@@ -96,7 +96,9 @@ class DocumentationBuilder:
                 pbar.update(1)
 
         logger.info(
-            f"✅ Build complete: {copied_count} files copied, {skipped_count} files skipped",
+            "✅ Build complete: %d files copied, %d files skipped",
+            copied_count,
+            skipped_count,
         )
 
     def build_file(self, file_path: Path) -> None:
@@ -202,5 +204,7 @@ class DocumentationBuilder:
                 pbar.update(1)
 
         logger.info(
-            f"✅ Build complete: {copied_count} files copied, {skipped_count} files skipped",
+            "✅ Build complete: %d files copied, %d files skipped",
+            copied_count,
+            skipped_count,
         )

@@ -50,6 +50,5 @@ def build_command(
     # Initialize builder and build docs
     builder = DocumentationBuilder(src_dir_path, build_dir_path)
     builder.build_all()
-
-    logger.info(f"Documentation built successfully in {build_dir_path}")
+    logger.info("Documentation built successfully in %s", build_dir_path)
     return 0

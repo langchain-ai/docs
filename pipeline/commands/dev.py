@@ -46,7 +46,9 @@ async def dev_command(args: Any | None) -> int:
         logger.info("Skipping initial build (using existing build directory)")
         if not build_dir.exists():
             logger.warning(
-                f"Build directory '{build_dir}' does not exist. You may want to run a build first.",
+                "Build directory '%s' does not exist. "
+                "You may want to run a build first.",
+                build_dir,
             )
     else:
         # Perform a full build
