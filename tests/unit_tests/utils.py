@@ -122,7 +122,8 @@ def file_system(files: list[File]) -> Iterator[FileSystem]:
             elif file["content"] is not None:
                 file_path.write_text(file["content"], encoding="utf-8")
             else:
-                raise ValueError("File must have either 'bytes' or 'content' defined")
+                msg = "File must have either 'bytes' or 'content' defined"
+                raise ValueError(msg)
         # Yield the file system
         yield FileSystem(temp_dir, src_dir, build_dir)
     finally:

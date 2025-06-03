@@ -114,8 +114,9 @@ class DocumentationBuilder:
             A message indicating whether the file was copied or skipped.
         """
         if not file_path.is_file():
+            msg = f"File does not exist: {file_path} this is likely a programming error"
             raise AssertionError(
-                f"File does not exist: {file_path} this is likely a programming error",
+                msg,
             )
 
         relative_path = file_path.relative_to(self.src_dir)
@@ -170,7 +171,7 @@ class DocumentationBuilder:
             file_paths: List of Path objects pointing to files to be built.
                 Only existing files will be processed.
         """
-        existing_files = [fp for fp in file_paths]
+        existing_files = list(file_paths)
 
         if not existing_files:
             logger.info("No files to build")

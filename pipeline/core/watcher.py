@@ -5,6 +5,7 @@ build pipeline, enabling automatic rebuilds when source files change.
 """
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 
@@ -228,7 +229,5 @@ class FileWatcher:
         # Cancel any pending rebuild task
         if self.rebuild_task:
             self.rebuild_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.rebuild_task
-            except asyncio.CancelledError:
-                pass
