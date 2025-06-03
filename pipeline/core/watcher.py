@@ -61,7 +61,8 @@ class DocsFileHandler(FileSystemEventHandler):
             return
 
         if not isinstance(event.src_path, str):
-            raise TypeError("Expected event.src_path to be a string")
+            msg = "Expected event.src_path to be a string"
+            raise TypeError(msg)
 
         src_path = event.src_path
 
@@ -95,7 +96,8 @@ class DocsFileHandler(FileSystemEventHandler):
             return
 
         if not isinstance(event.src_path, str):
-            raise TypeError("Expected event.src_path to be a string")
+            msg = "Expected event.src_path to be a string"
+            raise TypeError(msg)
 
         file_path = Path(event.src_path)
 
