@@ -1,9 +1,12 @@
 """Documentation builder implementation."""
 
+import logging
 import shutil
 from pathlib import Path
 
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentationBuilder:
@@ -57,7 +60,7 @@ class DocumentationBuilder:
         Displays:
             A progress bar showing build progress and file counts.
         """
-        print(f"Building from {self.src_dir} to {self.build_dir}")
+        logger.info(f"Building from {self.src_dir} to {self.build_dir}")
 
         # Clear build directory
         if self.build_dir.exists():
@@ -70,7 +73,7 @@ class DocumentationBuilder:
         ]
 
         if not all_files:
-            print("No files found to build")
+            logger.info("No files found to build")
             return
 
         # Process files with progress bar
@@ -92,7 +95,7 @@ class DocumentationBuilder:
                     skipped_count += 1
                 pbar.update(1)
 
-        print(
+        logger.info(
             f"✅ Build complete: {copied_count} files copied, {skipped_count} files skipped",
         )
 
@@ -124,9 +127,9 @@ class DocumentationBuilder:
         # For now, just copy supported files directly
         if file_path.suffix.lower() in self.copy_extensions:
             shutil.copy2(file_path, output_path)
-            print(f"Copied: {relative_path}")
+            logger.info(f"Copied: {relative_path}")
         else:
-            print(f"Skipped: {relative_path} (unsupported extension)")
+            logger.info(f"Skipped: {relative_path} (unsupported extension)")
 
     def _build_file_with_progress(self, file_path: Path, pbar: tqdm) -> bool:
         """Build a single file with progress bar integration.
@@ -170,7 +173,7 @@ class DocumentationBuilder:
         existing_files = [fp for fp in file_paths]
 
         if not existing_files:
-            print("No files to build")
+            logger.info("No files to build")
             return
 
         if len(existing_files) == 1:
@@ -197,6 +200,6 @@ class DocumentationBuilder:
                     skipped_count += 1
                 pbar.update(1)
 
-        print(
+        logger.info(
             f"✅ Build complete: {copied_count} files copied, {skipped_count} files skipped",
         )

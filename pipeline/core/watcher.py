@@ -5,12 +5,15 @@ build pipeline, enabling automatic rebuilds when source files change.
 """
 
 import asyncio
+import logging
 from pathlib import Path
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from pipeline.core.builder import DocumentationBuilder
+
+logger = logging.getLogger(__name__)
 
 
 class DocsFileHandler(FileSystemEventHandler):
@@ -58,7 +61,7 @@ class DocsFileHandler(FileSystemEventHandler):
 
         file_path = Path(event.src_path)
         if file_path.suffix.lower() in self.builder.copy_extensions:
-            print(f"File changed: {file_path}")
+            logger.info(f"File changed: {file_path}")
             # Put file change event in queue for async processing
             self.loop.call_soon_threadsafe(self.event_queue.put_nowait, file_path)
 
@@ -91,7 +94,7 @@ class DocsFileHandler(FileSystemEventHandler):
 
         if output_path.exists():
             output_path.unlink()
-            print(f"Deleted: {relative_path}")
+            logger.info(f"Deleted: {relative_path}")
 
 
 class FileWatcher:
@@ -206,7 +209,7 @@ class FileWatcher:
                 files_to_build = list(self.pending_files)
                 self.pending_files.clear()
 
-                print(f"Rebuilding {len(files_to_build)} files...")
+                logger.info(f"Rebuilding {len(files_to_build)} files...")
                 self.builder.build_files(files_to_build)
 
         except asyncio.CancelledError:

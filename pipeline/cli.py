@@ -6,10 +6,23 @@ pipeline, including argument parsing and command routing.
 
 import argparse
 import asyncio
+import logging
 import sys
 
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
+
+
+def setup_logging() -> None:
+    """Configure logging for the CLI application."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -25,6 +38,7 @@ def main() -> None:
     Exits:
         With code 1 if no command is specified or if the initial build fails.
     """
+    setup_logging()
     parser = argparse.ArgumentParser(description="LangChain docs build pipeline")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 

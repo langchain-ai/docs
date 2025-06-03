@@ -1,9 +1,12 @@
 """Build command implementation."""
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from pipeline.core.builder import DocumentationBuilder
+
+logger = logging.getLogger(__name__)
 
 
 def build_command(
@@ -33,12 +36,12 @@ def build_command(
     Prints:
         Progress messages and error messages to stdout.
     """
-    print("Building documentation...")
+    logger.info("Building documentation...")
     src_dir_path = Path(src_dir)
     build_dir_path = Path(build_dir)
 
     if not src_dir_path.exists():
-        print("Error: src directory not found")
+        logger.error("Error: src directory not found")
         return 1
 
     # Create build directory
@@ -48,5 +51,5 @@ def build_command(
     builder = DocumentationBuilder(src_dir_path, build_dir_path)
     builder.build_all()
 
-    print(f"Documentation built successfully in {build_dir_path}")
+    logger.info(f"Documentation built successfully in {build_dir_path}")
     return 0

@@ -4,6 +4,7 @@ This module provides the development command that combines building,
 file watching, and live serving for an optimal development experience.
 """
 
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,8 @@ from typing import Any
 
 from pipeline.commands.build import build_command
 from pipeline.core.watcher import FileWatcher
+
+logger = logging.getLogger(__name__)
 
 
 async def dev_command(args: Any | None) -> int:
@@ -31,7 +34,7 @@ async def dev_command(args: Any | None) -> int:
     Raises:
         KeyboardInterrupt: When the user interrupts the development server.
     """
-    print("Starting development mode...")
+    logger.info("Starting development mode...")
 
     # Check if we should skip the initial build
     skip_build = getattr(args, "skip_build", False) if args else False
@@ -40,24 +43,24 @@ async def dev_command(args: Any | None) -> int:
     build_dir = Path("build")
 
     if skip_build:
-        print("Skipping initial build (using existing build directory)")
+        logger.info("Skipping initial build (using existing build directory)")
         if not build_dir.exists():
-            print(
-                f"Warning: Build directory '{build_dir}' does not exist. You may want to run a build first.",
+            logger.warning(
+                f"Build directory '{build_dir}' does not exist. You may want to run a build first.",
             )
     else:
         # Perform a full build
-        print("Performing initial build...")
+        logger.info("Performing initial build...")
         build_result = build_command(args)
         if build_result != 0:
-            print("Initial build failed")
+            logger.error("Initial build failed")
             sys.exit(1)
 
     # Start file watcher
     watcher = FileWatcher(src_dir, build_dir)
 
     # Start mint dev in background
-    print("Starting mint dev...")
+    logger.info("Starting mint dev...")
     mint_process = subprocess.Popen(
         ["mint", "dev", "--port", "3000"],
         cwd=build_dir,
@@ -67,10 +70,10 @@ async def dev_command(args: Any | None) -> int:
 
     try:
         # Start file watching
-        print("Watching for file changes...")
+        logger.info("Watching for file changes...")
         await watcher.start()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        logger.info("\nShutting down...")
     finally:
         # Cleanup
         mint_process.terminate()
