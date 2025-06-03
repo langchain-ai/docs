@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from pipeline.core.builder import DocumentationBuilder
-from tests.test_utils import TestFileSystem
+from tests.unit_tests.test_utils import TestFileSystem
 
 
 class TestDocumentationBuilder:

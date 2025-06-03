@@ -215,7 +215,9 @@ class TestBuildCommand:
         with TestFileSystem(files) as fs:
             # Test the build command
             result = build_command(
-                None, src_dir=str(fs.src_dir), build_dir=str(fs.build_dir),
+                None,
+                src_dir=str(fs.src_dir),
+                build_dir=str(fs.build_dir),
             )
 
             # Verify success
