@@ -52,10 +52,10 @@ class TestDocumentationBuilder:
         files = [
             test_file("index.mdx", "# Home"),
         ]
-        
+
         with TestFileSystem(files) as fs:
             builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-            
+
             # Remove build dir to test creation
             if fs.build_dir.exists():
                 fs.build_dir.rmdir()
@@ -78,7 +78,7 @@ class TestDocumentationBuilder:
             test_file("unsupported.txt", "unsupported file"),
             test_file("guides/advanced.mdx", "# Advanced Guide"),
         ]
-        
+
         with TestFileSystem(files) as fs:
             builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
             builder.build_all()
@@ -105,7 +105,7 @@ class TestDocumentationBuilder:
             test_file("config.json", '{"title": "Test Docs"}'),
             test_binary_file("image.png", b"fake png data"),
         ]
-        
+
         with TestFileSystem(files) as fs:
             builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
             builder.build_all()
@@ -114,10 +114,10 @@ class TestDocumentationBuilder:
             assert fs.get_build_file("index.mdx") == "# Home\nWelcome to the docs"
             assert fs.get_build_file("config.json") == '{"title": "Test Docs"}'
             assert fs.get_build_file("image.png") == b"fake png data"
-    
+
     def test_build_comprehensive_file_structure(self) -> None:
         """Test building a comprehensive file structure.
-        
+
         Tests a realistic documentation structure with multiple directories,
         file types, and content preservation.
         """
@@ -126,25 +126,22 @@ class TestDocumentationBuilder:
             test_file("index.mdx", "# Documentation\nWelcome to our docs"),
             test_file("README.md", "# Project README"),
             test_file("docs.json", '{"version": "1.0", "title": "Docs"}'),
-            
             # Images and assets
             test_binary_file("assets/logo.png", b"PNG_IMAGE_DATA"),
             test_file("assets/icon.svg", '<svg><circle r="10"/></svg>'),
-            
             # Nested documentation
             test_file("guides/getting-started.mdx", "# Getting Started\nFirst steps"),
             test_file("guides/advanced/concepts.md", "# Advanced Concepts"),
             test_file("api/reference.json", '{"endpoints": ["/api/v1"]}'),
-            
             # Unsupported files (should be skipped)
             test_file("temp.txt", "temporary file"),
             test_file("scripts/build.py", "#!/usr/bin/env python3"),
         ]
-        
+
         with TestFileSystem(files) as fs:
             builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
             builder.build_all()
-            
+
             # Verify correct files were copied
             built_files = fs.list_build_files()
             expected_files = {
@@ -157,15 +154,17 @@ class TestDocumentationBuilder:
                 Path("guides/advanced/concepts.md"),
                 Path("api/reference.json"),
             }
-            
+
             assert set(built_files) == expected_files
             assert fs.get_build_file_count() == 8
-            
+
             # Verify content preservation
             assert "Welcome to our docs" in fs.get_build_file("index.mdx")
             assert fs.get_build_file("assets/logo.png") == b"PNG_IMAGE_DATA"
-            assert "Advanced Concepts" in fs.get_build_file("guides/advanced/concepts.md")
-            
+            assert "Advanced Concepts" in fs.get_build_file(
+                "guides/advanced/concepts.md",
+            )
+
             # Verify unsupported files were not copied
             assert not fs.build_file_exists("temp.txt")
             assert not fs.build_file_exists("scripts/build.py")

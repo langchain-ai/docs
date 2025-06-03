@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from pipeline.commands.build import build_command
-from tests.test_utils import TestFileSystem, test_file, test_binary_file
+from tests.test_utils import TestFileSystem, test_binary_file, test_file
 
 
 class TestBuildCommand:
@@ -198,10 +198,10 @@ class TestBuildCommand:
             build_dir=str(actual_build),
         )
         assert result == expected_result
-    
+
     def test_build_command_with_test_filesystem(self) -> None:
         """Example test using the new TestFileSystem context manager.
-        
+
         Demonstrates the clean, readable test setup with the new utilities.
         """
         files = [
@@ -211,14 +211,16 @@ class TestBuildCommand:
             test_file("guides/setup.md", "# Setup Guide\nHow to get started"),
             test_file("ignored.txt", "This file should be ignored"),
         ]
-        
+
         with TestFileSystem(files) as fs:
             # Test the build command
-            result = build_command(None, src_dir=str(fs.src_dir), build_dir=str(fs.build_dir))
-            
+            result = build_command(
+                None, src_dir=str(fs.src_dir), build_dir=str(fs.build_dir),
+            )
+
             # Verify success
             assert result == 0
-            
+
             # Verify files were built correctly
             assert fs.get_build_file_count() == 4  # txt file should be ignored
             assert fs.build_file_exists("index.mdx")
@@ -226,7 +228,7 @@ class TestBuildCommand:
             assert fs.build_file_exists("logo.png")
             assert fs.build_file_exists("guides/setup.md")
             assert not fs.build_file_exists("ignored.txt")
-            
+
             # Verify content
             assert "Welcome" in fs.get_build_file("index.mdx")
             assert fs.get_build_file("logo.png") == b"PNG_LOGO_DATA"

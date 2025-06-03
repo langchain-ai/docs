@@ -7,8 +7,7 @@ temporary file systems with source and build directories.
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, List, Union
-from typing import TypedDict
+from typing import Any, TypedDict
 
 
 class File(TypedDict):
@@ -34,7 +33,7 @@ class TestFileSystem:
         build_dir: Path to the build directory (temp_dir/build).
     """
 
-    def __init__(self, files: List[File]) -> None:
+    def __init__(self, files: list[File]) -> None:
         """Initialize the test file system.
 
         Args:
@@ -87,7 +86,7 @@ class TestFileSystem:
         if self.temp_dir and self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
-    def list_build_files(self) -> List[Path]:
+    def list_build_files(self) -> list[Path]:
         """List all files in the build directory.
 
         Returns:
@@ -104,7 +103,7 @@ class TestFileSystem:
 
         return sorted(files)
 
-    def get_build_file(self, path: str) -> Union[str, bytes]:
+    def get_build_file(self, path: str) -> str | bytes:
         """Get the content of a file in the build directory.
 
         Args:
