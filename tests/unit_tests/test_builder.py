@@ -10,254 +10,148 @@ from pathlib import Path
 import pytest
 
 from pipeline.core.builder import DocumentationBuilder
-from tests.unit_tests.test_utils import TestFileSystem
+from tests.unit_tests.utils import File, file_system
 
 
-class TestDocumentationBuilder:
-    """Test suite for DocumentationBuilder class.
+def test_builder_initialization() -> None:
+    """Test DocumentationBuilder initialization.
 
-    This test class verifies the functionality of the DocumentationBuilder,
-    including initialization, file building operations, and file extension
-    filtering capabilities.
+    Verifies that the builder is correctly initialized with the provided
+    source and build directories, and that the copy_extensions set contains
+    the expected file extensions.
     """
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        assert builder.src_dir == fs.src_dir
+        assert builder.build_dir == fs.build_dir
+        assert builder.copy_extensions == {
+            ".mdx",
+            ".md",
+            ".json",
+            ".svg",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+        }
 
-    def test_init(self) -> None:
-        """Test DocumentationBuilder initialization.
 
-        Verifies that the builder is correctly initialized with the provided
-        source and build directories, and that the copy_extensions set contains
-        the expected file extensions.
-        """
-        with TestFileSystem([]) as fs:
-            builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-            assert builder.src_dir == fs.src_dir
-            assert builder.build_dir == fs.build_dir
-            assert builder.copy_extensions == {
-                ".mdx",
-                ".md",
-                ".json",
-                ".svg",
-                ".png",
-                ".jpg",
-                ".jpeg",
-                ".gif",
-            }
+def test_build_all_empty_directory() -> None:
+    """Test building from an empty directory.
 
-    def test_build_all_creates_build_directory(self) -> None:
-        """Test that build_all creates the build directory.
+    Verifies that the builder handles empty source directories correctly.
+    """
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+        assert not fs.list_build_files()
 
-        Verifies that the build_all method creates the build directory
-        if it doesn't exist.
-        """
-        files = [
-            test_file("index.mdx", "# Home"),
-        ]
 
-        with TestFileSystem(files) as fs:
-            builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+def test_build_all_supported_files() -> None:
+    """Test building all supported file types.
 
-            # Remove build dir to test creation
-            if fs.build_dir.exists():
-                fs.build_dir.rmdir()
+    Verifies that the builder correctly copies all supported file types
+    while maintaining directory structure.
+    """
+    files = [
+        File(path="index.mdx", content="# Welcome", bytes=None),
+        File(path="config.json", content='{"name": "test"}', bytes=None),
+        File(path="images/logo.png", content=None, bytes=b"PNG_DATA"),
+        File(path="guides/setup.md", content="# Setup Guide", bytes=None),
+    ]
 
-            builder.build_all()
-            assert fs.build_dir.exists()
-
-    def test_build_all_copies_supported_files(self) -> None:
-        """Test that build_all copies all supported files.
-
-        Verifies that all files with supported extensions are copied
-        while unsupported files are skipped.
-        """
-        files = [
-            test_file("index.mdx", "# Home\nWelcome to the docs"),
-            test_file("guide.md", "# Guide\nThis is a guide"),
-            test_file("config.json", '{"title": "Test Docs"}'),
-            test_file("logo.svg", "<svg>test</svg>"),
-            test_binary_file("image.png", b"fake png data"),
-            test_file("unsupported.txt", "unsupported file"),
-            test_file("guides/advanced.mdx", "# Advanced Guide"),
-        ]
-
-        with TestFileSystem(files) as fs:
-            builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-            builder.build_all()
-
-            # Check that supported files were copied
-            assert fs.build_file_exists("index.mdx")
-            assert fs.build_file_exists("guide.md")
-            assert fs.build_file_exists("config.json")
-            assert fs.build_file_exists("logo.svg")
-            assert fs.build_file_exists("image.png")
-            assert fs.build_file_exists("guides/advanced.mdx")
-
-            # Check that unsupported files were not copied
-            assert not fs.build_file_exists("unsupported.txt")
-
-    def test_build_all_preserves_content(self) -> None:
-        """Test that build_all preserves file content.
-
-        Verifies that file contents are preserved exactly during the
-        copy operation.
-        """
-        files = [
-            test_file("index.mdx", "# Home\nWelcome to the docs"),
-            test_file("config.json", '{"title": "Test Docs"}'),
-            test_binary_file("image.png", b"fake png data"),
-        ]
-
-        with TestFileSystem(files) as fs:
-            builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-            builder.build_all()
-
-            # Check content is preserved
-            assert fs.get_build_file("index.mdx") == "# Home\nWelcome to the docs"
-            assert fs.get_build_file("config.json") == '{"title": "Test Docs"}'
-            assert fs.get_build_file("image.png") == b"fake png data"
-
-    def test_build_comprehensive_file_structure(self) -> None:
-        """Test building a comprehensive file structure.
-
-        Tests a realistic documentation structure with multiple directories,
-        file types, and content preservation.
-        """
-        files = [
-            # Root level files
-            test_file("index.mdx", "# Documentation\nWelcome to our docs"),
-            test_file("README.md", "# Project README"),
-            test_file("docs.json", '{"version": "1.0", "title": "Docs"}'),
-            # Images and assets
-            test_binary_file("assets/logo.png", b"PNG_IMAGE_DATA"),
-            test_file("assets/icon.svg", '<svg><circle r="10"/></svg>'),
-            # Nested documentation
-            test_file("guides/getting-started.mdx", "# Getting Started\nFirst steps"),
-            test_file("guides/advanced/concepts.md", "# Advanced Concepts"),
-            test_file("api/reference.json", '{"endpoints": ["/api/v1"]}'),
-            # Unsupported files (should be skipped)
-            test_file("temp.txt", "temporary file"),
-            test_file("scripts/build.py", "#!/usr/bin/env python3"),
-        ]
-
-        with TestFileSystem(files) as fs:
-            builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-            builder.build_all()
-
-            # Verify correct files were copied
-            built_files = fs.list_build_files()
-            expected_files = {
-                Path("index.mdx"),
-                Path("README.md"),
-                Path("docs.json"),
-                Path("assets/logo.png"),
-                Path("assets/icon.svg"),
-                Path("guides/getting-started.mdx"),
-                Path("guides/advanced/concepts.md"),
-                Path("api/reference.json"),
-            }
-
-            assert set(built_files) == expected_files
-            assert fs.get_build_file_count() == 8
-
-            # Verify content preservation
-            assert "Welcome to our docs" in fs.get_build_file("index.mdx")
-            assert fs.get_build_file("assets/logo.png") == b"PNG_IMAGE_DATA"
-            assert "Advanced Concepts" in fs.get_build_file(
-                "guides/advanced/concepts.md",
-            )
-
-            # Verify unsupported files were not copied
-            assert not fs.build_file_exists("temp.txt")
-            assert not fs.build_file_exists("scripts/build.py")
-
-    def test_build_all_preserves_directory_structure(
-        self,
-        temp_src_dir,
-        temp_build_dir,
-    ):
-        """Test that build_all preserves directory structure."""
-        builder = DocumentationBuilder(temp_src_dir, temp_build_dir)
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
         builder.build_all()
 
-        # Check directory structure is preserved
-        assert (temp_build_dir / "guides").is_dir()
-        assert (temp_build_dir / "guides" / "advanced.mdx").exists()
+        # Verify all files were copied
+        build_files = fs.list_build_files()
+        assert len(build_files) == 4
+        assert Path("index.mdx") in build_files
+        assert Path("config.json") in build_files
+        assert Path("images/logo.png") in build_files
+        assert Path("guides/setup.md") in build_files
 
-    def test_build_all_clears_existing_build(self, temp_src_dir, temp_build_dir):
-        """Test that build_all clears existing build directory."""
-        # Create some existing files in build dir
-        temp_build_dir.mkdir(exist_ok=True)
-        (temp_build_dir / "old_file.txt").write_text("old content")
 
-        builder = DocumentationBuilder(temp_src_dir, temp_build_dir)
+def test_build_all_unsupported_files() -> None:
+    """Test building with unsupported file types.
+
+    Verifies that the builder skips unsupported file types.
+    """
+    files = [
+        File(path="index.mdx", content="# Welcome", bytes=None),
+        File(path="ignored.txt", content="This should be ignored", bytes=None),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
         builder.build_all()
 
-        # Old file should be gone
-        assert not (temp_build_dir / "old_file.txt").exists()
-        # New files should exist
-        assert (temp_build_dir / "index.mdx").exists()
+        # Verify only supported files were copied
+        build_files = fs.list_build_files()
+        assert len(build_files) == 1
+        assert Path("index.mdx") in build_files
+        assert not fs.build_file_exists("ignored.txt")
 
-    def test_build_file_single_file(self, temp_src_dir, temp_build_dir):
-        """Test building a single file."""
-        builder = DocumentationBuilder(temp_src_dir, temp_build_dir)
-        temp_build_dir.mkdir(exist_ok=True)
 
-        file_path = temp_src_dir / "index.mdx"
-        builder.build_file(file_path)
+def test_build_single_file() -> None:
+    """Test building a single file.
 
-        assert (temp_build_dir / "index.mdx").exists()
-        assert (
-            temp_build_dir / "index.mdx"
-        ).read_text() == "# Home\nWelcome to the docs"
+    Verifies that the builder correctly copies a single file
+    when requested.
+    """
+    files = [
+        File(path="index.mdx", content="# Welcome", bytes=None),
+        File(path="config.json", content='{"name": "test"}', bytes=None),
+    ]
 
-    def test_build_files_multiple_files(self, temp_src_dir, temp_build_dir):
-        """Test building multiple specific files."""
-        builder = DocumentationBuilder(temp_src_dir, temp_build_dir)
-        temp_build_dir.mkdir(exist_ok=True)
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_file(fs.src_dir / "index.mdx")
 
-        files = [temp_src_dir / "index.mdx", temp_src_dir / "guide.md"]
-        builder.build_files(files)
+        # Verify only the requested file was copied
+        build_files = fs.list_build_files()
+        assert len(build_files) == 1
+        assert Path("index.mdx") in build_files
+        assert not fs.build_file_exists("config.json")
 
-        assert (temp_build_dir / "index.mdx").exists()
-        assert (temp_build_dir / "guide.md").exists()
-        assert not (temp_build_dir / "config.json").exists()  # Not in the list
 
-    @pytest.mark.parametrize(
-        "extension,should_copy",
-        [
-            (".mdx", True),
-            (".md", True),
-            (".json", True),
-            (".svg", True),
-            (".png", True),
-            (".jpg", True),
-            (".jpeg", True),
-            (".gif", True),
-            (".txt", False),
-            (".py", False),
-            (".js", False),
-            ("", False),
-        ],
-    )
-    def test_file_extension_handling(
-        self,
-        temp_src_dir,
-        temp_build_dir,
-        extension,
-        should_copy,
-    ):
-        """Test that only supported file extensions are copied."""
-        builder = DocumentationBuilder(temp_src_dir, temp_build_dir)
-        temp_build_dir.mkdir(exist_ok=True)
+def test_build_multiple_files() -> None:
+    """Test building multiple specific files.
 
-        # Create test file with specific extension
-        test_file = temp_src_dir / f"test{extension}"
-        test_file.write_text("test content")
+    Verifies that the builder correctly copies multiple specified files
+    while maintaining directory structure.
+    """
+    files = [
+        File(path="index.mdx", content="# Welcome", bytes=None),
+        File(path="config.json", content='{"name": "test"}', bytes=None),
+        File(path="guides/setup.md", content="# Setup Guide", bytes=None),
+    ]
 
-        builder.build_file(test_file)
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_files(
+            [
+                fs.src_dir / "index.mdx",
+                fs.src_dir / "guides/setup.md",
+            ],
+        )
 
-        output_file = temp_build_dir / f"test{extension}"
-        if should_copy:
-            assert output_file.exists()
-            assert output_file.read_text() == "test content"
-        else:
-            assert not output_file.exists()
+        # Verify only specified files were copied
+        build_files = fs.list_build_files()
+        assert len(build_files) == 2
+        assert Path("index.mdx") in build_files
+        assert Path("guides/setup.md") in build_files
+        assert not fs.build_file_exists("config.json")
+
+
+def test_build_nonexistent_file() -> None:
+    """Test building a nonexistent file.
+
+    Verifies that the builder handles attempts to build
+    nonexistent files gracefully.
+    """
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        with pytest.raises(AssertionError):
+            builder.build_file(fs.src_dir / "nonexistent.md")

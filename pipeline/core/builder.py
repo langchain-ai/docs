@@ -110,6 +110,11 @@ class DocumentationBuilder:
         Prints:
             A message indicating whether the file was copied or skipped.
         """
+        if not file_path.is_file():
+            raise AssertionError(
+                f"File does not exist: {file_path} this is likely a programming error",
+            )
+
         relative_path = file_path.relative_to(self.src_dir)
         output_path = self.build_dir / relative_path
 

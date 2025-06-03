@@ -77,7 +77,7 @@ class FileSystem:
 
 
 @contextmanager
-def test_file_system(files: list[File]) -> Iterator[FileSystem]:
+def file_system(files: list[File]) -> Iterator[FileSystem]:
     """Create a temporary test file system with the given files.
 
     This context manager creates a temporary directory structure with src/ and build/
@@ -123,10 +123,8 @@ def test_file_system(files: list[File]) -> Iterator[FileSystem]:
                 file_path.write_text(file["content"], encoding="utf-8")
             else:
                 raise ValueError("File must have either 'bytes' or 'content' defined")
-
         # Yield the file system
         yield FileSystem(temp_dir, src_dir, build_dir)
-
     finally:
         # Clean up the temporary directory
         if temp_dir.exists():
