@@ -60,9 +60,14 @@ class DocsFileHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        file_path = Path(event.src_path)
+        if not isinstance(event.src_path, str):
+            raise TypeError("Expected event.src_path to be a string")
+
+        src_path = event.src_path
+
+        file_path = Path(src_path)
         if file_path.suffix.lower() in self.builder.copy_extensions:
-            logger.info(f"File changed: {file_path}")
+            logger.info("File changed: %s", file_path)
             # Put file change event in queue for async processing
             self.loop.call_soon_threadsafe(self.event_queue.put_nowait, file_path)
 
@@ -89,13 +94,17 @@ class DocsFileHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
+        if not isinstance(event.src_path, str):
+            raise TypeError("Expected event.src_path to be a string")
+
         file_path = Path(event.src_path)
+
         relative_path = file_path.relative_to(self.builder.src_dir)
         output_path = self.builder.build_dir / relative_path
 
         if output_path.exists():
             output_path.unlink()
-            logger.info(f"Deleted: {relative_path}")
+            logger.info("Deleted: %s", relative_path)
 
 
 class FileWatcher:
@@ -210,7 +219,7 @@ class FileWatcher:
                 files_to_build = list(self.pending_files)
                 self.pending_files.clear()
 
-                logger.info(f"Rebuilding {len(files_to_build)} files...")
+                logger.info("Rebuilding %d files...", len(files_to_build))
                 self.builder.build_files(files_to_build)
 
         except asyncio.CancelledError:

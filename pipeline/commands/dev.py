@@ -4,11 +4,14 @@ This module provides the development command that combines building,
 file watching, and live serving for an optimal development experience.
 """
 
+import asyncio
 import logging
-import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from argparse import Namespace
 
 from pipeline.commands.build import build_command
 from pipeline.core.watcher import FileWatcher
@@ -16,7 +19,7 @@ from pipeline.core.watcher import FileWatcher
 logger = logging.getLogger(__name__)
 
 
-async def dev_command(args: Any | None) -> int:
+async def dev_command(args: "Namespace | None") -> int:
     """Start development mode with file watching and mint dev.
 
     This function orchestrates the development workflow by:
@@ -53,7 +56,7 @@ async def dev_command(args: Any | None) -> int:
     else:
         # Perform a full build
         logger.info("Performing initial build...")
-        build_result = build_command(args)
+        build_result = build_command()
         if build_result != 0:
             logger.error("Initial build failed")
             sys.exit(1)
@@ -63,11 +66,14 @@ async def dev_command(args: Any | None) -> int:
 
     # Start mint dev in background
     logger.info("Starting mint dev...")
-    mint_process = subprocess.Popen(
-        ["mint", "dev", "--port", "3000"],
+    mint_process = await asyncio.create_subprocess_exec(
+        "mint",
+        "dev",
+        "--port",
+        "3000",
         cwd=build_dir,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
 
     try:
@@ -80,8 +86,8 @@ async def dev_command(args: Any | None) -> int:
         # Cleanup
         mint_process.terminate()
         try:
-            mint_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
+            await asyncio.wait_for(mint_process.wait(), timeout=5)
+        except asyncio.TimeoutError:
             mint_process.kill()
 
     return 0

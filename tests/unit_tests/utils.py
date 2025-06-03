@@ -57,11 +57,11 @@ class FileSystem:
         if not self.build_dir.exists():
             return []
 
-        files = []
-        for file_path in self.build_dir.rglob("*"):
-            if file_path.is_file():
-                files.append(file_path.relative_to(self.build_dir))
-
+        files = [
+            file_path.relative_to(self.build_dir)
+            for file_path in self.build_dir.rglob("*")
+            if file_path.is_file()
+        ]
         return sorted(files)
 
     def build_file_exists(self, path: str) -> bool:
