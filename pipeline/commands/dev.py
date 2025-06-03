@@ -8,10 +8,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from argparse import Namespace
+from typing import Any
 
 from pipeline.commands.build import build_command
 from pipeline.core.watcher import FileWatcher
@@ -19,7 +16,9 @@ from pipeline.core.watcher import FileWatcher
 logger = logging.getLogger(__name__)
 
 
-async def dev_command(args: "Namespace | None") -> int:
+async def dev_command(
+    args: Any | None,  # noqa: ANN401
+) -> int:
     """Start development mode with file watching and mint dev.
 
     This function orchestrates the development workflow by:
@@ -56,7 +55,7 @@ async def dev_command(args: "Namespace | None") -> int:
     else:
         # Perform a full build
         logger.info("Performing initial build...")
-        build_result = build_command()
+        build_result = build_command(args)
         if build_result != 0:
             logger.error("Initial build failed")
             sys.exit(1)

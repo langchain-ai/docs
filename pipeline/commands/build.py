@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from pipeline.core.builder import DocumentationBuilder
 
@@ -9,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_command(
+    args: Any,  # noqa: ARG001, ANN401
     src_dir: str = "src",
     build_dir: str = "build",
 ) -> int:
@@ -20,6 +22,8 @@ def build_command(
     orchestrates the build process.
 
     Args:
+        args: Command line arguments (not used in this function, but
+            included for compatibility with other commands).
         src_dir: Path to the source directory containing documentation files.
             Defaults to "src".
         build_dir: Path to the build directory where files will be copied.
