@@ -16,6 +16,37 @@ from pipeline.core.watcher import FileWatcher
 logger = logging.getLogger(__name__)
 
 
+async def _forward_logs(stream: asyncio.StreamReader | None, source: str) -> None:
+    """Forward logs from a subprocess stream to the logger.
+
+    Args:
+        stream: The subprocess stream to read from.
+        source: The source identifier for logging (e.g., "mint-stdout").
+    """
+    if stream is None:
+        return
+
+    mint_logger = logging.getLogger(source)
+
+    try:
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+
+            # Decode and strip the line
+            decoded_line = line.decode("utf-8").rstrip()
+            if decoded_line:
+                # Use info level for stdout, error level for stderr
+                if "stderr" in source:
+                    mint_logger.error(decoded_line)
+                else:
+                    mint_logger.info(decoded_line)
+    except asyncio.CancelledError:
+        # Task was cancelled during shutdown
+        pass
+
+
 async def dev_command(
     args: Any | None,  # noqa: ANN401
 ) -> int:
@@ -75,6 +106,10 @@ async def dev_command(
         stderr=asyncio.subprocess.PIPE,
     )
 
+    # Start log forwarding tasks
+    stdout_task = asyncio.create_task(_forward_logs(mint_process.stdout, "mint-stdout"))
+    stderr_task = asyncio.create_task(_forward_logs(mint_process.stderr, "mint-stderr"))
+
     try:
         # Start file watching
         logger.info("Watching for file changes...")
@@ -84,9 +119,17 @@ async def dev_command(
     finally:
         # Cleanup
         mint_process.terminate()
+
+        # Cancel log forwarding tasks
+        stdout_task.cancel()
+        stderr_task.cancel()
+
         try:
             await asyncio.wait_for(mint_process.wait(), timeout=5)
         except asyncio.TimeoutError:
             mint_process.kill()
+
+        # Wait for log forwarding tasks to complete
+        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
 
     return 0
