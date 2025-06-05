@@ -16,6 +16,8 @@ import re
 import shutil
 from pathlib import Path
 
+import nbformat
+
 __all__ = ["cli"]  # only the entry-point is considered public
 
 ENCODING: str = "utf-8"
@@ -145,83 +147,63 @@ def _rewrite_links_in_notebook(  # noqa: PLR0913, C901
         changes: Accumulator list that will be extended with every link change.
         dry_run: Whether the operation is a preview (no disk writes).
     """
-    try:
-        notebook_content = json.loads(notebook_file.read_text(encoding=ENCODING))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        # Skip invalid notebook files
-        return
+    notebook = nbformat.read(notebook_file, as_version=nbformat.NO_CONVERT)
 
     modified = False
 
-    for cell in notebook_content.get("cells", []):
-        if cell.get("cell_type") == "markdown" and "source" in cell:
-            # Handle both string and list of strings for cell source
-            if isinstance(cell["source"], str):
-                original_source = cell["source"]
-                cell_sources = [original_source]
+    def _replacer(match: re.Match[str]) -> str:
+        nonlocal modified
+        label, url, anchor = match.groups()
+
+        # Handle case where anchor is None
+        anchor = anchor or ""
+        full_url = url + anchor
+
+        # Skip external links, mailto, or in-page anchors.
+        if url.startswith(("http://", "https://", "mailto:")) or (not url and anchor):
+            return match.group(0)
+
+        resolved = (notebook_file.parent / url).resolve()
+        try:
+            if _rel_to_docs_root(resolved, docs_root) == _rel_to_docs_root(
+                old_abs, docs_root
+            ):
+                new_rel = os.path.relpath(new_abs, notebook_file.parent)
+                new_rel_posix = Path(new_rel).as_posix()
+                new_full_url = new_rel_posix + anchor
+
+                changes.append((full_url, new_full_url))
+
+                if dry_run:
+                    logger.info(
+                        "Would update link in %s: %s -> %s",
+                        notebook_file.relative_to(docs_root),
+                        full_url,
+                        new_full_url,
+                    )
+                modified = True
+                return f"{label}({new_full_url})"
+        except ValueError:
+            # Path is outside docs_root - ignore.
+            pass
+        return match.group(0)
+
+    # Process all cells in the notebook
+    for cell in notebook.cells:
+        if cell.cell_type == "markdown" and "source" in cell:
+            # Handle both string and list sources
+            if isinstance(cell.source, list):
+                source_text = "".join(cell.source)
             else:
-                cell_sources = cell["source"]
-                original_source = "".join(cell_sources)
+                source_text = cell.source
 
-            def _replacer(match: re.Match[str]) -> str:
-                nonlocal modified
-                label, url, anchor = match.groups()
+            new_source = _LINK_PATTERN.sub(_replacer, source_text)
 
-                # Handle case where anchor is None
-                anchor = anchor or ""
-                full_url = url + anchor
-
-                # Skip external links, mailto, or in-page anchors.
-                if url.startswith(("http://", "https://", "mailto:")) or (
-                    not url and anchor
-                ):
-                    return match.group(0)
-
-                resolved = (notebook_file.parent / url).resolve()
-                try:
-                    if _rel_to_docs_root(resolved, docs_root) == _rel_to_docs_root(
-                        old_abs, docs_root
-                    ):
-                        new_rel = os.path.relpath(new_abs, notebook_file.parent)
-                        new_rel_posix = Path(new_rel).as_posix()
-                        new_full_url = new_rel_posix + anchor
-
-                        changes.append((full_url, new_full_url))
-
-                        if dry_run:
-                            logger.info(
-                                "Would update link in %s: %s -> %s",
-                                notebook_file.relative_to(docs_root),
-                                full_url,
-                                new_full_url,
-                            )
-                        modified = True
-                        return f"{label}({new_full_url})"
-                except ValueError:
-                    # Path is outside docs_root - ignore.
-                    pass
-                return match.group(0)
-
-            new_source = _LINK_PATTERN.sub(_replacer, original_source)
-
-            if new_source != original_source:
-                # Update the cell source
-                if isinstance(cell["source"], str):
-                    cell["source"] = new_source
-                else:
-                    # Split back into lines preserving original line breaks
-                    lines = new_source.splitlines(keepends=True)
-                    # Ensure we have the same number of elements as original
-                    if lines:
-                        cell["source"] = lines
-                    else:
-                        cell["source"] = [""]
+            if new_source != source_text:
+                cell.source = new_source
 
     if modified and not dry_run:
-        notebook_file.write_text(
-            json.dumps(notebook_content, indent=1, ensure_ascii=False),
-            encoding=ENCODING,
-        )
+        nbformat.write(notebook, notebook_file)
 
 
 def _scan_and_rewrite(
