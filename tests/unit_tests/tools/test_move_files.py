@@ -7,7 +7,6 @@ import pytest
 
 from pipeline.tools.move_files import (
     _find_git_root,
-    _LinkChange,
     _rel_to_docs_root,
     _rewrite_links,
     _scan_and_rewrite,

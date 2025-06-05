@@ -61,7 +61,7 @@ def _rel_to_docs_root(path: Path, docs_root: Path) -> Path:
     return path.resolve().relative_to(docs_root.resolve())
 
 
-def _rewrite_links(  # noqa: PLR0913
+def _rewrite_links(
     md_file: Path,
     old_abs: Path,
     new_abs: Path,
@@ -125,7 +125,7 @@ def _rewrite_links(  # noqa: PLR0913
     new_src: str = _LINK_PATTERN.sub(_replacer, src)
     if modified and not dry_run:
         md_file.write_text(new_src, encoding=ENCODING)
-    
+
     return changes
 
 
