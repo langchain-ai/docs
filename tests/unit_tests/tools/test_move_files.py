@@ -10,6 +10,7 @@ from pipeline.tools.move_files import (
     _LinkChange,
     _rel_to_docs_root,
     _rewrite_links,
+    _rewrite_links_in_notebook,
     _scan_and_rewrite,
     _write_changes_log,
     move_file_with_link_updates,
@@ -267,6 +268,80 @@ class TestRewriteLinks:
             # Check that changes were tracked
             assert changes == [("docs.md", "reference/docs.md")]
 
+    def test_rewrite_links_in_jupyter_notebook(self) -> None:
+        """Test that links in Jupyter notebook markdown cells are rewritten."""
+        # Create a simple notebook with markdown cells containing links
+        notebook_content = {
+            "cells": [
+                {
+                    "cell_type": "markdown",
+                    "source": [
+                        "# Documentation\n",
+                        "\n",
+                        "See [guide](guide.md) and [API docs](api.md#functions).\n",
+                    ],
+                },
+                {
+                    "cell_type": "code",
+                    "source": ["# This is a code cell\n", "print('hello')\n"],
+                },
+                {
+                    "cell_type": "markdown",
+                    "source": "Also check [guide](guide.md) again.",
+                },
+            ]
+        }
+
+        files: list[File] = [
+            {
+                "path": "notebook.ipynb",
+                "content": json.dumps(notebook_content, indent=1),
+            },
+            {"path": "guide.md", "content": "# Guide"},
+            {"path": "api.md", "content": "# API\n## Functions"},
+        ]
+
+        with temp_directory(files) as temp_dir:
+            changes: list[_LinkChange] = []
+
+            # Test rewriting links to guide.md
+            old_abs = temp_dir / "guide.md"
+            new_abs = temp_dir / "docs" / "guide.md"
+            notebook_file = temp_dir / "notebook.ipynb"
+
+            _rewrite_links_in_notebook(
+                notebook_file,
+                old_abs,
+                new_abs,
+                temp_dir,
+                changes=changes,
+                dry_run=False,
+            )
+
+            # Read the updated notebook
+            updated_notebook = json.loads(notebook_file.read_text(encoding="utf-8"))
+
+            # Check that links in markdown cells were updated
+            first_cell_source = "".join(updated_notebook["cells"][0]["source"])
+            assert "See [guide](docs/guide.md)" in first_cell_source
+            assert (
+                "[API docs](api.md#functions)" in first_cell_source
+            )  # Should remain unchanged
+
+            # Check second markdown cell
+            third_cell_source = updated_notebook["cells"][2]["source"]
+            assert "Also check [guide](docs/guide.md) again." in third_cell_source
+
+            # Check that code cell was not modified
+            code_cell_source = "".join(updated_notebook["cells"][1]["source"])
+            assert "print('hello')" in code_cell_source
+
+            # Check that changes were tracked
+            assert changes == [
+                ("guide.md", "docs/guide.md"),
+                ("guide.md", "docs/guide.md"),
+            ]
+
 
 class TestScanAndRewrite:
     """Tests for _scan_and_rewrite function."""
@@ -329,6 +404,50 @@ class TestScanAndRewrite:
             expected_changes = [
                 ("target.md", "docs/target.md"),
                 ("target.md", "docs/target.md"),
+            ]
+            assert changes == expected_changes
+
+    def test_scan_includes_ipynb_files(self) -> None:
+        """Test that _scan_and_rewrite processes .ipynb files."""
+        notebook_content = {
+            "cells": [
+                {
+                    "cell_type": "markdown",
+                    "source": ["Check [target](target.md) in notebook."],
+                }
+            ]
+        }
+
+        files: list[File] = [
+            {"path": "page.md", "content": "See [target](target.md)."},
+            {
+                "path": "notebook.ipynb",
+                "content": json.dumps(notebook_content, indent=1),
+            },
+            {"path": "target.md", "content": "# Target"},
+        ]
+
+        with temp_directory(files) as temp_dir:
+            old_abs = temp_dir / "target.md"
+            new_abs = temp_dir / "reference" / "target.md"
+
+            changes = _scan_and_rewrite(temp_dir, old_abs, new_abs, dry_run=False)
+
+            # Check .md file was updated
+            md_content = (temp_dir / "page.md").read_text(encoding="utf-8")
+            assert "See [target](reference/target.md)." in md_content
+
+            # Check .ipynb file was updated
+            updated_notebook = json.loads(
+                (temp_dir / "notebook.ipynb").read_text(encoding="utf-8")
+            )
+            notebook_source = "".join(updated_notebook["cells"][0]["source"])
+            assert "Check [target](reference/target.md) in notebook." in notebook_source
+
+            # Check changes from both file types were tracked
+            expected_changes = [
+                ("target.md", "reference/target.md"),
+                ("target.md", "reference/target.md"),
             ]
             assert changes == expected_changes
 

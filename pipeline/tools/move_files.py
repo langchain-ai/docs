@@ -126,6 +126,104 @@ def _rewrite_links(  # noqa: PLR0913
         md_file.write_text(new_src, encoding=ENCODING)
 
 
+def _rewrite_links_in_notebook(  # noqa: PLR0913, C901
+    notebook_file: Path,
+    old_abs: Path,
+    new_abs: Path,
+    docs_root: Path,
+    *,
+    changes: list[_LinkChange],
+    dry_run: bool,
+) -> None:
+    """Rewrite links in markdown cells of a Jupyter notebook.
+
+    Args:
+        notebook_file: The Jupyter notebook file to process.
+        old_abs: Absolute path of the file being moved.
+        new_abs: Absolute path where the file will be moved to.
+        docs_root: The root of the documentation tree.
+        changes: Accumulator list that will be extended with every link change.
+        dry_run: Whether the operation is a preview (no disk writes).
+    """
+    try:
+        notebook_content = json.loads(notebook_file.read_text(encoding=ENCODING))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        # Skip invalid notebook files
+        return
+
+    modified = False
+
+    for cell in notebook_content.get("cells", []):
+        if cell.get("cell_type") == "markdown" and "source" in cell:
+            # Handle both string and list of strings for cell source
+            if isinstance(cell["source"], str):
+                original_source = cell["source"]
+                cell_sources = [original_source]
+            else:
+                cell_sources = cell["source"]
+                original_source = "".join(cell_sources)
+
+            def _replacer(match: re.Match[str]) -> str:
+                nonlocal modified
+                label, url, anchor = match.groups()
+
+                # Handle case where anchor is None
+                anchor = anchor or ""
+                full_url = url + anchor
+
+                # Skip external links, mailto, or in-page anchors.
+                if url.startswith(("http://", "https://", "mailto:")) or (
+                    not url and anchor
+                ):
+                    return match.group(0)
+
+                resolved = (notebook_file.parent / url).resolve()
+                try:
+                    if _rel_to_docs_root(resolved, docs_root) == _rel_to_docs_root(
+                        old_abs, docs_root
+                    ):
+                        new_rel = os.path.relpath(new_abs, notebook_file.parent)
+                        new_rel_posix = Path(new_rel).as_posix()
+                        new_full_url = new_rel_posix + anchor
+
+                        changes.append((full_url, new_full_url))
+
+                        if dry_run:
+                            logger.info(
+                                "Would update link in %s: %s -> %s",
+                                notebook_file.relative_to(docs_root),
+                                full_url,
+                                new_full_url,
+                            )
+                        modified = True
+                        return f"{label}({new_full_url})"
+                except ValueError:
+                    # Path is outside docs_root - ignore.
+                    pass
+                return match.group(0)
+
+            new_source = _LINK_PATTERN.sub(_replacer, original_source)
+
+            if new_source != original_source:
+                # Update the cell source
+                if isinstance(cell["source"], str):
+                    cell["source"] = new_source
+                else:
+                    # Split back into lines preserving original line breaks
+                    lines = new_source.splitlines(keepends=True)
+                    # Ensure we have the same number of elements as original
+                    if lines:
+                        cell["source"] = lines
+                    else:
+                        cell["source"] = [""]
+
+    if modified and not dry_run:
+        notebook_file.write_text(
+            json.dumps(notebook_content, indent=1, ensure_ascii=False),
+            encoding=ENCODING,
+        )
+
+
 def _scan_and_rewrite(
     docs_root: Path,
     old_abs: Path,
@@ -151,6 +249,13 @@ def _scan_and_rewrite(
             _rewrite_links(
                 md_file, old_abs, new_abs, docs_root, changes=changes, dry_run=dry_run
             )
+
+    # Process Jupyter notebooks
+    for notebook_file in docs_root.rglob("*.ipynb"):
+        _rewrite_links_in_notebook(
+            notebook_file, old_abs, new_abs, docs_root, changes=changes, dry_run=dry_run
+        )
+
     return changes
 
 
