@@ -182,6 +182,46 @@ class TestRewriteLinks:
             # But changes should still be tracked
             assert changes == [("page2.md", "subdir/page2.md")]
 
+    def test_rewrite_links_with_anchors(self) -> None:
+        """Test rewriting links that include anchors."""
+        files: list[File] = [
+            {
+                "path": "page1.md",
+                "content": (
+                    "See [section 1](target.md#section1) and "
+                    "[section 2](target.md#section2)."
+                ),
+            },
+            {"path": "target.md", "content": "# Target\n## Section 1\n## Section 2"},
+        ]
+        with temp_directory(files) as temp_dir:
+            changes: list[_LinkChange] = []
+            old_abs = temp_dir / "target.md"
+            new_abs = temp_dir / "foo" / "b.md"
+            md_file = temp_dir / "page1.md"
+
+            _rewrite_links(
+                md_file,
+                old_abs,
+                new_abs,
+                temp_dir,
+                changes=changes,
+                dry_run=False,
+            )
+
+            # Check that the links with anchors were updated
+            updated_content = md_file.read_text(encoding="utf-8")
+            assert (
+                "See [section 1](foo/b.md#section1) and [section 2](foo/b.md#section2)."
+            ) in updated_content
+
+            # Check that changes tracked the full URLs including anchors
+            expected_changes = [
+                ("target.md#section1", "foo/b.md#section1"),
+                ("target.md#section2", "foo/b.md#section2"),
+            ]
+            assert changes == expected_changes
+
 
 class TestScanAndRewrite:
     """Tests for _scan_and_rewrite function."""

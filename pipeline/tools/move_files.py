@@ -20,8 +20,9 @@ __all__ = ["cli"]  # only the entry-point is considered public
 
 ENCODING: str = "utf-8"
 
-# Pattern to match Markdown links in the form of `[label](url)`.
-_LINK_PATTERN: re.Pattern[str] = re.compile(r"(\[[^\]]+\])\(([^)\s]+)\)")
+# Pattern to match Markdown links in the form of `[label](url)`
+# or `[label](url#anchor)`.
+_LINK_PATTERN: re.Pattern[str] = re.compile(r"(\[[^\]]+\])\(([^)\s#]+)(#[^)\s]*)?\)")
 _LinkChange = tuple[str, str]  # (old_url, new_url)
 
 logger = logging.getLogger(__name__)
@@ -85,10 +86,14 @@ def _rewrite_links(  # noqa: PLR0913
 
     def _replacer(match: re.Match[str]) -> str:
         nonlocal modified
-        label, url = match.groups()
+        label, url, anchor = match.groups()
+
+        # Handle case where anchor is None
+        anchor = anchor or ""
+        full_url = url + anchor
 
         # Skip external links, mailto, or in-page anchors.
-        if url.startswith(("http://", "https://", "mailto:", "#")):
+        if url.startswith(("http://", "https://", "mailto:")) or (not url and anchor):
             return match.group(0)
 
         resolved = (md_file.parent / url).resolve()
@@ -98,18 +103,19 @@ def _rewrite_links(  # noqa: PLR0913
             ):
                 new_rel = os.path.relpath(new_abs, md_file.parent)
                 new_rel_posix = Path(new_rel).as_posix()
+                new_full_url = new_rel_posix + anchor
 
-                changes.append((url, new_rel_posix))
+                changes.append((full_url, new_full_url))
 
                 if dry_run:
                     logger.info(
                         "Would update link in %s: %s -> %s",
                         md_file.relative_to(docs_root),
-                        url,
-                        new_rel_posix,
+                        full_url,
+                        new_full_url,
                     )
                 modified = True
-                return f"{label}({new_rel_posix})"
+                return f"{label}({new_full_url})"
         except ValueError:
             # Path is outside docs_root - ignore.
             pass
