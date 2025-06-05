@@ -222,6 +222,51 @@ class TestRewriteLinks:
             ]
             assert changes == expected_changes
 
+    def test_rewrite_links_in_mdx_files(self) -> None:
+        """Test that links in .mdx files are also rewritten."""
+        files: list[File] = [
+            {
+                "path": "page.mdx",
+                "content": (
+                    "import Component from './component.js'\n\n"
+                    "See [documentation](docs.md) and [guide](guide.md#setup).\n\n"
+                    "<Component />"
+                ),
+            },
+            {"path": "docs.md", "content": "# Documentation"},
+            {"path": "guide.md", "content": "# Guide\n## Setup"},
+        ]
+        with temp_directory(files) as temp_dir:
+            changes: list[_LinkChange] = []
+
+            # Test rewriting links to docs.md
+            old_abs = temp_dir / "docs.md"
+            new_abs = temp_dir / "reference" / "docs.md"
+            mdx_file = temp_dir / "page.mdx"
+
+            _rewrite_links(
+                mdx_file,
+                old_abs,
+                new_abs,
+                temp_dir,
+                changes=changes,
+                dry_run=False,
+            )
+
+            # Check that the link was updated in the .mdx file
+            updated_content = mdx_file.read_text(encoding="utf-8")
+            assert "See [documentation](reference/docs.md)" in updated_content
+            assert (
+                "[guide](guide.md#setup)" in updated_content
+            )  # Should remain unchanged
+            assert (
+                "import Component from './component.js'" in updated_content
+            )  # Should remain unchanged
+            assert "<Component />" in updated_content  # Should remain unchanged
+
+            # Check that changes were tracked
+            assert changes == [("docs.md", "reference/docs.md")]
+
 
 class TestScanAndRewrite:
     """Tests for _scan_and_rewrite function."""
@@ -257,6 +302,33 @@ class TestScanAndRewrite:
                 ("target.md", "moved/target.md"),
                 ("target.md", "moved/target.md"),
                 ("../target.md", "../moved/target.md"),
+            ]
+            assert changes == expected_changes
+
+    def test_scan_includes_mdx_files(self) -> None:
+        """Test that _scan_and_rewrite processes both .md and .mdx files."""
+        files: list[File] = [
+            {"path": "page.md", "content": "See [target](target.md)."},
+            {"path": "component.mdx", "content": "Check [target](target.md) in MDX."},
+            {"path": "target.md", "content": "# Target"},
+        ]
+        with temp_directory(files) as temp_dir:
+            old_abs = temp_dir / "target.md"
+            new_abs = temp_dir / "docs" / "target.md"
+
+            changes = _scan_and_rewrite(temp_dir, old_abs, new_abs, dry_run=False)
+
+            # Check both .md and .mdx files were updated
+            md_content = (temp_dir / "page.md").read_text(encoding="utf-8")
+            assert "See [target](docs/target.md)." in md_content
+
+            mdx_content = (temp_dir / "component.mdx").read_text(encoding="utf-8")
+            assert "Check [target](docs/target.md) in MDX." in mdx_content
+
+            # Check changes from both file types were tracked
+            expected_changes = [
+                ("target.md", "docs/target.md"),
+                ("target.md", "docs/target.md"),
             ]
             assert changes == expected_changes
 

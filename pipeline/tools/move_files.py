@@ -133,7 +133,7 @@ def _scan_and_rewrite(
     *,
     dry_run: bool,
 ) -> list[_LinkChange]:
-    """Recursively scan *docs_root* and rewrite links in every ``*.md`` file.
+    """Recursively scan *docs_root* and rewrite links in every documentation file.
 
     Args:
         docs_root: The root of the documentation tree.
@@ -146,10 +146,11 @@ def _scan_and_rewrite(
         performed (or that *would* be performed in dry-run mode).
     """
     changes: list[_LinkChange] = []
-    for md_file in docs_root.rglob("*.md"):
-        _rewrite_links(
-            md_file, old_abs, new_abs, docs_root, changes=changes, dry_run=dry_run
-        )
+    for pattern in ["*.md", "*.mdx"]:
+        for md_file in docs_root.rglob(pattern):
+            _rewrite_links(
+                md_file, old_abs, new_abs, docs_root, changes=changes, dry_run=dry_run
+            )
     return changes
 
 
