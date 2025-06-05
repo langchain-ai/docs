@@ -1,9 +1,11 @@
 """Documentation builder implementation."""
 
+import json
 import logging
 import shutil
 from pathlib import Path
 
+import yaml
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,8 @@ class DocumentationBuilder:
             ".jpg",
             ".jpeg",
             ".gif",
+            ".yml",
+            ".yaml",
         }
 
     def build_all(self) -> None:
@@ -101,6 +105,35 @@ class DocumentationBuilder:
             skipped_count,
         )
 
+    def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
+        """Convert a YAML file to JSON format.
+
+        This method loads a docs.yml file using YAML safe_load and writes
+        the corresponding docs.json file to the build directory.
+
+        Args:
+            yaml_file_path: Path to the source YAML file.
+            output_path: Path where the JSON file should be written.
+        """
+        try:
+            # Load YAML content
+            with yaml_file_path.open("r", encoding="utf-8") as yaml_file:
+                yaml_content = yaml.safe_load(yaml_file)
+
+            # Convert output path from .yml to .json
+            json_output_path = output_path.with_suffix(".json")
+
+            # Write JSON content
+            with json_output_path.open("w", encoding="utf-8") as json_file:
+                json.dump(yaml_content, json_file, indent=2, ensure_ascii=False)
+
+        except yaml.YAMLError:
+            logger.exception("Failed to parse YAML file %s", yaml_file_path)
+            raise
+        except Exception:
+            logger.exception("Failed to convert %s to JSON", yaml_file_path)
+            raise
+
     def build_file(self, file_path: Path) -> None:
         """Build a single file by copying it to the build directory.
 
@@ -127,8 +160,15 @@ class DocumentationBuilder:
         # Create output directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # For now, just copy supported files directly
-        if file_path.suffix.lower() in self.copy_extensions:
+        # Handle special case for docs.yml files
+        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
+            ".yml",
+            ".yaml",
+        }:
+            self._convert_yaml_to_json(file_path, output_path)
+            logger.info("Converted YAML to JSON: %s", relative_path)
+        # For other files, copy directly if supported
+        elif file_path.suffix.lower() in self.copy_extensions:
             shutil.copy2(file_path, output_path)
             logger.info("Copied: %s", relative_path)
         else:
@@ -157,7 +197,14 @@ class DocumentationBuilder:
         # Create output directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Copy supported files directly
+        # Handle special case for docs.yml files
+        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
+            ".yml",
+            ".yaml",
+        }:
+            self._convert_yaml_to_json(file_path, output_path)
+            return True
+        # Copy other supported files directly
         if file_path.suffix.lower() in self.copy_extensions:
             shutil.copy2(file_path, output_path)
             return True
