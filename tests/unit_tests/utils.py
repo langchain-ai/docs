@@ -9,7 +9,8 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import NotRequired, TypedDict
+
+from typing_extensions import NotRequired, TypedDict
 
 
 class File(TypedDict):
