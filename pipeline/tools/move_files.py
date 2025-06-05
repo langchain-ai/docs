@@ -67,9 +67,8 @@ def _rewrite_links(  # noqa: PLR0913
     new_abs: Path,
     docs_root: Path,
     *,
-    changes: list[_LinkChange],
     dry_run: bool,
-) -> None:
+) -> list[_LinkChange]:
     """Rewrite links in *md_file* that point to *old_abs*.
 
     Args:
@@ -77,12 +76,14 @@ def _rewrite_links(  # noqa: PLR0913
         old_abs: Absolute path of the file being moved.
         new_abs: Absolute path where the file will be moved to.
         docs_root: The root of the documentation tree (``<repo>/src``).
-        changes: Accumulator list that will be extended with every link change
-            as ``(old_url, new_url)``.
         dry_run: Whether the operation is a preview (no disk writes).
+
+    Returns:
+        A list of ``(old_url, new_url)`` tuples representing link changes.
     """
     src: str = md_file.read_text(encoding=ENCODING)
     modified: bool = False
+    changes: list[_LinkChange] = []
 
     def _replacer(match: re.Match[str]) -> str:
         nonlocal modified
@@ -124,6 +125,8 @@ def _rewrite_links(  # noqa: PLR0913
     new_src: str = _LINK_PATTERN.sub(_replacer, src)
     if modified and not dry_run:
         md_file.write_text(new_src, encoding=ENCODING)
+    
+    return changes
 
 
 def _scan_and_rewrite(
@@ -148,9 +151,10 @@ def _scan_and_rewrite(
     changes: list[_LinkChange] = []
     for pattern in ["*.md", "*.mdx"]:
         for md_file in docs_root.rglob(pattern):
-            _rewrite_links(
-                md_file, old_abs, new_abs, docs_root, changes=changes, dry_run=dry_run
+            file_changes = _rewrite_links(
+                md_file, old_abs, new_abs, docs_root, dry_run=dry_run
             )
+            changes.extend(file_changes)
     return changes
 
 
