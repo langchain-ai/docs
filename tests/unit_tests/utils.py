@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class File(TypedDict):
@@ -17,9 +17,9 @@ class File(TypedDict):
 
     path: str
     """Relative path of the file within the source directory."""
-    bytes: bytes | None
+    bytes: NotRequired[bytes]
     """File as bytes, if applicable."""
-    content: str | None
+    content: NotRequired[str]
     """File content as string, if applicable. Assumes utf-8 encoding."""
 
 
@@ -117,15 +117,66 @@ def file_system(files: list[File]) -> Iterator[FileSystem]:
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Write file content
-            if file["bytes"] is not None:
+            if file.get("bytes") is not None:
                 file_path.write_bytes(file["bytes"])
-            elif file["content"] is not None:
+            elif file.get("content") is not None:
                 file_path.write_text(file["content"], encoding="utf-8")
             else:
                 msg = "File must have either 'bytes' or 'content' defined"
                 raise ValueError(msg)
         # Yield the file system
         yield FileSystem(temp_dir, src_dir, build_dir)
+    finally:
+        # Clean up the temporary directory
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+
+
+@contextmanager
+def temp_directory(files: list[File]) -> Iterator[Path]:
+    """Create a temporary directory with the given files.
+
+    This context manager creates a temporary directory and populates it with
+    the provided test files. The temporary directory is automatically cleaned
+    up when exiting the context.
+
+    Args:
+        files: List of File objects to create in the directory.
+
+    Yields:
+        Path to the temporary directory.
+
+    Example:
+        ```python
+        with temp_directory([
+            {"path": "index.md", "content": "# Hello"},
+            {"path": "subdir/image.png", "bytes": b"PNG_DATA"}
+        ]) as temp_dir:
+            # Use temp_dir to interact with the test directory
+            assert (temp_dir / "index.md").exists()
+        ```
+    """
+    temp_dir = Path(tempfile.mkdtemp())
+
+    try:
+        # Create test files in temp directory
+        for file in files:
+            file_path = temp_dir / file["path"]
+
+            # Create parent directories if needed
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write file content
+            if file.get("bytes") is not None:
+                file_path.write_bytes(file["bytes"])
+            elif file.get("content") is not None:
+                file_path.write_text(file["content"], encoding="utf-8")
+            else:
+                msg = "File must have either 'bytes' or 'content' defined"
+                raise ValueError(msg)
+
+        # Yield the temp directory path
+        yield temp_dir
     finally:
         # Clean up the temporary directory
         if temp_dir.exists():

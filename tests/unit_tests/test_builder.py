@@ -54,10 +54,10 @@ def test_build_all_supported_files() -> None:
     while maintaining directory structure.
     """
     files = [
-        File(path="index.mdx", content="# Welcome", bytes=None),
-        File(path="config.json", content='{"name": "test"}', bytes=None),
-        File(path="images/logo.png", content=None, bytes=b"PNG_DATA"),
-        File(path="guides/setup.md", content="# Setup Guide", bytes=None),
+        File(path="index.mdx", content="# Welcome"),
+        File(path="config.json", content='{"name": "test"}'),
+        File(path="images/logo.png", bytes=b"PNG_DATA"),
+        File(path="guides/setup.md", content="# Setup Guide"),
     ]
 
     with file_system(files) as fs:
@@ -79,8 +79,14 @@ def test_build_all_unsupported_files() -> None:
     Verifies that the builder skips unsupported file types.
     """
     files = [
-        File(path="index.mdx", content="# Welcome", bytes=None),
-        File(path="ignored.txt", content="This should be ignored", bytes=None),
+        File(
+            path="index.mdx",
+            content="# Welcome",
+        ),
+        File(
+            path="ignored.txt",
+            content="This should be ignored",
+        ),
     ]
 
     with file_system(files) as fs:
@@ -101,8 +107,14 @@ def test_build_single_file() -> None:
     when requested.
     """
     files = [
-        File(path="index.mdx", content="# Welcome", bytes=None),
-        File(path="config.json", content='{"name": "test"}', bytes=None),
+        File(
+            path="index.mdx",
+            content="# Welcome",
+        ),
+        File(
+            path="config.json",
+            content='{"name": "test"}',
+        ),
     ]
 
     with file_system(files) as fs:
@@ -123,9 +135,18 @@ def test_build_multiple_files() -> None:
     while maintaining directory structure.
     """
     files = [
-        File(path="index.mdx", content="# Welcome", bytes=None),
-        File(path="config.json", content='{"name": "test"}', bytes=None),
-        File(path="guides/setup.md", content="# Setup Guide", bytes=None),
+        File(
+            path="index.mdx",
+            content="# Welcome",
+        ),
+        File(
+            path="config.json",
+            content='{"name": "test"}',
+        ),
+        File(
+            path="guides/setup.md",
+            content="# Setup Guide",
+        ),
     ]
 
     with file_system(files) as fs:
