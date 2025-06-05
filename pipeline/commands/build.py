@@ -9,7 +9,7 @@ from pipeline.core.builder import DocumentationBuilder
 logger = logging.getLogger(__name__)
 
 
-async def build_command(
+def build_command(
     args: Any,  # noqa: ARG001, ANN401
     src_dir: str = "src",
     build_dir: str = "build",
