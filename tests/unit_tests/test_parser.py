@@ -3,7 +3,7 @@
 from pipeline.tools.parser import Document, Heading, Paragraph, Parser
 
 
-def test_parse_simple_heading():
+def test_parse_simple_heading() -> None:
     """Test parsing a simple heading."""
     text = "# Hello World"
     parser = Parser(text)
@@ -20,7 +20,7 @@ def test_parse_simple_heading():
     assert heading.limit_line == 2
 
 
-def test_parse_simple_paragraph():
+def test_parse_simple_paragraph() -> None:
     """Test parsing a simple paragraph."""
     text = "This is a simple paragraph."
     parser = Parser(text)
