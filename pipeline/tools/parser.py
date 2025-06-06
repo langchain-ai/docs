@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 HEADING_LINE_RE = re.compile(
     r"""
-    ^ (?P<hashes>\#{1,6})      # 1–6 leading “#” characters
+    ^ (?P<hashes>\#{1,6})      # 1-6 leading “#” characters
       \s+                      # mandatory space
       (?P<text>.*) $           # heading text (rest of line)
     """,
@@ -54,7 +54,7 @@ ORDERED_MARKER_RE = re.compile(
 PARA_BREAK_RE = re.compile(
     r"""
     (?:
-        ```                    # code‑fence
+        ```                    # code-fence
       | \#{1,6}\s+             # heading
       | [-+*]\s+               # unordered list
       | \d+[.)]\s+             # ordered list
@@ -73,23 +73,31 @@ PARA_BREAK_RE = re.compile(
 
 @dataclass(kw_only=True)
 class Node:
+    """Base class for all AST nodes."""
+
     start_line: int
     limit_line: int
 
 
 @dataclass(kw_only=True)
 class Document(Node):
+    """Root document node containing all blocks."""
+
     blocks: list[Node]
 
 
 @dataclass(kw_only=True)
 class Heading(Node):
+    """Heading node with level (1-6) and text content."""
+
     level: int
     value: str
 
 
 @dataclass(kw_only=True)
 class Paragraph(Node):
+    """Paragraph node containing text content."""
+
     value: str
 
 
@@ -147,7 +155,8 @@ class Admonition(Node):
 class Parser:
     """Parse the supported markdown subset into an AST suitable for Mintlify."""
 
-    def __init__(self, text: str):
+    def __init__(self, text: str) -> None:
+        """Initialize parser with markdown text."""
         self.lines = text.splitlines()
         self.current = 0
         self.total = len(self.lines)
@@ -166,6 +175,7 @@ class Parser:
 
     # -- entry point --------------------------------------------------------
     def parse(self) -> Document:
+        """Parse the markdown text into a Document AST."""
         blocks: list[Node] = []
         while not self.eof():
             block = self.parse_block()
@@ -190,7 +200,7 @@ class Parser:
             return self.parse_ordered_list()
         if line.startswith(">"):
             return self.parse_quote_block()
-        if line.startswith("!!!") or line.startswith("???"):
+        if line.startswith(("!!!", "???")):
             return self.parse_admonition()
         if line.startswith("==="):
             return self.parse_tab_block()
@@ -303,7 +313,10 @@ class Parser:
         while not self.eof() and TAB_HEADER_RE.match(self.peek()):
             header_ln = self.current + 1
             m = TAB_HEADER_RE.match(self.next_line())
-            assert m is not None
+            if m is None:
+                msg = "Expected tab header match"
+                raise ValueError(msg)
+            # m is guaranteed to be not None after this check
             title = m.group("title")
             # skip blank lines before content
             while not self.eof() and not self.peek().strip():
@@ -312,9 +325,9 @@ class Parser:
             while (
                 not self.eof()
                 and not TAB_HEADER_RE.match(self.peek())
-                and not self.peek().strip() == ""
+                and self.peek().strip() != ""
             ):
-                # Accept content lines that are indented (Mintlify expects 4‑sp)
+                # Accept content lines that are indented (Mintlify expects 4-sp)
                 if self.peek().startswith("    ") or self.peek().startswith("\t"):
                     content.append(self.next_line().lstrip())
                 else:
