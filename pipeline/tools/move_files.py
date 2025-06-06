@@ -16,6 +16,8 @@ import re
 import shutil
 from pathlib import Path
 
+import nbformat
+
 __all__ = ["cli"]  # only the entry-point is considered public
 
 ENCODING: str = "utf-8"
@@ -129,6 +131,85 @@ def _rewrite_links(
     return changes
 
 
+def _rewrite_links_in_notebook(  # noqa: C901
+    notebook_file: Path,
+    old_abs: Path,
+    new_abs: Path,
+    docs_root: Path,
+    *,
+    dry_run: bool,
+) -> list[_LinkChange]:
+    """Rewrite links in markdown cells of a Jupyter notebook.
+
+    Args:
+        notebook_file: The Jupyter notebook file to process.
+        old_abs: Absolute path of the file being moved.
+        new_abs: Absolute path where the file will be moved to.
+        docs_root: The root of the documentation tree.
+        dry_run: Whether the operation is a preview (no disk writes).
+    """
+    notebook = nbformat.read(notebook_file, as_version=nbformat.NO_CONVERT)
+    changes: list[_LinkChange] = []
+
+    modified = False
+
+    def _replacer(match: re.Match[str]) -> str:
+        nonlocal modified
+        label, url, anchor = match.groups()
+
+        # Handle case where anchor is None
+        anchor = anchor or ""
+        full_url = url + anchor
+
+        # Skip external links, mailto, or in-page anchors.
+        if url.startswith(("http://", "https://", "mailto:")) or (not url and anchor):
+            return match.group(0)
+
+        resolved = (notebook_file.parent / url).resolve()
+        try:
+            if _rel_to_docs_root(resolved, docs_root) == _rel_to_docs_root(
+                old_abs, docs_root
+            ):
+                new_rel = os.path.relpath(new_abs, notebook_file.parent)
+                new_rel_posix = Path(new_rel).as_posix()
+                new_full_url = new_rel_posix + anchor
+
+                changes.append((full_url, new_full_url))
+
+                if dry_run:
+                    logger.info(
+                        "Would update link in %s: %s -> %s",
+                        notebook_file.relative_to(docs_root),
+                        full_url,
+                        new_full_url,
+                    )
+                modified = True
+                return f"{label}({new_full_url})"
+        except ValueError:
+            # Path is outside docs_root - ignore.
+            pass
+        return match.group(0)
+
+    # Process all cells in the notebook
+    for cell in notebook.cells:
+        if cell.cell_type == "markdown" and "source" in cell:
+            # Handle both string and list sources
+            if isinstance(cell.source, list):
+                source_text = "".join(cell.source)
+            else:
+                source_text = cell.source
+
+            new_source = _LINK_PATTERN.sub(_replacer, source_text)
+
+            if new_source != source_text:
+                cell.source = new_source
+
+    if modified and not dry_run:
+        nbformat.write(notebook, notebook_file)
+
+    return changes
+
+
 def _scan_and_rewrite(
     docs_root: Path,
     old_abs: Path,
@@ -155,6 +236,15 @@ def _scan_and_rewrite(
                 md_file, old_abs, new_abs, docs_root, dry_run=dry_run
             )
             changes.extend(file_changes)
+
+    # Process Jupyter notebooks
+    for notebook_file in docs_root.rglob("*.ipynb"):
+        changes.extend(
+            _rewrite_links_in_notebook(
+                notebook_file, old_abs, new_abs, docs_root, dry_run=dry_run
+            )
+        )
+
     return changes
 
 
