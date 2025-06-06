@@ -11,6 +11,8 @@ from pipeline.tools.move_files import (
     _rewrite_links,
     _rewrite_links_in_notebook,
     _scan_and_rewrite,
+    _update_internal_links_in_moved_file,
+    _update_internal_links_in_moved_notebook,
     move_file_with_link_updates,
 )
 from tests.unit_tests.utils import File, temp_directory
@@ -434,6 +436,226 @@ class TestScanAndRewrite:
             assert changes == expected_changes
 
 
+class TestUpdateInternalLinksInMovedFile:
+    """Tests for _update_internal_links_in_moved_file function."""
+
+    def test_update_relative_links_in_moved_file(self) -> None:
+        """Test updating relative links within a file that's been moved."""
+        files: list[File] = [
+            {
+                "path": "docs/guide.md",
+                "content": "See [API](../api/reference.md) and "
+                "[examples](examples.md).",
+            },
+            {"path": "api/reference.md", "content": "# API Reference"},
+            {"path": "docs/examples.md", "content": "# Examples"},
+        ]
+        with temp_directory(files) as temp_dir:
+            # Move guide.md from docs/ to tutorials/
+            moved_file = temp_dir / "tutorials" / "guide.md"
+            moved_file.parent.mkdir(exist_ok=True)
+
+            # Copy the original file to the new location
+            original_file = temp_dir / "docs" / "guide.md"
+            moved_file.write_text(
+                original_file.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            old_parent = temp_dir / "docs"
+            new_parent = temp_dir / "tutorials"
+
+            changes = _update_internal_links_in_moved_file(
+                moved_file, old_parent, new_parent, temp_dir, dry_run=False
+            )
+
+            # Check that the relative links were updated
+            updated_content = moved_file.read_text(encoding="utf-8")
+            assert (
+                "[API](../api/reference.md)" in updated_content
+            )  # ../api should remain unchanged
+            assert (
+                "[examples](../docs/examples.md)" in updated_content
+            )  # examples.md should become ../docs/examples.md
+
+            # Check changes were tracked
+            assert ("examples.md", "../docs/examples.md") in changes
+
+    def test_update_internal_links_skip_absolute_paths(self) -> None:
+        """Test that absolute paths and external links are not modified."""
+        files: list[File] = [
+            {
+                "path": "docs/page.md",
+                "content": (
+                    "See [absolute](/api/docs) and "
+                    "[external](https://example.com) and "
+                    "[relative](other.md)."
+                ),
+            },
+            {"path": "docs/other.md", "content": "# Other"},
+        ]
+        with temp_directory(files) as temp_dir:
+            moved_file = temp_dir / "guides" / "page.md"
+            moved_file.parent.mkdir(exist_ok=True)
+
+            original_file = temp_dir / "docs" / "page.md"
+            moved_file.write_text(
+                original_file.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            old_parent = temp_dir / "docs"
+            new_parent = temp_dir / "guides"
+
+            changes = _update_internal_links_in_moved_file(
+                moved_file, old_parent, new_parent, temp_dir, dry_run=False
+            )
+
+            updated_content = moved_file.read_text(encoding="utf-8")
+            # Absolute and external links should remain unchanged
+            assert "[absolute](/api/docs)" in updated_content
+            assert "[external](https://example.com)" in updated_content
+            # Only relative link should be updated
+            assert "[relative](../docs/other.md)" in updated_content
+
+            # Only the relative link change should be tracked
+            assert changes == [("other.md", "../docs/other.md")]
+
+    def test_update_internal_links_dry_run(self) -> None:
+        """Test dry run mode for internal link updates."""
+        files: list[File] = [
+            {
+                "path": "src/page.md",
+                "content": "See [guide](guide.md) for details.",
+            },
+            {"path": "src/guide.md", "content": "# Guide"},
+        ]
+        with temp_directory(files) as temp_dir:
+            file_path = temp_dir / "src" / "page.md"
+            old_parent = temp_dir / "src"
+            new_parent = temp_dir / "docs"
+
+            original_content = file_path.read_text(encoding="utf-8")
+            changes = _update_internal_links_in_moved_file(
+                file_path, old_parent, new_parent, temp_dir, dry_run=True
+            )
+
+            # File should be unchanged in dry run
+            updated_content = file_path.read_text(encoding="utf-8")
+            assert updated_content == original_content
+
+            # But changes should still be tracked
+            assert changes == [("guide.md", "../src/guide.md")]
+
+    def test_update_internal_links_with_anchors(self) -> None:
+        """Test updating relative links that include anchors."""
+        files: list[File] = [
+            {
+                "path": "guides/tutorial.md",
+                "content": (
+                    "See [setup section](setup.md#installation) and "
+                    "[config](setup.md#config)."
+                ),
+            },
+            {
+                "path": "guides/setup.md",
+                "content": "# Setup\n## Installation\n## Config",
+            },
+        ]
+        with temp_directory(files) as temp_dir:
+            moved_file = temp_dir / "docs" / "tutorial.md"
+            moved_file.parent.mkdir(exist_ok=True)
+
+            original_file = temp_dir / "guides" / "tutorial.md"
+            moved_file.write_text(
+                original_file.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            old_parent = temp_dir / "guides"
+            new_parent = temp_dir / "docs"
+
+            changes = _update_internal_links_in_moved_file(
+                moved_file, old_parent, new_parent, temp_dir, dry_run=False
+            )
+
+            # Check that links with anchors were updated
+            updated_content = moved_file.read_text(encoding="utf-8")
+            assert (
+                "See [setup section](../guides/setup.md#installation)"
+                in updated_content
+            )
+            assert "[config](../guides/setup.md#config)" in updated_content
+
+            # Check that changes tracked the full URLs including anchors
+            expected_changes = [
+                ("setup.md#installation", "../guides/setup.md#installation"),
+                ("setup.md#config", "../guides/setup.md#config"),
+            ]
+            assert changes == expected_changes
+
+    def test_update_internal_links_in_notebook(self) -> None:
+        """Test updating internal links within a moved Jupyter notebook."""
+        # Create a notebook with markdown cells containing relative links
+        notebook_content = {
+            "cells": [
+                {
+                    "cell_type": "markdown",
+                    "source": [
+                        "# Tutorial\n",
+                        "\n",
+                        "See [setup guide](setup.md) and "
+                        "[API docs](../api/reference.md).\n",
+                    ],
+                },
+                {
+                    "cell_type": "code",
+                    "source": ["# Code cell\n", "print('hello')\n"],
+                },
+            ]
+        }
+
+        files: list[File] = [
+            {
+                "path": "tutorials/notebook.ipynb",
+                "content": json.dumps(notebook_content, indent=1),
+            },
+            {"path": "tutorials/setup.md", "content": "# Setup"},
+            {"path": "api/reference.md", "content": "# API Reference"},
+        ]
+
+        with temp_directory(files) as temp_dir:
+            # Move notebook from tutorials/ to docs/
+            moved_notebook = temp_dir / "docs" / "notebook.ipynb"
+            moved_notebook.parent.mkdir(exist_ok=True)
+
+            original_notebook = temp_dir / "tutorials" / "notebook.ipynb"
+            moved_notebook.write_text(
+                original_notebook.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            old_parent = temp_dir / "tutorials"
+            new_parent = temp_dir / "docs"
+
+            changes = _update_internal_links_in_moved_notebook(
+                moved_notebook, old_parent, new_parent, temp_dir, dry_run=False
+            )
+
+            # Read the updated notebook
+            updated_notebook = json.loads(moved_notebook.read_text(encoding="utf-8"))
+
+            # Check that relative links in markdown cells were updated
+            first_cell_source = "".join(updated_notebook["cells"][0]["source"])
+            assert "See [setup guide](../tutorials/setup.md)" in first_cell_source
+            assert (
+                "[API docs](../api/reference.md)" in first_cell_source
+            )  # Should remain unchanged
+
+            # Check that code cell was not modified
+            code_cell_source = "".join(updated_notebook["cells"][1]["source"])
+            assert "print('hello')" in code_cell_source
+
+            # Check that changes were tracked
+            assert changes == [("setup.md", "../tutorials/setup.md")]
+
+
 class TestMoveFileWithLinkUpdates:
     """Tests for move_file_with_link_updates function."""
 
@@ -515,3 +737,96 @@ class TestMoveFileWithLinkUpdates:
                     git_root=temp_dir,
                     docs_root=invalid_docs_root,
                 )
+
+    def test_move_file_with_internal_link_updates(self) -> None:
+        """Test that internal links within the moved file are also updated."""
+        files: list[File] = [
+            {"path": ".git/config", "content": "[core]\n"},
+            {
+                "path": "src/guides/tutorial.md",
+                "content": (
+                    "# Tutorial\n\n"
+                    "See [setup guide](setup.md) and "
+                    "[API reference](../api/reference.md) for details."
+                ),
+            },
+            {"path": "src/guides/setup.md", "content": "# Setup"},
+            {"path": "src/api/reference.md", "content": "# API Reference"},
+            {
+                "path": "src/index.md",
+                "content": "Check out [tutorial](guides/tutorial.md).",
+            },
+        ]
+        with temp_directory(files) as temp_dir:
+            src_dir = temp_dir / "src"
+            old_path = src_dir / "guides" / "tutorial.md"
+            new_path = src_dir / "docs" / "tutorial.md"
+
+            changes = move_file_with_link_updates(
+                old_path,
+                new_path,
+                dry_run=False,
+                git_root=temp_dir,
+                docs_root=src_dir,
+            )
+
+            # File should be moved
+            assert not old_path.exists()
+            assert new_path.exists()
+
+            # Check that external references TO the moved file were updated
+            index_content = (src_dir / "index.md").read_text(encoding="utf-8")
+            assert "Check out [tutorial](docs/tutorial.md)." in index_content
+
+            # Check that internal links WITHIN the moved file were updated
+            tutorial_content = new_path.read_text(encoding="utf-8")
+            assert (
+                "[setup guide](../guides/setup.md)" in tutorial_content
+            )  # setup.md -> ../guides/setup.md
+            assert (
+                "[API reference](../api/reference.md)" in tutorial_content
+            )  # ../api should remain the same
+
+            # Verify all changes were tracked
+            expected_changes = [
+                ("guides/tutorial.md", "docs/tutorial.md"),  # External reference update
+                ("setup.md", "../guides/setup.md"),  # Internal link update
+            ]
+            assert all(change in changes for change in expected_changes)
+
+    def test_move_file_with_internal_links_dry_run(self) -> None:
+        """Test dry run shows both external and internal link changes."""
+        files: list[File] = [
+            {"path": ".git/config", "content": "[core]\n"},
+            {
+                "path": "src/page.md",
+                "content": "See [other](other.md) and [guide](../guides/setup.md).",
+            },
+            {"path": "src/other.md", "content": "# Other"},
+            {"path": "guides/setup.md", "content": "# Setup"},
+            {"path": "src/index.md", "content": "Check [page](page.md)."},
+        ]
+        with temp_directory(files) as temp_dir:
+            src_dir = temp_dir / "src"
+            old_path = src_dir / "page.md"
+            new_path = temp_dir / "tutorials" / "page.md"
+
+            changes = move_file_with_link_updates(
+                old_path,
+                new_path,
+                dry_run=True,
+                git_root=temp_dir,
+                docs_root=src_dir,
+            )
+
+            # File should not be moved in dry run
+            assert old_path.exists()
+            assert not new_path.exists()
+
+            # Should track both external references to the file AND internal
+            # links within it
+
+            # Check that the dry run identified the external reference change
+            assert ("page.md", "../tutorials/page.md") in changes
+            # Check that the dry run identified the internal link change
+            assert ("other.md", "../src/other.md") in changes

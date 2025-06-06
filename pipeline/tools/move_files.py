@@ -64,6 +64,84 @@ def _rel_to_docs_root(path: Path, docs_root: Path) -> Path:
     return path.resolve().relative_to(docs_root.resolve())
 
 
+def _update_internal_links_in_moved_file(
+    file_path: Path,
+    old_parent: Path,
+    new_parent: Path,
+    docs_root: Path,
+    *,
+    dry_run: bool,
+) -> list[_LinkChange]:
+    """Update internal relative links within a file that's being moved.
+
+    Args:
+        file_path: The file being moved (at its new location).
+        old_parent: The directory the file was moved from.
+        new_parent: The directory the file was moved to.
+        docs_root: The root of the documentation tree.
+        dry_run: Whether the operation is a preview (no disk writes).
+
+    Returns:
+        A list of ``(old_url, new_url)`` tuples representing link changes.
+    """
+    if not file_path.exists():
+        return []
+
+    src: str = file_path.read_text(encoding=ENCODING)
+    modified: bool = False
+    changes: list[_LinkChange] = []
+
+    def _replacer(match: re.Match[str]) -> str:
+        nonlocal modified
+        label, url, anchor = match.groups()
+
+        # Handle case where anchor is None
+        anchor = anchor or ""
+        full_url = url + anchor
+
+        # Skip external links, mailto, absolute paths, or in-page anchors
+        if url.startswith(("http://", "https://", "mailto:", "/")) or (
+            not url and anchor
+        ):
+            return match.group(0)
+
+        # This is a relative link - we need to update it
+        try:
+            # Calculate what the link was pointing to from the old location
+            old_target = (old_parent / url).resolve()
+
+            # Check if the target exists and is within docs_root
+            if old_target.exists() and old_target.is_relative_to(docs_root.resolve()):
+                # Calculate new relative path from new location
+                new_rel = os.path.relpath(old_target, new_parent)
+                new_rel_posix = Path(new_rel).as_posix()
+                new_full_url = new_rel_posix + anchor
+
+                # Only update if the path actually changed
+                if new_full_url != full_url:
+                    changes.append((full_url, new_full_url))
+
+                    if dry_run:
+                        logger.info(
+                            "Would update internal link in moved file %s: %s -> %s",
+                            file_path.relative_to(docs_root),
+                            full_url,
+                            new_full_url,
+                        )
+                    modified = True
+                    return f"{label}({new_full_url})"
+        except (ValueError, OSError):
+            # Path resolution failed or target outside docs_root - leave unchanged
+            pass
+        return match.group(0)
+
+    new_src: str = _LINK_PATTERN.sub(_replacer, src)
+    if modified and not dry_run:
+        file_path.write_text(new_src, encoding=ENCODING)
+
+    return changes
+
+
 def _rewrite_links(
     md_file: Path,
     old_abs: Path,
@@ -128,6 +206,97 @@ def _rewrite_links(
     new_src: str = _LINK_PATTERN.sub(_replacer, src)
     if modified and not dry_run:
         md_file.write_text(new_src, encoding=ENCODING)
+
+    return changes
+
+
+def _update_internal_links_in_moved_notebook(  # noqa: C901
+    file_path: Path,
+    old_parent: Path,
+    new_parent: Path,
+    docs_root: Path,
+    *,
+    dry_run: bool,
+) -> list[_LinkChange]:
+    """Update internal relative links within a notebook that's being moved.
+
+    Args:
+        file_path: The notebook being moved (at its new location).
+        old_parent: The directory the notebook was moved from.
+        new_parent: The directory the notebook was moved to.
+        docs_root: The root of the documentation tree.
+        dry_run: Whether the operation is a preview (no disk writes).
+
+    Returns:
+        A list of ``(old_url, new_url)`` tuples representing link changes.
+    """
+    if not file_path.exists():
+        return []
+
+    notebook = nbformat.read(file_path, as_version=nbformat.NO_CONVERT)
+    changes: list[_LinkChange] = []
+    modified = False
+
+    def _replacer(match: re.Match[str]) -> str:
+        nonlocal modified
+        label, url, anchor = match.groups()
+
+        # Handle case where anchor is None
+        anchor = anchor or ""
+        full_url = url + anchor
+
+        # Skip external links, mailto, absolute paths, or in-page anchors
+        if url.startswith(("http://", "https://", "mailto:", "/")) or (
+            not url and anchor
+        ):
+            return match.group(0)
+
+        # This is a relative link - we need to update it
+        try:
+            # Calculate what the link was pointing to from the old location
+            old_target = (old_parent / url).resolve()
+
+            # Check if the target exists and is within docs_root
+            if old_target.exists() and old_target.is_relative_to(docs_root.resolve()):
+                # Calculate new relative path from new location
+                new_rel = os.path.relpath(old_target, new_parent)
+                new_rel_posix = Path(new_rel).as_posix()
+                new_full_url = new_rel_posix + anchor
+
+                # Only update if the path actually changed
+                if new_full_url != full_url:
+                    changes.append((full_url, new_full_url))
+
+                    if dry_run:
+                        logger.info(
+                            "Would update internal link in moved notebook %s: %s -> %s",
+                            file_path.relative_to(docs_root),
+                            full_url,
+                            new_full_url,
+                        )
+                    modified = True
+                    return f"{label}({new_full_url})"
+        except (ValueError, OSError):
+            # Path resolution failed or target outside docs_root - leave unchanged
+            pass
+        return match.group(0)
+
+    # Process all cells in the notebook
+    for cell in notebook.cells:
+        if cell.cell_type == "markdown" and "source" in cell:
+            # Handle both string and list sources
+            if isinstance(cell.source, list):
+                source_text = "".join(cell.source)
+            else:
+                source_text = cell.source
+
+            new_source = _LINK_PATTERN.sub(_replacer, source_text)
+
+            if new_source != source_text:
+                cell.source = new_source
+
+    if modified and not dry_run:
+        nbformat.write(notebook, file_path)
 
     return changes
 
@@ -262,7 +431,7 @@ def _write_changes_log(old_path: Path, new_path: Path, root: Path) -> None:
         fp.write(json.dumps([str(old_path), str(new_path)]) + "\n")
 
 
-def move_file_with_link_updates(
+def move_file_with_link_updates(  # noqa: C901, PLR0912
     old_path: Path,
     new_path: Path,
     *,
@@ -314,6 +483,28 @@ def move_file_with_link_updates(
         logger.info("No links needed updating.")
 
     if dry_run:
+        # Also preview internal link updates that would happen in the moved file
+        logger.info("🔗  Previewing internal link updates in file to be moved...")
+        if old_abs.suffix.lower() in [".md", ".mdx"]:
+            internal_changes = _update_internal_links_in_moved_file(
+                old_abs, old_abs.parent, new_abs.parent, docs_root, dry_run=True
+            )
+        elif old_abs.suffix.lower() == ".ipynb":
+            internal_changes = _update_internal_links_in_moved_notebook(
+                old_abs, old_abs.parent, new_abs.parent, docs_root, dry_run=True
+            )
+        else:
+            internal_changes = []
+
+        if internal_changes:
+            logger.info(
+                "Would update %d internal link(s) within moved file.",
+                len(internal_changes),
+            )
+            changes.extend(internal_changes)
+        else:
+            logger.info("No internal links would need updating in moved file.")
+
         logger.info("Dry-run complete - no files were moved.")
         return changes
 
@@ -322,6 +513,28 @@ def move_file_with_link_updates(
     new_abs.parent.mkdir(parents=True, exist_ok=True)
     logger.info("🚚  Moving %s → %s", old_abs, new_abs)
     shutil.move(str(old_abs), str(new_abs))
+
+    # Update internal links within the moved file
+    logger.info("🔗  Updating internal links in moved file...")
+    if new_abs.suffix.lower() in [".md", ".mdx"]:
+        internal_changes = _update_internal_links_in_moved_file(
+            new_abs, old_abs.parent, new_abs.parent, docs_root, dry_run=False
+        )
+    elif new_abs.suffix.lower() == ".ipynb":
+        internal_changes = _update_internal_links_in_moved_notebook(
+            new_abs, old_abs.parent, new_abs.parent, docs_root, dry_run=False
+        )
+    else:
+        internal_changes = []
+
+    if internal_changes:
+        logger.info(
+            "🔧  Updated %d internal link(s) within moved file.", len(internal_changes)
+        )
+        changes.extend(internal_changes)
+    else:
+        logger.info("No internal links needed updating in moved file.")
+
     logger.info("Done! ✨")
 
     return changes
