@@ -11,7 +11,6 @@ from pipeline.tools.move_files import (
     _rewrite_links,
     _rewrite_links_in_notebook,
     _scan_and_rewrite,
-    _write_changes_log,
     move_file_with_link_updates,
 )
 from tests.unit_tests.utils import File, temp_directory
@@ -433,51 +432,6 @@ class TestScanAndRewrite:
                 ("target.md", "reference/target.md"),
             ]
             assert changes == expected_changes
-
-
-class TestWriteChangesLog:
-    """Tests for _write_changes_log function."""
-
-    def test_write_changes_log(self) -> None:
-        """Test writing changes to log file."""
-        files: list[File] = []
-        with temp_directory(files) as temp_dir:
-            changes = [("old1.md", "new1.md"), ("old2.md", "new2.md")]
-            _write_changes_log(changes, temp_dir)
-
-            log_path = temp_dir / "link_changes.jsonl"
-            assert log_path.exists()
-
-            lines = log_path.read_text(encoding="utf-8").strip().split("\n")
-            assert len(lines) == 2
-            assert json.loads(lines[0]) == ["old1.md", "new1.md"]
-            assert json.loads(lines[1]) == ["old2.md", "new2.md"]
-
-    def test_write_changes_log_empty(self) -> None:
-        """Test that empty changes don't create a log file."""
-        files: list[File] = []
-        with temp_directory(files) as temp_dir:
-            _write_changes_log([], temp_dir)
-            log_path = temp_dir / "link_changes.jsonl"
-            assert not log_path.exists()
-
-    def test_write_changes_log_append(self) -> None:
-        """Test that changes are appended to existing log file."""
-        files: list[File] = []
-        with temp_directory(files) as temp_dir:
-            # Write first batch of changes
-            changes1 = [("old1.md", "new1.md")]
-            _write_changes_log(changes1, temp_dir)
-
-            # Write second batch of changes
-            changes2 = [("old2.md", "new2.md")]
-            _write_changes_log(changes2, temp_dir)
-
-            log_path = temp_dir / "link_changes.jsonl"
-            lines = log_path.read_text(encoding="utf-8").strip().split("\n")
-            assert len(lines) == 2
-            assert json.loads(lines[0]) == ["old1.md", "new1.md"]
-            assert json.loads(lines[1]) == ["old2.md", "new2.md"]
 
 
 class TestMoveFileWithLinkUpdates:

@@ -27,6 +27,7 @@ ENCODING: str = "utf-8"
 _LINK_PATTERN: re.Pattern[str] = re.compile(r"(\[[^\]]+\])\(([^)\s#]+)(#[^)\s]*)?\)")
 _LinkChange = tuple[str, str]  # (old_url, new_url)
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -248,19 +249,17 @@ def _scan_and_rewrite(
     return changes
 
 
-def _write_changes_log(changes: list[_LinkChange], root: Path) -> None:
-    """Append link changes to ``link_changes.jsonl`` one JSON array per line.
+def _write_changes_log(old_path: Path, new_path: Path, root: Path) -> None:
+    """Append file move to ``link_changes.jsonl`` as a JSON array.
 
     Args:
-        changes: An iterable of ``(old_url, new_url)`` pairs.
+        old_path: The original file path.
+        new_path: The new file path.
         root: The directory where the log file will be written.
     """
-    if not changes:
-        return
     log_path = root / "link_changes.jsonl"
     with log_path.open("a", encoding=ENCODING) as fp:
-        for old, new in changes:
-            fp.write(json.dumps([old, new]) + "\n")
+        fp.write(json.dumps([str(old_path), str(new_path)]) + "\n")
 
 
 def move_file_with_link_updates(
@@ -311,7 +310,6 @@ def move_file_with_link_updates(
 
     if changes:
         logger.info("🏷️  Rewrote %d link(s).", len(changes))
-        _write_changes_log(changes, git_root)
     else:
         logger.info("No links needed updating.")
 
@@ -319,6 +317,7 @@ def move_file_with_link_updates(
         logger.info("Dry-run complete - no files were moved.")
         return changes
 
+    _write_changes_log(old_abs, new_abs, git_root)
     # Move the file on disk.
     new_abs.parent.mkdir(parents=True, exist_ok=True)
     logger.info("🚚  Moving %s → %s", old_abs, new_abs)
