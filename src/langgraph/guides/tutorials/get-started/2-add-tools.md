@@ -4,7 +4,7 @@ To handle queries that your chatbot can't answer "from memory", integrate a web 
 
 !!! note
 
-    This tutorial builds on [Build a basic chatbot](./1-build-basic-chatbot.md).
+    This tutorial builds on [Build a basic chatbot](../../get-started/build-a-basic-chatbot.mdx).
 
 ## Prerequisites
 
@@ -65,7 +65,7 @@ The results are page summaries our chat bot can use to answer questions:
 
 ## 4. Define the graph
 
-For the `StateGraph` you created in the [first tutorial](./1-build-basic-chatbot.md), add `bind_tools` on the LLM. This lets the LLM know the correct JSON format to use if it wants to use the search engine.
+For the `StateGraph` you created in the [first tutorial](../../get-started/build-a-basic-chatbot.mdx), add `bind_tools` on the LLM. This lets the LLM know the correct JSON format to use if it wants to use the search engine.
 
 Let's first select our LLM:
 
