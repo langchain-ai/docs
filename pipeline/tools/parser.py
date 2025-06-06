@@ -103,6 +103,8 @@ class Paragraph(Node):
 
 @dataclass(kw_only=True)
 class CodeBlock(Node):
+    """Code block with optional language and metadata."""
+
     language: str | None
     meta: str
     content: str
@@ -110,37 +112,51 @@ class CodeBlock(Node):
 
 @dataclass(kw_only=True)
 class ListItem(Node):
+    """Single item in a list containing nested blocks."""
+
     blocks: list[Node]
 
 
 @dataclass(kw_only=True)
 class UnorderedList(Node):
+    """Unordered list (bullet list) containing list items."""
+
     items: list[ListItem]
 
 
 @dataclass(kw_only=True)
 class OrderedList(Node):
+    """Ordered list (numbered list) containing list items."""
+
     items: list[ListItem]
 
 
 @dataclass(kw_only=True)
 class QuoteBlock(Node):
+    """Block quote containing multiple lines of text."""
+
     lines: list[str]
 
 
 @dataclass(kw_only=True)
 class Tab(Node):
+    """Single tab in a tab block with title and content."""
+
     title: str
     blocks: list[Node]
 
 
 @dataclass(kw_only=True)
 class TabBlock(Node):
+    """Tab block containing multiple tabs."""
+
     tabs: list[Tab]
 
 
 @dataclass(kw_only=True)
 class Admonition(Node):
+    """Admonition block (note, warning, etc.) with optional folding."""
+
     tag: str  # '???' or '!!!'
     title: str
     blocks: list[Node]
@@ -163,12 +179,15 @@ class Parser:
 
     # -- helpers ------------------------------------------------------------
     def eof(self) -> bool:
+        """Check if the parser has reached the end of input."""
         return self.current >= self.total
 
     def peek(self) -> str:
+        """Return the current line without advancing the parser."""
         return "" if self.eof() else self.lines[self.current]
 
     def next_line(self) -> str:
+        """Return the current line and advance to the next."""
         line = self.peek()
         self.current += 1
         return line
@@ -185,6 +204,7 @@ class Parser:
 
     # -- block dispatcher ---------------------------------------------------
     def parse_block(self) -> Node | None:
+        """Parse a single block element based on the current line."""
         line = self.peek()
 
         if not line:
@@ -208,6 +228,7 @@ class Parser:
 
     # -- individual block parsers ------------------------------------------
     def parse_code_block(self) -> CodeBlock:
+        """Parse a fenced code block with optional language and metadata."""
         start_ln = self.current + 1
         fence_line = self.next_line().strip()
         fence_body = fence_line[3:].strip()
@@ -234,6 +255,7 @@ class Parser:
         )
 
     def parse_heading(self) -> Heading:
+        """Parse a heading line (# through ######)."""
         start_ln = self.current + 1
         line = self.next_line().strip()
         m = HEADING_LINE_RE.match(line)
@@ -249,6 +271,7 @@ class Parser:
 
     # ----- lists -----------------------------------------------------------
     def _collect_list_items(self, marker_re: re.Pattern[str]) -> list[ListItem]:
+        """Collect consecutive list items matching the given marker pattern."""
         items: list[ListItem] = []
         while not self.eof() and marker_re.match(self.peek()):
             ln = self.current + 1
@@ -259,6 +282,7 @@ class Parser:
         return items
 
     def parse_unordered_list(self) -> UnorderedList:
+        """Parse an unordered list (bullets: -, +, *)."""
         start_ln = self.current + 1
         items = self._collect_list_items(UNORDERED_MARKER_RE)
         return UnorderedList(
@@ -266,6 +290,7 @@ class Parser:
         )
 
     def parse_ordered_list(self) -> OrderedList:
+        """Parse an ordered list (numbered: 1., 2), etc.)."""
         start_ln = self.current + 1
         items = self._collect_list_items(ORDERED_MARKER_RE)
         return OrderedList(
@@ -274,6 +299,7 @@ class Parser:
 
     # ----- quote -----------------------------------------------------------
     def parse_quote_block(self) -> QuoteBlock:
+        """Parse a block quote (lines starting with >)."""
         start_ln = self.current + 1
         lines: list[str] = []
         while not self.eof() and self.peek().lstrip().startswith(">"):
@@ -283,6 +309,7 @@ class Parser:
 
     # ----- admonition ------------------------------------------------------
     def parse_admonition(self) -> Admonition:
+        """Parse an admonition block (!!! or ??? with indented content)."""
         start_ln = self.current + 1
         header = self.next_line().strip()
         parts = header.split(None, 1)
@@ -308,6 +335,7 @@ class Parser:
 
     # ----- tabs ------------------------------------------------------------
     def parse_tab_block(self) -> TabBlock:
+        """Parse a tab block with multiple === "title" sections."""
         start_ln = self.current + 1
         tabs: list[Tab] = []
         while not self.eof() and TAB_HEADER_RE.match(self.peek()):
@@ -345,6 +373,7 @@ class Parser:
 
     # ----- paragraph -------------------------------------------------------
     def parse_paragraph(self) -> Paragraph:
+        """Parse a paragraph from consecutive non-empty lines."""
         start_ln = self.current + 1
         lines: list[str] = []
         while not self.eof():
