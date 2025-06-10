@@ -36,18 +36,19 @@ def mv_command(args) -> None:  # noqa: ANN001
 def migrate_command(args) -> None:  # noqa: ANN001
     """Handle the migrate command for converting markdown to mintlify format."""
     logger.info("Converting %s to mintlify format...", args.path)
-    with open(args.path, "r", encoding="utf-8") as file:
-        content = file.read()
+    content = Path(args.path).read_text()
     mint_markdown = to_mint(content)
 
     if args.dry_run:
-        print(mint_markdown)
+        # Print the converted markdown to stdout
+        print(mint_markdown)  # noqa: T201 (OK to use print)
     elif args.output_file:
-        with open(args.output_file, "w", encoding="utf-8") as file:
+        # Using open instead of Pathlib
+        with Path(args.output_file).open("w", encoding="utf-8") as file:
             file.write(mint_markdown)
         logger.info("Output written to %s", args.output_file)
     else:
-        with open(args.path, "w", encoding="utf-8") as file:
+        with Path(args.path).open("w", encoding="utf-8") as file:
             file.write(mint_markdown)
         logger.info("File %s updated in place", args.path)
 
