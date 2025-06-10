@@ -43,7 +43,9 @@ MARKDOWN1 = """\
 """
 
 EXPECTED_MARKDOWN = """\
-"""
+<Accordion title="Example Title">
+Foldable example
+</Accordion>"""
 
 
 def test_example_blocks() -> None:
