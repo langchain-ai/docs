@@ -313,19 +313,27 @@ class Parser:
         start_ln = self.current + 1
         header = self.next_line().strip()
         parts = header.split(None, 2)
-        tag = parts[0]  # '!!!' or '???'
+
+        num_parts = len(parts)
+
+        if num_parts == 2:  # noqa: PLR2004
+            tag, kind = parts
+            title = ""
+        elif num_parts == 3:  # noqa: PLR2004
+            # This is the case where we have a title
+            tag, kind, title = parts
+            title = title.strip('"')  # strip quotes around title
+        else:
+            msg = "Invalid admonition header format"
+            raise NotImplementedError(msg)
 
         if tag not in {"!!!", "???"}:
             msg = f"Invalid admonition type: {tag}"
             raise NotImplementedError(msg)
 
-        kind = parts[1]  # 'note', 'warning', etc.
-
         if kind not in {"note", "warning", "info", "tip", "example"}:
             msg = f"Unsupported admonition type: {kind}"
             raise NotImplementedError(msg)
-
-        title = parts[2].strip('"') if len(parts) > 2 else ""
 
         # skip blank lines
         while not self.eof() and not self.peek().strip():
@@ -539,7 +547,7 @@ class MintPrinter:
 
     def _visit_tab(self, node: Tab) -> None:
         """Visit a single tab node (handled by tabblock)."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def _visit_admonition(self, node: Admonition) -> None:
         """Visit an admonition node and convert to Mintlify format."""
@@ -566,7 +574,8 @@ class MintPrinter:
             }
             kind = node.kind.lower()
             if kind not in kind_to_callout:
-                raise NotImplementedError(f"Unsupported admonition kind: {kind}")
+                msg = f"Unsupported admonition kind: {kind}"
+                raise NotImplementedError(msg)
             callout = kind_to_callout[kind]
 
             self.output.append(f'<Callout type="{callout}">')
@@ -579,11 +588,11 @@ class MintPrinter:
                 self._visit(block)
             self.output.append("</Callout>")
         else:
-            raise NotImplementedError()
+            raise NotImplementedError
 
     def _visit_listitem(self, node: ListItem) -> None:
         """Visit a list item node (handled by list visitors)."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 def to_mint(markdown: str) -> str:

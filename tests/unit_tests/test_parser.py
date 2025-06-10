@@ -45,6 +45,7 @@ MARKDOWN1 = """\
 EXPECTED_MARKDOWN = """\
 """
 
+
 def test_example_blocks() -> None:
     """Test the Mintlify printer."""
     output = to_mint(MARKDOWN1)
