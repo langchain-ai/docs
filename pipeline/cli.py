@@ -8,9 +8,11 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
+from pipeline.tools.move_files import move_file_with_link_updates
 
 
 def setup_logging() -> None:
@@ -25,6 +27,19 @@ def setup_logging() -> None:
 logger = logging.getLogger(__name__)
 
 
+def mv_command(args) -> None:
+    """Handle the mv command for moving files with link updates."""
+    move_file_with_link_updates(args.old_path, args.new_path, dry_run=args.dry_run)
+
+
+def migrate_command(args) -> None:
+    """Handle the migrate command for converting markdown to mintlify format."""
+    # Placeholder implementation
+    logger.info("Converting %s to mintlify format...", args.path)
+    logger.info("Migrate command is not yet implemented - placeholder only")
+    # TODO: Implement markdown to mintlify conversion
+
+
 def main() -> None:
     """Main CLI entry point.
 
@@ -34,6 +49,8 @@ def main() -> None:
     Commands:
         dev: Start development mode with file watching and live server.
         build: Build documentation files from source to build directory.
+        mv: Move a file and update cross-references to maintain valid links.
+        migrate: Convert markdown file to mintlify format.
 
     Exits:
         With code 1 if no command is specified or if the initial build fails.
@@ -62,6 +79,40 @@ def main() -> None:
         help="Watch for file changes",
     )
     build_parser.set_defaults(func=build_command)
+
+    # Move command
+    mv_parser = subparsers.add_parser(
+        "mv",
+        help="Move a file and update cross-references",
+    )
+    mv_parser.add_argument(
+        "old_path",
+        type=Path,
+        help="Path to the file being moved",
+    )
+    mv_parser.add_argument(
+        "new_path",
+        type=Path,
+        help="Destination path for the file",
+    )
+    mv_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview changes without rewriting files or moving the document",
+    )
+    mv_parser.set_defaults(func=mv_command)
+
+    # Migrate command
+    migrate_parser = subparsers.add_parser(
+        "migrate",
+        help="Convert markdown file to mintlify format",
+    )
+    migrate_parser.add_argument(
+        "path",
+        type=Path,
+        help="Path to the markdown file to convert",
+    )
+    migrate_parser.set_defaults(func=migrate_command)
 
     args = parser.parse_args()
 
