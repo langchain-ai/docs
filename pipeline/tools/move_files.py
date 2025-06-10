@@ -8,7 +8,6 @@ the old file location to point to the new location, ensuring no links break.
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import os
@@ -17,8 +16,6 @@ import shutil
 from pathlib import Path
 
 import nbformat
-
-__all__ = ["cli"]  # only the entry-point is considered public
 
 ENCODING: str = "utf-8"
 
@@ -540,34 +537,4 @@ def move_file_with_link_updates(  # noqa: C901, PLR0912
     return changes
 
 
-def cli() -> None:
-    """Entry-point for the *meowz* command-line interface."""
-    parser = argparse.ArgumentParser(
-        prog="lmv",
-        description=(
-            "Move a page and update cross-references under the "
-            "docs tree so that links remain valid."
-        ),
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("old", type=Path, help="Path to the file being moved.")
-    parser.add_argument("new", type=Path, help="Destination path for the file.")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview changes without rewriting files or moving the document.",
-    )
-
-    args = parser.parse_args()
-    move_file_with_link_updates(args.old, args.new, dry_run=args.dry_run)
-
-
-def entrypoint() -> None:
-    """Main entry point for the script."""
-    # Configure logging *once* here so imported usage (e.g. tests) is not noisy.
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    cli()
-
-
-if __name__ == "__main__":
-    entrypoint()
+__all__ = ["move_file_with_link_updates"]

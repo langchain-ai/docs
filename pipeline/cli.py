@@ -27,17 +27,16 @@ def setup_logging() -> None:
 logger = logging.getLogger(__name__)
 
 
-def mv_command(args) -> None:
+def mv_command(args) -> None:  # noqa: ANN001
     """Handle the mv command for moving files with link updates."""
     move_file_with_link_updates(args.old_path, args.new_path, dry_run=args.dry_run)
 
 
-def migrate_command(args) -> None:
+def migrate_command(args) -> None:  # noqa: ANN001
     """Handle the migrate command for converting markdown to mintlify format."""
     # Placeholder implementation
     logger.info("Converting %s to mintlify format...", args.path)
     logger.info("Migrate command is not yet implemented - placeholder only")
-    # TODO: Implement markdown to mintlify conversion
 
 
 def main() -> None:
