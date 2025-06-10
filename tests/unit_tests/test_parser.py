@@ -1,6 +1,6 @@
 """Tests for the markdown parser."""
 
-from pipeline.tools.parser import Document, Heading, Paragraph, Parser
+from pipeline.tools.parser import Document, Heading, Paragraph, Parser, to_mint
 
 
 def test_parse_simple_heading() -> None:
@@ -34,3 +34,18 @@ def test_parse_simple_paragraph() -> None:
     assert paragraph.value == "This is a simple paragraph."
     assert paragraph.start_line == 1
     assert paragraph.limit_line == 2
+
+
+MARKDOWN1 = """\
+??? example "Example Title"
+
+    Foldable example
+"""
+
+EXPECTED_MARKDOWN = """\
+"""
+
+def test_example_blocks() -> None:
+    """Test the Mintlify printer."""
+    output = to_mint(MARKDOWN1)
+    assert output == EXPECTED_MARKDOWN
