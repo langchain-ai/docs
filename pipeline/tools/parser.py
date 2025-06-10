@@ -203,7 +203,7 @@ class Parser:
         return Document(blocks=blocks, start_line=1, limit_line=self.total + 1)
 
     # -- block dispatcher ---------------------------------------------------
-    def parse_block(self) -> Node | None:
+    def parse_block(self) -> Node | None:  # noqa: PLR0911 (too-many-returns)
         """Parse a single block element based on the current line."""
         line = self.peek()
 
