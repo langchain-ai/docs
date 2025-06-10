@@ -7,15 +7,14 @@ import logging
 import os
 import posixpath
 import re
-from typing import Any, Dict
-
-from bs4 import BeautifulSoup
-from mkdocs.config.defaults import MkDocsConfig
-from mkdocs.structure.files import Files, File
-from mkdocs.structure.pages import Page
+from typing import Any
 
 from _scripts.generate_api_reference_links import update_markdown_with_imports
 from _scripts.notebook_convert import convert_notebook
+from bs4 import BeautifulSoup
+from mkdocs.config.defaults import MkDocsConfig
+from mkdocs.structure.files import File, Files
+from mkdocs.structure.pages import Page
 
 logger = logging.getLogger(__name__)
 logging.basicConfig()
@@ -117,7 +116,7 @@ class NotebookFile(File):
         return True
 
 
-def on_files(files: Files, **kwargs: Dict[str, Any]):
+def on_files(files: Files, **kwargs: dict[str, Any]):
     if DISABLED:
         return files
     new_files = Files([])
@@ -221,7 +220,7 @@ def _highlight_code_blocks(markdown: str) -> str:
             opening_fence += f" {attributes}"
 
         if highlighted_lines:
-            opening_fence += f" hl_lines=\"{' '.join(highlighted_lines)}\""
+            opening_fence += f' hl_lines="{" ".join(highlighted_lines)}"'
 
         return (
             # The indent and opening fence
@@ -269,7 +268,7 @@ def _on_page_markdown_with_config(
     return markdown
 
 
-def on_page_markdown(markdown: str, page: Page, **kwargs: Dict[str, Any]):
+def on_page_markdown(markdown: str, page: Page, **kwargs: dict[str, Any]):
     return _on_page_markdown_with_config(
         markdown,
         page,
@@ -342,8 +341,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         # Insert the GTM code as raw HTML at the top of <body>
         body.insert(0, BeautifulSoup(gtm_code, "html.parser"))
         return str(soup)
-    else:
-        return html  # fallback if no <body> found
+    return html  # fallback if no <body> found
 
 
 def on_post_page(output: str, page: Page, config: MkDocsConfig) -> str:

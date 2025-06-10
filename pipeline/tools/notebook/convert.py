@@ -51,7 +51,7 @@ def _rewrite_cell_magic(code: str) -> str:
         if stripped.startswith("%%capture"):
             continue
         # Rewrite %pip lines by dropping the '%'
-        elif stripped.startswith("%") or stripped.startswith("!"):
+        if stripped.startswith("%") or stripped.startswith("!"):
             # Drop the leading '%' character and then drop all leading whitespace
             stripped = stripped.lstrip("%! \t")
             # Check if the line starts with "pip"
@@ -66,8 +66,7 @@ def _rewrite_cell_magic(code: str) -> str:
 
 
 class PrintCallVisitor(ast.NodeVisitor):
-    """
-    This visitor sets self.has_print to True if it encounters a call
+    """This visitor sets self.has_print to True if it encounters a call
     to a print within the global scope.
 
     This should catch calls to print(), print_stream(), etc. (Prefixed with "print").
@@ -169,7 +168,6 @@ def _convert_links_in_markdown(markdown: str) -> str:
     in ipython notebooks do not follow the same conventions as regular markdown
     files in mkdocs (which should link to a .md file).
     """
-
     # Define the regex pattern in parts for clarity:
     pattern = (
         r"(?<!!)"  # Negative lookbehind: ensure the link is not an image (i.e., doesn't start with "!")
@@ -183,7 +181,7 @@ def _convert_links_in_markdown(markdown: str) -> str:
     )
 
     def custom_replacement(match):
-        """logic will correct the link format used in ipython notebooks
+        """Logic will correct the link format used in ipython notebooks
 
         Ipython notebooks were being converted directly into HTML links
         instead of markdown links that retain the markdown extension.
@@ -197,10 +195,7 @@ def _convert_links_in_markdown(markdown: str) -> str:
         text = match.group("text")
         url = match.group("url")
 
-        if url.startswith("../"):
-            # we strip the "../" from the start of the URL
-            # We only need to denest one level.
-            url = url[3:]
+        url = url.removeprefix("../")
 
         url = url.rstrip("/")  # Strip `/` from the end of the URL
 
@@ -221,8 +216,7 @@ def _convert_links_in_markdown(markdown: str) -> str:
 
 
 class HideCellTagPreprocessor(Preprocessor):
-    """
-    Removes cells that have '# hide-cell' at the beginning of the cell content.
+    """Removes cells that have '# hide-cell' at the beginning of the cell content.
     This allows authors to include cells in the notebook that should not
     appear in the generated markdown output.
     """
@@ -311,14 +305,12 @@ class EscapePreprocessor(Preprocessor):
 
 
 class ExtractAttachmentsPreprocessor(Preprocessor):
-    """
-    Extracts all of the outputs from the notebook file.  The extracted
+    """Extracts all of the outputs from the notebook file.  The extracted
     outputs are returned in the 'resources' dictionary.
     """
 
     def preprocess_cell(self, cell, resources, cell_index):
-        """
-        Apply a transformation on each cell,
+        """Apply a transformation on each cell,
         Parameters
         ----------
         cell : NotebookNode cell
@@ -329,7 +321,6 @@ class ExtractAttachmentsPreprocessor(Preprocessor):
         cell_index : int
             Index of the cell being processed (see base.py)
         """
-
         # Get files directory if it has been specified
 
         # Make sure outputs key exists
