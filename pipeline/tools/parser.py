@@ -158,9 +158,9 @@ class Admonition(Node):
     """Admonition block (note, warning, etc.) with optional folding."""
 
     tag: str  # '???' or '!!!'
+    kind: str  # 'note', 'warning', etc.
     title: str
     blocks: list[Node]
-    foldable: bool
 
 
 # ---------------------------------------------------------------------------
@@ -312,9 +312,21 @@ class Parser:
         """Parse an admonition block (!!! or ??? with indented content)."""
         start_ln = self.current + 1
         header = self.next_line().strip()
-        parts = header.split(None, 1)
-        tag = parts[0]
-        title = parts[1].strip('"') if len(parts) > 1 else ""
+        parts = header.split(None, 2)
+        tag = parts[0]  # '!!!' or '???'
+
+        if tag not in {"!!!", "???"}:
+            msg = f"Invalid admonition type: {tag}"
+            raise NotImplementedError(msg)
+
+        kind = parts[1]  # 'note', 'warning', etc.
+
+        if kind not in {"note", "warning", "info", "tip", "example"}:
+            msg = f"Unsupported admonition type: {kind}"
+            raise NotImplementedError(msg)
+
+        title = parts[2].strip('"') if len(parts) > 2 else ""
+
         # skip blank lines
         while not self.eof() and not self.peek().strip():
             self.next_line()
@@ -326,9 +338,9 @@ class Parser:
         inner = Parser("\n".join(body_lines)).parse()
         return Admonition(
             tag=tag,
+            kind=kind,
             title=title,
             blocks=inner.blocks,
-            foldable=False,
             start_line=start_ln,
             limit_line=self.current + 1,
         )
@@ -385,3 +397,198 @@ class Parser:
         return Paragraph(
             value=" ".join(lines), start_line=start_ln, limit_line=self.current + 1
         )
+
+
+# ---------------------------------------------------------------------------
+# MintPrinter - AST to Mintlify markdown converter
+# ---------------------------------------------------------------------------
+
+
+class MintPrinter:
+    """Convert AST nodes to Mintlify-formatted markdown.
+
+    **Warning**: this is a mutable class that accumulates output in `self.output`.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the printer."""
+        self.output: list[str] = []
+
+    def print(self, node: Node) -> str:
+        """Convert an AST node to Mintlify markdown string."""
+        self.output = []
+        self._visit(node)
+        return "\n".join(self.output).rstrip()
+
+    def _visit(self, node: Node) -> None:
+        """Visit a node and dispatch to the appropriate handler."""
+        method_name = f"_visit_{type(node).__name__.lower()}"
+        method = getattr(self, method_name, self._visit_generic)
+        method(node)
+
+    def _visit_generic(self, node: Node) -> None:
+        """Generic visitor for unhandled nodes."""
+        self.output.append(f"<!-- Unhandled node: {type(node).__name__} -->")
+
+    def _visit_document(self, node: Document) -> None:
+        """Visit a document node."""
+        for i, block in enumerate(node.blocks):
+            if i > 0:
+                self.output.append("")
+            self._visit(block)
+
+    def _visit_heading(self, node: Heading) -> None:
+        """Visit a heading node."""
+        prefix = "#" * node.level
+        self.output.append(f"{prefix} {node.value}")
+
+    def _visit_paragraph(self, node: Paragraph) -> None:
+        """Visit a paragraph node."""
+        self.output.append(node.value)
+
+    def _visit_codeblock(self, node: CodeBlock) -> None:
+        """Visit a code block node and format for Mintlify."""
+        fence = "```"
+
+        # Build the opening fence with language and metadata
+        if node.language:
+            fence_line = f"{fence}{node.language}"
+            if node.meta:
+                # Handle special Mintlify syntax like [expandable] and line highlighting
+                if "[expandable]" in node.meta:
+                    fence_line = f"{fence}{node.language} {node.meta}"
+                elif "{" in node.meta and "}" in node.meta:
+                    # Line highlighting syntax
+                    fence_line = f"{fence}{node.language} {node.meta}"
+                else:
+                    # Regular filename or title
+                    fence_line = f"{fence}{node.language} {node.meta}"
+        else:
+            fence_line = fence
+
+        self.output.append(fence_line)
+
+        # Add the code content
+        if node.content:
+            for line in node.content.split("\n"):
+                self.output.append(line)
+
+        self.output.append(fence)
+
+    def _visit_unorderedlist(self, node: UnorderedList) -> None:
+        """Visit an unordered list node."""
+        for item in node.items:
+            self._visit_list_item(item, "- ")
+
+    def _visit_orderedlist(self, node: OrderedList) -> None:
+        """Visit an ordered list node."""
+        for i, item in enumerate(node.items, 1):
+            self._visit_list_item(item, f"{i}. ")
+
+    def _visit_list_item(self, item: ListItem, prefix: str) -> None:
+        """Visit a list item with the given prefix."""
+        for i, block in enumerate(item.blocks):
+            if i == 0:
+                # First block gets the list marker
+                if isinstance(block, Paragraph):
+                    self.output.append(f"{prefix}{block.value}")
+                else:
+                    self.output.append(prefix)
+                    self._visit(block)
+            else:
+                # Subsequent blocks are indented
+                saved_output = self.output[:]
+                self.output = []
+                self._visit(block)
+                for line in self.output:
+                    saved_output.append(f"  {line}")
+                self.output = saved_output
+
+    def _visit_quoteblock(self, node: QuoteBlock) -> None:
+        """Visit a quote block node."""
+        for line in node.lines:
+            self.output.append(f"> {line}")
+
+    def _visit_tabblock(self, node: TabBlock) -> None:
+        """Visit a tab block node and convert to Mintlify <Tabs> format."""
+        self.output.append("<Tabs>")
+
+        for tab in node.tabs:
+            self.output.append(f'  <Tab title="{tab.title}">')
+
+            # Process tab content with proper indentation
+            saved_output = self.output[:]
+            self.output = []
+
+            for i, block in enumerate(tab.blocks):
+                if i > 0:
+                    self.output.append("")
+                self._visit(block)
+
+            # Indent all tab content
+            for line in self.output:
+                if line.strip():
+                    saved_output.append(f"    {line}")
+                else:
+                    saved_output.append("")
+
+            self.output = saved_output
+            self.output.append("  </Tab>")
+
+        self.output.append("</Tabs>")
+
+    def _visit_tab(self, node: Tab) -> None:
+        """Visit a single tab node (handled by tabblock)."""
+        raise NotImplementedError()
+
+    def _visit_admonition(self, node: Admonition) -> None:
+        """Visit an admonition node and convert to Mintlify format."""
+        # Map common admonition types to Mintlify equivalents
+        if node.tag == "???":
+            # Then it's an Accordion (foldable)
+            if node.title:
+                self.output.append(f'<Accordion title="{node.title}">')
+            else:
+                self.output.append("<Accordion>")
+
+            for i, block in enumerate(node.blocks):
+                if i > 0:
+                    self.output.append("")
+                self._visit(block)
+            self.output.append("</Accordion>")
+        elif node.tag == "!!!":
+            kind_to_callout = {
+                "note": "Note",
+                "warning": "Warning",
+                "info": "Info",
+                "tip": "Tip",
+                "danger": "Danger",
+            }
+            kind = node.kind.lower()
+            if kind not in kind_to_callout:
+                raise NotImplementedError(f"Unsupported admonition kind: {kind}")
+            callout = kind_to_callout[kind]
+
+            self.output.append(f'<Callout type="{callout}">')
+            # as a bolded string
+            if node.title:
+                self.output.append(f"**{node.title}**")
+            for i, block in enumerate(node.blocks):
+                if i > 0:
+                    self.output.append("")
+                self._visit(block)
+            self.output.append("</Callout>")
+        else:
+            raise NotImplementedError()
+
+    def _visit_listitem(self, node: ListItem) -> None:
+        """Visit a list item node (handled by list visitors)."""
+        raise NotImplementedError()
+
+
+def to_mint(markdown: str) -> str:
+    """Convenience function to print an AST node as Mintlify markdown."""
+    parser = Parser(markdown)
+    doc = parser.parse()
+    printer = MintPrinter()
+    return printer.print(doc)
