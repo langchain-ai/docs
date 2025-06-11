@@ -273,7 +273,7 @@ class Parser:
 
     def parse_front_matter(self) -> FrontMatter | None:
         """Parse YAML front matter block."""
-        if not self.peek().strip() == "---":
+        if self.peek().strip() != "---":
             return None
 
         start_ln = self.current + 1
@@ -402,7 +402,8 @@ class Parser:
         line = self.peek()
         match = marker_re.match(line)
         if not match:
-            raise ValueError("Expected list marker")
+            error_msg = "Expected list marker"
+            raise ValueError(error_msg)
 
         # Get the indentation level of the list marker
         marker_indent = (
@@ -443,7 +444,8 @@ class Parser:
 
             if line_indent >= min_required_indent:
                 # This line belongs to the current list item
-                # Collect all consecutive indented lines and parse them as a sub-document
+                # Collect all consecutive indented lines and parse them as a
+                # sub-document
                 indented_lines: list[str] = []
 
                 while not self.eof():
@@ -563,7 +565,7 @@ class Parser:
                 continue
 
             # If line is not indented at all, we've reached the end of the admonition
-            if not (line.startswith("    ") or line.startswith("\t")):
+            if not line.startswith(("    ", "\t")):
                 break
 
             # Remove the base indentation and add to body
@@ -598,8 +600,8 @@ class Parser:
             header_ln = self.current + 1
             m = TAB_HEADER_RE.match(self.next_line())
             if m is None:
-                msg = "Expected tab header match"
-                raise ValueError(msg)
+                error_msg = "Expected tab header match"
+                raise ValueError(error_msg)
             # m is guaranteed to be not None after this check
             title = m.group("title")
             # skip blank lines before content
@@ -622,7 +624,7 @@ class Parser:
                     continue
 
                 # If line is not indented at all, we've reached the end of this tab
-                if not (line.startswith("    ") or line.startswith("\t")):
+                if not line.startswith(("    ", "\t")):
                     break
 
                 # Remove the base indentation and add to content
