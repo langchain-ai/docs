@@ -1,3 +1,5 @@
+"""Tests for the markdown lexer module."""
+
 from pipeline.tools.lexer import TokenType, lex
 
 

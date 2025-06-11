@@ -429,10 +429,11 @@ class Parser:
                 continue
 
             # Check if this line starts a new list item at the same level
-            if marker_re.match(line):
+            match_result = marker_re.match(line)
+            if match_result:
                 new_marker_indent = (
-                    len(marker_re.match(line).group("indent"))
-                    if "indent" in marker_re.match(line).groupdict()
+                    len(match_result.group("indent"))
+                    if "indent" in match_result.groupdict()
                     else 0
                 )
                 if new_marker_indent == marker_indent:
@@ -456,10 +457,11 @@ class Parser:
                         continue
 
                     # Check if this starts a new list item at the same level
-                    if marker_re.match(line):
+                    match_result = marker_re.match(line)
+                    if match_result:
                         new_marker_indent = (
-                            len(marker_re.match(line).group("indent"))
-                            if "indent" in marker_re.match(line).groupdict()
+                            len(match_result.group("indent"))
+                            if "indent" in match_result.groupdict()
                             else 0
                         )
                         if new_marker_indent == marker_indent:

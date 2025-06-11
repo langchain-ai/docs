@@ -1,9 +1,14 @@
+"""Markdown lexer for tokenizing markdown text."""
+
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import Enum, auto
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
 
 TAB_SIZE = 4  # change this if you want tabs to expand differently
 
@@ -19,10 +24,10 @@ class TokenType(Enum):
     BLOCKQUOTE = auto()  # >
     TAB_HEADER = auto()  # === "title"
     ADMONITION = auto()  # !!! note "Title" or ??? note
-    HTML_TAG = auto()  # <div> … (single‑line)
-    BLANK = auto()  # empty or whitespace‑only line
+    HTML_TAG = auto()  # <div> … (single-line)
+    BLANK = auto()  # empty or whitespace-only line
     TEXT = auto()  # anything else
-    EOF = auto()  # synthetic end‑of‑file marker
+    EOF = auto()  # synthetic end-of-file marker
 
 
 @dataclass(slots=True)
@@ -32,11 +37,11 @@ class Token:
     type: TokenType
     value: str  # text after leading indent has been stripped
     indent: int  # indent width in spaces (tabs → spaces)
-    line: int  # 1‑based line number where this token was found
+    line: int  # 1-based line number where this token was found
 
 
 # ---------------------------------------------------------------------------
-# Regular‑expressions are evaluated against the *trimmed* line (indent removed)
+# Regular-expressions are evaluated against the *trimmed* line (indent removed)
 # ---------------------------------------------------------------------------
 
 _PATTERNS: list[tuple[TokenType, re.Pattern[str]]] = [
@@ -54,7 +59,7 @@ _PATTERNS: list[tuple[TokenType, re.Pattern[str]]] = [
     (TokenType.TAB_HEADER, re.compile(r'===\s*"[^"]+"')),
     # !!! or ??? admonitions
     (TokenType.ADMONITION, re.compile(r"(?:!!!|\?\?\?)\s+\w+(?:\s+\"[^\"]+\")?")),
-    # Single‑line HTML tag (kept permissive; full parsing happens later)
+    # Single-line HTML tag (kept permissive; full parsing happens later)
     (TokenType.HTML_TAG, re.compile(r"<[/A-Za-z][^>]*>$")),
 ]
 
@@ -92,12 +97,7 @@ def lex(text: str | Iterable[str]) -> Iterator[Token]:
     Yields:
         Token objects, **including** a final EOF token.
     """
-    lines: list[str]
-    if isinstance(text, str):
-        # Preserve trailing newline semantics of splitlines(keepends=False)
-        lines = text.splitlines()
-    else:
-        lines = list(text)
+    lines = text.splitlines() if isinstance(text, str) else list(text)
 
     for idx, raw in enumerate(lines, 1):
         indent = _indent_width(raw)
