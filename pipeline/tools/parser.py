@@ -1,4 +1,13 @@
-"""Simplified Markdown parser for mapping custom commands to Mintlify syntax."""
+"""Simplified Markdown parser for mapping custom commands to Mintlify syntax.
+
+Most of this parser was generated with Claude code. It's created to help
+with a quick migration from a custom markdown format to Mintlify's format and
+is not meant to be perfect or handle all edge cases of Markdown syntax.
+
+If we keep the parser, we may need to re-design the architecture a bit to separate
+the tokenization from the parsing logic, which will make it simpler to handle
+indentation and other nuances of Markdown syntax.
+"""
 
 from __future__ import annotations
 
@@ -317,7 +326,7 @@ class Parser:
 
                 if is_self_closing:
                     continue
-                elif is_closing:
+                if is_closing:
                     # Remove matching opening tag from stack
                     if tag_stack and tag_stack[-1] == tag_name:
                         tag_stack.pop()
@@ -477,9 +486,8 @@ class Parser:
                         sub_doc = sub_parser.parse()
                         blocks.extend(sub_doc.blocks)
                 break
-            else:
-                # This line is not indented enough, so it doesn't belong to this list item
-                break
+            # This line is not indented enough, so it doesn't belong to this list item
+            break
 
         return ListItem(blocks=blocks, start_line=start_ln, limit_line=self.current + 1)
 
@@ -710,7 +718,6 @@ class MintPrinter:
 
     def _visit_paragraph(self, node: Paragraph) -> None:
         """Visit a paragraph node."""
-
         for i, line in enumerate(node.value):
             self._add_line(line.strip())
             if i > 0:
@@ -852,7 +859,6 @@ class MintPrinter:
     def _visit_frontmatter(self, node: FrontMatter) -> None:
         """Visit a front matter node (ignored in output)."""
         # Front matter is ignored in Mintlify output
-        pass
 
     def _visit_htmlblock(self, node: HTMLBlock) -> None:
         """Visit an HTML block node."""

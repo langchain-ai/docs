@@ -1,6 +1,13 @@
 """Tests for the markdown parser."""
 
-from pipeline.tools.parser import Document, FrontMatter, Heading, Paragraph, Parser, to_mint
+from pipeline.tools.parser import (
+    Document,
+    FrontMatter,
+    Heading,
+    Paragraph,
+    Parser,
+    to_mint,
+)
 
 
 def test_parse_simple_heading() -> None:
