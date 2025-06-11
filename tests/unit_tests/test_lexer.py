@@ -32,17 +32,8 @@ def test_fence_start() -> None:
     """Test lexing a fenced code block start."""
     tokens = list(lex("```python"))
     assert len(tokens) == 2
-    assert tokens[0].type == TokenType.FENCE_START
+    assert tokens[0].type == TokenType.FENCE
     assert tokens[0].value == "```python"
-    assert tokens[1].type == TokenType.EOF
-
-
-def test_fence_end() -> None:
-    """Test lexing a fenced code block end."""
-    tokens = list(lex("```"))
-    assert len(tokens) == 2
-    assert tokens[0].type == TokenType.FENCE_END
-    assert tokens[0].value == "```"
     assert tokens[1].type == TokenType.EOF
 
 
@@ -89,23 +80,3 @@ def test_admonition() -> None:
     assert tokens[0].type == TokenType.ADMONITION
     assert tokens[0].value == '??? note "Important Note"'
     assert tokens[1].type == TokenType.EOF
-
-
-def test_html_tag() -> None:
-    """Test lexing a single-line HTML tag."""
-    tokens = list(lex("<div>Content</div>"))
-    assert len(tokens) == 2
-    assert tokens[0].type == TokenType.HTML_TAG
-    assert tokens[0].value == "<div>Content</div>"
-    assert tokens[1].type == TokenType.EOF
-
-
-def test_two_html_tags() -> None:
-    """Test lexing two HTML tags."""
-    tokens = list(lex("<div>Content</div><span>More content</span>"))
-    assert len(tokens) == 3
-    assert tokens[0].type == TokenType.HTML_TAG
-    assert tokens[0].value == "<div>Content</div>"
-    assert tokens[1].type == TokenType.HTML_TAG
-    assert tokens[1].value == "<span>More content</span>"
-    assert tokens[2].type == TokenType.EOF

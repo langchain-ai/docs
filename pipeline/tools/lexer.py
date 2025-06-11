@@ -17,7 +17,7 @@ class TokenType(Enum):
     """All token kinds recognised by the Markdown lexer."""
 
     HEADING = auto()  # #, ##, ### …
-    FENCE_START = auto()  # ```lang [meta]
+    FENCE = auto()  # ```lang [meta]
     FENCE_END = auto()  # ```
     UL_MARKER = auto()  # -, +, *
     OL_MARKER = auto()  # 1.  2)  etc.
@@ -48,8 +48,7 @@ _PATTERNS: list[tuple[TokenType, re.Pattern[str]]] = [
     # Block/ATX headings
     (TokenType.HEADING, re.compile(r"(#{1,6})\s+.*")),
     # Fenced code blocks
-    (TokenType.FENCE_START, re.compile(r"```(?:\S*)")),
-    (TokenType.FENCE_END, re.compile(r"```\s*$")),
+    (TokenType.FENCE, re.compile(r"```(?:\S*)")),
     # Unordered and ordered list markers
     (TokenType.UL_MARKER, re.compile(r"[-+*]\s+")),
     (TokenType.OL_MARKER, re.compile(r"\d+[.)]\s+")),

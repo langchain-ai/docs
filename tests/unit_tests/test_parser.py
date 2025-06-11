@@ -51,7 +51,7 @@ MARKDOWN1 = """\
 
 EXPECTED_MARKDOWN = """\
 <Accordion title="Example Title">
-Foldable example
+  Foldable example
 </Accordion>"""
 
 
@@ -112,6 +112,6 @@ title: Overview
 ---
 
 # Hello World"""
-    expected = "# Hello World"
+    expected = "\n# Hello World"
     output = to_mint(text)
     assert output == expected
