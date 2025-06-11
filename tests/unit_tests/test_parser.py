@@ -31,7 +31,7 @@ def test_parse_simple_paragraph() -> None:
 
     paragraph = doc.blocks[0]
     assert isinstance(paragraph, Paragraph)
-    assert paragraph.value == "This is a simple paragraph."
+    assert paragraph.value == ["This is a simple paragraph."]
     assert paragraph.start_line == 1
     assert paragraph.limit_line == 2
 

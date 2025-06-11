@@ -98,7 +98,7 @@ class Heading(Node):
 class Paragraph(Node):
     """Paragraph node containing text content."""
 
-    value: str
+    value: list[str]
 
 
 @dataclass(kw_only=True)
@@ -276,7 +276,7 @@ class Parser:
         while not self.eof() and marker_re.match(self.peek()):
             ln = self.current + 1
             text = marker_re.sub("", self.peek(), count=1).rstrip()
-            para = Paragraph(value=text, start_line=ln, limit_line=ln + 1)
+            para = Paragraph(value=[text], start_line=ln, limit_line=ln + 1)
             items.append(ListItem(blocks=[para], start_line=ln, limit_line=ln + 1))
             self.next_line()
         return items
@@ -405,7 +405,7 @@ class Parser:
             lines.append(line.strip())
             self.next_line()
         return Paragraph(
-            value=" ".join(lines), start_line=start_ln, limit_line=self.current + 1
+            value=lines, start_line=start_ln, limit_line=self.current + 1
         )
 
 
@@ -464,7 +464,7 @@ class MintPrinter:
 
     def _visit_paragraph(self, node: Paragraph) -> None:
         """Visit a paragraph node."""
-        self._add_line(node.value)
+        self._add_line(" ".join(node.value))
 
     def _visit_codeblock(self, node: CodeBlock) -> None:
         """Visit a code block node and format for Mintlify."""
@@ -511,7 +511,7 @@ class MintPrinter:
             if i == 0:
                 # First block gets the list marker
                 if isinstance(block, Paragraph):
-                    self._add_line(f"{prefix}{block.value}")
+                    self._add_line(f"{prefix}{' '.join(block.value)}")
                 else:
                     self._add_line(prefix)
                     self._visit(block)
