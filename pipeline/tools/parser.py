@@ -331,7 +331,9 @@ class Parser:
             msg = f"Invalid admonition type: {tag}"
             raise NotImplementedError(msg)
 
-        if kind not in {"note", "warning", "info", "tip", "example"}:
+        kind = kind.lower()
+
+        if kind not in {"note", "warning", "info", "tip", "example", "note"}:
             msg = f"Unsupported admonition type: {kind}"
             raise NotImplementedError(msg)
 
