@@ -333,7 +333,7 @@ class Parser:
 
         kind = kind.lower()
 
-        if kind not in {"note", "warning", "info", "tip", "example", "note"}:
+        if kind not in {"note", "warning", "info", "tip", "example"}:
             msg = f"Unsupported admonition type: {kind}"
             raise NotImplementedError(msg)
 
@@ -423,12 +423,22 @@ class MintPrinter:
     def __init__(self) -> None:
         """Initialize the printer."""
         self.output: list[str] = []
+        self.indent_level: int = 0
 
     def print(self, node: Node) -> str:
         """Convert an AST node to Mintlify markdown string."""
         self.output = []
+        self.indent_level = 0
         self._visit(node)
         return "\n".join(self.output).rstrip()
+
+    def _add_line(self, line: str) -> None:
+        """Add a line with proper indentation."""
+        if line.strip():
+            indent = "  " * self.indent_level
+            self.output.append(f"{indent}{line}")
+        else:
+            self.output.append("")
 
     def _visit(self, node: Node) -> None:
         """Visit a node and dispatch to the appropriate handler."""
@@ -438,23 +448,23 @@ class MintPrinter:
 
     def _visit_generic(self, node: Node) -> None:
         """Generic visitor for unhandled nodes."""
-        self.output.append(f"<!-- Unhandled node: {type(node).__name__} -->")
+        self._add_line(f"<!-- Unhandled node: {type(node).__name__} -->")
 
     def _visit_document(self, node: Document) -> None:
         """Visit a document node."""
         for i, block in enumerate(node.blocks):
             if i > 0:
-                self.output.append("")
+                self._add_line("")
             self._visit(block)
 
     def _visit_heading(self, node: Heading) -> None:
         """Visit a heading node."""
         prefix = "#" * node.level
-        self.output.append(f"{prefix} {node.value}")
+        self._add_line(f"{prefix} {node.value}")
 
     def _visit_paragraph(self, node: Paragraph) -> None:
         """Visit a paragraph node."""
-        self.output.append(node.value)
+        self._add_line(node.value)
 
     def _visit_codeblock(self, node: CodeBlock) -> None:
         """Visit a code block node and format for Mintlify."""
@@ -476,14 +486,14 @@ class MintPrinter:
         else:
             fence_line = fence
 
-        self.output.append(fence_line)
+        self._add_line(fence_line)
 
         # Add the code content
         if node.content:
             for line in node.content.split("\n"):
-                self.output.append(line)
+                self._add_line(line)
 
-        self.output.append(fence)
+        self._add_line(fence)
 
     def _visit_unorderedlist(self, node: UnorderedList) -> None:
         """Visit an unordered list node."""
@@ -501,51 +511,40 @@ class MintPrinter:
             if i == 0:
                 # First block gets the list marker
                 if isinstance(block, Paragraph):
-                    self.output.append(f"{prefix}{block.value}")
+                    self._add_line(f"{prefix}{block.value}")
                 else:
-                    self.output.append(prefix)
+                    self._add_line(prefix)
                     self._visit(block)
             else:
                 # Subsequent blocks are indented
-                saved_output = self.output[:]
-                self.output = []
+                self.indent_level += 1
                 self._visit(block)
-                for line in self.output:
-                    saved_output.append(f"  {line}")
-                self.output = saved_output
+                self.indent_level -= 1
 
     def _visit_quoteblock(self, node: QuoteBlock) -> None:
         """Visit a quote block node."""
         for line in node.lines:
-            self.output.append(f"> {line}")
+            self._add_line(f"> {line}")
 
     def _visit_tabblock(self, node: TabBlock) -> None:
         """Visit a tab block node and convert to Mintlify <Tabs> format."""
-        self.output.append("<Tabs>")
+        self._add_line("<Tabs>")
 
+        self.indent_level += 1
         for tab in node.tabs:
-            self.output.append(f'  <Tab title="{tab.title}">')
+            self._add_line(f'<Tab title="{tab.title}">')
 
-            # Process tab content with proper indentation
-            saved_output = self.output[:]
-            self.output = []
-
+            self.indent_level += 1
             for i, block in enumerate(tab.blocks):
                 if i > 0:
-                    self.output.append("")
+                    self._add_line("")
                 self._visit(block)
+            self.indent_level -= 1
 
-            # Indent all tab content
-            for line in self.output:
-                if line.strip():
-                    saved_output.append(f"    {line}")
-                else:
-                    saved_output.append("")
+            self._add_line("</Tab>")
+        self.indent_level -= 1
 
-            self.output = saved_output
-            self.output.append("  </Tab>")
-
-        self.output.append("</Tabs>")
+        self._add_line("</Tabs>")
 
     def _visit_tab(self, node: Tab) -> None:
         """Visit a single tab node (handled by tabblock)."""
@@ -557,15 +556,17 @@ class MintPrinter:
         if node.tag == "???":
             # Then it's an Accordion (foldable)
             if node.title:
-                self.output.append(f'<Accordion title="{node.title}">')
+                self._add_line(f'<Accordion title="{node.title}">')
             else:
-                self.output.append("<Accordion>")
+                self._add_line("<Accordion>")
 
+            self.indent_level += 1
             for i, block in enumerate(node.blocks):
                 if i > 0:
-                    self.output.append("")
+                    self._add_line("")
                 self._visit(block)
-            self.output.append("</Accordion>")
+            self.indent_level -= 1
+            self._add_line("</Accordion>")
         elif node.tag == "!!!":
             kind_to_callout = {
                 "note": "Note",
@@ -580,15 +581,17 @@ class MintPrinter:
                 raise NotImplementedError(msg)
             callout = kind_to_callout[kind]
 
-            self.output.append(f'<Callout type="{callout}">')
+            self._add_line(f"<{callout}>")
+            self.indent_level += 1
             # as a bolded string
             if node.title:
-                self.output.append(f"**{node.title}**")
+                self._add_line(f"**{node.title}**")
             for i, block in enumerate(node.blocks):
                 if i > 0:
-                    self.output.append("")
+                    self._add_line("")
                 self._visit(block)
-            self.output.append("</Callout>")
+            self.indent_level -= 1
+            self._add_line(f"</{callout}>")
         else:
             raise NotImplementedError
 
