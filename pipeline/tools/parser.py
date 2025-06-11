@@ -223,13 +223,13 @@ class Parser:
     def parse(self) -> Document:
         """Parse the markdown text into a Document AST."""
         blocks: list[Node] = []
-        
+
         # Check for front matter at the beginning
         if not self.eof() and self.peek().strip() == "---":
             front_matter = self.parse_front_matter()
             if front_matter is not None:
                 blocks.append(front_matter)
-        
+
         while not self.eof():
             block = self.parse_block()
             if block is not None:
@@ -266,10 +266,10 @@ class Parser:
         """Parse YAML front matter block."""
         if not self.peek().strip() == "---":
             return None
-            
+
         start_ln = self.current + 1
         self.next_line()  # consume opening ---
-        
+
         content_lines: list[str] = []
         while not self.eof():
             line = self.peek()
@@ -278,12 +278,10 @@ class Parser:
                 break
             content_lines.append(line)
             self.next_line()
-        
+
         content = "\n".join(content_lines)
         return FrontMatter(
-            content=content,
-            start_line=start_ln,
-            limit_line=self.current + 1
+            content=content, start_line=start_ln, limit_line=self.current + 1
         )
 
     def parse_html_block(self) -> HTMLBlock:
@@ -291,21 +289,32 @@ class Parser:
         start_ln = self.current + 1
         lines: list[str] = []
         tag_stack: list[str] = []
-        
+
         while not self.eof():
             line = self.peek()
             lines.append(line)
             self.next_line()
-            
+
             # Find all HTML tags in this line
             for match in HTML_TAG_RE.finditer(line):
                 is_closing = bool(match.group("closing"))
                 tag_name = match.group("tag").lower()
                 is_self_closing = bool(match.group("self_closing")) or tag_name in {
-                    "area", "base", "br", "col", "embed", "hr", "img", "input", 
-                    "link", "meta", "source", "track", "wbr"
+                    "area",
+                    "base",
+                    "br",
+                    "col",
+                    "embed",
+                    "hr",
+                    "img",
+                    "input",
+                    "link",
+                    "meta",
+                    "source",
+                    "track",
+                    "wbr",
                 }
-                
+
                 if is_self_closing:
                     continue
                 elif is_closing:
@@ -315,16 +324,14 @@ class Parser:
                 else:
                     # Add opening tag to stack
                     tag_stack.append(tag_name)
-            
+
             # If we've closed all tags, we're done
             if not tag_stack:
                 break
-        
+
         content = "\n".join(lines)
         return HTMLBlock(
-            content=content,
-            start_line=start_ln,
-            limit_line=self.current + 1
+            content=content, start_line=start_ln, limit_line=self.current + 1
         )
 
     # -- individual block parsers ------------------------------------------
@@ -377,64 +384,76 @@ class Parser:
         while not self.eof() and marker_re.match(self.peek()):
             items.append(self._parse_list_item(marker_re))
         return items
-    
+
     def _parse_list_item(self, marker_re: re.Pattern[str]) -> ListItem:
         """Parse a single list item, including any indented content."""
         start_ln = self.current + 1
-        
+
         # Parse the first line of the list item
         line = self.peek()
         match = marker_re.match(line)
         if not match:
             raise ValueError("Expected list marker")
-        
+
         # Get the indentation level of the list marker
-        marker_indent = len(match.group("indent")) if "indent" in match.groupdict() else 0
+        marker_indent = (
+            len(match.group("indent")) if "indent" in match.groupdict() else 0
+        )
         text = marker_re.sub("", line, count=1).rstrip()
         self.next_line()
-        
+
         # Start with the main text as a paragraph
         blocks: list[Node] = []
         if text.strip():
-            blocks.append(Paragraph(value=[text], start_line=start_ln, limit_line=start_ln + 1))
-        
+            blocks.append(
+                Paragraph(value=[text], start_line=start_ln, limit_line=start_ln + 1)
+            )
+
         # Collect any indented content that belongs to this list item
         while not self.eof():
             line = self.peek()
-            
+
             # If line is empty, skip it but continue looking for indented content
             if not line.strip():
                 self.next_line()
                 continue
-            
+
             # Check if this line starts a new list item at the same level
             if marker_re.match(line):
-                new_marker_indent = len(marker_re.match(line).group("indent")) if "indent" in marker_re.match(line).groupdict() else 0
+                new_marker_indent = (
+                    len(marker_re.match(line).group("indent"))
+                    if "indent" in marker_re.match(line).groupdict()
+                    else 0
+                )
                 if new_marker_indent == marker_indent:
                     break  # This is a new list item at the same level
-            
+
             # Check if this line is indented more than the marker (belongs to this item)
             line_indent = len(line) - len(line.lstrip())
             min_required_indent = marker_indent + 4  # Standard markdown indentation
-            
+
             if line_indent >= min_required_indent:
                 # This line belongs to the current list item
                 # Collect all consecutive indented lines and parse them as a sub-document
                 indented_lines: list[str] = []
-                
+
                 while not self.eof():
                     line = self.peek()
                     if not line.strip():  # Empty line
                         indented_lines.append(line)
                         self.next_line()
                         continue
-                    
+
                     # Check if this starts a new list item at the same level
                     if marker_re.match(line):
-                        new_marker_indent = len(marker_re.match(line).group("indent")) if "indent" in marker_re.match(line).groupdict() else 0
+                        new_marker_indent = (
+                            len(marker_re.match(line).group("indent"))
+                            if "indent" in marker_re.match(line).groupdict()
+                            else 0
+                        )
                         if new_marker_indent == marker_indent:
                             break
-                    
+
                     line_indent = len(line) - len(line.lstrip())
                     if line_indent >= min_required_indent:
                         # Remove the base indentation to normalize the content
@@ -445,13 +464,13 @@ class Parser:
                         self.next_line()
                     else:
                         break
-                
+
                 # Parse the indented content as a sub-document
                 if indented_lines:
                     # Remove trailing empty lines
                     while indented_lines and not indented_lines[-1].strip():
                         indented_lines.pop()
-                    
+
                     if indented_lines:
                         sub_content = "\n".join(indented_lines)
                         sub_parser = Parser(sub_content)
@@ -461,7 +480,7 @@ class Parser:
             else:
                 # This line is not indented enough, so it doesn't belong to this list item
                 break
-        
+
         return ListItem(blocks=blocks, start_line=start_ln, limit_line=self.current + 1)
 
     def parse_unordered_list(self) -> UnorderedList:
@@ -524,10 +543,34 @@ class Parser:
         while not self.eof() and not self.peek().strip():
             self.next_line()
         body_lines: list[str] = []
-        while not self.eof() and (
-            self.peek().startswith("    ") or self.peek().startswith("\t")
-        ):
-            body_lines.append(self.next_line().lstrip())
+
+        # Collect all indented content, handling block boundaries properly
+        while not self.eof():
+            line = self.peek()
+
+            # If line is completely empty, include it and continue
+            if not line.strip():
+                body_lines.append(line)
+                self.next_line()
+                continue
+
+            # If line is not indented at all, we've reached the end of the admonition
+            if not (line.startswith("    ") or line.startswith("\t")):
+                break
+
+            # Remove the base indentation and add to body
+            if line.startswith("    "):
+                body_lines.append(line[4:])
+            elif line.startswith("\t"):
+                body_lines.append(line[1:])
+            else:
+                body_lines.append(line.lstrip())
+            self.next_line()
+
+        # Remove trailing empty lines
+        while body_lines and not body_lines[-1].strip():
+            body_lines.pop()
+
         inner = Parser("\n".join(body_lines)).parse()
         return Admonition(
             tag=tag,
@@ -555,16 +598,38 @@ class Parser:
             while not self.eof() and not self.peek().strip():
                 self.next_line()
             content: list[str] = []
-            while (
-                not self.eof()
-                and not TAB_HEADER_RE.match(self.peek())
-                and self.peek().strip() != ""
-            ):
-                # Accept content lines that are indented (Mintlify expects 4-sp)
-                if self.peek().startswith("    ") or self.peek().startswith("\t"):
-                    content.append(self.next_line().lstrip())
-                else:
+
+            # Collect all indented content, handling empty lines properly
+            while not self.eof():
+                line = self.peek()
+
+                # Check if this is the start of a new tab
+                if TAB_HEADER_RE.match(line):
                     break
+
+                # If line is completely empty, include it and continue
+                if not line.strip():
+                    content.append(line)
+                    self.next_line()
+                    continue
+
+                # If line is not indented at all, we've reached the end of this tab
+                if not (line.startswith("    ") or line.startswith("\t")):
+                    break
+
+                # Remove the base indentation and add to content
+                if line.startswith("    "):
+                    content.append(line[4:])
+                elif line.startswith("\t"):
+                    content.append(line[1:])
+                else:
+                    content.append(line.lstrip())
+                self.next_line()
+
+            # Remove trailing empty lines
+            while content and not content[-1].strip():
+                content.pop()
+
             inner = Parser("\n".join(content)).parse()
             tabs.append(
                 Tab(
@@ -587,9 +652,7 @@ class Parser:
                 break
             lines.append(line.strip())
             self.next_line()
-        return Paragraph(
-            value=lines, start_line=start_ln, limit_line=self.current + 1
-        )
+        return Paragraph(value=lines, start_line=start_ln, limit_line=self.current + 1)
 
 
 # ---------------------------------------------------------------------------
@@ -647,7 +710,11 @@ class MintPrinter:
 
     def _visit_paragraph(self, node: Paragraph) -> None:
         """Visit a paragraph node."""
-        self._add_line(" ".join(node.value))
+
+        for i, line in enumerate(node.value):
+            self._add_line(line.strip())
+            if i > 0:
+                self._add_line("\n")
 
     def _visit_codeblock(self, node: CodeBlock) -> None:
         """Visit a code block node and format for Mintlify."""
