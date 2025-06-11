@@ -163,6 +163,13 @@ class Admonition(Node):
     blocks: list[Node]
 
 
+@dataclass(kw_only=True)
+class FrontMatter(Node):
+    """YAML front matter block."""
+
+    content: str
+
+
 # ---------------------------------------------------------------------------
 # Parser implementation
 # ---------------------------------------------------------------------------
@@ -196,6 +203,13 @@ class Parser:
     def parse(self) -> Document:
         """Parse the markdown text into a Document AST."""
         blocks: list[Node] = []
+        
+        # Check for front matter at the beginning
+        if not self.eof() and self.peek().strip() == "---":
+            front_matter = self.parse_front_matter()
+            if front_matter is not None:
+                blocks.append(front_matter)
+        
         while not self.eof():
             block = self.parse_block()
             if block is not None:
@@ -225,6 +239,30 @@ class Parser:
         if line.startswith("==="):
             return self.parse_tab_block()
         return self.parse_paragraph()
+
+    def parse_front_matter(self) -> FrontMatter | None:
+        """Parse YAML front matter block."""
+        if not self.peek().strip() == "---":
+            return None
+            
+        start_ln = self.current + 1
+        self.next_line()  # consume opening ---
+        
+        content_lines: list[str] = []
+        while not self.eof():
+            line = self.peek()
+            if line.strip() == "---":
+                self.next_line()  # consume closing ---
+                break
+            content_lines.append(line)
+            self.next_line()
+        
+        content = "\n".join(content_lines)
+        return FrontMatter(
+            content=content,
+            start_line=start_ln,
+            limit_line=self.current + 1
+        )
 
     # -- individual block parsers ------------------------------------------
     def parse_code_block(self) -> CodeBlock:
@@ -598,6 +636,11 @@ class MintPrinter:
     def _visit_listitem(self, node: ListItem) -> None:
         """Visit a list item node (handled by list visitors)."""
         raise NotImplementedError
+
+    def _visit_frontmatter(self, node: FrontMatter) -> None:
+        """Visit a front matter node (ignored in output)."""
+        # Front matter is ignored in Mintlify output
+        pass
 
 
 def to_mint(markdown: str) -> str:
