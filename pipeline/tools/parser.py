@@ -197,6 +197,19 @@ class Parser:
     # Concrete block parsers
     # ------------------------------------------------------------------
 
+    def _parse_blocks_until_indent(self, min_indent: int) -> list[Node]:
+        """Parse blocks whose first token’s indent is *strictly greater*
+        than `min_indent`.  Stops as soon as we hit a shallower token or EOF.
+        """
+        blocks: list[Node] = []
+        while not self._check(TokenType.EOF) and (
+            self._token.indent > min_indent or self._token.type == TokenType.BLANK
+        ):
+            if self._match(TokenType.BLANK):
+                continue  # skip blank lines at this level
+            blocks.append(self._parse_block())
+        return blocks
+
     def _parse_front_matter(self) -> FrontMatter:
         """Parse YAML front-matter (--- … ---)."""
         open_token = self._advance()  # opening '---'
@@ -277,35 +290,26 @@ class Parser:
 
     def _parse_list_item(self, list_indent: int) -> ListItem:
         """Parse a single list item and its nested content."""
-        marker_token = self._advance()  # consume marker
+        marker_tok = self._advance()
         first_text = (
-            marker_token.value.split(maxsplit=1)[1] if " " in marker_token.value else ""
+            marker_tok.value.split(maxsplit=1)[1] if " " in marker_tok.value else ""
         )
 
-        nested_tokens: list[Token] = []
-        while self._token.indent > list_indent:
-            nested_tokens.append(self._advance())
-
-        nested_blocks: list[Node]
-        if nested_tokens:
-            nested_parser = Parser("\n".join(t.value for t in nested_tokens))
-            nested_blocks = nested_parser.parse().blocks
-        else:
-            nested_blocks = []
+        nested_blocks = self._parse_blocks_until_indent(list_indent)
 
         if first_text:
             nested_blocks.insert(
                 0,
                 Paragraph(
                     value=[first_text],
-                    start_line=marker_token.line,
-                    limit_line=marker_token.line + 1,
+                    start_line=marker_tok.line,
+                    limit_line=marker_tok.line + 1,
                 ),
             )
 
         return ListItem(
             blocks=nested_blocks,
-            start_line=marker_token.line,
+            start_line=marker_tok.line,
             limit_line=self._token.line,
         )
 
@@ -321,31 +325,19 @@ class Parser:
 
     def _parse_admonition(self) -> Admonition:
         """Parse !!! / ??? admonitions."""
-        header_token = self._advance()
-        tag, *tail = header_token.value.split(None, 2)
+        header_tok = self._advance()
+        tag, *tail = header_tok.value.split(None, 2)
         kind = tail[0].lower() if tail else "note"
         title = tail[1].strip('"') if len(tail) == 2 else ""
 
-        body_token_buffer: list[Token] = []
-        while (
-            self._token.indent > header_token.indent
-            or self._token.type == TokenType.BLANK
-        ):
-            body_token_buffer.append(self._advance())
-
-        body_blocks: list[Node]
-        if body_token_buffer:
-            body_parser = Parser("\n".join(t.value for t in body_token_buffer))
-            body_blocks = body_parser.parse().blocks
-        else:
-            body_blocks = []
+        body_blocks = self._parse_blocks_until_indent(header_tok.indent)
 
         return Admonition(
             tag=tag,
             kind=kind,
             title=title,
             blocks=body_blocks,
-            start_line=header_token.line,
+            start_line=header_tok.line,
             limit_line=self._token.line,
         )
 
@@ -353,29 +345,20 @@ class Parser:
         """Parse === "Title" tab blocks."""
         tabs: list[Tab] = []
         while self._check(TokenType.TAB_HEADER):
-            header_token = self._advance()
-            title = header_token.value.split('"', 1)[1].rsplit('"', 1)[0]
+            header_tok = self._advance()
+            title = header_tok.value.split('"', 1)[1].rsplit('"', 1)[0]
 
-            tab_body_tokens: list[Token] = []
-            while (
-                self._token.indent > header_token.indent
-                or self._token.type == TokenType.BLANK
-            ):
-                tab_body_tokens.append(self._advance())
+            inner_blocks = self._parse_blocks_until_indent(header_tok.indent)
 
-            inner_blocks = (
-                Parser("\n".join(t.value for t in tab_body_tokens)).parse().blocks
-                if tab_body_tokens
-                else []
-            )
             tabs.append(
                 Tab(
                     title=title,
                     blocks=inner_blocks,
-                    start_line=header_token.line,
+                    start_line=header_tok.line,
                     limit_line=self._token.line,
                 )
             )
+
         return TabBlock(
             tabs=tabs, start_line=tabs[0].start_line, limit_line=tabs[-1].limit_line
         )

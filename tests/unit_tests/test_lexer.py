@@ -80,3 +80,37 @@ def test_admonition() -> None:
     assert tokens[0].type == TokenType.ADMONITION
     assert tokens[0].value == '??? note "Important Note"'
     assert tokens[1].type == TokenType.EOF
+
+
+CODE_IN_TAB = """\
+=== "Example Tab"
+
+    ```python 
+    def test():
+        print("Hello, World!")
+    ```
+"""
+
+
+def test_indentation_in_tab() -> None:
+    """Test indentation is handled correctly inside a code block in a tab."""
+    tokens = list(lex(CODE_IN_TAB))
+
+    types = [
+        TokenType.TAB_HEADER,
+        TokenType.BLANK,
+        TokenType.FENCE,
+        TokenType.TEXT,
+        TokenType.TEXT,
+        TokenType.FENCE,
+        TokenType.EOF,
+    ]
+
+    assert [token.type for token in tokens] == types
+
+    # Check indents
+    assert tokens[0].indent == 0
+    assert tokens[1].indent == 0
+    assert tokens[2].indent == 4  # Fence starts with 4 spaces
+    assert tokens[3].indent == 4  # Same indent for code line
+    assert tokens[4].indent == 8  # Indent for the print
