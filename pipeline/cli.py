@@ -71,9 +71,19 @@ def migrate_command(args) -> None:  # noqa: ANN001
             file.write(mint_markdown)
         logger.info("Output written to %s", args.output_file)
     else:
-        with Path(args.path).open("w", encoding="utf-8") as file:
+        # New output path should have an `.mdx` extension.
+        # If extension is different, we delete the old file
+        if extension != ".mdx":
+            args.path.unlink(missing_ok=True)
+            logger.info("Deleted old file %s", args.path)
+
+        # Change extension to .mdx
+        new_path = args.path.with_suffix(".mdx")
+
+        with new_path.open("w", encoding="utf-8") as file:
             file.write(mint_markdown)
-        logger.info("File %s updated in place", args.path)
+
+        logger.info("File %s updated", new_path)
 
 
 def main() -> None:
