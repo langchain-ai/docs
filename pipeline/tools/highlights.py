@@ -1,3 +1,5 @@
+"""Support code blocks with highlight comments in Markdown."""
+
 import re
 
 
@@ -75,5 +77,4 @@ def highlight_code_blocks(markdown: str) -> str:
         )
 
     # Replace all code blocks in the markdown
-    markdown = code_block_pattern.sub(replace_highlight_comments, markdown)
-    return markdown
+    return code_block_pattern.sub(replace_highlight_comments, markdown)
