@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
-from pipeline.tools.links import move_file_with_link_updates, drop_suffix_from_links
+from pipeline.tools.links import drop_suffix_from_links, move_file_with_link_updates
 from pipeline.tools.parser import to_mint
 
 
@@ -38,7 +38,7 @@ def migrate_command(args) -> None:  # noqa: ANN001
     logger.info("Converting %s to mintlify format...", args.path)
     content = Path(args.path).read_text()
     mint_markdown = to_mint(content)
-    _,  mint_markdown = drop_suffix_from_links(mint_markdown)
+    _, mint_markdown = drop_suffix_from_links(mint_markdown)
 
     if args.dry_run:
         # Print the converted markdown to stdout

@@ -580,4 +580,4 @@ def drop_suffix_from_links(
     return (modified, new_source) if modified else (False, md_source)
 
 
-__all__ = ["move_file_with_link_updates", "drop_suffix_from_links"]
+__all__ = ["drop_suffix_from_links", "move_file_with_link_updates"]

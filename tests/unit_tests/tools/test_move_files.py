@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pipeline.tools.move_files import (
+from pipeline.tools.links import (
     _find_git_root,
     _rel_to_docs_root,
     _rewrite_links,
