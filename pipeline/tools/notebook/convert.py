@@ -161,10 +161,10 @@ def _has_output(source: str) -> bool:
 def _convert_links_in_markdown(markdown: str) -> str:
     """Convert links present in notebook markdown cells to standardized format.
 
-    We want to update markdown links code cells by linking to markdown
+    We want to update Markdown links code cells by linking to markdown
     files rather than assuming that the link is to the finalized HTML.
 
-    This code is needed temporarily since the markdown links that are present
+    This code is needed temporarily since the Markdown links that are present
     in ipython notebooks do not follow the same conventions as regular markdown
     files in mkdocs (which should link to a .md file).
     """
@@ -184,7 +184,7 @@ def _convert_links_in_markdown(markdown: str) -> str:
         """Logic will correct the link format used in ipython notebooks
 
         Ipython notebooks were being converted directly into HTML links
-        instead of markdown links that retain the markdown extension.
+        instead of Markdown links that retain the markdown extension.
 
         It needs to handle the following cases:
         - optional fragments (e.g., `#section`)
@@ -243,7 +243,7 @@ class EscapePreprocessor(Preprocessor):
                 # Old logic is to convert ipynb links to HTML links
                 cell.source = re.sub(
                     r"(?<!!)\[([^\]]*)\]\((?![^\)]*//)([^)]*)(?:\.ipynb)?\)",
-                    r'<a href="\2">\1</a>',
+                    r'[\1](\2)',
                     cell.source,
                 )
             else:
@@ -305,8 +305,9 @@ class EscapePreprocessor(Preprocessor):
 
 
 class ExtractAttachmentsPreprocessor(Preprocessor):
-    """Extracts all of the outputs from the notebook file.  The extracted
-    outputs are returned in the 'resources' dictionary.
+    """Extracts all the outputs from the notebook file.
+
+    The extracted outputs are returned in the 'resources' dictionary.
     """
 
     def preprocess_cell(self, cell, resources, cell_index):
@@ -327,7 +328,7 @@ class ExtractAttachmentsPreprocessor(Preprocessor):
         if not isinstance(resources["outputs"], dict):
             resources["outputs"] = {}
 
-        # Loop through all of the attachments in the cell
+        # Loop through all the attachments in the cell
         for name, attach in cell.get("attachments", {}).items():
             for mime, data in attach.items():
                 if mime not in {
@@ -362,10 +363,11 @@ exporter = MarkdownExporter(
 
 
 def convert_notebook(
-    notebook_path: str,
-    mode: Literal["markdown", "exec"] = "markdown",
+    path: str,
+    mode: Literal["markdown"] = "markdown",
 ) -> str:
-    with open(notebook_path) as f:
+    """Convert a Jupyter notebook to markdown format."""
+    with open(path) as f:
         nb = nbformat.read(f, as_version=4)
 
     nb.metadata.mode = mode

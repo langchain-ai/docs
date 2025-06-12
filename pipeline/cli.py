@@ -13,6 +13,7 @@ from pathlib import Path
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
 from pipeline.tools.move_files import move_file_with_link_updates
+from pipeline.tools.notebook.convert import convert_notebook
 from pipeline.tools.parser import to_mint
 
 
@@ -36,8 +37,30 @@ def mv_command(args) -> None:  # noqa: ANN001
 def migrate_command(args) -> None:  # noqa: ANN001
     """Handle the migrate command for converting markdown to mintlify format."""
     logger.info("Converting %s to mintlify format...", args.path)
+
+    # Determine if the path is a file or a directory
+    if not args.path.exists():
+        logger.exception("Path %s does not exist", args.path)
+        sys.exit(1)
+
+    if not args.path.is_file():
+        logger.exception("Path %s is not a file", args.path)
+        sys.exit(1)
+
+    # Check the file extension to see if it's a markdown file
+
+    extension = args.path.suffix.lower()
+
     content = Path(args.path).read_text()
-    mint_markdown = to_mint(content)
+
+    if extension in {".md", ".markdown"}:
+        mint_markdown = to_mint(content)
+    elif extension == ".ipynb":
+        markdown = convert_notebook(args.path)
+        mint_markdown = to_mint(markdown)
+    else:
+        logger.exception("Unsupported file extension %s", extension)
+        sys.exit(1)
 
     if args.dry_run:
         # Print the converted markdown to stdout
