@@ -537,4 +537,47 @@ def move_file_with_link_updates(  # noqa: C901, PLR0912
     return changes
 
 
-__all__ = ["move_file_with_link_updates"]
+def drop_suffix_from_links(
+    md_source: str,
+    *,
+    strip_suffixes: tuple[str, ...] = (".md", ".mdx"),
+) -> tuple[bool, str]:
+    """Drop specific suffixes from relative links in Markdown text.
+
+    Args:
+        md_source: The Markdown source text to process.
+        strip_suffixes: A tuple of suffixes to remove from links.
+
+    Returns:
+        2-tuple (was_modified, new_source)
+    """
+    changes: list[tuple[str, str]] = []
+    modified = False
+
+    def _replacer(match: re.Match[str]) -> str:
+        nonlocal modified
+        label, url, anchor = match.groups()
+        anchor = anchor or ""
+
+        # Ignore absolute, external, mailto, or in-page-anchor links
+        if url.startswith(("http://", "https://", "mailto:", "/")) or (
+            not url and anchor
+        ):
+            return match.group(0)
+
+        # Remove any recognised suffix found at the *end* of the URL
+        for suffix in strip_suffixes:
+            if url.endswith(suffix):
+                new_url = url[: -len(suffix)]
+                old_full, new_full = url + anchor, new_url + anchor
+                changes.append((old_full, new_full))
+                modified = True
+                return f"{label}({new_full})"
+
+        return match.group(0)
+
+    new_source = _LINK_PATTERN.sub(_replacer, md_source)
+    return (modified, new_source) if modified else (False, md_source)
+
+
+__all__ = ["move_file_with_link_updates", "drop_suffix_from_links"]
