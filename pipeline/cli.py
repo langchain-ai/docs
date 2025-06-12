@@ -13,6 +13,7 @@ from pathlib import Path
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
 from pipeline.tools.move_files import move_file_with_link_updates
+from pipeline.tools.parser import to_mint
 
 
 def setup_logging() -> None:
@@ -34,9 +35,22 @@ def mv_command(args) -> None:  # noqa: ANN001
 
 def migrate_command(args) -> None:  # noqa: ANN001
     """Handle the migrate command for converting markdown to mintlify format."""
-    # Placeholder implementation
     logger.info("Converting %s to mintlify format...", args.path)
-    logger.info("Migrate command is not yet implemented - placeholder only")
+    content = Path(args.path).read_text()
+    mint_markdown = to_mint(content)
+
+    if args.dry_run:
+        # Print the converted markdown to stdout
+        print(mint_markdown)  # noqa: T201 (OK to use print)
+    elif args.output_file:
+        # Using open instead of Pathlib
+        with Path(args.output_file).open("w", encoding="utf-8") as file:
+            file.write(mint_markdown)
+        logger.info("Output written to %s", args.output_file)
+    else:
+        with Path(args.path).open("w", encoding="utf-8") as file:
+            file.write(mint_markdown)
+        logger.info("File %s updated in place", args.path)
 
 
 def main() -> None:
@@ -110,6 +124,16 @@ def main() -> None:
         "path",
         type=Path,
         help="Path to the markdown file to convert",
+    )
+    migrate_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print converted markdown to stdout instead of writing to file",
+    )
+    migrate_parser.add_argument(
+        "--output-file",
+        type=Path,
+        help="Output file path (if not provided, updates file in place)",
     )
     migrate_parser.set_defaults(func=migrate_command)
 
