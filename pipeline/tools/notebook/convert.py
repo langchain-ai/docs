@@ -1,6 +1,7 @@
 import ast
 import os
 import re
+from pathlib import Path
 from typing import Literal
 
 import nbformat
@@ -243,7 +244,7 @@ class EscapePreprocessor(Preprocessor):
                 # Old logic is to convert ipynb links to HTML links
                 cell.source = re.sub(
                     r"(?<!!)\[([^\]]*)\]\((?![^\)]*//)([^)]*)(?:\.ipynb)?\)",
-                    r'[\1](\2)',
+                    r"[\1](\2)",
                     cell.source,
                 )
             else:
@@ -312,15 +313,15 @@ class ExtractAttachmentsPreprocessor(Preprocessor):
 
     def preprocess_cell(self, cell, resources, cell_index):
         """Apply a transformation on each cell,
-        Parameters
-        ----------
-        cell : NotebookNode cell
-            Notebook cell being processed
-        resources : dictionary
-            Additional resources used in the conversion process.  Allows
-            preprocessors to pass variables into the Jinja engine.
-        cell_index : int
-            Index of the cell being processed (see base.py)
+
+        Args:
+            cell: NotebookNode cell
+                Notebook cell being processed
+            resources: dictionary
+                Additional resources used in the conversion process.  Allows
+                preprocessors to pass variables into the Jinja engine.
+            cell_index: int
+                Index of the cell being processed (see base.py)
         """
         # Get files directory if it has been specified
 
@@ -367,7 +368,7 @@ def convert_notebook(
     mode: Literal["markdown"] = "markdown",
 ) -> str:
     """Convert a Jupyter notebook to markdown format."""
-    with open(path) as f:
+    with Path(path).open() as f:
         nb = nbformat.read(f, as_version=4)
 
     nb.metadata.mode = mode
