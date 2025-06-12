@@ -367,7 +367,7 @@ def convert_notebook(
     path: Path,
     mode: Literal["markdown"] = "markdown",
 ) -> str:
-    """Convert a Jupyter notebook to markdown format."""
+    """Convert a Jupyter notebook to Markdown format."""
     with path.open() as f:
         nb = nbformat.read(f, as_version=4)
 
