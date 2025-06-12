@@ -85,7 +85,7 @@ def test_admonition() -> None:
 CODE_IN_TAB = """\
 === "Example Tab"
 
-    ```python 
+    ```python
     def test():
         print("Hello, World!")
     ```

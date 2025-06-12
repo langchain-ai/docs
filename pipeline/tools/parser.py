@@ -11,10 +11,13 @@ indentation and other nuances of Markdown syntax.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import typing
 from dataclasses import dataclass
 
 from pipeline.tools.lexer import Token, TokenType, lex
+
+if typing.TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @dataclass(kw_only=True)
@@ -198,9 +201,7 @@ class Parser:
     # ------------------------------------------------------------------
 
     def _parse_blocks_until_indent(self, min_indent: int) -> list[Node]:
-        """Parse blocks whose first token’s indent is *strictly greater*
-        than `min_indent`.  Stops as soon as we hit a shallower token or EOF.
-        """
+        """Parse blocks into a sequence until we hit a shallower indent."""
         blocks: list[Node] = []
         while not self._check(TokenType.EOF) and (
             self._token.indent > min_indent or self._token.type == TokenType.BLANK
@@ -239,7 +240,6 @@ class Parser:
         open_token = self._advance()
         fence_body = open_token.value[3:].strip()
         language, meta = (fence_body.split(None, 1) + [""])[:2]
-        language = language or None
 
         # All lines that belong to this fenced block will have an
         # indent *at least* as big as the opening fence.  Everything
