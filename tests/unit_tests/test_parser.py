@@ -75,7 +75,7 @@ EXAMPLE_ADMONITION_BLANK = """\
 EXPECTED_ADMONITION_BLANK = """\
 <Accordion title="Example Title">
   Paragraph 1
-
+  
   Paragraph 2
 </Accordion>
 """
