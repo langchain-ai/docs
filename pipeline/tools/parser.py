@@ -19,15 +19,15 @@ from pipeline.tools.lexer import Token, TokenType, lex
 
 @dataclass(kw_only=True)
 class Node:
-    """Base‑class for all AST nodes."""
+    """Base-class for all AST nodes."""
 
-    start_line: int  #: First source line (1‑based, inclusive).
+    start_line: int  #: First source line (1-based, inclusive).
     limit_line: int  #: Line *after* the last source line (exclusive).
 
 
 @dataclass(kw_only=True)
 class Document(Node):
-    """Root node that stores top‑level blocks."""
+    """Root node that stores top-level blocks."""
 
     blocks: list[Node]
 
@@ -65,7 +65,7 @@ class ListItem(Node):
 
 @dataclass(kw_only=True)
 class UnorderedList(Node):
-    """Bullet list (‑, +, *)."""
+    """Bullet list (-, +, *)."""
 
     items: list[ListItem]
 
@@ -111,7 +111,7 @@ class Admonition(Node):
 
 @dataclass(kw_only=True)
 class FrontMatter(Node):
-    """YAML front‑matter between --- delimiters."""
+    """YAML front-matter between --- delimiters."""
 
     content: str
 
@@ -124,7 +124,7 @@ class HTMLBlock(Node):
 
 
 class Parser:
-    """Recursive‑descent parser that consumes tokens and builds an AST."""
+    """Recursive-descent parser that consumes tokens and builds an AST."""
 
     def __init__(self, source: str) -> None:
         """Create a parser.
@@ -133,7 +133,7 @@ class Parser:
             source: Full Markdown text.
         """
         self._tokens: Iterator[Token] = iter(lex(source))
-        self._token: Token = next(self._tokens)  # current look‑ahead
+        self._token: Token = next(self._tokens)  # current look-ahead
 
     def parse(self) -> Document:
         """Parse *source* and return an AST root."""
@@ -195,7 +195,7 @@ class Parser:
     # ------------------------------------------------------------------
 
     def _parse_front_matter(self) -> FrontMatter:
-        """Parse YAML front‑matter (--- … ---)."""
+        """Parse YAML front-matter (--- … ---)."""
         open_token = self._advance()  # opening '---'
         content_lines: list[str] = []
         while not self._check(TokenType.FRONT_MATTER):
@@ -358,7 +358,7 @@ class Parser:
         )
 
     def _parse_html_block(self) -> HTMLBlock:
-        """Return a single‑line HTML block verbatim."""
+        """Return a single-line HTML block verbatim."""
         token = self._advance()
         return HTMLBlock(
             content=token.value, start_line=token.line, limit_line=token.line + 1
