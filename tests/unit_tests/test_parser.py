@@ -89,6 +89,7 @@ def test_example_admonition_with_blank_line() -> None:
 INPUT_FRONT_MATTER = """\
 ---
 title: Example Document
+other_field: value
 ---
 # Example Heading
 This is a simple document with front matter.
@@ -97,12 +98,9 @@ This is a simple document with front matter.
 EXPECTED_FRONT_MATTER = """\
 ---
 title: Example Document
-
+other_field: value
 ---
-
-
 # Example Heading
-
 This is a simple document with front matter.
 """
 
@@ -317,3 +315,4 @@ def test_long_code_block() -> None:
     assert isinstance(first_block, CodeBlock)
     assert first_block.language == "python"
     assert first_block.content == "def foo():\n    x = 1\n    \n    y = 2"
+
