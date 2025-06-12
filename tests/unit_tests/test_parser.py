@@ -78,7 +78,7 @@ EXPECTED_ADMONITION_BLANK = """\
   
   Paragraph 2
 </Accordion>
-"""
+"""  # noqa: W293
 
 
 def test_example_admonition_with_blank_line() -> None:
