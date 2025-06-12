@@ -169,6 +169,9 @@ class DocumentationBuilder:
             logger.info("Converted YAML to JSON: %s", relative_path)
         # For other files, copy directly if supported
         elif file_path.suffix.lower() in self.copy_extensions:
+            # if the file is a .md file, we'll rename it to .mdx
+            if file_path.suffix.lower() == ".md":
+                output_path = output_path.with_suffix(".mdx")
             shutil.copy2(file_path, output_path)
             logger.info("Copied: %s", relative_path)
         else:
@@ -206,6 +209,8 @@ class DocumentationBuilder:
             return True
         # Copy other supported files directly
         if file_path.suffix.lower() in self.copy_extensions:
+            if file_path.suffix.lower() == ".md":
+                output_path = output_path.with_suffix(".mdx")
             shutil.copy2(file_path, output_path)
             return True
         return False
