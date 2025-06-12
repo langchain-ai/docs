@@ -364,11 +364,11 @@ exporter = MarkdownExporter(
 
 
 def convert_notebook(
-    path: str,
+    path: Path,
     mode: Literal["markdown"] = "markdown",
 ) -> str:
     """Convert a Jupyter notebook to markdown format."""
-    with Path(path).open() as f:
+    with path.open() as f:
         nb = nbformat.read(f, as_version=4)
 
     nb.metadata.mode = mode

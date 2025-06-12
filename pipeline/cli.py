@@ -10,6 +10,8 @@ import logging
 import sys
 from pathlib import Path
 
+from tqdm import tqdm
+
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
 from pipeline.tools.links import drop_suffix_from_links, move_file_with_link_updates
@@ -34,61 +36,123 @@ def mv_command(args) -> None:  # noqa: ANN001
     move_file_with_link_updates(args.old_path, args.new_path, dry_run=args.dry_run)
 
 
-def migrate_command(args) -> None:  # noqa: ANN001
-    """Handle the migrate command for converting markdown to mintlify format."""
-    logger.info("Converting %s to mintlify format...", args.path)
+def _find_files_to_migrate(input_path: Path) -> list[Path]:
+    """Find all .ipynb and .md files in the given path.
 
-    # Determine if the path is a file or a directory
-    if not args.path.exists():
-        logger.exception("Path %s does not exist", args.path)
-        sys.exit(1)
+    Args:
+        input_path: Path to file or directory to search
 
-    if not args.path.is_file():
-        logger.exception("Path %s is not a file", args.path)
-        sys.exit(1)
+    Returns:
+        List of Path objects for files to migrate
+    """
+    if input_path.is_file():
+        return [input_path]
 
-    # Check the file extension to see if it's a markdown file
+    # Recursively find all .ipynb and .md files
+    files: list[Path] = []
+    for pattern in ["**/*.ipynb", "**/*.md", "**/*.markdown"]:
+        files.extend(input_path.glob(pattern))
 
-    extension = args.path.suffix.lower()
+    return sorted(files)
 
-    content = Path(args.path).read_text()
+
+def _process_single_file(file_path: Path, output_path: Path, *, dry_run: bool) -> None:
+    """Process a single file for migration.
+
+    Args:
+        file_path: Input file path
+        output_path: Output file path
+        dry_run: Whether to print to stdout instead of writing
+    """
+    extension = file_path.suffix.lower()
+    content = file_path.read_text()
 
     if extension in {".md", ".markdown"}:
         mint_markdown = to_mint(content)
     elif extension == ".ipynb":
-        markdown = convert_notebook(args.path)
+        markdown = convert_notebook(file_path)
         mint_markdown = to_mint(markdown)
     else:
-        logger.exception("Unsupported file extension %s", extension)
-        sys.exit(1)
+        logger.warning(
+            "Skipping unsupported file extension %s: %s", extension, file_path
+        )
+        return
 
     _, mint_markdown = drop_suffix_from_links(mint_markdown)
 
-    if args.dry_run:
+    if dry_run:
         # Print the converted markdown to stdout
+        print(f"=== {file_path} ===")  # noqa: T201 (OK to use print)
         print(mint_markdown)  # noqa: T201 (OK to use print)
-    elif args.output_file:
-        # Using open instead of Pathlib
-        with Path(args.output_file).open("w", encoding="utf-8") as file:
-            file.write(mint_markdown)
-        logger.info("Output written to %s", args.output_file)
+        print()  # noqa: T201 (OK to use print)
     else:
-        # For now, we'll keep the .md extension, so we can see side by side changes
-        # for md files!
-        new_extension = ".md"  # .mdx
+        # Ensure output directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # New output path should have an `.mdx` extension.
-        # If extension is different, we delete the old file
-        if extension != new_extension:
-            args.path.unlink(missing_ok=True)
-            logger.info("Deleted old file %s", args.path)
-
-        new_path = args.path.with_suffix(new_extension)
-
-        with new_path.open("w", encoding="utf-8") as file:
+        # Write the converted content
+        with output_path.open("w", encoding="utf-8") as file:
             file.write(mint_markdown)
 
-        logger.info("File %s updated", new_path)
+        logger.info("Converted %s -> %s", file_path, output_path)
+
+
+def migrate_command(args) -> None:  # noqa: ANN001
+    """Handle the migrate command for converting markdown to mintlify format."""
+    input_path = args.path
+
+    # Determine if the path is a file or a directory
+    if not input_path.exists():
+        logger.exception("Path %s does not exist", input_path)
+        sys.exit(1)
+
+    # Find all files to migrate
+    files_to_migrate = _find_files_to_migrate(input_path)
+
+    if not files_to_migrate:
+        logger.info("No .ipynb or .md files found in %s", input_path)
+        return
+
+    if input_path.is_dir() and not args.output.exists():
+        # Create output directory if it doesn't exist
+        args.output.mkdir(parents=True, exist_ok=True)
+
+    # Process multiple files with progress bar
+    if len(files_to_migrate) > 1:
+        logger.info("Processing %d files...", len(files_to_migrate))
+
+    with tqdm(
+        files_to_migrate, desc="Migrating files", disable=len(files_to_migrate) == 1
+    ) as pbar:
+        for file_path in pbar:
+            pbar.set_description(f"Processing {file_path.name}")
+
+            if args.output:
+                # Calculate relative path from input to maintain directory structure
+                if input_path.is_dir():
+                    rel_path = file_path.relative_to(input_path)
+                    output_path = args.output / rel_path
+                    output_path = output_path.with_suffix(".md")
+                else:
+                    # Single file case
+                    output_path = args.output
+            # In-place update
+            elif file_path.suffix.lower() == ".ipynb":
+                # Convert .ipynb to .md
+                output_path = file_path.with_suffix(".md")
+            else:
+                # Keep .md files as .md
+                output_path = file_path
+
+            _process_single_file(file_path, output_path, dry_run=args.dry_run)
+
+            # Delete original file if needed (for .ipynb -> .md conversion)
+            if (
+                not args.dry_run
+                and not args.output
+                and file_path.suffix.lower() == ".ipynb"
+            ):
+                file_path.unlink(missing_ok=True)
+                logger.info("Deleted original file %s", file_path)
 
 
 def main() -> None:
@@ -156,12 +220,12 @@ def main() -> None:
     # Migrate command
     migrate_parser = subparsers.add_parser(
         "migrate",
-        help="Convert markdown file to mintlify format",
+        help="Convert markdown files or folders to mintlify format",
     )
     migrate_parser.add_argument(
         "path",
         type=Path,
-        help="Path to the markdown file to convert",
+        help="Path to the file or folder to convert",
     )
     migrate_parser.add_argument(
         "--dry-run",
@@ -169,9 +233,9 @@ def main() -> None:
         help="Print converted markdown to stdout instead of writing to file",
     )
     migrate_parser.add_argument(
-        "--output-file",
+        "--output",
         type=Path,
-        help="Output file path (if not provided, updates file in place)",
+        help="Output file or folder path (if not provided, updates files in place)",
     )
     migrate_parser.set_defaults(func=migrate_command)
 
