@@ -122,7 +122,7 @@ def example():
     x = 2
     
     y = 3
-"""
+"""  # noqa: W293
 
 
 def test_lex_code_with_blank_lines() -> None:

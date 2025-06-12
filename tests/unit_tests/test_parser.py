@@ -283,7 +283,7 @@ INPUT_CODE_FENCE = """\
 def example_function():
     print("This is an example function.")
 ```
-"""
+"""  # noqa: W291
 
 EXPECTED_CODE_FENCE = """\
 ```
@@ -305,7 +305,7 @@ def foo():
     
     y = 2
 ```
-"""
+"""  # noqa: W293
 
 
 def test_long_code_block() -> None:
@@ -315,4 +315,3 @@ def test_long_code_block() -> None:
     assert isinstance(first_block, CodeBlock)
     assert first_block.language == "python"
     assert first_block.content == "def foo():\n    x = 1\n    \n    y = 2"
-
