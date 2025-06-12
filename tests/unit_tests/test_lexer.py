@@ -114,3 +114,36 @@ def test_indentation_in_tab() -> None:
     assert tokens[2].indent == 4  # Fence starts with 4 spaces
     assert tokens[3].indent == 4  # Same indent for code line
     assert tokens[4].indent == 8  # Indent for the print
+
+
+CODEBLOCK_WITH_BLANK_LINES = """\
+```python
+def example():
+    x = 2
+    
+    y = 3
+"""
+
+
+def test_lex_code_with_blank_lines() -> None:
+    """Test lexing a code block with blank lines."""
+    tokens = list(lex(CODEBLOCK_WITH_BLANK_LINES))
+
+    types = [
+        TokenType.FENCE,
+        TokenType.TEXT,
+        TokenType.TEXT,
+        TokenType.BLANK,
+        TokenType.TEXT,
+        TokenType.EOF,
+    ]
+
+    assert [token.type for token in tokens] == types
+
+    # Check indents
+    assert tokens[0].indent == 0  # Fence starts with no indent
+    assert tokens[1].indent == 0  # Function definition
+    assert tokens[2].indent == 4  # Assignment line
+    # We want to check that the ident on the blank line is preserved correctly
+    assert tokens[3].indent == 4  # Blank line
+    assert tokens[4].indent == 4  # Second assignment line

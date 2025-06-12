@@ -1,6 +1,7 @@
 """Tests for the markdown parser."""
 
 from pipeline.tools.parser import (
+    CodeBlock,
     Document,
     Heading,
     Paragraph,
@@ -297,3 +298,22 @@ def example_function():
 def test_code_fence() -> None:
     """Test parsing a code fence."""
     assert to_mint(INPUT_CODE_FENCE) == EXPECTED_CODE_FENCE
+
+
+INPUT_CODE_BLOCK_WITH_BLANK_LINE = """\
+```python
+def foo():
+    x = 1
+    
+    y = 2
+```
+"""
+
+
+def test_long_code_block() -> None:
+    """Test parsing a long code block."""
+    ast = Parser(INPUT_CODE_BLOCK_WITH_BLANK_LINE).parse()
+    first_block = ast.blocks[0]
+    assert isinstance(first_block, CodeBlock)
+    assert first_block.language == "python"
+    assert first_block.content == "def foo():\n    x = 1\n    \n    y = 2"

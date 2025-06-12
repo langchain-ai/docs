@@ -256,11 +256,6 @@ class Parser:
         body_lines: list[str] = []
         while not self._check(TokenType.FENCE):
             tok = self._advance()
-
-            # Blank tokens keep the line empty
-            if tok.type == TokenType.BLANK:
-                body_lines.append("")
-
             # Preserve **relative** indentation of the code block
             rel_ident = max(0, tok.indent - fence_indent)
             body_lines.append(" " * rel_ident + tok.value)
@@ -424,11 +419,8 @@ class MintPrinter:
 
     def _add_line(self, line: str) -> None:
         """Add a line with proper indentation."""
-        if line.strip():
-            indent = "  " * self.indent_level
-            self.output.append(f"{indent}{line}")
-        else:
-            self.output.append("")
+        indent = "  " * self.indent_level
+        self.output.append(f"{indent}{line}")
 
     def _visit(self, node: Node) -> None:
         """Visit a node and dispatch to the appropriate handler."""
