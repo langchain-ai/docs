@@ -551,6 +551,7 @@ class MintPrinter:
                 "info": "Info",
                 "tip": "Tip",
                 "danger": "Danger",
+                "important": "Warning",
             }
             kind = node.kind.lower()
             if kind not in kind_to_callout:
@@ -592,6 +593,8 @@ class MintPrinter:
 
 def to_mint(markdown: str) -> str:
     """Convenience function to print an AST node as Mintlify markdown."""
+    if not markdown:
+        return ""
     parser = Parser(markdown)
     doc = parser.parse()
     printer = MintPrinter()

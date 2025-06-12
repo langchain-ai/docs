@@ -112,7 +112,7 @@ def migrate_command(args) -> None:  # noqa: ANN001
         logger.info("No .ipynb or .md files found in %s", input_path)
         return
 
-    if input_path.is_dir() and not args.output.exists():
+    if input_path.is_dir() and args.output and not args.output.exists():
         # Create output directory if it doesn't exist
         args.output.mkdir(parents=True, exist_ok=True)
 
