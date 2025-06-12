@@ -17,8 +17,8 @@ class TokenType(Enum):
     """All token kinds recognised by the Markdown lexer."""
 
     HEADING = auto()  # #, ##, ### …
-    FENCE = auto()  # ```lang [meta]
-    FENCE_END = auto()  # ```
+    FENCE = auto()  # ```lang [meta] or fence close
+    FRONT_MATTER = auto()  # ---
     UL_MARKER = auto()  # -, +, *
     OL_MARKER = auto()  # 1.  2)  etc.
     BLOCKQUOTE = auto()  # >

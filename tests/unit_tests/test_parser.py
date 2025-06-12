@@ -45,7 +45,6 @@ def test_parse_simple_paragraph() -> None:
 
 MARKDOWN1 = """\
 ??? example "Example Title"
-
     Foldable example
 """
 
@@ -55,10 +54,25 @@ EXPECTED_MARKDOWN = """\
 </Accordion>"""
 
 
-def test_example_blocks() -> None:
+def test_example_admonition() -> None:
     """Test the Mintlify printer."""
     output = to_mint(MARKDOWN1)
     assert output == EXPECTED_MARKDOWN
+
+
+EXAMPLE_ADMONITION_BLANK = """\
+??? example "Example Title"
+
+    Paragraph 1
+    
+    Paragraph 2
+"""
+
+
+def test_example_admonition_with_blank_line() -> None:
+    """Test the Mintlify printer with a blank line after admonition."""
+    output = to_mint(EXAMPLE_ADMONITION_BLANK)
+    assert output == ""
 
 
 def test_parse_front_matter() -> None:
