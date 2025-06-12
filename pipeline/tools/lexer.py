@@ -58,8 +58,7 @@ _PATTERNS: list[tuple[TokenType, re.Pattern[str]]] = [
     (TokenType.TAB_HEADER, re.compile(r'===\s*"[^"]+"')),
     # !!! or ??? admonitions
     (TokenType.ADMONITION, re.compile(r"(?:!!!|\?\?\?)\s+\w+(?:\s+\"[^\"]+\")?")),
-    # Single-line HTML tag (kept permissive; full parsing happens later)
-    (TokenType.HTML_TAG, re.compile(r"<[/A-Za-z][^>]*>$")),
+    (TokenType.HTML_TAG, re.compile(r"<[/A-Za-z][^>]*>.*$")),
 ]
 
 

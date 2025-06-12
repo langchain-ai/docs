@@ -364,10 +364,18 @@ class Parser:
         )
 
     def _parse_html_block(self) -> HTMLBlock:
-        """Return a single-line HTML block verbatim."""
-        token = self._advance()
+        """Collect consecutive HTML-tag lines into one block, keeping indent."""
+        first_tok = self._advance()
+
+        lines = [" " * first_tok.indent + first_tok.value]
+        while self._check(TokenType.HTML_TAG):
+            tok = self._advance()
+            lines.append(" " * tok.indent + tok.value)
+
         return HTMLBlock(
-            content=token.value, start_line=token.line, limit_line=token.line + 1
+            content="\n".join(lines),
+            start_line=first_tok.line,
+            limit_line=self._token.line,
         )
 
     def _parse_paragraph(self) -> Paragraph:
@@ -404,7 +412,7 @@ class MintPrinter:
         self.output = []
         self.indent_level = 0
         self._visit(node)
-        return "\n".join(self.output).rstrip()
+        return "\n".join(self.output).rstrip() + "\n"
 
     def _add_line(self, line: str) -> None:
         """Add a line with proper indentation."""

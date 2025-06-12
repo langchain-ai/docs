@@ -53,7 +53,8 @@ MARKDOWN1 = """\
 EXPECTED_MARKDOWN = """\
 <Accordion title="Example Title">
   Foldable example
-</Accordion>"""
+</Accordion>
+"""
 
 
 def test_example_admonition() -> None:
@@ -75,7 +76,8 @@ EXPECTED_ADMONITION_BLANK = """\
   Paragraph 1
 
   Paragraph 2
-</Accordion>"""
+</Accordion>
+"""
 
 
 def test_example_admonition_with_blank_line() -> None:
@@ -100,7 +102,7 @@ title: Example Document
 
 # Example Heading
 
-This is a simple document with front matter.\
+This is a simple document with front matter.
 """
 
 
@@ -126,7 +128,8 @@ EXPECTED_TABS = """\
   <Tab title="javascript">
     Other content with tabs
   </Tab>
-</Tabs>"""
+</Tabs>
+"""
 
 
 def test_tabs() -> None:
@@ -143,7 +146,7 @@ print("Hello, World!")
 EXPECTED_CODE_BLOCK = """\
 ```python
 print("Hello, World!")
-```\
+```
 """
 
 
@@ -163,7 +166,7 @@ EXPECTED_CODE_BLOCK_WITH_EXTRAS = """\
 ```python hl_lines="1-2"
 print("Hello, World!")
 print("This is a test.")
-```\
+```
 """
 
 
@@ -185,7 +188,7 @@ EXPECTED_UNORDERED_LIST = """\
 
 - Item 1
 - Item 2
-- Item 3\
+- Item 3
 """
 
 
@@ -207,7 +210,7 @@ EXPECTED_ORDERED_LIST = """\
 
 1. First item
 2. Second item
-3. Third item\
+3. Third item
 """
 
 
@@ -223,7 +226,7 @@ INPUT_WITH_BLOCKQUOTE = """\
 
 EXPECTED_BLOCKQUOTE = """\
 > Example Blockquote
-> More text in the blockquote.\
+> More text in the blockquote.
 """
 
 
@@ -241,12 +244,13 @@ INPUT_WITH_HTML = """\
 EXPECTED_HTML = """\
 <div>
     <p>This is a paragraph inside a div.</p>
-</div>"""
+</div>
+"""
 
 
 def test_html() -> None:
     """Test parsing HTML content."""
-    assert to_mint(INPUT_WITH_HTML) == ""
+    assert to_mint(INPUT_WITH_HTML) == EXPECTED_HTML
 
 
 INPUT_CODE_BLOCK_IN_TAB = """\
@@ -266,7 +270,8 @@ EXPECTED_CODE_BLOCK_IN_TAB = """\
         print("Hello, World!")
     ```
   </Tab>
-</Tabs>"""
+</Tabs>
+"""
 
 
 def test_code_block_in_tab() -> None:
