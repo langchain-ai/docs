@@ -12,6 +12,8 @@ from pathlib import Path
 
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
+from pipeline.tools.links import move_file_with_link_updates
+from pipeline.tools.notebook.convert import convert_notebook
 from pipeline.tools.links import drop_suffix_from_links, move_file_with_link_updates
 from pipeline.tools.parser import to_mint
 
@@ -36,8 +38,31 @@ def mv_command(args) -> None:  # noqa: ANN001
 def migrate_command(args) -> None:  # noqa: ANN001
     """Handle the migrate command for converting markdown to mintlify format."""
     logger.info("Converting %s to mintlify format...", args.path)
+
+    # Determine if the path is a file or a directory
+    if not args.path.exists():
+        logger.exception("Path %s does not exist", args.path)
+        sys.exit(1)
+
+    if not args.path.is_file():
+        logger.exception("Path %s is not a file", args.path)
+        sys.exit(1)
+
+    # Check the file extension to see if it's a markdown file
+
+    extension = args.path.suffix.lower()
+
     content = Path(args.path).read_text()
-    mint_markdown = to_mint(content)
+
+    if extension in {".md", ".markdown"}:
+        mint_markdown = to_mint(content)
+    elif extension == ".ipynb":
+        markdown = convert_notebook(args.path)
+        mint_markdown = to_mint(markdown)
+    else:
+        logger.exception("Unsupported file extension %s", extension)
+        sys.exit(1)
+
     _, mint_markdown = drop_suffix_from_links(mint_markdown)
 
     if args.dry_run:
@@ -49,9 +74,19 @@ def migrate_command(args) -> None:  # noqa: ANN001
             file.write(mint_markdown)
         logger.info("Output written to %s", args.output_file)
     else:
-        with Path(args.path).open("w", encoding="utf-8") as file:
+        # New output path should have an `.mdx` extension.
+        # If extension is different, we delete the old file
+        if extension != ".mdx":
+            args.path.unlink(missing_ok=True)
+            logger.info("Deleted old file %s", args.path)
+
+        # Change extension to .mdx
+        new_path = args.path.with_suffix(".mdx")
+
+        with new_path.open("w", encoding="utf-8") as file:
             file.write(mint_markdown)
-        logger.info("File %s updated in place", args.path)
+
+        logger.info("File %s updated", new_path)
 
 
 def main() -> None:
