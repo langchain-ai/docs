@@ -12,9 +12,8 @@ from pathlib import Path
 
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
-from pipeline.tools.links import move_file_with_link_updates
-from pipeline.tools.notebook.convert import convert_notebook
 from pipeline.tools.links import drop_suffix_from_links, move_file_with_link_updates
+from pipeline.tools.notebook.convert import convert_notebook
 from pipeline.tools.parser import to_mint
 
 
