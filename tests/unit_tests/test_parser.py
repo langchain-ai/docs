@@ -96,17 +96,16 @@ This is a simple document with front matter.
 """
 
 EXPECTED_FRONT_MATTER = """\
----
-title: Example Document
-other_field: value
----
+
 # Example Heading
+
 This is a simple document with front matter.
 """
 
 
 def test_front_matter_ignored_in_output() -> None:
     """Test that front matter is ignored in Mintlify output."""
+    # Let's test the AST first.
     assert to_mint(INPUT_FRONT_MATTER) == EXPECTED_FRONT_MATTER
 
 

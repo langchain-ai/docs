@@ -142,7 +142,7 @@ class Parser:
         """Parse *source* and return an AST root."""
         blocks: list[Node] = []
 
-        if self._match(TokenType.FRONT_MATTER):
+        if self._check(TokenType.FRONT_MATTER):
             blocks.append(self._parse_front_matter())
 
         while not self._check(TokenType.EOF):
@@ -577,8 +577,7 @@ class MintPrinter:
         raise NotImplementedError
 
     def _visit_frontmatter(self, node: FrontMatter) -> None:
-        """Visit a front matter node (ignored in output)."""
-        raise NotImplementedError
+        """Remove front matter from the output."""
 
     def _visit_htmlblock(self, node: HTMLBlock) -> None:
         """Visit an HTML block node."""

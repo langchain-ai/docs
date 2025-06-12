@@ -56,6 +56,8 @@ _PATTERNS: list[tuple[TokenType, re.Pattern[str]]] = [
     (TokenType.BLOCKQUOTE, re.compile(r">")),
     # === "Tab" blocks
     (TokenType.TAB_HEADER, re.compile(r'===\s*"[^"]+"')),
+    # Front matter (YAML)
+    (TokenType.FRONT_MATTER, re.compile(r"^-{3,}\s*$")),
     # !!! or ??? admonitions
     (TokenType.ADMONITION, re.compile(r"(?:!!!|\?\?\?)\s+\w+(?:\s+\"[^\"]+\")?")),
     (TokenType.HTML_TAG, re.compile(r"<[/A-Za-z][^>]*>.*$")),
