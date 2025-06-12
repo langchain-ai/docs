@@ -40,8 +40,7 @@ def highlight_code_blocks(markdown: str) -> str:
         while lines and not lines[0].strip():
             lines.pop(0)
 
-        lines_to_keep = []
-
+        lines_to_keep: list[str] = []
         comment_syntax = (
             "# highlight-next-line"
             if language in ["py", "python"]
