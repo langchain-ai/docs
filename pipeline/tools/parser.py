@@ -239,7 +239,7 @@ class Parser:
         """Parse a fenced code block (```lang [meta])."""
         open_token = self._advance()
         fence_body = open_token.value[3:].strip()
-        language, meta = (fence_body.split(None, 1) + [""])[:2]
+        language, meta = [*fence_body.split(None, 1), ""][:2]
 
         # All lines that belong to this fenced block will have an
         # indent *at least* as big as the opening fence.  Everything
@@ -328,7 +328,8 @@ class Parser:
         header_tok = self._advance()
         tag, *tail = header_tok.value.split(None, 2)
         kind = tail[0].lower() if tail else "note"
-        title = tail[1].strip('"') if len(tail) == 2 else ""
+        expected_tail_length = 2
+        title = tail[1].strip('"') if len(tail) == expected_tail_length else ""
 
         body_blocks = self._parse_blocks_until_indent(header_tok.indent)
 
