@@ -55,7 +55,7 @@ class CodeBlock(Node):
     """Fenced code block (```lang [meta])."""
 
     language: str | None
-    meta: str
+    meta: str | None
     content: str
 
 
@@ -239,7 +239,14 @@ class Parser:
         """Parse a fenced code block (```lang [meta])."""
         open_token = self._advance()
         fence_body = open_token.value[3:].strip()
-        language, meta = [*fence_body.split(None, 1), ""][:2]
+
+        parts = fence_body.split(" ", maxsplit=1)
+
+        if len(parts) == 1:
+            language = parts[0] if parts[0] else None
+            meta = ""
+        else:
+            language, meta = parts
 
         # All lines that belong to this fenced block will have an
         # indent *at least* as big as the opening fence.  Everything
@@ -584,8 +591,12 @@ class MintPrinter:
     def _visit_htmlblock(self, node: HTMLBlock) -> None:
         """Visit an HTML block node."""
         # Output HTML content as-is
-        for line in node.content.split("\n"):
-            self._add_line(line)
+        lines = node.content.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip() or i == 0:
+                self._add_line(line)
+            else:
+                self._add_line("")
 
 
 def to_mint(markdown: str) -> str:

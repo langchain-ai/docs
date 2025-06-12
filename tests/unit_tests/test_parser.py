@@ -277,3 +277,23 @@ EXPECTED_CODE_BLOCK_IN_TAB = """\
 def test_code_block_in_tab() -> None:
     """Test parsing a code block inside a tab."""
     assert to_mint(INPUT_CODE_BLOCK_IN_TAB) == EXPECTED_CODE_BLOCK_IN_TAB
+
+
+INPUT_CODE_FENCE = """\
+``` 
+def example_function():
+    print("This is an example function.")
+```
+"""
+
+EXPECTED_CODE_FENCE = """\
+```
+def example_function():
+    print("This is an example function.")
+```
+"""
+
+
+def test_code_fence() -> None:
+    """Test parsing a code fence."""
+    assert to_mint(INPUT_CODE_FENCE) == EXPECTED_CODE_FENCE
