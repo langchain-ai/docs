@@ -2,7 +2,6 @@
 
 from pipeline.tools.parser import (
     Document,
-    FrontMatter,
     Heading,
     Paragraph,
     Parser,
@@ -43,6 +42,9 @@ def test_parse_simple_paragraph() -> None:
     assert paragraph.limit_line == 2
 
 
+# This is a set of tests that verifies end-to-end functionality from parsing markdown
+# to converting it to Mintlify format.
+
 MARKDOWN1 = """\
 ??? example "Example Title"
     Foldable example
@@ -64,68 +66,209 @@ EXAMPLE_ADMONITION_BLANK = """\
 ??? example "Example Title"
 
     Paragraph 1
-    
+
     Paragraph 2
 """
+
+EXPECTED_ADMONITION_BLANK = """\
+<Accordion title="Example Title">
+  Paragraph 1
+
+  Paragraph 2
+</Accordion>"""
 
 
 def test_example_admonition_with_blank_line() -> None:
     """Test the Mintlify printer with a blank line after admonition."""
-    output = to_mint(EXAMPLE_ADMONITION_BLANK)
-    assert output == ""
+    assert to_mint(EXAMPLE_ADMONITION_BLANK) == EXPECTED_ADMONITION_BLANK
 
 
-def test_parse_front_matter() -> None:
-    """Test parsing front matter."""
-    text = """---
-title: Overview
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags
+INPUT_FRONT_MATTER = """\
+---
+title: Example Document
+---
+# Example Heading
+This is a simple document with front matter.
+"""
+
+EXPECTED_FRONT_MATTER = """\
+---
+title: Example Document
+
 ---
 
-# Hello World
 
-This is content."""
-    parser = Parser(text)
-    doc = parser.parse()
+# Example Heading
 
-    assert isinstance(doc, Document)
-    assert len(doc.blocks) == 3
-
-    # First block should be front matter
-    front_matter = doc.blocks[0]
-    assert isinstance(front_matter, FrontMatter)
-    expected_content = """title: Overview
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags"""
-    assert front_matter.content == expected_content
-
-    # Second block should be heading
-    heading = doc.blocks[1]
-    assert isinstance(heading, Heading)
-    assert heading.value == "Hello World"
-
-    # Third block should be paragraph
-    paragraph = doc.blocks[2]
-    assert isinstance(paragraph, Paragraph)
-    assert paragraph.value == ["This is content."]
+This is a simple document with front matter.\
+"""
 
 
 def test_front_matter_ignored_in_output() -> None:
     """Test that front matter is ignored in Mintlify output."""
-    text = """---
-title: Overview
----
+    assert to_mint(INPUT_FRONT_MATTER) == EXPECTED_FRONT_MATTER
 
-# Hello World"""
-    expected = "\n# Hello World"
-    output = to_mint(text)
-    assert output == expected
+
+INPUT_WITH_TABS = """\
+=== "Python"
+    Content with tabs
+
+=== "javascript"
+
+    Other content with tabs
+"""
+
+EXPECTED_TABS = """\
+<Tabs>
+  <Tab title="Python">
+    Content with tabs
+  </Tab>
+  <Tab title="javascript">
+    Other content with tabs
+  </Tab>
+</Tabs>"""
+
+
+def test_tabs() -> None:
+    """Test parsing with tabs."""
+    assert to_mint(INPUT_WITH_TABS) == EXPECTED_TABS
+
+
+INPUT_WITH_CODE_BLOCK = """\
+```python
+print("Hello, World!")
+```
+"""
+
+EXPECTED_CODE_BLOCK = """\
+```python
+print("Hello, World!")
+```\
+"""
+
+
+def test_code_block() -> None:
+    """Test parsing a code block."""
+    assert to_mint(INPUT_WITH_CODE_BLOCK) == EXPECTED_CODE_BLOCK
+
+
+INPUT_CODE_BLOCK_WITH_EXTRAS = """\
+```python hl_lines="1-2"
+print("Hello, World!")
+print("This is a test.")
+```
+"""
+
+EXPECTED_CODE_BLOCK_WITH_EXTRAS = """\
+```python hl_lines="1-2"
+print("Hello, World!")
+print("This is a test.")
+```\
+"""
+
+
+def test_code_block_with_extras() -> None:
+    """Test parsing a code block with extra lines."""
+    assert to_mint(INPUT_CODE_BLOCK_WITH_EXTRAS) == EXPECTED_CODE_BLOCK_WITH_EXTRAS
+
+
+INPUT_WITH_UNORDERED_LIST = """\
+# Example List
+
+- Item 1
+- Item 2
+- Item 3
+"""
+
+EXPECTED_UNORDERED_LIST = """\
+# Example List
+
+- Item 1
+- Item 2
+- Item 3\
+"""
+
+
+def test_unordered_list() -> None:
+    """Test parsing an unordered list."""
+    assert to_mint(INPUT_WITH_UNORDERED_LIST) == EXPECTED_UNORDERED_LIST
+
+
+INPUT_WITH_ORDERED_LIST = """\
+# Example Ordered List
+
+1. First item
+2. Second item
+3. Third item
+"""
+
+EXPECTED_ORDERED_LIST = """\
+# Example Ordered List
+
+1. First item
+2. Second item
+3. Third item\
+"""
+
+
+def test_ordered_list() -> None:
+    """Test parsing an ordered list."""
+    assert to_mint(INPUT_WITH_ORDERED_LIST) == EXPECTED_ORDERED_LIST
+
+
+INPUT_WITH_BLOCKQUOTE = """\
+> Example Blockquote
+> More text in the blockquote.
+"""
+
+EXPECTED_BLOCKQUOTE = """\
+> Example Blockquote
+> More text in the blockquote.\
+"""
+
+
+def test_blockquote() -> None:
+    """Test parsing a blockquote."""
+    assert to_mint(INPUT_WITH_BLOCKQUOTE) == EXPECTED_BLOCKQUOTE
+
+
+INPUT_WITH_HTML = """\
+<div>
+    <p>This is a paragraph inside a div.</p>
+</div>
+"""
+
+EXPECTED_HTML = """\
+<div>
+    <p>This is a paragraph inside a div.</p>
+</div>"""
+
+
+def test_html() -> None:
+    """Test parsing HTML content."""
+    assert to_mint(INPUT_WITH_HTML) == ""
+
+
+INPUT_CODE_BLOCK_IN_TAB = """\
+=== "Python"
+
+    ```python
+    def hello_world():
+        print("Hello, World!")
+    ```
+"""
+
+EXPECTED_CODE_BLOCK_IN_TAB = """\
+<Tabs>
+  <Tab title="Python">
+    ```python
+    def hello_world():
+        print("Hello, World!")
+    ```
+  </Tab>
+</Tabs>"""
+
+
+def test_code_block_in_tab() -> None:
+    """Test parsing a code block inside a tab."""
+    assert to_mint(INPUT_CODE_BLOCK_IN_TAB) == EXPECTED_CODE_BLOCK_IN_TAB

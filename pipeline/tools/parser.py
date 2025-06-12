@@ -170,7 +170,10 @@ class Parser:
     # Block dispatch
     # ------------------------------------------------------------------
 
-    def _parse_block(self) -> Node:
+    # Ignoring PLR0911 (too many return statements) here as this is a
+    # dispatch method that routes to specific block parsers based on the
+    # current token type.
+    def _parse_block(self) -> Node:  # noqa: PLR0911
         """Route to the correct *block* parser based on current token."""
         if self._check(TokenType.HEADING):
             return self._parse_heading()
@@ -208,7 +211,7 @@ class Parser:
         )
 
     def _parse_heading(self) -> Heading:
-        """Parse an ATX heading (#, ##, …)."""
+        """Parse a heading (#, ##, …)."""
         token = self._advance()
         hashes, text = token.value.split(" ", 1)
         return Heading(
@@ -225,9 +228,23 @@ class Parser:
         language, meta = (fence_body.split(None, 1) + [""])[:2]
         language = language or None
 
+        # All lines that belong to this fenced block will have an
+        # indent *at least* as big as the opening fence.  Everything
+        # beyond that is real, user-written indentation that we must
+        # preserve in the output.
+        fence_indent = open_token.indent
         body_lines: list[str] = []
         while not self._check(TokenType.FENCE):
-            body_lines.append(self._advance().value)
+            tok = self._advance()
+
+            # Blank tokens keep the line empty
+            if tok.type == TokenType.BLANK:
+                body_lines.append("")
+
+            # Preserve **relative** indentation of the code block
+            rel_ident = max(0, tok.indent - fence_indent)
+            body_lines.append(" " * rel_ident + tok.value)
+
         close_token = self._advance()
 
         return CodeBlock(
@@ -245,7 +262,7 @@ class Parser:
         marker_type = TokenType.OL_MARKER if ordered else TokenType.UL_MARKER
 
         while self._check(marker_type) and self._token.indent == list_indent:
-            items.append(self._parse_list_item(marker_type, list_indent))
+            items.append(self._parse_list_item(list_indent))
 
         if ordered:
             return OrderedList(
@@ -258,7 +275,7 @@ class Parser:
             items=items, start_line=items[0].start_line, limit_line=items[-1].limit_line
         )
 
-    def _parse_list_item(self, marker_type: TokenType, list_indent: int) -> ListItem:
+    def _parse_list_item(self, list_indent: int) -> ListItem:
         """Parse a single list item and its nested content."""
         marker_token = self._advance()  # consume marker
         first_text = (
@@ -310,7 +327,10 @@ class Parser:
         title = tail[1].strip('"') if len(tail) == 2 else ""
 
         body_token_buffer: list[Token] = []
-        while self._token.indent > header_token.indent:
+        while (
+            self._token.indent > header_token.indent
+            or self._token.type == TokenType.BLANK
+        ):
             body_token_buffer.append(self._advance())
 
         body_blocks: list[Node]
@@ -337,7 +357,10 @@ class Parser:
             title = header_token.value.split('"', 1)[1].rsplit('"', 1)[0]
 
             tab_body_tokens: list[Token] = []
-            while self._token.indent > header_token.indent:
+            while (
+                self._token.indent > header_token.indent
+                or self._token.type == TokenType.BLANK
+            ):
                 tab_body_tokens.append(self._advance())
 
             inner_blocks = (
@@ -445,15 +468,7 @@ class MintPrinter:
         if node.language:
             fence_line = f"{fence}{node.language}"
             if node.meta:
-                # Handle special Mintlify syntax like [expandable] and line highlighting
-                if "[expandable]" in node.meta:
-                    fence_line = f"{fence}{node.language} {node.meta}"
-                elif "{" in node.meta and "}" in node.meta:
-                    # Line highlighting syntax
-                    fence_line = f"{fence}{node.language} {node.meta}"
-                else:
-                    # Regular filename or title
-                    fence_line = f"{fence}{node.language} {node.meta}"
+                fence_line = f"{fence}{node.language} {node.meta}"
         else:
             fence_line = fence
 
@@ -572,7 +587,7 @@ class MintPrinter:
 
     def _visit_frontmatter(self, node: FrontMatter) -> None:
         """Visit a front matter node (ignored in output)."""
-        # Front matter is ignored in Mintlify output
+        raise NotImplementedError
 
     def _visit_htmlblock(self, node: HTMLBlock) -> None:
         """Visit an HTML block node."""
