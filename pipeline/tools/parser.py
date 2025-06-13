@@ -450,6 +450,7 @@ class MintPrinter:
             self._add_line("---")
             self._add_line(f"title: {node.value}")
             self._add_line("---")
+            self.printed_first_heading = True
 
     def _visit_paragraph(self, node: Paragraph) -> None:
         """Visit a paragraph node."""
