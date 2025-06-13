@@ -182,9 +182,9 @@ INPUT_WITH_UNORDERED_LIST = """\
 """
 
 EXPECTED_UNORDERED_LIST = """\
-- Item 1
-- Item 2
-- Item 3
+* Item 1
+* Item 2
+* Item 3
 """
 
 
@@ -341,5 +341,13 @@ INPUT_TABLE = """\
 
 def test_table() -> None:
     """Test parsing a table."""
-    # Let's get the AST first
     assert to_mint(INPUT_TABLE) == INPUT_TABLE
+
+
+INDENTED_BLOCK = """\
+This block has indentation:
+
+    {
+        "key": "value"
+    }
+"""
