@@ -443,25 +443,45 @@ class MintPrinter:
 
     def _visit_heading(self, node: Heading) -> None:
         """Visit a heading node."""
-        if self.printed_first_heading:
-            # We'll try to catch acorn expressions like {# tools }
-            # And replace with <a id="tools"></a> prior to the heading.
-            re.match(r"\{#\s*(.*?)\s*\}", node.value)
-            acorn_pattern = r"\{#\s*([A-Za-z0-9\-_]+)\s*\}"
-            match = re.search(acorn_pattern, node.value)
-            anchor_id = match.group(1) if match else None
-            clean_value = re.sub(acorn_pattern, "", node.value).strip()
 
-            if anchor_id:
-                # If we have an anchor ID, add it as an HTML anchor tag
-                self._add_line(f'<a id="{anchor_id}"></a>')
+        def _slugify(text: str) -> str:
+            """Convert arbitrary text to a URL‑safe slug."""
+            text = text.lower()
+            # Replace any sequence of non‑alphanumerics with a single hyphen
+            text = re.sub(r"[^a-z0-9]+", "-", text)
+            # Collapse consecutive hyphens and trim leading/trailing ones
+            return re.sub(r"-+", "-", text).strip("-")
 
-            prefix = "#" * node.level
-            self._add_line(f"{prefix} {clean_value}")
+        # --- Extract anchor id (explicit or implicit) and clean heading text ---
+        acorn_pattern = r"\{\s*#\s*([A-Za-z0-9\-_]+)\s*\}"
+        paren_pattern = r"\(([^)]+)\)\s*$"  # anchor in trailing parentheses
+
+        anchor_id: str | None = None
+        heading_text = node.value
+
+        acorn_match = re.search(acorn_pattern, heading_text)
+        if acorn_match:
+            anchor_id = acorn_match.group(1)
+            heading_text = re.sub(acorn_pattern, "", heading_text).strip()
         else:
-            # Otherwise convert the first heading to front matter
+            paren_match = re.search(paren_pattern, heading_text)
+            if paren_match:
+                anchor_id = paren_match.group(1)
+                heading_text = re.sub(paren_pattern, "", heading_text).strip()
+
+        if anchor_id:
+            anchor_id = _slugify(anchor_id)
+
+        # --- Emit result ---
+        if self.printed_first_heading:
+            if anchor_id:
+                self._add_line(f'<a id="{anchor_id}"></a>')
+            prefix = "#" * node.level
+            self._add_line(f"{prefix} {heading_text}")
+        else:
+            # Convert the very first heading into front‑matter
             self._add_line("---")
-            self._add_line(f"title: {node.value}")
+            self._add_line(f"title: {heading_text}")
             self._add_line("---")
             self.printed_first_heading = True
 
