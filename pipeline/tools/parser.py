@@ -409,6 +409,7 @@ class MintPrinter:
         """Initialize the printer."""
         self.output: list[str] = []
         self.indent_level: int = 0
+        self.printed_first_heading = False
 
     def print(self, node: Node) -> str:
         """Convert an AST node to Mintlify markdown string."""
@@ -441,8 +442,14 @@ class MintPrinter:
 
     def _visit_heading(self, node: Heading) -> None:
         """Visit a heading node."""
-        prefix = "#" * node.level
-        self._add_line(f"{prefix} {node.value}")
+        if self.printed_first_heading:
+            prefix = "#" * node.level
+            self._add_line(f"{prefix} {node.value}")
+        else:
+            # Otherwise convert the first heading to front matter
+            self._add_line("---")
+            self._add_line(f"title: {node.value}")
+            self._add_line("---")
 
     def _visit_paragraph(self, node: Paragraph) -> None:
         """Visit a paragraph node."""
@@ -509,7 +516,11 @@ class MintPrinter:
 
         self.indent_level += 1
         for tab in node.tabs:
-            self._add_line(f'<Tab title="{tab.title}">')
+            # Let's remove '`' from the title if it exists
+            # '`' does highlighting in mkdocs, but Mintlify doesn't support it
+            # and it looks weird in the output.
+            title = tab.title.strip("`")
+            self._add_line(f'<Tab title="{title}">')
 
             self.indent_level += 1
             for i, block in enumerate(tab.blocks):
