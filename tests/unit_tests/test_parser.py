@@ -314,3 +314,23 @@ def test_long_code_block() -> None:
     assert isinstance(first_block, CodeBlock)
     assert first_block.language == "python"
     assert first_block.content == "def foo():\n    x = 1\n    \n    y = 2"
+
+
+NOTE_WITH_TITLE = """\
+!!! info "Requirements" 
+
+    content
+
+"""
+
+EXPECTED_NOTE_WITH_TITLE = """\
+<Info>
+  **Requirements**
+  content
+</Info>
+"""
+
+
+def test_note_with_title() -> None:
+    """Test parsing a note with a title."""
+    assert to_mint(NOTE_WITH_TITLE) == EXPECTED_NOTE_WITH_TITLE

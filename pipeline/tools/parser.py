@@ -331,10 +331,10 @@ class Parser:
         tag, *tail = header_tok.value.split(None, 2)
         kind = tail[0].lower() if tail else "note"
         expected_tail_length = 2
-        title = tail[1].strip('"') if len(tail) == expected_tail_length else ""
-
+        title = tail[1] if len(tail) == expected_tail_length else ""
+        # Remove whitespace (especially trailing whitespace)
+        title = title.strip(" ").strip('"')
         body_blocks = self._parse_blocks_until_indent(header_tok.indent)
-
         return Admonition(
             tag=tag,
             kind=kind,
