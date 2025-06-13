@@ -11,6 +11,7 @@ indentation and other nuances of Markdown syntax.
 
 from __future__ import annotations
 
+import re
 import typing
 from dataclasses import dataclass
 
@@ -443,8 +444,20 @@ class MintPrinter:
     def _visit_heading(self, node: Heading) -> None:
         """Visit a heading node."""
         if self.printed_first_heading:
+            # We'll try to catch acorn expressions like {# tools }
+            # And replace with <a id="tools"></a> prior to the heading.
+            re.match(r"\{#\s*(.*?)\s*\}", node.value)
+            acorn_pattern = r"\{#\s*([A-Za-z0-9\-_]+)\s*\}"
+            match = re.search(acorn_pattern, node.value)
+            anchor_id = match.group(1) if match else None
+            clean_value = re.sub(acorn_pattern, "", node.value).strip()
+
+            if anchor_id:
+                # If we have an anchor ID, add it as an HTML anchor tag
+                self._add_line(f'<a id="{anchor_id}"></a>')
+
             prefix = "#" * node.level
-            self._add_line(f"{prefix} {node.value}")
+            self._add_line(f"{prefix} {clean_value}")
         else:
             # Otherwise convert the first heading to front matter
             self._add_line("---")
