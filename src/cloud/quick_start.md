@@ -35,12 +35,10 @@ Once your application is deployed:
 1. Select the deployment you just created to view more details.
 2. Click the **LangGraph Studio** button in the top right corner.
   LangGraph Studio will open to display your graph.
-      <figure markdown="1">
-  [![image](deployment/img/langgraph_studio.png){: style="max-height:400px"}](deployment/img/langgraph_studio.png)
-      <figcaption>
-  Sample graph run in LangGraph Studio.
-      </figcaption>
-      </figure>
+
+<Frame caption="Sample graph run in LangGraph Studio.">
+<img src="deployment/img/langgraph_studio.png"/>
+</Frame>
 
 ## 4. Get the API URL for your deployment
 
