@@ -1,22 +1,15 @@
 ---
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags
+title: Multi-agent
 ---
 
-# Multi-agent
-
-A single agent might struggle if it needs to specialize in multiple domains or manage many tools. To tackle this, you can break your agent into smaller, independent agents and compose them into a [multi-agent system](../concepts/multi_agent.md).
+A single agent might struggle if it needs to specialize in multiple domains or manage many tools. To tackle this, you can break your agent into smaller, independent agents and compose them into a [multi-agent system](../concepts/multi_agent).
 
 In multi-agent systems, agents need to communicate between each other. They do so via [handoffs](#handoffs) — a primitive that describes which agent to hand control to and the payload to send to that agent.
 
 Two of the most popular multi-agent architectures are:
 
-- [supervisor](#supervisor) — individual agents are coordinated by a central supervisor agent. The supervisor controls all communication flow and task delegation, making decisions about which agent to invoke based on the current context and task requirements.
-- [swarm](#swarm) — agents dynamically hand off control to one another based on their specializations. The system remembers which agent was last active, ensuring that on subsequent interactions, the conversation resumes with that agent.
+* [supervisor](#supervisor) — individual agents are coordinated by a central supervisor agent. The supervisor controls all communication flow and task delegation, making decisions about which agent to invoke based on the current context and task requirements.
+* [swarm](#swarm) — agents dynamically hand off control to one another based on their specializations. The system remembers which agent was last active, ensuring that on subsequent interactions, the conversation resumes with that agent.
 
 ## Supervisor
 
@@ -147,54 +140,49 @@ for chunk in swarm.stream(
 
 A common pattern in multi-agent interactions is **handoffs**, where one agent *hands off* control to another. Handoffs allow you to specify:
 
-- **destination**: target agent to navigate to
-- **payload**: information to pass to that agent
+* **destination**: target agent to navigate to
+* **payload**: information to pass to that agent
 
 This is used both by `langgraph-supervisor` (supervisor hands off to individual agents) and `langgraph-swarm` (an individual agent can hand off to other agents).
 
 To implement handoffs with `create_react_agent`, you need to:
 
 1. Create a special tool that can transfer control to a different agent
-
-    ```python
-    def transfer_to_bob():
-        """Transfer to bob."""
-        return Command(
-            # name of the agent (node) to go to
-            # highlight-next-line
-            goto="bob",
-            # data to send to the agent
-            # highlight-next-line
-            update={"messages": [...]},
-            # indicate to LangGraph that we need to navigate to
-            # agent node in a parent graph
-            # highlight-next-line
-            graph=Command.PARENT,
-        )
-    ```
-
-1. Create individual agents that have access to handoff tools:
-
-    ```python
-    flight_assistant = create_react_agent(
-        ..., tools=[book_flight, transfer_to_hotel_assistant]
-    )
-    hotel_assistant = create_react_agent(
-        ..., tools=[book_hotel, transfer_to_flight_assistant]
-    )
-    ```
-
-1. Define a parent graph that contains individual agents as nodes:
-
-    ```python
-    from langgraph.graph import StateGraph, MessagesState
-    multi_agent_graph = (
-        StateGraph(MessagesState)
-        .add_node(flight_assistant)
-        .add_node(hotel_assistant)
-        ...
-    )
-    ```
+  ```python
+  def transfer_to_bob():
+      """Transfer to bob."""
+      return Command(
+          # name of the agent (node) to go to
+          # highlight-next-line
+          goto="bob",
+          # data to send to the agent
+          # highlight-next-line
+          update={"messages": [...]},
+          # indicate to LangGraph that we need to navigate to
+          # agent node in a parent graph
+          # highlight-next-line
+          graph=Command.PARENT,
+      )
+  ```
+2. Create individual agents that have access to handoff tools:
+  ```python
+  flight_assistant = create_react_agent(
+      ..., tools=[book_flight, transfer_to_hotel_assistant]
+  )
+  hotel_assistant = create_react_agent(
+      ..., tools=[book_hotel, transfer_to_flight_assistant]
+  )
+  ```
+3. Define a parent graph that contains individual agents as nodes:
+  ```python
+  from langgraph.graph import StateGraph, MessagesState
+  multi_agent_graph = (
+      StateGraph(MessagesState)
+      .add_node(flight_assistant)
+      .add_node(hotel_assistant)
+      ...
+  )
+  ```
 
 Putting this together, here is how you can implement a simple multi-agent system with two agents — a flight booking assistant and a hotel booking assistant:
 
@@ -299,10 +287,11 @@ for chunk in multi_agent_graph.stream(
 4. Take the agent's messages and **add** them to the parent's **state** as part of the handoff. The next agent will see the parent state.
 5. Indicate to LangGraph that we need to navigate to agent node in a **parent** multi-agent graph.
 
-!!! Note
-    This handoff implementation assumes that:
-
-    - each agent receives overall message history (across all agents) in the multi-agent system as its input
-    - each agent outputs its internal messages history to the overall message history of the multi-agent system
-
-    Check out LangGraph [supervisor](https://github.com/langchain-ai/langgraph-supervisor-py#customizing-handoff-tools) and [swarm](https://github.com/langchain-ai/langgraph-swarm-py#customizing-handoff-tools) documentation to learn how to customize handoffs.
+<Note>
+  This handoff implementation assumes that:
+  
+  * each agent receives overall message history (across all agents) in the multi-agent system as its input
+  * each agent outputs its internal messages history to the overall message history of the multi-agent system
+  
+  Check out LangGraph [supervisor](https://github.com/langchain-ai/langgraph-supervisor-py#customizing-handoff-tools) and [swarm](https://github.com/langchain-ai/langgraph-swarm-py#customizing-handoff-tools) documentation to learn how to customize handoffs.
+</Note>

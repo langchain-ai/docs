@@ -1,13 +1,6 @@
 ---
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags
+title: LangGraph quickstart
 ---
-
-# LangGraph quickstart
 
 This guide shows you how to set up and use LangGraph's **prebuilt**, **reusable** components, which are designed to help you construct agentic systems quickly and reliably.
 
@@ -15,7 +8,7 @@ This guide shows you how to set up and use LangGraph's **prebuilt**, **reusable*
 
 Before you start this tutorial, ensure you have the following:
 
-- An [Anthropic](https://console.anthropic.com/settings/keys) API key 
+* An [Anthropic](https://console.anthropic.com/settings/keys) API key 
 
 ## 1. Install dependencies
 
@@ -25,9 +18,9 @@ If you haven't already, install LangGraph and LangChain:
 pip install -U langgraph "langchain[anthropic]"
 ```
 
-!!! info 
-
-    LangChain is installed so the agent can call the [model](https://python.langchain.com/docs/integrations/chat/).
+<Info>
+  LangChain is installed so the agent can call the [model](https://python.langchain.com/docs/integrations/chat/).
+</Info>
 
 ## 2. Create an agent
 
@@ -52,8 +45,8 @@ agent.invoke(
 )
 ```
 
-1. Define a tool for the agent to use. Tools can be defined as vanilla Python functions. For more advanced tool usage and customization, check the [tools](./tools.md) page.
-2. Provide a language model for the agent to use. To learn more about configuring language models for the agents, check the [models](./models.md) page.
+1. Define a tool for the agent to use. Tools can be defined as vanilla Python functions. For more advanced tool usage and customization, check the [tools](./tools) page.
+2. Provide a language model for the agent to use. To learn more about configuring language models for the agents, check the [models](./models) page.
 3. Provide a list of tools for the model to use.
 4. Provide a system prompt (instructions) to the language model used by the agent.
 
@@ -79,7 +72,7 @@ agent = create_react_agent(
 )
 ```
 
-For more information on how to configure LLMs, see [Models](./models.md).
+For more information on how to configure LLMs, see [Models](./models).
 
 ## 4. Add a custom prompt
 
@@ -88,13 +81,13 @@ Prompts instruct the LLM how to behave. Add one of the following types of prompt
 * **Static**: A string is interpreted as a **system message**.
 * **Dynamic**: A list of messages generated at **runtime**, based on input or configuration.
 
-=== "Static prompt"
-
+<Tabs>
+  <Tab title="Static prompt">
     Define a fixed prompt string or list of messages:
-
+    
     ```python
     from langgraph.prebuilt import create_react_agent
-
+    
     agent = create_react_agent(
         model="anthropic:claude-3-7-sonnet-latest",
         tools=[get_weather],
@@ -102,54 +95,53 @@ Prompts instruct the LLM how to behave. Add one of the following types of prompt
         # highlight-next-line
         prompt="Never answer questions about the weather."
     )
-
+    
     agent.invoke(
         {"messages": [{"role": "user", "content": "what is the weather in sf"}]}
     )
     ```
-
-=== "Dynamic prompt"
-
+  </Tab>
+  <Tab title="Dynamic prompt">
     Define a function that returns a message list based on the agent's state and configuration:
-
+    
     ```python
     from langchain_core.messages import AnyMessage
     from langchain_core.runnables import RunnableConfig
     from langgraph.prebuilt.chat_agent_executor import AgentState
     from langgraph.prebuilt import create_react_agent
-
+    
     # highlight-next-line
     def prompt(state: AgentState, config: RunnableConfig) -> list[AnyMessage]:  # (1)!
         user_name = config["configurable"].get("user_name")
         system_msg = f"You are a helpful assistant. Address the user as {user_name}."
         return [{"role": "system", "content": system_msg}] + state["messages"]
-
+    
     agent = create_react_agent(
         model="anthropic:claude-3-7-sonnet-latest",
         tools=[get_weather],
         # highlight-next-line
         prompt=prompt
     )
-
+    
     agent.invoke(
         {"messages": [{"role": "user", "content": "what is the weather in sf"}]},
         # highlight-next-line
         config={"configurable": {"user_name": "John Smith"}}
     )
     ```
+    
+    1. Dynamic prompts allow including non-message [context](./context) when constructing an input to the LLM, such as:
+      * Information passed at runtime, like a `user_id` or API credentials (using `config`).
+      * Internal agent state updated during a multi-step reasoning process (using `state`).
+      Dynamic prompts can be defined as functions that take `state` and `config` and return a list of messages to send to the LLM.
+  </Tab>
+</Tabs>
 
-    1. Dynamic prompts allow including non-message [context](./context.md) when constructing an input to the LLM, such as:
-
-        - Information passed at runtime, like a `user_id` or API credentials (using `config`).
-        - Internal agent state updated during a multi-step reasoning process (using `state`).
-
-        Dynamic prompts can be defined as functions that take `state` and `config` and return a list of messages to send to the LLM.
-
-For more information, see [Context](./context.md).
+For more information, see [Context](./context).
 
 ## 5. Add memory
 
-To allow multi-turn conversations with an agent, you need to enable [persistence](../concepts/persistence.md) by providing a `checkpointer` when creating an agent. At runtime, you need to provide a config containing `thread_id` — a unique identifier for the conversation (session):
+To allow multi-turn conversations with an agent, you need to enable [persistence](../concepts/persistence) by providing a `checkpointer` when creating an agent. At runtime, you need to provide a config containing `thread_id` — a unique identifier for the conversation (session):
 
 ```python
 from langgraph.prebuilt import create_react_agent
@@ -180,14 +172,14 @@ ny_response = agent.invoke(
 )
 ```
 
-1. `checkpointer` allows the agent to store its state at every step in the tool calling loop. This enables [short-term memory](./memory.md#short-term-memory) and [human-in-the-loop](./human-in-the-loop.md) capabilities.
+1. `checkpointer` allows the agent to store its state at every step in the tool calling loop. This enables [short-term memory](./memory#short-term-memory) and [human-in-the-loop](./human-in-the-loop) capabilities.
 2. Pass configuration with `thread_id` to be able to resume the same conversation on future agent invocations.
 
 When you enable the checkpointer, it stores agent state at every step in the provided checkpointer database (or in memory, if using `InMemorySaver`).
 
 Note that in the above example, when the agent is invoked the second time with the same `thread_id`, the original message history from the first conversation is automatically included, together with the new user input.
 
-For more information, see [Memory](./memory.md).
+For more information, see [Memory](./memory).
 
 ## 6. Configure structured output
 
@@ -216,15 +208,15 @@ response["structured_response"]
 ```
 
 1. When `response_format` is provided, a separate step is added at the end of the agent loop: agent message history is passed to an LLM with structured output to generate a structured response.
+  To provide a system prompt to this LLM, use a tuple `(prompt, schema)`, e.g., `response_format=(prompt, WeatherResponse)`.
 
-    To provide a system prompt to this LLM, use a tuple `(prompt, schema)`, e.g., `response_format=(prompt, WeatherResponse)`.
-
-!!! Note "LLM post-processing"
-
-    Structured output requires an additional call to the LLM to format the response according to the schema.
+<Note>
+  **LLM post-processing**
+  Structured output requires an additional call to the LLM to format the response according to the schema.
+</Note>
 
 ## Next steps
 
-- [Deploy your agent locally](../tutorials/langgraph-platform/local-server.md)
-- [Learn more about prebuilt agents](../agents/overview.md)
-- [LangGraph Platform quickstart](../cloud/quick_start.md)
+* [Deploy your agent locally](../tutorials/langgraph-platform/local-server)
+* [Learn more about prebuilt agents](../agents/overview)
+* [LangGraph Platform quickstart](../cloud/quick_start)

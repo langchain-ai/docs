@@ -1,42 +1,35 @@
 ---
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags
+title: Memory
 ---
-
-# Memory
 
 LangGraph supports two types of memory essential for building conversational agents:
 
-- **[Short-term memory](#short-term-memory)**: Tracks the ongoing conversation by maintaining message history within a session.
-- **[Long-term memory](#long-term-memory)**: Stores user-specific or application-level data across sessions.
+* **[Short-term memory](#short-term-memory)**: Tracks the ongoing conversation by maintaining message history within a session.
+* **[Long-term memory](#long-term-memory)**: Stores user-specific or application-level data across sessions.
 
 This guide demonstrates how to use both memory types with agents in LangGraph. For a deeper
-understanding of memory concepts, refer to the [LangGraph memory documentation](../concepts/memory.md).
+understanding of memory concepts, refer to the [LangGraph memory documentation](../concepts/memory).
 
-<figure markdown="1">
-![image](./assets/memory.png){: style="max-height:400px"}
-<figcaption>Both <strong>short-term</strong> and <strong>long-term</strong> memory require persistent storage to maintain continuity across LLM interactions. In production environments, this data is typically stored in a database.</figcaption>
-</figure>
+<Frame caption="Both short-term and long-term memory require persistent storage to maintain continuity across LLM interactions. In production environments, this data is typically stored in a database.">
+<img src="./assets/memory.png"/>
+</Frame>
 
-!!! note "Terminology"
-
-    In LangGraph:
-
-    - *Short-term memory* is also referred to as **thread-level memory**.
-    - *Long-term memory* is also called **cross-thread memory**.
-
-    A [thread](../concepts/persistence.md#threads) represents a sequence of related runs
-    grouped by the same `thread_id`.
+<Note>
+  **Terminology**
+  In LangGraph:
+  
+  * *Short-term memory* is also referred to as **thread-level memory**.
+  * *Long-term memory* is also called **cross-thread memory**.
+  
+  A [thread](../concepts/persistence#threads) represents a sequence of related runs
+  grouped by the same `thread_id`.
+</Note>
 
 ## Short-term memory
 
 Short-term memory enables agents to track multi-turn conversations. To use it, you must:
 
-1. Provide a `checkpointer` when creating the agent. The `checkpointer` enables [persistence](../concepts/persistence.md) of the agent's state.
+1. Provide a `checkpointer` when creating the agent. The `checkpointer` enables [persistence](../concepts/persistence) of the agent's state.
 2. Supply a `thread_id` in the config when running the agent. The `thread_id` is a unique identifier for the conversation session.
 
 ```python
@@ -81,16 +74,17 @@ ny_response = agent.invoke(
 )
 ```
 
-1. The `InMemorySaver` is a checkpointer that stores the agent's state in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [checkpointer documentation](../reference/checkpoints.md) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready checkpointer for you.
+1. The `InMemorySaver` is a checkpointer that stores the agent's state in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [checkpointer documentation](../reference/checkpoints) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready checkpointer for you.
 2. The `checkpointer` is passed to the agent. This enables the agent to persist its state across invocations.
 3. A unique `thread_id` is provided in the config. This ID is used to identify the conversation session. The value is controlled by the user and can be any string.
 4. The agent will continue the conversation using the same `thread_id`. This will allow the agent to infer that the user is asking specifically about the **weather** in New York. 
 
 When the agent is invoked the second time with the same `thread_id`, the original message history from the first conversation is automatically included, allowing the agent to infer that the user is asking specifically about the **weather** in New York.
 
-!!! Note "LangGraph Platform provides a production-ready checkpointer"
-
-    If you're using [LangGraph Platform](./deployment.md), during deployment your checkpointer will be automatically configured to use a production-ready database.
+<Note>
+  **LangGraph Platform provides a production-ready checkpointer**
+  If you're using [LangGraph Platform](./deployment), during deployment your checkpointer will be automatically configured to use a production-ready database.
+</Note>
 
 ### Manage message history
 
@@ -101,15 +95,21 @@ Long conversations can exceed the LLM's context window. Common solutions are:
 
 This allows the agent to keep track of the conversation without exceeding the LLM's context window.
 
-To manage message history, specify `pre_model_hook` — a function ([node](../concepts/low_level.md#nodes)) that will always run before calling the language model.
+To manage message history, specify `pre_model_hook` — a function ([node](../concepts/low_level#nodes)) that will always run before calling the language model.
 
 #### Summarize message history
 
-<figure markdown="1">
-![image](./assets/summary.png){: style="max-height:400px"}
-<figcaption>Long conversations can exceed the LLM's context window. A common solution is to maintain a running summary of the conversation. This allows the agent to keep track of the conversation without exceeding the LLM's context window.
-</figcaption>
-</figure>
+[//]: # (<figure markdown="1">)
+
+[//]: # ()
+[//]: # (![image]&#40;./assets/summary.png&#41;{: style="max-height:400px"})
+
+[//]: # ()
+[//]: # (<figcaption>Long conversations can exceed the LLM's context window. A common solution is to maintain a running summary of the conversation. This allows the agent to keep track of the conversation without exceeding the LLM's context window.)
+
+[//]: # (</figcaption>)
+
+[//]: # (</figure>)
 
 To summarize message history, you can use [`pre_model_hook`][langgraph.prebuilt.chat_agent_executor.create_react_agent] with a prebuilt [`SummarizationNode`](https://langchain-ai.github.io/langmem/reference/short_term/#langmem.short_term.SummarizationNode):
 
@@ -152,7 +152,7 @@ agent = create_react_agent(
 )
 ```
 
-1. The `InMemorySaver` is a checkpointer that stores the agent's state in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [checkpointer documentation](../reference/checkpoints.md) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready checkpointer for you.
+1. The `InMemorySaver` is a checkpointer that stores the agent's state in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [checkpointer documentation](../reference/checkpoints) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready checkpointer for you.
 2. The `context` key is added to the agent's state. The key contains book-keeping information for the summarization node. It is used to keep track of the last summary information and ensure that the agent doesn't summarize on every LLM call, which can be inefficient.
 3. The `checkpointer` is passed to the agent. This enables the agent to persist its state across invocations.
 4. The `pre_model_hook` is set to the `SummarizationNode`. This node will summarize the message history before sending it to the LLM. The summarization node will automatically handle the summarization process and update the agent's state with the new summary. You can replace this with a custom implementation if you prefer. Please see the [create_react_agent][langgraph.prebuilt.chat_agent_executor.create_react_agent] API reference for more details.
@@ -198,7 +198,8 @@ agent = create_react_agent(
 
 To learn more about using `pre_model_hook` for managing message history, see this [how-to guide](../how-tos/create-react-agent-manage-message-history.ipynb)
 
-### Read in tools { #read-short-term }
+<a id="read-short-term"></a>
+### Read in tools
 
 LangGraph allows agent to access its short-term memory (state) inside the tools.
 
@@ -233,9 +234,10 @@ agent.invoke({
 })
 ```
 
-See the [Context](./context.md#__tabbed_2_2) guide for more information.
+See the [Context](./context#__tabbed_2_2) guide for more information.
 
-### Write from tools { #write-short-term }
+<a id="write-short-term"></a>
+### Write from tools
 
 To modify the agent's short-term memory (state) during execution, you can return state updates directly from the tools. This is useful for persisting intermediate results or making information accessible to subsequent tools or prompts.
 
@@ -305,7 +307,8 @@ To use long-term memory, you need to:
 1. [Configure a store](../how-tos/persistence.ipynb#add-long-term-memory) to persist data across invocations.
 2. Use the [`get_store`][langgraph.config.get_store] function to access the store from within tools or prompts.
 
-### Read { #read-long-term }
+<a id="read-long-term"></a>
+### Read
 
 ```python title="A tool the agent can use to look up user information"
 from langchain_core.runnables import RunnableConfig
@@ -351,7 +354,7 @@ agent.invoke(
 )
 ```
 
-1. The `InMemoryStore` is a store that stores data in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [store documentation](../reference/store.md) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
+1. The `InMemoryStore` is a store that stores data in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [store documentation](../reference/store) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
 2. For this example, we write some sample data to the store using the `put` method. Please see the [BaseStore.put][langgraph.store.base.BaseStore.put] API reference for more details.
 3. The first argument is the namespace. This is used to group related data together. In this case, we are using the `users` namespace to group user data.
 4. A key within the namespace. This example uses a user ID for the key.
@@ -360,7 +363,8 @@ agent.invoke(
 7. The `get` method is used to retrieve data from the store. The first argument is the namespace, and the second argument is the key. This will return a `StoreValue` object, which contains the value and metadata about the value.
 8. The `store` is passed to the agent. This enables the agent to access the store when running tools. You can also use the `get_store` function to access the store from anywhere in your code.
 
-### Write { #write-long-term }
+<a id="write-long-term"></a>
+### Write
 
 ```python title="Example of a tool that updates user information"
 from typing_extensions import TypedDict
@@ -402,7 +406,7 @@ agent.invoke(
 store.get(("users",), "user_123").value
 ```
 
-1. The `InMemoryStore` is a store that stores data in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [store documentation](../reference/store.md) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
+1. The `InMemoryStore` is a store that stores data in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [store documentation](../reference/store) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
 2. The `UserInfo` class is a `TypedDict` that defines the structure of the user information. The LLM will use this to format the response according to the schema.
 3. The `save_user_info` function is a tool that allows an agent to update user information. This could be useful for a chat application where the user wants to update their profile information.
 4. The `get_store` function is used to access the store. You can call it from anywhere in your code, including tools and prompts. This function returns the store that was passed to the agent when it was created.
@@ -417,7 +421,6 @@ LangGraph also allows you to [search](https://langchain-ai.github.io/langgraph/h
 
 **LangMem** is a LangChain-maintained library that offers tools for managing long-term memories in your agent. See the [LangMem documentation](https://langchain-ai.github.io/langmem/) for usage examples.
 
-
 ## Additional resources
 
-* [Memory in LangGraph](../concepts/memory.md)
+* [Memory in LangGraph](../concepts/memory)

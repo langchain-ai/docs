@@ -1,26 +1,20 @@
 ---
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags
+title: Deployment
 ---
-
-# Deployment
 
 To deploy your LangGraph agent, create and configure a LangGraph app. This setup supports both local development and production deployments.
 
-Features: 
+Features:
 
 * 🖥️ Local server for development
 * 🧩 Studio Web UI for visual debugging
 * ☁️ Cloud and 🔧 self-hosted deployment options
 * 📊 LangSmith integration for tracing and observability
 
-!!! info "Requirements" 
-
-    - ✅ You **must** have a [LangSmith account](https://www.langchain.com/langsmith). You can sign up for **free** and get started with the free tier.
+<Info>
+  **Requirements**
+  * ✅ You **must** have a [LangSmith account](https://www.langchain.com/langsmith). You can sign up for **free** and get started with the free tier.
+</Info>
 
 ## Create a LangGraph app
 
@@ -71,13 +65,13 @@ langgraph dev
 
 This will start up the LangGraph API server locally. If this runs successfully, you should see something like:
 
->    Ready!
+> Ready!
 > 
->    - API: [http://localhost:2024](http://localhost:2024/)
->     
->    - Docs: http://localhost:2024/docs
->     
->    - LangGraph Studio Web UI: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
+> - API: [http://localhost:2024](http://localhost:2024/)
+> 
+> - Docs: http://localhost:2024/docs
+> 
+> - LangGraph Studio Web UI: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
 
 See this [tutorial](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/) to learn more about running LangGraph app locally.
 
@@ -85,8 +79,8 @@ See this [tutorial](https://langchain-ai.github.io/langgraph/tutorials/langgraph
 
 LangGraph Studio Web is a specialized UI that you can connect to LangGraph API server to enable visualization, interaction, and debugging of your application locally. Test your graph in the LangGraph Studio Web UI by visiting the URL provided in the output of the `langgraph dev` command.
 
->    - LangGraph Studio Web UI: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
+> - LangGraph Studio Web UI: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
 
 ## Deployment
 
-Once your LangGraph app is running locally, you can deploy it using LangGraph Platform. Refer to the [deployment options guide](../tutorials/deployment.md) for detailed instructions on all supported deployment models.
+Once your LangGraph app is running locally, you can deploy it using LangGraph Platform. Refer to the [deployment options guide](../tutorials/deployment) for detailed instructions on all supported deployment models.

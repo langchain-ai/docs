@@ -1,13 +1,6 @@
 ---
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags
+title: Tools
 ---
-
-# Tools
 
 [Tools](https://python.langchain.com/docs/concepts/tools/) are a way to encapsulate a function and its input schema in a way that can be passed to a chat model that supports tool calling. This allows the model to request the execution of this function with specific inputs.
 
@@ -179,28 +172,29 @@ agent.invoke(
 )
 ```
 
-!!! Warning "Avoid infinite loops"
-
-    Forcing tool usage without stopping conditions can create infinite loops. Use one of the following safeguards:
-
-    - Mark the tool with [`return_direct=True`](#return-tool-results-directly) to end the loop after execution.
-    - Set [`recursion_limit`](../concepts/low_level.md#recursion-limit) to restrict the number of execution steps.
+<Warning>
+  **Avoid infinite loops**
+  Forcing tool usage without stopping conditions can create infinite loops. Use one of the following safeguards:
+  
+  * Mark the tool with [`return_direct=True`](#return-tool-results-directly) to end the loop after execution.
+  * Set [`recursion_limit`](../concepts/low_level#recursion-limit) to restrict the number of execution steps.
+</Warning>
 
 ## Handle tool errors
 
 By default, the agent will catch all exceptions raised during tool calls and will pass those as tool messages to the LLM. To control how the errors are handled, you can use the prebuilt [`ToolNode`][langgraph.prebuilt.tool_node.ToolNode] — the node that executes tools inside `create_react_agent` — via its `handle_tool_errors` parameter:
 
-=== "Enable error handling (default)"
-
+<Tabs>
+  <Tab title="Enable error handling (default)">
     ```python
     from langgraph.prebuilt import create_react_agent
-
+    
     def multiply(a: int, b: int) -> int:
         """Multiply two numbers."""
         if a == 42:
             raise ValueError("The ultimate error")
         return a * b
-
+    
     # Run with error handling (default)
     agent = create_react_agent(
         model="anthropic:claude-3-7-sonnet-latest",
@@ -210,18 +204,17 @@ By default, the agent will catch all exceptions raised during tool calls and wil
         {"messages": [{"role": "user", "content": "what's 42 x 7?"}]}
     )
     ```
-
-=== "Disable error handling"
-
+  </Tab>
+  <Tab title="Disable error handling">
     ```python
     from langgraph.prebuilt import create_react_agent, ToolNode
-
+    
     def multiply(a: int, b: int) -> int:
         """Multiply two numbers."""
         if a == 42:
             raise ValueError("The ultimate error")
         return a * b
-
+    
     # highlight-next-line
     tool_node = ToolNode(
         [multiply],
@@ -236,20 +229,19 @@ By default, the agent will catch all exceptions raised during tool calls and wil
         {"messages": [{"role": "user", "content": "what's 42 x 7?"}]}
     )
     ```
-
+    
     1. This disables error handling (enabled by default). See all available strategies in the [API reference][langgraph.prebuilt.tool_node.ToolNode].
-
-=== "Custom error handling"
-
+  </Tab>
+  <Tab title="Custom error handling">
     ```python
     from langgraph.prebuilt import create_react_agent, ToolNode
-
+    
     def multiply(a: int, b: int) -> int:
         """Multiply two numbers."""
         if a == 42:
             raise ValueError("The ultimate error")
         return a * b
-
+    
     # highlight-next-line
     tool_node = ToolNode(
         [multiply],
@@ -266,17 +258,19 @@ By default, the agent will catch all exceptions raised during tool calls and wil
         {"messages": [{"role": "user", "content": "what's 42 x 7?"}]}
     )
     ```
-
+    
     1. This provides a custom message to send to the LLM in case of an exception. See all available strategies in the [API reference][langgraph.prebuilt.tool_node.ToolNode].
+  </Tab>
+</Tabs>
 
 See [API reference][langgraph.prebuilt.tool_node.ToolNode] for more information on different tool error handling options.
 
 ## Working with memory
 
-LangGraph allows access to short-term and long-term memory from tools. See [Memory](./memory.md) guide for more information on:
+LangGraph allows access to short-term and long-term memory from tools. See [Memory](./memory) guide for more information on:
 
-* how to [read](./memory.md#read-short-term) from and [write](./memory.md#write-short-term) to **short-term** memory
-* how to [read](./memory.md#read-long-term) from and [write](./memory.md#write-long-term) to **long-term** memory
+* how to [read](./memory#read-short-term) from and [write](./memory#write-short-term) to **short-term** memory
+* how to [read](./memory#read-long-term) from and [write](./memory#write-long-term) to **long-term** memory
 
 ## Prebuilt tools
 
@@ -300,11 +294,10 @@ You can browse the full list of available integrations in the [LangChain integra
 
 Some commonly used tool categories include:
 
-- **Search**: Bing, SerpAPI, Tavily
-- **Code interpreters**: Python REPL, Node.js REPL
-- **Databases**: SQL, MongoDB, Redis
-- **Web data**: Web scraping and browsing
-- **APIs**: OpenWeatherMap, NewsAPI, and others
+* **Search**: Bing, SerpAPI, Tavily
+* **Code interpreters**: Python REPL, Node.js REPL
+* **Databases**: SQL, MongoDB, Redis
+* **Web data**: Web scraping and browsing
+* **APIs**: OpenWeatherMap, NewsAPI, and others
 
 These integrations can be configured and added to your agents using the same `tools` parameter shown in the examples above.
-

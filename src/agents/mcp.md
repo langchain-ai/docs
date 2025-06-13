@@ -1,13 +1,6 @@
 ---
-search:
-  boost: 2
-tags:
-  - agent
-hide:
-  - tags
+title: MCP Integration
 ---
-
-# MCP Integration
 
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) is an open protocol that standardizes how applications provide tools and context to language models. LangGraph agents can use tools defined on MCP servers through the `langchain-mcp-adapters` library.
 
@@ -68,6 +61,7 @@ Install the MCP library:
 ```bash
 pip install mcp
 ```
+
 Use the following reference implementations to test your agent with MCP tool servers.
 
 ```python title="Example Math Server (stdio transport)"
@@ -105,5 +99,5 @@ if __name__ == "__main__":
 
 ## Additional resources
 
-- [MCP documentation](https://modelcontextprotocol.io/introduction)
-- [MCP Transport documentation](https://modelcontextprotocol.io/docs/concepts/transports)
+* [MCP documentation](https://modelcontextprotocol.io/introduction)
+* [MCP Transport documentation](https://modelcontextprotocol.io/docs/concepts/transports)
