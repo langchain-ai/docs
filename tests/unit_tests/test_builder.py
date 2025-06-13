@@ -72,7 +72,7 @@ def test_build_all_supported_files() -> None:
         assert Path("index.mdx") in build_files
         assert Path("config.json") in build_files
         assert Path("images/logo.png") in build_files
-        assert Path("guides/setup.md") in build_files
+        assert Path("guides/setup.mdx") in build_files
 
 
 def test_build_all_unsupported_files() -> None:
@@ -164,7 +164,7 @@ def test_build_multiple_files() -> None:
         build_files = fs.list_build_files()
         assert len(build_files) == 2
         assert Path("index.mdx") in build_files
-        assert Path("guides/setup.md") in build_files
+        assert Path("guides/setup.mdx") in build_files
         assert not fs.build_file_exists("config.json")
 
 

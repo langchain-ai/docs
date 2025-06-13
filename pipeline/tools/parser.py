@@ -436,9 +436,9 @@ class MintPrinter:
     def _visit_document(self, node: Document) -> None:
         """Visit a document node."""
         for i, block in enumerate(node.blocks):
+            self._visit(block)
             if i > 0:
                 self._add_line("")
-            self._visit(block)
 
     def _visit_heading(self, node: Heading) -> None:
         """Visit a heading node."""

@@ -97,7 +97,6 @@ This is a simple document with front matter.
 
 # We convert the first heading to a Mintlify front matter block.
 EXPECTED_FRONT_MATTER = """\
-
 ---
 title: Example Heading
 ---
