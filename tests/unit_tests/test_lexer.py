@@ -147,3 +147,24 @@ def test_lex_code_with_blank_lines() -> None:
     # We want to check that the ident on the blank line is preserved correctly
     assert tokens[3].indent == 4  # Blank line
     assert tokens[4].indent == 4  # Second assignment line
+
+
+INPUT_TABLE = """\
+| Property | Description                           |
+| -------- | ------------------------------------- |
+| Name     | Full name of user                     |
+| Age      | Reported age                          |
+| Joined   | Whether the user joined the community |
+"""
+
+
+def test_lex_table() -> None:
+    """Test lexing a table."""
+    tokens = list(lex(INPUT_TABLE))
+    assert len(tokens) == 6
+    assert tokens[0].type == TokenType.TEXT
+    assert tokens[0].value == "| Property | Description                           |"
+    assert tokens[1].type == TokenType.TEXT
+    assert tokens[1].value == "| -------- | ------------------------------------- |"
+    assert tokens[2].type == TokenType.TEXT
+    assert tokens[2].value == "| Name     | Full name of user                     |"

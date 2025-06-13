@@ -455,8 +455,6 @@ class MintPrinter:
         """Visit a paragraph node."""
         for i, line in enumerate(node.value):
             self._add_line(line.strip())
-            if i > 0:
-                self._add_line("\n")
 
     def _visit_codeblock(self, node: CodeBlock) -> None:
         """Visit a code block node and format for Mintlify."""
