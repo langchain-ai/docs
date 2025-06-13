@@ -1,6 +1,7 @@
-# How to Set Up a LangGraph.js Application
-
-A [LangGraph.js](https://langchain-ai.github.io/langgraphjs/) application must be configured with a [LangGraph configuration file](../reference/cli.md#configuration-file) in order to be deployed to LangGraph Platform (or to be self-hosted). This how-to guide discusses the basic steps to setup a LangGraph.js application for deployment using `package.json` to specify project dependencies.
+---
+title: How to Set Up a LangGraph.js Application
+---
+A [LangGraph.js](https://langchain-ai.github.io/langgraphjs/) application must be configured with a [LangGraph configuration file](../reference/cli#configuration-file) in order to be deployed to LangGraph Platform (or to be self-hosted). This how-to guide discusses the basic steps to setup a LangGraph.js application for deployment using `package.json` to specify project dependencies.
 
 This walkthrough is based on [this repository](https://github.com/langchain-ai/langgraphjs-studio-starter), which you can play around with to learn more about how to setup your LangGraph application for deployment.
 
@@ -57,7 +58,7 @@ my-app/
 
 ## Specify Environment Variables
 
-Environment variables can optionally be specified in a file (e.g. `.env`). See the [Environment Variables reference](../reference/env_var.md) to configure additional variables for a deployment.
+Environment variables can optionally be specified in a file (e.g. `.env`). See the [Environment Variables reference](../reference/env_var) to configure additional variables for a deployment.
 
 Example `.env` file:
 
@@ -78,7 +79,7 @@ my-app/
 
 ## Define Graphs
 
-Implement your graphs! Graphs can be defined in a single file or multiple files. Make note of the variable names of each compiled graph to be included in the LangGraph application. The variable names will be used later when creating the [LangGraph configuration file](../reference/cli.md#configuration-file).
+Implement your graphs! Graphs can be defined in a single file or multiple files. Make note of the variable names of each compiled graph to be included in the LangGraph application. The variable names will be used later when creating the [LangGraph configuration file](../reference/cli#configuration-file).
 
 Here is an example `agent.ts`:
 
@@ -172,7 +173,7 @@ my-app/
 
 ## Create LangGraph API Config
 
-Create a [LangGraph configuration file](../reference/cli.md#configuration-file) called `langgraph.json`. See the [LangGraph configuration file reference](../reference/cli.md#configuration-file) for detailed explanations of each key in the JSON object of the configuration file.
+Create a [LangGraph configuration file](../reference/cli#configuration-file) called `langgraph.json`. See the [LangGraph configuration file reference](../reference/cli#configuration-file) for detailed explanations of each key in the JSON object of the configuration file.
 
 Example `langgraph.json` file:
 
@@ -190,10 +191,11 @@ Example `langgraph.json` file:
 
 Note that the variable name of the `CompiledGraph` appears at the end of the value of each subkey in the top-level `graphs` key (i.e. `:<variable_name>`).
 
-!!! info "Configuration Location"
-
-    The LangGraph configuration file must be placed in a directory that is at the same level or higher than the TypeScript files that contain compiled graphs and associated dependencies.
+<Info>
+  **Configuration Location**
+  The LangGraph configuration file must be placed in a directory that is at the same level or higher than the TypeScript files that contain compiled graphs and associated dependencies.
+</Info>
 
 ## Next
 
-After you setup your project and place it in a GitHub repository, it's time to [deploy your app](./cloud.md).
+After you setup your project and place it in a GitHub repository, it's time to [deploy your app](./cloud).

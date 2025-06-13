@@ -1,12 +1,13 @@
-# How to add semantic search to your LangGraph deployment
-
-This guide explains how to add semantic search to your LangGraph deployment's cross-thread [store](../../concepts/persistence.md#memory-store), so that your agent can search for memories and other documents by semantic similarity.
+---
+title: How to add semantic search to your LangGraph deployment
+---
+This guide explains how to add semantic search to your LangGraph deployment's cross-thread [store](../../concepts/persistence#memory-store), so that your agent can search for memories and other documents by semantic similarity.
 
 ## Prerequisites
 
-- A LangGraph deployment (see [how to deploy](setup_pyproject.md))
-- API keys for your embedding provider (in this case, OpenAI)
-- `langchain >= 0.3.8` (if you specify using the string format below)
+* A LangGraph deployment (see [how to deploy](setup_pyproject))
+* API keys for your embedding provider (in this case, OpenAI)
+* `langchain >= 0.3.8` (if you specify using the string format below)
 
 ## Steps
 
@@ -27,11 +28,11 @@ This guide explains how to add semantic search to your LangGraph deployment's cr
 
 This configuration:
 
-- Uses OpenAI's text-embedding-3-small model for generating embeddings
-- Sets the embedding dimension to 1536 (matching the model's output)
-- Indexes all fields in your stored data (`["$"]` means index everything, or specify specific fields like `["text", "metadata.title"]`)
+* Uses OpenAI's text-embedding-3-small model for generating embeddings
+* Sets the embedding dimension to 1536 (matching the model's output)
+* Indexes all fields in your stored data (`["$"]` means index everything, or specify specific fields like `["text", "metadata.title"]`)
 
-2. To use the string embedding format above, make sure your dependencies include `langchain >= 0.3.8`:
+1. To use the string embedding format above, make sure your dependencies include `langchain >= 0.3.8`:
 
 ```toml
 # In pyproject.toml

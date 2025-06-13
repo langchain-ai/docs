@@ -1,5 +1,6 @@
-# How to customize Dockerfile
-
+---
+title: How to customize Dockerfile
+---
 Users can add an array of additional lines to add to the Dockerfile following the import from the parent LangGraph image. In order to do this, you simply need to modify your `langgraph.json` file by passing in the commands you want run to the `dockerfile_lines` key. For example, if we wanted to use `Pillow` in our graph you would need to add the following dependencies:
 
 ```
@@ -16,4 +17,4 @@ Users can add an array of additional lines to add to the Dockerfile following th
 }
 ```
 
-This would install the system packages required to use Pillow if we were working with `jpeg` or `png` image formats. 
+This would install the system packages required to use Pillow if we were working with `jpeg` or `png` image formats.

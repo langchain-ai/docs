@@ -1,14 +1,19 @@
-# How to Set Up a LangGraph Application with requirements.txt
-
-A LangGraph application must be configured with a [LangGraph configuration file](../reference/cli.md#configuration-file) in order to be deployed to LangGraph Platform (or to be self-hosted). This how-to guide discusses the basic steps to setup a LangGraph application for deployment using `requirements.txt` to specify project dependencies.
+---
+title: How to Set Up a LangGraph Application with requirements.txt
+---
+A LangGraph application must be configured with a [LangGraph configuration file](../reference/cli#configuration-file) in order to be deployed to LangGraph Platform (or to be self-hosted). This how-to guide discusses the basic steps to setup a LangGraph application for deployment using `requirements.txt` to specify project dependencies.
 
 This walkthrough is based on [this repository](https://github.com/langchain-ai/langgraph-example), which you can play around with to learn more about how to setup your LangGraph application for deployment.
 
-!!! tip "Setup with pyproject.toml"
-    If you prefer using poetry for dependency management, check out [this how-to guide](./setup_pyproject.md) on using `pyproject.toml` for LangGraph Platform.
+<Tip>
+  **Setup with pyproject.toml**
+  If you prefer using poetry for dependency management, check out [this how-to guide](./setup_pyproject) on using `pyproject.toml` for LangGraph Platform.
+</Tip>
 
-!!! tip "Setup with a Monorepo"
-    If you are interested in deploying a graph located inside a monorepo, take a look at [this repository](https://github.com/langchain-ai/langgraph-example-monorepo) for an example of how to do so.
+<Tip>
+  **Setup with a Monorepo**
+  If you are interested in deploying a graph located inside a monorepo, take a look at [this repository](https://github.com/langchain-ai/langgraph-example-monorepo) for an example of how to do so.
+</Tip>
 
 The final repository structure will look something like this:
 
@@ -74,7 +79,7 @@ my-app/
 
 ## Specify Environment Variables
 
-Environment variables can optionally be specified in a file (e.g. `.env`). See the [Environment Variables reference](../reference/env_var.md) to configure additional variables for a deployment.
+Environment variables can optionally be specified in a file (e.g. `.env`). See the [Environment Variables reference](../reference/env_var) to configure additional variables for a deployment.
 
 Example `.env` file:
 
@@ -95,7 +100,7 @@ my-app/
 
 ## Define Graphs
 
-Implement your graphs! Graphs can be defined in a single file or multiple files. Make note of the variable names of each [CompiledStateGraph][langgraph.graph.state.CompiledStateGraph] to be included in the LangGraph application. The variable names will be used later when creating the [LangGraph configuration file](../reference/cli.md#configuration-file).
+Implement your graphs! Graphs can be defined in a single file or multiple files. Make note of the variable names of each [CompiledStateGraph][langgraph.graph.state.CompiledStateGraph] to be included in the LangGraph application. The variable names will be used later when creating the [LangGraph configuration file](../reference/cli#configuration-file).
 
 Example `agent.py` file, which shows how to import from other modules you define (code for the modules is not shown here, please see [this repository](https://github.com/langchain-ai/langgraph-example) to see their implementation):
 
@@ -147,7 +152,7 @@ my-app/
 
 ## Create LangGraph Configuration File
 
-Create a [LangGraph configuration file](../reference/cli.md#configuration-file) called `langgraph.json`. See the [LangGraph configuration file reference](../reference/cli.md#configuration-file) for detailed explanations of each key in the JSON object of the configuration file.
+Create a [LangGraph configuration file](../reference/cli#configuration-file) called `langgraph.json`. See the [LangGraph configuration file reference](../reference/cli#configuration-file) for detailed explanations of each key in the JSON object of the configuration file.
 
 Example `langgraph.json` file:
 
@@ -163,8 +168,10 @@ Example `langgraph.json` file:
 
 Note that the variable name of the `CompiledGraph` appears at the end of the value of each subkey in the top-level `graphs` key (i.e. `:<variable_name>`).
 
-!!! warning "Configuration File Location"
-    The LangGraph configuration file must be placed in a directory that is at the same level or higher than the Python files that contain compiled graphs and associated dependencies.
+<Warning>
+  **Configuration File Location**
+  The LangGraph configuration file must be placed in a directory that is at the same level or higher than the Python files that contain compiled graphs and associated dependencies.
+</Warning>
 
 Example file directory:
 
@@ -185,4 +192,4 @@ my-app/
 
 ## Next
 
-After you setup your project and place it in a GitHub repository, it's time to [deploy your app](./cloud.md).
+After you setup your project and place it in a GitHub repository, it's time to [deploy your app](./cloud).
