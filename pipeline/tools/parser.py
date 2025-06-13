@@ -514,7 +514,7 @@ class MintPrinter:
     def _visit_unorderedlist(self, node: UnorderedList) -> None:
         """Visit an unordered list node."""
         for item in node.items:
-            self._visit_list_item(item, "- ")
+            self._visit_list_item(item, "* ")
 
     def _visit_orderedlist(self, node: OrderedList) -> None:
         """Visit an ordered list node."""
