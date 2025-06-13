@@ -1,5 +1,6 @@
-# Use webhooks
-
+---
+title: Use webhooks
+---
 When working with LangGraph Platform, you may want to use webhooks to receive updates after an API call completes. Webhooks are useful for triggering actions in your service once a run has finished processing. To implement this, you need to expose an endpoint that can accept `POST` requests and pass this endpoint as a `webhook` parameter in your API request.
 
 Currently, the SDK does not provide built-in support for defining webhook endpoints, but you can specify them manually using API requests.
@@ -24,7 +25,11 @@ In this guide, we’ll show how to trigger a webhook after streaming a run.
 
 Before making API calls, set up your assistant and thread.
 
-=== "Python"
+<Tabs>
+  <Tab title="Python">
+  </Tab>
+</Tabs>
+
 ```python
 from langgraph_sdk import get_client
 
@@ -34,7 +39,11 @@ thread = await client.threads.create()
 print(thread)
 ```
 
-=== "JavaScript"
+<Tabs>
+  <Tab title="JavaScript">
+  </Tab>
+</Tabs>
+
 ```js
 import { Client } from "@langchain/langgraph-sdk";
 
@@ -44,7 +53,11 @@ const thread = await client.threads.create();
 console.log(thread);
 ```
 
-=== "CURL"
+<Tabs>
+  <Tab title="CURL">
+  </Tab>
+</Tabs>
+
 ```bash
 curl --request POST \
     --url <DEPLOYMENT_URL>/assistants/search \
@@ -76,7 +89,11 @@ To use a webhook, specify the `webhook` parameter in your API request. When the 
 
 For example, if your server listens for webhook events at `https://my-server.app/my-webhook-endpoint`, include this in your request:
 
-=== "Python"
+<Tabs>
+  <Tab title="Python">
+  </Tab>
+</Tabs>
+
 ```python
 input = { "messages": [{ "role": "user", "content": "Hello!" }] }
 
@@ -90,7 +107,11 @@ async for chunk in client.runs.stream(
     pass
 ```
 
-=== "JavaScript"
+<Tabs>
+  <Tab title="JavaScript">
+  </Tab>
+</Tabs>
+
 ```js
 const input = { messages: [{ role: "human", content: "Hello!" }] };
 
@@ -108,7 +129,11 @@ for await (const chunk of streamResponse) {
 }
 ```
 
-=== "CURL"
+<Tabs>
+  <Tab title="CURL">
+  </Tab>
+</Tabs>
+
 ```bash
 curl --request POST \
     --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs/stream \
@@ -122,7 +147,7 @@ curl --request POST \
 
 ## Webhook payload
 
-LangGraph Platform sends webhook notifications in the format of a [Run](../../cloud/concepts/runs.md). See the [API Reference](https://langchain-ai.github.io/langgraph/cloud/reference/api/api_ref.html#model/run) for details. The request payload includes run input, configuration, and other metadata in the `kwargs` field.
+LangGraph Platform sends webhook notifications in the format of a [Run](../../cloud/concepts/runs). See the [API Reference](https://langchain-ai.github.io/langgraph/cloud/reference/api/api_ref.html#model/run) for details. The request payload includes run input, configuration, and other metadata in the `kwargs` field.
 
 ## Secure webhooks
 
@@ -138,7 +163,7 @@ Your server should extract and validate this token before processing requests.
 
 You can test your webhook using online services like:
 
-- **[Beeceptor](https://beeceptor.com/)** – Quickly create a test endpoint and inspect incoming webhook payloads.
-- **[Webhook.site](https://webhook.site/)** – View, debug, and log incoming webhook requests in real time.
+* **[Beeceptor](https://beeceptor.com/)** – Quickly create a test endpoint and inspect incoming webhook payloads.
+* **[Webhook.site](https://webhook.site/)** – View, debug, and log incoming webhook requests in real time.
 
 These tools help you verify that LangGraph Platform is correctly triggering and sending webhooks to your service.

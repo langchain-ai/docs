@@ -1,5 +1,6 @@
-# Iterate on prompts
-
+---
+title: Iterate on prompts
+---
 ## Overview
 
 LangGraph Studio supports two methods for modifying prompts in your graph: direct node editing and the LangSmith Playground interface.
@@ -8,9 +9,10 @@ LangGraph Studio supports two methods for modifying prompts in your graph: direc
 
 Studio allows you to edit prompts used inside individual nodes, directly from the graph interface.
 
-!!! info "Prerequisites"
-
-    - [Assistants overview](../../concepts/assistants.md)
+<Info>
+  **Prerequisites**
+  * [Assistants overview](../../concepts/assistants)
+</Info>
 
 ### Graph Configuration
 
@@ -20,10 +22,10 @@ Define your [configuration](https://langchain-ai.github.io/langgraph/how-tos/con
 
 ##### `langgraph_nodes`
 
-- **Description**: Specifies which nodes of the graph a configuration field is associated with.
-- **Value Type**: Array of strings, where each string is the name of a node in your graph.
-- **Usage Context**: Include in the `json_schema_extra` dictionary for Pydantic models or the `metadata["json_schema_extra"]` dictionary for dataclasses.
-- **Example**:
+* **Description**: Specifies which nodes of the graph a configuration field is associated with.
+* **Value Type**: Array of strings, where each string is the name of a node in your graph.
+* **Usage Context**: Include in the `json_schema_extra` dictionary for Pydantic models or the `metadata["json_schema_extra"]` dictionary for dataclasses.
+* **Example**:
   ```python
   system_prompt: str = Field(
       default="You are a helpful AI assistant.",
@@ -33,12 +35,12 @@ Define your [configuration](https://langchain-ai.github.io/langgraph/how-tos/con
 
 ##### `langgraph_type`
 
-- **Description**: Specifies the type of configuration field, which determines how it's handled in the UI.
-- **Value Type**: String
-- **Supported Values**:
-  - `"prompt"`: Indicates the field contains prompt text that should be treated specially in the UI.
-- **Usage Context**: Include in the `json_schema_extra` dictionary for Pydantic models or the `metadata["json_schema_extra"]` dictionary for dataclasses.
-- **Example**:
+* **Description**: Specifies the type of configuration field, which determines how it's handled in the UI.
+* **Value Type**: String
+* **Supported Values**:
+  * `"prompt"`: Indicates the field contains prompt text that should be treated specially in the UI.
+* **Usage Context**: Include in the `json_schema_extra` dictionary for Pydantic models or the `metadata["json_schema_extra"]` dictionary for dataclasses.
+* **Example**:
   ```python
   system_prompt: str = Field(
       default="You are a helpful AI assistant.",

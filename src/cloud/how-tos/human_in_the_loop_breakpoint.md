@@ -1,13 +1,14 @@
-# Breakpoints
-
-[Breakpoints](../../concepts/breakpoints.md) pause graph execution at defined points and let you step through each stage. They use LangGraph's [**persistence layer**](../../concepts/persistence.md), which saves the graph state after each step.
+---
+title: Breakpoints
+---
+[Breakpoints](../../concepts/breakpoints) pause graph execution at defined points and let you step through each stage. They use LangGraph's [**persistence layer**](../../concepts/persistence), which saves the graph state after each step.
 
 With breakpoints, you can inspect the graph's state and node inputs at any point. Execution pauses **indefinitely** until you resume, as the checkpointer preserves the state.
 
 ## Set breakpoints
 
-=== "Compile time"
-
+<Tabs>
+  <Tab title="Compile time">
     ```python
     # highlight-next-line
     graph = graph_builder.compile( # (1)!
@@ -17,15 +18,14 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
         interrupt_after=["node_b", "node_c"], # (3)!
     )
     ```
-
+    
     1. The breakpoints are set during `compile` time.
     2. `interrupt_before` specifies the nodes where execution should pause before the node is executed.
     3. `interrupt_after` specifies the nodes where execution should pause after the node is executed.
-
-=== "Run time"
-
-    === "Python"
-
+  </Tab>
+  <Tab title="Run time">
+    <Tabs>
+      <Tab title="Python">
         ```python
         # highlight-next-line
         await client.runs.wait( # (1)!
@@ -38,13 +38,12 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
             interrupt_after=["node_b", "node_c"] # (3)!
         )
         ```
-
+        
         1. `client.runs.wait` is called with the `interrupt_before` and `interrupt_after` parameters. This is a run-time configuration and can be changed for every invocation.
         2. `interrupt_before` specifies the nodes where execution should pause before the node is executed.
         3. `interrupt_after` specifies the nodes where execution should pause after the node is executed.
-
-    === "JavaScript"
-
+      </Tab>
+      <Tab title="JavaScript">
         ```js
         // highlight-next-line
         await client.runs.wait( // (1)!
@@ -59,13 +58,12 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
           }
         )
         ```
-
+        
         1. `client.runs.wait` is called with the `interruptBefore` and `interruptAfter` parameters. This is a run-time configuration and can be changed for every invocation.
         2. `interruptBefore` specifies the nodes where execution should pause before the node is executed.
         3. `interruptAfter` specifies the nodes where execution should pause after the node is executed.
-
-    === "cURL"
-
+      </Tab>
+      <Tab title="cURL">
         ```bash
         curl --request POST \
         --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs/wait \
@@ -77,32 +75,35 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
           \"input\": <INPUT>
         }"
         ```
+      </Tab>
+    </Tabs>
+  </Tab>
+</Tabs>
 
-!!! tip
+<Tip>
+  This example shows how to add **static** breakpoints. See [this guide](../../how-tos/human_in_the_loop/breakpoints.ipynb) for more options for how to add breakpoints.
+</Tip>
 
-    This example shows how to add **static** breakpoints. See [this guide](../../how-tos/human_in_the_loop/breakpoints.ipynb) for more options for how to add breakpoints.
-
-
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     from langgraph_sdk import get_client
     client = get_client(url=<DEPLOYMENT_URL>)
-
+    
     # Using the graph deployed with the name "agent"
     assistant_id = "agent"
-
+    
     # create a thread
     thread = await client.threads.create()
     thread_id = thread["thread_id"]
-
+    
     # Run the graph until the breakpoint
     result = await client.runs.wait(
         thread_id,
         assistant_id,
         input=inputs   # (1)!
     )
-
+    
     # Resume the graph
     await client.runs.wait(
         thread_id,
@@ -110,30 +111,29 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
         input=None   # (2)!
     )
     ```
-
+    
     1. The graph is run until the first breakpoint is hit.
     2. The graph is resumed by passing in `None` for the input. This will run the graph until the next breakpoint is hit.
-
-=== "JavaScript"
-
+  </Tab>
+  <Tab title="JavaScript">
     ```js
     import { Client } from "@langchain/langgraph-sdk";
     const client = new Client({ apiUrl: <DEPLOYMENT_URL> });
-
+    
     // Using the graph deployed with the name "agent"
     const assistantID = "agent";
-
+    
     // create a thread
     const thread = await client.threads.create();
     const threadID = thread["thread_id"];
-
+    
     // Run the graph until the breakpoint
     const result = await client.runs.wait(
       threadID,
       assistantID,
       { input: input }   // (1)!
     );
-
+    
     // Resume the graph
     await client.runs.wait(
       threadID,
@@ -141,23 +141,22 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
       { input: null }   // (2)!
     );
     ```
-
+    
     1. The graph is run until the first breakpoint is hit.
     2. The graph is resumed by passing in `null` for the input. This will run the graph until the next breakpoint is hit.
-
-=== "cURL"
-
+  </Tab>
+  <Tab title="cURL">
     Create a thread:
-
+    
     ```bash
     curl --request POST \
     --url <DEPLOYMENT_URL>/threads \
     --header 'Content-Type: application/json' \
     --data '{}'
     ```
-
+    
     Run the graph until the breakpoint:
-
+    
     ```bash
     curl --request POST \
     --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs/wait \
@@ -167,9 +166,9 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
       \"input\": <INPUT>
     }"
     ```
-
+    
     Resume the graph:
-
+    
     ```bash
     curl --request POST \
     --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs/wait \
@@ -178,7 +177,9 @@ With breakpoints, you can inspect the graph's state and node inputs at any point
       \"assistant_id\": \"agent\"
     }"
     ```
+  </Tab>
+</Tabs>
 
 ## Learn more
 
-- [**LangGraph breakpoints guide**](../../how-tos/human_in_the_loop/breakpoints.ipynb): learn more about adding breakpoints in LangGraph.
+* [**LangGraph breakpoints guide**](../../how-tos/human_in_the_loop/breakpoints.ipynb): learn more about adding breakpoints in LangGraph.

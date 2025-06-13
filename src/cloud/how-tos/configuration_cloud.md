@@ -1,18 +1,19 @@
-# Manage assistants
-
-In this guide we will show how to create, configure, and manage an [assistant](../../concepts/assistants.md).
+---
+title: Manage assistants
+---
+In this guide we will show how to create, configure, and manage an [assistant](../../concepts/assistants).
 
 First, as a brief refresher on the concept of configurations, consider the following simple `call_model` node and configuration schema. Observe that this node tries to read and use the `model_name` as defined by the `config` object's `configurable`.
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
-
+    
     class ConfigSchema(TypedDict):
         model_name: str
-
+    
     builder = StateGraph(AgentState, config_schema=ConfigSchema)
-
+    
     def call_model(state, config):
         messages = state["messages"]
         model_name = config.get('configurable', {}).get("model_name", "anthropic")
@@ -21,19 +22,18 @@ First, as a brief refresher on the concept of configurations, consider the follo
         # We return a list, because this will get added to the existing list
         return {"messages": [response]}
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     import { Annotation } from "@langchain/langgraph";
-
+    
     const ConfigSchema = Annotation.Root({
         model_name: Annotation<string>,
         system_prompt:
     });
-
+    
     const builder = new StateGraph(AgentState, ConfigSchema)
-
+    
     function callModel(state: State, config: RunnableConfig) {
       const messages = state.messages;
       const modelName = config.configurable?.model_name ?? "anthropic";
@@ -43,57 +43,61 @@ First, as a brief refresher on the concept of configurations, consider the follo
       return { messages: [response] };
     }
     ```
+  </Tab>
+</Tabs>
 
-For more information on configurations, [see here](../../concepts/low_level.md#configuration).
+For more information on configurations, [see here](../../concepts/low_level#configuration).
 
 ## Create an assistant
 
 ### LangGraph SDK
 
-To create an assistant, use the [LangGraph SDK](../../concepts/sdk.md) `create` method. See the [Python](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/#langgraph_sdk.client.AssistantsClient.create) and [JS](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/js_ts_sdk_ref/#create) SDK reference docs for more information.
+To create an assistant, use the [LangGraph SDK](../../concepts/sdk) `create` method. See the [Python](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/#langgraph_sdk.client.AssistantsClient.create) and [JS](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/js_ts_sdk_ref/#create) SDK reference docs for more information.
 
 This example uses the same configuration schema as above, and creates an assistant with `model_name` set to `openai`.
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     from langgraph_sdk import get_client
-
+    
     client = get_client(url=<DEPLOYMENT_URL>)
     openai_assistant = await client.assistants.create(
         # "agent" is the name of a graph we deployed
         "agent", config={"configurable": {"model_name": "openai"}}, name="Open AI Assistant"
     )
-
+    
     print(openai_assistant)
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     import { Client } from "@langchain/langgraph-sdk";
-
+    
     const client = new Client({ apiUrl: <DEPLOYMENT_URL> });
     const openAIAssistant = await client.assistants.create({
         graphId: 'agent',
         name: "Open AI Assistant",
         config: { "configurable": { "model_name": "openai" } },
     });
-
+    
     console.log(openAIAssistant);
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request POST \
         --url <DEPLOYMENT_URL>/assistants \
         --header 'Content-Type: application/json' \
         --data '{"graph_id":"agent", "config":{"configurable":{"model_name":"openai"}}, "name": "Open AI Assistant"}'
     ```
+  </Tab>
+</Tabs>
 
 Output:
 
+
+```
     {
         "assistant_id": "62e209ca-9154-432a-b9e9-2d75c7a9219b",
         "graph_id": "agent",
@@ -107,6 +111,7 @@ Output:
         "created_at": "2024-08-31T03:09:10.230718+00:00",
         "updated_at": "2024-08-31T03:09:10.230718+00:00",
     }
+```
 
 ### LangGraph Platform UI
 
@@ -116,7 +121,7 @@ Inside your deployment, select the "Assistants" tab. This will load a table of a
 
 To create a new assistant, select the "+ New assistant" button. This will open a form where you can specify the graph this assistant is for, as well as provide a name, description, and the desired configuration for the assistant based on the configuration schema for that graph.
 
-To confirm, click "Create assistant". This will take you to [LangGraph Studio](../../concepts/langgraph_studio.md) where you can test the assistant. If you go back to the "Assistants" tab in the deployment, you will see the newly created assistant in the table.
+To confirm, click "Create assistant". This will take you to [LangGraph Studio](../../concepts/langgraph_studio) where you can test the assistant. If you go back to the "Assistants" tab in the deployment, you will see the newly created assistant in the table.
 
 ## Use an assistant
 
@@ -124,8 +129,8 @@ To confirm, click "Create assistant". This will take you to [LangGraph Studio](.
 
 We have now created an assistant called "Open AI Assistant" that has `model_name` defined as `openai`. We can now use this assistant with this configuration:
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     thread = await client.threads.create()
     input = {"messages": [{"role": "user", "content": "who made you?"}]}
@@ -140,13 +145,12 @@ We have now created an assistant called "Open AI Assistant" that has `model_name
         print(event.data)
         print("\n\n")
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     const thread = await client.threads.create();
     const input = { "messages": [{ "role": "user", "content": "who made you?" }] };
-
+    
     const streamResponse = client.runs.stream(
       thread["thread_id"],
       // this is where we specify the assistant id to use
@@ -156,16 +160,15 @@ We have now created an assistant called "Open AI Assistant" that has `model_name
         streamMode: "updates"
       }
     );
-
+    
     for await (const event of streamResponse) {
       console.log(`Receiving event of type: ${event.event}`);
       console.log(event.data);
       console.log("\n\n");
     }
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     thread_id=$(curl --request POST \
         --url <DEPLOYMENT_URL>/threads \
@@ -209,16 +212,18 @@ We have now created an assistant called "Open AI Assistant" that has `model_name
         }
     '
     ```
+  </Tab>
+</Tabs>
 
 Output:
 
-    Receiving event of type: metadata
-    {'run_id': '1ef6746e-5893-67b1-978a-0f1cd4060e16'}
+```
+Receiving event of type: metadata
+{'run_id': '1ef6746e-5893-67b1-978a-0f1cd4060e16'}
 
-
-
-    Receiving event of type: updates
-    {'agent': {'messages': [{'content': 'I was created by OpenAI, a research organization focused on developing and advancing artificial intelligence technology.', 'additional_kwargs': {}, 'response_metadata': {'finish_reason': 'stop', 'model_name': 'gpt-4o-2024-05-13', 'system_fingerprint': 'fp_157b3831f5'}, 'type': 'ai', 'name': None, 'id': 'run-e1a6b25c-8416-41f2-9981-f9cfe043f414', 'example': False, 'tool_calls': [], 'invalid_tool_calls': [], 'usage_metadata': None}]}}
+Receiving event of type: updates
+{'agent': {'messages': [{'content': 'I was created by OpenAI, a research organization focused on developing and advancing artificial intelligence technology.', 'additional_kwargs': {}, 'response_metadata': {'finish_reason': 'stop', 'model_name': 'gpt-4o-2024-05-13', 'system_fingerprint': 'fp_157b3831f5'}, 'type': 'ai', 'name': None, 'id': 'run-e1a6b25c-8416-41f2-9981-f9cfe043f414', 'example': False, 'tool_calls': [], 'invalid_tool_calls': [], 'usage_metadata': None}]}}
+```
 
 ### LangGraph Platform UI
 
@@ -230,12 +235,15 @@ Inside your deployment, select the "Assistants" tab. For the assistant you would
 
 To edit the assistant, use the `update` method. This will create a new version of the assistant with the provided edits. See the [Python](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/#langgraph_sdk.client.AssistantsClient.update) and [JS](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/js_ts_sdk_ref/#update) SDK reference docs for more information.
 
-!!! note "Note"
+<Note>
 You must pass in the ENTIRE config (and metadata if you are using it). The update endpoint creates new versions completely from scratch and does not rely on previous versions.
+</Note>
+
 
 For example, to update your assistant's system prompt:
-=== "Python"
 
+<Tabs>
+  <Tab title="Python">
     ```python
     openai_assistant_v2 = await client.assistants.update(
         openai_assistant["assistant_id"],
@@ -247,9 +255,8 @@ For example, to update your assistant's system prompt:
         },
     )
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     const openaiAssistantV2 = await client.assistants.update(
         openai_assistant["assistant_id"],
@@ -262,9 +269,8 @@ For example, to update your assistant's system prompt:
         },
     });
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request PATCH \
     --url <DEPOLYMENT_URL>/assistants/<ASSISTANT_ID> \
@@ -273,6 +279,8 @@ For example, to update your assistant's system prompt:
     "config": {"model_name": "openai", "system_prompt": "You are an unhelpful assistant!"}
     }'
     ```
+  </Tab>
+</Tabs>
 
 This will create a new version of the assistant with the updated parameters and set this as the active version of your assistant. If you now run your graph and pass in this assistant id, it will use this latest version.
 
@@ -294,20 +302,18 @@ You can also change the active version of your assistant. To do so, use the `set
 
 In the example above, to rollback to the first version of the assistant:
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     await client.assistants.set_latest(openai_assistant['assistant_id'], 1)
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     await client.assistants.setLatest(openaiAssistant['assistant_id'], 1);
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request POST \
     --url <DEPLOYMENT_URL>/assistants/<ASSISTANT_ID>/latest \
@@ -316,6 +322,8 @@ In the example above, to rollback to the first version of the assistant:
     "version": 1
     }'
     ```
+  </Tab>
+</Tabs>
 
 If you now run your graph and pass in this assistant id, it will use the first version of the assistant.
 
@@ -323,5 +331,7 @@ If you now run your graph and pass in this assistant id, it will use the first v
 
 If using LangGraph Studio, to set the active version of your assistant, click the "Manage Assistants" button and locate the assistant you would like to use. Select the assistant and the version, and then click the "Active" toggle. This will update the assistant to make the selected version active.
 
-!!! warning "Deleting Assistants"
-    Deleting as assistant will delete ALL of its versions. There is currently no way to delete a single version, but by pointing your assistant to the correct version you can skip any versions that you don't wish to use.
+<Warning>
+  **Deleting Assistants**
+  Deleting as assistant will delete ALL of its versions. There is currently no way to delete a single version, but by pointing your assistant to the correct version you can skip any versions that you don't wish to use.
+</Warning>

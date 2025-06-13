@@ -1,16 +1,17 @@
-# Use cron jobs
-
+---
+title: Use cron jobs
+---
 Sometimes you don't want to run your graph based on user interaction, but rather you would like to schedule your graph to run on a schedule - for example if you wish for your graph to compose and send out a weekly email of to-dos for your team. LangGraph Platform allows you to do this without having to write your own script by using the `Crons` client. To schedule a graph job, you need to pass a [cron expression](https://crontab.cronhub.io/) to inform the client when you want to run the graph. `Cron` jobs are run in the background and do not interfere with normal invocations of the graph.
 
 ## Setup
 
 First, let's set up our SDK client, assistant, and thread:
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     from langgraph_sdk import get_client
-
+    
     client = get_client(url=<DEPLOYMENT_URL>)
     # Using the graph deployed with the name "agent"
     assistant_id = "agent"
@@ -18,12 +19,11 @@ First, let's set up our SDK client, assistant, and thread:
     thread = await client.threads.create()
     print(thread)
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     import { Client } from "@langchain/langgraph-sdk";
-
+    
     const client = new Client({ apiUrl: <DEPLOYMENT_URL> });
     // Using the graph deployed with the name "agent"
     const assistantId = "agent";
@@ -31,9 +31,8 @@ First, let's set up our SDK client, assistant, and thread:
     const thread = await client.threads.create();
     console.log(thread);
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request POST \
         --url <DEPLOYMENT_URL>/assistants/search \
@@ -47,26 +46,29 @@ First, let's set up our SDK client, assistant, and thread:
         --header 'Content-Type: application/json' \
         --data '{}'
     ```
+  </Tab>
+</Tabs>
 
 Output:
 
-    {
-        'thread_id': '9dde5490-2b67-47c8-aa14-4bfec88af217', 
-        'created_at': '2024-08-30T23:07:38.242730+00:00', 
-        'updated_at': '2024-08-30T23:07:38.242730+00:00', 
-        'metadata': {}, 
-        'status': 'idle', 
-        'config': {}, 
-        'values': None
-    }
+```
+{
+    'thread_id': '9dde5490-2b67-47c8-aa14-4bfec88af217',
+    'created_at': '2024-08-30T23:07:38.242730+00:00',
+    'updated_at': '2024-08-30T23:07:38.242730+00:00',
+    'metadata': {},
+    'status': 'idle',
+    'config': {},
+    'values': None
+}
+```
 
 ## Cron job on a thread 
 
 To create a cron job associated with a specific thread, you can write:
 
-
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     # This schedules a job to run at 15:27 (3:27PM) every day
     cron_job = await client.crons.create_for_thread(
@@ -76,9 +78,8 @@ To create a cron job associated with a specific thread, you can write:
         input={"messages": [{"role": "user", "content": "What time is it?"}]},
     )
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     // This schedules a job to run at 15:27 (3:27PM) every day
     const cronJob = await client.crons.create_for_thread(
@@ -90,9 +91,8 @@ To create a cron job associated with a specific thread, you can write:
       }
     );
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request POST \
         --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs/crons \
@@ -101,34 +101,36 @@ To create a cron job associated with a specific thread, you can write:
             "assistant_id": <ASSISTANT_ID>,
         }'
     ```
+  </Tab>
+</Tabs>
 
 Note that it is **very** important to delete `Cron` jobs that are no longer useful. Otherwise you could rack up unwanted API charges to the LLM! You can delete a `Cron` job using the following code:
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     await client.crons.delete(cron_job["cron_id"])
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     await client.crons.delete(cronJob["cron_id"]);
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request DELETE \
         --url <DEPLOYMENT_URL>/runs/crons/<CRON_ID>
     ```
+  </Tab>
+</Tabs>
 
 ## Cron job stateless
 
 You can also create stateless cron jobs by using the following code:
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     # This schedules a job to run at 15:27 (3:27PM) every day
     cron_job_stateless = await client.crons.create(
@@ -137,9 +139,8 @@ You can also create stateless cron jobs by using the following code:
         input={"messages": [{"role": "user", "content": "What time is it?"}]},
     )
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     // This schedules a job to run at 15:27 (3:27PM) every day
     const cronJobStateless = await client.crons.create(
@@ -150,9 +151,8 @@ You can also create stateless cron jobs by using the following code:
       }
     );
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request POST \
         --url <DEPLOYMENT_URL>/runs/crons \
@@ -161,24 +161,26 @@ You can also create stateless cron jobs by using the following code:
             "assistant_id": <ASSISTANT_ID>,
         }'
     ```
+  </Tab>
+</Tabs>
 
 Again, remember to delete your job once you are done with it!
 
-=== "Python"
-
+<Tabs>
+  <Tab title="Python">
     ```python
     await client.crons.delete(cron_job_stateless["cron_id"])
     ```
-
-=== "Javascript"
-
+  </Tab>
+  <Tab title="Javascript">
     ```js
     await client.crons.delete(cronJobStateless["cron_id"]);
     ```
-
-=== "CURL"
-
+  </Tab>
+  <Tab title="CURL">
     ```bash
     curl --request DELETE \
         --url <DEPLOYMENT_URL>/runs/crons/<CRON_ID>
     ```
+  </Tab>
+</Tabs>

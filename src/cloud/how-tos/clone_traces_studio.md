@@ -1,5 +1,6 @@
-# Debug LangSmith traces
-
+---
+title: Debug LangSmith traces
+---
 This guide explains how to open LangSmith traces in LangGraph Studio for interactive investigation and debugging.
 
 ## Open deployed threads
@@ -15,15 +16,16 @@ This section explains how to test a local agent against remote traces from LangS
 
 ### Requirements
 
-- A LangSmith traced thread
-- A locally running agent. See [here](../how-tos/studio/quick_start.md#local-development-server) for setup
+* A LangSmith traced thread
+* A locally running agent. See [here](../how-tos/studio/quick_start#local-development-server) for setup
   instructions.
 
-!!! info "Local agent requirements"
-
-    - langgraph>=0.3.18
-    - langgraph-api>=0.0.32
-    - Contains the same set of nodes present in the remote trace
+<Info>
+  **Local agent requirements**
+  * langgraph>=0.3.18
+  * langgraph-api>=0.0.32
+  * Contains the same set of nodes present in the remote trace
+</Info>
 
 ### Cloning Thread
 
