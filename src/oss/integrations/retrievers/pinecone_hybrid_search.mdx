@@ -1,0 +1,114 @@
+---
+title: "Pinecone Hybrid Search"
+---
+
+> [Pinecone](https://docs.pinecone.io/oss/overview) is a vector database with broad functionality.
+
+This notebook goes over how to use a retriever that under the hood uses Pinecone and Hybrid Search.
+
+The logic of this retriever is taken from [this documentation](https://docs.pinecone.io/oss/hybrid-search)
+
+To use Pinecone, you must have an API key and an Environment. Here are the [installation instructions](https://docs.pinecone.io/oss/quickstart).
+
+```
+%pip install --upgrade --quiet  pinecone pinecone-text pinecone-notebooks
+```
+
+```
+# Connect to Pinecone and get an API key.from pinecone_notebooks.colab import AuthenticateAuthenticate()import osapi_key = os.environ["PINECONE_API_KEY"]
+```
+
+```
+from langchain_community.retrievers import (    PineconeHybridSearchRetriever,)
+```
+
+**API Reference:**[PineconeHybridSearchRetriever](https://python.langchain.com/api_reference/community/retrievers/langchain_community.retrievers.pinecone_hybrid_search.PineconeHybridSearchRetriever.html)
+
+We want to use `OpenAIEmbeddings` so we have to get the OpenAI API Key.
+
+```
+import getpassif "OPENAI_API_KEY" not in os.environ:    os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API Key:")
+```
+
+## Setup Pinecone
+
+You should only have to do this part once.
+
+```
+import osfrom pinecone import Pinecone, ServerlessSpecindex_name = "langchain-pinecone-hybrid-search"# initialize Pinecone clientpc = Pinecone(api_key=api_key)# create the indexif index_name not in pc.list_indexes().names():    pc.create_index(        name=index_name,        dimension=1536,  # dimensionality of dense model        metric="dotproduct",  # sparse values supported only for dotproduct        spec=ServerlessSpec(cloud="aws", region="us-east-1"),    )
+```
+
+```
+WhoAmIResponse(username='load', user_label='label', projectname='load-test')
+```
+
+Now that the index is created, we can use it.
+
+```
+index = pc.Index(index_name)
+```
+
+## Get embeddings and sparse encoders
+
+Embeddings are used for the dense vectors, tokenizer is used for the sparse vector
+
+```
+from langchain_openai import OpenAIEmbeddingsembeddings = OpenAIEmbeddings()
+```
+
+**API Reference:**[OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+To encode the text to sparse values you can either choose SPLADE or BM25. For out of domain tasks we recommend using BM25.
+
+For more information about the sparse encoders you can checkout pinecone-text library [docs](https://pinecone-io.github.io/pinecone-text/pinecone_text.html).
+
+```
+from pinecone_text.sparse import BM25Encoder# or from pinecone_text.sparse import SpladeEncoder if you wish to work with SPLADE# use default tf-idf valuesbm25_encoder = BM25Encoder().default()
+```
+
+The above code is using default tfids values. It's highly recommended to fit the tf-idf values to your own corpus. You can do it as follow:
+
+```
+corpus = ["foo", "bar", "world", "hello"]# fit tf-idf values on your corpusbm25_encoder.fit(corpus)# store the values to a json filebm25_encoder.dump("bm25_values.json")# load to your BM25Encoder objectbm25_encoder = BM25Encoder().load("bm25_values.json")
+```
+
+## Load Retriever
+
+We can now construct the retriever!
+
+```
+retriever = PineconeHybridSearchRetriever(    embeddings=embeddings, sparse_encoder=bm25_encoder, index=index)
+```
+
+## Add texts (if necessary)")
+
+We can optionally add texts to the retriever (if they aren't already in there)
+
+```
+retriever.add_texts(["foo", "bar", "world", "hello"])
+```
+
+```
+100%|██████████| 1/1 [00:02<00:00,  2.27s/it]
+```
+
+## Use Retriever
+
+We can now use the retriever!
+
+```
+result = retriever.invoke("foo")
+```
+
+```
+result[0]
+```
+
+```
+Document(page_content='foo', metadata={})
+```
+
+## Related
+
+* Retriever [conceptual guide](/src/oss/concepts/retrievers)
+* Retriever [how-to guides](/src/oss/how_to/#retrievers)

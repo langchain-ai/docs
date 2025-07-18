@@ -1,0 +1,82 @@
+---
+title: "RunPod LLM"
+---
+
+Get started with RunPod LLMs.
+
+## Overview
+
+This guide covers how to use the LangChain `RunPod` LLM class to interact with text generation models hosted on [RunPod Serverless](https://www.runpod.io/serverless-gpu).
+
+## Setup
+
+1. **Install the package:**
+
+   ```
+   pip install -qU langchain-runpod
+   ```
+
+2. **Deploy an LLM Endpoint:** Follow the setup steps in the [RunPod Provider Guide](/src/oss/integrations/providers/runpod/#setup) to deploy a compatible text generation endpoint on RunPod Serverless and get its Endpoint ID.
+
+3. **Set Environment Variables:** Make sure `RUNPOD_API_KEY` and `RUNPOD_ENDPOINT_ID` are set.
+
+```
+import getpassimport os# Make sure environment variables are set (or pass them directly to RunPod)if "RUNPOD_API_KEY" not in os.environ:    os.environ["RUNPOD_API_KEY"] = getpass.getpass("Enter your RunPod API Key: ")if "RUNPOD_ENDPOINT_ID" not in os.environ:    os.environ["RUNPOD_ENDPOINT_ID"] = input("Enter your RunPod Endpoint ID: ")
+```
+
+## Instantiation
+
+Initialize the `RunPod` class. You can pass model-specific parameters via `model_kwargs` and configure polling behavior.
+
+```
+from langchain_runpod import RunPodllm = RunPod(    # runpod_endpoint_id can be passed here if not set in env    model_kwargs={        "max_new_tokens": 256,        "temperature": 0.6,        "top_k": 50,        # Add other parameters supported by your endpoint handler    },    # Optional: Adjust polling    # poll_interval=0.3,    # max_polling_attempts=100)
+```
+
+## Invocation
+
+Use the standard LangChain `.invoke()` and `.ainvoke()` methods to call the model. Streaming is also supported via `.stream()` and `.astream()` (simulated by polling the RunPod `/stream` endpoint).
+
+```
+prompt = "Write a tagline for an ice cream shop on the moon."# Invoke (Sync)try:    response = llm.invoke(prompt)    print("--- Sync Invoke Response ---")    print(response)except Exception as e:    print(        f"Error invoking LLM: {e}. Ensure endpoint ID/API key are correct and endpoint is active/compatible."    )
+```
+
+```
+# Stream (Sync, simulated via polling /stream)print("\n--- Sync Stream Response ---")try:    for chunk in llm.stream(prompt):        print(chunk, end="", flush=True)    print()  # Newlineexcept Exception as e:    print(        f"\nError streaming LLM: {e}. Ensure endpoint handler supports streaming output format."    )
+```
+
+### Async Usage
+
+```
+# AInvoke (Async)try:    async_response = await llm.ainvoke(prompt)    print("--- Async Invoke Response ---")    print(async_response)except Exception as e:    print(f"Error invoking LLM asynchronously: {e}.")
+```
+
+```
+# AStream (Async)print("\n--- Async Stream Response ---")try:    async for chunk in llm.astream(prompt):        print(chunk, end="", flush=True)    print()  # Newlineexcept Exception as e:    print(        f"\nError streaming LLM asynchronously: {e}. Ensure endpoint handler supports streaming output format."    )
+```
+
+## Chaining
+
+The LLM integrates seamlessly with LangChain Expression Language (LCEL) chains.
+
+```
+from langchain_core.output_parsers import StrOutputParserfrom langchain_core.prompts import PromptTemplate# Assumes 'llm' variable is instantiated from the 'Instantiation' cellprompt_template = PromptTemplate.from_template("Tell me a joke about {topic}")parser = StrOutputParser()chain = prompt_template | llm | parsertry:    chain_response = chain.invoke({"topic": "bears"})    print("--- Chain Response ---")    print(chain_response)except Exception as e:    print(f"Error running chain: {e}")# Async chaintry:    async_chain_response = await chain.ainvoke({"topic": "robots"})    print("--- Async Chain Response ---")    print(async_chain_response)except Exception as e:    print(f"Error running async chain: {e}")
+```
+
+**API Reference:**[StrOutputParser](https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.string.StrOutputParser.html) | [PromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.prompt.PromptTemplate.html)
+
+## Endpoint Considerations
+
+* **Input:** The endpoint handler should expect the prompt string within `{"input": {"prompt": "...", ...}}`.
+* **Output:** The handler should return the generated text within the `"output"` key of the final status response (e.g., `{"output": "Generated text..."}` or `{"output": {"text": "..."}}`).
+* **Streaming:** For simulated streaming via the `/stream` endpoint, the handler must populate the `"stream"` key in the status response with a list of chunk dictionaries, like `[{"output": "token1"}, {"output": "token2"}]`.
+
+## API reference
+
+For detailed documentation of the `RunPod` LLM class, parameters, and methods, refer to the source code or the generated API reference (if available).
+
+Link to source code: [https://github.com/runpod/langchain-runpod/blob/main/langchain\_runpod/llms.py](https://github.com/runpod/langchain-runpod/blob/main/langchain_runpod/llms.py)
+
+## Related
+
+* LLM [conceptual guide](/src/oss/concepts/text_llms)
+* LLM [how-to guides](/src/oss/how_to/#llms)

@@ -1,0 +1,1105 @@
+---
+title: "Model caches"
+---
+
+This notebook covers how to cache results of individual LLM calls using different caches.
+
+First, let's install some dependencies
+
+```
+%pip install -qU langchain-openai langchain-community
+```
+
+```
+import osfrom getpass import getpassif "OPENAI_API_KEY" not in os.environ:    os.environ["OPENAI_API_KEY"] = getpass()
+```
+
+```
+from langchain.globals import set_llm_cachefrom langchain_openai import OpenAI# To make the caching really obvious, let's use a slower and older model.# Caching supports newer chat models as well.llm = OpenAI(model="gpt-3.5-turbo-instruct", n=2, best_of=2)
+```
+
+**API Reference:**[set\_llm\_cache](https://python.langchain.com/api_reference/langchain/globals/langchain.globals.set_llm_cache.html) | [OpenAI](https://python.langchain.com/api_reference/openai/llms/langchain_openai.llms.base.OpenAI.html)
+
+## `In Memory` cache
+
+```
+from langchain_community.cache import InMemoryCacheset_llm_cache(InMemoryCache())
+```
+
+**API Reference:**[InMemoryCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.InMemoryCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 7.57 ms, sys: 8.22 ms, total: 15.8 msWall time: 649 ms
+```
+
+```
+"\n\nWhy couldn't the bicycle stand up by itself? Because it was two-tired!"
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 551 µs, sys: 221 µs, total: 772 µsWall time: 1.23 ms
+```
+
+```
+"\n\nWhy couldn't the bicycle stand up by itself? Because it was two-tired!"
+```
+
+## `SQLite` cache
+
+```
+!rm .langchain.db
+```
+
+```
+# We can do the same thing with a SQLite cachefrom langchain_community.cache import SQLiteCacheset_llm_cache(SQLiteCache(database_path=".langchain.db"))
+```
+
+**API Reference:**[SQLiteCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.SQLiteCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 12.6 ms, sys: 3.51 ms, total: 16.1 msWall time: 486 ms
+```
+
+```
+"\n\nWhy couldn't the bicycle stand up by itself? Because it was two-tired!"
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 52.6 ms, sys: 57.7 ms, total: 110 msWall time: 113 ms
+```
+
+```
+"\n\nWhy couldn't the bicycle stand up by itself? Because it was two-tired!"
+```
+
+## `Upstash Redis` caches
+
+### Standard cache
+
+Use [Upstash Redis](https://upstash.com) to cache prompts and responses with a serverless HTTP API.
+
+```
+%pip install -qU upstash_redis
+```
+
+```
+import langchainfrom langchain_community.cache import UpstashRedisCachefrom upstash_redis import RedisURL = "<UPSTASH_REDIS_REST_URL>"TOKEN = "<UPSTASH_REDIS_REST_TOKEN>"langchain.llm_cache = UpstashRedisCache(redis_=Redis(url=URL, token=TOKEN))
+```
+
+**API Reference:**[UpstashRedisCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.UpstashRedisCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 7.56 ms, sys: 2.98 ms, total: 10.5 msWall time: 1.14 s
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 2.78 ms, sys: 1.95 ms, total: 4.73 msWall time: 82.9 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+### Semantic cache
+
+Use [Upstash Vector](https://upstash.com/oss/vector/overall/whatisvector) to do a semantic similarity search and cache the most similar response in the database. The vectorization is automatically done by the selected embedding model while creating Upstash Vector database.
+
+```
+%pip install upstash-semantic-cache
+```
+
+```
+from langchain.globals import set_llm_cachefrom upstash_semantic_cache import SemanticCache
+```
+
+**API Reference:**[set\_llm\_cache](https://python.langchain.com/api_reference/langchain/globals/langchain.globals.set_llm_cache.html)
+
+```
+UPSTASH_VECTOR_REST_URL = "<UPSTASH_VECTOR_REST_URL>"UPSTASH_VECTOR_REST_TOKEN = "<UPSTASH_VECTOR_REST_TOKEN>"cache = SemanticCache(    url=UPSTASH_VECTOR_REST_URL, token=UPSTASH_VECTOR_REST_TOKEN, min_proximity=0.7)
+```
+
+```
+set_llm_cache(cache)
+```
+
+```
+%%timellm.invoke("Which city is the most crowded city in the USA?")
+```
+
+```
+CPU times: user 28.4 ms, sys: 3.93 ms, total: 32.3 msWall time: 1.89 s
+```
+
+```
+'\n\nNew York City is the most crowded city in the USA.'
+```
+
+```
+%%timellm.invoke("Which city has the highest population in the USA?")
+```
+
+```
+CPU times: user 3.22 ms, sys: 940 μs, total: 4.16 msWall time: 97.7 ms
+```
+
+```
+'\n\nNew York City is the most crowded city in the USA.'
+```
+
+## `Redis` caches
+
+See the main [Redis cache docs](/src/oss/integrations/caches/redis_llm_caching) for detail.
+
+### Standard cache
+
+Use [Redis](/src/oss/integrations/providers/redis) to cache prompts and responses.
+
+```
+%pip install -qU redis
+```
+
+```
+# We can do the same thing with a Redis cache# (make sure your local Redis instance is running first before running this example)from langchain_community.cache import RedisCachefrom redis import Redisset_llm_cache(RedisCache(redis_=Redis()))
+```
+
+**API Reference:**[RedisCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.RedisCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 6.88 ms, sys: 8.75 ms, total: 15.6 msWall time: 1.04 s
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 1.59 ms, sys: 610 µs, total: 2.2 msWall time: 5.58 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+### Semantic cache
+
+Use [Redis](/src/oss/integrations/providers/redis) to cache prompts and responses and evaluate hits based on semantic similarity.
+
+```
+%pip install -qU redis
+```
+
+```
+from langchain_community.cache import RedisSemanticCachefrom langchain_openai import OpenAIEmbeddingsset_llm_cache(    RedisSemanticCache(redis_url="redis://localhost:6379", embedding=OpenAIEmbeddings()))
+```
+
+**API Reference:**[RedisSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.RedisSemanticCache.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 351 ms, sys: 156 ms, total: 507 msWall time: 3.37 s
+```
+
+```
+"\n\nWhy don't scientists trust atoms?\nBecause they make up everything."
+```
+
+```
+%%time# The second time, while not a direct hit, the question is semantically similar to the original question,# so it uses the cached result!llm.invoke("Tell me one joke")
+```
+
+```
+CPU times: user 6.25 ms, sys: 2.72 ms, total: 8.97 msWall time: 262 ms
+```
+
+```
+"\n\nWhy don't scientists trust atoms?\nBecause they make up everything."
+```
+
+## `GPTCache`
+
+We can use [GPTCache](https://github.com/zilliztech/GPTCache) for exact match caching OR to cache results based on semantic similarity
+
+Let's first start with an example of exact match
+
+```
+%pip install -qU gptcache
+```
+
+```
+import hashlibfrom gptcache import Cachefrom gptcache.manager.factory import manager_factoryfrom gptcache.processor.pre import get_promptfrom langchain_community.cache import GPTCachedef get_hashed_name(name):    return hashlib.sha256(name.encode()).hexdigest()def init_gptcache(cache_obj: Cache, llm: str):    hashed_llm = get_hashed_name(llm)    cache_obj.init(        pre_embedding_func=get_prompt,        data_manager=manager_factory(manager="map", data_dir=f"map_cache_{hashed_llm}"),    )set_llm_cache(GPTCache(init_gptcache))
+```
+
+**API Reference:**[GPTCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.GPTCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 21.5 ms, sys: 21.3 ms, total: 42.8 msWall time: 6.2 s
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 571 µs, sys: 43 µs, total: 614 µsWall time: 635 µs
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+Let's now show an example of similarity caching
+
+```
+import hashlibfrom gptcache import Cachefrom gptcache.adapter.api import init_similar_cachefrom langchain_community.cache import GPTCachedef get_hashed_name(name):    return hashlib.sha256(name.encode()).hexdigest()def init_gptcache(cache_obj: Cache, llm: str):    hashed_llm = get_hashed_name(llm)    init_similar_cache(cache_obj=cache_obj, data_dir=f"similar_cache_{hashed_llm}")set_llm_cache(GPTCache(init_gptcache))
+```
+
+**API Reference:**[GPTCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.GPTCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 1.42 s, sys: 279 ms, total: 1.7 sWall time: 8.44 s
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side.'
+```
+
+```
+%%time# This is an exact match, so it finds it in the cachellm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 866 ms, sys: 20 ms, total: 886 msWall time: 226 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side.'
+```
+
+```
+%%time# This is not an exact match, but semantically within distance so it hits!llm.invoke("Tell me joke")
+```
+
+```
+CPU times: user 853 ms, sys: 14.8 ms, total: 868 msWall time: 224 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side.'
+```
+
+## `MongoDB Atlas` caches
+
+[MongoDB Atlas](https://www.mongodb.com/oss/atlas/) is a fully-managed cloud database available in AWS, Azure, and GCP. It has native support for Vector Search on the MongoDB document data. Use [MongoDB Atlas Vector Search](/src/oss/integrations/providers/mongodb_atlas) to semantically cache prompts and responses.
+
+### Standard cache
+
+Standard cache is a simple cache in MongoDB. It does not use Semantic Caching, nor does it require an index to be made on the collection before generation.
+
+To import this cache, first install the required dependency:
+
+```
+%pip install -qU langchain-mongodb
+```
+
+```
+from langchain_mongodb.cache import MongoDBCache
+```
+
+**API Reference:**[MongoDBCache](https://python.langchain.com/api_reference/mongodb/cache/langchain_mongodb.cache.MongoDBCache.html)
+
+To use this cache with your LLMs:
+
+```
+from langchain_core.globals import set_llm_cache# use any embedding provider...from tests.integration_tests.vectorstores.fake_embeddings import FakeEmbeddingsmongodb_atlas_uri = "<YOUR_CONNECTION_STRING>"COLLECTION_NAME="<YOUR_CACHE_COLLECTION_NAME>"DATABASE_NAME="<YOUR_DATABASE_NAME>"set_llm_cache(MongoDBCache(    connection_string=mongodb_atlas_uri,    collection_name=COLLECTION_NAME,    database_name=DATABASE_NAME,))
+```
+
+**API Reference:**[set\_llm\_cache](https://python.langchain.com/api_reference/core/globals/langchain_core.globals.set_llm_cache.html)
+
+### Semantic cache
+
+Semantic caching allows retrieval of cached prompts based on semantic similarity between the user input and previously cached results. Under the hood, it blends MongoDBAtlas as both a cache and a vectorstore. The MongoDBAtlasSemanticCache inherits from `MongoDBAtlasVectorSearch` and needs an Atlas Vector Search Index defined to work. Please look at the [usage example](/src/oss/integrations/vectorstores/mongodb_atlas) on how to set up the index.
+
+To import this cache:
+
+```
+from langchain_mongodb.cache import MongoDBAtlasSemanticCache
+```
+
+**API Reference:**[MongoDBAtlasSemanticCache](https://python.langchain.com/api_reference/mongodb/cache/langchain_mongodb.cache.MongoDBAtlasSemanticCache.html)
+
+To use this cache with your LLMs:
+
+```
+from langchain_core.globals import set_llm_cache# use any embedding provider...from tests.integration_tests.vectorstores.fake_embeddings import FakeEmbeddingsmongodb_atlas_uri = "<YOUR_CONNECTION_STRING>"COLLECTION_NAME="<YOUR_CACHE_COLLECTION_NAME>"DATABASE_NAME="<YOUR_DATABASE_NAME>"set_llm_cache(MongoDBAtlasSemanticCache(    embedding=FakeEmbeddings(),    connection_string=mongodb_atlas_uri,    collection_name=COLLECTION_NAME,    database_name=DATABASE_NAME,))
+```
+
+**API Reference:**[set\_llm\_cache](https://python.langchain.com/api_reference/core/globals/langchain_core.globals.set_llm_cache.html)
+
+To find more resources about using MongoDBSemanticCache visit [here](https://www.mongodb.com/blog/post/introducing-semantic-caching-dedicated-mongodb-lang-chain-package-gen-ai-apps)
+
+## `Momento` cache
+
+Use [Momento](/src/oss/integrations/providers/momento) to cache prompts and responses.
+
+Requires installing the `momento` package:
+
+```
+%pip install -qU momento
+```
+
+You'll need to get a Momento auth token to use this class. This can either be passed in to a momento.CacheClient if you'd like to instantiate that directly, as a named parameter `auth_token` to `MomentoChatMessageHistory.from_client_params`, or can just be set as an environment variable `MOMENTO_AUTH_TOKEN`.
+
+```
+from datetime import timedeltafrom langchain_community.cache import MomentoCachecache_name = "langchain"ttl = timedelta(days=1)set_llm_cache(MomentoCache.from_client_params(cache_name, ttl))
+```
+
+**API Reference:**[MomentoCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.MomentoCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 40.7 ms, sys: 16.5 ms, total: 57.2 msWall time: 1.73 s
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+```
+%%time# The second time it is, so it goes faster# When run in the same region as the cache, latencies are single digit msllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 3.16 ms, sys: 2.98 ms, total: 6.14 msWall time: 57.9 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+## `SQLAlchemy` cache
+
+You can use `SQLAlchemyCache` to cache with any SQL database supported by `SQLAlchemy`.
+
+### Standard cache
+
+```
+from langchain.cache import SQLAlchemyCachefrom sqlalchemy import create_engineengine = create_engine("postgresql://postgres:postgres@localhost:5432/postgres")set_llm_cache(SQLAlchemyCache(engine))
+```
+
+**API Reference:**[SQLAlchemyCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.SQLAlchemyCache.html)
+
+### Custom SQLAlchemy schemas
+
+You can define your own declarative `SQLAlchemyCache` child class to customize the schema used for caching. For example, to support high-speed fulltext prompt indexing with `Postgres`, use:
+
+```
+from langchain_community.cache import SQLAlchemyCachefrom sqlalchemy import Column, Computed, Index, Integer, Sequence, String, create_enginefrom sqlalchemy.ext.declarative import declarative_basefrom sqlalchemy_utils import TSVectorTypeBase = declarative_base()class FulltextLLMCache(Base):  # type: ignore    """Postgres table for fulltext-indexed LLM Cache"""    __tablename__ = "llm_cache_fulltext"    id = Column(Integer, Sequence("cache_id"), primary_key=True)    prompt = Column(String, nullable=False)    llm = Column(String, nullable=False)    idx = Column(Integer)    response = Column(String)    prompt_tsv = Column(        TSVectorType(),        Computed("to_tsvector('english', llm || ' ' || prompt)", persisted=True),    )    __table_args__ = (        Index("idx_fulltext_prompt_tsv", prompt_tsv, postgresql_using="gin"),    )engine = create_engine("postgresql://postgres:postgres@localhost:5432/postgres")set_llm_cache(SQLAlchemyCache(engine, FulltextLLMCache))
+```
+
+**API Reference:**[SQLAlchemyCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.SQLAlchemyCache.html)
+
+## `Cassandra` caches
+
+> [Apache Cassandra®](https://cassandra.apache.org/) is a NoSQL, row-oriented, highly scalable and highly available database. Starting with version 5.0, the database ships with [vector search capabilities](https://cassandra.apache.org/doc/trunk/cassandra/vector-search/overview.html).
+
+You can use Cassandra for caching LLM responses, choosing from the exact-match `CassandraCache` or the (vector-similarity-based) `CassandraSemanticCache`.
+
+Let's see both in action. The next cells guide you through the (little) required setup, and the following cells showcase the two available cache classes.
+
+Required dependency:
+
+```
+%pip install -qU "cassio>=0.1.4"
+```
+
+### Connecting to the DB
+
+The Cassandra caches shown in this page can be used with Cassandra as well as other derived databases that can use the CQL (Cassandra Query Language) protocol, such as DataStax Astra DB.
+
+Depending on whether you connect to a Cassandra cluster or to Astra DB through CQL, you will provide different parameters when instantiating the cache (through initialization of a CassIO connection).
+
+#### to a Cassandra cluster
+
+You first need to create a `cassandra.cluster.Session` object, as described in the [Cassandra driver documentation](https://docs.datastax.com/en/developer/python-driver/latest/api/cassandra/cluster/#module-cassandra.cluster). The details vary (e.g. with network settings and authentication), but this might be something like:
+
+```
+from cassandra.cluster import Clustercluster = Cluster(["127.0.0.1"])session = cluster.connect()
+```
+
+You can now set the session, along with your desired keyspace name, as a global CassIO parameter:
+
+```
+import cassioCASSANDRA_KEYSPACE = input("CASSANDRA_KEYSPACE = ")cassio.init(session=session, keyspace=CASSANDRA_KEYSPACE)
+```
+
+```
+CASSANDRA_KEYSPACE =  demo_keyspace
+```
+
+#### to Astra DB through CQL
+
+In this case you initialize CassIO with the following connection parameters:
+
+* the Database ID, e.g. `01234567-89ab-cdef-0123-456789abcdef`
+* the Token, e.g. `AstraCS:6gBhNmsk135....` (it must be a "Database Administrator" token)
+* Optionally a Keyspace name (if omitted, the default one for the database will be used)
+
+```
+import getpassASTRA_DB_ID = input("ASTRA_DB_ID = ")ASTRA_DB_APPLICATION_TOKEN = getpass.getpass("ASTRA_DB_APPLICATION_TOKEN = ")desired_keyspace = input("ASTRA_DB_KEYSPACE (optional, can be left empty) = ")if desired_keyspace:    ASTRA_DB_KEYSPACE = desired_keyspaceelse:    ASTRA_DB_KEYSPACE = None
+```
+
+```
+ASTRA_DB_ID =  01234567-89ab-cdef-0123-456789abcdefASTRA_DB_APPLICATION_TOKEN =  ········ASTRA_DB_KEYSPACE (optional, can be left empty) =  my_keyspace
+```
+
+```
+import cassiocassio.init(    database_id=ASTRA_DB_ID,    token=ASTRA_DB_APPLICATION_TOKEN,    keyspace=ASTRA_DB_KEYSPACE,)
+```
+
+### Standard cache
+
+This will avoid invoking the LLM when the supplied prompt is *exactly* the same as one encountered already:
+
+```
+from langchain_community.cache import CassandraCachefrom langchain_core.globals import set_llm_cacheset_llm_cache(CassandraCache())
+```
+
+**API Reference:**[CassandraCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.CassandraCache.html) | [set\_llm\_cache](https://python.langchain.com/api_reference/core/globals/langchain_core.globals.set_llm_cache.html)
+
+```
+%%timeprint(llm.invoke("Why is the Moon always showing the same side?"))
+```
+
+```
+The Moon is tidally locked with the Earth, which means that its rotation on its own axis is synchronized with its orbit around the Earth. This results in the Moon always showing the same side to the Earth. This is because the gravitational forces between the Earth and the Moon have caused the Moon's rotation to slow down over time, until it reached a point where it takes the same amount of time for the Moon to rotate on its axis as it does to orbit around the Earth. This phenomenon is common among satellites in close orbits around their parent planets and is known as tidal locking.CPU times: user 92.5 ms, sys: 8.89 ms, total: 101 msWall time: 1.98 s
+```
+
+```
+%%timeprint(llm.invoke("Why is the Moon always showing the same side?"))
+```
+
+```
+The Moon is tidally locked with the Earth, which means that its rotation on its own axis is synchronized with its orbit around the Earth. This results in the Moon always showing the same side to the Earth. This is because the gravitational forces between the Earth and the Moon have caused the Moon's rotation to slow down over time, until it reached a point where it takes the same amount of time for the Moon to rotate on its axis as it does to orbit around the Earth. This phenomenon is common among satellites in close orbits around their parent planets and is known as tidal locking.CPU times: user 5.51 ms, sys: 0 ns, total: 5.51 msWall time: 5.78 ms
+```
+
+### Semantic cache
+
+This cache will do a semantic similarity search and return a hit if it finds a cached entry that is similar enough, For this, you need to provide an `Embeddings` instance of your choice.
+
+```
+from langchain_openai import OpenAIEmbeddingsembedding = OpenAIEmbeddings()
+```
+
+**API Reference:**[OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+```
+from langchain_community.cache import CassandraSemanticCachefrom langchain_core.globals import set_llm_cacheset_llm_cache(    CassandraSemanticCache(        embedding=embedding,        table_name="my_semantic_cache",    ))
+```
+
+**API Reference:**[CassandraSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.CassandraSemanticCache.html) | [set\_llm\_cache](https://python.langchain.com/api_reference/core/globals/langchain_core.globals.set_llm_cache.html)
+
+```
+%%timeprint(llm.invoke("Why is the Moon always showing the same side?"))
+```
+
+```
+The Moon is always showing the same side because of a phenomenon called synchronous rotation. This means that the Moon rotates on its axis at the same rate that it orbits around the Earth, which takes approximately 27.3 days. This results in the same side of the Moon always facing the Earth. This is due to the gravitational forces between the Earth and the Moon, which have caused the Moon's rotation to gradually slow down and become synchronized with its orbit. This is a common occurrence among many moons in our solar system.CPU times: user 49.5 ms, sys: 7.38 ms, total: 56.9 msWall time: 2.55 s
+```
+
+```
+%%timeprint(llm.invoke("How come we always see one face of the moon?"))
+```
+
+```
+The Moon is always showing the same side because of a phenomenon called synchronous rotation. This means that the Moon rotates on its axis at the same rate that it orbits around the Earth, which takes approximately 27.3 days. This results in the same side of the Moon always facing the Earth. This is due to the gravitational forces between the Earth and the Moon, which have caused the Moon's rotation to gradually slow down and become synchronized with its orbit. This is a common occurrence among many moons in our solar system.CPU times: user 21.2 ms, sys: 3.38 ms, total: 24.6 msWall time: 532 ms
+```
+
+**Attribution statement:**
+
+> `Apache Cassandra`, `Cassandra` and `Apache` are either registered trademarks or trademarks of the [Apache Software Foundation](http://www.apache.org/) in the United States and/or other countries.
+
+## `Astra DB` caches
+
+You can easily use [Astra DB](https://docs.datastax.com/en/astra/home/astra.html) as an LLM cache, with either the "exact" or the "semantic-based" cache.
+
+> [DataStax Astra DB](https://docs.datastax.com/en/astra-db-serverless/index.html) is a serverless AI-ready database built on `Apache Cassandra®` and made conveniently available through an easy-to-use JSON API.
+
+*This approach differs from the `Cassandra` caches mentioned above in that it natively uses the HTTP Data API. The Data API is specific to Astra DB. Keep in mind that the storage format will also differ.*
+
+Make sure you have a running database (it must be a Vector-enabled database to use the Semantic cache) and get the required credentials on your Astra dashboard:
+
+* the API Endpoint looks like `https://01234567-89ab-cdef-0123-456789abcdef-us-east1.apps.astra.datastax.com`
+* the Token looks like `AstraCS:6gBhNmsk135....`
+
+```
+%pip install -qU langchain_astradbimport getpassASTRA_DB_API_ENDPOINT = input("ASTRA_DB_API_ENDPOINT = ")ASTRA_DB_APPLICATION_TOKEN = getpass.getpass("ASTRA_DB_APPLICATION_TOKEN = ")
+```
+
+```
+ASTRA_DB_API_ENDPOINT =  https://01234567-89ab-cdef-0123-456789abcdef-us-east1.apps.astra.datastax.comASTRA_DB_APPLICATION_TOKEN =  ········
+```
+
+### Standard cache
+
+This will avoid invoking the LLM when the supplied prompt is *exactly* the same as one encountered already:
+
+```
+from langchain.globals import set_llm_cachefrom langchain_astradb import AstraDBCacheset_llm_cache(    AstraDBCache(        api_endpoint=ASTRA_DB_API_ENDPOINT,        token=ASTRA_DB_APPLICATION_TOKEN,    ))
+```
+
+**API Reference:**[set\_llm\_cache](https://python.langchain.com/api_reference/langchain/globals/langchain.globals.set_llm_cache.html) | [AstraDBCache](https://python.langchain.com/api_reference/astradb/cache/langchain_astradb.cache.AstraDBCache.html)
+
+```
+%%timeprint(llm.invoke("Is a true fakery the same as a fake truth?"))
+```
+
+```
+There is no definitive answer to this question as it depends on the interpretation of the terms "true fakery" and "fake truth". However, one possible interpretation is that a true fakery is a counterfeit or imitation that is intended to deceive, whereas a fake truth is a false statement that is presented as if it were true.CPU times: user 70.8 ms, sys: 4.13 ms, total: 74.9 msWall time: 2.06 s
+```
+
+```
+%%timeprint(llm.invoke("Is a true fakery the same as a fake truth?"))
+```
+
+```
+There is no definitive answer to this question as it depends on the interpretation of the terms "true fakery" and "fake truth". However, one possible interpretation is that a true fakery is a counterfeit or imitation that is intended to deceive, whereas a fake truth is a false statement that is presented as if it were true.CPU times: user 15.1 ms, sys: 3.7 ms, total: 18.8 msWall time: 531 ms
+```
+
+### Semantic cache
+
+This cache will do a semantic similarity search and return a hit if it finds a cached entry that is similar enough, For this, you need to provide an `Embeddings` instance of your choice.
+
+```
+from langchain_openai import OpenAIEmbeddingsembedding = OpenAIEmbeddings()
+```
+
+**API Reference:**[OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+```
+from langchain_astradb import AstraDBSemanticCacheset_llm_cache(    AstraDBSemanticCache(        api_endpoint=ASTRA_DB_API_ENDPOINT,        token=ASTRA_DB_APPLICATION_TOKEN,        embedding=embedding,        collection_name="demo_semantic_cache",    ))
+```
+
+**API Reference:**[AstraDBSemanticCache](https://python.langchain.com/api_reference/astradb/cache/langchain_astradb.cache.AstraDBSemanticCache.html)
+
+```
+%%timeprint(llm.invoke("Are there truths that are false?"))
+```
+
+```
+There is no definitive answer to this question since it presupposes a great deal about the nature of truth itself, which is a matter of considerable philosophical debate. It is possible, however, to construct scenarios in which something could be considered true despite being false, such as if someone sincerely believes something to be true even though it is not.CPU times: user 65.6 ms, sys: 15.3 ms, total: 80.9 msWall time: 2.72 s
+```
+
+```
+%%timeprint(llm.invoke("Is is possible that something false can be also true?"))
+```
+
+```
+There is no definitive answer to this question since it presupposes a great deal about the nature of truth itself, which is a matter of considerable philosophical debate. It is possible, however, to construct scenarios in which something could be considered true despite being false, such as if someone sincerely believes something to be true even though it is not.CPU times: user 29.3 ms, sys: 6.21 ms, total: 35.5 msWall time: 1.03 s
+```
+
+## `Azure Cosmos DB` semantic cache
+
+You can use this integrated [vector database](https://learn.microsoft.com/en-us/azure/cosmos-db/vector-database) for caching.
+
+```
+from langchain_community.cache import AzureCosmosDBSemanticCachefrom langchain_community.vectorstores.azure_cosmos_db import (    CosmosDBSimilarityType,    CosmosDBVectorSearchType,)from langchain_openai import OpenAIEmbeddings# Read more about Azure CosmosDB Mongo vCore vector search here https://learn.microsoft.com/en-us/azure/cosmos-db/mongodb/vcore/vector-searchNAMESPACE = "langchain_test_db.langchain_test_collection"CONNECTION_STRING = (    "Please provide your azure cosmos mongo vCore vector db connection string")DB_NAME, COLLECTION_NAME = NAMESPACE.split(".")# Default value for these paramsnum_lists = 3dimensions = 1536similarity_algorithm = CosmosDBSimilarityType.COSkind = CosmosDBVectorSearchType.VECTOR_IVFm = 16ef_construction = 64ef_search = 40score_threshold = 0.9application_name = "LANGCHAIN_CACHING_PYTHON"set_llm_cache(    AzureCosmosDBSemanticCache(        cosmosdb_connection_string=CONNECTION_STRING,        cosmosdb_client=None,        embedding=OpenAIEmbeddings(),        database_name=DB_NAME,        collection_name=COLLECTION_NAME,        num_lists=num_lists,        similarity=similarity_algorithm,        kind=kind,        dimensions=dimensions,        m=m,        ef_construction=ef_construction,        ef_search=ef_search,        score_threshold=score_threshold,        application_name=application_name,    ))
+```
+
+**API Reference:**[AzureCosmosDBSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.AzureCosmosDBSemanticCache.html) | [CosmosDBSimilarityType](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.azure_cosmos_db.CosmosDBSimilarityType.html) | [CosmosDBVectorSearchType](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.azure_cosmos_db.CosmosDBVectorSearchType.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 45.6 ms, sys: 19.7 ms, total: 65.3 msWall time: 2.29 s
+```
+
+```
+'\n\nWhy was the math book sad? Because it had too many problems.'
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 9.61 ms, sys: 3.42 ms, total: 13 msWall time: 474 ms
+```
+
+```
+'\n\nWhy was the math book sad? Because it had too many problems.'
+```
+
+## `Azure Cosmos DB NoSql` semantic cache
+
+You can use this integrated [vector database](https://learn.microsoft.com/en-us/azure/cosmos-db/vector-database) for caching.
+
+```
+from typing import Any, Dictfrom azure.cosmos import CosmosClient, PartitionKeyfrom langchain_community.cache import AzureCosmosDBNoSqlSemanticCachefrom langchain_openai import OpenAIEmbeddingsHOST = "COSMOS_DB_URI"KEY = "COSMOS_DB_KEY"cosmos_client = CosmosClient(HOST, KEY)def get_vector_indexing_policy() -> dict:    return {        "indexingMode": "consistent",        "includedPaths": [{"path": "/*"}],        "excludedPaths": [{"path": '/"_etag"/?'}],        "vectorIndexes": [{"path": "/embedding", "type": "diskANN"}],    }def get_vector_embedding_policy() -> dict:    return {        "vectorEmbeddings": [            {                "path": "/embedding",                "dataType": "float32",                "dimensions": 1536,                "distanceFunction": "cosine",            }        ]    }cosmos_container_properties_test = {"partition_key": PartitionKey(path="/id")}cosmos_database_properties_test: Dict[str, Any] = {}set_llm_cache(    AzureCosmosDBNoSqlSemanticCache(        cosmos_client=cosmos_client,        embedding=OpenAIEmbeddings(),        vector_embedding_policy=get_vector_embedding_policy(),        indexing_policy=get_vector_indexing_policy(),        cosmos_container_properties=cosmos_container_properties_test,        cosmos_database_properties=cosmos_database_properties_test,    ))
+```
+
+**API Reference:**[AzureCosmosDBNoSqlSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.AzureCosmosDBNoSqlSemanticCache.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 374 ms, sys: 34.2 ms, total: 408 msWall time: 3.15 s
+```
+
+```
+"\n\nWhy couldn't the bicycle stand up by itself? Because it was two-tired!"
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 17.7 ms, sys: 2.88 ms, total: 20.6 msWall time: 373 ms
+```
+
+```
+"\n\nWhy couldn't the bicycle stand up by itself? Because it was two-tired!"
+```
+
+## `Elasticsearch` caches
+
+A caching layer for LLMs that uses Elasticsearch.
+
+First install the LangChain integration with Elasticsearch.
+
+```
+%pip install -qU langchain-elasticsearch
+```
+
+### Standard cache
+
+Use the class `ElasticsearchCache`.
+
+Simple example:
+
+```
+from langchain.globals import set_llm_cachefrom langchain_elasticsearch import ElasticsearchCacheset_llm_cache(    ElasticsearchCache(        es_url="http://localhost:9200",        index_name="llm-chat-cache",        metadata={"project": "my_chatgpt_project"},    ))
+```
+
+**API Reference:**[set\_llm\_cache](https://python.langchain.com/api_reference/langchain/globals/langchain.globals.set_llm_cache.html) | [ElasticsearchCache](https://python.langchain.com/api_reference/elasticsearch/cache/langchain_elasticsearch.cache.ElasticsearchCache.html)
+
+The `index_name` parameter can also accept aliases. This allows to use the [ILM: Manage the index lifecycle](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-lifecycle-management.html) that we suggest to consider for managing retention and controlling cache growth.
+
+Look at the class docstring for all parameters.
+
+### Index the generated text
+
+The cached data won't be searchable by default. The developer can customize the building of the Elasticsearch document in order to add indexed text fields, where to put, for example, the text generated by the LLM.
+
+This can be done by subclassing end overriding methods. The new cache class can be applied also to a pre-existing cache index:
+
+```
+import jsonfrom typing import Any, Dict, Listfrom langchain.globals import set_llm_cachefrom langchain_core.caches import RETURN_VAL_TYPEfrom langchain_elasticsearch import ElasticsearchCacheclass SearchableElasticsearchCache(ElasticsearchCache):    @property    def mapping(self) -> Dict[str, Any]:        mapping = super().mapping        mapping["mappings"]["properties"]["parsed_llm_output"] = {            "type": "text",            "analyzer": "english",        }        return mapping    def build_document(        self, prompt: str, llm_string: str, return_val: RETURN_VAL_TYPE    ) -> Dict[str, Any]:        body = super().build_document(prompt, llm_string, return_val)        body["parsed_llm_output"] = self._parse_output(body["llm_output"])        return body    @staticmethod    def _parse_output(data: List[str]) -> List[str]:        return [            json.loads(output)["kwargs"]["message"]["kwargs"]["content"]            for output in data        ]set_llm_cache(    SearchableElasticsearchCache(        es_url="http://localhost:9200", index_name="llm-chat-cache"    ))
+```
+
+**API Reference:**[set\_llm\_cache](https://python.langchain.com/api_reference/langchain/globals/langchain.globals.set_llm_cache.html) | [RETURN\_VAL\_TYPE](https://python.langchain.com/api_reference/collections/abc/collections.abc.RETURN_VAL_TYPE.html) | [ElasticsearchCache](https://python.langchain.com/api_reference/elasticsearch/cache/langchain_elasticsearch.cache.ElasticsearchCache.html)
+
+When overriding the mapping and the document building, please only make additive modifications, keeping the base mapping intact.
+
+### Embedding cache
+
+An Elasticsearch store for caching embeddings.
+
+```
+from langchain_elasticsearch import ElasticsearchEmbeddingsCache
+```
+
+**API Reference:**[ElasticsearchEmbeddingsCache](https://python.langchain.com/api_reference/elasticsearch/cache/langchain_elasticsearch.cache.ElasticsearchEmbeddingsCache.html)
+
+## LLM-specific optional caching
+
+You can also turn off caching for specific LLMs. In the example below, even though global caching is enabled, we turn it off for a specific LLM.
+
+```
+llm = OpenAI(model="gpt-3.5-turbo-instruct", n=2, best_of=2, cache=False)
+```
+
+```
+%%timellm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 5.8 ms, sys: 2.71 ms, total: 8.51 msWall time: 745 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+```
+%%timellm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 4.91 ms, sys: 2.64 ms, total: 7.55 msWall time: 623 ms
+```
+
+```
+'\n\nTwo guys stole a calendar. They got six months each.'
+```
+
+## Optional caching in Chains
+
+You can also turn off caching for particular nodes in chains. Note that because of certain interfaces, its often easier to construct the chain first, and then edit the LLM afterwards.
+
+As an example, we will load a summarizer map-reduce chain. We will cache results for the map-step, but then not freeze it for the combine step.
+
+```
+llm = OpenAI(model="gpt-3.5-turbo-instruct")no_cache_llm = OpenAI(model="gpt-3.5-turbo-instruct", cache=False)
+```
+
+```
+from langchain_text_splitters import CharacterTextSplittertext_splitter = CharacterTextSplitter()
+```
+
+**API Reference:**[CharacterTextSplitter](https://python.langchain.com/api_reference/text_splitters/character/langchain_text_splitters.character.CharacterTextSplitter.html)
+
+```
+with open("../how_to/state_of_the_union.txt") as f:    state_of_the_union = f.read()texts = text_splitter.split_text(state_of_the_union)
+```
+
+```
+from langchain_core.documents import Documentdocs = [Document(page_content=t) for t in texts[:3]]from langchain.chains.summarize import load_summarize_chain
+```
+
+**API Reference:**[Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html) | [load\_summarize\_chain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.summarize.chain.load_summarize_chain.html)
+
+```
+chain = load_summarize_chain(llm, chain_type="map_reduce", reduce_llm=no_cache_llm)
+```
+
+```
+%%timechain.invoke(docs)
+```
+
+```
+CPU times: user 176 ms, sys: 23.2 ms, total: 199 msWall time: 4.42 s
+```
+
+```
+{'input_documents': [Document(page_content='Madam Speaker, Madam Vice President, our First Lady and Second Gentleman. Members of Congress and the Cabinet. Justices of the Supreme Court. My fellow Americans.  \n\nLast year COVID-19 kept us apart. This year we are finally together again. \n\nTonight, we meet as Democrats Republicans and Independents. But most importantly as Americans. \n\nWith a duty to one another to the American people to the Constitution. \n\nAnd with an unwavering resolve that freedom will always triumph over tyranny. \n\nSix days ago, Russia’s Vladimir Putin sought to shake the foundations of the free world thinking he could make it bend to his menacing ways. But he badly miscalculated. \n\nHe thought he could roll into Ukraine and the world would roll over. Instead he met a wall of strength he never imagined. \n\nHe met the Ukrainian people. \n\nFrom President Zelenskyy to every Ukrainian, their fearlessness, their courage, their determination, inspires the world. \n\nGroups of citizens blocking tanks with their bodies. Everyone from students to retirees teachers turned soldiers defending their homeland. \n\nIn this struggle as President Zelenskyy said in his speech to the European Parliament “Light will win over darkness.” The Ukrainian Ambassador to the United States is here tonight. \n\nLet each of us here tonight in this Chamber send an unmistakable signal to Ukraine and to the world. \n\nPlease rise if you are able and show that, Yes, we the United States of America stand with the Ukrainian people. \n\nThroughout our history we’ve learned this lesson when dictators do not pay a price for their aggression they cause more chaos.   \n\nThey keep moving.   \n\nAnd the costs and the threats to America and the world keep rising.   \n\nThat’s why the NATO Alliance was created to secure peace and stability in Europe after World War 2. \n\nThe United States is a member along with 29 other nations. \n\nIt matters. American diplomacy matters. American resolve matters. \n\nPutin’s latest attack on Ukraine was premeditated and unprovoked. \n\nHe rejected repeated efforts at diplomacy. \n\nHe thought the West and NATO wouldn’t respond. And he thought he could divide us at home. Putin was wrong. We were ready.  Here is what we did.   \n\nWe prepared extensively and carefully. \n\nWe spent months building a coalition of other freedom-loving nations from Europe and the Americas to Asia and Africa to confront Putin. \n\nI spent countless hours unifying our European allies. We shared with the world in advance what we knew Putin was planning and precisely how he would try to falsely justify his aggression.  \n\nWe countered Russia’s lies with truth.   \n\nAnd now that he has acted the free world is holding him accountable. \n\nAlong with twenty-seven members of the European Union including France, Germany, Italy, as well as countries like the United Kingdom, Canada, Japan, Korea, Australia, New Zealand, and many others, even Switzerland. \n\nWe are inflicting pain on Russia and supporting the people of Ukraine. Putin is now isolated from the world more than ever. \n\nTogether with our allies –we are right now enforcing powerful economic sanctions. \n\nWe are cutting off Russia’s largest banks from the international financial system.  \n\nPreventing Russia’s central bank from defending the Russian Ruble making Putin’s $630 Billion “war fund” worthless.   \n\nWe are choking off Russia’s access to technology that will sap its economic strength and weaken its military for years to come.  \n\nTonight I say to the Russian oligarchs and corrupt leaders who have bilked billions of dollars off this violent regime no more. \n\nThe U.S. Department of Justice is assembling a dedicated task force to go after the crimes of Russian oligarchs.  \n\nWe are joining with our European allies to find and seize your yachts your luxury apartments your private jets. We are coming for your ill-begotten gains.'),  Document(page_content='We are joining with our European allies to find and seize your yachts your luxury apartments your private jets. We are coming for your ill-begotten gains. \n\nAnd tonight I am announcing that we will join our allies in closing off American air space to all Russian flights – further isolating Russia – and adding an additional squeeze –on their economy. The Ruble has lost 30% of its value. \n\nThe Russian stock market has lost 40% of its value and trading remains suspended. Russia’s economy is reeling and Putin alone is to blame. \n\nTogether with our allies we are providing support to the Ukrainians in their fight for freedom. Military assistance. Economic assistance. Humanitarian assistance. \n\nWe are giving more than $1 Billion in direct assistance to Ukraine. \n\nAnd we will continue to aid the Ukrainian people as they defend their country and to help ease their suffering.  \n\nLet me be clear, our forces are not engaged and will not engage in conflict with Russian forces in Ukraine.  \n\nOur forces are not going to Europe to fight in Ukraine, but to defend our NATO Allies – in the event that Putin decides to keep moving west.  \n\nFor that purpose we’ve mobilized American ground forces, air squadrons, and ship deployments to protect NATO countries including Poland, Romania, Latvia, Lithuania, and Estonia. \n\nAs I have made crystal clear the United States and our Allies will defend every inch of territory of NATO countries with the full force of our collective power.  \n\nAnd we remain clear-eyed. The Ukrainians are fighting back with pure courage. But the next few days weeks, months, will be hard on them.  \n\nPutin has unleashed violence and chaos.  But while he may make gains on the battlefield – he will pay a continuing high price over the long run. \n\nAnd a proud Ukrainian people, who have known 30 years  of independence, have repeatedly shown that they will not tolerate anyone who tries to take their country backwards.  \n\nTo all Americans, I will be honest with you, as I’ve always promised. A Russian dictator, invading a foreign country, has costs around the world. \n\nAnd I’m taking robust action to make sure the pain of our sanctions  is targeted at Russia’s economy. And I will use every tool at our disposal to protect American businesses and consumers. \n\nTonight, I can announce that the United States has worked with 30 other countries to release 60 Million barrels of oil from reserves around the world.  \n\nAmerica will lead that effort, releasing 30 Million barrels from our own Strategic Petroleum Reserve. And we stand ready to do more if necessary, unified with our allies.  \n\nThese steps will help blunt gas prices here at home. And I know the news about what’s happening can seem alarming. \n\nBut I want you to know that we are going to be okay. \n\nWhen the history of this era is written Putin’s war on Ukraine will have left Russia weaker and the rest of the world stronger. \n\nWhile it shouldn’t have taken something so terrible for people around the world to see what’s at stake now everyone sees it clearly. \n\nWe see the unity among leaders of nations and a more unified Europe a more unified West. And we see unity among the people who are gathering in cities in large crowds around the world even in Russia to demonstrate their support for Ukraine.  \n\nIn the battle between democracy and autocracy, democracies are rising to the moment, and the world is clearly choosing the side of peace and security. \n\nThis is a real test. It’s going to take time. So let us continue to draw inspiration from the iron will of the Ukrainian people. \n\nTo our fellow Ukrainian Americans who forge a deep bond that connects our two nations we stand with you. \n\nPutin may circle Kyiv with tanks, but he will never gain the hearts and souls of the Ukrainian people. \n\nHe will never extinguish their love of freedom. He will never weaken the resolve of the free world. \n\nWe meet tonight in an America that has lived through two of the hardest years this nation has ever faced.'),  Document(page_content='We meet tonight in an America that has lived through two of the hardest years this nation has ever faced. \n\nThe pandemic has been punishing. \n\nAnd so many families are living paycheck to paycheck, struggling to keep up with the rising cost of food, gas, housing, and so much more. \n\nI understand. \n\nI remember when my Dad had to leave our home in Scranton, Pennsylvania to find work. I grew up in a family where if the price of food went up, you felt it. \n\nThat’s why one of the first things I did as President was fight to pass the American Rescue Plan.  \n\nBecause people were hurting. We needed to act, and we did. \n\nFew pieces of legislation have done more in a critical moment in our history to lift us out of crisis. \n\nIt fueled our efforts to vaccinate the nation and combat COVID-19. It delivered immediate economic relief for tens of millions of Americans.  \n\nHelped put food on their table, keep a roof over their heads, and cut the cost of health insurance. \n\nAnd as my Dad used to say, it gave people a little breathing room. \n\nAnd unlike the $2 Trillion tax cut passed in the previous administration that benefitted the top 1% of Americans, the American Rescue Plan helped working people—and left no one behind. \n\nAnd it worked. It created jobs. Lots of jobs. \n\nIn fact—our economy created over 6.5 Million new jobs just last year, more jobs created in one year  \nthan ever before in the history of America. \n\nOur economy grew at a rate of 5.7% last year, the strongest growth in nearly 40 years, the first step in bringing fundamental change to an economy that hasn’t worked for the working people of this nation for too long.  \n\nFor the past 40 years we were told that if we gave tax breaks to those at the very top, the benefits would trickle down to everyone else. \n\nBut that trickle-down theory led to weaker economic growth, lower wages, bigger deficits, and the widest gap between those at the top and everyone else in nearly a century. \n\nVice President Harris and I ran for office with a new economic vision for America. \n\nInvest in America. Educate Americans. Grow the workforce. Build the economy from the bottom up  \nand the middle out, not from the top down.  \n\nBecause we know that when the middle class grows, the poor have a ladder up and the wealthy do very well. \n\nAmerica used to have the best roads, bridges, and airports on Earth. \n\nNow our infrastructure is ranked 13th in the world. \n\nWe won’t be able to compete for the jobs of the 21st Century if we don’t fix that. \n\nThat’s why it was so important to pass the Bipartisan Infrastructure Law—the most sweeping investment to rebuild America in history. \n\nThis was a bipartisan effort, and I want to thank the members of both parties who worked to make it happen. \n\nWe’re done talking about infrastructure weeks. \n\nWe’re going to have an infrastructure decade. \n\nIt is going to transform America and put us on a path to win the economic competition of the 21st Century that we face with the rest of the world—particularly with China.  \n\nAs I’ve told Xi Jinping, it is never a good bet to bet against the American people. \n\nWe’ll create good jobs for millions of Americans, modernizing roads, airports, ports, and waterways all across America. \n\nAnd we’ll do it all to withstand the devastating effects of the climate crisis and promote environmental justice. \n\nWe’ll build a national network of 500,000 electric vehicle charging stations, begin to replace poisonous lead pipes—so every child—and every American—has clean water to drink at home and at school, provide affordable high-speed internet for every American—urban, suburban, rural, and tribal communities. \n\n4,000 projects have already been announced. \n\nAnd tonight, I’m announcing that this year we will start fixing over 65,000 miles of highway and 1,500 bridges in disrepair. \n\nWhen we use taxpayer dollars to rebuild America – we are going to Buy American: buy American products to support American jobs.')], 'output_text': " The speaker addresses the unity and strength of Americans and discusses the recent conflict with Russia and actions taken by the US and its allies. They announce closures of airspace, support for Ukraine, and measures to target corrupt Russian leaders. President Biden reflects on past hardships and highlights efforts to pass the American Rescue Plan. He criticizes the previous administration's policies and shares plans for the economy, including investing in America, education, rebuilding infrastructure, and supporting American jobs. "}
+```
+
+When we run it again, we see that it runs substantially faster but the final answer is different. This is due to caching at the map steps, but not at the reduce step.
+
+```
+%%timechain.invoke(docs)
+```
+
+```
+CPU times: user 7 ms, sys: 1.94 ms, total: 8.94 msWall time: 1.06 s
+```
+
+```
+{'input_documents': [Document(page_content='Madam Speaker, Madam Vice President, our First Lady and Second Gentleman. Members of Congress and the Cabinet. Justices of the Supreme Court. My fellow Americans.  \n\nLast year COVID-19 kept us apart. This year we are finally together again. \n\nTonight, we meet as Democrats Republicans and Independents. But most importantly as Americans. \n\nWith a duty to one another to the American people to the Constitution. \n\nAnd with an unwavering resolve that freedom will always triumph over tyranny. \n\nSix days ago, Russia’s Vladimir Putin sought to shake the foundations of the free world thinking he could make it bend to his menacing ways. But he badly miscalculated. \n\nHe thought he could roll into Ukraine and the world would roll over. Instead he met a wall of strength he never imagined. \n\nHe met the Ukrainian people. \n\nFrom President Zelenskyy to every Ukrainian, their fearlessness, their courage, their determination, inspires the world. \n\nGroups of citizens blocking tanks with their bodies. Everyone from students to retirees teachers turned soldiers defending their homeland. \n\nIn this struggle as President Zelenskyy said in his speech to the European Parliament “Light will win over darkness.” The Ukrainian Ambassador to the United States is here tonight. \n\nLet each of us here tonight in this Chamber send an unmistakable signal to Ukraine and to the world. \n\nPlease rise if you are able and show that, Yes, we the United States of America stand with the Ukrainian people. \n\nThroughout our history we’ve learned this lesson when dictators do not pay a price for their aggression they cause more chaos.   \n\nThey keep moving.   \n\nAnd the costs and the threats to America and the world keep rising.   \n\nThat’s why the NATO Alliance was created to secure peace and stability in Europe after World War 2. \n\nThe United States is a member along with 29 other nations. \n\nIt matters. American diplomacy matters. American resolve matters. \n\nPutin’s latest attack on Ukraine was premeditated and unprovoked. \n\nHe rejected repeated efforts at diplomacy. \n\nHe thought the West and NATO wouldn’t respond. And he thought he could divide us at home. Putin was wrong. We were ready.  Here is what we did.   \n\nWe prepared extensively and carefully. \n\nWe spent months building a coalition of other freedom-loving nations from Europe and the Americas to Asia and Africa to confront Putin. \n\nI spent countless hours unifying our European allies. We shared with the world in advance what we knew Putin was planning and precisely how he would try to falsely justify his aggression.  \n\nWe countered Russia’s lies with truth.   \n\nAnd now that he has acted the free world is holding him accountable. \n\nAlong with twenty-seven members of the European Union including France, Germany, Italy, as well as countries like the United Kingdom, Canada, Japan, Korea, Australia, New Zealand, and many others, even Switzerland. \n\nWe are inflicting pain on Russia and supporting the people of Ukraine. Putin is now isolated from the world more than ever. \n\nTogether with our allies –we are right now enforcing powerful economic sanctions. \n\nWe are cutting off Russia’s largest banks from the international financial system.  \n\nPreventing Russia’s central bank from defending the Russian Ruble making Putin’s $630 Billion “war fund” worthless.   \n\nWe are choking off Russia’s access to technology that will sap its economic strength and weaken its military for years to come.  \n\nTonight I say to the Russian oligarchs and corrupt leaders who have bilked billions of dollars off this violent regime no more. \n\nThe U.S. Department of Justice is assembling a dedicated task force to go after the crimes of Russian oligarchs.  \n\nWe are joining with our European allies to find and seize your yachts your luxury apartments your private jets. We are coming for your ill-begotten gains.'),  Document(page_content='We are joining with our European allies to find and seize your yachts your luxury apartments your private jets. We are coming for your ill-begotten gains. \n\nAnd tonight I am announcing that we will join our allies in closing off American air space to all Russian flights – further isolating Russia – and adding an additional squeeze –on their economy. The Ruble has lost 30% of its value. \n\nThe Russian stock market has lost 40% of its value and trading remains suspended. Russia’s economy is reeling and Putin alone is to blame. \n\nTogether with our allies we are providing support to the Ukrainians in their fight for freedom. Military assistance. Economic assistance. Humanitarian assistance. \n\nWe are giving more than $1 Billion in direct assistance to Ukraine. \n\nAnd we will continue to aid the Ukrainian people as they defend their country and to help ease their suffering.  \n\nLet me be clear, our forces are not engaged and will not engage in conflict with Russian forces in Ukraine.  \n\nOur forces are not going to Europe to fight in Ukraine, but to defend our NATO Allies – in the event that Putin decides to keep moving west.  \n\nFor that purpose we’ve mobilized American ground forces, air squadrons, and ship deployments to protect NATO countries including Poland, Romania, Latvia, Lithuania, and Estonia. \n\nAs I have made crystal clear the United States and our Allies will defend every inch of territory of NATO countries with the full force of our collective power.  \n\nAnd we remain clear-eyed. The Ukrainians are fighting back with pure courage. But the next few days weeks, months, will be hard on them.  \n\nPutin has unleashed violence and chaos.  But while he may make gains on the battlefield – he will pay a continuing high price over the long run. \n\nAnd a proud Ukrainian people, who have known 30 years  of independence, have repeatedly shown that they will not tolerate anyone who tries to take their country backwards.  \n\nTo all Americans, I will be honest with you, as I’ve always promised. A Russian dictator, invading a foreign country, has costs around the world. \n\nAnd I’m taking robust action to make sure the pain of our sanctions  is targeted at Russia’s economy. And I will use every tool at our disposal to protect American businesses and consumers. \n\nTonight, I can announce that the United States has worked with 30 other countries to release 60 Million barrels of oil from reserves around the world.  \n\nAmerica will lead that effort, releasing 30 Million barrels from our own Strategic Petroleum Reserve. And we stand ready to do more if necessary, unified with our allies.  \n\nThese steps will help blunt gas prices here at home. And I know the news about what’s happening can seem alarming. \n\nBut I want you to know that we are going to be okay. \n\nWhen the history of this era is written Putin’s war on Ukraine will have left Russia weaker and the rest of the world stronger. \n\nWhile it shouldn’t have taken something so terrible for people around the world to see what’s at stake now everyone sees it clearly. \n\nWe see the unity among leaders of nations and a more unified Europe a more unified West. And we see unity among the people who are gathering in cities in large crowds around the world even in Russia to demonstrate their support for Ukraine.  \n\nIn the battle between democracy and autocracy, democracies are rising to the moment, and the world is clearly choosing the side of peace and security. \n\nThis is a real test. It’s going to take time. So let us continue to draw inspiration from the iron will of the Ukrainian people. \n\nTo our fellow Ukrainian Americans who forge a deep bond that connects our two nations we stand with you. \n\nPutin may circle Kyiv with tanks, but he will never gain the hearts and souls of the Ukrainian people. \n\nHe will never extinguish their love of freedom. He will never weaken the resolve of the free world. \n\nWe meet tonight in an America that has lived through two of the hardest years this nation has ever faced.'),  Document(page_content='We meet tonight in an America that has lived through two of the hardest years this nation has ever faced. \n\nThe pandemic has been punishing. \n\nAnd so many families are living paycheck to paycheck, struggling to keep up with the rising cost of food, gas, housing, and so much more. \n\nI understand. \n\nI remember when my Dad had to leave our home in Scranton, Pennsylvania to find work. I grew up in a family where if the price of food went up, you felt it. \n\nThat’s why one of the first things I did as President was fight to pass the American Rescue Plan.  \n\nBecause people were hurting. We needed to act, and we did. \n\nFew pieces of legislation have done more in a critical moment in our history to lift us out of crisis. \n\nIt fueled our efforts to vaccinate the nation and combat COVID-19. It delivered immediate economic relief for tens of millions of Americans.  \n\nHelped put food on their table, keep a roof over their heads, and cut the cost of health insurance. \n\nAnd as my Dad used to say, it gave people a little breathing room. \n\nAnd unlike the $2 Trillion tax cut passed in the previous administration that benefitted the top 1% of Americans, the American Rescue Plan helped working people—and left no one behind. \n\nAnd it worked. It created jobs. Lots of jobs. \n\nIn fact—our economy created over 6.5 Million new jobs just last year, more jobs created in one year  \nthan ever before in the history of America. \n\nOur economy grew at a rate of 5.7% last year, the strongest growth in nearly 40 years, the first step in bringing fundamental change to an economy that hasn’t worked for the working people of this nation for too long.  \n\nFor the past 40 years we were told that if we gave tax breaks to those at the very top, the benefits would trickle down to everyone else. \n\nBut that trickle-down theory led to weaker economic growth, lower wages, bigger deficits, and the widest gap between those at the top and everyone else in nearly a century. \n\nVice President Harris and I ran for office with a new economic vision for America. \n\nInvest in America. Educate Americans. Grow the workforce. Build the economy from the bottom up  \nand the middle out, not from the top down.  \n\nBecause we know that when the middle class grows, the poor have a ladder up and the wealthy do very well. \n\nAmerica used to have the best roads, bridges, and airports on Earth. \n\nNow our infrastructure is ranked 13th in the world. \n\nWe won’t be able to compete for the jobs of the 21st Century if we don’t fix that. \n\nThat’s why it was so important to pass the Bipartisan Infrastructure Law—the most sweeping investment to rebuild America in history. \n\nThis was a bipartisan effort, and I want to thank the members of both parties who worked to make it happen. \n\nWe’re done talking about infrastructure weeks. \n\nWe’re going to have an infrastructure decade. \n\nIt is going to transform America and put us on a path to win the economic competition of the 21st Century that we face with the rest of the world—particularly with China.  \n\nAs I’ve told Xi Jinping, it is never a good bet to bet against the American people. \n\nWe’ll create good jobs for millions of Americans, modernizing roads, airports, ports, and waterways all across America. \n\nAnd we’ll do it all to withstand the devastating effects of the climate crisis and promote environmental justice. \n\nWe’ll build a national network of 500,000 electric vehicle charging stations, begin to replace poisonous lead pipes—so every child—and every American—has clean water to drink at home and at school, provide affordable high-speed internet for every American—urban, suburban, rural, and tribal communities. \n\n4,000 projects have already been announced. \n\nAnd tonight, I’m announcing that this year we will start fixing over 65,000 miles of highway and 1,500 bridges in disrepair. \n\nWhen we use taxpayer dollars to rebuild America – we are going to Buy American: buy American products to support American jobs.')], 'output_text': '\n\nThe speaker addresses the unity of Americans and discusses the conflict with Russia and support for Ukraine. The US and allies are taking action against Russia and targeting corrupt leaders. There is also support and assurance for the American people. President Biden reflects on recent hardships and highlights efforts to pass the American Rescue Plan. He also shares plans for economic growth and investment in America. '}
+```
+
+```
+!rm .langchain.db sqlite.db
+```
+
+```
+rm: sqlite.db: No such file or directory
+```
+
+## `OpenSearch` semantic cache
+
+Use [OpenSearch](https://python.langchain.com/oss/integrations/vectorstores/opensearch/) as a semantic cache to cache prompts and responses and evaluate hits based on semantic similarity.
+
+```
+from langchain_community.cache import OpenSearchSemanticCachefrom langchain_openai import OpenAIEmbeddingsset_llm_cache(    OpenSearchSemanticCache(        opensearch_url="http://localhost:9200", embedding=OpenAIEmbeddings()    ))
+```
+
+**API Reference:**[OpenSearchSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.OpenSearchSemanticCache.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 39.4 ms, sys: 11.8 ms, total: 51.2 msWall time: 1.55 s
+```
+
+```
+"\n\nWhy don't scientists trust atoms?\n\nBecause they make up everything."
+```
+
+```
+%%time# The second time, while not a direct hit, the question is semantically similar to the original question,# so it uses the cached result!llm.invoke("Tell me one joke")
+```
+
+```
+CPU times: user 4.66 ms, sys: 1.1 ms, total: 5.76 msWall time: 113 ms
+```
+
+```
+"\n\nWhy don't scientists trust atoms?\n\nBecause they make up everything."
+```
+
+## `SingleStoreDB` semantic cache
+
+You can use [SingleStore](https://python.langchain.com/oss/integrations/vectorstores/singlestore/) as a semantic cache to cache prompts and responses.
+
+```
+%pip install -qU langchain-singlestore
+```
+
+```
+from langchain_openai import OpenAIEmbeddingsfrom langchain_singlestore.cache import SingleStoreSemanticCacheset_llm_cache(    SingleStoreSemanticCache(        embedding=OpenAIEmbeddings(),        host="root:pass@localhost:3306/db",    ))
+```
+
+**API Reference:**[OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+## `Memcached` cache
+
+You can use [Memcached](https://www.memcached.org/) as a cache to cache prompts and responses through [pymemcache](https://github.com/pinterest/pymemcache).
+
+This cache requires the pymemcache dependency to be installed:
+
+```
+%pip install -qU pymemcache
+```
+
+```
+from langchain_community.cache import MemcachedCachefrom pymemcache.client.base import Clientset_llm_cache(MemcachedCache(Client("localhost")))
+```
+
+**API Reference:**[MemcachedCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.MemcachedCache.html)
+
+```
+%%time# The first time, it is not yet in cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 32.8 ms, sys: 21 ms, total: 53.8 msWall time: 343 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+```
+%%time# The second time it is, so it goes fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 2.31 ms, sys: 850 µs, total: 3.16 msWall time: 6.43 ms
+```
+
+```
+'\n\nWhy did the chicken cross the road?\n\nTo get to the other side!'
+```
+
+## `Couchbase` caches
+
+Use [Couchbase](https://couchbase.com/) as a cache for prompts and responses.
+
+### Standard cache
+
+The standard cache that looks for an exact match of the user prompt.
+
+```
+%pip install -qU langchain_couchbase
+```
+
+```
+# Create couchbase connection objectfrom datetime import timedeltafrom couchbase.auth import PasswordAuthenticatorfrom couchbase.cluster import Clusterfrom couchbase.options import ClusterOptionsfrom langchain_couchbase.cache import CouchbaseCachefrom langchain_openai import ChatOpenAICOUCHBASE_CONNECTION_STRING = (    "couchbase://localhost"  # or "couchbases://localhost" if using TLS)DB_USERNAME = "Administrator"DB_PASSWORD = "Password"auth = PasswordAuthenticator(DB_USERNAME, DB_PASSWORD)options = ClusterOptions(auth)cluster = Cluster(COUCHBASE_CONNECTION_STRING, options)# Wait until the cluster is ready for use.cluster.wait_until_ready(timedelta(seconds=5))
+```
+
+**API Reference:**[ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+```
+# Specify the bucket, scope and collection to store the cached documentsBUCKET_NAME = "langchain-testing"SCOPE_NAME = "_default"COLLECTION_NAME = "_default"set_llm_cache(    CouchbaseCache(        cluster=cluster,        bucket_name=BUCKET_NAME,        scope_name=SCOPE_NAME,        collection_name=COLLECTION_NAME,    ))
+```
+
+```
+%%time# The first time, it is not yet in the cache, so it should take longerllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 22.2 ms, sys: 14 ms, total: 36.2 msWall time: 938 ms
+```
+
+```
+"\n\nWhy couldn't the bicycle stand up by itself? Because it was two-tired!"
+```
+
+```
+%%time# The second time, it is in the cache, so it should be much fasterllm.invoke("Tell me a joke")
+```
+
+```
+CPU times: user 25.9 ms, sys: 15.3 ms, total: 41.3 msWall time: 144 ms
+```
+
+```
+"\n\nWhy don't scientists trust atoms?\n\nBecause they make up everything."
+```
+
+#### Time to Live (TTL) for the cached entries for the cached entries")
+
+The Cached documents can be deleted after a specified time automatically by specifying a `ttl` parameter along with the initialization of the Cache.
+
+```
+from datetime import timedeltaset_llm_cache(    CouchbaseCache(        cluster=cluster,        bucket_name=BUCKET_NAME,        scope_name=SCOPE_NAME,        collection_name=COLLECTION_NAME,        ttl=timedelta(minutes=5),    ))
+```
+
+### Semantic cache
+
+Semantic caching allows users to retrieve cached prompts based on semantic similarity between the user input and previously cached inputs. Under the hood it uses Couchbase as both a cache and a vectorstore. This needs an appropriate Vector Search Index defined to work. Please look at the usage example on how to set up the index.
+
+```
+# Create Couchbase connection objectfrom datetime import timedeltafrom couchbase.auth import PasswordAuthenticatorfrom couchbase.cluster import Clusterfrom couchbase.options import ClusterOptionsfrom langchain_couchbase.cache import CouchbaseSemanticCachefrom langchain_openai import ChatOpenAI, OpenAIEmbeddingsCOUCHBASE_CONNECTION_STRING = (    "couchbase://localhost"  # or "couchbases://localhost" if using TLS)DB_USERNAME = "Administrator"DB_PASSWORD = "Password"auth = PasswordAuthenticator(DB_USERNAME, DB_PASSWORD)options = ClusterOptions(auth)cluster = Cluster(COUCHBASE_CONNECTION_STRING, options)# Wait until the cluster is ready for use.cluster.wait_until_ready(timedelta(seconds=5))
+```
+
+**API Reference:**[ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+Notes:
+
+* The search index for the semantic cache needs to be defined before using the semantic cache.
+* The optional parameter, `score_threshold` in the Semantic Cache that you can use to tune the results of the semantic search.
+
+#### Index to the Full Text Search service
+
+How to Import an Index to the Full Text Search service?
+
+* [Couchbase Server](https://docs.couchbase.com/server/current/search/import-search-index.html)
+
+  * Click on Search -> Add Index -> Import
+  * Copy the following Index definition in the Import screen
+  * Click on Create Index to create the index.
+
+* [Couchbase Capella](https://docs.couchbase.com/cloud/search/import-search-index.html)
+
+  * Copy the index definition to a new file `index.json`
+  * Import the file in Capella using the instructions in the documentation.
+  * Click on Create Index to create the index.
+
+**Example index for the vector search:**
+
+```
+{  "type": "fulltext-index",  "name": "langchain-testing._default.semantic-cache-index",  "sourceType": "gocbcore",  "sourceName": "langchain-testing",  "planParams": {    "maxPartitionsPerPIndex": 1024,    "indexPartitions": 16  },  "params": {    "doc_config": {      "docid_prefix_delim": "",      "docid_regexp": "",      "mode": "scope.collection.type_field",      "type_field": "type"    },    "mapping": {      "analysis": {},      "default_analyzer": "standard",      "default_datetime_parser": "dateTimeOptional",      "default_field": "_all",      "default_mapping": {        "dynamic": true,        "enabled": false      },      "default_type": "_default",      "docvalues_dynamic": false,      "index_dynamic": true,      "store_dynamic": true,      "type_field": "_type",      "types": {        "_default.semantic-cache": {          "dynamic": false,          "enabled": true,          "properties": {            "embedding": {              "dynamic": false,              "enabled": true,              "fields": [                {                  "dims": 1536,                  "index": true,                  "name": "embedding",                  "similarity": "dot_product",                  "type": "vector",                  "vector_index_optimized_for": "recall"                }              ]            },            "metadata": {              "dynamic": true,              "enabled": true            },            "text": {              "dynamic": false,              "enabled": true,              "fields": [                {                  "index": true,                  "name": "text",                  "store": true,                  "type": "text"                }              ]            }          }        }      }    },    "store": {      "indexType": "scorch",      "segmentVersion": 16    }  },  "sourceParams": {}}
+```
+
+```
+BUCKET_NAME = "langchain-testing"SCOPE_NAME = "_default"COLLECTION_NAME = "semantic-cache"INDEX_NAME = "semantic-cache-index"embeddings = OpenAIEmbeddings()cache = CouchbaseSemanticCache(    cluster=cluster,    embedding=embeddings,    bucket_name=BUCKET_NAME,    scope_name=SCOPE_NAME,    collection_name=COLLECTION_NAME,    index_name=INDEX_NAME,    score_threshold=0.8,)set_llm_cache(cache)
+```
+
+```
+%%time# The first time, it is not yet in the cache, so it should take longerprint(llm.invoke("How long do dogs live?"))
+```
+
+```
+The average lifespan of a dog is around 12 years, but this can vary depending on the breed, size, and overall health of the individual dog. Some smaller breeds may live longer, while larger breeds may have shorter lifespans. Proper care, diet, and exercise can also play a role in extending a dog's lifespan.CPU times: user 826 ms, sys: 2.46 s, total: 3.28 sWall time: 2.87 s
+```
+
+```
+%%time# The second time, it is in the cache, so it should be much fasterprint(llm.invoke("What is the expected lifespan of a dog?"))
+```
+
+```
+The average lifespan of a dog is around 12 years, but this can vary depending on the breed, size, and overall health of the individual dog. Some smaller breeds may live longer, while larger breeds may have shorter lifespans. Proper care, diet, and exercise can also play a role in extending a dog's lifespan.CPU times: user 9.82 ms, sys: 2.61 ms, total: 12.4 msWall time: 311 ms
+```
+
+#### Time to Live (TTL) for the cached entries for the cached entries")
+
+The Cached documents can be deleted after a specified time automatically by specifying a `ttl` parameter along with the initialization of the Cache.
+
+```
+from datetime import timedeltaset_llm_cache(    CouchbaseSemanticCache(        cluster=cluster,        embedding=embeddings,        bucket_name=BUCKET_NAME,        scope_name=SCOPE_NAME,        collection_name=COLLECTION_NAME,        index_name=INDEX_NAME,        score_threshold=0.8,        ttl=timedelta(minutes=5),    ))
+```
+
+## Cache classes: summary table
+
+**Cache** classes are implemented by inheriting the [BaseCache](https://python.langchain.com/api_reference/core/caches/langchain_core.caches.BaseCache.html) class.
+
+This table lists all derived classes with links to the API Reference.
+
+| Namespace                      | Class 🔻                                                                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| langchain\_astradb.cache       | [AstraDBCache](https://python.langchain.com/api_reference/astradb/cache/langchain_astradb.cache.AstraDBCache.html)                                                                      |
+| langchain\_astradb.cache       | [AstraDBSemanticCache](https://python.langchain.com/api_reference/astradb/cache/langchain_astradb.cache.AstraDBSemanticCache.html)                                                      |
+| langchain\_community.cache     | [AstraDBCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.AstraDBCache.html) (deprecated since `langchain-community==0.0.28`)                 |
+| langchain\_community.cache     | [AstraDBSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.AstraDBSemanticCache.html) (deprecated since `langchain-community==0.0.28`) |
+| langchain\_community.cache     | [AzureCosmosDBSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.AzureCosmosDBSemanticCache.html)                                      |
+| langchain\_community.cache     | [CassandraCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.CassandraCache.html)                                                              |
+| langchain\_community.cache     | [CassandraSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.CassandraSemanticCache.html)                                              |
+| langchain\_couchbase.cache     | [CouchbaseCache](https://python.langchain.com/api_reference/couchbase/cache/langchain_couchbase.cache.CouchbaseCache.html)                                                              |
+| langchain\_couchbase.cache     | [CouchbaseSemanticCache](https://python.langchain.com/api_reference/couchbase/cache/langchain_couchbase.cache.CouchbaseSemanticCache.html)                                              |
+| langchain\_elasticsearch.cache | [ElasticsearchCache](https://python.langchain.com/api_reference/elasticsearch/cache/langchain_elasticsearch.cache.AsyncElasticsearchCache.html)                                         |
+| langchain\_elasticsearch.cache | [ElasticsearchEmbeddingsCache](https://python.langchain.com/api_reference/elasticsearch/cache/langchain_elasticsearch.cache.AsyncElasticsearchEmbeddingsCache.html)                     |
+| langchain\_community.cache     | [GPTCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.GPTCache.html)                                                                          |
+| langchain\_core.caches         | [InMemoryCache](https://python.langchain.com/api_reference/core/caches/langchain_core.caches.InMemoryCache.html)                                                                        |
+| langchain\_community.cache     | [InMemoryCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.InMemoryCache.html)                                                                |
+| langchain\_community.cache     | [MomentoCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.MomentoCache.html)                                                                  |
+| langchain\_mongodb.cache       | [MongoDBAtlasSemanticCache](https://python.langchain.com/api_reference/mongodb/cache/langchain_mongodb.cache.MongoDBAtlasSemanticCache.html)                                            |
+| langchain\_mongodb.cache       | [MongoDBCache](https://python.langchain.com/api_reference/mongodb/cache/langchain_mongodb.cache.MongoDBCache.html)                                                                      |
+| langchain\_community.cache     | [OpenSearchSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.OpenSearchSemanticCache.html)                                            |
+| langchain\_community.cache     | [RedisSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.RedisSemanticCache.html)                                                      |
+| langchain\_community.cache     | [SingleStoreDBSemanticCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.SingleStoreDBSemanticCache.html)                                      |
+| langchain\_community.cache     | [SQLAlchemyCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.SQLAlchemyCache.html)                                                            |
+| langchain\_community.cache     | [SQLAlchemyMd5Cache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.SQLAlchemyMd5Cache.html)                                                      |
+| langchain\_community.cache     | [UpstashRedisCache](https://python.langchain.com/api_reference/community/cache/langchain_community.cache.UpstashRedisCache.html)                                                        |

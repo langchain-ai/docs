@@ -1,0 +1,452 @@
+---
+title: "Redis Vector Store"
+---
+
+This notebook covers how to get started with the Redis vector store.
+
+> [Redis](https://redis.io/oss/stack/vectorsearch/) is a popular open-source, in-memory data structure store that can be used as a database, cache, message broker, and queue. It now includes vector similarity search capabilities, making it suitable for use as a vector store.
+
+### What is Redis?
+
+Most developers are familiar with `Redis`. At its core, `Redis` is a NoSQL Database in the key-value family that can used as a cache, message broker, stream processing and a primary database. Developers choose `Redis` because it is fast, has a large ecosystem of client libraries, and has been deployed by major enterprises for years.
+
+On top of these traditional use cases, `Redis` provides additional capabilities like the Search and Query capability that allows users to create secondary index structures within `Redis`. This allows `Redis` to be a Vector Database, at the speed of a cache.
+
+### Redis as a Vector Database
+
+`Redis` uses compressed, inverted indexes for fast indexing with a low memory footprint. It also supports a number of advanced features such as:
+
+* Indexing of multiple fields in Redis hashes and `JSON`
+* Vector similarity search (with `HNSW` (ANN) or `FLAT` (KNN))
+* Vector Range Search (e.g. find all vectors within a radius of a query vector)
+* Incremental indexing without performance loss
+* Document ranking (using [tf-idf](https://en.wikipedia.org/wiki/Tf%E2%80%93idf), with optional user-provided weights)
+* Field weighting
+* Complex boolean queries with `AND`, `OR`, and `NOT` operators
+* Prefix matching, fuzzy matching, and exact-phrase queries
+* Support for [double-metaphone phonetic matching](https://redis.io/oss/stack/search/reference/phonetic_matching/)
+* Auto-complete suggestions (with fuzzy prefix suggestions)
+* Stemming-based query expansion in [many languages](https://redis.io/oss/stack/search/reference/stemming/) (using [Snowball](http://snowballstem.org/))
+* Support for Chinese-language tokenization and querying (using [Friso](https://github.com/lionsoul2014/friso))
+* Numeric filters and ranges
+* Geospatial searches using Redis geospatial indexing
+* A powerful aggregations engine
+* Supports for all `utf-8` encoded text
+* Retrieve full documents, selected fields, or only the document IDs
+* Sorting results (for example, by creation date)
+
+### Clients
+
+Since `Redis` is much more than just a vector database, there are often use cases that demand the usage of a `Redis` client besides just the `LangChain` integration. You can use any standard `Redis` client library to run Search and Query commands, but it's easiest to use a library that wraps the Search and Query API. Below are a few examples, but you can find more client libraries [here](https://redis.io/resources/clients/).
+
+| Project                                             | Language | License | Author                     | Stars                                                                                     |
+| --------------------------------------------------- | -------- | ------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| [jedis](https://github.com/redis/jedis)             | Java     | MIT     | [Redis](https://redis.com) | ![Stars](/images/oss/integrations/vectorstores/redis/github/stars/redis/jedis.svg)       |
+| [redisvl](https://github.com/redis/redis-vl-python) | Python   | MIT     | [Redis](https://redis.com) | ![Stars](/images/oss/integrations/vectorstores/redis/github/stars/redis/redisvl.svg)     |
+| [redis-py](https://github.com/redis/redis-py)       | Python   | MIT     | [Redis](https://redis.com) | ![Stars](/images/oss/integrations/vectorstores/redis/github/stars/redis/redis-py.svg)    |
+| [node-redis](https://github.com/redis/node-redis)   | Node.js  | MIT     | [Redis](https://redis.com) | ![Stars](/images/oss/integrations/vectorstores/redis/github/stars/redis/node-redis.svg)  |
+| [nredisstack](https://github.com/redis/nredisstack) | .NET     | MIT     | [Redis](https://redis.com) | ![Stars](/images/oss/integrations/vectorstores/redis/github/stars/redis/nredisstack.svg) |
+
+### Deployment options
+
+There are many ways to deploy Redis with RediSearch. The easiest way to get started is to use Docker, but there are are many potential options for deployment such as
+
+* [Redis Cloud](https://redis.com/redis-enterprise-cloud/overview/)
+* [Docker (Redis Stack)](https://hub.docker.com/r/redis/redis-stack)
+* Cloud marketplaces: [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-e6y7ork67pjwg?sr=0-2\&ref_=beagle\&applicationId=AWSMPContessa), [Google Marketplace](https://console.cloud.google.com/marketplace/details/redislabs-public/redis-enterprise?pli=1), or [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps/garantiadata.redis_enterprise_1sp_public_preview?tab=Overview)
+* On-premise: [Redis Enterprise Software](https://redis.com/redis-enterprise-software/overview/)
+* Kubernetes: [Redis Enterprise Software on Kubernetes](https://docs.redis.com/latest/kubernetes/)
+
+### Redis connection Url schemas
+
+Valid Redis Url schemas are:
+
+1. `redis://` - Connection to Redis standalone, unencrypted
+2. `rediss://` - Connection to Redis standalone, with TLS encryption
+3. `redis+sentinel://` - Connection to Redis server via Redis Sentinel, unencrypted
+4. `rediss+sentinel://` - Connection to Redis server via Redis Sentinel, both connections with TLS encryption
+
+More information about additional connection parameters can be found in the [redis-py documentation](https://redis-py.readthedocs.io/en/stable/connections.html).
+
+## Setup
+
+To use the RedisVectorStore, you'll need to install the `langchain-redis` partner package, as well as the other packages used throughout this notebook.
+
+```
+%pip install -qU langchain-redis langchain-huggingface sentence-transformers scikit-learn
+```
+
+```
+Note: you may need to restart the kernel to use updated packages.
+```
+
+### Credentials
+
+Redis connection credentials are passed as part of the Redis Connection URL. Redis Connection URLs are versatile and can accommodate various Redis server topologies and authentication methods. These URLs follow a specific format that includes the connection protocol, authentication details, host, port, and database information. The basic structure of a Redis Connection URL is:
+
+```
+[protocol]://[auth]@[host]:[port]/[database]
+```
+
+Where:
+
+* protocol can be redis for standard connections, rediss for SSL/TLS connections, or redis+sentinel for Sentinel connections.
+* auth includes username and password (if applicable).
+* host is the Redis server hostname or IP address.
+* port is the Redis server port.
+* database is the Redis database number.
+
+Redis Connection URLs support various configurations, including:
+
+* Standalone Redis servers (with or without authentication)
+* Redis Sentinel setups
+* SSL/TLS encrypted connections
+* Different authentication methods (password-only or username-password)
+
+Below are examples of Redis Connection URLs for different configurations:
+
+```
+# connection to redis standalone at localhost, db 0, no passwordredis_url = "redis://localhost:6379"# connection to host "redis" port 7379 with db 2 and password "secret" (old style authentication scheme without username / pre 6.x)redis_url = "redis://:secret@redis:7379/2"# connection to host redis on default port with user "joe", pass "secret" using redis version 6+ ACLsredis_url = "redis://joe:secret@redis/0"# connection to sentinel at localhost with default group mymaster and db 0, no passwordredis_url = "redis+sentinel://localhost:26379"# connection to sentinel at host redis with default port 26379 and user "joe" with password "secret" with default group mymaster and db 0redis_url = "redis+sentinel://joe:secret@redis"# connection to sentinel, no auth with sentinel monitoring group "zone-1" and database 2redis_url = "redis+sentinel://redis:26379/zone-1/2"# connection to redis standalone at localhost, db 0, no password but with TLS supportredis_url = "rediss://localhost:6379"# connection to redis sentinel at localhost and default port, db 0, no password# but with TLS support for both Sentinel and Redis serverredis_url = "rediss+sentinel://localhost"
+```
+
+### Launching a Redis Instance with Docker
+
+To use Redis with LangChain, you need a running Redis instance. You can start one using Docker with:
+
+```
+docker run -d -p 6379:6379 redis/redis-stack:latest
+```
+
+For this example, we'll use a local Redis instance. If you're using a remote instance, you'll need to modify the Redis URL accordingly.
+
+```
+import osREDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")print(f"Connecting to Redis at: {REDIS_URL}")
+```
+
+```
+Connecting to Redis at: redis://redis:6379
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+
+```
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+Let's check that Redis is up an running by pinging it:
+
+```
+import redisredis_client = redis.from_url(REDIS_URL)redis_client.ping()
+```
+
+```
+True
+```
+
+### Sample Data
+
+The 20 newsgroups dataset comprises around 18000 newsgroups posts on 20 topics. We'll use a subset for this demonstration and focus on two categories: 'alt.atheism' and 'sci.space':
+
+```
+from langchain.docstore.document import Documentfrom sklearn.datasets import fetch_20newsgroupscategories = ["alt.atheism", "sci.space"]newsgroups = fetch_20newsgroups(    subset="train", categories=categories, shuffle=True, random_state=42)# Use only the first 250 documentstexts = newsgroups.data[:250]metadata = [    {"category": newsgroups.target_names[target]} for target in newsgroups.target[:250]]len(texts)
+```
+
+**API Reference:**[Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html)
+
+```
+250
+```
+
+## Initialization
+
+The RedisVectorStore instance can be initialized in several ways:
+
+* `RedisVectorStore.__init__` - Initialize directly
+* `RedisVectorStore.from_texts` - Initialize from a list of texts (optionally with metadata)
+* `RedisVectorStore.from_documents` - Initialize from a list of `langchain_core.documents.Document` objects
+* `RedisVectorStore.from_existing_index` - Initialize from an existing Redis index
+
+Below we will use the `RedisVectorStore.__init__` method using a `RedisConfig` instance.
+
+Select [embeddings model](/src/oss/integrations/text_embedding):
+
+OpenAI▾
+
+* [OpenAI](#)
+
+* [Azure](#)
+
+* [Google Gemini](#)
+
+* [Google Vertex](#)
+
+* [AWS](#)
+
+* [HuggingFace](#)
+
+* [Ollama](#)
+
+* [Cohere](#)
+
+* [MistralAI](#)
+
+* [Nomic](#)
+
+* [NVIDIA](#)
+
+* [Voyage AI](#)
+
+* [IBM watsonx](#)
+
+* [Fake](#)
+
+```
+pip install -qU langchain-openai
+```
+
+```
+import getpassimport osif not os.environ.get("OPENAI_API_KEY"):  os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")from langchain_openai import OpenAIEmbeddingsembeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+```
+
+We'll use the SentenceTransformer model to create embeddings. This model runs locally and doesn't require an API key.
+
+```
+from langchain_redis import RedisConfig, RedisVectorStoreconfig = RedisConfig(    index_name="newsgroups",    redis_url=REDIS_URL,    metadata_schema=[        {"name": "category", "type": "tag"},    ],)vector_store = RedisVectorStore(embeddings, config=config)
+```
+
+**API Reference:**[RedisConfig](https://python.langchain.com/api_reference/redis/config/langchain_redis.config.RedisConfig.html) | [RedisVectorStore](https://python.langchain.com/api_reference/redis/vectorstores/langchain_redis.vectorstores.RedisVectorStore.html)
+
+## Manage vector store
+
+### Add items to vector store
+
+```
+ids = vector_store.add_texts(texts, metadata)print(ids[0:10])
+```
+
+```
+['newsgroups:f1e788ee61fe410daa8ef941dd166223', 'newsgroups:80b39032181f4299a359a9aaed6e2401', 'newsgroups:99a3efc1883647afba53d115b49e6e92', 'newsgroups:503a6c07cd71418eb71e11b42589efd7', 'newsgroups:7351210e32d1427bbb3c7426cf93a44f', 'newsgroups:4e79fdf67abe471b8ee98ba0e8a1a055', 'newsgroups:03559a1d574e4f9ca0479d7b3891402e', 'newsgroups:9a1c2a7879b8409a805db72feac03580', 'newsgroups:3578a1e129f5435f9743cf803413f37a', 'newsgroups:9f68baf4d6b04f1683d6b871ce8ad92d']
+```
+
+Let's inspect the first document:
+
+```
+texts[0], metadata[0]
+```
+
+```
+('From: bil@okcforum.osrhe.edu (Bill Conner)\nSubject: Re: Not the Omni!\nNntp-Posting-Host: okcforum.osrhe.edu\nOrganization: Okcforum Unix Users Group\nX-Newsreader: TIN [version 1.1 PL6]\nLines: 18\n\nCharley Wingate (mangoe@cs.umd.edu) wrote:\n: \n: >> Please enlighten me.  How is omnipotence contradictory?\n: \n: >By definition, all that can occur in the universe is governed by the rules\n: >of nature. Thus god cannot break them. Anything that god does must be allowed\n: >in the rules somewhere. Therefore, omnipotence CANNOT exist! It contradicts\n: >the rules of nature.\n: \n: Obviously, an omnipotent god can change the rules.\n\nWhen you say, "By definition", what exactly is being defined;\ncertainly not omnipotence. You seem to be saying that the "rules of\nnature" are pre-existent somehow, that they not only define nature but\nactually cause it. If that\'s what you mean I\'d like to hear your\nfurther thoughts on the question.\n\nBill\n', {'category': 'alt.atheism'})
+```
+
+### Delete items from vector store
+
+```
+# Delete documents by passing one or more keys/idsvector_store.index.drop_keys(ids[0])
+```
+
+```
+1
+```
+
+### Inspecting the created Index
+
+Once the `Redis` VectorStore object has been constructed, an index will have been created in Redis if it did not already exist. The index can be inspected with both the `rvl`and the `redis-cli` command line tool. If you installed `redisvl` above, you can use the `rvl` command line tool to inspect the index.
+
+```
+# assumes you're running Redis locally (use --host, --port, --password, --username, to change this)!rvl index listall --port 6379
+```
+
+```
+[32m17:54:50[0m [34m[RedisVL][0m [1;30mINFO[0m   Using Redis address from environment variable, REDIS_URL[32m17:54:50[0m [34m[RedisVL][0m [1;30mINFO[0m   Indices:[32m17:54:50[0m [34m[RedisVL][0m [1;30mINFO[0m   1. newsgroups
+```
+
+The `Redis` VectorStore implementation will attempt to generate index schema (fields for filtering) for any metadata passed through the `from_texts`, `from_texts_return_keys`, and `from_documents` methods. This way, whatever metadata is passed will be indexed into the Redis search index allowing for filtering on those fields.
+
+Below we show what fields were created from the metadata we defined above
+
+```
+!rvl index info -i newsgroups --port 6379
+```
+
+```
+[32m17:54:50[0m [34m[RedisVL][0m [1;30mINFO[0m   Using Redis address from environment variable, REDIS_URLIndex Information:╭──────────────┬────────────────┬────────────────┬─────────────────┬────────────╮│ Index Name   │ Storage Type   │ Prefixes       │ Index Options   │   Indexing │├──────────────┼────────────────┼────────────────┼─────────────────┼────────────┤│ newsgroups   │ HASH           │ ['newsgroups'] │ []              │          0 │╰──────────────┴────────────────┴────────────────┴─────────────────┴────────────╯Index Fields:╭───────────┬─────────────┬────────┬────────────────┬────────────────┬────────────────┬────────────────┬────────────────┬────────────────┬─────────────────┬────────────────╮│ Name      │ Attribute   │ Type   │ Field Option   │ Option Value   │ Field Option   │ Option Value   │ Field Option   │   Option Value │ Field Option    │ Option Value   │├───────────┼─────────────┼────────┼────────────────┼────────────────┼────────────────┼────────────────┼────────────────┼────────────────┼─────────────────┼────────────────┤│ text      │ text        │ TEXT   │ WEIGHT         │ 1              │                │                │                │                │                 │                ││ embedding │ embedding   │ VECTOR │ algorithm      │ FLAT           │ data_type      │ FLOAT32        │ dim            │            768 │ distance_metric │ COSINE         ││ category  │ category    │ TAG    │ SEPARATOR      │ |              │                │                │                │                │                 │                │╰───────────┴─────────────┴────────┴────────────────┴────────────────┴────────────────┴────────────────┴────────────────┴────────────────┴─────────────────┴────────────────╯
+```
+
+```
+!rvl stats -i newsgroups --port 6379
+```
+
+```
+[32m17:54:51[0m [34m[RedisVL][0m [1;30mINFO[0m   Using Redis address from environment variable, REDIS_URLStatistics:╭─────────────────────────────┬────────────╮│ Stat Key                    │ Value      │├─────────────────────────────┼────────────┤│ num_docs                    │ 249        ││ num_terms                   │ 16178      ││ max_doc_id                  │ 250        ││ num_records                 │ 50394      ││ percent_indexed             │ 1          ││ hash_indexing_failures      │ 0          ││ number_of_uses              │ 2          ││ bytes_per_record_avg        │ 38.2743    ││ doc_table_size_mb           │ 0.0263586  ││ inverted_sz_mb              │ 1.83944    ││ key_table_size_mb           │ 0.00932026 ││ offset_bits_per_record_avg  │ 10.6699    ││ offset_vectors_sz_mb        │ 0.089057   ││ offsets_per_term_avg        │ 1.38937    ││ records_per_doc_avg         │ 202.386    ││ sortable_values_size_mb     │ 0          ││ total_indexing_time         │ 72.444     ││ total_inverted_index_blocks │ 16207      ││ vector_index_sz_mb          │ 3.01776    │╰─────────────────────────────┴────────────╯
+```
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+```
+query = "Tell me about space exploration"results = vector_store.similarity_search(query, k=2)print("Simple Similarity Search Results:")for doc in results:    print(f"Content: {doc.page_content[:100]}...")    print(f"Metadata: {doc.metadata}")    print()
+```
+
+```
+Simple Similarity Search Results:Content: From: aa429@freenet.carleton.ca (Terry Ford)Subject: A flawed propulsion system: Space ShuttleX-Ad...Metadata: {'category': 'sci.space'}Content: From: nsmca@aurora.alaska.eduSubject: Space Design Movies?Article-I.D.: aurora.1993Apr23.124722.1...Metadata: {'category': 'sci.space'}
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```
+# Similarity search with score and filterscored_results = vector_store.similarity_search_with_score(query, k=2)print("Similarity Search with Score Results:")for doc, score in scored_results:    print(f"Content: {doc.page_content[:100]}...")    print(f"Metadata: {doc.metadata}")    print(f"Score: {score}")    print()
+```
+
+```
+Similarity Search with Score Results:Content: From: aa429@freenet.carleton.ca (Terry Ford)Subject: A flawed propulsion system: Space ShuttleX-Ad...Metadata: {'category': 'sci.space'}Score: 0.569670975208Content: From: nsmca@aurora.alaska.eduSubject: Space Design Movies?Article-I.D.: aurora.1993Apr23.124722.1...Metadata: {'category': 'sci.space'}Score: 0.590400338173
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+```
+retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 2})retriever.invoke("What planet in the solar system has the largest number of moons?")
+```
+
+```
+[Document(metadata={'category': 'sci.space'}, page_content='Subject: Re: Comet in Temporary Orbit Around Jupiter?\nFrom: Robert Coe <bob@1776.COM>\nDistribution: world\nOrganization: 1776 Enterprises, Sudbury MA\nLines: 23\n\njgarland@kean.ucs.mun.ca writes:\n\n> >> Also, perihelions of Gehrels3 were:\n> >> \n> >> April  1973     83 jupiter radii\n> >> August 1970     ~3 jupiter radii\n> > \n> > Where 1 Jupiter radius = 71,000 km = 44,000 mi = 0.0005 AU.  So the\n> > 1970 figure seems unlikely to actually be anything but a perijove.\n> > Is that the case for the 1973 figure as well?\n> > -- \n> Sorry, _perijoves_...I\'m not used to talking this language.\n\nHmmmm....  The prefix "peri-" is Greek, not Latin, so it\'s usually used\nwith the Greek form of the name of the body being orbited.  (That\'s why\nit\'s "perihelion" rather than "perisol", "perigee" rather than "periterr",\nand "pericynthion" rather than "perilune".)  So for Jupiter I\'d expect it\nto be something like "perizeon".)   :^)\n\n   ___            _                                           -  Bob\n   /__) _   /    / ) _   _\n(_/__) (_)_(_)  (___(_)_(/_______________________________________ bob@1776.COM\nRobert K. Coe ** 14 Churchill St, Sudbury, Massachusetts 01776 ** 508-443-3265\n'), Document(metadata={'category': 'sci.space'}, page_content='From: pyron@skndiv.dseg.ti.com (Dillon Pyron)\nSubject: Re: Why not give $1 billion to first year-long moon residents?\nLines: 42\nNntp-Posting-Host: skndiv.dseg.ti.com\nReply-To: pyron@skndiv.dseg.ti.com\nOrganization: TI/DSEG VAX Support\n\n\nIn article <1qve4kINNpas@sal-sun121.usc.edu>, schaefer@sal-sun121.usc.edu (Peter Schaefer) writes:\n>In article <1993Apr19.130503.1@aurora.alaska.edu>, nsmca@aurora.alaska.edu writes:\n>|> In article <6ZV82B2w165w@theporch.raider.net>, gene@theporch.raider.net (Gene Wright) writes:\n>|> > With the continuin talk about the "End of the Space Age" and complaints \n>|> > by government over the large cost, why not try something I read about \n>|> > that might just work.\n>|> > \n>|> > Announce that a reward of $1 billion would go to the first corporation \n>|> > who successfully keeps at least 1 person alive on the moon for a year. \n>|> > Then you\'d see some of the inexpensive but not popular technologies begin \n>|> > to be developed. THere\'d be a different kind of space race then!\n>|> > \n>|> > --\n>|> >   gene@theporch.raider.net (Gene Wright)\n>|> > theporch.raider.net  615/297-7951 The MacInteresteds of Nashville\n>|> ====\n>|> If that were true, I\'d go for it.. I have a few friends who we could pool our\n>|> resources and do it.. Maybe make it a prize kind of liek the "Solar Car Race"\n>|> in Australia..\n>|> Anybody game for a contest!\n>|> \n>|> ==\n>|> Michael Adams, nsmca@acad3.alaska.edu -- I\'m not high, just jacked\n>\n>\n>Oh gee, a billion dollars!  That\'d be just about enough to cover the cost of the\n>feasability study!  Happy, Happy, JOY! JOY!\n>\n\nFeasability study??  What a wimp!!  While you are studying, others would be\ndoing.  Too damn many engineers doing way too little engineering.\n\n"He who sits on his arse sits on his fortune"  - Sir Richard Francis Burton\n--\nDillon Pyron                      | The opinions expressed are those of the\nTI/DSEG Lewisville VAX Support    | sender unless otherwise stated.\n(214)462-3556 (when I\'m here)     |\n(214)492-4656 (when I\'m home)     |Texans: Vote NO on Robin Hood.  We need\npyron@skndiv.dseg.ti.com          |solutions, not gestures.\nPADI DM-54909                     |\n\n')]
+```
+
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+* [Tutorials](/src/oss/tutorials)
+* [How-to: Question and answer with RAG](https://python.langchain.com/oss/how_to/#qa-with-rag)
+* [Retrieval conceptual docs](https://python.langchain.com/oss/concepts/retrieval)
+
+## Redis-specific functionality
+
+Redis offers some unique features for vector search:
+
+### Similarity search with metadata filtering
+
+We can filter our search results based on metadata:
+
+```
+from redisvl.query.filter import Tagquery = "Tell me about space exploration"# Create a RedisVL filter expressionfilter_condition = Tag("category") == "sci.space"filtered_results = vector_store.similarity_search(query, k=2, filter=filter_condition)print("Filtered Similarity Search Results:")for doc in filtered_results:    print(f"Content: {doc.page_content[:100]}...")    print(f"Metadata: {doc.metadata}")    print()
+```
+
+```
+Filtered Similarity Search Results:Content: From: aa429@freenet.carleton.ca (Terry Ford)Subject: A flawed propulsion system: Space ShuttleX-Ad...Metadata: {'category': 'sci.space'}Content: From: nsmca@aurora.alaska.eduSubject: Space Design Movies?Article-I.D.: aurora.1993Apr23.124722.1...Metadata: {'category': 'sci.space'}
+```
+
+### Maximum marginal relevance search
+
+Maximum marginal relevance search helps in getting diverse results:
+
+```
+# Maximum marginal relevance search with filtermmr_results = vector_store.max_marginal_relevance_search(    query, k=2, fetch_k=10, filter=filter_condition)print("Maximum Marginal Relevance Search Results:")for doc in mmr_results:    print(f"Content: {doc.page_content[:100]}...")    print(f"Metadata: {doc.metadata}")    print()
+```
+
+```
+Maximum Marginal Relevance Search Results:Content: From: aa429@freenet.carleton.ca (Terry Ford)Subject: A flawed propulsion system: Space ShuttleX-Ad...Metadata: {'category': 'sci.space'}Content: From: moroney@world.std.com (Michael Moroney)Subject: Re: Vulcan? (No, not the guy with the ears!)...Metadata: {'category': 'sci.space'}
+```
+
+## Chain usage
+
+The code below shows how to use the vector store as a retriever in a simple RAG chain:
+
+Select [chat model](/src/oss/integrations/chat):
+
+Google Gemini▾
+
+* [OpenAI](#)
+
+* [Anthropic](#)
+
+* [Azure](#)
+
+* [Google Gemini](#)
+
+* [Google Vertex](#)
+
+* [AWS](#)
+
+* [Groq](#)
+
+* [Cohere](#)
+
+* [NVIDIA](#)
+
+* [Fireworks AI](#)
+
+* [Mistral AI](#)
+
+* [Together AI](#)
+
+* [IBM watsonx](#)
+
+* [Databricks](#)
+
+* [xAI](#)
+
+* [Perplexity](#)
+
+```
+pip install -qU "langchain[google-genai]"
+```
+
+```
+import getpassimport osif not os.environ.get("GOOGLE_API_KEY"):  os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter API key for Google Gemini: ")from langchain.chat_models import init_chat_modelllm = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
+```
+
+```
+from langchain_core.output_parsers import StrOutputParserfrom langchain_core.prompts import ChatPromptTemplatefrom langchain_core.runnables import RunnablePassthrough# Promptprompt = ChatPromptTemplate.from_messages(    [        (            "human",            """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.Question: {question}Context: {context}Answer:""",        ),    ])def format_docs(docs):    return "\n\n".join(doc.page_content for doc in docs)rag_chain = (    {"context": retriever | format_docs, "question": RunnablePassthrough()}    | prompt    | llm    | StrOutputParser())rag_chain.invoke("Describe the Space Shuttle program?")
+```
+
+**API Reference:**[StrOutputParser](https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.string.StrOutputParser.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [RunnablePassthrough](https://python.langchain.com/api_reference/core/runnables/langchain_core.runnables.passthrough.RunnablePassthrough.html)
+
+```
+'The Space Shuttle program was a NASA initiative that enabled reusable spacecraft to transport astronauts and cargo to and from low Earth orbit. It conducted a variety of missions, including satellite deployment, scientific research, and assembly of the International Space Station, and typically carried a crew of five astronauts. Although it achieved many successes, the program faced criticism for its safety concerns and the complexity of its propulsion system.'
+```
+
+## Connect to an existing Index
+
+In order to have the same metadata indexed when using the `Redis` VectorStore. You will need to have the same `index_schema` passed in either as a path to a yaml file or as a dictionary. The following shows how to obtain the schema from an index and connect to an existing index.
+
+```
+# write the schema to a yaml filevector_store.index.schema.to_yaml("redis_schema.yaml")
+```
+
+```
+# now we can connect to our existing index as followsnew_rdvs = RedisVectorStore(    embeddings,    redis_url=REDIS_URL,    schema_path="redis_schema.yaml",)results = new_rdvs.similarity_search("Space Shuttle Propulsion System", k=3)print(results[0])
+```
+
+```
+18:19:58 redisvl.index.index INFO   Index already exists, not overwriting.page_content='From: aa429@freenet.carleton.ca (Terry Ford)Subject: A flawed propulsion system: Space ShuttleX-Added: Forwarded by Space DigestOrganization: [via International Space University]Original-Sender: isu@VACATION.VENARI.CS.CMU.EDUDistribution: sciLines: 13For an essay, I am writing about the space shuttle and a need for a betterpropulsion system.  Through research, I have found that it is rather clumsy (i.e. all the checks/tests before launch), the safety hazards ("sittingon a hydrogen bomb"), etc..  If you have any beefs about the currentspace shuttle program Re: propulsion, please send me your ideas.Thanks a lot.--Terry Ford [aa429@freenet.carleton.ca]Nepean, Ontario, Canada.' metadata={'category': 'sci.space'}
+```
+
+```
+# compare the two schemas to verify they are the samenew_rdvs.index.schema == vector_store.index.schema
+```
+
+```
+True
+```
+
+## Cleanup vector store
+
+```
+# Clear vector storevector_store.index.delete(drop=True)
+```
+
+## API reference
+
+For detailed documentation of all RedisVectorStore features and configurations head to the API reference: [https://python.langchain.com/api\_reference/redis/vectorstores/langchain\_redis.vectorstores.RedisVectorStore.html](https://python.langchain.com/api_reference/redis/vectorstores/langchain_redis.vectorstores.RedisVectorStore.html)
+
+## Related
+
+* Vector store [conceptual guide](/src/oss/concepts/vectorstores)
+* Vector store [how-to guides](/src/oss/how_to/#vector-stores)

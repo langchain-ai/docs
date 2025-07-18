@@ -1,0 +1,135 @@
+---
+title: "AzureAISearchRetriever"
+---
+
+[Azure AI Search](https://learn.microsoft.com/azure/search/search-what-is-azure-search) (formerly known as `Azure Cognitive Search`) is a Microsoft cloud search service that gives developers infrastructure, APIs, and tools for information retrieval of vector, keyword, and hybrid queries at scale.
+
+`AzureAISearchRetriever` is an integration module that returns documents from an unstructured query. It's based on the BaseRetriever class and it targets the 2023-11-01 stable REST API version of Azure AI Search, which means it supports vector indexing and queries.
+
+This guide will help you get started with the Azure AI Search [retriever](/src/oss/concepts/retrievers). For detailed documentation of all `AzureAISearchRetriever` features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/retrievers/langchain_community.retrievers.azure_ai_search.AzureAISearchRetriever.html).
+
+`AzureAISearchRetriever` replaces `AzureCognitiveSearchRetriever`, which will soon be deprecated. We recommend switching to the newer version that's based on the most recent stable version of the search APIs.
+
+### Integration details
+
+| Retriever                                 | Self-host | Cloud offering | Package                                                                                                                                                            |
+| ----------------------------------------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [AzureAISearchRetriever](/src/oss/../../azure_ai_search) | ❌         | ✅              | [langchain\_community](https://python.langchain.com/api_reference/community/retrievers/langchain_community.retrievers.azure_ai_search.AzureAISearchRetriever.html) |
+
+## Setup
+
+To use this module, you need:
+
+* An Azure AI Search service. You can [create one](https://learn.microsoft.com/azure/search/search-create-service-portal) for free if you sign up for the Azure trial. A free service has lower quotas, but it's sufficient for running the code in this notebook.
+
+* An existing index with vector fields. There are several ways to create one, including using the [vector store module](/src/oss/integrations/vectorstores/azuresearch). Or, [try the Azure AI Search REST APIs](https://learn.microsoft.com/azure/search/search-get-started-vector).
+
+* An API key or Azure AD Token.
+
+  * API keys are generated when you create the search service. If you're just querying an index, you can use the query API key, otherwise use an admin API key. See [Find your API keys](https://learn.microsoft.com/azure/search/search-security-api-keys?tabs=rest-use%2Cportal-find%2Cportal-query#find-existing-keys) for details.
+  * Azure AD Token can be used with Azure Managed Identity. See [Connect your app to Azure AI Search using identities](https://learn.microsoft.com/en-us/azure/search/keyless-connections?tabs=python%2Cazure-cli) for details.
+
+We can then set the search service name, index name, and API key as environment variables (alternatively, you can pass them as arguments to `AzureAISearchRetriever`). The search index provides the searchable content.
+
+With an API Key
+
+```
+import osos.environ["AZURE_AI_SEARCH_SERVICE_NAME"] = "<YOUR_SEARCH_SERVICE_NAME>"os.environ["AZURE_AI_SEARCH_INDEX_NAME"] = "<YOUR_SEARCH_INDEX_NAME>"os.environ["AZURE_AI_SEARCH_API_KEY"] = "<YOUR_API_KEY>"
+```
+
+With an Azure AD Token
+
+```
+import osos.environ["AZURE_AI_SEARCH_SERVICE_NAME"] = "<YOUR_SEARCH_SERVICE_NAME>"os.environ["AZURE_AI_SEARCH_INDEX_NAME"] = "<YOUR_SEARCH_INDEX_NAME>"os.environ["AZURE_AI_SEARCH_AD_TOKEN"] = "<YOUR_AZURE_AD_TOKEN>"
+```
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+This retriever lives in the `langchain-community` package. We will need some additional dependencies as well:
+
+```
+%pip install --upgrade --quiet langchain-community%pip install --upgrade --quiet langchain-openai%pip install --upgrade --quiet  azure-search-documents>=11.4%pip install --upgrade --quiet  azure-identity
+```
+
+## Instantiation
+
+For `AzureAISearchRetriever`, provide an `index_name`, `content_key`, and `top_k` set to the number of number of results you'd like to retrieve. Setting `top_k` to zero (the default) returns all results.
+
+```
+from langchain_community.retrievers import AzureAISearchRetrieverretriever = AzureAISearchRetriever(    content_key="content", top_k=1, index_name="langchain-vector-demo")
+```
+
+**API Reference:**[AzureAISearchRetriever](https://python.langchain.com/api_reference/community/retrievers/langchain_community.retrievers.azure_ai_search.AzureAISearchRetriever.html)
+
+## Usage
+
+Now you can use it to retrieve documents from Azure AI Search. This is the method you would call to do so. It will return all documents relevant to the query.
+
+```
+retriever.invoke("here is my unstructured query string")
+```
+
+## Example
+
+This section demonstrates using the retriever over built-in sample data. You can skip this step if you already have a vector index on your search service.
+
+Start by providing the endpoints and keys. Since we're creating a vector index in this step, specify a text embedding model to get a vector representation of the text. This example assumes Azure OpenAI with a deployment of text-embedding-ada-002. Because this step creates an index, be sure to use an admin API key for your search service.
+
+```
+import osfrom langchain_community.document_loaders import DirectoryLoader, TextLoaderfrom langchain_community.retrievers import AzureAISearchRetrieverfrom langchain_community.vectorstores import AzureSearchfrom langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddingsfrom langchain_text_splitters import TokenTextSplitteros.environ["AZURE_AI_SEARCH_SERVICE_NAME"] = "<YOUR_SEARCH_SERVICE_NAME>"os.environ["AZURE_AI_SEARCH_INDEX_NAME"] = "langchain-vector-demo"os.environ["AZURE_AI_SEARCH_API_KEY"] = "<YOUR_SEARCH_SERVICE_ADMIN_API_KEY>"azure_endpoint: str = "<YOUR_AZURE_OPENAI_ENDPOINT>"azure_openai_api_key: str = "<YOUR_AZURE_OPENAI_API_KEY>"azure_openai_api_version: str = "2023-05-15"azure_deployment: str = "text-embedding-ada-002"
+```
+
+**API Reference:**[DirectoryLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.directory.DirectoryLoader.html) | [TextLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.text.TextLoader.html) | [AzureAISearchRetriever](https://python.langchain.com/api_reference/community/retrievers/langchain_community.retrievers.azure_ai_search.AzureAISearchRetriever.html) | [AzureSearch](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.azuresearch.AzureSearch.html) | [AzureOpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.azure.AzureOpenAIEmbeddings.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html) | [TokenTextSplitter](https://python.langchain.com/api_reference/text_splitters/base/langchain_text_splitters.base.TokenTextSplitter.html)
+
+We'll use an embedding model from Azure OpenAI to turn our documents into embeddings stored in the Azure AI Search vector store. We'll also set the index name to `langchain-vector-demo`. This will create a new vector store associated with that index name.
+
+```
+embeddings = AzureOpenAIEmbeddings(    model=azure_deployment,    azure_endpoint=azure_endpoint,    openai_api_key=azure_openai_api_key,)vector_store: AzureSearch = AzureSearch(    embedding_function=embeddings.embed_query,    azure_search_endpoint=os.getenv("AZURE_AI_SEARCH_SERVICE_NAME"),    azure_search_key=os.getenv("AZURE_AI_SEARCH_API_KEY"),    index_name="langchain-vector-demo",)
+```
+
+Next, we'll load data into our newly created vector store. For this example, we load the `state_of_the_union.txt` file. We'll split the text in 400 token chunks with no overlap. Finally, the documents are added to our vector store as emeddings.
+
+```
+from langchain_community.document_loaders import TextLoaderfrom langchain_text_splitters import CharacterTextSplitterloader = TextLoader("../../how_to/state_of_the_union.txt", encoding="utf-8")documents = loader.load()text_splitter = CharacterTextSplitter(chunk_size=400, chunk_overlap=0)docs = text_splitter.split_documents(documents)vector_store.add_documents(documents=docs)
+```
+
+**API Reference:**[TextLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.text.TextLoader.html) | [CharacterTextSplitter](https://python.langchain.com/api_reference/text_splitters/character/langchain_text_splitters.character.CharacterTextSplitter.html)
+
+Next, we'll create a retriever. The current `index_name` variable is `langchain-vector-demo` from the last step. If you skipped vector store creation, provide your index name in the parameter. In this query, the top result is returned.
+
+```
+retriever = AzureAISearchRetriever(    content_key="content", top_k=1, index_name="langchain-vector-demo")
+```
+
+Now we can retrieve the data that is relevant to our query from the documents we uploaded.
+
+```
+retriever.invoke("does the president have a plan for covid-19?")
+```
+
+## Use within a chain
+
+```
+from langchain_core.output_parsers import StrOutputParserfrom langchain_core.prompts import ChatPromptTemplatefrom langchain_core.runnables import RunnablePassthroughfrom langchain_openai import ChatOpenAIprompt = ChatPromptTemplate.from_template(    """Answer the question based only on the context provided.Context: {context}Question: {question}""")llm = ChatOpenAI(model="gpt-4o-mini")def format_docs(docs):    return "\n\n".join(doc.page_content for doc in docs)chain = (    {"context": retriever | format_docs, "question": RunnablePassthrough()}    | prompt    | llm    | StrOutputParser())
+```
+
+**API Reference:**[StrOutputParser](https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.string.StrOutputParser.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [RunnablePassthrough](https://python.langchain.com/api_reference/core/runnables/langchain_core.runnables.passthrough.RunnablePassthrough.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+```
+chain.invoke("does the president have a plan for covid-19?")
+```
+
+## API reference
+
+For detailed documentation of all `AzureAISearchRetriever` features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/retrievers/langchain_community.retrievers.azure_ai_search.AzureAISearchRetriever.html).
+
+## Related
+
+* Retriever [conceptual guide](/src/oss/concepts/retrievers)
+* Retriever [how-to guides](/src/oss/how_to/#retrievers)

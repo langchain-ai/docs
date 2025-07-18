@@ -1,0 +1,99 @@
+---
+title: "MariaDB"
+---
+
+LangChain's MariaDB integration (langchain-mariadb) provides vector capabilities for working with MariaDB version 11.7.1 and above, distributed under the MIT license. Users can use the provided implementations as-is or customize them for specific needs. Key features include:
+
+* Built-in vector similarity search
+* Support for cosine and euclidean distance metrics
+* Robust metadata filtering options
+* Performance optimization through connection pooling
+* Configurable table and column settings
+
+## Setup
+
+Launch a MariaDB Docker container with:
+
+```
+!docker run --name mariadb-container -e MARIADB_ROOT_PASSWORD=langchain -e MARIADB_DATABASE=langchain -p 3306:3306 -d mariadb:11.7
+```
+
+### Installing the Package
+
+The package uses SQLAlchemy but works best with the MariaDB connector, which requires C/C++ components:
+
+```
+# Debian, Ubuntu!sudo apt install libmariadb3 libmariadb-dev# CentOS, RHEL, Rocky Linux!sudo yum install MariaDB-shared MariaDB-devel# Install Python connector!pip install -U mariadb
+```
+
+Then install `langchain-mariadb` package
+
+```
+pip install -U langchain-mariadb
+```
+
+VectorStore works along with an LLM model, here using `langchain-openai` as example.
+
+```
+pip install langchain-openaiexport OPENAI_API_KEY=...
+```
+
+## Initialization
+
+```
+from langchain_core.documents import Documentfrom langchain_mariadb import MariaDBStorefrom langchain_openai import OpenAIEmbeddings# connection stringurl = f"mariadb+mariadbconnector://myuser:mypassword@localhost/langchain"# Initialize vector storevectorstore = MariaDBStore(    embeddings=OpenAIEmbeddings(),    embedding_length=1536,    datasource=url,    collection_name="my_docs",)
+```
+
+**API Reference:**[Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+## Manage vector store
+
+### Adding Data
+
+You can add data as documents with metadata:
+
+```
+docs = [    Document(        page_content="there are cats in the pond",        metadata={"id": 1, "location": "pond", "topic": "animals"},    ),    Document(        page_content="ducks are also found in the pond",        metadata={"id": 2, "location": "pond", "topic": "animals"},    ),    # More documents...]vectorstore.add_documents(docs)
+```
+
+Or as plain text with optional metadata:
+
+```
+texts = [    "a sculpture exhibit is also at the museum",    "a new coffee shop opened on Main Street",]metadatas = [    {"id": 6, "location": "museum", "topic": "art"},    {"id": 7, "location": "Main Street", "topic": "food"},]vectorstore.add_texts(texts=texts, metadatas=metadatas)
+```
+
+## Query vector store
+
+```
+# Basic similarity searchresults = vectorstore.similarity_search("Hello", k=2)# Search with metadata filteringresults = vectorstore.similarity_search("Hello", filter={"category": "greeting"})
+```
+
+### Filter Options
+
+The system supports various filtering operations on metadata:
+
+* Equality: $eq
+* Inequality: $ne
+* Comparisons: $lt, $lte, $gt, $gte
+* List operations: $in, $nin
+* Text matching: $like, $nlike
+* Logical operations: $and, $or, $not
+
+Example:
+
+```
+# Search with simple filterresults = vectorstore.similarity_search(    "kitty", k=10, filter={"id": {"$in": [1, 5, 2, 9]}})# Search with multiple conditions (AND)results = vectorstore.similarity_search(    "ducks",    k=10,    filter={"id": {"$in": [1, 5, 2, 9]}, "location": {"$in": ["pond", "market"]}},)
+```
+
+## Usage for retrieval-augmented generation
+
+TODO: document example
+
+## API reference
+
+See the repo [here](https://github.com/mariadb-corporation/langchain-mariadb) for more detail.
+
+## Related
+
+* Vector store [conceptual guide](/src/oss/concepts/vectorstores)
+* Vector store [how-to guides](/src/oss/how_to/#vector-stores)

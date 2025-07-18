@@ -1,0 +1,87 @@
+---
+title: "Aim"
+---
+
+Aim makes it super easy to visualize and debug LangChain executions. Aim tracks inputs and outputs of LLMs and tools, as well as actions of agents.
+
+With Aim, you can easily debug and examine an individual execution:
+
+![](/images/oss/integrations/providers/aim_tracking/13848158/227784778-06b806c7-74a1-4d15-ab85-9ece09b458aa.png)
+
+Additionally, you have the option to compare multiple executions side by side:
+
+![](/images/oss/integrations/providers/aim_tracking/13848158/227784994-699b24b7-e69b-48f9-9ffa-e6a6142fd719.png)
+
+Aim is fully open source, [learn more](https://github.com/aimhubio/aim) about Aim on GitHub.
+
+Let's move forward and see how to enable and configure Aim callback.
+
+### Tracking LangChain Executions with Aim
+
+In this notebook we will explore three usage scenarios. To start off, we will install the necessary packages and import certain modules. Subsequently, we will configure two environment variables that can be established either within the Python script or through the terminal.
+
+```
+%pip install --upgrade --quiet  aim%pip install --upgrade --quiet  langchain%pip install --upgrade --quiet  langchain-openai%pip install --upgrade --quiet  google-search-results
+```
+
+```
+import osfrom datetime import datetimefrom langchain_community.callbacks import AimCallbackHandlerfrom langchain_core.callbacks import StdOutCallbackHandlerfrom langchain_openai import OpenAI
+```
+
+**API Reference:**[AimCallbackHandler](https://python.langchain.com/api_reference/community/callbacks/langchain_community.callbacks.aim_callback.AimCallbackHandler.html) | [StdOutCallbackHandler](https://python.langchain.com/api_reference/core/callbacks/langchain_core.callbacks.stdout.StdOutCallbackHandler.html) | [OpenAI](https://python.langchain.com/api_reference/openai/llms/langchain_openai.llms.base.OpenAI.html)
+
+Our examples use a GPT model as the LLM, and OpenAI offers an API for this purpose. You can obtain the key from the following link: [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys) .
+
+We will use the SerpApi to retrieve search results from Google. To acquire the SerpApi key, please go to [https://serpapi.com/manage-api-key](https://serpapi.com/manage-api-key) .
+
+```
+os.environ["OPENAI_API_KEY"] = "..."os.environ["SERPAPI_API_KEY"] = "..."
+```
+
+The event methods of `AimCallbackHandler` accept the LangChain module or agent as input and log at least the prompts and generated results, as well as the serialized version of the LangChain module, to the designated Aim run.
+
+```
+session_group = datetime.now().strftime("%m.%d.%Y_%H.%M.%S")aim_callback = AimCallbackHandler(    repo=".",    experiment_name="scenario 1: OpenAI LLM",)callbacks = [StdOutCallbackHandler(), aim_callback]llm = OpenAI(temperature=0, callbacks=callbacks)
+```
+
+The `flush_tracker` function is used to record LangChain assets on Aim. By default, the session is reset rather than being terminated outright.
+
+### Scenario 1
+
+In the first scenario, we will use OpenAI LLM.
+
+```
+# scenario 1 - LLMllm_result = llm.generate(["Tell me a joke", "Tell me a poem"] * 3)aim_callback.flush_tracker(    langchain_asset=llm,    experiment_name="scenario 2: Chain with multiple SubChains on multiple generations",)
+```
+
+### Scenario 2
+
+Scenario two involves chaining with multiple SubChains across multiple generations.
+
+```
+from langchain.chains import LLMChainfrom langchain_core.prompts import PromptTemplate
+```
+
+**API Reference:**[LLMChain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.llm.LLMChain.html) | [PromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.prompt.PromptTemplate.html)
+
+```
+# scenario 2 - Chaintemplate = """You are a playwright. Given the title of play, it is your job to write a synopsis for that title.Title: {title}Playwright: This is a synopsis for the above play:"""prompt_template = PromptTemplate(input_variables=["title"], template=template)synopsis_chain = LLMChain(llm=llm, prompt=prompt_template, callbacks=callbacks)test_prompts = [    {        "title": "documentary about good video games that push the boundary of game design"    },    {"title": "the phenomenon behind the remarkable speed of cheetahs"},    {"title": "the best in class mlops tooling"},]synopsis_chain.apply(test_prompts)aim_callback.flush_tracker(    langchain_asset=synopsis_chain, experiment_name="scenario 3: Agent with Tools")
+```
+
+### Scenario 3
+
+The third scenario involves an agent with tools.
+
+```
+from langchain.agents import AgentType, initialize_agent, load_tools
+```
+
+**API Reference:**[AgentType](https://python.langchain.com/api_reference/langchain/agents/langchain.agents.agent_types.AgentType.html) | [initialize\_agent](https://python.langchain.com/api_reference/langchain/agents/langchain.agents.initialize.initialize_agent.html) | [load\_tools](https://python.langchain.com/api_reference/community/agent_toolkits/langchain_community.agent_toolkits.load_tools.load_tools.html)
+
+```
+# scenario 3 - Agent with Toolstools = load_tools(["serpapi", "llm-math"], llm=llm, callbacks=callbacks)agent = initialize_agent(    tools,    llm,    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,    callbacks=callbacks,)agent.run(    "Who is Leo DiCaprio's girlfriend? What is her current age raised to the 0.43 power?")aim_callback.flush_tracker(langchain_asset=agent, reset=False, finish=True)
+```
+
+```
+[1m> Entering new AgentExecutor chain...[0m[32;1m[1;3m I need to find out who Leo DiCaprio's girlfriend is and then calculate her age raised to the 0.43 power.Action: SearchAction Input: "Leo DiCaprio girlfriend"[0mObservation: [36;1m[1;3mLeonardo DiCaprio seemed to prove a long-held theory about his love life right after splitting from girlfriend Camila Morrone just months ...[0mThought:[32;1m[1;3m I need to find out Camila Morrone's ageAction: SearchAction Input: "Camila Morrone age"[0mObservation: [36;1m[1;3m25 years[0mThought:[32;1m[1;3m I need to calculate 25 raised to the 0.43 powerAction: CalculatorAction Input: 25^0.43[0mObservation: [33;1m[1;3mAnswer: 3.991298452658078[0mThought:[32;1m[1;3m I now know the final answerFinal Answer: Camila Morrone is Leo DiCaprio's girlfriend and her current age raised to the 0.43 power is 3.991298452658078.[0m[1m> Finished chain.[0m
+```

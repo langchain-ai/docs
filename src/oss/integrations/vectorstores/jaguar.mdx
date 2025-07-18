@@ -1,0 +1,51 @@
+---
+title: "Jaguar Vector Database"
+---
+
+1. It is a distributed vector database
+2. The “ZeroMove” feature of JaguarDB enables instant horizontal scalability
+3. Multimodal: embeddings, text, images, videos, PDFs, audio, time series, and geospatial
+4. All-masters: allows both parallel reads and writes
+5. Anomaly detection capabilities
+6. RAG support: combines LLM with proprietary and real-time data
+7. Shared metadata: sharing of metadata across multiple vector indexes
+8. Distance metrics: Euclidean, Cosine, InnerProduct, Manhatten, Chebyshev, Hamming, Jeccard, Minkowski
+
+## Prerequisites
+
+There are two requirements for running the examples in this file.
+
+1. You must install and set up the JaguarDB server and its HTTP gateway server. Please refer to the instructions in: [www.jaguardb.com](http://www.jaguardb.com) For quick setup in docker environment: docker pull jaguardb/jaguardb\_with\_http docker run -d -p 8888:8888 -p 8080:8080 --name jaguardb\_with\_http jaguardb/jaguardb\_with\_http
+
+2. You must install the http client package for JaguarDB:
+
+   ```
+       pip install -U jaguardb-http-client
+   ```
+
+3. You'll need to install `langchain-community` with `pip install -qU langchain-community` to use this integration
+
+## RAG With Langchain
+
+This section demonstrates chatting with LLM together with Jaguar in the langchain software stack.
+
+```
+from langchain.chains import RetrievalQAWithSourcesChainfrom langchain_community.document_loaders import TextLoaderfrom langchain_community.vectorstores.jaguar import Jaguarfrom langchain_core.output_parsers import StrOutputParserfrom langchain_core.prompts import ChatPromptTemplatefrom langchain_core.runnables import RunnablePassthroughfrom langchain_openai import ChatOpenAI, OpenAI, OpenAIEmbeddingsfrom langchain_text_splitters import CharacterTextSplitter""" Load a text file into a set of documents """loader = TextLoader("../../how_to/state_of_the_union.txt")documents = loader.load()text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=300)docs = text_splitter.split_documents(documents)"""Instantiate a Jaguar vector store"""### Jaguar HTTP endpointurl = "http://192.168.5.88:8080/fwww/"### Use OpenAI embedding modelembeddings = OpenAIEmbeddings()### Pod is a database for vectorspod = "vdb"### Vector store namestore = "langchain_rag_store"### Vector index namevector_index = "v"### Type of the vector index# cosine: distance metric# fraction: embedding vectors are decimal numbers# float: values stored with floating-point numbersvector_type = "cosine_fraction_float"### Dimension of each embedding vectorvector_dimension = 1536### Instantiate a Jaguar store objectvectorstore = Jaguar(    pod, store, vector_index, vector_type, vector_dimension, url, embeddings)"""Login must be performed to authorize the client.The environment variable JAGUAR_API_KEY or file $HOME/.jagrcshould contain the API key for accessing JaguarDB servers."""vectorstore.login()"""Create vector store on the JaguarDB database server.This should be done only once."""# Extra metadata fields for the vector storemetadata = "category char(16)"# Number of characters for the text field of the storetext_size = 4096#  Create a vector store on the servervectorstore.create(metadata, text_size)"""Add the texts from the text splitter to our vectorstore"""vectorstore.add_documents(docs)# or tag the documents:# vectorstore.add_documents(more_docs, text_tag="tags to these documents")""" Get the retriever object """retriever = vectorstore.as_retriever()# retriever = vectorstore.as_retriever(search_kwargs={"where": "m1='123' and m2='abc'"})template = """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.Question: {question}Context: {context}Answer:"""prompt = ChatPromptTemplate.from_template(template)""" Obtain a Large Language Model """LLM = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)""" Create a chain for the RAG flow """rag_chain = (    {"context": retriever, "question": RunnablePassthrough()}    | prompt    | LLM    | StrOutputParser())resp = rag_chain.invoke("What did the president say about Justice Breyer?")print(resp)
+```
+
+**API Reference:**[RetrievalQAWithSourcesChain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.qa_with_sources.retrieval.RetrievalQAWithSourcesChain.html) | [TextLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.text.TextLoader.html) | [Jaguar](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.jaguar.Jaguar.html) | [StrOutputParser](https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.string.StrOutputParser.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [RunnablePassthrough](https://python.langchain.com/api_reference/core/runnables/langchain_core.runnables.passthrough.RunnablePassthrough.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html) | [OpenAI](https://python.langchain.com/api_reference/openai/llms/langchain_openai.llms.base.OpenAI.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html) | [CharacterTextSplitter](https://python.langchain.com/api_reference/text_splitters/character/langchain_text_splitters.character.CharacterTextSplitter.html)
+
+## Interaction With Jaguar Vector Store
+
+Users can interact directly with the Jaguar vector store for similarity search and anomaly detection.
+
+```
+from langchain_community.vectorstores.jaguar import Jaguarfrom langchain_openai import OpenAIEmbeddings# Instantiate a Jaguar vector store objecturl = "http://192.168.3.88:8080/fwww/"pod = "vdb"store = "langchain_test_store"vector_index = "v"vector_type = "cosine_fraction_float"vector_dimension = 10embeddings = OpenAIEmbeddings()vectorstore = Jaguar(    pod, store, vector_index, vector_type, vector_dimension, url, embeddings)# Login for authorizationvectorstore.login()# Create the vector store with two metadata fields# This needs to be run only once.metadata_str = "author char(32), category char(16)"vectorstore.create(metadata_str, 1024)# Add a list of textstexts = ["foo", "bar", "baz"]metadatas = [    {"author": "Adam", "category": "Music"},    {"author": "Eve", "category": "Music"},    {"author": "John", "category": "History"},]ids = vectorstore.add_texts(texts=texts, metadatas=metadatas)#  Search similar textoutput = vectorstore.similarity_search(    query="foo",    k=1,    metadatas=["author", "category"],)assert output[0].page_content == "foo"assert output[0].metadata["author"] == "Adam"assert output[0].metadata["category"] == "Music"assert len(output) == 1# Search with filtering (where)where = "author='Eve'"output = vectorstore.similarity_search(    query="foo",    k=3,    fetch_k=9,    where=where,    metadatas=["author", "category"],)assert output[0].page_content == "bar"assert output[0].metadata["author"] == "Eve"assert output[0].metadata["category"] == "Music"assert len(output) == 1# Anomaly detectionresult = vectorstore.is_anomalous(    query="dogs can jump high",)assert result is False# Remove all data in the storevectorstore.clear()assert vectorstore.count() == 0# Remove the store completelyvectorstore.drop()# Logoutvectorstore.logout()
+```
+
+**API Reference:**[Jaguar](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.jaguar.Jaguar.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+## Related
+
+* Vector store [conceptual guide](/src/oss/concepts/vectorstores)
+* Vector store [how-to guides](/src/oss/how_to/#vector-stores)

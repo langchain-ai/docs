@@ -1,0 +1,195 @@
+---
+title: "openGauss VectorStore"
+---
+
+This notebook covers how to get started with the openGauss VectorStore. [openGauss](https://opengauss.org/en/) is a high-performance relational database with native vector storage and retrieval capabilities. This integration enables ACID-compliant vector operations within LangChain applications, combining traditional SQL functionality with modern AI-driven similarity search. vector store.
+
+## Setup
+
+### Launch openGauss Container
+
+```
+docker run --name opengauss \  -d \  -e GS_PASSWORD='MyStrongPass@123' \  -p 8888:5432 \  opengauss/opengauss-server:latest
+```
+
+### Install langchain-opengauss
+
+```
+pip install langchain-opengauss
+```
+
+**System Requirements**:
+
+* openGauss ≥ 7.0.0
+* Python ≥ 3.8
+* psycopg2-binary
+
+### Credentials
+
+Using your openGauss Credentials
+
+## Initialization
+
+Select [embeddings model](/src/oss/integrations/text_embedding):
+
+OpenAI▾
+
+* [OpenAI](#)
+
+* [Azure](#)
+
+* [Google Gemini](#)
+
+* [Google Vertex](#)
+
+* [AWS](#)
+
+* [HuggingFace](#)
+
+* [Ollama](#)
+
+* [Cohere](#)
+
+* [MistralAI](#)
+
+* [Nomic](#)
+
+* [NVIDIA](#)
+
+* [Voyage AI](#)
+
+* [IBM watsonx](#)
+
+* [Fake](#)
+
+```
+pip install -qU langchain-openai
+```
+
+```
+import getpassimport osif not os.environ.get("OPENAI_API_KEY"):  os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")from langchain_openai import OpenAIEmbeddingsembeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+```
+
+```
+from langchain_opengauss import OpenGauss, OpenGaussSettings# Configure with schema validationconfig = OpenGaussSettings(    table_name="test_langchain",    embedding_dimension=384,    index_type="HNSW",    distance_strategy="COSINE",)vector_store = OpenGauss(embedding=embeddings, config=config)
+```
+
+## Manage vector store
+
+### Add items to vector store
+
+```
+from langchain_core.documents import Documentdocument_1 = Document(page_content="foo", metadata={"source": "https://example.com"})document_2 = Document(page_content="bar", metadata={"source": "https://example.com"})document_3 = Document(page_content="baz", metadata={"source": "https://example.com"})documents = [document_1, document_2, document_3]vector_store.add_documents(documents=documents, ids=["1", "2", "3"])
+```
+
+**API Reference:**[Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html)
+
+### Update items in vector store
+
+```
+updated_document = Document(    page_content="qux", metadata={"source": "https://another-example.com"})# If the id is already exist, will update the documentvector_store.add_documents(document_id="1", document=updated_document)
+```
+
+### Delete items from vector store
+
+```
+vector_store.delete(ids=["3"])
+```
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+* TODO: Edit and then run code cell to generate output
+
+```
+results = vector_store.similarity_search(    query="thud", k=1, filter={"source": "https://another-example.com"})for doc in results:    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```
+results = vector_store.similarity_search_with_score(    query="thud", k=1, filter={"source": "https://example.com"})for doc, score in results:    print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+* TODO: Edit and then run code cell to generate output
+
+```
+retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 1})retriever.invoke("thud")
+```
+
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+* [Tutorials](/src/oss/tutorials)
+* [How-to: Question and answer with RAG](https://python.langchain.com/oss/how_to/#qa-with-rag)
+* [Retrieval conceptual docs](https://python.langchain.com/oss/concepts/retrieval/)
+
+## Configuration
+
+### Connection Settings
+
+| Parameter             | Default                 | Description                                                                                                                                                                                                                                                         |
+| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`                | localhost               | Database server address                                                                                                                                                                                                                                             |
+| `port`                | 8888                    | Database connection port                                                                                                                                                                                                                                            |
+| `user`                | gaussdb                 | Database username                                                                                                                                                                                                                                                   |
+| `password`            | -                       | Complex password string                                                                                                                                                                                                                                             |
+| `database`            | postgres                | Default database name                                                                                                                                                                                                                                               |
+| `min_connections`     | 1                       | Connection pool minimum size                                                                                                                                                                                                                                        |
+| `max_connections`     | 5                       | Connection pool maximum size                                                                                                                                                                                                                                        |
+| `table_name`          | langchain\_docs         | Name of the table for storing vector data and metadata                                                                                                                                                                                                              |
+| `index_type`          | IndexType.HNSW          | Vector index algorithm type. Options: HNSW or IVFFLAT\nDefault is HNSW.                                                                                                                                                                                             |
+| `vector_type`         | VectorType.vector       | Type of vector representation to use. Default is Vector.                                                                                                                                                                                                            |
+| `distance_strategy`   | DistanceStrategy.COSINE | Vector similarity metric to use for retrieval. Options: euclidean (L2 distance), cosine (angular distance, ideal for text embeddings), manhattan (L1 distance for sparse data), negative\_inner\_product (dot product for normalized vectors).\n Default is cosine. |
+| `embedding_dimension` | 1536                    | Dimensionality of the vector embeddings.                                                                                                                                                                                                                            |
+
+### Supported Combinations
+
+| Vector Type | Dimensions | Index Types  | Supported Distance Strategies          |
+| ----------- | ---------- | ------------ | -------------------------------------- |
+| vector      | ≤2000      | HNSW/IVFFLAT | COSINE/EUCLIDEAN/MANHATTAN/INNER\_PROD |
+
+## Performance Optimization
+
+### Index Tuning Guidelines
+
+**HNSW Parameters**:
+
+* `m`: 16-100 (balance between recall and memory)
+* `ef_construction`: 64-1000 (must be > 2\*m)
+
+**IVFFLAT Recommendations**:
+
+```
+import mathlists = min(    int(math.sqrt(total_rows)) if total_rows > 1e6 else int(total_rows / 1000),    2000,  # openGauss maximum)
+```
+
+### Connection Pooling
+
+```
+OpenGaussSettings(min_connections=3, max_connections=20)
+```
+
+## Limitations
+
+* `bit` and `sparsevec` vector types currently in development
+* Maximum vector dimensions: 2000 for `vector` type
+
+## API reference
+
+For detailed documentation of all \_\_ModuleName\_\_VectorStore features and configurations head to the API reference: [https://python.langchain.com/api\_reference/en/latest/vectorstores/opengauss.OpenGuass.html](https://python.langchain.com/api_reference/en/latest/vectorstores/opengauss.OpenGuass.html)
+
+## Related
+
+* Vector store [conceptual guide](/src/oss/concepts/vectorstores)
+* Vector store [how-to guides](/src/oss/how_to/#vector-stores)

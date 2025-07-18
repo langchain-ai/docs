@@ -1,0 +1,99 @@
+---
+title: "Log, Trace, and Monitor"
+---
+
+When building apps or agents using Langchain, you end up making multiple API calls to fulfill a single user request. However, these requests are not chained when you want to analyse them. With [**Portkey**](/src/oss/integrations/providers/portkey), all the embeddings, completions, and other requests from a single user request will get logged and traced to a common ID, enabling you to gain full visibility of user interactions.
+
+This notebook serves as a step-by-step guide on how to log, trace, and monitor Langchain LLM calls using `Portkey` in your Langchain app.
+
+First, let's import Portkey, OpenAI, and Agent tools
+
+```
+import osfrom langchain.agents import AgentExecutor, create_openai_tools_agentfrom langchain_openai import ChatOpenAIfrom portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
+```
+
+**API Reference:**[AgentExecutor](https://python.langchain.com/api_reference/langchain/agents/langchain.agents.agent.AgentExecutor.html) | [create\_openai\_tools\_agent](https://python.langchain.com/api_reference/langchain/agents/langchain.agents.openai_tools.base.create_openai_tools_agent.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+Paste your OpenAI API key below. [(You can find it here)](https://platform.openai.com/account/api-keys)
+
+```
+os.environ["OPENAI_API_KEY"] = "..."
+```
+
+## Get Portkey API Key
+
+1. Sign up for [Portkey here](https://app.portkey.ai/signup)
+2. On your [dashboard](https://app.portkey.ai/), click on the profile icon on the bottom left, then click on "Copy API Key"
+3. Paste it below
+
+```
+PORTKEY_API_KEY = "..."  # Paste your Portkey API Key here
+```
+
+## Set Trace ID
+
+1. Set the trace id for your request below
+2. The Trace ID can be common for all API calls originating from a single request
+
+```
+TRACE_ID = "uuid-trace-id"  # Set trace id here
+```
+
+## Generate Portkey Headers
+
+```
+portkey_headers = createHeaders(    api_key=PORTKEY_API_KEY, provider="openai", trace_id=TRACE_ID)
+```
+
+Define the prompts and the tools to use
+
+```
+from langchain import hubfrom langchain_core.tools import toolprompt = hub.pull("hwchase17/openai-tools-agent")@tooldef multiply(first_int: int, second_int: int) -> int:    """Multiply two integers together."""    return first_int * second_int@tooldef exponentiate(base: int, exponent: int) -> int:    "Exponentiate the base to the exponent power."    return base**exponenttools = [multiply, exponentiate]
+```
+
+**API Reference:**[hub](https://python.langchain.com/api_reference/langchain/hub/langchain.hub.hub.html) | [tool](https://python.langchain.com/api_reference/core/tools/langchain_core.tools.convert.tool.html)
+
+Run your agent as usual. The **only** change is that we will **include the above headers** in the request now.
+
+```
+model = ChatOpenAI(    base_url=PORTKEY_GATEWAY_URL, default_headers=portkey_headers, temperature=0)# Construct the OpenAI Tools agentagent = create_openai_tools_agent(model, tools, prompt)# Create an agent executor by passing in the agent and toolsagent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)agent_executor.invoke(    {        "input": "Take 3 to the fifth power and multiply that by thirty six, then square the result"    })
+```
+
+```
+[1m> Entering new AgentExecutor chain...[0m[32;1m[1;3mInvoking: `exponentiate` with `{'base': 3, 'exponent': 5}`[0m[33;1m[1;3m243[0m[32;1m[1;3mInvoking: `multiply` with `{'first_int': 243, 'second_int': 36}`[0m[36;1m[1;3m8748[0m[32;1m[1;3mInvoking: `exponentiate` with `{'base': 8748, 'exponent': 2}`[0m[33;1m[1;3m76527504[0m[32;1m[1;3mThe result of taking 3 to the fifth power, multiplying it by 36, and then squaring the result is 76,527,504.[0m[1m> Finished chain.[0m
+```
+
+```
+{'input': 'Take 3 to the fifth power and multiply that by thirty six, then square the result', 'output': 'The result of taking 3 to the fifth power, multiplying it by 36, and then squaring the result is 76,527,504.'}
+```
+
+## How Logging & Tracing Works on Portkey
+
+**Logging**
+
+* Sending your request through Portkey ensures that all of the requests are logged by default
+* Each request log contains `timestamp`, `model name`, `total cost`, `request time`, `request json`, `response json`, and additional Portkey features
+
+**[Tracing](https://portkey.ai/oss/product/observability-modern-monitoring-for-llms/traces)**
+
+* Trace id is passed along with each request and is visible on the logs on Portkey dashboard
+* You can also set a **distinct trace id** for each request if you want
+* You can append user feedback to a trace id as well. [More info on this here](https://portkey.ai/oss/product/observability-modern-monitoring-for-llms/feedback)
+
+For the above request, you will be able to view the entire log trace like this ![View Langchain traces on Portkey](https://assets.portkey.ai/oss/agent_tracing.gif)
+
+## Advanced LLMOps Features - Caching, Tagging, Retries
+
+In addition to logging and tracing, Portkey provides more features that add production capabilities to your existing workflows:
+
+**Caching**
+
+Respond to previously served customers queries from cache instead of sending them again to OpenAI. Match exact strings OR semantically similar strings. Cache can save costs and reduce latencies by 20x. [Docs](https://portkey.ai/oss/product/ai-gateway-streamline-llm-integrations/cache-simple-and-semantic)
+
+**Retries**
+
+Automatically reprocess any unsuccessful API requests **`upto 5`** times. Uses an **`exponential backoff`** strategy, which spaces out retry attempts to prevent network overload.[Docs](https://portkey.ai/oss/product/ai-gateway-streamline-llm-integrations)
+
+**Tagging**
+
+Track and audit each user interaction in high detail with predefined tags. [Docs](https://portkey.ai/oss/product/observability-modern-monitoring-for-llms/metadata)

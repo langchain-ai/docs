@@ -1,0 +1,174 @@
+---
+title: "Migrating off ConversationBufferWindowMemory or ConversationTokenBufferMemory"
+---
+
+Follow this guide if you're trying to migrate off one of the old memory classes listed below:
+
+| Memory Type                      | Description                                                                                                                                                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConversationBufferWindowMemory` | Keeps the last `n` messages of the conversation. Drops the oldest messages when there are more than `n` messages.                                                 |
+| `ConversationTokenBufferMemory`  | Keeps only the most recent messages in the conversation under the constraint that the total number of tokens in the conversation does not exceed a certain limit. |
+
+`ConversationBufferWindowMemory` and `ConversationTokenBufferMemory` apply additional processing on top of the raw conversation history to trim the conversation history to a size that fits inside the context window of a chat model.
+
+This processing functionality can be accomplished using LangChain's built-in [trim\_messages](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html) function.
+
+<Info>
+  We’ll begin by exploring a straightforward method that involves applying processing logic to the entire conversation history.
+
+  While this approach is easy to implement, it has a downside: as the conversation grows, so does the latency, since the logic is re-applied to all previous exchanges in the conversation at each turn.
+
+  More advanced strategies focus on incrementally updating the conversation history to avoid redundant processing.
+
+  For instance, the langgraph [how-to guide on summarization](https://langchain-ai.github.io/langgraph/how-tos/memory/add-summary-conversation-history/) demonstrates how to maintain a running summary of the conversation while discarding older messages, ensuring they aren't re-processed during later turns.
+</Info>
+
+## Set up
+
+```
+%%capture --no-stderr%pip install --upgrade --quiet langchain-openai langchain
+```
+
+```
+import osfrom getpass import getpassif "OPENAI_API_KEY" not in os.environ:    os.environ["OPENAI_API_KEY"] = getpass()
+```
+
+## Legacy usage with LLMChain / Conversation Chain
+
+<Accordion title="Details">
+  ```
+  from langchain.chains import LLMChainfrom langchain.memory import ConversationBufferWindowMemoryfrom langchain_core.messages import SystemMessagefrom langchain_core.prompts import ChatPromptTemplatefrom langchain_core.prompts.chat import (    ChatPromptTemplate,    HumanMessagePromptTemplate,    MessagesPlaceholder,)from langchain_openai import ChatOpenAIprompt = ChatPromptTemplate(    [        SystemMessage(content="You are a helpful assistant."),        MessagesPlaceholder(variable_name="chat_history"),        HumanMessagePromptTemplate.from_template("{text}"),    ])memory = ConversationBufferWindowMemory(memory_key="chat_history", return_messages=True)legacy_chain = LLMChain(    llm=ChatOpenAI(),    prompt=prompt,    memory=memory,)legacy_result = legacy_chain.invoke({"text": "my name is bob"})print(legacy_result)legacy_result = legacy_chain.invoke({"text": "what was my name"})print(legacy_result)
+  ```
+
+  **API Reference:**[LLMChain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.llm.LLMChain.html) | [ConversationBufferWindowMemory](https://python.langchain.com/api_reference/langchain/memory/langchain.memory.buffer_window.ConversationBufferWindowMemory.html) | [SystemMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.system.SystemMessage.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [HumanMessagePromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.HumanMessagePromptTemplate.html) | [MessagesPlaceholder](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.MessagesPlaceholder.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+  ```
+  {'text': 'Nice to meet you, Bob! How can I assist you today?', 'chat_history': []}{'text': 'Your name is Bob. How can I assist you further, Bob?', 'chat_history': [HumanMessage(content='my name is bob', additional_kwargs={}, response_metadata={}), AIMessage(content='Nice to meet you, Bob! How can I assist you today?', additional_kwargs={}, response_metadata={})]}
+  ```
+</Accordion>
+
+## Reimplementing ConversationBufferWindowMemory logic
+
+Let's first create appropriate logic to process the conversation history, and then we'll see how to integrate it into an application. You can later replace this basic setup with more advanced logic tailored to your specific needs.
+
+We'll use `trim_messages` to implement logic that keeps the last `n` messages of the conversation. It will drop the oldest messages when the number of messages exceeds `n`.
+
+In addition, we will also keep the system message if it's present -- when present, it's the first message in a conversation that includes instructions for the chat model.
+
+```
+from langchain_core.messages import (    AIMessage,    BaseMessage,    HumanMessage,    SystemMessage,    trim_messages,)from langchain_openai import ChatOpenAImessages = [    SystemMessage("you're a good assistant, you always respond with a joke."),    HumanMessage("i wonder why it's called langchain"),    AIMessage(        'Well, I guess they thought "WordRope" and "SentenceString" just didn\'t have the same ring to it!'    ),    HumanMessage("and who is harrison chasing anyways"),    AIMessage(        "Hmmm let me think.\n\nWhy, he's probably chasing after the last cup of coffee in the office!"    ),    HumanMessage("why is 42 always the answer?"),    AIMessage(        "Because it’s the only number that’s constantly right, even when it doesn’t add up!"    ),    HumanMessage("What did the cow say?"),]
+```
+
+**API Reference:**[AIMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.ai.AIMessage.html) | [BaseMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.base.BaseMessage.html) | [HumanMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.human.HumanMessage.html) | [SystemMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.system.SystemMessage.html) | [trim\_messages](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+```
+from langchain_core.messages import trim_messagesselected_messages = trim_messages(    messages,    token_counter=len,  # <-- len will simply count the number of messages rather than tokens    max_tokens=5,  # <-- allow up to 5 messages.    strategy="last",    # Most chat models expect that chat history starts with either:    # (1) a HumanMessage or    # (2) a SystemMessage followed by a HumanMessage    # start_on="human" makes sure we produce a valid chat history    start_on="human",    # Usually, we want to keep the SystemMessage    # if it's present in the original history.    # The SystemMessage has special instructions for the model.    include_system=True,    allow_partial=False,)for msg in selected_messages:    msg.pretty_print()
+```
+
+**API Reference:**[trim\_messages](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html)
+
+```
+================================[1m System Message [0m================================you're a good assistant, you always respond with a joke.==================================[1m Ai Message [0m==================================Hmmm let me think.Why, he's probably chasing after the last cup of coffee in the office!================================[1m Human Message [0m=================================why is 42 always the answer?==================================[1m Ai Message [0m==================================Because it’s the only number that’s constantly right, even when it doesn’t add up!================================[1m Human Message [0m=================================What did the cow say?
+```
+
+## Reimplementing ConversationTokenBufferMemory logic
+
+Here, we'll use `trim_messages` to keeps the system message and the most recent messages in the conversation under the constraint that the total number of tokens in the conversation does not exceed a certain limit.
+
+```
+from langchain_core.messages import trim_messagesselected_messages = trim_messages(    messages,    # Please see API reference for trim_messages for other ways to specify a token counter.    token_counter=ChatOpenAI(model="gpt-4o"),    max_tokens=80,  # <-- token limit    # The start_on is specified    # Most chat models expect that chat history starts with either:    # (1) a HumanMessage or    # (2) a SystemMessage followed by a HumanMessage    # start_on="human" makes sure we produce a valid chat history    start_on="human",    # Usually, we want to keep the SystemMessage    # if it's present in the original history.    # The SystemMessage has special instructions for the model.    include_system=True,    strategy="last",)for msg in selected_messages:    msg.pretty_print()
+```
+
+**API Reference:**[trim\_messages](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html)
+
+```
+================================[1m System Message [0m================================you're a good assistant, you always respond with a joke.================================[1m Human Message [0m=================================why is 42 always the answer?==================================[1m Ai Message [0m==================================Because it’s the only number that’s constantly right, even when it doesn’t add up!================================[1m Human Message [0m=================================What did the cow say?
+```
+
+## Modern usage with LangGraph
+
+The example below shows how to use LangGraph to add simple conversation pre-processing logic.
+
+<Note>
+  If you want to avoid running the computation on the entire conversation history each time, you can follow the [how-to guide on summarization](https://langchain-ai.github.io/langgraph/how-tos/memory/add-summary-conversation-history/) that demonstrates how to discard older messages, ensuring they aren't re-processed during later turns.
+</Note>
+
+<Accordion title="Details">
+  ```
+  import uuidfrom IPython.display import Image, displayfrom langchain_core.messages import HumanMessagefrom langgraph.checkpoint.memory import MemorySaverfrom langgraph.graph import START, MessagesState, StateGraph# Define a new graphworkflow = StateGraph(state_schema=MessagesState)# Define a chat modelmodel = ChatOpenAI()# Define the function that calls the modeldef call_model(state: MessagesState):    selected_messages = trim_messages(        state["messages"],        token_counter=len,  # <-- len will simply count the number of messages rather than tokens        max_tokens=5,  # <-- allow up to 5 messages.        strategy="last",        # Most chat models expect that chat history starts with either:        # (1) a HumanMessage or        # (2) a SystemMessage followed by a HumanMessage        # start_on="human" makes sure we produce a valid chat history        start_on="human",        # Usually, we want to keep the SystemMessage        # if it's present in the original history.        # The SystemMessage has special instructions for the model.        include_system=True,        allow_partial=False,    )    response = model.invoke(selected_messages)    # We return a list, because this will get added to the existing list    return {"messages": response}# Define the two nodes we will cycle betweenworkflow.add_edge(START, "model")workflow.add_node("model", call_model)# Adding memory is straight forward in langgraph!memory = MemorySaver()app = workflow.compile(    checkpointer=memory)# The thread id is a unique key that identifies# this particular conversation.# We'll just generate a random uuid here.thread_id = uuid.uuid4()config = {"configurable": {"thread_id": thread_id}}input_message = HumanMessage(content="hi! I'm bob")for event in app.stream({"messages": [input_message]}, config, stream_mode="values"):    event["messages"][-1].pretty_print()# Here, let's confirm that the AI remembers our name!config = {"configurable": {"thread_id": thread_id}}input_message = HumanMessage(content="what was my name?")for event in app.stream({"messages": [input_message]}, config, stream_mode="values"):    event["messages"][-1].pretty_print()
+  ```
+
+  **API Reference:**[HumanMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.human.HumanMessage.html) | [MemorySaver](https://langchain-ai.github.io/langgraph/reference/checkpoints/#langgraph.checkpoint.memory.MemorySaver) | [StateGraph](https://langchain-ai.github.io/langgraph/reference/graphs/#langgraph.graph.state.StateGraph)
+
+  ```
+  ================================[1m Human Message [0m=================================hi! I'm bob==================================[1m Ai Message [0m==================================Hello Bob! How can I assist you today?================================[1m Human Message [0m=================================what was my name?==================================[1m Ai Message [0m==================================Your name is Bob. How can I help you, Bob?
+  ```
+</Accordion>
+
+## Usage with a pre-built langgraph agent
+
+This example shows usage of an Agent Executor with a pre-built agent constructed using the [create\_tool\_calling\_agent](https://python.langchain.com/api_reference/langchain/agents/langchain.agents.tool_calling_agent.base.create_tool_calling_agent.html) function.
+
+If you are using one of the [old LangChain pre-built agents](https://python.langchain.com/v0.1/oss/modules/agents/agent_types/), you should be able to replace that code with the new [langgraph pre-built agent](https://langchain-ai.github.io/langgraph/how-tos/create-react-agent/) which leverages native tool calling capabilities of chat models and will likely work better out of the box.
+
+<Accordion title="Details">
+  ```
+  import uuidfrom langchain_core.messages import (    AIMessage,    BaseMessage,    HumanMessage,    SystemMessage,    trim_messages,)from langchain_core.tools import toolfrom langchain_openai import ChatOpenAIfrom langgraph.checkpoint.memory import MemorySaverfrom langgraph.prebuilt import create_react_agent@tooldef get_user_age(name: str) -> str:    """Use this tool to find the user's age."""    # This is a placeholder for the actual implementation    if "bob" in name.lower():        return "42 years old"    return "41 years old"memory = MemorySaver()model = ChatOpenAI()def prompt(state) -> list[BaseMessage]:    """Given the agent state, return a list of messages for the chat model."""    # We're using the message processor defined above.    return trim_messages(        state["messages"],        token_counter=len,  # <-- len will simply count the number of messages rather than tokens        max_tokens=5,  # <-- allow up to 5 messages.        strategy="last",        # Most chat models expect that chat history starts with either:        # (1) a HumanMessage or        # (2) a SystemMessage followed by a HumanMessage        # start_on="human" makes sure we produce a valid chat history        start_on="human",        # Usually, we want to keep the SystemMessage        # if it's present in the original history.        # The SystemMessage has special instructions for the model.        include_system=True,        allow_partial=False,    )app = create_react_agent(    model,    tools=[get_user_age],    checkpointer=memory,    prompt=prompt,)# The thread id is a unique key that identifies# this particular conversation.# We'll just generate a random uuid here.thread_id = uuid.uuid4()config = {"configurable": {"thread_id": thread_id}}# Tell the AI that our name is Bob, and ask it to use a tool to confirm# that it's capable of working like an agent.input_message = HumanMessage(content="hi! I'm bob. What is my age?")for event in app.stream({"messages": [input_message]}, config, stream_mode="values"):    event["messages"][-1].pretty_print()# Confirm that the chat bot has access to previous conversation# and can respond to the user saying that the user's name is Bob.input_message = HumanMessage(content="do you remember my name?")for event in app.stream({"messages": [input_message]}, config, stream_mode="values"):    event["messages"][-1].pretty_print()
+  ```
+
+  **API Reference:**[AIMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.ai.AIMessage.html) | [BaseMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.base.BaseMessage.html) | [HumanMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.human.HumanMessage.html) | [SystemMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.system.SystemMessage.html) | [trim\_messages](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html) | [tool](https://python.langchain.com/api_reference/core/tools/langchain_core.tools.convert.tool.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html) | [MemorySaver](https://langchain-ai.github.io/langgraph/reference/checkpoints/#langgraph.checkpoint.memory.MemorySaver) | [create\_react\_agent](https://langchain-ai.github.io/langgraph/reference/prebuilt/#langgraph.prebuilt.chat_agent_executor.create_react_agent)
+
+  ```
+  ================================[1m Human Message [0m=================================hi! I'm bob. What is my age?==================================[1m Ai Message [0m==================================Tool Calls:  get_user_age (call_jsMvoIFv970DhqqLCJDzPKsp) Call ID: call_jsMvoIFv970DhqqLCJDzPKsp  Args:    name: bob=================================[1m Tool Message [0m=================================Name: get_user_age42 years old==================================[1m Ai Message [0m==================================Bob, you are 42 years old.================================[1m Human Message [0m=================================do you remember my name?==================================[1m Ai Message [0m==================================Yes, your name is Bob.
+  ```
+</Accordion>
+
+## LCEL: Add a preprocessing step
+
+The simplest way to add complex conversation management is by introducing a pre-processing step in front of the chat model and pass the full conversation history to the pre-processing step.
+
+This approach is conceptually simple and will work in many situations; for example, if using a [RunnableWithMessageHistory](/src/oss/how_to/message_history) instead of wrapping the chat model, wrap the chat model with the pre-processor.
+
+The obvious downside of this approach is that latency starts to increase as the conversation history grows because of two reasons:
+
+1. As the conversation gets longer, more data may need to be fetched from whatever store your'e using to store the conversation history (if not storing it in memory).
+2. The pre-processing logic will end up doing a lot of redundant computation, repeating computation from previous steps of the conversation.
+
+<Warning>
+  If you want to use a chat model's tool calling capabilities, remember to bind the tools to the model before adding the history pre-processing step to it!
+</Warning>
+
+<Accordion title="Details">
+  ```
+  from langchain_core.messages import (    AIMessage,    BaseMessage,    HumanMessage,    SystemMessage,    trim_messages,)from langchain_core.tools import toolfrom langchain_openai import ChatOpenAImodel = ChatOpenAI()@tooldef what_did_the_cow_say() -> str:    """Check to see what the cow said."""    return "foo"message_processor = trim_messages(  # Returns a Runnable if no messages are provided    token_counter=len,  # <-- len will simply count the number of messages rather than tokens    max_tokens=5,  # <-- allow up to 5 messages.    strategy="last",    # The start_on is specified    # to make sure we do not generate a sequence where    # a ToolMessage that contains the result of a tool invocation    # appears before the AIMessage that requested a tool invocation    # as this will cause some chat models to raise an error.    start_on=("human", "ai"),    include_system=True,  # <-- Keep the system message    allow_partial=False,)# Note that we bind tools to the model first!model_with_tools = model.bind_tools([what_did_the_cow_say])model_with_preprocessor = message_processor | model_with_toolsfull_history = [    SystemMessage("you're a good assistant, you always respond with a joke."),    HumanMessage("i wonder why it's called langchain"),    AIMessage(        'Well, I guess they thought "WordRope" and "SentenceString" just didn\'t have the same ring to it!'    ),    HumanMessage("and who is harrison chasing anyways"),    AIMessage(        "Hmmm let me think.\n\nWhy, he's probably chasing after the last cup of coffee in the office!"    ),    HumanMessage("why is 42 always the answer?"),    AIMessage(        "Because it’s the only number that’s constantly right, even when it doesn’t add up!"    ),    HumanMessage("What did the cow say?"),]# We pass it explicity to the model_with_preprocesor for illustrative purposes.# If you're using `RunnableWithMessageHistory` the history will be automatically# read from the source the you configure.model_with_preprocessor.invoke(full_history).pretty_print()
+  ```
+
+  **API Reference:**[AIMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.ai.AIMessage.html) | [BaseMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.base.BaseMessage.html) | [HumanMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.human.HumanMessage.html) | [SystemMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.system.SystemMessage.html) | [trim\_messages](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html) | [tool](https://python.langchain.com/api_reference/core/tools/langchain_core.tools.convert.tool.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+  ```
+  ==================================[1m Ai Message [0m==================================Tool Calls:  what_did_the_cow_say (call_urHTB5CShhcKz37QiVzNBlIS) Call ID: call_urHTB5CShhcKz37QiVzNBlIS  Args:
+  ```
+</Accordion>
+
+If you need to implement more efficient logic and want to use `RunnableWithMessageHistory` for now the way to achieve this is to subclass from [BaseChatMessageHistory](https://python.langchain.com/api_reference/core/chat_history/langchain_core.chat_history.BaseChatMessageHistory.html) and define appropriate logic for `add_messages` (that doesn't simply append the history, but instead re-writes it).
+
+Unless you have a good reason to implement this solution, you should instead use LangGraph.
+
+## Next steps
+
+Explore persistence with LangGraph:
+
+* [LangGraph quickstart tutorial](https://langchain-ai.github.io/langgraph/tutorials/introduction/)
+* [How to add persistence ("memory") to your graph](https://langchain-ai.github.io/langgraph/how-tos/persistence/)
+* [How to manage conversation history](https://langchain-ai.github.io/langgraph/how-tos/memory/manage-conversation-history/)
+* [How to add summary of the conversation history](https://langchain-ai.github.io/langgraph/how-tos/memory/add-summary-conversation-history/)
+
+Add persistence with simple LCEL (favor langgraph for more complex use cases):
+
+* [How to add message history](/src/oss/how_to/message_history)
+
+Working with message history:
+
+* [How to trim messages](/src/oss/how_to/trim_messages)
+* [How to filter messages](/src/oss/how_to/filter_messages)
+* [How to merge message runs](/src/oss/how_to/merge_message_runs)

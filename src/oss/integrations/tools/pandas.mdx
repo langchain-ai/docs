@@ -1,0 +1,100 @@
+---
+title: "Pandas Dataframe"
+---
+
+This notebook shows how to use agents to interact with a `Pandas DataFrame`. It is mostly optimized for question answering.
+
+**NOTE: this agent calls the `Python` agent under the hood, which executes LLM generated Python code - this can be bad if the LLM generated Python code is harmful. Use cautiously.**
+
+**NOTE: Since langchain migrated to v0.3 you should upgrade langchain\_openai and langchain. This would avoid import errors.**
+
+pip install --upgrade langchain\_openai pip install --upgrade langchain
+
+```
+from langchain.agents.agent_types import AgentTypefrom langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agentfrom langchain_openai import ChatOpenAI
+```
+
+**API Reference:**[AgentType](https://python.langchain.com/api_reference/langchain/agents/langchain.agents.agent_types.AgentType.html) | [create\_pandas\_dataframe\_agent](https://python.langchain.com/api_reference/experimental/agents/langchain_experimental.agents.agent_toolkits.pandas.base.create_pandas_dataframe_agent.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+```
+import pandas as pdfrom langchain_openai import OpenAIdf = pd.read_csv(    "https://raw.githubusercontent.com/pandas-dev/pandas/main/doc/data/titanic.csv")
+```
+
+**API Reference:**[OpenAI](https://python.langchain.com/api_reference/openai/llms/langchain_openai.llms.base.OpenAI.html)
+
+## Using `ZERO_SHOT_REACT_DESCRIPTION`
+
+This shows how to initialize the agent using the `ZERO_SHOT_REACT_DESCRIPTION` agent type.
+
+```
+agent = create_pandas_dataframe_agent(OpenAI(temperature=0), df, verbose=True)
+```
+
+## Using OpenAI Functions
+
+This shows how to initialize the agent using the OPENAI\_FUNCTIONS agent type. Note that this is an alternative to the above.
+
+```
+agent = create_pandas_dataframe_agent(    ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613"),    df,    verbose=True,    agent_type=AgentType.OPENAI_FUNCTIONS,)
+```
+
+```
+agent.invoke("how many rows are there?")
+```
+
+```
+[1m> Entering new  chain...[0m[32;1m[1;3mInvoking: `python_repl_ast` with `df.shape[0]`[0m[36;1m[1;3m891[0m[32;1m[1;3mThere are 891 rows in the dataframe.[0m[1m> Finished chain.[0m
+```
+
+```
+'There are 891 rows in the dataframe.'
+```
+
+```
+agent.invoke("how many people have more than 3 siblings")
+```
+
+```
+[1m> Entering new AgentExecutor chain...[0m[32;1m[1;3mThought: I need to count the number of people with more than 3 siblingsAction: python_repl_astAction Input: df[df['SibSp'] > 3].shape[0][0mObservation: [36;1m[1;3m30[0mThought:[32;1m[1;3m I now know the final answerFinal Answer: 30 people have more than 3 siblings.[0m[1m> Finished chain.[0m
+```
+
+```
+'30 people have more than 3 siblings.'
+```
+
+```
+agent.invoke("whats the square root of the average age?")
+```
+
+```
+[1m> Entering new AgentExecutor chain...[0m[32;1m[1;3mThought: I need to calculate the average age firstAction: python_repl_astAction Input: df['Age'].mean()[0mObservation: [36;1m[1;3m29.69911764705882[0mThought:[32;1m[1;3m I now need to calculate the square root of the average ageAction: python_repl_astAction Input: math.sqrt(df['Age'].mean())[0mObservation: [36;1m[1;3mNameError("name 'math' is not defined")[0mThought:[32;1m[1;3m I need to import the math libraryAction: python_repl_astAction Input: import math[0mObservation: [36;1m[1;3m[0mThought:[32;1m[1;3m I now need to calculate the square root of the average ageAction: python_repl_astAction Input: math.sqrt(df['Age'].mean())[0mObservation: [36;1m[1;3m5.449689683556195[0mThought:[32;1m[1;3m I now know the final answerFinal Answer: The square root of the average age is 5.449689683556195.[0m[1m> Finished chain.[0m
+```
+
+```
+'The square root of the average age is 5.449689683556195.'
+```
+
+## Multi DataFrame Example
+
+This next part shows how the agent can interact with multiple dataframes passed in as a list.
+
+```
+df1 = df.copy()df1["Age"] = df1["Age"].fillna(df1["Age"].mean())
+```
+
+```
+agent = create_pandas_dataframe_agent(OpenAI(temperature=0), [df, df1], verbose=True)agent.invoke("how many rows in the age column are different?")
+```
+
+```
+[1m> Entering new AgentExecutor chain...[0m[32;1m[1;3mThought: I need to compare the age columns in both dataframesAction: python_repl_astAction Input: len(df1[df1['Age'] != df2['Age']])[0mObservation: [36;1m[1;3m177[0mThought:[32;1m[1;3m I now know the final answerFinal Answer: 177 rows in the age column are different.[0m[1m> Finished chain.[0m
+```
+
+```
+'177 rows in the age column are different.'
+```
+
+## Related
+
+* Tool [conceptual guide](/src/oss/concepts/tools)
+* Tool [how-to guides](/src/oss/how_to/#tools)

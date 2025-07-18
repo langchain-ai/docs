@@ -1,0 +1,53 @@
+---
+title: "GMail"
+---
+
+This loader goes over how to load data from GMail. There are many ways you could want to load data from GMail. This loader is currently fairly opinionated in how to do so. The way it does it is it first looks for all messages that you have sent. It then looks for messages where you are responding to a previous email. It then fetches that previous email, and creates a training example of that email, followed by your email.
+
+Note that there are clear limitations here. For example, all examples created are only looking at the previous email for context.
+
+To use:
+
+* Set up a Google Developer Account: Go to the Google Developer Console, create a project, and enable the Gmail API for that project. This will give you a credentials.json file that you'll need later.
+
+* Install the Google Client Library: Run the following command to install the Google Client Library:
+
+```
+%pip install --upgrade --quiet  google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+```
+
+```
+import os.pathfrom google.auth.transport.requests import Requestfrom google.oauth2.credentials import Credentialsfrom google_auth_oauthlib.flow import InstalledAppFlowSCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]creds = None# The file token.json stores the user's access and refresh tokens, and is# created automatically when the authorization flow completes for the first# time.if os.path.exists("email_token.json"):    creds = Credentials.from_authorized_user_file("email_token.json", SCOPES)# If there are no (valid) credentials available, let the user log in.if not creds or not creds.valid:    if creds and creds.expired and creds.refresh_token:        creds.refresh(Request())    else:        flow = InstalledAppFlow.from_client_secrets_file(            # your creds file here. Please create json file as here https://cloud.google.com/oss/authentication/getting-started            "creds.json",            SCOPES,        )        creds = flow.run_local_server(port=0)    # Save the credentials for the next run    with open("email_token.json", "w") as token:        token.write(creds.to_json())
+```
+
+```
+from langchain_community.chat_loaders.gmail import GMailLoader
+```
+
+**API Reference:**[GMailLoader](https://python.langchain.com/api_reference/community/chat_loaders/langchain_community.chat_loaders.gmail.GMailLoader.html)
+
+```
+loader = GMailLoader(creds=creds, n=3)
+```
+
+```
+data = loader.load()
+```
+
+```
+# Sometimes there can be errors which we silently ignorelen(data)
+```
+
+```
+2
+```
+
+```
+from langchain_community.chat_loaders.utils import (    map_ai_messages,)
+```
+
+**API Reference:**[map\_ai\_messages](https://python.langchain.com/api_reference/community/chat_loaders/langchain_community.chat_loaders.utils.map_ai_messages.html)
+
+```
+# This makes messages sent by hchase@langchain.com the AI Messages# This means you will train an LLM to predict as if it's responding as hchasetraining_data = list(    map_ai_messages(data, sender="Harrison Chase <hchase@langchain.com>"))
+```

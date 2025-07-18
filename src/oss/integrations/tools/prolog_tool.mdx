@@ -1,0 +1,122 @@
+---
+title: "Prolog"
+---
+
+LangChain tools that use Prolog rules to generate answers.
+
+## Overview
+
+The PrologTool class allows the generation of langchain tools that use Prolog rules to generate answers.
+
+## Setup
+
+Let's use the following Prolog rules in the file family.pl:
+
+parent(john, bianca, mary). parent(john, bianca, michael). parent(peter, patricia, jennifer). partner(X, Y) :- parent(X, Y, \_).
+
+```
+#!pip install langchain-prologfrom langchain_prolog import PrologConfig, PrologRunnable, PrologToolTEST_SCRIPT = "family.pl"
+```
+
+## Instantiation
+
+First create the Prolog tool:
+
+```
+schema = PrologRunnable.create_schema("parent", ["men", "women", "child"])config = PrologConfig(    rules_file=TEST_SCRIPT,    query_schema=schema,)prolog_tool = PrologTool(    prolog_config=config,    name="family_query",    description="""        Query family relationships using Prolog.        parent(X, Y, Z) implies only that Z is a child of X and Y.        Input can be a query string like 'parent(john, X, Y)' or 'john, X, Y'"        You have to specify 3 parameters: men, woman, child. Do not use quotes.    """,)
+```
+
+## Invocation
+
+### Using a Prolog tool with an LLM and function calling
+
+```
+#!pip install python-dotenvfrom dotenv import find_dotenv, load_dotenvload_dotenv(find_dotenv(), override=True)#!pip install langchain-openaifrom langchain_core.messages import HumanMessagefrom langchain_openai import ChatOpenAI
+```
+
+**API Reference:**[HumanMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.human.HumanMessage.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+To use the tool, bind it to the LLM model:
+
+```
+llm = ChatOpenAI(model="gpt-4o-mini")llm_with_tools = llm.bind_tools([prolog_tool])
+```
+
+and then query the model:
+
+```
+query = "Who are John's children?"messages = [HumanMessage(query)]response = llm_with_tools.invoke(messages)
+```
+
+The LLM will respond with a tool call request:
+
+```
+messages.append(response)response.tool_calls[0]
+```
+
+```
+{'name': 'family_query', 'args': {'men': 'john', 'women': None, 'child': None}, 'id': 'call_gH8rWamYXITrkfvRP2s5pkbF', 'type': 'tool_call'}
+```
+
+The tool takes this request and queries the Prolog database:
+
+```
+tool_msg = prolog_tool.invoke(response.tool_calls[0])
+```
+
+The tool returns a list with all the solutions for the query:
+
+```
+messages.append(tool_msg)tool_msg
+```
+
+```
+ToolMessage(content='[{"Women": "bianca", "Child": "mary"}, {"Women": "bianca", "Child": "michael"}]', name='family_query', tool_call_id='call_gH8rWamYXITrkfvRP2s5pkbF')
+```
+
+That we then pass to the LLM, and the LLM answers the original query using the tool response:
+
+```
+answer = llm_with_tools.invoke(messages)print(answer.content)
+```
+
+```
+John has two children: Mary and Michael, with Bianca as their mother.
+```
+
+## Chaining
+
+### Using a Prolog Tool with an agent
+
+To use the prolog tool with an agent, pass it to the agent's constructor:
+
+```
+#!pip install langgraphfrom langgraph.prebuilt import create_react_agentagent_executor = create_react_agent(llm, [prolog_tool])
+```
+
+**API Reference:**[create\_react\_agent](https://langchain-ai.github.io/langgraph/reference/prebuilt/#langgraph.prebuilt.chat_agent_executor.create_react_agent)
+
+The agent takes the query and use the Prolog tool if needed:
+
+```
+messages = agent_executor.invoke({"messages": [("human", query)]})
+```
+
+Then the agent receives​ the tool response and generates the answer:
+
+```
+messages["messages"][-1].pretty_print()
+```
+
+```
+==================================[1m Ai Message [0m==================================John has two children: Mary and Michael, with Bianca as their mother.
+```
+
+## API reference
+
+See [https://langchain-prolog.readthedocs.io/en/latest/modules.html](https://langchain-prolog.readthedocs.io/en/latest/modules.html) for detail.
+
+## Related
+
+* Tool [conceptual guide](/src/oss/concepts/tools)
+* Tool [how-to guides](/src/oss/how_to/#tools)

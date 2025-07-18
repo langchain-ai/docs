@@ -1,0 +1,89 @@
+---
+title: "FalkorDB"
+---
+
+> [FalkorDB](https://www.falkordb.com/) is a low-latency Graph Database that delivers knowledge to GenAI.
+
+This notebook shows how to use LLMs to provide a natural language interface to `FalkorDB` database.
+
+## Setting up
+
+You can run the `falkordb` Docker container locally:
+
+```
+docker run -p 6379:6379 -it --rm falkordb/falkordb
+```
+
+Once launched, you create a database on the local machine and connect to it.
+
+```
+from langchain.chains import FalkorDBQAChainfrom langchain_community.graphs import FalkorDBGraphfrom langchain_openai import ChatOpenAI
+```
+
+**API Reference:**[FalkorDBQAChain](https://python.langchain.com/api_reference/community/chains/langchain_community.chains.graph_qa.falkordb.FalkorDBQAChain.html) | [FalkorDBGraph](https://python.langchain.com/api_reference/community/graphs/langchain_community.graphs.falkordb_graph.FalkorDBGraph.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+## Create a graph connection and insert the demo data
+
+```
+graph = FalkorDBGraph(database="movies")
+```
+
+```
+graph.query(    """    CREATE         (al:Person {name: 'Al Pacino', birthDate: '1940-04-25'}),        (robert:Person {name: 'Robert De Niro', birthDate: '1943-08-17'}),        (tom:Person {name: 'Tom Cruise', birthDate: '1962-07-3'}),        (val:Person {name: 'Val Kilmer', birthDate: '1959-12-31'}),        (anthony:Person {name: 'Anthony Edwards', birthDate: '1962-7-19'}),        (meg:Person {name: 'Meg Ryan', birthDate: '1961-11-19'}),        (god1:Movie {title: 'The Godfather'}),        (god2:Movie {title: 'The Godfather: Part II'}),        (god3:Movie {title: 'The Godfather Coda: The Death of Michael Corleone'}),        (top:Movie {title: 'Top Gun'}),        (al)-[:ACTED_IN]->(god1),        (al)-[:ACTED_IN]->(god2),        (al)-[:ACTED_IN]->(god3),        (robert)-[:ACTED_IN]->(god2),        (tom)-[:ACTED_IN]->(top),        (val)-[:ACTED_IN]->(top),        (anthony)-[:ACTED_IN]->(top),        (meg)-[:ACTED_IN]->(top)""")
+```
+
+```
+[]
+```
+
+## Creating FalkorDBQAChain
+
+```
+graph.refresh_schema()print(graph.schema)import osos.environ["OPENAI_API_KEY"] = "API_KEY_HERE"
+```
+
+```
+Node properties: [[OrderedDict([('label', None), ('properties', ['name', 'birthDate', 'title'])])]]Relationships properties: [[OrderedDict([('type', None), ('properties', [])])]]Relationships: [['(:Person)-[:ACTED_IN]->(:Movie)']]
+```
+
+```
+chain = FalkorDBQAChain.from_llm(ChatOpenAI(temperature=0), graph=graph, verbose=True)
+```
+
+## Querying the graph
+
+```
+chain.run("Who played in Top Gun?")
+```
+
+```
+[1m> Entering new FalkorDBQAChain chain...[0mGenerated Cypher:[32;1m[1;3mMATCH (p:Person)-[:ACTED_IN]->(m:Movie)WHERE m.title = 'Top Gun'RETURN p.name[0mFull Context:[32;1m[1;3m[['Tom Cruise'], ['Val Kilmer'], ['Anthony Edwards'], ['Meg Ryan'], ['Tom Cruise'], ['Val Kilmer'], ['Anthony Edwards'], ['Meg Ryan']][0m[1m> Finished chain.[0m
+```
+
+```
+'Tom Cruise, Val Kilmer, Anthony Edwards, and Meg Ryan played in Top Gun.'
+```
+
+```
+chain.run("Who is the oldest actor who played in The Godfather: Part II?")
+```
+
+```
+[1m> Entering new FalkorDBQAChain chain...[0mGenerated Cypher:[32;1m[1;3mMATCH (p:Person)-[r:ACTED_IN]->(m:Movie)WHERE m.title = 'The Godfather: Part II'RETURN p.nameORDER BY p.birthDate ASCLIMIT 1[0mFull Context:[32;1m[1;3m[['Al Pacino']][0m[1m> Finished chain.[0m
+```
+
+```
+'The oldest actor who played in The Godfather: Part II is Al Pacino.'
+```
+
+```
+chain.run("Robert De Niro played in which movies?")
+```
+
+```
+[1m> Entering new FalkorDBQAChain chain...[0mGenerated Cypher:[32;1m[1;3mMATCH (p:Person {name: 'Robert De Niro'})-[:ACTED_IN]->(m:Movie)RETURN m.title[0mFull Context:[32;1m[1;3m[['The Godfather: Part II'], ['The Godfather: Part II']][0m[1m> Finished chain.[0m
+```
+
+```
+'Robert De Niro played in "The Godfather: Part II".'
+```

@@ -1,0 +1,135 @@
+---
+title: "Migrating from StuffDocumentsChain"
+---
+
+[StuffDocumentsChain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.combine_documents.stuff.StuffDocumentsChain.html) combines documents by concatenating them into a single context window. It is a straightforward and effective strategy for combining documents for question-answering, summarization, and other purposes.
+
+[create\_stuff\_documents\_chain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.combine_documents.stuff.create_stuff_documents_chain.html) is the recommended alternative. It functions the same as `StuffDocumentsChain`, with better support for streaming and batch functionality. Because it is a simple combination of [LCEL primitives](/src/oss/concepts/lcel), it is also easier to extend and incorporate into other LangChain applications.
+
+Below we will go through both `StuffDocumentsChain` and `create_stuff_documents_chain` on a simple example for illustrative purposes.
+
+Let's first load a chat model:
+
+Select [chat model](/src/oss/integrations/chat):
+
+Google Gemini▾
+
+* [OpenAI](#)
+
+* [Anthropic](#)
+
+* [Azure](#)
+
+* [Google Gemini](#)
+
+* [Google Vertex](#)
+
+* [AWS](#)
+
+* [Groq](#)
+
+* [Cohere](#)
+
+* [NVIDIA](#)
+
+* [Fireworks AI](#)
+
+* [Mistral AI](#)
+
+* [Together AI](#)
+
+* [IBM watsonx](#)
+
+* [Databricks](#)
+
+* [xAI](#)
+
+* [Perplexity](#)
+
+```
+pip install -qU "langchain[google-genai]"
+```
+
+```
+import getpassimport osif not os.environ.get("GOOGLE_API_KEY"):  os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter API key for Google Gemini: ")from langchain.chat_models import init_chat_modelllm = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
+```
+
+## Example
+
+Let's go through an example where we analyze a set of documents. We first generate some simple documents for illustrative purposes:
+
+```
+from langchain_core.documents import Documentdocuments = [    Document(page_content="Apples are red", metadata={"title": "apple_book"}),    Document(page_content="Blueberries are blue", metadata={"title": "blueberry_book"}),    Document(page_content="Bananas are yelow", metadata={"title": "banana_book"}),]
+```
+
+**API Reference:**[Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html)
+
+### Legacy
+
+<Accordion title="Details">
+  Below we show an implementation with `StuffDocumentsChain`. We define the prompt template for a summarization task and instantiate a [LLMChain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.llm.LLMChain.html) object for this purpose. We define how documents are formatted into the prompt and ensure consistency among the keys in the various prompts.
+
+  ```
+  from langchain.chains import LLMChain, StuffDocumentsChainfrom langchain_core.prompts import ChatPromptTemplate, PromptTemplate# This controls how each document will be formatted. Specifically,# it will be passed to `format_document` - see that function for more# details.document_prompt = PromptTemplate(    input_variables=["page_content"], template="{page_content}")document_variable_name = "context"# The prompt here should take as an input variable the# `document_variable_name`prompt = ChatPromptTemplate.from_template("Summarize this content: {context}")llm_chain = LLMChain(llm=llm, prompt=prompt)chain = StuffDocumentsChain(    llm_chain=llm_chain,    document_prompt=document_prompt,    document_variable_name=document_variable_name,)
+  ```
+
+  **API Reference:**[LLMChain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.llm.LLMChain.html) | [StuffDocumentsChain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.combine_documents.stuff.StuffDocumentsChain.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [PromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.prompt.PromptTemplate.html)
+
+  We can now invoke our chain:
+
+  ```
+  result = chain.invoke(documents)result["output_text"]
+  ```
+
+  ```
+  'This content describes the colors of different fruits: apples are red, blueberries are blue, and bananas are yellow.'
+  ```
+
+  ```
+  for chunk in chain.stream(documents):    print(chunk)
+  ```
+
+  ```
+  {'input_documents': [Document(metadata={'title': 'apple_book'}, page_content='Apples are red'), Document(metadata={'title': 'blueberry_book'}, page_content='Blueberries are blue'), Document(metadata={'title': 'banana_book'}, page_content='Bananas are yelow')], 'output_text': 'This content describes the colors of different fruits: apples are red, blueberries are blue, and bananas are yellow.'}
+  ```
+</Accordion>
+
+### LCEL
+
+<Accordion title="Details">
+  Below we show an implementation using `create_stuff_documents_chain`:
+
+  ```
+  from langchain.chains.combine_documents import create_stuff_documents_chainfrom langchain_core.prompts import ChatPromptTemplateprompt = ChatPromptTemplate.from_template("Summarize this content: {context}")chain = create_stuff_documents_chain(llm, prompt)
+  ```
+
+  **API Reference:**[create\_stuff\_documents\_chain](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.combine_documents.stuff.create_stuff_documents_chain.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html)
+
+  Invoking the chain, we obtain a similar result as before:
+
+  ```
+  result = chain.invoke({"context": documents})result
+  ```
+
+  ```
+  'This content describes the colors of different fruits: apples are red, blueberries are blue, and bananas are yellow.'
+  ```
+
+  Note that this implementation supports streaming of output tokens:
+
+  ```
+  for chunk in chain.stream({"context": documents}):    print(chunk, end=" | ")
+  ```
+
+  ```
+   | This |  content |  describes |  the |  colors |  of |  different |  fruits | : |  apples |  are |  red | , |  blue | berries |  are |  blue | , |  and |  bananas |  are |  yellow | . |  |
+  ```
+</Accordion>
+
+## Next steps
+
+Check out the [LCEL conceptual docs](/src/oss/concepts/lcel) for more background information.
+
+See these [how-to guides](/src/oss/how_to/#qa-with-rag) for more on question-answering tasks with RAG.
+
+See [this tutorial](/src/oss/tutorials/summarization) for more LLM-based summarization strategies.

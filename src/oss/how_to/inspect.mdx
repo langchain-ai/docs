@@ -1,0 +1,64 @@
+---
+title: "How to inspect runnables"
+---
+
+<Info>
+  This guide assumes familiarity with the following concepts:
+
+  * [LangChain Expression Language (LCEL)](/src/oss/concepts/lcel)
+  * [Chaining runnables](/src/oss/how_to/sequence)
+</Info>
+
+Once you create a runnable with [LangChain Expression Language](/src/oss/concepts/lcel), you may often want to inspect it to get a better sense for what is going on. This notebook covers some methods for doing so.
+
+This guide shows some ways you can programmatically introspect the internal steps of chains. If you are instead interested in debugging issues in your chain, see [this section](/src/oss/how_to/debugging) instead.
+
+First, let's create an example chain. We will create one that does retrieval:
+
+```
+%pip install -qU langchain langchain-openai faiss-cpu tiktoken
+```
+
+```
+from langchain_community.vectorstores import FAISSfrom langchain_core.output_parsers import StrOutputParserfrom langchain_core.prompts import ChatPromptTemplatefrom langchain_core.runnables import RunnablePassthroughfrom langchain_openai import ChatOpenAI, OpenAIEmbeddingsvectorstore = FAISS.from_texts(    ["harrison worked at kensho"], embedding=OpenAIEmbeddings())retriever = vectorstore.as_retriever()template = """Answer the question based only on the following context:{context}Question: {question}"""prompt = ChatPromptTemplate.from_template(template)model = ChatOpenAI()chain = (    {"context": retriever, "question": RunnablePassthrough()}    | prompt    | model    | StrOutputParser())
+```
+
+**API Reference:**[FAISS](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.faiss.FAISS.html) | [StrOutputParser](https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.string.StrOutputParser.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [RunnablePassthrough](https://python.langchain.com/api_reference/core/runnables/langchain_core.runnables.passthrough.RunnablePassthrough.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+## Get a graph
+
+You can use the `get_graph()` method to get a graph representation of the runnable:
+
+```
+chain.get_graph()
+```
+
+## Print a graph
+
+While that is not super legible, you can use the `print_ascii()` method to show that graph in a way that's easier to understand:
+
+```
+chain.get_graph().print_ascii()
+```
+
+```
+           +---------------------------------+                    | Parallel<context,question>Input |                    +---------------------------------+                             **               **                                 ***                   ***                            **                         **           +----------------------+              +-------------+  | VectorStoreRetriever |              | Passthrough |  +----------------------+              +-------------+                      **               **                                      ***         ***                                           **     **                                +----------------------------------+                   | Parallel<context,question>Output |                   +----------------------------------+                                     *                                                      *                                                      *                                           +--------------------+                                 | ChatPromptTemplate |                                 +--------------------+                                            *                                                      *                                                      *                                               +------------+                                         | ChatOpenAI |                                         +------------+                                                *                                                      *                                                      *                                            +-----------------+                                    | StrOutputParser |                                    +-----------------+                                              *                                                      *                                                      *                                         +-----------------------+                              | StrOutputParserOutput |                              +-----------------------+
+```
+
+## Get the prompts
+
+You may want to see just the prompts that are used in a chain with the `get_prompts()` method:
+
+```
+chain.get_prompts()
+```
+
+```
+[ChatPromptTemplate(input_variables=['context', 'question'], messages=[HumanMessagePromptTemplate(prompt=PromptTemplate(input_variables=['context', 'question'], template='Answer the question based only on the following context:\n{context}\n\nQuestion: {question}\n'))])]
+```
+
+## Next steps
+
+You've now learned how to introspect your composed LCEL chains.
+
+Next, check out the other how-to guides on runnables in this section, or the related how-to guide on [debugging your chains](/src/oss/how_to/debugging).

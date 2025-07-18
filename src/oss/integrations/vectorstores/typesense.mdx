@@ -1,0 +1,66 @@
+---
+title: "Typesense"
+---
+
+> [Typesense](https://typesense.org) is an open-source, in-memory search engine, that you can either [self-host](https://typesense.org/oss/guide/install-typesense#option-2-local-machine-self-hosting) or run on [Typesense Cloud](https://cloud.typesense.org/).
+>
+> Typesense focuses on performance by storing the entire index in RAM (with a backup on disk) and also focuses on providing an out-of-the-box developer experience by simplifying available options and setting good defaults.
+>
+> It also lets you combine attribute-based filtering together with vector queries, to fetch the most relevant documents.
+
+This notebook shows you how to use Typesense as your VectorStore.
+
+Let's first install our dependencies:
+
+```
+%pip install --upgrade --quiet  typesense openapi-schema-pydantic langchain-openai langchain-community tiktoken
+```
+
+We want to use `OpenAIEmbeddings` so we have to get the OpenAI API Key.
+
+```
+import getpassimport osif "OPENAI_API_KEY" not in os.environ:    os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API Key:")
+```
+
+```
+from langchain_community.document_loaders import TextLoaderfrom langchain_community.vectorstores import Typesensefrom langchain_openai import OpenAIEmbeddingsfrom langchain_text_splitters import CharacterTextSplitter
+```
+
+**API Reference:**[TextLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.text.TextLoader.html) | [Typesense](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.typesense.Typesense.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html) | [CharacterTextSplitter](https://python.langchain.com/api_reference/text_splitters/character/langchain_text_splitters.character.CharacterTextSplitter.html)
+
+Let's import our test dataset:
+
+```
+loader = TextLoader("../../how_to/state_of_the_union.txt")documents = loader.load()text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)docs = text_splitter.split_documents(documents)embeddings = OpenAIEmbeddings()
+```
+
+```
+docsearch = Typesense.from_documents(    docs,    embeddings,    typesense_client_params={        "host": "localhost",  # Use xxx.a1.typesense.net for Typesense Cloud        "port": "8108",  # Use 443 for Typesense Cloud        "protocol": "http",  # Use https for Typesense Cloud        "typesense_api_key": "xyz",        "typesense_collection_name": "lang-chain",    },)
+```
+
+## Similarity Search
+
+```
+query = "What did the president say about Ketanji Brown Jackson"found_docs = docsearch.similarity_search(query)
+```
+
+```
+print(found_docs[0].page_content)
+```
+
+## Typesense as a Retriever
+
+Typesense, as all the other vector stores, is a LangChain Retriever, by using cosine similarity.
+
+```
+retriever = docsearch.as_retriever()retriever
+```
+
+```
+query = "What did the president say about Ketanji Brown Jackson"retriever.invoke(query)[0]
+```
+
+## Related
+
+* Vector store [conceptual guide](/src/oss/concepts/vectorstores)
+* Vector store [how-to guides](/src/oss/how_to/#vector-stores)

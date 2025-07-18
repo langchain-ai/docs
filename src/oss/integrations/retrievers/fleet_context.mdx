@@ -1,0 +1,70 @@
+---
+title: "Fleet AI Context"
+---
+
+> [Fleet AI Context](https://www.fleet.so/context) is a dataset of high-quality embeddings of the top 1200 most popular & permissive Python Libraries & their documentation.
+>
+> The `Fleet AI` team is on a mission to embed the world's most important data. They've started by embedding the top 1200 Python libraries to enable code generation with up-to-date knowledge. They've been kind enough to share their embeddings of the [LangChain docs](/src/oss/introduction) and [API reference](https://python.langchain.com/api_reference/).
+
+Let's take a look at how we can use these embeddings to power a docs retrieval system and ultimately a simple code-generating chain!
+
+```
+%pip install --upgrade --quiet  langchain fleet-context langchain-openai pandas faiss-cpu # faiss-gpu for CUDA supported GPU
+```
+
+```
+from operator import itemgetterfrom typing import Any, Optional, Typeimport pandas as pdfrom langchain.retrievers import MultiVectorRetrieverfrom langchain_community.vectorstores import FAISSfrom langchain_core.documents import Documentfrom langchain_core.stores import BaseStorefrom langchain_core.vectorstores import VectorStorefrom langchain_openai import OpenAIEmbeddingsdef load_fleet_retriever(    df: pd.DataFrame,    *,    vectorstore_cls: Type[VectorStore] = FAISS,    docstore: Optional[BaseStore] = None,    **kwargs: Any,):    vectorstore = _populate_vectorstore(df, vectorstore_cls)    if docstore is None:        return vectorstore.as_retriever(**kwargs)    else:        _populate_docstore(df, docstore)        return MultiVectorRetriever(            vectorstore=vectorstore, docstore=docstore, id_key="parent", **kwargs        )def _populate_vectorstore(    df: pd.DataFrame,    vectorstore_cls: Type[VectorStore],) -> VectorStore:    if not hasattr(vectorstore_cls, "from_embeddings"):        raise ValueError(            f"Incompatible vector store class {vectorstore_cls}."            "Must implement `from_embeddings` class method."        )    texts_embeddings = []    metadatas = []    for _, row in df.iterrows():        texts_embeddings.append((row.metadata["text"], row["dense_embeddings"]))        metadatas.append(row.metadata)    return vectorstore_cls.from_embeddings(        texts_embeddings,        OpenAIEmbeddings(model="text-embedding-ada-002"),        metadatas=metadatas,    )def _populate_docstore(df: pd.DataFrame, docstore: BaseStore) -> None:    parent_docs = []    df = df.copy()    df["parent"] = df.metadata.apply(itemgetter("parent"))    for parent_id, group in df.groupby("parent"):        sorted_group = group.iloc[            group.metadata.apply(itemgetter("section_index")).argsort()        ]        text = "".join(sorted_group.metadata.apply(itemgetter("text")))        metadata = {            k: sorted_group.iloc[0].metadata[k] for k in ("title", "type", "url")        }        text = metadata["title"] + "\n" + text        metadata["id"] = parent_id        parent_docs.append(Document(page_content=text, metadata=metadata))    docstore.mset(((d.metadata["id"], d) for d in parent_docs))
+```
+
+**API Reference:**[MultiVectorRetriever](https://python.langchain.com/api_reference/langchain/retrievers/langchain.retrievers.multi_vector.MultiVectorRetriever.html) | [FAISS](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.faiss.FAISS.html) | [Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html) | [BaseStore](https://python.langchain.com/api_reference/core/stores/langchain_core.stores.BaseStore.html) | [VectorStore](https://python.langchain.com/api_reference/core/vectorstores/langchain_core.vectorstores.base.VectorStore.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+## Retriever chunks
+
+As part of their embedding process, the Fleet AI team first chunked long documents before embedding them. This means the vectors correspond to sections of pages in the LangChain docs, not entire pages. By default, when we spin up a retriever from these embeddings, we'll be retrieving these embedded chunks.
+
+We will be using Fleet Context's `download_embeddings()` to grab Langchain's documentation embeddings. You can view all supported libraries' documentation at [https://fleet.so/context](https://fleet.so/context).
+
+```
+from context import download_embeddingsdf = download_embeddings("langchain")vecstore_retriever = load_fleet_retriever(df)
+```
+
+```
+vecstore_retriever.invoke("How does the multi vector retriever work")
+```
+
+## Other packages
+
+You can download and use other embeddings from [this Dropbox link](https://www.dropbox.com/scl/fo/54t2e7fogtixo58pnlyub/h?rlkey=tne16wkssgf01jor0p1iqg6p9\&dl=0).
+
+## Retrieve parent docs
+
+The embeddings provided by Fleet AI contain metadata that indicates which embedding chunks correspond to the same original document page. If we'd like we can use this information to retrieve whole parent documents, and not just embedded chunks. Under the hood, we'll use a MultiVectorRetriever and a BaseStore object to search for relevant chunks and then map them to their parent document.
+
+```
+from langchain.storage import InMemoryStoreparent_retriever = load_fleet_retriever(    "https://www.dropbox.com/scl/fi/4rescpkrg9970s3huz47l/libraries_langchain_release.parquet?rlkey=283knw4wamezfwiidgpgptkep&dl=1",    docstore=InMemoryStore(),)
+```
+
+**API Reference:**[InMemoryStore](https://python.langchain.com/api_reference/core/stores/langchain_core.stores.InMemoryStore.html)
+
+```
+parent_retriever.invoke("How does the multi vector retriever work")
+```
+
+## Putting it in a chain
+
+Let's try using our retrieval systems in a simple chain!
+
+```
+from langchain_core.output_parsers import StrOutputParserfrom langchain_core.prompts import ChatPromptTemplatefrom langchain_core.runnables import RunnablePassthroughfrom langchain_openai import ChatOpenAIprompt = ChatPromptTemplate.from_messages(    [        (            "system",            """You are a great software engineer who is very familiar \with Python. Given a user question or request about a new Python library called LangChain and \parts of the LangChain documentation, answer the question or generate the requested code. \Your answers must be accurate, should include code whenever possible, and should assume anything \about LangChain which is note explicitly stated in the LangChain documentation. If the required \information is not available, just say so.LangChain Documentation------------------{context}""",        ),        ("human", "{question}"),    ])model = ChatOpenAI(model="gpt-3.5-turbo-16k")chain = (    {        "question": RunnablePassthrough(),        "context": parent_retriever        | (lambda docs: "\n\n".join(d.page_content for d in docs)),    }    | prompt    | model    | StrOutputParser())
+```
+
+**API Reference:**[StrOutputParser](https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.string.StrOutputParser.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [RunnablePassthrough](https://python.langchain.com/api_reference/core/runnables/langchain_core.runnables.passthrough.RunnablePassthrough.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+```
+for chunk in chain.invoke(    "How do I create a FAISS vector store retriever that returns 10 documents per search query"):    print(chunk, end="", flush=True)
+```
+
+## Related
+
+* Retriever [conceptual guide](/src/oss/concepts/retrievers)
+* Retriever [how-to guides](/src/oss/how_to/#retrievers)

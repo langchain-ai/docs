@@ -1,0 +1,82 @@
+---
+title: "ChatAI21"
+---
+
+This notebook covers how to get started with AI21 chat models. Note that different chat models support different parameters. See the [AI21 documentation](https://docs.ai21.com/reference) to learn more about the parameters in your chosen model. [See all AI21's LangChain components.](https://pypi.org/project/langchain-ai21/)
+
+### Integration details
+
+| Class                                                                                                                                                | Package                                                                      | Local | Serializable | [JS support](https://js.langchain.com/oss/integrations/chat/__package_name_short_snake__) | Package downloads                                                               | Package latest                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----- | ------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [ChatAI21](https://python.langchain.com/api_reference/ai21/chat_models/langchain_ai21.chat_models.ChatAI21.html#langchain_ai21.chat_models.ChatAI21) | [langchain-ai21](https://python.langchain.com/api_reference/ai21/index.html) | ❌     | beta         | ✅                                                                                          | ![PyPI - Downloads](/images/oss/integrations/chat/ai21/pypi/dm/langchain-ai21) | ![PyPI - Version](/images/oss/integrations/chat/ai21/pypi/v/langchain-ai21) |
+
+### Model features
+
+| [Tool calling](/src/oss/how_to/tool_calling) | [Structured output](/src/oss/how_to/structured_output) | JSON mode | [Image input](/src/oss/how_to/multimodal_inputs) | Audio input | Video input | [Token-level streaming](/src/oss/how_to/chat_streaming) | Native async | [Token usage](/src/oss/how_to/chat_token_usage_tracking) | [Logprobs](/src/oss/how_to/logprobs) |
+| ------------------------------------------ | ---------------------------------------------------- | --------- | ---------------------------------------------- | ----------- | ----------- | ----------------------------------------------------- | ------------ | ------------------------------------------------------ | ---------------------------------- |
+| ✅                                          | ✅                                                    | ❌         | ❌                                              | ❌           | ❌           | ✅                                                     | ✅            | ✅                                                      | ❌                                  |
+
+## Setup
+
+### Credentials
+
+We'll need to get an [AI21 API key](https://docs.ai21.com/) and set the `AI21_API_KEY` environment variable:
+
+```
+import osfrom getpass import getpassif "AI21_API_KEY" not in os.environ:    os.environ["AI21_API_KEY"] = getpass()
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+
+```
+# os.environ["LANGSMITH_TRACING"] = "true"# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+!pip install -qU langchain-ai21
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```
+from langchain_ai21 import ChatAI21llm = ChatAI21(model="jamba-instruct", temperature=0)
+```
+
+**API Reference:**[ChatAI21](https://python.langchain.com/api_reference/ai21/chat_models/langchain_ai21.chat_models.ChatAI21.html)
+
+## Invocation
+
+```
+messages = [    (        "system",        "You are a helpful assistant that translates English to French. Translate the user sentence.",    ),    ("human", "I love programming."),]ai_msg = llm.invoke(messages)ai_msg
+```
+
+## Chaining
+
+We can [chain](/src/oss/how_to/sequence) our model with a prompt template like so:
+
+```
+from langchain_core.prompts import ChatPromptTemplateprompt = ChatPromptTemplate(    [        (            "system",            "You are a helpful assistant that translates {input_language} to {output_language}.",        ),        ("human", "{input}"),    ])chain = prompt | llmchain.invoke(    {        "input_language": "English",        "output_language": "German",        "input": "I love programming.",    })
+```
+
+**API Reference:**[ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html)
+
+# Tool Calls / Function Calling
+
+This example shows how to use tool calling with AI21 models:
+
+```
+import osfrom getpass import getpassfrom langchain_ai21.chat_models import ChatAI21from langchain_core.messages import HumanMessage, SystemMessage, ToolMessagefrom langchain_core.tools import toolfrom langchain_core.utils.function_calling import convert_to_openai_toolif "AI21_API_KEY" not in os.environ:    os.environ["AI21_API_KEY"] = getpass()@tooldef get_weather(location: str, date: str) -> str:    """“Provide the weather for the specified location on the given date.”"""    if location == "New York" and date == "2024-12-05":        return "25 celsius"    elif location == "New York" and date == "2024-12-06":        return "27 celsius"    elif location == "London" and date == "2024-12-05":        return "22 celsius"    return "32 celsius"llm = ChatAI21(model="jamba-1.5-mini")llm_with_tools = llm.bind_tools([convert_to_openai_tool(get_weather)])chat_messages = [    SystemMessage(        content="You are a helpful assistant. You can use the provided tools "        "to assist with various tasks and provide accurate information"    )]human_messages = [    HumanMessage(        content="What is the forecast for the weather in New York on December 5, 2024?"    ),    HumanMessage(content="And what about the 2024-12-06?"),    HumanMessage(content="OK, thank you."),    HumanMessage(content="What is the expected weather in London on December 5, 2024?"),]for human_message in human_messages:    print(f"User: {human_message.content}")    chat_messages.append(human_message)    response = llm_with_tools.invoke(chat_messages)    chat_messages.append(response)    if response.tool_calls:        tool_call = response.tool_calls[0]        if tool_call["name"] == "get_weather":            weather = get_weather.invoke(                {                    "location": tool_call["args"]["location"],                    "date": tool_call["args"]["date"],                }            )            chat_messages.append(                ToolMessage(content=weather, tool_call_id=tool_call["id"])            )            llm_answer = llm_with_tools.invoke(chat_messages)            print(f"Assistant: {llm_answer.content}")    else:        print(f"Assistant: {response.content}")
+```
+
+**API Reference:**[ChatAI21](https://python.langchain.com/api_reference/ai21/chat_models/langchain_ai21.chat_models.ChatAI21.html) | [HumanMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.human.HumanMessage.html) | [SystemMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.system.SystemMessage.html) | [ToolMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.tool.ToolMessage.html) | [tool](https://python.langchain.com/api_reference/core/tools/langchain_core.tools.convert.tool.html) | [convert\_to\_openai\_tool](https://python.langchain.com/api_reference/core/utils/langchain_core.utils.function_calling.convert_to_openai_tool.html)
+
+## API reference
+
+For detailed documentation of all ChatAI21 features and configurations head to the API reference: [https://python.langchain.com/api\_reference/ai21/chat\_models/langchain\_ai21.chat\_models.ChatAI21.html](https://python.langchain.com/api_reference/ai21/chat_models/langchain_ai21.chat_models.ChatAI21.html)
+
+## Related
+
+* Chat model [conceptual guide](/src/oss/concepts/chat_models)
+* Chat model [how-to guides](/src/oss/how_to/#chat-models)

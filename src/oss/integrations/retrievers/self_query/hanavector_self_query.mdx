@@ -1,0 +1,49 @@
+---
+title: "SAP HANA Cloud Vector Engine"
+---
+
+For more information on how to setup the SAP HANA vetor store, take a look at the [documentation](/src/oss/integrations/vectorstores/sap_hanavector).
+
+We use the same setup here:
+
+```
+import os# Use OPENAI_API_KEY env variable# os.environ["OPENAI_API_KEY"] = "Your OpenAI API key"from hdbcli import dbapi# Use connection settings from the environmentconnection = dbapi.connect(    address=os.environ.get("HANA_DB_ADDRESS"),    port=os.environ.get("HANA_DB_PORT"),    user=os.environ.get("HANA_DB_USER"),    password=os.environ.get("HANA_DB_PASSWORD"),    autocommit=True,    sslValidateCertificate=False,)
+```
+
+To be able to self query with good performance we create additional metadata fields for our vectorstore table in HANA:
+
+```
+# Create custom table with attributecur = connection.cursor()cur.execute("DROP TABLE LANGCHAIN_DEMO_SELF_QUERY", ignoreErrors=True)cur.execute(    (        """CREATE TABLE "LANGCHAIN_DEMO_SELF_QUERY"  (        "name" NVARCHAR(100), "is_active" BOOLEAN, "id" INTEGER, "height" DOUBLE,        "VEC_TEXT" NCLOB,         "VEC_META" NCLOB,         "VEC_VECTOR" REAL_VECTOR        )"""    ))
+```
+
+Let's add some documents.
+
+```
+from langchain_community.vectorstores.hanavector import HanaDBfrom langchain_core.documents import Documentfrom langchain_openai import OpenAIEmbeddingsembeddings = OpenAIEmbeddings()# Prepare some test documentsdocs = [    Document(        page_content="First",        metadata={"name": "adam", "is_active": True, "id": 1, "height": 10.0},    ),    Document(        page_content="Second",        metadata={"name": "bob", "is_active": False, "id": 2, "height": 5.7},    ),    Document(        page_content="Third",        metadata={"name": "jane", "is_active": True, "id": 3, "height": 2.4},    ),]db = HanaDB(    connection=connection,    embedding=embeddings,    table_name="LANGCHAIN_DEMO_SELF_QUERY",    specific_metadata_columns=["name", "is_active", "id", "height"],)# Delete already existing documents from the tabledb.delete(filter={})db.add_documents(docs)
+```
+
+**API Reference:**[HanaDB](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.hanavector.HanaDB.html) | [Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html)
+
+## Self querying
+
+Now for the main act: here is how to construct a SelfQueryRetriever for HANA vectorstore:
+
+```
+from langchain.chains.query_constructor.schema import AttributeInfofrom langchain.retrievers.self_query.base import SelfQueryRetrieverfrom langchain_community.query_constructors.hanavector import HanaTranslatorfrom langchain_openai import ChatOpenAIllm = ChatOpenAI(model="gpt-3.5-turbo")metadata_field_info = [    AttributeInfo(        name="name",        description="The name of the person",        type="string",    ),    AttributeInfo(        name="is_active",        description="Whether the person is active",        type="boolean",    ),    AttributeInfo(        name="id",        description="The ID of the person",        type="integer",    ),    AttributeInfo(        name="height",        description="The height of the person",        type="float",    ),]document_content_description = "A collection of persons"hana_translator = HanaTranslator()retriever = SelfQueryRetriever.from_llm(    llm,    db,    document_content_description,    metadata_field_info,    structured_query_translator=hana_translator,)
+```
+
+**API Reference:**[AttributeInfo](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.query_constructor.schema.AttributeInfo.html) | [SelfQueryRetriever](https://python.langchain.com/api_reference/langchain/retrievers/langchain.retrievers.self_query.base.SelfQueryRetriever.html) | [HanaTranslator](https://python.langchain.com/api_reference/community/query_constructors/langchain_community.query_constructors.hanavector.HanaTranslator.html) | [ChatOpenAI](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+
+Let's use this retriever to prepare a (self) query for a person:
+
+```
+query_prompt = "Which person is not active?"docs = retriever.invoke(input=query_prompt)for doc in docs:    print("-" * 80)    print(doc.page_content, " ", doc.metadata)
+```
+
+We can also take a look at how the query is being constructed:
+
+```
+from langchain.chains.query_constructor.base import (    StructuredQueryOutputParser,    get_query_constructor_prompt,)prompt = get_query_constructor_prompt(    document_content_description,    metadata_field_info,)output_parser = StructuredQueryOutputParser.from_components()query_constructor = prompt | llm | output_parsersq = query_constructor.invoke(input=query_prompt)print("Structured query: ", sq)print("Translated for hana vector store: ", hana_translator.visit_structured_query(sq))
+```
+
+**API Reference:**[StructuredQueryOutputParser](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.query_constructor.base.StructuredQueryOutputParser.html) | [get\_query\_constructor\_prompt](https://python.langchain.com/api_reference/langchain/chains/langchain.chains.query_constructor.base.get_query_constructor_prompt.html)

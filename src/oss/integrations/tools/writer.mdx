@@ -1,0 +1,120 @@
+---
+title: "Writer Tools"
+---
+
+This notebook provides a quick overview for getting started with Writer [tools](https://python.langchain.com/oss/concepts/tools/). For detailed documentation of all Writer features and configurations head to the [Writer docs](https://dev.writer.com/home).
+
+## Overview
+
+### Integration details
+
+| Class                                                                                          | Package                                                        | Local | Serializable | JS support | Package downloads                                                                    | Package latest                                                                    |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----- | ------------ | ---------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| [GraphTool](https://github.com/writer/langchain-writer/blob/main/langchain_writer/tools.py#L9) | [langchain-writer](https://pypi.org/project/langchain-writer/) | ❌     | ❌            | ❌          | ![PyPI - Downloads](/images/oss/integrations/tools/writer/pypi/dm/langchain-writer) | ![PyPI - Version](/images/oss/integrations/tools/writer/pypi/v/langchain-writer) |
+
+### Features
+
+We provide usage of two types of tools for use with `ChatWriter`: `function` and `graph`.
+
+#### Function
+
+Functions are the most common type of tool, which allows the LLM to call external APIs, fetch data from databases, and generally perform any external action you want to do. Visit our [tool calling docs](https://dev.writer.com/api-guides/tool-calling#tool-calling) for additional information.
+
+#### Graph
+
+The `Graph` tool is Writer's graph-based retrieval-augmented generation (RAG) called Knowledge Graph. This tool enables developers to simply pass the graph ID to the model and it will return the answer to the question in the prompt. To learn more, see our [Knowledge Graph API docs](https://dev.writer.com/api-guides/knowledge-graph).
+
+## Setup
+
+Sign up for [Writer AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) to generate an API key (you can follow this [Quickstart](https://dev.writer.com/api-guides/quickstart)). Then, set the WRITER\_API\_KEY environment variable:
+
+```
+import getpassimport osif not os.getenv("WRITER_API_KEY"):    os.environ["WRITER_API_KEY"] = getpass.getpass("Enter your Writer API key: ")
+```
+
+## Usage
+
+You can bind graph or function tools to `ChatWriter`.
+
+### Graph Tools
+
+To bind graph tools, first create and initialize a `GraphTool` instance with the `graph_ids` you want to use as sources:
+
+```
+from langchain_writer.chat_models import ChatWriterfrom langchain_writer.tools import GraphToolchat = ChatWriter()graph_id = getpass.getpass("Enter Writer Knowledge Graph ID: ")graph_tool = GraphTool(graph_ids=[graph_id])
+```
+
+## Instantiation
+
+```
+from typing import Optionalfrom langchain_core.tools import toolfrom pydantic import BaseModel, Field@tooldef get_supercopa_trophies_count(club_name: str) -> Optional[int]:    """Returns information about supercopa trophies count.    Args:        club_name: Club you want to investigate info of supercopa trophies about    Returns:        Number of supercopa trophies or None if there is no info about requested club    """    if club_name == "Barcelona":        return 15    elif club_name == "Real Madrid":        return 13    elif club_name == "Atletico Madrid":        return 2    else:        return Noneclass GetWeather(BaseModel):    """Get the current weather in a given location"""    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")get_product_info = {    "type": "function",    "function": {        "name": "get_product_info",        "description": "Get information about a product by its id",        "parameters": {            "type": "object",            "properties": {                "product_id": {                    "type": "number",                    "description": "The unique identifier of the product to retrieve information for",                }            },            "required": ["product_id"],        },    },}
+```
+
+**API Reference:**[tool](https://python.langchain.com/api_reference/core/tools/langchain_core.tools.convert.tool.html)
+
+### Binding tools
+
+Then, you can simply bind all tools to the `ChatWriter` instance:
+
+```
+chat.bind_tools(    [graph_tool, get_supercopa_trophies_count, GetWeather, get_product_info])
+```
+
+All tools are stored in the `tools` attribute of the `ChatWriter` instance:
+
+```
+chat.tools
+```
+
+The tool choice mode is stored at the `tool_choice` attribute, which is `auto` by default:
+
+```
+chat.tool_choice
+```
+
+## Invocation
+
+The model will automatically choose the tool during invocation with all modes (streaming/non-streaming, sync/async).
+
+```
+from langchain_core.messages import HumanMessagemessages = [    HumanMessage(        "Use knowledge graph tool to compose this answer. Tell me what th first line of documents stored in your KG. Also I want to know: how many SuperCopa trophies have Barcelona won?"    )]response = chat.invoke(messages)messages.append(response)
+```
+
+**API Reference:**[HumanMessage](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.human.HumanMessage.html)
+
+In the case of function tools, you will receive an assistant message with the tool call request.
+
+```
+print(response.tool_calls)
+```
+
+Then you can manually handle tool call request, send to model and receive final response:
+
+```
+for tool_call in response.tool_calls:    selected_tool = {        "get_supercopa_trophies_count": get_supercopa_trophies_count,    }[tool_call["name"].lower()]    tool_msg = selected_tool.invoke(tool_call)    messages.append(tool_msg)response = chat.invoke(messages)print(response.content)
+```
+
+With a `GraphTool`, the model will call it remotely and return usage info in the `additional_kwargs` under the `graph_data` key:
+
+```
+print(response.additional_kwargs["graph_data"])
+```
+
+The `content` attribute contains the final response:
+
+```
+print(response.content)
+```
+
+## Chaining
+
+Due to specificity of Writer Graph tool (you don't need to call it manually, Writer server will call it by himself and return RAG based generation) it's impossible to invoke it separately, so GraphTool can't be used as part of chain
+
+## API reference
+
+For detailed documentation of all `GraphTool` features and configurations, head to the [API reference](https://python.langchain.com/api_reference/writer/tools/langchain_writer.tools.GraphTool.html#langchain_writer.tools.GraphTool).
+
+## Related
+
+* Tool [conceptual guide](/src/oss/concepts/tools)
+* Tool [how-to guides](/src/oss/how_to/#tools)

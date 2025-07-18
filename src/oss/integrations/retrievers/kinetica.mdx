@@ -1,0 +1,53 @@
+---
+title: "Kinetica Vectorstore based Retriever"
+---
+
+> [Kinetica](https://www.kinetica.com/) is a database with integrated support for vector similarity search
+
+It supports:
+
+* exact and approximate nearest neighbor search
+* L2 distance, inner product, and cosine distance
+
+This notebook shows how to use a retriever based on Kinetica vector store (`Kinetica`).
+
+```
+# Please ensure that this connector is installed in your working environment.%pip install gpudb==7.2.0.9
+```
+
+We want to use `OpenAIEmbeddings` so we have to get the OpenAI API Key.
+
+```
+import getpassimport osif "OPENAI_API_KEY" not in os.environ:    os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API Key:")
+```
+
+```
+## Loading Environment Variablesfrom dotenv import load_dotenvload_dotenv()
+```
+
+```
+from langchain_community.document_loaders import TextLoaderfrom langchain_community.vectorstores import (    Kinetica,    KineticaSettings,)from langchain_core.documents import Documentfrom langchain_openai import OpenAIEmbeddingsfrom langchain_text_splitters import CharacterTextSplitter
+```
+
+**API Reference:**[TextLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.text.TextLoader.html) | [Kinetica](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.kinetica.Kinetica.html) | [KineticaSettings](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.kinetica.KineticaSettings.html) | [Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html) | [OpenAIEmbeddings](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.base.OpenAIEmbeddings.html) | [CharacterTextSplitter](https://python.langchain.com/api_reference/text_splitters/character/langchain_text_splitters.character.CharacterTextSplitter.html)
+
+```
+# Kinetica needs the connection to the database.# This is how to set it up.HOST = os.getenv("KINETICA_HOST", "http://127.0.0.1:9191")USERNAME = os.getenv("KINETICA_USERNAME", "")PASSWORD = os.getenv("KINETICA_PASSWORD", "")OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")def create_config() -> KineticaSettings:    return KineticaSettings(host=HOST, username=USERNAME, password=PASSWORD)
+```
+
+## Create Retriever from vector store
+
+```
+loader = TextLoader("../../how_to/state_of_the_union.txt")documents = loader.load()text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)docs = text_splitter.split_documents(documents)embeddings = OpenAIEmbeddings()# The Kinetica Module will try to create a table with the name of the collection.# So, make sure that the collection name is unique and the user has the permission to create a table.COLLECTION_NAME = "state_of_the_union_test"connection = create_config()db = Kinetica.from_documents(    embedding=embeddings,    documents=docs,    collection_name=COLLECTION_NAME,    config=connection,)# create retriever from the vector storeretriever = db.as_retriever(search_kwargs={"k": 2})
+```
+
+## Search with retriever
+
+```
+result = retriever.get_relevant_documents(    "What did the president say about Ketanji Brown Jackson")print(docs[0].page_content)
+```
+
+## Related
+
+* Retriever [conceptual guide](/src/oss/concepts/retrievers)
+* Retriever [how-to guides](/src/oss/how_to/#retrievers)

@@ -1,0 +1,148 @@
+---
+title: "Nebius Retriever"
+---
+
+The `NebiusRetriever` enables efficient similarity search using embeddings from [Nebius AI Studio](https://studio.nebius.ai/). It leverages high-quality embedding models to enable semantic search over documents.
+
+This retriever is optimized for scenarios where you need to perform similarity search over a collection of documents, but don't need to persist the vectors to a vector database. It performs vector similarity search in-memory using matrix operations, making it efficient for medium-sized document collections.
+
+## Setup
+
+### Installation
+
+The Nebius integration can be installed via pip:
+
+```
+%pip install --upgrade langchain-nebius
+```
+
+### Credentials
+
+Nebius requires an API key that can be passed as an initialization parameter `api_key` or set as the environment variable `NEBIUS_API_KEY`. You can obtain an API key by creating an account on [Nebius AI Studio](https://studio.nebius.ai/).
+
+```
+import getpassimport os# Make sure you've set your API key as an environment variableif "NEBIUS_API_KEY" not in os.environ:    os.environ["NEBIUS_API_KEY"] = getpass.getpass("Enter your Nebius API key: ")
+```
+
+## Instantiation
+
+The `NebiusRetriever` requires a `NebiusEmbeddings` instance and a list of documents. Here's how to initialize it:
+
+```
+from langchain_core.documents import Documentfrom langchain_nebius import NebiusEmbeddings, NebiusRetriever# Create sample documentsdocs = [    Document(        page_content="Paris is the capital of France", metadata={"country": "France"}    ),    Document(        page_content="Berlin is the capital of Germany", metadata={"country": "Germany"}    ),    Document(        page_content="Rome is the capital of Italy", metadata={"country": "Italy"}    ),    Document(        page_content="Madrid is the capital of Spain", metadata={"country": "Spain"}    ),    Document(        page_content="London is the capital of the United Kingdom",        metadata={"country": "UK"},    ),    Document(        page_content="Moscow is the capital of Russia", metadata={"country": "Russia"}    ),    Document(        page_content="Washington DC is the capital of the United States",        metadata={"country": "USA"},    ),    Document(        page_content="Tokyo is the capital of Japan", metadata={"country": "Japan"}    ),    Document(        page_content="Beijing is the capital of China", metadata={"country": "China"}    ),    Document(        page_content="Canberra is the capital of Australia",        metadata={"country": "Australia"},    ),]# Initialize embeddingsembeddings = NebiusEmbeddings()# Create retrieverretriever = NebiusRetriever(    embeddings=embeddings,    docs=docs,    k=3,  # Number of documents to return)
+```
+
+**API Reference:**[Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html)
+
+## Usage
+
+### Retrieve Relevant Documents
+
+You can use the retriever to find documents related to a query:
+
+```
+# Query for European capitalsquery = "What are some capitals in Europe?"results = retriever.invoke(query)print(f"Query: {query}")print(f"Top {len(results)} results:")for i, doc in enumerate(results):    print(f"{i + 1}. {doc.page_content} (Country: {doc.metadata['country']})")
+```
+
+```
+Query: What are some capitals in Europe?Top 3 results:1. Paris is the capital of France (Country: France)2. Berlin is the capital of Germany (Country: Germany)3. Rome is the capital of Italy (Country: Italy)
+```
+
+### Using get\_relevant\_documents
+
+You can also use the `get_relevant_documents` method directly (though `invoke` is the preferred interface):
+
+```
+# Query for Asian countriesquery = "What are the capitals in Asia?"results = retriever.get_relevant_documents(query)print(f"Query: {query}")print(f"Top {len(results)} results:")for i, doc in enumerate(results):    print(f"{i + 1}. {doc.page_content} (Country: {doc.metadata['country']})")
+```
+
+```
+Query: What are the capitals in Asia?Top 3 results:1. Beijing is the capital of China (Country: China)2. Tokyo is the capital of Japan (Country: Japan)3. Canberra is the capital of Australia (Country: Australia)
+```
+
+### Customizing Number of Results
+
+You can adjust the number of results at query time by passing `k` as a parameter:
+
+```
+# Query for a specific country, with custom kquery = "Where is France?"results = retriever.invoke(query, k=1)  # Override default kprint(f"Query: {query}")print(f"Top {len(results)} result:")for i, doc in enumerate(results):    print(f"{i + 1}. {doc.page_content} (Country: {doc.metadata['country']})")
+```
+
+```
+Query: Where is France?Top 1 result:1. Paris is the capital of France (Country: France)
+```
+
+### Async Support
+
+NebiusRetriever supports async operations:
+
+```
+import asyncioasync def retrieve_async():    query = "What are some capital cities?"    results = await retriever.ainvoke(query)    print(f"Async query: {query}")    print(f"Top {len(results)} results:")    for i, doc in enumerate(results):        print(f"{i + 1}. {doc.page_content} (Country: {doc.metadata['country']})")await retrieve_async()
+```
+
+```
+Async query: What are some capital cities?Top 3 results:1. Washington DC is the capital of the United States (Country: USA)2. Canberra is the capital of Australia (Country: Australia)3. Paris is the capital of France (Country: France)
+```
+
+### Handling Empty Documents
+
+```
+# Create a retriever with empty documentsempty_retriever = NebiusRetriever(    embeddings=embeddings,    docs=[],    k=2,  # Empty document list)# Test the retriever with empty docsresults = empty_retriever.invoke("What are the capitals of European countries?")print(f"Number of results: {len(results)}")
+```
+
+```
+Number of results: 0
+```
+
+## Use within a chain
+
+NebiusRetriever works seamlessly in LangChain RAG pipelines. Here's an example of creating a simple RAG chain with the NebiusRetriever:
+
+```
+from langchain_core.output_parsers import StrOutputParserfrom langchain_core.prompts import ChatPromptTemplatefrom langchain_core.runnables import RunnablePassthroughfrom langchain_nebius import ChatNebius# Initialize LLMllm = ChatNebius(model="meta-llama/Llama-3.3-70B-Instruct-fast")# Create a prompt templateprompt = ChatPromptTemplate.from_template(    """Answer the question based only on the following context:Context:{context}Question: {question}""")# Format documents functiondef format_docs(docs):    return "\n\n".join(doc.page_content for doc in docs)# Create RAG chainrag_chain = (    {"context": retriever | format_docs, "question": RunnablePassthrough()}    | prompt    | llm    | StrOutputParser())# Run the chainanswer = rag_chain.invoke("What are three European capitals?")print(answer)
+```
+
+**API Reference:**[StrOutputParser](https://python.langchain.com/api_reference/core/output_parsers/langchain_core.output_parsers.string.StrOutputParser.html) | [ChatPromptTemplate](https://python.langchain.com/api_reference/core/prompts/langchain_core.prompts.chat.ChatPromptTemplate.html) | [RunnablePassthrough](https://python.langchain.com/api_reference/core/runnables/langchain_core.runnables.passthrough.RunnablePassthrough.html)
+
+```
+Based on the context provided, three European capitals are:1. Paris2. Berlin3. Rome
+```
+
+### Creating a Search Tool
+
+You can use the `NebiusRetrievalTool` to create a tool for agents:
+
+```
+from langchain_nebius import NebiusRetrievalTool# Create a retrieval tooltool = NebiusRetrievalTool(    retriever=retriever,    name="capital_search",    description="Search for information about capital cities around the world",)# Use the toolresult = tool.invoke({"query": "capitals in Europe", "k": 3})print("Tool results:")print(result)
+```
+
+```
+Tool results:Document 1:Paris is the capital of FranceDocument 2:Berlin is the capital of GermanyDocument 3:Rome is the capital of Italy
+```
+
+## How It Works
+
+The NebiusRetriever works by:
+
+1. During initialization:
+
+   * It stores the provided documents
+   * It uses the provided NebiusEmbeddings to compute embeddings for all documents
+   * These embeddings are stored in memory for quick retrieval
+
+2. During retrieval (`invoke` or `get_relevant_documents`):
+
+   * It embeds the query using the same embedding model
+   * It computes similarity scores between the query embedding and all document embeddings
+   * It returns the top-k documents sorted by similarity
+
+This approach is efficient for medium-sized document collections, as it avoids the need for a separate vector database while still providing high-quality semantic search.
+
+## API reference
+
+For more details about the Nebius AI Studio API, visit the [Nebius AI Studio Documentation](https://studio.nebius.com/api-reference).
+
+## Related
+
+* Retriever [conceptual guide](/src/oss/concepts/retrievers)
+* Retriever [how-to guides](/src/oss/how_to/#retrievers)

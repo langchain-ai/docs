@@ -1,0 +1,102 @@
+---
+title: "Zep"
+---
+
+> Recall, understand, and extract data from chat histories. Power personalized AI experiences.
+
+> [Zep](https://www.getzep.com) is a long-term memory service for AI Assistant apps. With Zep, you can provide AI assistants with the ability to recall past conversations, no matter how distant, while also reducing hallucinations, latency, and cost.
+
+> Interested in Zep Cloud? See [Zep Cloud Installation Guide](https://help.getzep.com/sdks) and [Zep Cloud Vector Store example](https://help.getzep.com/langchain/examples/vectorstore-example)
+
+## Open Source Installation and Setup
+
+> Zep Open Source project: [https://github.com/getzep/zep](https://github.com/getzep/zep)
+>
+> Zep Open Source Docs: [https://docs.getzep.com/](https://docs.getzep.com/)
+
+You'll need to install `langchain-community` with `pip install -qU langchain-community` to use this integration
+
+## Usage
+
+In the examples below, we're using Zep's auto-embedding feature which automatically embeds documents on the Zep server using low-latency embedding models.
+
+## Note
+
+* These examples use Zep's async interfaces. Call sync interfaces by removing the `a` prefix from the method names.
+* If you pass in an `Embeddings` instance Zep will use this to embed documents rather than auto-embed them. You must also set your document collection to `isAutoEmbedded === false`.
+* If you set your collection to `isAutoEmbedded === false`, you must pass in an `Embeddings` instance.
+
+## Load or create a Collection from documents
+
+```
+from uuid import uuid4from langchain_community.document_loaders import WebBaseLoaderfrom langchain_community.vectorstores import ZepVectorStorefrom langchain_community.vectorstores.zep import CollectionConfigfrom langchain_text_splitters import RecursiveCharacterTextSplitterZEP_API_URL = "http://localhost:8000"  # this is the API url of your Zep instanceZEP_API_KEY = "<optional_key>"  # optional API Key for your Zep instancecollection_name = f"babbage{uuid4().hex}"  # a unique collection name. alphanum only# Collection config is needed if we're creating a new Zep Collectionconfig = CollectionConfig(    name=collection_name,    description="<optional description>",    metadata={"optional_metadata": "associated with the collection"},    is_auto_embedded=True,  # we'll have Zep embed our documents using its low-latency embedder    embedding_dimensions=1536,  # this should match the model you've configured Zep to use.)# load the documentarticle_url = "https://www.gutenberg.org/cache/epub/71292/pg71292.txt"loader = WebBaseLoader(article_url)documents = loader.load()# split it into chunkstext_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=0)docs = text_splitter.split_documents(documents)# Instantiate the VectorStore. Since the collection does not already exist in Zep,# it will be created and populated with the documents we pass in.vs = ZepVectorStore.from_documents(    docs,    collection_name=collection_name,    config=config,    api_url=ZEP_API_URL,    api_key=ZEP_API_KEY,    embedding=None,  # we'll have Zep embed our documents using its low-latency embedder)
+```
+
+**API Reference:**[WebBaseLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.web_base.WebBaseLoader.html) | [ZepVectorStore](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.zep.ZepVectorStore.html) | [CollectionConfig](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.zep.CollectionConfig.html) | [RecursiveCharacterTextSplitter](https://python.langchain.com/api_reference/text_splitters/character/langchain_text_splitters.character.RecursiveCharacterTextSplitter.html)
+
+```
+# wait for the collection embedding to completeasync def wait_for_ready(collection_name: str) -> None:    import time    from zep_python import ZepClient    client = ZepClient(ZEP_API_URL, ZEP_API_KEY)    while True:        c = await client.document.aget_collection(collection_name)        print(            "Embedding status: "            f"{c.document_embedded_count}/{c.document_count} documents embedded"        )        time.sleep(1)        if c.status == "ready":            breakawait wait_for_ready(collection_name)
+```
+
+```
+Embedding status: 0/401 documents embeddedEmbedding status: 0/401 documents embeddedEmbedding status: 0/401 documents embeddedEmbedding status: 0/401 documents embeddedEmbedding status: 0/401 documents embeddedEmbedding status: 0/401 documents embeddedEmbedding status: 401/401 documents embedded
+```
+
+## Simarility Search Query over the Collection
+
+```
+# query itquery = "what is the structure of our solar system?"docs_scores = await vs.asimilarity_search_with_relevance_scores(query, k=3)# print resultsfor d, s in docs_scores:    print(d.page_content, " -> ", s, "\n====\n")
+```
+
+```
+the positions of the two principal planets, (and these the mostnecessary for the navigator,) Jupiter and Saturn, require each not lessthan one hundred and sixteen tables. Yet it is not only necessary topredict the position of these bodies, but it is likewise expedient totabulate the motions of the four satellites of Jupiter, to predict theexact times at which they enter his shadow, and at which their shadowscross his disc, as well as the times at which they are interposed  ->  0.9003241539387915 ====furnish more than a small fraction of that aid to navigation (in thelarge sense of that term), which, with greater facility, expedition, andeconomy in the calculation and printing of tables, it might be made tosupply.Tables necessary to determine the places of the planets are not lessnecessary than those for the sun, moon, and stars. Some notion of thenumber and complexity of these tables may be formed, when we state that  ->  0.8911165633479508 ====the scheme of notation thus applied, immediately suggested theadvantages which must attend it as an instrument for expressing thestructure, operation, and circulation of the animal system; and weentertain no doubt of its adequacy for that purpose. Not only themechanical connexion of the solid members of the bodies of men andanimals, but likewise the structure and operation of the softer parts,including the muscles, integuments, membranes, &c. the nature, motion,  ->  0.8899750214770481 ====
+```
+
+## Search over Collection Re-ranked by MMR
+
+Zep offers native, hardware-accelerated MMR re-ranking of search results.
+
+```
+query = "what is the structure of our solar system?"docs = await vs.asearch(query, search_type="mmr", k=3)for d in docs:    print(d.page_content, "\n====\n")
+```
+
+```
+the positions of the two principal planets, (and these the mostnecessary for the navigator,) Jupiter and Saturn, require each not lessthan one hundred and sixteen tables. Yet it is not only necessary topredict the position of these bodies, but it is likewise expedient totabulate the motions of the four satellites of Jupiter, to predict theexact times at which they enter his shadow, and at which their shadowscross his disc, as well as the times at which they are interposed ====the scheme of notation thus applied, immediately suggested theadvantages which must attend it as an instrument for expressing thestructure, operation, and circulation of the animal system; and weentertain no doubt of its adequacy for that purpose. Not only themechanical connexion of the solid members of the bodies of men andanimals, but likewise the structure and operation of the softer parts,including the muscles, integuments, membranes, &c. the nature, motion, ====resistance, economizing time, harmonizing the mechanism, and giving tothe whole mechanical action the utmost practical perfection.The system of mechanical contrivances by which the results, hereattempted to be described, are attained, form only one order ofexpedients adopted in this machinery;--although such is the perfectionof their action, that in any ordinary case they would be regarded ashaving attained the ends in view with an almost superfluous degree of ====
+```
+
+# Filter by Metadata
+
+Use a metadata filter to narrow down results. First, load another book: "Adventures of Sherlock Holmes"
+
+```
+# Let's add more content to the existing Collectionarticle_url = "https://www.gutenberg.org/files/48320/48320-0.txt"loader = WebBaseLoader(article_url)documents = loader.load()# split it into chunkstext_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=0)docs = text_splitter.split_documents(documents)await vs.aadd_documents(docs)await wait_for_ready(collection_name)
+```
+
+```
+Embedding status: 401/1691 documents embeddedEmbedding status: 401/1691 documents embeddedEmbedding status: 401/1691 documents embeddedEmbedding status: 401/1691 documents embeddedEmbedding status: 401/1691 documents embeddedEmbedding status: 401/1691 documents embeddedEmbedding status: 901/1691 documents embeddedEmbedding status: 901/1691 documents embeddedEmbedding status: 901/1691 documents embeddedEmbedding status: 901/1691 documents embeddedEmbedding status: 901/1691 documents embeddedEmbedding status: 901/1691 documents embeddedEmbedding status: 1401/1691 documents embeddedEmbedding status: 1401/1691 documents embeddedEmbedding status: 1401/1691 documents embeddedEmbedding status: 1401/1691 documents embeddedEmbedding status: 1691/1691 documents embedded
+```
+
+We see results from both books. Note the `source` metadata
+
+```
+query = "Was he interested in astronomy?"docs = await vs.asearch(query, search_type="similarity", k=3)for d in docs:    print(d.page_content, " -> ", d.metadata, "\n====\n")
+```
+
+```
+or remotely, for this purpose. But in addition to these, a great numberof tables, exclusively astronomical, are likewise indispensable. Thepredictions of the astronomer, with respect to the positions and motionsof the bodies of the firmament, are the means, and the only means, whichenable the mariner to prosecute his art. By these he is enabled todiscover the distance of his ship from the Line, and the extent of his  ->  {'source': 'https://www.gutenberg.org/cache/epub/71292/pg71292.txt'} ====possess all knowledge which is likely to be useful to him in his work,and this I have endeavored in my case to do. If I remember rightly, youon one occasion, in the early days of our friendship, defined my limitsin a very precise fashion.”“Yes,” I answered, laughing. “It was a singular document. Philosophy,astronomy, and politics were marked at zero, I remember. Botanyvariable, geology profound as regards the mud-stains from any region  ->  {'source': 'https://www.gutenberg.org/files/48320/48320-0.txt'} ====of astronomy, and its kindred sciences, with the various arts dependenton them. In none are computations more operose than those whichastronomy in particular requires;--in none are preparatory facilitiesmore needful;--in none is error more detrimental. The practicalastronomer is interrupted in his pursuit, and diverted from his task ofobservation by the irksome labours of computation, or his diligence inobserving becomes ineffectual for want of yet greater industry of  ->  {'source': 'https://www.gutenberg.org/cache/epub/71292/pg71292.txt'} ====
+```
+
+Now, we set up a filter
+
+```
+filter = {    "where": {        "jsonpath": (            "$[*] ? (@.source == 'https://www.gutenberg.org/files/48320/48320-0.txt')"        )    },}docs = await vs.asearch(query, search_type="similarity", metadata=filter, k=3)for d in docs:    print(d.page_content, " -> ", d.metadata, "\n====\n")
+```
+
+```
+possess all knowledge which is likely to be useful to him in his work,and this I have endeavored in my case to do. If I remember rightly, youon one occasion, in the early days of our friendship, defined my limitsin a very precise fashion.”“Yes,” I answered, laughing. “It was a singular document. Philosophy,astronomy, and politics were marked at zero, I remember. Botanyvariable, geology profound as regards the mud-stains from any region  ->  {'source': 'https://www.gutenberg.org/files/48320/48320-0.txt'} ====the light shining upon his strong-set aquiline features. So he sat as Idropped off to sleep, and so he sat when a sudden ejaculation caused meto wake up, and I found the summer sun shining into the apartment. Thepipe was still between his lips, the smoke still curled upward, and theroom was full of a dense tobacco haze, but nothing remained of the heapof shag which I had seen upon the previous night.“Awake, Watson?” he asked.“Yes.”“Game for a morning drive?”  ->  {'source': 'https://www.gutenberg.org/files/48320/48320-0.txt'} ====“I glanced at the books upon the table, and in spite of my ignoranceof German I could see that two of them were treatises on science, theothers being volumes of poetry. Then I walked across to the window,hoping that I might catch some glimpse of the country-side, but an oakshutter, heavily barred, was folded across it. It was a wonderfullysilent house. There was an old clock ticking loudly somewhere in thepassage, but otherwise everything was deadly still. A vague feeling of  ->  {'source': 'https://www.gutenberg.org/files/48320/48320-0.txt'} ====
+```
+
+## Related
+
+* Vector store [conceptual guide](/src/oss/concepts/vectorstores)
+* Vector store [how-to guides](/src/oss/how_to/#vector-stores)
