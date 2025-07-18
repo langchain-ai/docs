@@ -18,31 +18,54 @@ README.md             # This file
 
 ### Quick Start
 
-1. **Install dependencies:**
- 
-   Install `uv` https://docs.astral.sh/uv/
+1. **Clone and navigate to the docs directory:**
+   ```bash
+   git clone [repository-url]
+   cd docs
+   ```
+
+2. **Install dependencies using Make (recommended):**
    ```bash
    make install
    ```
+   This installs `uv` and sets up the Python virtual environment automatically.
 
-2. **Start development mode:**
+3. **Start development mode:**
    ```bash
    make dev
    ```
    This watches for changes in `src/` and automatically rebuilds content in `build/`.
 
-   This was cobbled together quickly and may not work well for all edits. 
-   If it's getting stuck, kill the process and restart it.
+4. **Edit documentation files:**
+   - All source files are in the `src/` directory
+   - Edit `.md`, `.mdx`, or `.ipynb` files as needed
+   - Changes are automatically rebuilt when using `make dev`
 
-   Alternatively, you can `make build`, and launch `mint` inside the `build/` directory 
-   to preview changes.
+### Alternative: Manual Setup
 
+If you prefer to manage the virtual environment manually:
 
-3. **Build documentation:**
+1. **Install uv:**
    ```bash
-   make build
+   # Install uv from https://docs.astral.sh/uv/
    ```
-   Generates compiled .mdx files in the `build/` directory.
+
+2. **Set up Python virtual environment:**
+   ```bash
+   uv venv
+   source .venv/bin/activate
+   uv sync --all-groups
+   ```
+
+3. **Use the docs CLI tool:**
+   ```bash
+   docs --help
+   docs migrate [path]  # can be directory or file, updates in place
+   ```
+
+### Why Use the Makefile?
+
+The Makefile provides convenient commands that handle virtual environment activation automatically, so you don't need to manually activate/deactivate the venv each time. All Make commands automatically use the correct Python environment.
 
 ### Important Rules
 
@@ -52,19 +75,19 @@ README.md             # This file
 
 ### Available Commands
 
-#### Make Commands
+#### Make Commands (Recommended)
+- `make install` - Install all dependencies and set up virtual environment
 - `make dev` - Start development mode with file watching and live rebuild
 - `make build` - Build documentation to `./build` directory  
-- `make install` - Install all dependencies
-- `make clean` - Remove build artifacts
 - `make test` - Run the test suite
 - `make lint` - Check code style and formatting
 - `make format` - Auto-format code
+- `make clean` - Remove build artifacts
 - `make help` - Show all available commands
 
-#### docs CLI Tool
+#### docs CLI Tool (Advanced)
 
-The `docs` command (installed as `uv run docs`) provides additional functionality:
+For advanced usage, you can use the `docs` CLI tool directly (requires manual venv activation):
 
 - **`docs migrate <path>`** - Convert markdown/notebook files to Mintlify format
   - `--dry-run` - Preview changes without writing files
@@ -73,13 +96,11 @@ The `docs` command (installed as `uv run docs`) provides additional functionalit
 - **`docs mv <old_path> <new_path>`** - Move files and update cross-references
   - `--dry-run` - Preview changes without moving files
 
-These can be used directly using the `Makefile` or via the `docs` CLI tool:
-
 - **`docs dev`** - Start development mode with file watching
-    - `--skip-build` - Skip initial build and use existing build directory
+  - `--skip-build` - Skip initial build and use existing build directory
 
 - **`docs build`** - Build documentation files
-    - `--watch` - Watch for file changes after building
+  - `--watch` - Watch for file changes after building
 
 ### Development Workflow
 
