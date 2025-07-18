@@ -18,14 +18,41 @@ README.md             # This file
 
 ### Quick Start
 
-1. **Install dependencies:**
- 
-   Install `uv` https://docs.astral.sh/uv/
+#### Setup Virtual Environment (Recommended)
+
+1. **Install uv:**
+   
+   Install `uv` from https://docs.astral.sh/uv/
+
+2. **Create and activate virtual environment:**
    ```bash
-   make install
+   cd docs
+   uv venv
+   source .venv/bin/activate
    ```
 
-2. **Start development mode:**
+3. **Install dependencies:**
+   ```bash
+   uv sync --all-groups
+   ```
+
+4. **Use the docs CLI tool:**
+   
+   After setup, you'll have access to the `docs` command:
+   ```bash
+   docs --help
+   ```
+   
+   Common commands:
+   - `docs dev` - Start development mode with file watching
+   - `docs build` - Build documentation
+   - `docs migrate <path>` - Convert markdown files to Mintlify format
+
+#### Using Makefile (Alternative)
+
+You can use the Makefile for easier build and development:
+
+1. **Start development mode:**
    ```bash
    make dev
    ```
@@ -37,8 +64,7 @@ README.md             # This file
    Alternatively, you can `make build`, and launch `mint` inside the `build/` directory 
    to preview changes.
 
-
-3. **Build documentation:**
+2. **Build documentation:**
    ```bash
    make build
    ```
