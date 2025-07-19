@@ -1,0 +1,72 @@
+# Documentation Build & Link Validation
+#
+# This reusable workflow builds documentation using Python/Make and validates
+# all internal and external links using Mintlify's link checker.
+#
+# Usage:
+#   jobs:
+#     docs-validation:
+#       uses: ./.github/workflows/test-build-docs.yml
+#       with:
+#         working-directory: "./path/to/docs"
+#         python-version: "3.11"
+#
+# Requirements:
+#   - A Makefile with a 'build' target in the working directory
+#   - Python dependencies managed via uv with a 'test' group
+#   - Generated documentation compatible with Mintlify link checker
+
+name: Documentation Build & Link Validation
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        required: true
+        type: string
+        description: "Directory containing the documentation Makefile and source files"
+      python-version:
+        required: true
+        type: string
+        description: "Python version for building documentation (e.g., '3.11', '3.12')"
+
+env:
+  UV_FROZEN: "true"
+  UV_NO_SYNC: "true"
+
+jobs:
+  build-and-validate:
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    name: "Documentation Build & Link Check (Python ${{ inputs.python-version }})"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Python ${{ inputs.python-version }} with uv package manager
+        uses: "./.github/actions/uv_setup"
+        id: setup-python
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Python dependencies
+        shell: bash
+        run: uv sync --group test
+
+      - name: Build documentation
+        shell: bash
+        run: make build
+
+      - name: Configure Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Mintlify CLI
+        run: npm install -g @mintlify/cli
+
+      - name: Validate documentation links
+        run: mint broken-links
