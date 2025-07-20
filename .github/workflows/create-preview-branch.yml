@@ -1,0 +1,88 @@
+---
+name: Create Preview Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Source branch to create preview from'
+        required: true
+        default: 'main'
+        type: string
+
+concurrency:
+  group: create-preview-${{ github.event.inputs.source_branch }}
+  cancel-in-progress: true
+
+jobs:
+  create-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_branch }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Build documentation
+        run: make build
+
+      - name: Generate preview branch name
+        id: branch-name
+        run: |
+          # Get safe characters from source branch (first 6 chars, alphanumeric only)
+          SAFE_PREFIX=$(echo "${{ github.event.inputs.source_branch }}" | tr -cd '[:alnum:]' | cut -c1-6)
+          # Generate random 4-digit number
+          RANDOM_SUFFIX=$(printf "%04d" $((RANDOM % 10000)))
+          PREVIEW_BRANCH="preview-${SAFE_PREFIX}-${RANDOM_SUFFIX}"
+          echo "branch_name=$PREVIEW_BRANCH" >> $GITHUB_OUTPUT
+          echo "Preview branch will be: $PREVIEW_BRANCH"
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push preview branch
+        run: |
+          # Create new branch from current state
+          git checkout -b "${{ steps.branch-name.outputs.branch_name }}"
+          
+          # Add build artifacts
+          git add build/
+          
+          # Check if there are changes to commit
+          if git diff --cached --quiet; then
+            echo "No build artifacts to commit"
+          else
+            git commit -m "Add build artifacts for preview deployment
+            
+            Source branch: ${{ github.event.inputs.source_branch }}
+            Generated from commit: ${{ github.sha }}
+            
+            This branch contains the built documentation for preview deployment.
+            Do not merge this branch to main."
+          fi
+          
+          # Push the preview branch
+          git push origin "${{ steps.branch-name.outputs.branch_name }}"
+
+      - name: Output preview branch info
+        run: |
+          echo "✅ Preview branch created successfully!"
+          echo "Branch name: ${{ steps.branch-name.outputs.branch_name }}"
+          echo "Source branch: ${{ github.event.inputs.source_branch }}"
+          echo "Source commit: ${{ github.sha }}"
+          echo ""
+          echo "The preview branch is now ready for Mintlify deployment."
