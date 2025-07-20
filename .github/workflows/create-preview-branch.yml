@@ -3,15 +3,9 @@ name: Create Preview Branch
 
 on:
   workflow_dispatch:
-    inputs:
-      source_branch:
-        description: 'Source branch to create preview from'
-        required: true
-        default: 'main'
-        type: string
 
 concurrency:
-  group: create-preview-${{ github.event.inputs.source_branch }}
+  group: create-preview-${{ github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -22,42 +16,38 @@ jobs:
   create-preview:
     runs-on: ubuntu-latest
     env:
-      SOURCE_BRANCH: ${{ github.event.inputs.source_branch }}
+      SOURCE_BRANCH: ${{ github.ref_name }}
       GITHUB_SHA: ${{ github.sha }}
     steps:
-      - name: Validate and sanitize input
+      - name: Validate and sanitize branch context
         id: validate
         run: |
           set -euo pipefail
           
-          echo "[INFO] Validating source branch input"
+          echo "[INFO] Validating current branch context"
+          echo "[INFO] Current ref: ${{ github.ref }}"
+          echo "[INFO] Branch name: $SOURCE_BRANCH"
           
           # Validate source branch contains only safe characters and isn't too long
           if [[ ! "$SOURCE_BRANCH" =~ ^[a-zA-Z0-9/_-]+$ ]]; then
-            echo "[ERROR] Source branch name contains invalid characters. Only alphanumeric, slash, underscore, and hyphen are allowed."
+            echo "[ERROR] Current branch name contains invalid characters. Only alphanumeric, slash, underscore, and hyphen are allowed."
             exit 1
           fi
           
           if [[ ${#SOURCE_BRANCH} -gt 100 ]]; then
-            echo "[ERROR] Source branch name is too long (max 100 characters)"
-            exit 1
-          fi
-          
-          # Defensive check even though input is required
-          if [[ ${#SOURCE_BRANCH} -lt 1 ]]; then
-            echo "[ERROR] Source branch name cannot be empty"
+            echo "[ERROR] Current branch name is too long (max 100 characters)"
             exit 1
           fi
           
           # Sanitize for logging (first 20 chars max)
           SAFE_LOG_BRANCH=$(echo "$SOURCE_BRANCH" | cut -c1-20)
           echo "safe_branch_log=$SAFE_LOG_BRANCH" >> $GITHUB_OUTPUT
-          echo "[SUCCESS] Input validation passed for branch: $SAFE_LOG_BRANCH"
+          echo "[SUCCESS] Branch validation passed for: $SAFE_LOG_BRANCH"
 
-      - name: Checkout source branch
+      - name: Checkout current branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.source_branch }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - name: Set up Python
