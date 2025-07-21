@@ -2,12 +2,12 @@
 title: "How to add scores to retriever results"
 ---
 
-[Retrievers](/src/oss/concepts/retrievers) will return sequences of [Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html) objects, which by default include no information about the process that retrieved them (e.g., a similarity score against a query). Here we demonstrate how to add retrieval scores to the `.metadata` of documents:
+[Retrievers](/oss/concepts/retrievers) will return sequences of [Document](https://python.langchain.com/api_reference/core/documents/langchain_core.documents.base.Document.html) objects, which by default include no information about the process that retrieved them (e.g., a similarity score against a query). Here we demonstrate how to add retrieval scores to the `.metadata` of documents:
 
-1. From [vectorstore retrievers](/src/oss/how_to/vectorstore_retriever);
-2. From higher-order LangChain retrievers, such as [SelfQueryRetriever](/src/oss/how_to/self_query) or [MultiVectorRetriever](/src/oss/how_to/multi_vector).
+1. From [vectorstore retrievers](/oss/how_to/vectorstore_retriever);
+2. From higher-order LangChain retrievers, such as [SelfQueryRetriever](/oss/how_to/self_query) or [MultiVectorRetriever](/oss/how_to/multi_vector).
 
-For (1), we will implement a short wrapper function around the corresponding [vector store](/src/oss/concepts/vectorstores). For (2), we will update a method of the corresponding class.
+For (1), we will implement a short wrapper function around the corresponding [vector store](/oss/concepts/vectorstores). For (2), we will update a method of the corresponding class.
 
 ## Create vector store
 
@@ -23,7 +23,7 @@ from langchain_core.documents import Documentfrom langchain_openai import OpenAI
 
 To obtain scores from a vector store retriever, we wrap the underlying vector store's `.similarity_search_with_score` method in a short function that packages scores into the associated document's metadata.
 
-We add a `@chain` decorator to the function to create a [Runnable](/src/oss/concepts/lcel) that can be used similarly to a typical retriever.
+We add a `@chain` decorator to the function to create a [Runnable](/oss/concepts/lcel) that can be used similarly to a typical retriever.
 
 ```
 from typing import Listfrom langchain_core.documents import Documentfrom langchain_core.runnables import chain@chaindef retriever(query: str) -> List[Document]:    docs, scores = zip(*vectorstore.similarity_search_with_score(query))    for doc, score in zip(docs, scores):        doc.metadata["score"] = score    return docs
@@ -43,11 +43,11 @@ Note that similarity scores from the retrieval step are included in the metadata
 
 ## SelfQueryRetriever
 
-`SelfQueryRetriever` will use a LLM to generate a query that is potentially structured-- for example, it can construct filters for the retrieval on top of the usual semantic-similarity driven selection. See [this guide](/src/oss/how_to/self_query) for more detail.
+`SelfQueryRetriever` will use a LLM to generate a query that is potentially structured-- for example, it can construct filters for the retrieval on top of the usual semantic-similarity driven selection. See [this guide](/oss/how_to/self_query) for more detail.
 
 `SelfQueryRetriever` includes a short (1 - 2 line) method `_get_docs_with_query` that executes the `vectorstore` search. We can subclass `SelfQueryRetriever` and override this method to propagate similarity scores.
 
-First, following the [how-to guide](/src/oss/how_to/self_query), we will need to establish some metadata on which to filter:
+First, following the [how-to guide](/oss/how_to/self_query), we will need to establish some metadata on which to filter:
 
 ```
 from langchain.chains.query_constructor.base import AttributeInfofrom langchain.retrievers.self_query.base import SelfQueryRetrieverfrom langchain_openai import ChatOpenAImetadata_field_info = [    AttributeInfo(        name="genre",        description="The genre of the movie. One of ['science fiction', 'comedy', 'drama', 'thriller', 'romance', 'action', 'animated']",        type="string",    ),    AttributeInfo(        name="year",        description="The year the movie was released",        type="integer",    ),    AttributeInfo(        name="director",        description="The name of the movie director",        type="string",    ),    AttributeInfo(        name="rating", description="A 1-10 rating for the movie", type="float"    ),]document_content_description = "Brief summary of a movie"llm = ChatOpenAI(temperature=0)
@@ -73,7 +73,7 @@ retriever = CustomSelfQueryRetriever.from_llm(    llm,    vectorstore,    docume
 
 ## MultiVectorRetriever
 
-`MultiVectorRetriever` allows you to associate multiple vectors with a single document. This can be useful in a number of applications. For example, we can index small chunks of a larger document and run the retrieval on the chunks, but return the larger "parent" document when invoking the retriever. [ParentDocumentRetriever](/src/oss/how_to/parent_document_retriever), a subclass of `MultiVectorRetriever`, includes convenience methods for populating a vector store to support this. Further applications are detailed in this [how-to guide](/src/oss/how_to/multi_vector).
+`MultiVectorRetriever` allows you to associate multiple vectors with a single document. This can be useful in a number of applications. For example, we can index small chunks of a larger document and run the retrieval on the chunks, but return the larger "parent" document when invoking the retriever. [ParentDocumentRetriever](/oss/how_to/parent_document_retriever), a subclass of `MultiVectorRetriever`, includes convenience methods for populating a vector store to support this. Further applications are detailed in this [how-to guide](/oss/how_to/multi_vector).
 
 To propagate similarity scores through this retriever, we can again subclass `MultiVectorRetriever` and override a method. This time we will override `_get_relevant_documents`.
 

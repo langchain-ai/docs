@@ -1,3 +1,0 @@
----
-title: Langgraph Control Plane
----

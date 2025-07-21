@@ -1,3 +1,0 @@
----
-title: Double Texting
----

@@ -1,3 +1,0 @@
----
-title: Scalability And Resilience
----

@@ -1,3 +1,0 @@
----
-title: Langgraph Standalone Container
----

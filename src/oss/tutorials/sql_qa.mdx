@@ -5,17 +5,17 @@ title: "Build a Question/Answering system over SQL data"
 <Info>
   This guide assumes familiarity with the following concepts:
 
-  * [Chat models](/src/oss/concepts/chat_models)
-  * [Tools](/src/oss/concepts/tools)
-  * [Agents](/src/oss/concepts/agents)
-  * [LangGraph](/src/oss/concepts/architecture/#langgraph)
+  * [Chat models](/oss/concepts/chat_models)
+  * [Tools](/oss/concepts/tools)
+  * [Agents](/oss/concepts/agents)
+  * [LangGraph](/oss/concepts/architecture/#langgraph)
 </Info>
 
-Enabling a LLM system to query structured data can be qualitatively different from unstructured text data. Whereas in the latter it is common to generate text that can be searched against a vector database, the approach for structured data is often for the LLM to write and execute queries in a DSL, such as SQL. In this guide we'll go over the basic ways to create a Q\&A system over tabular data in databases. We will cover implementations using both [chains](/src/oss/tutorials/sql_qa/#chains) and [agents](/src/oss/tutorials/sql_qa/#agents). These systems will allow us to ask a question about the data in a database and get back a natural language answer. The main difference between the two is that our agent can query the database in a loop as many times as it needs to answer the question.
+Enabling a LLM system to query structured data can be qualitatively different from unstructured text data. Whereas in the latter it is common to generate text that can be searched against a vector database, the approach for structured data is often for the LLM to write and execute queries in a DSL, such as SQL. In this guide we'll go over the basic ways to create a Q\&A system over tabular data in databases. We will cover implementations using both [chains](/oss/tutorials/sql_qa/#chains) and [agents](/oss/tutorials/sql_qa/#agents). These systems will allow us to ask a question about the data in a database and get back a natural language answer. The main difference between the two is that our agent can query the database in a loop as many times as it needs to answer the question.
 
 ## ⚠️ Security note ⚠️
 
-Building Q\&A systems of SQL databases requires executing model-generated SQL queries. There are inherent risks in doing this. Make sure that your database connection permissions are always scoped as narrowly as possible for your chain/agent's needs. This will mitigate though not eliminate the risks of building a model-driven system. For more on general security best practices, [see here](/src/oss/security).
+Building Q\&A systems of SQL databases requires executing model-generated SQL queries. There are inherent risks in doing this. Make sure that your database connection permissions are always scoped as narrowly as possible for your chain/agent's needs. This will mitigate though not eliminate the risks of building a model-driven system. For more on general security best practices, [see here](/oss/security).
 
 ## Architecture
 
@@ -25,7 +25,7 @@ At a high-level, the steps of these systems are:
 2. **Execute SQL query**: Execute the query.
 3. **Answer the question**: Model responds to user input using the query results.
 
-Note that querying data in CSVs can follow a similar approach. See our [how-to guide](/src/oss/how_to/sql_csv) on question-answering over CSV data for more detail.
+Note that querying data in CSVs can follow a similar approach. See our [how-to guide](/oss/how_to/sql_csv) on question-answering over CSV data for more detail.
 
 ![sql\_usecase.png](/images/oss/tutorials/sql_qa/assets/images/sql_usecase-d432701261f05ab69b38576093718cf3.png)
 
@@ -69,7 +69,7 @@ Great! We've got a SQL database that we can query. Now let's try hooking it up t
 
 ## Chains
 
-Chains are compositions of predictable steps. In [LangGraph](/src/oss/concepts/architecture/#langgraph), we can represent a chain via simple sequence of nodes. Let's create a sequence of steps that, given a question, does the following:
+Chains are compositions of predictable steps. In [LangGraph](/oss/concepts/architecture/#langgraph), we can represent a chain via simple sequence of nodes. Let's create a sequence of steps that, given a question, does the following:
 
 * converts the question into a SQL query;
 * executes the query;
@@ -91,45 +91,45 @@ Now we just need functions that operate on this state and populate its contents.
 
 ### Convert question to SQL query
 
-The first step is to take the user input and convert it to a SQL query. To reliably obtain SQL queries (absent markdown formatting and explanations or clarifications), we will make use of LangChain's [structured output](/src/oss/concepts/structured_outputs) abstraction.
+The first step is to take the user input and convert it to a SQL query. To reliably obtain SQL queries (absent markdown formatting and explanations or clarifications), we will make use of LangChain's [structured output](/oss/concepts/structured_outputs) abstraction.
 
 Let's select a chat model for our application:
 
-Select [chat model](/src/oss/integrations/chat):
+Select [chat model](/oss/integrations/chat):
 
 Google Gemini▾
 
-* [OpenAI](#)
+* [OpenAI](/oss/integrations/text_embedding/openai)
 
-* [Anthropic](#)
+* [Anthropic](/oss/integrations/text_embedding/bedrock)
 
-* [Azure](#)
+* [Azure](/oss/integrations/text_embedding/azureopenai)
 
-* [Google Gemini](#)
+* [Google Gemini](/oss/integrations/text_embedding/google_generative_ai)
 
-* [Google Vertex](#)
+* [Google Vertex](/oss/integrations/text_embedding/google_vertex_ai_palm)
 
-* [AWS](#)
+* [AWS](/oss/integrations/text_embedding/bedrock)
 
-* [Groq](#)
+* [Groq](/oss/integrations/text_embedding/groq)
 
-* [Cohere](#)
+* [Cohere](/oss/integrations/text_embedding/cohere)
 
-* [NVIDIA](#)
+* [NVIDIA](/oss/integrations/text_embedding/nvidia_ai_endpoints)
 
-* [Fireworks AI](#)
+* [Fireworks AI](/oss/integrations/text_embedding/fireworks)
 
-* [Mistral AI](#)
+* [Mistral AI](/oss/integrations/text_embedding/mistralai)
 
-* [Together AI](#)
+* [Together AI](/oss/integrations/text_embedding/together)
 
-* [IBM watsonx](#)
+* [IBM watsonx](/oss/integrations/text_embedding/ibm_watsonx)
 
-* [Databricks](#)
+* [Databricks](/oss/integrations/text_embedding/databricks)
 
-* [xAI](#)
+* [xAI](/oss/integrations/text_embedding/xai)
 
-* [Perplexity](#)
+* [Perplexity](/oss/integrations/text_embedding/perplexity)
 
 ```
 pip install -qU "langchain[google-genai]"
@@ -171,7 +171,7 @@ write_query({"question": "How many Employees are there?"})
 
 **This is the most dangerous part of creating a SQL chain.** Consider carefully if it is OK to run automated queries over your data. Minimize the database connection permissions as much as possible. Consider adding a human approval step to you chains before query execution (see below).
 
-To execute the query, we will load a tool from [langchain-community](/src/oss/concepts/architecture/#langchain-community). Our `execute_query` node will just wrap this tool:
+To execute the query, we will load a tool from [langchain-community](/oss/concepts/architecture/#langchain-community). Our `execute_query` node will just wrap this tool:
 
 ```
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTooldef execute_query(state: State):    """Execute SQL query."""    execute_query_tool = QuerySQLDatabaseTool(db=db)    return {"result": execute_query_tool.invoke(state["query"])}
@@ -259,13 +259,13 @@ See [this](https://langchain-ai.github.io/langgraph/concepts/human_in_the_loop/)
 
 For more complex query-generation, we may want to create few-shot prompts or add query-checking steps. For advanced techniques like this and more check out:
 
-* [Prompting strategies](/src/oss/how_to/sql_prompting): Advanced prompt engineering techniques.
-* [Query checking](/src/oss/how_to/sql_query_checking): Add query validation and error handling.
-* [Large databases](/src/oss/how_to/sql_large_db): Techniques for working with large databases.
+* [Prompting strategies](/oss/how_to/sql_prompting): Advanced prompt engineering techniques.
+* [Query checking](/oss/how_to/sql_query_checking): Add query validation and error handling.
+* [Large databases](/oss/how_to/sql_large_db): Techniques for working with large databases.
 
 ## Agents
 
-[Agents](/src/oss/concepts/agents) leverage the reasoning capabilities of LLMs to make decisions during execution. Using agents allows you to offload additional discretion over the query generation and execution process. Although their behavior is less predictable than the above "chain", they feature some advantages:
+[Agents](/oss/concepts/agents) leverage the reasoning capabilities of LLMs to make decisions during execution. Using agents allows you to offload additional discretion over the query generation and execution process. Although their behavior is less predictable than the above "chain", they feature some advantages:
 
 * They can query the database as many times as needed to answer the user question.
 * They can recover from errors by running a generated query, catching the traceback and regenerating it correctly.
@@ -304,7 +304,7 @@ system_message = """You are an agent designed to interact with a SQL database.Gi
 
 ### Initializing agent
 
-We will use a prebuilt [LangGraph](/src/oss/concepts/architecture/#langgraph) agent to build our agent
+We will use a prebuilt [LangGraph](/oss/concepts/architecture/#langgraph) agent to build our agent
 
 ```
 from langchain_core.messages import HumanMessagefrom langgraph.prebuilt import create_react_agentagent_executor = create_react_agent(llm, tools, prompt=system_message)
@@ -360,41 +360,41 @@ import astimport redef query_as_list(db, query):    res = db.run(query)    res =
 
 Using this function, we can create a **retriever tool** that the agent can execute at its discretion.
 
-Let's select an [embeddings model](/src/oss/integrations/text_embedding) and [vector store](/src/oss/integrations/vectorstores) for this step:
+Let's select an [embeddings model](/oss/integrations/text_embedding) and [vector store](/oss/integrations/vectorstores) for this step:
 
 **Select an embedding model**:
 
-Select [embeddings model](/src/oss/integrations/text_embedding):
+Select [embeddings model](/oss/integrations/text_embedding):
 
 OpenAI▾
 
-* [OpenAI](#)
+* [OpenAI](/oss/integrations/text_embedding/openai)
 
-* [Azure](#)
+* [Azure](/oss/integrations/text_embedding/azureopenai)
 
-* [Google Gemini](#)
+* [Google Gemini](/oss/integrations/text_embedding/google_generative_ai)
 
-* [Google Vertex](#)
+* [Google Vertex](/oss/integrations/text_embedding/google_vertex_ai_palm)
 
-* [AWS](#)
+* [AWS](/oss/integrations/text_embedding/bedrock)
 
-* [HuggingFace](#)
+* [HuggingFace](/oss/integrations/text_embedding/huggingfacehub)
 
-* [Ollama](#)
+* [Ollama](/oss/integrations/text_embedding/ollama)
 
-* [Cohere](#)
+* [Cohere](/oss/integrations/text_embedding/cohere)
 
-* [MistralAI](#)
+* [MistralAI](/oss/integrations/text_embedding/mistralai)
 
-* [Nomic](#)
+* [Nomic](/oss/integrations/text_embedding/nomic)
 
-* [NVIDIA](#)
+* [NVIDIA](/oss/integrations/text_embedding/nvidia_ai_endpoints)
 
-* [Voyage AI](#)
+* [Voyage AI](/oss/integrations/text_embedding/voyageai)
 
-* [IBM watsonx](#)
+* [IBM watsonx](/oss/integrations/text_embedding/ibm_watsonx)
 
-* [Fake](#)
+* [Fake](/oss/integrations/text_embedding/fake)
 
 ```
 pip install -qU langchain-openai
@@ -406,27 +406,27 @@ import getpassimport osif not os.environ.get("OPENAI_API_KEY"):  os.environ["OPE
 
 **Select a vector store**:
 
-Select [vector store](/src/oss/integrations/vectorstores):
+Select [vector store](/oss/integrations/vectorstores):
 
 In-memory▾
 
-* [In-memory](#)
+* [In-memory](https://python.langchain.com/api_reference/core/vectorstores/langchain_core.vectorstores.in_memory.InMemoryVectorStore.html)
 
-* [AstraDB](#)
+* [AstraDB](/oss/integrations/vectorstores/astradb)
 
-* [Chroma](#)
+* [Chroma](/oss/integrations/vectorstores/chroma)
 
-* [FAISS](#)
+* [FAISS](/oss/integrations/vectorstores/faiss)
 
-* [Milvus](#)
+* [Milvus](/oss/integrations/vectorstores/milvus)
 
-* [MongoDB](#)
+* [MongoDB](/oss/integrations/vectorstores/mongodb_atlas)
 
-* [PGVector](#)
+* [PGVector](/oss/integrations/vectorstores/pgvector)
 
-* [Pinecone](#)
+* [Pinecone](/oss/integrations/vectorstores/pinecone)
 
-* [Qdrant](#)
+* [Qdrant](/oss/integrations/vectorstores/qdrant)
 
 ```
 pip install -qU langchain-core
