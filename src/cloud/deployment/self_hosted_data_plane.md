@@ -1,17 +1,17 @@
 ---
 title: How to Deploy Self-Hosted Data Plane
 ---
-Before deploying, review the [conceptual guide for the Self-Hosted Data Plane](../../concepts/langgraph_self_hosted_data_plane) deployment option.
+Before deploying, review the [conceptual guide for the Self-Hosted Data Plane](langgraph_self_hosted_data_plane) deployment option.
 
 <Info>
   **Important**
-  The Self-Hosted Data Plane deployment option is currently in beta stage and requires an [Enterprise](../../concepts/plans) plan.
+  The Self-Hosted Data Plane deployment option is currently in beta stage and requires an [Enterprise](plans) plan.
 </Info>
 
 ## Prerequisites
 
-1. Use the [LangGraph CLI](../../concepts/langgraph_cli) to [test your application locally](../../tutorials/langgraph-platform/local-server).
-2. Use the [LangGraph CLI](../../concepts/langgraph_cli) to build a Docker image (i.e. `langgraph build`) and push it to a registry your Kubernetes cluster or Amazon ECS cluster has access to.
+1. Use the [LangGraph CLI](langgraph_cli) to [test your application locally](local-server).
+2. Use the [LangGraph CLI](langgraph_cli) to build a Docker image (i.e. `langgraph build`) and push it to a registry your Kubernetes cluster or Amazon ECS cluster has access to.
 
 ## Kubernetes
 
@@ -27,7 +27,7 @@ Before deploying, review the [conceptual guide for the Self-Hosted Data Plane](.
 
 1. You give us your LangSmith organization ID. We will enable the Self-Hosted Data Plane for your organization.
 2. We provide you a [Helm chart](https://github.com/langchain-ai/helm/tree/main/charts/langgraph-dataplane) which you run to setup your Kubernetes cluster. This chart contains a few important components.
-  1. `langgraph-listener`: This is a service that listens to LangChain's [control plane](../../concepts/langgraph_control_plane) for changes to your deployments and creates/updates downstream CRDs.
+  1. `langgraph-listener`: This is a service that listens to LangChain's [control plane](langgraph_control_plane) for changes to your deployments and creates/updates downstream CRDs.
   2. `LangGraphPlatform CRD`: A CRD for LangGraph Platform deployments. This contains the spec for managing an instance of a LangGraph Platform deployment.
   3. `langgraph-platform-operator`: This operator handles changes to your LangGraph Platform CRDs.
 3. Configure your `langgraph-dataplane-values.yaml` file.
@@ -45,7 +45,7 @@ Before deploying, review the [conceptual guide for the Self-Hosted Data Plane](.
   NAME                                          READY   STATUS              RESTARTS   AGE
   langgraph-dataplane-listener-7fccd788-wn2dx   0/1     Running             0          9s
   langgraph-dataplane-redis-0                   0/1     ContainerCreating   0          9s
-6. You create a deployment from the [control plane UI](../../concepts/langgraph_control_plane#control-plane-ui).
+6. You create a deployment from the [control plane UI](langgraph_control_plane#control-plane-ui).
 
 ## Amazon ECS
 

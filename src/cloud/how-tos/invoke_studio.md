@@ -13,7 +13,7 @@ This guide shows how to submit a [run](../concepts/runs) to your application.
 
 First define the input to your graph with in the "Input" section on the left side of the page, below the graph interface.
 
-Studio will attempt to render a form for your input based on the graph's defined [state schema](../../concepts/low_level.md/#schema). To disable this, click the "View Raw" button, which will present you with a JSON editor.
+Studio will attempt to render a form for your input based on the graph's defined [state schema](low_level.md/#schema). To disable this, click the "View Raw" button, which will present you with a JSON editor.
 
 Click the up/down arrows at the top of the "Input" section to toggle through and use previously submitted inputs.
 
@@ -21,7 +21,7 @@ Click the up/down arrows at the top of the "Input" section to toggle through and
 
 #### Assistant
 
-To specify the [assistant](../../concepts/assistants) that is used for the run click the settings button in the bottom left corner. If an assistant is currently selected the button will also list the assistant name. If no assistant is selected it will say "Manage Assistants".
+To specify the [assistant](assistants) that is used for the run click the settings button in the bottom left corner. If an assistant is currently selected the button will also list the assistant name. If no assistant is selected it will say "Manage Assistants".
 
 Select the assistant to run and click the "Active" toggle at the top of the modal to activate it. [See here](./studio/manage_assistants) for more information on managing assistants.
 
@@ -33,7 +33,7 @@ Click the dropdown next to "Submit" and click the toggle to enable/disable strea
 
 To run your graph with breakpoints, click the "Interrupt" button. Select a node and whether to pause before and/or after that node has executed. Click "Continue" in the thread log to resume execution.
 
-For more information on breakpoints see [here](../../concepts/breakpoints).
+For more information on breakpoints see [here](breakpoints).
 
 ### Submit run
 

@@ -1,7 +1,7 @@
 ---
 title: How to add semantic search to your LangGraph deployment
 ---
-This guide explains how to add semantic search to your LangGraph deployment's cross-thread [store](../../concepts/persistence#memory-store), so that your agent can search for memories and other documents by semantic similarity.
+This guide explains how to add semantic search to your LangGraph deployment's cross-thread [store](https://langchain-ai.github.io/langgraph/concepts/persistence/#memory-store), so that your agent can search for memories and other documents by semantic similarity.
 
 ## Prerequisites
 

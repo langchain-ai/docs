@@ -1,7 +1,7 @@
 ---
 title: How to use the interrupt option
 ---
-This guide assumes knowledge of what double-texting is, which you can learn about in the [double-texting conceptual guide](../../concepts/double_texting).
+This guide assumes knowledge of what double-texting is, which you can learn about in the [double-texting conceptual guide](double_texting).
 
 The guide covers the `interrupt` option for double texting, which interrupts the prior run of the graph and starts a new one with the double-text. This option does not delete the first run, but rather keeps it in the database but sets its status to `interrupted`. Below is a quick example of using the `interrupt` option.
 

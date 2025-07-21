@@ -1,12 +1,12 @@
 ---
 title: How to Deploy to Cloud SaaS
 ---
-Before deploying, review the [conceptual guide for the Cloud SaaS](../../concepts/langgraph_cloud) deployment option.
+Before deploying, review the [conceptual guide for the Cloud SaaS](langgraph_cloud) deployment option.
 
 ## Prerequisites
 
 1. LangGraph Platform applications are deployed from GitHub repositories. Configure and upload a LangGraph Platform application to a GitHub repository in order to deploy it to LangGraph Platform.
-2. [Verify that the LangGraph API runs locally](../../tutorials/langgraph-platform/local-server). If the API does not run successfully (i.e. `langgraph dev`), deploying to LangGraph Platform will fail as well.
+2. [Verify that the LangGraph API runs locally](local-server). If the API does not run successfully (i.e. `langgraph dev`), deploying to LangGraph Platform will fail as well.
 
 ## Create New Deployment
 
@@ -19,7 +19,7 @@ Starting from the <a href="https://smith.langchain.com/" target="_blank">LangSmi
     1. Select `Import from GitHub` and follow the GitHub OAuth workflow to install and authorize LangChain's `hosted-langserve` GitHub app to access the selected repositories. After installation is complete, return to the `Create New Deployment` panel and select the GitHub repository to deploy from the dropdown menu. **Note**: The GitHub user installing LangChain's `hosted-langserve` GitHub app must be an [owner](https://docs.github.com/en/organizations/managing-peoples-access-to-your-organization-with-roles/roles-in-an-organization#organization-owners) of the organization or account.
     2. Specify a name for the deployment.
     3. Specify the desired `Git Branch`. A deployment is linked to a branch. When a new revision is created, code for the linked branch will be deployed. The branch can be updated later in the [Deployment Settings](#deployment-settings).
-    4. Specify the full path to the [LangGraph API config file](../reference/cli#configuration-file) including the file name. For example, if the file `langgraph.json` is in the root of the repository, simply specify `langgraph.json`.
+    4. Specify the full path to the [LangGraph API config file](cli#configuration-file) including the file name. For example, if the file `langgraph.json` is in the root of the repository, simply specify `langgraph.json`.
     5. Check/uncheck checkbox to `Automatically update deployment on push to branch`. If checked, the deployment will automatically be updated when changes are pushed to the specified `Git Branch`. This setting can be enabled/disabled later in the [Deployment Settings](#deployment-settings).
   2. Select the desired `Deployment Type`.
     1. `Development` deployments are meant for non-production use cases and are provisioned with minimal resources.
@@ -27,7 +27,7 @@ Starting from the <a href="https://smith.langchain.com/" target="_blank">LangSmi
   3. Determine if the deployment should be `Shareable through LangGraph Studio`.
     1. If unchecked, the deployment will only be accessible with a valid LangSmith API key for the workspace.
     2. If checked, the deployment will be accessible through LangGraph Studio to any LangSmith user. A direct URL to LangGraph Studio for the deployment will be provided to share with other LangSmith users.
-  4. Specify `Environment Variables` and secrets. See the [Environment Variables reference](../reference/env_var) to configure additional variables for the deployment.
+  4. Specify `Environment Variables` and secrets. See the [Environment Variables reference](env_var) to configure additional variables for the deployment.
     1. Sensitive values such as API keys (e.g. `OPENAI_API_KEY`) should be specified as secrets.
     2. Additional non-secret environment variables can be specified as well.
   5. A new LangSmith `Tracing Project` is automatically created with the same name as the deployment.
@@ -43,11 +43,11 @@ Starting from the <a href="https://smith.langchain.com/" target="_blank">LangSmi
 2. Select an existing deployment to create a new revision for.
 3. In the `Deployment` view, in the top-right corner, select `+ New Revision`.
 4. In the `New Revision` modal, fill out the required fields.
-  1. Specify the full path to the [LangGraph API config file](../reference/cli#configuration-file) including the file name. For example, if the file `langgraph.json` is in the root of the repository, simply specify `langgraph.json`.
+  1. Specify the full path to the [LangGraph API config file](cli#configuration-file) including the file name. For example, if the file `langgraph.json` is in the root of the repository, simply specify `langgraph.json`.
   2. Determine if the deployment should be `Shareable through LangGraph Studio`.
     1. If unchecked, the deployment will only be accessible with a valid LangSmith API key for the workspace.
     2. If checked, the deployment will be accessible through LangGraph Studio to any LangSmith user. A direct URL to LangGraph Studio for the deployment will be provided to share with other LangSmith users.
-  3. Specify `Environment Variables` and secrets. Existing secrets and environment variables are prepopulated. See the [Environment Variables reference](../reference/env_var) to configure additional variables for the revision.
+  3. Specify `Environment Variables` and secrets. Existing secrets and environment variables are prepopulated. See the [Environment Variables reference](env_var) to configure additional variables for the revision.
     1. Add new secrets or environment variables.
     2. Remove existing secrets or environment variables.
     3. Update the value of existing secrets or environment variables.

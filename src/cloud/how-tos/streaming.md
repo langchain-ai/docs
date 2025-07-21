@@ -3,7 +3,7 @@ title: Stream outputs
 ---
 ## Streaming API
 
-[LangGraph SDK](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/) allows you to stream outputs from the LangGraph API server.
+[LangGraph SDK](../cloud/reference/sdk/python_sdk_ref/) allows you to stream outputs from the LangGraph API server.
 
 Basic usage example:
 
@@ -115,7 +115,7 @@ Basic usage example:
   ```
   
   Once you have a running LangGraph API server, you can interact with it using
-  [LangGraph SDK](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/)
+  [LangGraph SDK](../cloud/reference/sdk/python_sdk_ref/)
   
   <Tabs>
     <Tab title="Python">
@@ -212,7 +212,7 @@ Basic usage example:
 
 | Mode                             | Description                                                                                                                                                                         | LangGraph Library Method                                                                                 |
 |----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| [`values`](#stream-graph-state)  | Stream the full graph state after each [super-step](../../concepts/low_level#graphs).                                                                                            | `.stream()` / `.astream()` with [`stream_mode="values"`](../../how-tos/streaming#stream-graph-state)  |
+| [`values`](#stream-graph-state)  | Stream the full graph state after each [super-step](low_level#graphs).                                                                                            | `.stream()` / `.astream()` with [`stream_mode="values"`](../../how-tos/streaming#stream-graph-state)  |
 | [`updates`](#stream-graph-state) | Streams the updates to the state after each step of the graph. If multiple updates are made in the same step (e.g., multiple nodes are run), those updates are streamed separately. | `.stream()` / `.astream()` with [`stream_mode="updates"`](../../how-tos/streaming#stream-graph-state) |
 | [`messages-tuple`](#messages)    | Streams LLM tokens and metadata for the graph node where the LLM is invoked (useful for chat apps).                                                                                 | `.stream()` / `.astream()` with [`stream_mode="messages"`](../../how-tos/streaming#messages)          |
 | [`debug`](#debug)                | Streams as much information as possible throughout the execution of the graph.                                                                                                      | `.stream()` / `.astream()` with [`stream_mode="debug"`](../../how-tos/streaming#stream-graph-state)   |
@@ -305,7 +305,7 @@ Use the stream modes `updates` and `values` to stream the state of the graph as 
 
 <Note>
   **Stateful runs**
-  Examples below assume that you want to **persist the outputs** of a streaming run in the [checkpointer](../../concepts/persistence) DB and have created a thread. To create a thread:
+  Examples below assume that you want to **persist the outputs** of a streaming run in the [checkpointer](https://langchain-ai.github.io/langgraph/concepts/persistence/) DB and have created a thread. To create a thread:
   
   <Tabs>
     <Tab title="Python">
@@ -442,7 +442,7 @@ Use the stream modes `updates` and `values` to stream the state of the graph as 
 
 ## Subgraphs
 
-To include outputs from [subgraphs](../../concepts/subgraphs) in the streamed outputs, you can set `subgraphs=True` in the `.stream()` method of the parent graph. This will stream outputs from both the parent graph and any subgraphs.
+To include outputs from [subgraphs](subgraphs) in the streamed outputs, you can set `subgraphs=True` in the `.stream()` method of the parent graph. This will stream outputs from both the parent graph and any subgraphs.
 
 ```python
 for chunk in client.runs.stream(
@@ -501,7 +501,7 @@ for chunk in client.runs.stream(
   ```
   
   Once you have a running LangGraph API server, you can interact with it using
-  [LangGraph SDK](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/)
+  [LangGraph SDK](../cloud/reference/sdk/python_sdk_ref/)
   
   <Tabs>
     <Tab title="Python">

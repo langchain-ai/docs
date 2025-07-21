@@ -3,7 +3,7 @@ title: Human-in-the-loop
 ---
 LangGraph supports robust **human-in-the-loop (HIL)** workflows, enabling human intervention at any point in an automated process. This is especially useful in large language model (LLM)-driven applications where model output may require validation, correction, or additional context.
 
-Please see [the overview of LangGraph human-in-the-loop](../../concepts/human_in_the_loop) features for more information.
+Please see [the overview of LangGraph human-in-the-loop](human_in_the_loop) features for more information.
 
 ## `interrupt`
 
@@ -205,7 +205,7 @@ def human_node(state: State):
   3. Once resumed, the return value of `interrupt(...)` is the human-provided input, which is used to update the state.
   
   Once you have a running LangGraph API server, you can interact with it using
-  [LangGraph SDK](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/)
+  [LangGraph SDK](../cloud/reference/sdk/python_sdk_ref/)
   
   <Tabs>
     <Tab title="Python">
@@ -338,6 +338,6 @@ def human_node(state: State):
 
 ## Learn more
 
-* [**LangGraph human-in-the-loop overview**](../../concepts/human_in_the_loop): learn more about LangGraph human-in-the-loop features. 
+* [**LangGraph human-in-the-loop overview**](human_in_the_loop): learn more about LangGraph human-in-the-loop features. 
 * [**Design patterns**](../../how-tos/human_in_the_loop/add-human-in-the-loop#design-patterns): learn how to implement patterns like approving/rejecting actions, requesting user input, and more.
 * [**How to review tool calls**](./human_in_the_loop_review_tool_calls): detailed examples of how to review and approve/edit tool calls or provide feedback to the tool-calling LLM.

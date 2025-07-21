@@ -11,7 +11,7 @@ Studio allows you to edit prompts used inside individual nodes, directly from th
 
 <Info>
   **Prerequisites**
-  * [Assistants overview](../../concepts/assistants)
+  * [Assistants overview](assistants)
 </Info>
 
 ### Graph Configuration

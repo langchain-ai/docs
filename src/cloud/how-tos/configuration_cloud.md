@@ -1,7 +1,7 @@
 ---
 title: Manage assistants
 ---
-In this guide we will show how to create, configure, and manage an [assistant](../../concepts/assistants).
+In this guide we will show how to create, configure, and manage an [assistant](assistants).
 
 First, as a brief refresher on the concept of configurations, consider the following simple `call_model` node and configuration schema. Observe that this node tries to read and use the `model_name` as defined by the `config` object's `configurable`.
 
@@ -46,13 +46,13 @@ First, as a brief refresher on the concept of configurations, consider the follo
   </Tab>
 </Tabs>
 
-For more information on configurations, [see here](../../concepts/low_level#configuration).
+For more information on configurations, [see here](low_level#configuration).
 
 ## Create an assistant
 
 ### LangGraph SDK
 
-To create an assistant, use the [LangGraph SDK](../../concepts/sdk) `create` method. See the [Python](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/#langgraph_sdk.client.AssistantsClient.create) and [JS](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/js_ts_sdk_ref/#create) SDK reference docs for more information.
+To create an assistant, use the [LangGraph SDK](sdk) `create` method. See the [Python](../cloud/reference/sdk/python_sdk_ref/#langgraph_sdk.client.AssistantsClient.create) and [JS](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/js_ts_sdk_ref/#create) SDK reference docs for more information.
 
 This example uses the same configuration schema as above, and creates an assistant with `model_name` set to `openai`.
 
@@ -121,7 +121,7 @@ Inside your deployment, select the "Assistants" tab. This will load a table of a
 
 To create a new assistant, select the "+ New assistant" button. This will open a form where you can specify the graph this assistant is for, as well as provide a name, description, and the desired configuration for the assistant based on the configuration schema for that graph.
 
-To confirm, click "Create assistant". This will take you to [LangGraph Studio](../../concepts/langgraph_studio) where you can test the assistant. If you go back to the "Assistants" tab in the deployment, you will see the newly created assistant in the table.
+To confirm, click "Create assistant". This will take you to [LangGraph Studio](langgraph_studio) where you can test the assistant. If you go back to the "Assistants" tab in the deployment, you will see the newly created assistant in the table.
 
 ## Use an assistant
 
@@ -233,7 +233,7 @@ Inside your deployment, select the "Assistants" tab. For the assistant you would
 
 ### LangGraph SDK
 
-To edit the assistant, use the `update` method. This will create a new version of the assistant with the provided edits. See the [Python](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/#langgraph_sdk.client.AssistantsClient.update) and [JS](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/js_ts_sdk_ref/#update) SDK reference docs for more information.
+To edit the assistant, use the `update` method. This will create a new version of the assistant with the provided edits. See the [Python](../cloud/reference/sdk/python_sdk_ref/#langgraph_sdk.client.AssistantsClient.update) and [JS](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/js_ts_sdk_ref/#update) SDK reference docs for more information.
 
 <Note>
 You must pass in the ENTIRE config (and metadata if you are using it). The update endpoint creates new versions completely from scratch and does not rely on previous versions.

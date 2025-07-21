@@ -1,7 +1,7 @@
 ---
 title: Breakpoints
 ---
-[Breakpoints](../../concepts/breakpoints) pause graph execution at defined points and let you step through each stage. They use LangGraph's [**persistence layer**](../../concepts/persistence), which saves the graph state after each step.
+[Breakpoints](breakpoints) pause graph execution at defined points and let you step through each stage. They use LangGraph's [**persistence layer**](https://langchain-ai.github.io/langgraph/concepts/persistence/), which saves the graph state after each step.
 
 With breakpoints, you can inspect the graph's state and node inputs at any point. Execution pauses **indefinitely** until you resume, as the checkpointer preserves the state.
 

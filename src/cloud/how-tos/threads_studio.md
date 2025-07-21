@@ -40,4 +40,4 @@ To edit a human message in the thread, click the edit button below the human mes
 
 ## Learn more
 
-For more information about time travel, [see here](../../concepts/time-travel).
+For more information about time travel, [see here](time-travel).

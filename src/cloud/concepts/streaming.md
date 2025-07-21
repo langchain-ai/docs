@@ -21,7 +21,7 @@ LangGraph Platform supports the following streaming modes:
 
 ## Stateless runs
 
-If you don't want to **persist the outputs** of a streaming run in the [checkpointer](../../concepts/persistence) DB, you can create a stateless run without creating a thread:
+If you don't want to **persist the outputs** of a streaming run in the [checkpointer](https://langchain-ai.github.io/langgraph/concepts/persistence/) DB, you can create a stateless run without creating a thread:
 
 <Tabs>
   <Tab title="Python">
@@ -81,7 +81,7 @@ If you don't want to **persist the outputs** of a streaming run in the [checkpoi
 
 ## Join and stream
 
-LangGraph Platform allows you to join an active [background run](../how-tos/background_run) and stream outputs from it. To do so, you can use [LangGraph SDK's](https://langchain-ai.github.io/langgraph/cloud/reference/sdk/python_sdk_ref/) `client.runs.join_stream` method:
+LangGraph Platform allows you to join an active [background run](../how-tos/background_run) and stream outputs from it. To do so, you can use [LangGraph SDK's](../cloud/reference/sdk/python_sdk_ref/) `client.runs.join_stream` method:
 
 <Tabs>
   <Tab title="Python">

@@ -1,7 +1,7 @@
 ---
 title: Enqueue
 ---
-This guide assumes knowledge of what double-texting is, which you can learn about in the [double-texting conceptual guide](../../concepts/double_texting).
+This guide assumes knowledge of what double-texting is, which you can learn about in the [double-texting conceptual guide](double_texting).
 
 The guide covers the `enqueue` option for double texting, which adds the interruptions to a queue and executes them in the order they are received by the client. Below is a quick example of using the `enqueue` option.
 
