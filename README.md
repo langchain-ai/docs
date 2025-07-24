@@ -149,3 +149,12 @@ Before submitting changes, ensure your code passes linting:
 make lint
 make format
 ```
+
+### Publish to prod
+
+Once your branch has been merged into `main`, you need to push the changes to `prod` for them to render on the live docs site. Use the [Publish documentation GH action](https://github.com/langchain-ai/docs/actions/workflows/publish.yml):
+
+1. Go to [Publish documentation](https://github.com/langchain-ai/docs/actions/workflows/publish.yml).
+2. Click the **Run workflow** button.
+3. Select the **main** branch to deploy.
+4. Click **Run workflow**.
