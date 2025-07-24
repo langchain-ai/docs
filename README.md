@@ -109,13 +109,6 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 - **`docs build`** - Build documentation files
     - `--watch` - Watch for file changes after building
 
-### Development Workflow
-
-1. Edit files in `src/`
-2. Run `make dev` to start the development server
-3. The build system will automatically detect changes and rebuild
-4. Preview your changes in the generated `build/` directory
-
 ### File Formats
 
 - **Markdown files** (`.md`, `.mdx`) - Standard documentation content
@@ -149,6 +142,34 @@ Before submitting changes, ensure your code passes linting:
 make lint
 make format
 ```
+
+## Development Workflow
+
+1. Edit files in `src/`
+2. Run `make dev` to start the development server
+3. The build system will automatically detect changes and rebuild
+4. Preview your changes in the generated `build/` directory
+
+### Create a preview build
+
+Once you have a PR open and are ready to preview changes, create a [preview branch](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml):
+
+1. Go to [Create a preview branch](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml).
+2. Click the **Run workflow** button.
+3. Select your branch.
+4. Click **Run workflow**.
+5. Once the workflow is done running, click into the related job.
+6. In the **Create and publish preview branch** step, look for the preview branch's name.
+    <img width="1061" height="637" alt="Screenshot 2025-07-24 at 10 23 16 AM" src="https://github.com/user-attachments/assets/d8235368-5f95-404c-b3b8-f731307f1140" />
+    
+7. Copy the preview branch's name.
+8. In the [Mintlify dashboard](https://dashboard.mintlify.com/langchain-5e9cc07a/langchain-5e9cc07a?section=previews), click **Create preview deployment**.
+9. Enter the preview branch's name.
+10. Click **Create deployment**.
+    A **Manual update** will display in the **Previews** table.
+11. Select the preview and click **Visit** to view the preview build.
+
+To redeploy the preview build, click **Redeploy** on the Mintlify dashboard.
 
 ### Publish to prod
 
