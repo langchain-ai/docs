@@ -35,6 +35,7 @@ def test_builder_initialization() -> None:
             ".gif",
             ".yml",
             ".yaml",
+            ".css",
         }
 
 
