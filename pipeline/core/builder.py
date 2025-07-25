@@ -46,7 +46,6 @@ class DocumentationBuilder:
             ".gif",
             ".yml",
             ".yaml",
-            ".css",
         }
 
     def build_all(self) -> None:
