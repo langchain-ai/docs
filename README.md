@@ -48,7 +48,8 @@ README.md             # This file
    Common commands:
    - `docs dev` - Start development mode with file watching
    - `docs build` - Build documentation
-   - `docs migrate <path>` - Convert markdown files to Mintlify format
+   - `docs migrate <path>` - Convert MkDocs markdown files to Mintlify format
+   - `docs migrate-docusaurus <path>` - Convert Docusaurus markdown files to Mintlify format
 
 #### Using Makefile (Alternative)
 
@@ -94,9 +95,16 @@ You can use the Makefile for easier build and development:
 
 The `docs` command (installed as `uv run docs`) provides additional functionality:
 
-- **`docs migrate <path>`** - Convert markdown/notebook files to Mintlify format
+- **`docs migrate <path>`** - Convert MkDocs markdown/notebook files to Mintlify format
   - `--dry-run` - Preview changes without writing files
   - `--output <path>` - Specify output location (default: in-place)
+  - Supports `.md`, `.markdown`, `.ipynb` files
+
+- **`docs migrate-docusaurus <path>`** - Convert Docusaurus markdown/notebook files to Mintlify format
+  - `--dry-run` - Preview changes without writing files
+  - `--output <path>` - Specify output location (default: in-place)
+  - Supports `.md`, `.markdown`, `.mdx`, `.ipynb` files
+  - Converts Docusaurus-specific syntax (admonitions, tabs, imports, etc.)
 
 - **`docs mv <old_path> <new_path>`** - Move files and update cross-references
   - `--dry-run` - Preview changes without moving files

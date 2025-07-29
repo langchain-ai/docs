@@ -17,6 +17,7 @@ from pipeline.commands.dev import dev_command
 from pipeline.tools.links import drop_suffix_from_links, move_file_with_link_updates
 from pipeline.tools.notebook.convert import convert_notebook
 from pipeline.tools.parser import to_mint
+from pipeline.tools.docusaurus_parser import convert_docusaurus_to_mintlify
 
 
 def setup_logging() -> None:
@@ -36,11 +37,12 @@ def mv_command(args) -> None:  # noqa: ANN001
     move_file_with_link_updates(args.old_path, args.new_path, dry_run=args.dry_run)
 
 
-def _find_files_to_migrate(input_path: Path) -> list[Path]:
-    """Find all .ipynb and .md files in the given path.
+def _find_files_to_migrate(input_path: Path, migration_type: str = "mkdocs") -> list[Path]:
+    """Find all files to migrate in the given path.
 
     Args:
         input_path: Path to file or directory to search
+        migration_type: Type of migration ("mkdocs" or "docusaurus")
 
     Returns:
         List of Path objects for files to migrate
@@ -48,30 +50,43 @@ def _find_files_to_migrate(input_path: Path) -> list[Path]:
     if input_path.is_file():
         return [input_path]
 
-    # Recursively find all .ipynb and .md files
+    # File patterns based on migration type
+    if migration_type == "docusaurus":
+        patterns = ["**/*.ipynb", "**/*.md", "**/*.markdown", "**/*.mdx"]
+    else:
+        patterns = ["**/*.ipynb", "**/*.md", "**/*.markdown"]
+
+    # Recursively find all relevant files
     files: list[Path] = []
-    for pattern in ["**/*.ipynb", "**/*.md", "**/*.markdown"]:
+    for pattern in patterns:
         files.extend(input_path.glob(pattern))
 
     return sorted(files)
 
 
-def _process_single_file(file_path: Path, output_path: Path, *, dry_run: bool) -> None:
+def _process_single_file(file_path: Path, output_path: Path, *, dry_run: bool, migration_type: str = "mkdocs") -> None:
     """Process a single file for migration.
 
     Args:
         file_path: Input file path
         output_path: Output file path
         dry_run: Whether to print to stdout instead of writing
+        migration_type: Type of migration ("mkdocs" or "docusaurus")
     """
     extension = file_path.suffix.lower()
     content = file_path.read_text()
 
-    if extension in {".md", ".markdown"}:
-        mint_markdown = to_mint(content)
+    if extension in {".md", ".markdown", ".mdx"}:
+        if migration_type == "docusaurus":
+            mint_markdown = convert_docusaurus_to_mintlify(content, file_path)
+        else:
+            mint_markdown = to_mint(content)
     elif extension == ".ipynb":
         markdown = convert_notebook(file_path)
-        mint_markdown = to_mint(markdown)
+        if migration_type == "docusaurus":
+            mint_markdown = convert_docusaurus_to_mintlify(markdown, file_path)
+        else:
+            mint_markdown = to_mint(markdown)
     else:
         logger.warning(
             "Skipping unsupported file extension %s: %s", extension, file_path
@@ -99,6 +114,7 @@ def _process_single_file(file_path: Path, output_path: Path, *, dry_run: bool) -
 def migrate_command(args) -> None:  # noqa: ANN001
     """Handle the migrate command for converting markdown to mintlify format."""
     input_path = args.path
+    migration_type = getattr(args, 'migration_type', 'mkdocs')
 
     # Determine if the path is a file or a directory
     if not input_path.exists():
@@ -106,10 +122,11 @@ def migrate_command(args) -> None:  # noqa: ANN001
         sys.exit(1)
 
     # Find all files to migrate
-    files_to_migrate = _find_files_to_migrate(input_path)
+    files_to_migrate = _find_files_to_migrate(input_path, migration_type)
 
     if not files_to_migrate:
-        logger.info("No .ipynb or .md files found in %s", input_path)
+        file_types = ".ipynb, .md, .mdx" if migration_type == "docusaurus" else ".ipynb, .md"
+        logger.info("No %s files found in %s", file_types, input_path)
         return
 
     if input_path.is_dir() and args.output and not args.output.exists():
@@ -131,7 +148,11 @@ def migrate_command(args) -> None:  # noqa: ANN001
                 if input_path.is_dir():
                     rel_path = file_path.relative_to(input_path)
                     output_path = args.output / rel_path
-                    output_path = output_path.with_suffix(".md")
+                    # For Docusaurus, preserve .mdx extension, otherwise convert to .md
+                    if migration_type == "docusaurus" and file_path.suffix.lower() == ".mdx":
+                        output_path = output_path.with_suffix(".mdx")
+                    else:
+                        output_path = output_path.with_suffix(".md")
                 else:
                     # Single file case
                     output_path = args.output
@@ -140,10 +161,10 @@ def migrate_command(args) -> None:  # noqa: ANN001
                 # Convert .ipynb to .md
                 output_path = file_path.with_suffix(".md")
             else:
-                # Keep .md files as .md
+                # Keep original extension for in-place updates
                 output_path = file_path
 
-            _process_single_file(file_path, output_path, dry_run=args.dry_run)
+            _process_single_file(file_path, output_path, dry_run=args.dry_run, migration_type=migration_type)
 
             # Delete original file if needed (for .ipynb -> .md conversion)
             if (
@@ -165,7 +186,8 @@ def main() -> None:
         dev: Start development mode with file watching and live server.
         build: Build documentation files from source to build directory.
         mv: Move a file and update cross-references to maintain valid links.
-        migrate: Convert markdown file to mintlify format.
+        migrate: Convert MkDocs markdown files to mintlify format.
+        migrate-docusaurus: Convert Docusaurus markdown files to mintlify format.
 
     Exits:
         With code 1 if no command is specified or if the initial build fails.
@@ -217,10 +239,10 @@ def main() -> None:
     )
     mv_parser.set_defaults(func=mv_command)
 
-    # Migrate command
+    # Migrate command (MkDocs to Mintlify)
     migrate_parser = subparsers.add_parser(
         "migrate",
-        help="Convert markdown files or folders to mintlify format",
+        help="Convert MkDocs markdown files or folders to mintlify format",
     )
     migrate_parser.add_argument(
         "path",
@@ -237,7 +259,29 @@ def main() -> None:
         type=Path,
         help="Output file or folder path (if not provided, updates files in place)",
     )
-    migrate_parser.set_defaults(func=migrate_command)
+    migrate_parser.set_defaults(func=migrate_command, migration_type="mkdocs")
+
+    # Migrate Docusaurus command
+    migrate_docusaurus_parser = subparsers.add_parser(
+        "migrate-docusaurus",
+        help="Convert Docusaurus markdown files or folders to mintlify format",
+    )
+    migrate_docusaurus_parser.add_argument(
+        "path",
+        type=Path,
+        help="Path to the file or folder to convert",
+    )
+    migrate_docusaurus_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print converted markdown to stdout instead of writing to file",
+    )
+    migrate_docusaurus_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Output file or folder path (if not provided, updates files in place)",
+    )
+    migrate_docusaurus_parser.set_defaults(func=migrate_command, migration_type="docusaurus")
 
     args = parser.parse_args()
 
