@@ -243,12 +243,60 @@ class DocusaurusParser:
         return content
     
     def _convert_links(self, content: str) -> str:
-        """Convert Docusaurus-style links to standard markdown links."""
-        # Convert doc links (e.g., [text](./doc-name) or [text](../category/doc-name))
-        # This is a basic conversion - more sophisticated path resolution might be needed
+        """Convert Docusaurus-style links to work with new directory structure.
         
-        # Convert relative .md links to remove .md extension for Mintlify
-        content = re.sub(r'\[([^\]]+)\]\(([^)]+)\.md\)', r'[\1](\2)', content)
+        This converts internal documentation links to work with the new Mintlify
+        structure while preserving external links unchanged.
+        """
+        def replace_link(match: re.Match[str]) -> str:
+            link_text = match.group(1)
+            link_url = match.group(2)
+            
+            # Skip external links (http/https)
+            if link_url.startswith(('http://', 'https://')):
+                return match.group(0)  # Return unchanged
+            
+            # Skip anchor-only links
+            if link_url.startswith('#'):
+                return match.group(0)  # Return unchanged
+            
+            # Convert Docusaurus doc references to new structure
+            if link_url.startswith('/docs/'):
+                # Map common Docusaurus paths to new Mintlify structure
+                path_mappings = {
+                    '/docs/tutorials/': '/oss/tutorials/',
+                    '/docs/how_to/': '/oss/how-to/',
+                    '/docs/concepts/': '/oss/concepts/',
+                    '/docs/integrations/': '/oss/integrations/',
+                    '/docs/guides/': '/oss/guides/',
+                }
+                
+                # Apply path mappings
+                new_url = link_url
+                for old_path, new_path in path_mappings.items():
+                    if link_url.startswith(old_path):
+                        new_url = link_url.replace(old_path, new_path, 1)
+                        break
+                
+                return f'{link_text}({new_url})'
+            
+            # Handle relative links (./file or ../category/file)
+            if link_url.startswith(('./', '../')):
+                # Remove .md extension if present
+                if link_url.endswith('.md'):
+                    new_url = link_url[:-3]  # Remove .md
+                    return f'{link_text}({new_url})'
+            
+            # For other relative links, just remove .md extension if present
+            if link_url.endswith('.md'):
+                new_url = link_url[:-3]  # Remove .md
+                return f'{link_text}({new_url})'
+            
+            return match.group(0)  # Return unchanged if no conversion needed
+        
+        # Pattern to match markdown links [text](url)
+        link_pattern = r'(\[[^\]]+\])\(([^)]+)\)'
+        content = re.sub(link_pattern, replace_link, content)
         
         return content
     
