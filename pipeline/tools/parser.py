@@ -445,9 +445,9 @@ class MintPrinter:
         """Visit a heading node."""
 
         def _slugify(text: str) -> str:
-            """Convert arbitrary text to a URL‑safe slug."""
+            """Convert arbitrary text to a URL-safe slug."""
             text = text.lower()
-            # Replace any sequence of non‑alphanumerics with a single hyphen
+            # Replace any sequence of non-alphanumerics with a single hyphen
             text = re.sub(r"[^a-z0-9]+", "-", text)
             # Collapse consecutive hyphens and trim leading/trailing ones
             return re.sub(r"-+", "-", text).strip("-")
@@ -479,7 +479,7 @@ class MintPrinter:
             prefix = "#" * node.level
             self._add_line(f"{prefix} {heading_text}")
         else:
-            # Convert the very first heading into front‑matter
+            # Convert the very first heading into front-matter
             self._add_line("---")
             self._add_line(f"title: {heading_text}")
             self._add_line("---")
@@ -487,7 +487,7 @@ class MintPrinter:
 
     def _visit_paragraph(self, node: Paragraph) -> None:
         """Visit a paragraph node."""
-        for i, line in enumerate(node.value):
+        for _i, line in enumerate(node.value):
             self._add_line(line.strip())
 
     def _visit_codeblock(self, node: CodeBlock) -> None:

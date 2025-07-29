@@ -311,7 +311,7 @@ def test_long_code_block() -> None:
 
 
 NOTE_WITH_TITLE = """\
-!!! info "Requirements" 
+!!! info "Requirements"
 
     content
 

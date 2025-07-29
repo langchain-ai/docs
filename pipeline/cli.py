@@ -14,10 +14,10 @@ from tqdm import tqdm
 
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
+from pipeline.tools.docusaurus_parser import convert_docusaurus_to_mintlify
 from pipeline.tools.links import drop_suffix_from_links, move_file_with_link_updates
 from pipeline.tools.notebook.convert import convert_notebook
 from pipeline.tools.parser import to_mint
-from pipeline.tools.docusaurus_parser import convert_docusaurus_to_mintlify
 
 
 def setup_logging() -> None:
@@ -37,7 +37,9 @@ def mv_command(args) -> None:  # noqa: ANN001
     move_file_with_link_updates(args.old_path, args.new_path, dry_run=args.dry_run)
 
 
-def _find_files_to_migrate(input_path: Path, migration_type: str = "mkdocs") -> list[Path]:
+def _find_files_to_migrate(
+    input_path: Path, migration_type: str = "mkdocs"
+) -> list[Path]:
     """Find all files to migrate in the given path.
 
     Args:
@@ -64,7 +66,9 @@ def _find_files_to_migrate(input_path: Path, migration_type: str = "mkdocs") -> 
     return sorted(files)
 
 
-def _process_single_file(file_path: Path, output_path: Path, *, dry_run: bool, migration_type: str = "mkdocs") -> None:
+def _process_single_file(
+    file_path: Path, output_path: Path, *, dry_run: bool, migration_type: str = "mkdocs"
+) -> None:
     """Process a single file for migration.
 
     Args:
@@ -111,10 +115,42 @@ def _process_single_file(file_path: Path, output_path: Path, *, dry_run: bool, m
         logger.info("Converted %s -> %s", file_path, output_path)
 
 
+def _determine_output_path(
+    input_path: Path, file_path: Path, args: argparse.Namespace, migration_type: str
+) -> Path:
+    """Determine the output path for a single file during migration."""
+    if args.output:
+        # Calculate relative path from input to maintain directory structure
+        if input_path.is_dir():
+            rel_path = file_path.relative_to(input_path)
+            output_path = args.output / rel_path
+            # For Docusaurus, preserve .mdx extension, otherwise convert to .md
+            if migration_type == "docusaurus" and file_path.suffix.lower() == ".mdx":
+                return output_path.with_suffix(".mdx")
+            return output_path.with_suffix(".md")
+        # Single file case
+        return args.output
+    # In-place update
+    if file_path.suffix.lower() == ".ipynb":
+        # Convert .ipynb to .md
+        return file_path.with_suffix(".md")
+    # Keep original extension for in-place updates
+    return file_path
+
+
+def _cleanup_original_file(
+    file_path: Path, args: argparse.Namespace, *, dry_run: bool
+) -> None:
+    """Delete original file if needed (for .ipynb -> .md conversion)."""
+    if not dry_run and not args.output and file_path.suffix.lower() == ".ipynb":
+        file_path.unlink(missing_ok=True)
+        logger.info("Deleted original file %s", file_path)
+
+
 def migrate_command(args) -> None:  # noqa: ANN001
     """Handle the migrate command for converting markdown to mintlify format."""
     input_path = args.path
-    migration_type = getattr(args, 'migration_type', 'mkdocs')
+    migration_type = getattr(args, "migration_type", "mkdocs")
 
     # Determine if the path is a file or a directory
     if not input_path.exists():
@@ -125,7 +161,9 @@ def migrate_command(args) -> None:  # noqa: ANN001
     files_to_migrate = _find_files_to_migrate(input_path, migration_type)
 
     if not files_to_migrate:
-        file_types = ".ipynb, .md, .mdx" if migration_type == "docusaurus" else ".ipynb, .md"
+        file_types = (
+            ".ipynb, .md, .mdx" if migration_type == "docusaurus" else ".ipynb, .md"
+        )
         logger.info("No %s files found in %s", file_types, input_path)
         return
 
@@ -143,37 +181,18 @@ def migrate_command(args) -> None:  # noqa: ANN001
         for file_path in pbar:
             pbar.set_description(f"Processing {file_path.name}")
 
-            if args.output:
-                # Calculate relative path from input to maintain directory structure
-                if input_path.is_dir():
-                    rel_path = file_path.relative_to(input_path)
-                    output_path = args.output / rel_path
-                    # For Docusaurus, preserve .mdx extension, otherwise convert to .md
-                    if migration_type == "docusaurus" and file_path.suffix.lower() == ".mdx":
-                        output_path = output_path.with_suffix(".mdx")
-                    else:
-                        output_path = output_path.with_suffix(".md")
-                else:
-                    # Single file case
-                    output_path = args.output
-            # In-place update
-            elif file_path.suffix.lower() == ".ipynb":
-                # Convert .ipynb to .md
-                output_path = file_path.with_suffix(".md")
-            else:
-                # Keep original extension for in-place updates
-                output_path = file_path
+            output_path = _determine_output_path(
+                input_path, file_path, args, migration_type
+            )
 
-            _process_single_file(file_path, output_path, dry_run=args.dry_run, migration_type=migration_type)
+            _process_single_file(
+                file_path,
+                output_path,
+                dry_run=args.dry_run,
+                migration_type=migration_type,
+            )
 
-            # Delete original file if needed (for .ipynb -> .md conversion)
-            if (
-                not args.dry_run
-                and not args.output
-                and file_path.suffix.lower() == ".ipynb"
-            ):
-                file_path.unlink(missing_ok=True)
-                logger.info("Deleted original file %s", file_path)
+            _cleanup_original_file(file_path, args, dry_run=args.dry_run)
 
 
 def main() -> None:
@@ -281,7 +300,9 @@ def main() -> None:
         type=Path,
         help="Output file or folder path (if not provided, updates files in place)",
     )
-    migrate_docusaurus_parser.set_defaults(func=migrate_command, migration_type="docusaurus")
+    migrate_docusaurus_parser.set_defaults(
+        func=migrate_command, migration_type="docusaurus"
+    )
 
     args = parser.parse_args()
 
