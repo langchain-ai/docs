@@ -34,12 +34,13 @@ def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
         ValueError: If target_language is not "python" or "js".
     """
     if target_language not in {"python", "js"}:
-        raise ValueError("target_language must be 'python' or 'js'")
+        msg = "target_language must be 'python' or 'js'"
+        raise ValueError(msg)
 
     pattern = re.compile(
         r"(?P<indent>[ \t]*):::(?P<language>\w+)\s*\n"
         r"(?P<content>((?:.*\n)*?))"  # Capture the content inside the block
-        r"(?P=indent)[ \t]*:::"  # Match closing with the same indentation + any additional whitespace
+        r"(?P=indent)[ \t]*:::"  # Match closing with same indentation
     )
 
     def replace_conditional_blocks(match: re.Match) -> str:
@@ -73,8 +74,9 @@ def preprocess_markdown(
         content: The markdown content to process.
         file_path: Path to the file being processed (for error reporting).
         target_language: Target language for conditional blocks ("python" or "js").
-                        If None, uses TARGET_LANGUAGE environment variable or "python".
-        default_scope: Default scope for cross-references. If None, uses target_language.
+                        If None, uses TARGET_LANGUAGE environment variable.
+        default_scope: Default scope for cross-references. If None,
+            uses target_language.
 
     Returns:
         Processed markdown content.

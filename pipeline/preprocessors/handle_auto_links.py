@@ -77,7 +77,6 @@ def _transform_link(
         return f"[{title}]({url})"
     # Log error with file location information
     logger.info(
-        # Using %s
         "Link '%s' not found in scope '%s'. "
         "In file: %s, line %d. Available links in scope: %s",
         link_name,
@@ -107,7 +106,7 @@ CROSS_REFERENCE_PATTERN = re.compile(
         (?P<title>[^\]]+)   # Custom title - one or more non-bracket characters
         \]                  # Closing bracket for title
         \[                  # Opening bracket for link name
-        (?P<link_name_with_title>[^\]]+)  # Link name - one or more non-bracket characters
+        (?P<link_name_with_title>[^\]]+)  # Link name - non-bracket chars
         \]                  # Closing bracket for link name
         |                   # OR
         @\[                 # @ symbol followed by opening bracket
@@ -119,10 +118,36 @@ CROSS_REFERENCE_PATTERN = re.compile(
 )
 
 
+def _replace_cross_references_in_line(
+    line: str, scope: str, file_path: str, line_number: int
+) -> str:
+    """Replace cross-references in a single line."""
+
+    def replace_cross_reference(match: re.Match[str]) -> str:
+        """Replace a single @[link_name] with the scoped equivalent."""
+        # Check if this is the @[title][ref] format or @[ref] format
+        title = match.group("title")
+        if title is not None:
+            # This is @[title][ref] format
+            link_name = match.group("link_name_with_title")
+            custom_title = title
+        else:
+            # This is @[ref] format
+            link_name = match.group("link_name")
+            custom_title = None
+
+        transformed = _transform_link(
+            link_name, scope, file_path, line_number, custom_title
+        )
+        return transformed if transformed is not None else match.group(0)
+
+    return CROSS_REFERENCE_PATTERN.sub(replace_cross_reference, line)
+
+
 def replace_autolinks(
     markdown: str, file_path: str, *, default_scope: str = "python"
 ) -> str:
-    """Preprocess markdown lines to handle @[links] with conditional fence scopes.
+    r"""Preprocess markdown lines to handle @[links] with conditional fence scopes.
 
     This function processes markdown content to transform @[link_name] references
     based on the current conditional fence scope. Conditional fences use the
@@ -161,25 +186,9 @@ def replace_autolinks(
             continue
 
         # Transform all @[link_name] references in this line based on current scope
-        def replace_cross_reference(match: re.Match[str]) -> str:
-            """Replace a single @[link_name] with the scoped equivalent."""
-            # Check if this is the @[title][ref] format or @[ref] format
-            title = match.group("title")
-            if title is not None:
-                # This is @[title][ref] format
-                link_name = match.group("link_name_with_title")
-                custom_title = title
-            else:
-                # This is @[ref] format
-                link_name = match.group("link_name")
-                custom_title = None
-
-            transformed = _transform_link(
-                link_name, current_scope, file_path, line_number, custom_title
-            )
-            return transformed if transformed is not None else match.group(0)
-
-        transformed_line = CROSS_REFERENCE_PATTERN.sub(replace_cross_reference, line)
+        transformed_line = _replace_cross_references_in_line(
+            line, current_scope, file_path, line_number
+        )
         processed_lines.append(transformed_line)
 
     return "".join(processed_lines)

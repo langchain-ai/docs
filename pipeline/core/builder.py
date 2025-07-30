@@ -152,9 +152,7 @@ class DocumentationBuilder:
         """
         try:
             # Apply markdown preprocessing
-            processed_content = preprocess_markdown(content, file_path)
-            return processed_content
-
+            return preprocess_markdown(content, file_path)
         except Exception:
             logger.exception("Failed to process markdown content from %s", file_path)
             raise
