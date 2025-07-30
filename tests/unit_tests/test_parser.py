@@ -2,6 +2,7 @@
 
 from pipeline.tools.parser import (
     CodeBlock,
+    ConditionalBlock,
     Document,
     Heading,
     Paragraph,
