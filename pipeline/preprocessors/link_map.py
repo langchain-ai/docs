@@ -61,6 +61,7 @@ PYTHON_LINK_MAP = {
 
 # JavaScript-specific link mappings
 JS_LINK_MAP = {
+    "Auth": "reference/classes/sdk_auth.Auth.html",
     "StateGraph": "reference/classes/langgraph.StateGraph.html",
     "add_conditional_edges": "reference/functions/langgraph_StateGraph.addConditionalEdges.html",
     "add_edge": "reference/functions/langgraph_StateGraph.addEdge.html",
@@ -88,6 +89,7 @@ JS_LINK_MAP = {
     "entrypoint.final": "reference/functions/langgraph_func.entrypoint.final.html",
     "entrypoint": "reference/functions/langgraph_func.entrypoint.html",
     "from_pycryptodome_aes": "reference/functions/langgraph_checkpoint_serde_encrypted.EncryptedSerializer.fromPycryptodomeAes.html",
+    "getContextVariable": "https://v03.api.js.langchain.com/functions/_langchain_core.context.getContextVariable.html",
     "get_state_history": "reference/functions/langgraph_CompiledStateGraph.getStateHistory.html",
     "get_stream_writer": "reference/functions/langgraph_config.getStreamWriter.html",
     "HumanInterrupt": "reference/classes/langgraph_prebuilt.HumanInterrupt.html",
@@ -98,6 +100,8 @@ JS_LINK_MAP = {
     "JsonPlusSerializer": "reference/classes/langgraph_checkpoint_serde_jsonplus.JsonPlusSerializer.html",
     "langgraph.json": "reference/configuration.html",
     "LastValue": "reference/classes/langgraph_channels.LastValue.html",
+    "MemorySaver": "reference/classes/checkpoint.MemorySaver.html",
+    "messagesStateReducer": "reference/functions/langgraph.messagesStateReducer.html",
     "PostgresSaver": "reference/classes/langgraph_checkpoint_postgres.PostgresSaver.html",
     "Pregel": "reference/classes/langgraph.Pregel.html",
     "Pregel.stream": "reference/functions/langgraph_Pregel.stream.html",
