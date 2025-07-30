@@ -693,13 +693,13 @@ class MintPrinter:
         """Visit a conditional block node and preserve structure with indentation."""
         # Add the opening tag using _add_line to respect current indentation
         self._add_line(f":::{node.language}")
-        
+
         # Process each block preserving original formatting
         for i, block in enumerate(node.blocks):
             if i > 0:
                 self._add_line("")
             self._visit(block)
-        
+
         # Add the closing tag
         self._add_line(":::")
 

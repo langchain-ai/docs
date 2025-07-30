@@ -206,14 +206,14 @@ print("Hello from Python")
 def test_conditional_block_complete() -> None:
     """Test lexing a complete conditional block."""
     tokens = list(lex(CONDITIONAL_BLOCK_EXAMPLE))
-    
+
     types = [
         TokenType.CONDITIONAL_BLOCK_OPEN,
         TokenType.TEXT,
         TokenType.CONDITIONAL_BLOCK_CLOSE,
         TokenType.EOF,
     ]
-    
+
     assert [token.type for token in tokens] == types
     assert tokens[0].value == ":::python"
     assert tokens[1].value == 'print("Hello from Python")'
@@ -229,14 +229,14 @@ INDENTED_CONDITIONAL_BLOCK = """\
 def test_indented_conditional_block() -> None:
     """Test lexing an indented conditional block."""
     tokens = list(lex(INDENTED_CONDITIONAL_BLOCK))
-    
+
     types = [
         TokenType.CONDITIONAL_BLOCK_OPEN,
         TokenType.TEXT,
         TokenType.CONDITIONAL_BLOCK_CLOSE,
         TokenType.EOF,
     ]
-    
+
     assert [token.type for token in tokens] == types
     assert tokens[0].indent == 4
     assert tokens[1].indent == 4

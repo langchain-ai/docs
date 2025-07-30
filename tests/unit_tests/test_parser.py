@@ -449,39 +449,63 @@ def test_parse_indented_conditional_block() -> None:
 
 INPUT_CONDITIONAL_PYTHON = """\
 :::python
+```python
 def hello():
     print("Hello from Python!")
 
 hello()
+```
 :::"""
 
 
 def test_conditional_block_python_to_mint() -> None:
     """Test converting a Python conditional block to Mintlify format."""
-    assert to_mint(INPUT_CONDITIONAL_PYTHON) == INPUT_CONDITIONAL_PYTHON
+    assert to_mint(INPUT_CONDITIONAL_PYTHON) == INPUT_CONDITIONAL_PYTHON + "\n"
 
 
 INPUT_CONDITIONAL_JS = """\
 :::js
+```js
 function hello() {
     console.log("Hello from JavaScript!");
 }
 
 hello();
+```
 :::"""
 
 
 def test_conditional_block_js_to_mint() -> None:
     """Test converting a JavaScript conditional block to Mintlify format."""
-    assert to_mint(INPUT_CONDITIONAL_JS) == INPUT_CONDITIONAL_PYTHON
+    assert to_mint(INPUT_CONDITIONAL_JS) == INPUT_CONDITIONAL_JS + "\n"
 
 
 INPUT_INDENTED_CONDITIONAL = """\
+hello
+
+=== "Tab1"
+
     :::python
+    ```python
     print("Indented conditional block")
-    :::"""
+    ```
+    :::
+"""
+
+EXPECTED_INDENTED_CONDITIONAL = """\
+hello
+<Tabs>
+  <Tab title="Tab1">
+    :::python
+    ```python
+    print("Indented conditional block")
+    ```
+    :::
+  </Tab>
+</Tabs>
+"""
 
 
 def test_indented_conditional_block_to_mint() -> None:
     """Test converting an indented conditional block to Mintlify format."""
-    assert to_mint(INPUT_INDENTED_CONDITIONAL) == INPUT_INDENTED_CONDITIONAL
+    assert to_mint(INPUT_INDENTED_CONDITIONAL) == EXPECTED_INDENTED_CONDITIONAL
