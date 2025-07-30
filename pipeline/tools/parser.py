@@ -691,23 +691,17 @@ class MintPrinter:
 
     def _visit_conditionalblock(self, node: ConditionalBlock) -> None:
         """Visit a conditional block node and preserve structure with indentation."""
-        # Add the opening tag with the same indentation as the original
-        opening_indent = " " * node.indent
-        opening_line = f"{opening_indent}:::{node.language}"
-
-        # Add opening line directly to output without using
-        # _add_line to avoid double indentation
-        self.output.append(opening_line)
-
-        # Visit all child blocks
+        # Add the opening tag using _add_line to respect current indentation
+        self._add_line(f":::{node.language}")
+        
+        # Process each block preserving original formatting
         for i, block in enumerate(node.blocks):
             if i > 0:
                 self._add_line("")
             self._visit(block)
-
-        # Add the closing tag with the same indentation
-        closing_line = f"{opening_indent}:::"
-        self.output.append(closing_line)
+        
+        # Add the closing tag
+        self._add_line(":::")
 
 
 def to_mint(markdown: str) -> str:
