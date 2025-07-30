@@ -38,7 +38,7 @@ PYTHON_LINK_MAP = {
     "HumanInterrupt": "reference/prebuilt/#langgraph.prebuilt.interrupt.HumanInterrupt",
     "InjectedState": "reference/prebuilt/#langgraph.prebuilt.InjectedState",
     "InMemorySaver": "reference/checkpoints/#langgraph.checkpoint.memory.InMemorySaver",
-    "interrupt": "reference/graphs/#langgraph.graph.interrupt",
+    "interrupt": "reference/types/#langgraph.types.interrupt",
     "CompiledStateGraph.invoke": "reference/graphs/#langgraph.graph.state.CompiledStateGraph.invoke",
     "JsonPlusSerializer": "reference/checkpoints/#langgraph.checkpoint.serde.jsonplus.JsonPlusSerializer",
     "langgraph.json": "reference/configuration/#configuration-file",
