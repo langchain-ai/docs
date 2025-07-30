@@ -59,11 +59,6 @@ PYTHON_LINK_MAP = {
     "update_state": "reference/graphs/#langgraph.graph.state.CompiledStateGraph.update_state",
 }
 
-
-
-
-
-
 # JavaScript-specific link mappings
 JS_LINK_MAP = {
     "Auth": "reference/classes/sdk_auth.Auth.html",
