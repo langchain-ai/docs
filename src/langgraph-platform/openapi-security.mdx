@@ -1,26 +1,35 @@
 ---
-title: Document API authentication in OpenAPI
-sidebarTitle: Document API authentication in OpenAPI
+title: OpenAPI Security
 ---
-This guide shows how to customize the OpenAPI security schema for your LangGraph Platform API documentation. A well-documented security schema helps API consumers understand how to authenticate with your API and even enables automatic client generation. See the [Authentication & Access Control conceptual guide](auth) for more details about LangGraph's authentication system.
 
-<Note>
-  **Implementation vs Documentation**
-  This guide only covers how to document your security requirements in OpenAPI. To implement the actual authentication logic, see [How to add custom authentication](custom-auth).
-</Note>
+LangGraph Platform supports OpenAPI security schemes that enable automatic client generation. See the [Authentication & Access Control conceptual guide](/langgraph-platform/auth) for more details about LangGraph's authentication system.
 
-This guide applies to all LangGraph Platform deployments (Cloud and self-hosted). It does not apply to usage of the LangGraph open source library if you are not using LangGraph Platform.
+This guide only covers how to document your security requirements in OpenAPI. To implement the actual authentication logic, see [How to add custom authentication](/langgraph-platform/custom-auth).
 
-## Default Schema
+## Overview
 
-The default security scheme varies by deployment type:
+When you deploy a LangGraph application with custom authentication, the platform automatically generates OpenAPI documentation that includes your security requirements. This enables tools like [OpenAPI Generator](https://openapi-generator.tech/) to create type-safe client libraries that handle authentication automatically.
 
-<Tabs>
-  <Tab title="LangGraph Platform">
-  </Tab>
-</Tabs>
+## Security Schemes
 
-By default, LangGraph Platform requires a LangSmith API key in the `x-api-key` header:
+LangGraph Platform supports the following OpenAPI security schemes:
+
+### Bearer Token Authentication
+
+The most common authentication method is Bearer token authentication. When you implement custom authentication, the platform automatically adds a `bearerAuth` security scheme to your OpenAPI documentation.
+
+```yaml
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+```
+
+### API Key Authentication
+
+For API key authentication, you can specify the location and name of the API key:
 
 ```yaml
 components:
@@ -28,82 +37,24 @@ components:
     apiKeyAuth:
       type: apiKey
       in: header
-      name: x-api-key
-security:
-  - apiKeyAuth: []
+      name: X-API-Key
 ```
 
-When using one of the LangGraph SDK's, this can be inferred from environment variables.
+## Applying Security to Endpoints
 
-<Tabs>
-  <Tab title="Self-hosted">
-  </Tab>
-</Tabs>
+You can apply security schemes to specific endpoints or globally to all endpoints. To add custom authentication, see [How to add custom authentication](/langgraph-platform/custom-auth).
 
-By default, self-hosted deployments have no security scheme. This means they are to be deployed only on a secured network or with authentication. To add custom authentication, see [How to add custom authentication](custom-auth).
+## Example
 
-## Custom Security Schema
+Here's an example of how security is applied to endpoints in the generated OpenAPI documentation:
 
-To customize the security schema in your OpenAPI documentation, add an `openapi` field to your `auth` configuration in `langgraph.json`. Remember that this only updates the API documentation - you must also implement the corresponding authentication logic as shown in [How to add custom authentication](custom-auth).
+```yaml
+paths:
+  /threads/{thread_id}/runs:
+    post:
+      security:
+        - bearerAuth: []
+      # ... other endpoint details
+```
 
-Note that LangGraph Platform does not provide authentication endpoints - you'll need to handle user authentication in your client application and pass the resulting credentials to the LangGraph API.
-
-<Tabs>
-  <Tab title="OAuth2 with Bearer Token">
-    ```json
-    {
-      "auth": {
-        "path": "./auth.py:my_auth",  // Implement auth logic here
-        "openapi": {
-          "securitySchemes": {
-            "OAuth2": {
-              "type": "oauth2",
-              "flows": {
-                "implicit": {
-                  "authorizationUrl": "https://your-auth-server.com/oauth/authorize",
-                  "scopes": {
-                    "me": "Read information about the current user",
-                    "threads": "Access to create and manage threads"
-                  }
-                }
-              }
-            }
-          },
-          "security": [
-            {"OAuth2": ["me", "threads"]}
-          ]
-        }
-      }
-    }
-    ```
-  </Tab>
-  <Tab title="API Key">
-    ```json
-    {
-      "auth": {
-        "path": "./auth.py:my_auth",  // Implement auth logic here
-        "openapi": {
-          "securitySchemes": {
-            "apiKeyAuth": {
-              "type": "apiKey",
-              "in": "header",
-              "name": "X-API-Key"
-            }
-          },
-          "security": [
-            {"apiKeyAuth": []}
-          ]
-        }
-      }
-    }
-    ```
-  </Tab>
-</Tabs>
-
-## Testing
-
-After updating your configuration:
-
-1. Deploy your application
-2. Visit `/docs` to see the updated OpenAPI documentation
-3. Try out the endpoints using credentials from your authentication server (make sure you've implemented the authentication logic first)
+This indicates that the endpoint requires Bearer token authentication. To add custom authentication, see [How to add custom authentication](/langgraph-platform/custom-auth).
