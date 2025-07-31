@@ -24,6 +24,8 @@ class TokenType(Enum):
     BLOCKQUOTE = auto()  # >
     TAB_HEADER = auto()  # === "title"
     ADMONITION = auto()  # !!! note "Title" or ??? note
+    CONDITIONAL_BLOCK_OPEN = auto()  # :::python, :::js
+    CONDITIONAL_BLOCK_CLOSE = auto()  # :::
     HTML_TAG = auto()  # <div> … (single-line)
     BLANK = auto()  # empty or whitespace-only line
     TEXT = auto()  # anything else
@@ -60,6 +62,10 @@ _PATTERNS: list[tuple[TokenType, re.Pattern[str]]] = [
     (TokenType.FRONT_MATTER, re.compile(r"^-{3,}\s*$")),
     # !!! or ??? admonitions
     (TokenType.ADMONITION, re.compile(r"(?:!!!|\?\?\?)\s+\w+(?:\s+\"[^\"]+\")?")),
+    # Conditional block opening tags: :::python, :::js (language required)
+    (TokenType.CONDITIONAL_BLOCK_OPEN, re.compile(r":::(python|js)\s*$")),
+    # Conditional block closing tag: :::
+    (TokenType.CONDITIONAL_BLOCK_CLOSE, re.compile(r":::\s*$")),
     (TokenType.HTML_TAG, re.compile(r"<[/A-Za-z][^>]*>.*$")),
 ]
 

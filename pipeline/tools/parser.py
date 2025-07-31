@@ -127,6 +127,15 @@ class HTMLBlock(Node):
     content: str
 
 
+@dataclass(kw_only=True)
+class ConditionalBlock(Node):
+    """Custom conditional block (:::python or :::js)."""
+
+    language: str
+    blocks: list[Node]
+    indent: int
+
+
 class Parser:
     """Recursive-descent parser that consumes tokens and builds an AST."""
 
@@ -195,6 +204,8 @@ class Parser:
             return self._parse_tab_block()
         if self._check(TokenType.HTML_TAG):
             return self._parse_html_block()
+        if self._check(TokenType.CONDITIONAL_BLOCK_OPEN):
+            return self._parse_conditional_block()
         return self._parse_paragraph()
 
     # ------------------------------------------------------------------
@@ -380,6 +391,51 @@ class Parser:
             content="\n".join(lines),
             start_line=first_tok.line,
             limit_line=self._token.line,
+        )
+
+    def _parse_conditional_block(self) -> ConditionalBlock:
+        """Parse a conditional block (:::python ... :::)."""
+        open_token = self._advance()
+
+        # Extract language from the opening tag (:::python -> "python")
+        # The lexer ensures this is always present
+        if not open_token.value.startswith(":::"):
+            msg = f"Invalid conditional block opening tag: {open_token.value}"
+            raise ValueError(msg)
+
+        language = open_token.value[3:].strip()
+        if language not in ("python", "js"):
+            msg = (
+                f"Invalid conditional block language: {language}. "
+                f"Must be 'python' or 'js'"
+            )
+            raise ValueError(msg)
+
+        # Parse all blocks until we find the closing :::
+        blocks: list[Node] = []
+        while not self._check(TokenType.EOF):
+            if self._check(TokenType.CONDITIONAL_BLOCK_CLOSE):
+                break
+            if self._match(TokenType.BLANK):
+                continue
+            blocks.append(self._parse_block())
+
+        # Consume the closing ::: token
+        if not self._check(TokenType.CONDITIONAL_BLOCK_CLOSE):
+            msg = (
+                f"Missing closing tag ':::' for conditional "
+                f"block starting at line {open_token.line}"
+            )
+            raise ValueError(msg)
+
+        close_token = self._advance()
+
+        return ConditionalBlock(
+            language=language,
+            blocks=blocks,
+            indent=open_token.indent,
+            start_line=open_token.line,
+            limit_line=close_token.line + 1,
         )
 
     def _parse_paragraph(self) -> Paragraph:
@@ -632,6 +688,20 @@ class MintPrinter:
                 self._add_line(line)
             else:
                 self._add_line("")
+
+    def _visit_conditionalblock(self, node: ConditionalBlock) -> None:
+        """Visit a conditional block node and preserve structure with indentation."""
+        # Add the opening tag using _add_line to respect current indentation
+        self._add_line(f":::{node.language}")
+
+        # Process each block preserving original formatting
+        for i, block in enumerate(node.blocks):
+            if i > 0:
+                self._add_line("")
+            self._visit(block)
+
+        # Add the closing tag
+        self._add_line(":::")
 
 
 def to_mint(markdown: str) -> str:

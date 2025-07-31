@@ -8,6 +8,8 @@ from pathlib import Path
 import yaml
 from tqdm import tqdm
 
+from pipeline.preprocessors import preprocess_markdown
+
 logger = logging.getLogger(__name__)
 
 
@@ -135,6 +137,57 @@ class DocumentationBuilder:
             logger.exception("Failed to convert %s to JSON", yaml_file_path)
             raise
 
+    def _process_markdown_content(self, content: str, file_path: Path) -> str:
+        """Process markdown content with preprocessing.
+
+        This method applies preprocessing (cross-reference resolution and
+        conditional blocks) to markdown content.
+
+        Args:
+            content: The markdown content to process.
+            file_path: Path to the source file (for error reporting).
+
+        Returns:
+            The processed markdown content.
+        """
+        try:
+            # Apply markdown preprocessing
+            return preprocess_markdown(content, file_path)
+        except Exception:
+            logger.exception("Failed to process markdown content from %s", file_path)
+            raise
+
+    def _process_markdown_file(self, input_path: Path, output_path: Path) -> None:
+        """Process a markdown file with preprocessing and copy to output.
+
+        This method reads a markdown file, applies preprocessing (cross-reference
+        resolution and conditional blocks), and writes the processed content to
+        the output path.
+
+        Args:
+            input_path: Path to the source markdown file.
+            output_path: Path where the processed file should be written.
+        """
+        try:
+            # Read the source markdown content
+            with input_path.open("r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Apply markdown preprocessing
+            processed_content = self._process_markdown_content(content, input_path)
+
+            # Convert .md to .mdx if needed
+            if input_path.suffix.lower() == ".md":
+                output_path = output_path.with_suffix(".mdx")
+
+            # Write the processed content
+            with output_path.open("w", encoding="utf-8") as f:
+                f.write(processed_content)
+
+        except Exception:
+            logger.exception("Failed to process markdown file %s", input_path)
+            raise
+
     def build_file(self, file_path: Path) -> None:
         """Build a single file by copying it to the build directory.
 
@@ -170,11 +223,13 @@ class DocumentationBuilder:
             logger.info("Converted YAML to JSON: %s", relative_path)
         # For other files, copy directly if supported
         elif file_path.suffix.lower() in self.copy_extensions:
-            # if the file is a .md file, we'll rename it to .mdx
-            if file_path.suffix.lower() == ".md":
-                output_path = output_path.with_suffix(".mdx")
-            shutil.copy2(file_path, output_path)
-            logger.info("Copied: %s", relative_path)
+            # Handle markdown files with preprocessing
+            if file_path.suffix.lower() in {".md", ".mdx"}:
+                self._process_markdown_file(file_path, output_path)
+                logger.info("Processed markdown: %s", relative_path)
+            else:
+                shutil.copy2(file_path, output_path)
+                logger.info("Copied: %s", relative_path)
         else:
             logger.info("Skipped: %s (unsupported extension)", relative_path)
 
@@ -210,8 +265,10 @@ class DocumentationBuilder:
             return True
         # Copy other supported files directly
         if file_path.suffix.lower() in self.copy_extensions:
-            if file_path.suffix.lower() == ".md":
-                output_path = output_path.with_suffix(".mdx")
+            # Handle markdown files with preprocessing
+            if file_path.suffix.lower() in {".md", ".mdx"}:
+                self._process_markdown_file(file_path, output_path)
+                return True
             shutil.copy2(file_path, output_path)
             return True
         return False

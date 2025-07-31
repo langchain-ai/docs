@@ -2,6 +2,7 @@
 
 from pipeline.tools.parser import (
     CodeBlock,
+    ConditionalBlock,
     Document,
     Heading,
     Paragraph,
@@ -351,3 +352,160 @@ This block has indentation:
         "key": "value"
     }
 """
+
+
+def test_parse_conditional_block_python() -> None:
+    """Test parsing a Python conditional block."""
+    text = """\
+:::python
+print("Hello, World!")
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "python"
+    assert block.start_line == 1
+    assert block.limit_line == 4
+    assert len(block.blocks) == 1
+
+    inner_block = block.blocks[0]
+    assert isinstance(inner_block, Paragraph)
+    assert inner_block.value == ['print("Hello, World!")']
+
+
+def test_parse_conditional_block_js() -> None:
+    """Test parsing a JavaScript conditional block."""
+    text = """\
+:::js
+console.log("Hello, World!");
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "js"
+    assert len(block.blocks) == 1
+
+    inner_block = block.blocks[0]
+    assert isinstance(inner_block, Paragraph)
+    assert inner_block.value == ['console.log("Hello, World!");']
+
+
+def test_parse_conditional_block_with_multiple_paragraphs() -> None:
+    """Test parsing a conditional block with multiple paragraphs."""
+    text = """\
+:::python
+print("First line")
+
+print("Second line")
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "python"
+    assert len(block.blocks) == 2
+
+    first_paragraph = block.blocks[0]
+    assert isinstance(first_paragraph, Paragraph)
+    assert first_paragraph.value == ['print("First line")']
+
+    second_paragraph = block.blocks[1]
+    assert isinstance(second_paragraph, Paragraph)
+    assert second_paragraph.value == ['print("Second line")']
+
+
+def test_parse_indented_conditional_block() -> None:
+    """Test parsing an indented conditional block."""
+    text = """\
+    :::js
+    console.log("Indented");
+    :::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "js"
+    assert block.indent == 4
+    assert len(block.blocks) == 1
+
+
+INPUT_CONDITIONAL_PYTHON = """\
+:::python
+```python
+def hello():
+    print("Hello from Python!")
+
+hello()
+```
+:::"""
+
+
+def test_conditional_block_python_to_mint() -> None:
+    """Test converting a Python conditional block to Mintlify format."""
+    assert to_mint(INPUT_CONDITIONAL_PYTHON) == INPUT_CONDITIONAL_PYTHON + "\n"
+
+
+INPUT_CONDITIONAL_JS = """\
+:::js
+```js
+function hello() {
+    console.log("Hello from JavaScript!");
+}
+
+hello();
+```
+:::"""
+
+
+def test_conditional_block_js_to_mint() -> None:
+    """Test converting a JavaScript conditional block to Mintlify format."""
+    assert to_mint(INPUT_CONDITIONAL_JS) == INPUT_CONDITIONAL_JS + "\n"
+
+
+INPUT_INDENTED_CONDITIONAL = """\
+hello
+
+=== "Tab1"
+
+    :::python
+    ```python
+    print("Indented conditional block")
+    ```
+    :::
+"""
+
+EXPECTED_INDENTED_CONDITIONAL = """\
+hello
+<Tabs>
+  <Tab title="Tab1">
+    :::python
+    ```python
+    print("Indented conditional block")
+    ```
+    :::
+  </Tab>
+</Tabs>
+"""
+
+
+def test_indented_conditional_block_to_mint() -> None:
+    """Test converting an indented conditional block to Mintlify format."""
+    assert to_mint(INPUT_INDENTED_CONDITIONAL) == EXPECTED_INDENTED_CONDITIONAL

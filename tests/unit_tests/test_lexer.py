@@ -168,3 +168,76 @@ def test_lex_table() -> None:
     assert tokens[1].value == "| -------- | ------------------------------------- |"
     assert tokens[2].type == TokenType.TEXT
     assert tokens[2].value == "| Name     | Full name of user                     |"
+
+
+def test_conditional_block_open_python() -> None:
+    """Test lexing a conditional block opening tag for Python."""
+    tokens = list(lex(":::python"))
+    assert len(tokens) == 2
+    assert tokens[0].type == TokenType.CONDITIONAL_BLOCK_OPEN
+    assert tokens[0].value == ":::python"
+    assert tokens[1].type == TokenType.EOF
+
+
+def test_conditional_block_open_js() -> None:
+    """Test lexing a conditional block opening tag for JavaScript."""
+    tokens = list(lex(":::js"))
+    assert len(tokens) == 2
+    assert tokens[0].type == TokenType.CONDITIONAL_BLOCK_OPEN
+    assert tokens[0].value == ":::js"
+    assert tokens[1].type == TokenType.EOF
+
+
+def test_conditional_block_close() -> None:
+    """Test lexing a conditional block closing tag."""
+    tokens = list(lex(":::"))
+    assert len(tokens) == 2
+    assert tokens[0].type == TokenType.CONDITIONAL_BLOCK_CLOSE
+    assert tokens[0].value == ":::"
+    assert tokens[1].type == TokenType.EOF
+
+
+CONDITIONAL_BLOCK_EXAMPLE = """\
+:::python
+print("Hello from Python")
+:::"""
+
+
+def test_conditional_block_complete() -> None:
+    """Test lexing a complete conditional block."""
+    tokens = list(lex(CONDITIONAL_BLOCK_EXAMPLE))
+
+    types = [
+        TokenType.CONDITIONAL_BLOCK_OPEN,
+        TokenType.TEXT,
+        TokenType.CONDITIONAL_BLOCK_CLOSE,
+        TokenType.EOF,
+    ]
+
+    assert [token.type for token in tokens] == types
+    assert tokens[0].value == ":::python"
+    assert tokens[1].value == 'print("Hello from Python")'
+    assert tokens[2].value == ":::"
+
+
+INDENTED_CONDITIONAL_BLOCK = """\
+    :::js
+    console.log("Hello from JS");
+    :::"""
+
+
+def test_indented_conditional_block() -> None:
+    """Test lexing an indented conditional block."""
+    tokens = list(lex(INDENTED_CONDITIONAL_BLOCK))
+
+    types = [
+        TokenType.CONDITIONAL_BLOCK_OPEN,
+        TokenType.TEXT,
+        TokenType.CONDITIONAL_BLOCK_CLOSE,
+        TokenType.EOF,
+    ]
+
+    assert [token.type for token in tokens] == types
+    assert tokens[0].indent == 4
+    assert tokens[1].indent == 4
+    assert tokens[2].indent == 4
