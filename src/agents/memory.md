@@ -111,7 +111,7 @@ To manage message history, specify `pre_model_hook` — a function ([node](../co
 
 [//]: # (</figure>)
 
-To summarize message history, you can use [`pre_model_hook`][langgraph.prebuilt.chat_agent_executor.create_react_agent] with a prebuilt [`SummarizationNode`](https://langchain-ai.github.io/langmem/reference/short_term/#langmem.short_term.SummarizationNode):
+To summarize message history, you can use @[`pre_model_hook`] with a prebuilt [`SummarizationNode`](https://langchain-ai.github.io/langmem/reference/short_term/#langmem.short_term.SummarizationNode):
 
 ```python
 from langchain_anthropic import ChatAnthropic
@@ -155,12 +155,12 @@ agent = create_react_agent(
 1. The `InMemorySaver` is a checkpointer that stores the agent's state in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [checkpointer documentation](../reference/checkpoints) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready checkpointer for you.
 2. The `context` key is added to the agent's state. The key contains book-keeping information for the summarization node. It is used to keep track of the last summary information and ensure that the agent doesn't summarize on every LLM call, which can be inefficient.
 3. The `checkpointer` is passed to the agent. This enables the agent to persist its state across invocations.
-4. The `pre_model_hook` is set to the `SummarizationNode`. This node will summarize the message history before sending it to the LLM. The summarization node will automatically handle the summarization process and update the agent's state with the new summary. You can replace this with a custom implementation if you prefer. Please see the [create_react_agent][langgraph.prebuilt.chat_agent_executor.create_react_agent] API reference for more details.
+4. The `pre_model_hook` is set to the `SummarizationNode`. This node will summarize the message history before sending it to the LLM. The summarization node will automatically handle the summarization process and update the agent's state with the new summary. You can replace this with a custom implementation if you prefer. Please see the @[create_react_agent] API reference for more details.
 5. The `state_schema` is set to the `State` class, which is the custom state that contains an extra `context` key.
 
 #### Trim message history
 
-To trim message history, you can use [`pre_model_hook`][langgraph.prebuilt.chat_agent_executor.create_react_agent] with [`trim_messages`](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html) function:
+To trim message history, you can use @[`pre_model_hook`] with [`trim_messages`](https://python.langchain.com/api_reference/core/messages/langchain_core.messages.utils.trim_messages.html) function:
 
 ```python
 # highlight-next-line
@@ -305,7 +305,7 @@ Use long-term memory to store user-specific or application-specific data across 
 To use long-term memory, you need to:
 
 1. [Configure a store](../how-tos/persistence.ipynb#add-long-term-memory) to persist data across invocations.
-2. Use the [`get_store`][langgraph.config.get_store] function to access the store from within tools or prompts.
+2. Use the @[`get_store`] function to access the store from within tools or prompts.
 
 <a id="read-long-term"></a>
 ### Read
@@ -355,7 +355,7 @@ agent.invoke(
 ```
 
 1. The `InMemoryStore` is a store that stores data in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [store documentation](../reference/store) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
-2. For this example, we write some sample data to the store using the `put` method. Please see the [BaseStore.put][langgraph.store.base.BaseStore.put] API reference for more details.
+2. For this example, we write some sample data to the store using the `put` method. Please see the @[BaseStore.put] API reference for more details.
 3. The first argument is the namespace. This is used to group related data together. In this case, we are using the `users` namespace to group user data.
 4. A key within the namespace. This example uses a user ID for the key.
 5. The data that we want to store for the given user.

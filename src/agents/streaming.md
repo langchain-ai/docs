@@ -17,7 +17,7 @@ You can stream [more than one type of data](#stream-multiple-modes) at a time.
 
 ## Agent progress
 
-To stream agent progress, use the [`stream()`][langgraph.graph.state.CompiledStateGraph.stream] or [`astream()`][langgraph.graph.state.CompiledStateGraph.astream] methods with [`stream_mode="updates"`](https://langchain-ai.github.io/langgraph/how-tos/streaming/#updates). This emits an event after every agent step.
+To stream agent progress, use the @[`stream()`] or @[`astream()`] methods with [`stream_mode="updates"`](https://langchain-ai.github.io/langgraph/how-tos/streaming/#updates). This emits an event after every agent step.
 
 For example, if you have an agent that calls a tool once, you should see the following updates:
 
@@ -103,7 +103,7 @@ To stream tokens as they are produced by the LLM, use `stream_mode="messages"`:
 
 ## Tool updates
 
-To stream updates from tools as they are executed, you can use [get_stream_writer][langgraph.config.get_stream_writer].
+To stream updates from tools as they are executed, you can use @[get_stream_writer].
 
 <Tabs>
   <Tab title="Sync">

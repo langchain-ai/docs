@@ -2,7 +2,7 @@
 title: Human-in-the-loop
 ---
 
-To review, edit and approve tool calls in an agent you can use LangGraph's built-in [Human-In-the-Loop (HIL)](../concepts/human_in_the_loop) features, specifically the [`interrupt()`][langgraph.types.interrupt] primitive.
+To review, edit and approve tool calls in an agent you can use LangGraph's built-in [Human-In-the-Loop (HIL)](../concepts/human_in_the_loop) features, specifically the @[`interrupt()`] primitive.
 
 LangGraph allows you to pause execution **indefinitely** — for minutes, hours, or even days—until human input is received.
 
@@ -53,7 +53,7 @@ agent = create_react_agent(
 )
 ```
 
-1. The [`interrupt` function][langgraph.types.interrupt] pauses the agent graph at a specific node. In this case, we call `interrupt()` at the beginning of the tool function, which pauses the graph at the node that executes the tool. The information inside `interrupt()` (e.g., tool calls) can be presented to a human, and the graph can be resumed with the user input (tool call approval, edit or feedback).
+1. The @[`interrupt` function] pauses the agent graph at a specific node. In this case, we call `interrupt()` at the beginning of the tool function, which pauses the graph at the node that executes the tool. The information inside `interrupt()` (e.g., tool calls) can be presented to a human, and the graph can be resumed with the user input (tool call approval, edit or feedback).
 2. The `InMemorySaver` is used to store the agent state at every step in the tool calling loop. This enables [short-term memory](./memory#short-term-memory) and [human-in-the-loop](./human-in-the-loop) capabilities. In this example, we use `InMemorySaver` to store the agent state in memory. In a production application, the agent state will be stored in a database.
 3. Initialize the agent with the `checkpointer`.
 
@@ -93,7 +93,7 @@ for chunk in agent.stream(
     print("\n")
 ```
 
-1. The [`interrupt` function][langgraph.types.interrupt] is used in conjunction with the [`Command`][langgraph.types.Command] object to resume the graph with a value provided by the human.
+1. The @[`interrupt` function] is used in conjunction with the @[`Command`] object to resume the graph with a value provided by the human.
 
 ## Using with Agent Inbox
 
@@ -161,7 +161,7 @@ def add_human_in_the_loop(
 
 1. This wrapper creates a new tool that calls `interrupt()` **before** executing the wrapped tool.
 2. `interrupt()` is using special input and output format that's expected by [Agent Inbox UI](https://github.com/langchain-ai/agent-inbox):
-  * a list of [`HumanInterrupt`][langgraph.prebuilt.interrupt.HumanInterrupt] objects is sent to `AgentInbox` render interrupt information to the end user
+  * a list of @[`HumanInterrupt`] objects is sent to `AgentInbox` render interrupt information to the end user
   * resume value is provided by `AgentInbox` as a list (i.e., `Command(resume=[...])`)
 
 You can use the `add_human_in_the_loop` wrapper to add `interrupt()` to any tool without having to add it *inside* the tool:

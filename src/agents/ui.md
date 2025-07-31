@@ -23,7 +23,7 @@ Agent Chat UI has full support for [human-in-the-loop](../concepts/human_in_the_
 <video controls src="../assets/interrupt-chat-ui.mp4" type="video/mp4"></video>
 
 <Warning>
-  Agent Chat UI works best if your LangGraph agent interrupts using the [`HumanInterrupt` schema][langgraph.prebuilt.interrupt.HumanInterrupt]. If you do not use that schema, the Agent Chat UI will be able to render the input passed to the `interrupt` function, but it will not have full support for resuming your graph.
+  Agent Chat UI works best if your LangGraph agent interrupts using the @[`HumanInterrupt` schema]. If you do not use that schema, the Agent Chat UI will be able to render the input passed to the `interrupt` function, but it will not have full support for resuming your graph.
 </Warning>
 
 ## Generative UI

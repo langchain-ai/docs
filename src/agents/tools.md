@@ -182,7 +182,7 @@ agent.invoke(
 
 ## Handle tool errors
 
-By default, the agent will catch all exceptions raised during tool calls and will pass those as tool messages to the LLM. To control how the errors are handled, you can use the prebuilt [`ToolNode`][langgraph.prebuilt.tool_node.ToolNode] — the node that executes tools inside `create_react_agent` — via its `handle_tool_errors` parameter:
+By default, the agent will catch all exceptions raised during tool calls and will pass those as tool messages to the LLM. To control how the errors are handled, you can use the prebuilt @[`ToolNode`] — the node that executes tools inside `create_react_agent` — via its `handle_tool_errors` parameter:
 
 <Tabs>
   <Tab title="Enable error handling (default)">
@@ -230,7 +230,7 @@ By default, the agent will catch all exceptions raised during tool calls and wil
     )
     ```
     
-    1. This disables error handling (enabled by default). See all available strategies in the [API reference][langgraph.prebuilt.tool_node.ToolNode].
+    1. This disables error handling (enabled by default). See all available strategies in the @[API reference].
   </Tab>
   <Tab title="Custom error handling">
     ```python
@@ -259,11 +259,11 @@ By default, the agent will catch all exceptions raised during tool calls and wil
     )
     ```
     
-    1. This provides a custom message to send to the LLM in case of an exception. See all available strategies in the [API reference][langgraph.prebuilt.tool_node.ToolNode].
+    1. This provides a custom message to send to the LLM in case of an exception. See all available strategies in the @[API reference].
   </Tab>
 </Tabs>
 
-See [API reference][langgraph.prebuilt.tool_node.ToolNode] for more information on different tool error handling options.
+See @[API reference] for more information on different tool error handling options.
 
 ## Working with memory
 
