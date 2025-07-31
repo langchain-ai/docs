@@ -9,6 +9,44 @@ The Model Context Protocol (MCP) is an open protocol for describing tools and da
 
 The MCP endpoint is available at `/mcp` on [LangGraph Server](/langgraph-platform/langgraph-server).
 
+You can set up [custom authentication middleware](/langgraph-platform/custom-auth) to authenticate a user with an MCP server to get access to user-scoped tools within your LangGraph Platform deployment.
+
+An example architecture for this flow:
+
+```mermaid
+sequenceDiagram
+  %% Actors
+  participant ClientApp as Client
+  participant AuthProv  as Auth Provider
+  participant LangGraph as LangGraph Backend
+  participant SecretStore as Secret Store
+  participant MCPServer as MCP Server
+
+  %% Platform login / AuthN
+  ClientApp  ->> AuthProv: 1. Login (username / password)
+  AuthProv   -->> ClientApp: 2. Return token
+  ClientApp  ->> LangGraph: 3. Request with token
+
+  Note over LangGraph: 4. Validate token (@auth.authenticate)
+  LangGraph  -->> AuthProv: 5. Fetch user info
+  AuthProv   -->> LangGraph: 6. Confirm validity
+
+  %% Fetch user tokens from secret store
+  LangGraph  ->> SecretStore: 6a. Fetch user tokens
+  SecretStore -->> LangGraph: 6b. Return tokens
+
+  Note over LangGraph: 7. Apply access control (@auth.on.*)
+
+  %% MCP round-trip
+  Note over LangGraph: 8. Build MCP client with user token
+  LangGraph  ->> MCPServer: 9. Call MCP tool (with header)
+  Note over MCPServer: 10. MCP validates header and runs tool
+  MCPServer  -->> LangGraph: 11. Tool response
+
+  %% Return to caller
+  LangGraph  -->> ClientApp: 12. Return resources / tool output
+```
+
 ## Requirements
 
 To use MCP, ensure you have the following dependencies installed:
