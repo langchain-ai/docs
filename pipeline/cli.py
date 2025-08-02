@@ -10,21 +10,20 @@ import logging
 import sys
 from pathlib import Path
 
-from tqdm import tqdm
 
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
 from pipeline.tools.docusaurus_parser import convert_docusaurus_to_mintlify
 from pipeline.tools.links import drop_suffix_from_links, move_file_with_link_updates
 from pipeline.tools.notebook.convert import convert_notebook
-from pipeline.tools.parser import to_mint
+from pipeline.tools.parser import ParseError, to_mint
 
 
 def setup_logging() -> None:
     """Configure logging for the CLI application."""
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
@@ -68,7 +67,7 @@ def _find_files_to_migrate(
 
 def _process_single_file(
     file_path: Path, output_path: Path, *, dry_run: bool, migration_type: str = "mkdocs"
-) -> None:
+) -> bool:
     """Process a single file for migration.
 
     Args:
@@ -76,43 +75,55 @@ def _process_single_file(
         output_path: Output file path
         dry_run: Whether to print to stdout instead of writing
         migration_type: Type of migration ("mkdocs" or "docusaurus")
+
+    Returns:
+        True if processing was successful, False if there was an error
     """
-    extension = file_path.suffix.lower()
-    content = file_path.read_text()
+    try:
+        extension = file_path.suffix.lower()
+        content = file_path.read_text()
 
-    if extension in {".md", ".markdown", ".mdx"}:
-        if migration_type == "docusaurus":
-            mint_markdown = convert_docusaurus_to_mintlify(content, file_path)
+        if extension in {".md", ".markdown", ".mdx"}:
+            if migration_type == "docusaurus":
+                mint_markdown = convert_docusaurus_to_mintlify(content, file_path)
+            else:
+                mint_markdown = to_mint(content, str(file_path))
+        elif extension == ".ipynb":
+            markdown = convert_notebook(file_path)
+            if migration_type == "docusaurus":
+                mint_markdown = convert_docusaurus_to_mintlify(markdown, file_path)
+            else:
+                mint_markdown = to_mint(markdown, str(file_path))
         else:
-            mint_markdown = to_mint(content)
-    elif extension == ".ipynb":
-        markdown = convert_notebook(file_path)
-        if migration_type == "docusaurus":
-            mint_markdown = convert_docusaurus_to_mintlify(markdown, file_path)
+            logger.warning(
+                "Skipping unsupported file extension %s: %s", extension, file_path
+            )
+            return True  # Not an error, just unsupported
+
+        _, mint_markdown = drop_suffix_from_links(mint_markdown)
+
+        if dry_run:
+            # Print the converted markdown to stdout
+            print(f"=== {file_path} ===")  # noqa: T201 (OK to use print)
+            print(mint_markdown)  # noqa: T201 (OK to use print)
+            print()  # noqa: T201 (OK to use print)
         else:
-            mint_markdown = to_mint(markdown)
-    else:
-        logger.warning(
-            "Skipping unsupported file extension %s: %s", extension, file_path
-        )
-        return
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    _, mint_markdown = drop_suffix_from_links(mint_markdown)
+            # Write the converted content
+            with output_path.open("w", encoding="utf-8") as file:
+                file.write(mint_markdown)
 
-    if dry_run:
-        # Print the converted markdown to stdout
-        print(f"=== {file_path} ===")  # noqa: T201 (OK to use print)
-        print(mint_markdown)  # noqa: T201 (OK to use print)
-        print()  # noqa: T201 (OK to use print)
-    else:
-        # Ensure output directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info("Converted %s -> %s", file_path, output_path)
+    except ParseError as e:
+        logger.error("Parse error while processing file: %s", str(e))
+        return False
+    except Exception:
+        logger.exception("Unexpected error while processing file %s", file_path)
+        return False
 
-        # Write the converted content
-        with output_path.open("w", encoding="utf-8") as file:
-            file.write(mint_markdown)
-
-        logger.info("Converted %s -> %s", file_path, output_path)
+    return True
 
 
 def _determine_output_path(
@@ -167,6 +178,8 @@ def migrate_command(args) -> None:  # noqa: ANN001
         logger.info("No %s files found in %s", file_types, input_path)
         return
 
+    logger.info("Found %d files to migrate", len(files_to_migrate))
+
     if input_path.is_dir() and args.output and not args.output.exists():
         # Create output directory if it doesn't exist
         args.output.mkdir(parents=True, exist_ok=True)
@@ -175,24 +188,43 @@ def migrate_command(args) -> None:  # noqa: ANN001
     if len(files_to_migrate) > 1:
         logger.info("Processing %d files...", len(files_to_migrate))
 
-    with tqdm(
-        files_to_migrate, desc="Migrating files", disable=len(files_to_migrate) == 1
-    ) as pbar:
-        for file_path in pbar:
-            pbar.set_description(f"Processing {file_path.name}")
+    successful_files = 0
+    failed_files = 0
 
-            output_path = _determine_output_path(
-                input_path, file_path, args, migration_type
-            )
+    for file_path in files_to_migrate:
+        logger.info("Processing %s", file_path.name)
 
-            _process_single_file(
-                file_path,
-                output_path,
-                dry_run=args.dry_run,
-                migration_type=migration_type,
-            )
+        output_path = _determine_output_path(
+            input_path, file_path, args, migration_type
+        )
 
+        success = _process_single_file(
+            file_path,
+            output_path,
+            dry_run=args.dry_run,
+            migration_type=migration_type,
+        )
+
+        if success:
+            successful_files += 1
             _cleanup_original_file(file_path, args, dry_run=args.dry_run)
+        else:
+            failed_files += 1
+
+    # Report final results
+    if len(files_to_migrate) > 1:
+        logger.info(
+            "Migration completed: %d successful, %d failed out of %d total files",
+            successful_files,
+            failed_files,
+            len(files_to_migrate),
+        )
+        if failed_files > 0:
+            logger.warning(
+                "%d files failed to migrate. Check the error messages above for "
+                "details.",
+                failed_files,
+            )
 
 
 def main() -> None:

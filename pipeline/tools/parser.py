@@ -21,6 +21,54 @@ if typing.TYPE_CHECKING:
     from collections.abc import Iterator
 
 
+class ParseError(Exception):
+    """Exception raised when parsing fails with detailed context information."""
+
+    def __init__(  # noqa: PLR0913
+        self,
+        message: str,
+        *,
+        line: int | None = None,
+        token: Token | None = None,
+        expected: str | None = None,
+        found: str | None = None,
+        file_path: str | None = None,
+    ) -> None:
+        """Initialize ParseError with detailed context information."""
+        self.message = message
+        self.line = line
+        self.token = token
+        self.expected = expected
+        self.found = found
+        self.file_path = file_path
+
+        # Build detailed error message
+        error_parts = []
+        
+        if file_path is not None:
+            error_parts.append(f"'{file_path}':")
+        
+        error_parts.append(message)
+
+        if line is not None:
+            error_parts.append(f"at line {line}")
+
+        if token is not None:
+            error_parts.append(f"found token {token.type.name} '{token.value}'")
+
+        if expected:
+            error_parts.append(f"expected {expected}")
+
+        if found:
+            error_parts.append(f"but found {found}")
+
+        super().__init__(", ".join(error_parts))
+
+    def __str__(self) -> str:
+        """Return string representation of the exception."""
+        return super().__str__()
+
+
 @dataclass(kw_only=True)
 class Node:
     """Base-class for all AST nodes."""
@@ -165,7 +213,19 @@ class Parser:
     def _advance(self) -> Token:
         """Consume the current token and return it."""
         previous = self._token
-        self._token = next(self._tokens)
+        try:
+            self._token = next(self._tokens)
+        except StopIteration:
+            # This should not happen if the lexer is working correctly
+            # (it should always end with an EOF token), but handle it gracefully
+            msg = "Unexpected end of input"
+            raise ParseError(
+                msg,
+                line=previous.line,
+                token=previous,
+                expected="more tokens",
+                found="end of input",
+            ) from None
         return previous
 
     def _check(self, *kinds: TokenType) -> bool:
@@ -218,6 +278,40 @@ class Parser:
         while not self._check(TokenType.EOF) and (
             self._token.indent > min_indent or self._token.type == TokenType.BLANK
         ):
+            # Check for unexpected structural tokens that shouldn't appear in
+            # this context
+            if self._check(TokenType.CONDITIONAL_BLOCK_CLOSE, TokenType.FRONT_MATTER):
+                token_descriptions = {
+                    TokenType.CONDITIONAL_BLOCK_CLOSE: "conditional block close ':::'",
+                    TokenType.FRONT_MATTER: "front matter delimiter '---'",
+                }
+                found_desc = token_descriptions[self._token.type]
+
+                # Special message for conditional block close with indentation info
+                if self._token.type == TokenType.CONDITIONAL_BLOCK_CLOSE:
+                    msg = (
+                        "Conditional block close ':::' has mismatched indentation - "
+                        "check that opening and closing tags have the same "
+                        "indentation level"
+                    )
+                    raise ParseError(
+                        msg,
+                        line=self._token.line,
+                        token=self._token,
+                        expected=f"content with indent > {min_indent} or properly "
+                        f"indented closing tag",
+                        found=f"conditional block close ':::' at indent "
+                        f"{self._token.indent} (should match opening tag indent)",
+                    )
+                token_type_desc = self._token.type.name.lower().replace("_", " ")
+                msg = f"Unexpected {token_type_desc} token"
+                raise ParseError(
+                    msg,
+                    line=self._token.line,
+                    token=self._token,
+                    expected="content or block end",
+                    found=found_desc,
+                )
             if self._match(TokenType.BLANK):
                 continue  # skip blank lines at this level
             blocks.append(self._parse_block())
@@ -267,6 +361,15 @@ class Parser:
         fence_indent = open_token.indent
         body_lines: list[str] = []
         while not self._check(TokenType.FENCE):
+            if self._check(TokenType.EOF):
+                msg = "Unclosed code block"
+                raise ParseError(
+                    msg,
+                    line=open_token.line,
+                    token=open_token,
+                    expected="closing fence '```'",
+                    found="end of file",
+                )
             tok = self._advance()
             # Preserve **relative** indentation of the code block
             rel_ident = max(0, tok.indent - fence_indent)
@@ -704,11 +807,24 @@ class MintPrinter:
         self._add_line(":::")
 
 
-def to_mint(markdown: str) -> str:
+def to_mint(markdown: str, file_path: str | None = None) -> str:
     """Convenience function to print an AST node as Mintlify markdown."""
     if not markdown:
         return ""
-    parser = Parser(markdown)
-    doc = parser.parse()
-    printer = MintPrinter()
-    return printer.print(doc)
+    try:
+        parser = Parser(markdown)
+        doc = parser.parse()
+        printer = MintPrinter()
+        return printer.print(doc)
+    except ParseError as e:
+        # Re-raise with file path context if not already present
+        if e.file_path is None and file_path is not None:
+            raise ParseError(
+                e.message,
+                line=e.line,
+                token=e.token,
+                expected=e.expected,
+                found=e.found,
+                file_path=file_path,
+            ) from e
+        raise

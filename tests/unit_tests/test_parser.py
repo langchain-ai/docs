@@ -1,11 +1,14 @@
 """Tests for the markdown parser."""
 
+import pytest
+
 from pipeline.tools.parser import (
     CodeBlock,
     ConditionalBlock,
     Document,
     Heading,
     Paragraph,
+    ParseError,
     Parser,
     to_mint,
 )
@@ -509,3 +512,117 @@ hello
 def test_indented_conditional_block_to_mint() -> None:
     """Test converting an indented conditional block to Mintlify format."""
     assert to_mint(INPUT_INDENTED_CONDITIONAL) == EXPECTED_INDENTED_CONDITIONAL
+
+
+def test_conditional_block_with_whitespace_before_closing_tag() -> None:
+    """Test parsing conditional block with extra whitespace before closing :::."""
+    # This test reproduces the infinite loop bug where whitespace before
+    # the closing ::: tag causes the parser to get stuck
+    text = """\
+:::python
+some text here
+1. blah
+2. moove
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "python"
+    assert len(block.blocks) == 2  # "some text here", ordered list with 2 items
+
+
+def test_admonition_with_conditional_block_close() -> None:
+    """Test admonition with orphaned conditional block closing tag raises ParseError."""
+    text = """\
+!!! note "Title"
+    Some content here
+    :::"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "conditional block close" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert ":::" in str(exc_info.value)
+
+
+def test_tab_block_with_conditional_block_close() -> None:
+    """Test tab block with orphaned conditional block closing tag raises ParseError."""
+    text = """\
+=== "Tab Title"
+    Some tab content
+    :::"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "conditional block close" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert ":::" in str(exc_info.value)
+
+
+def test_admonition_with_fence_token() -> None:
+    """Test admonition containing orphaned fence token raises ParseError."""
+    text = """\
+!!! warning "Important"
+    Some warning text
+    ```"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "fence" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert "```" in str(exc_info.value)
+
+
+def test_tab_block_with_fence_token() -> None:
+    """Test tab block containing orphaned fence token raises ParseError."""
+    text = """\
+=== "Code Tab"
+    Here's some code:
+    ```"""
+    parser = Parser(text)
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+    assert "fence" in str(exc_info.value)
+
+
+def test_nested_list_with_conditional_close() -> None:
+    """Test nested list with orphaned conditional block close raises ParseError."""
+    text = """\
+1. First item
+   - Nested item
+   :::"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "conditional block close" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert ":::" in str(exc_info.value)
+
+
+def test_admonition_with_front_matter_token() -> None:
+    """Test admonition containing orphaned front matter token raises ParseError."""
+    text = """\
+!!! info "Information"
+    Some info here
+    ---"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "front matter" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert "---" in str(exc_info.value)

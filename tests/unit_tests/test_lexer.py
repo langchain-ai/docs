@@ -241,3 +241,36 @@ def test_indented_conditional_block() -> None:
     assert tokens[0].indent == 4
     assert tokens[1].indent == 4
     assert tokens[2].indent == 4
+
+
+def test_conditional_block_with_whitespace_before_close() -> None:
+    """Test lexing conditional block with whitespace before closing tag."""
+    # This is the problematic case that causes infinite loop in parser
+    test_content = """\
+:::python
+some text here
+1. blah
+2. moove
+ :::"""
+
+    tokens = list(lex(test_content))
+
+    # Expected token sequence
+    expected_types = [
+        TokenType.CONDITIONAL_BLOCK_OPEN,  # :::python
+        TokenType.TEXT,  # some text here
+        TokenType.OL_MARKER,  # 1. blah
+        TokenType.OL_MARKER,  # 2. moove
+        TokenType.CONDITIONAL_BLOCK_CLOSE,  # :::
+        TokenType.EOF,
+    ]
+
+    actual_types = [token.type for token in tokens]
+
+    assert actual_types == expected_types
+
+    # Verify the closing tag has correct indent and value
+    close_token = tokens[4]  # The closing ::: token
+    assert close_token.type == TokenType.CONDITIONAL_BLOCK_CLOSE
+    assert close_token.value == ":::"
+    assert close_token.indent == 1  # Should have 1 space of indent
