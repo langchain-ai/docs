@@ -10,7 +10,6 @@ import logging
 import sys
 from pathlib import Path
 
-
 from pipeline.commands.build import build_command
 from pipeline.commands.dev import dev_command
 from pipeline.tools.docusaurus_parser import convert_docusaurus_to_mintlify
@@ -117,7 +116,9 @@ def _process_single_file(
 
             logger.info("Converted %s -> %s", file_path, output_path)
     except ParseError as e:
-        logger.error("Parse error while processing file: %s", str(e))
+        # We want to use logger.error rather than exception here. We do not need the
+        # full stack trace! ParseError should have a nice message.
+        logger.error("Parse error while processing file: %s", str(e))  # noqa: TRY400
         return False
     except Exception:
         logger.exception("Unexpected error while processing file %s", file_path)

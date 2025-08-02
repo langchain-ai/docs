@@ -44,10 +44,10 @@ class ParseError(Exception):
 
         # Build detailed error message
         error_parts = []
-        
+
         if file_path is not None:
             error_parts.append(f"'{file_path}':")
-        
+
         error_parts.append(message)
 
         if line is not None:

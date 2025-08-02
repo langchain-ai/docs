@@ -100,8 +100,6 @@ JS_LINK_MAP = {
     "START": "reference/variables/langgraph.START.html",
     "CompiledStateGraph.stream": "reference/classes/langgraph.CompiledStateGraph.html#stream",
     "task": "reference/functions/langgraph.task.html",
-    ## TODO (hntrl): export Topic from langgraphjs
-    # "Topic": "reference/classes/langgraph_channels.Topic.html",
     "update_state": "reference/classes/langgraph.CompiledStateGraph.html#updateState",
 }
 
