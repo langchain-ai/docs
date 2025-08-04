@@ -55,14 +55,11 @@ README.md             # This file
 
 You can use the Makefile for easier build and development:
 
-1. **Start development mode:**
+1. **Start development mode, from the src/ dir:**
    ```bash
-   make dev
+   mint dev
    ```
    This watches for changes in `src/` and automatically rebuilds content in `build/`.
-
-   This was cobbled together quickly and may not work well for all edits. 
-   If it's getting stuck, kill the process and restart it.
 
    Alternatively, you can `make build`, and launch `mint` inside the `build/` directory 
    to preview changes.
