@@ -1,0 +1,312 @@
+---
+title: "Stuff chain"
+icon: "Book"
+---
+
+The **Stuff Documents** chain processes all documents in a **single pass** by **concatenating their content** and inserting it into the **context window** of the language model (LLM). This approach is ideal when:
+
+- The combined size of all documents **fits within the model’s context window**.
+- You want **joint analysis**, such as summarizing or reasoning across the entire content.
+- You may optionally apply **refinement**, where previous outputs are reprocessed along with new documents.
+
+```mermaid
+graph TD
+    A[Documents] --> B[Concatenate all]
+    C[Optional question] --> E[Prompt construction: all stuffed in context window]
+    D[Optional response format] --> E
+    B --> E
+    E --> F[LLM Processes input]
+    F --> H["Extraction / Summary / Answer"]
+````
+
+# 1. Set up data
+
+
+```python
+from langchain.chains import create_stuff_documents_chain
+from langchain.chat_models import init_chat_model
+from langchain.documents import Document
+```
+
+
+```python
+documents = [
+    Document(
+        page_content=(
+            "Richard Feynman was born on May 11, 1918, in Queens, New York. He showed an early "
+            "interest in science, especially radios and engineering. As a teenager, he repaired "
+            "radios as a hobby and even earned some money doing it.\n\n"
+            "He attended the Massachusetts Institute of Technology (MIT) for his undergraduate "
+            "studies and later earned his PhD in physics from Princeton University in 1942. At "
+            "Princeton, he impressed many with his quick mind and problem-solving skills.\n\n"
+            "After completing his PhD, he joined the Los Alamos Laboratory as part of the Manhattan Project."
+        ),
+        metadata={"source": "early_life"},
+        id="1"
+    ),
+    Document(
+        page_content=(
+            "During World War II, Feynman worked on the Manhattan Project, the top-secret effort "
+            "to build the first atomic bomb. He was based at Los Alamos Laboratory in New Mexico.\n\n"
+            "There, he worked under physicist Hans Bethe and was known for his creativity and sense "
+            "of humor. One of his habits was picking locks and cracking safes—not to steal secrets, "
+            "but to prove how insecure they were.\n\n"
+            "Feynman’s contributions helped the U.S. develop nuclear weapons, which were used in "
+            "1945 to end the war."
+        ),
+        metadata={"source": "manhattan_project"},
+        id="2"
+    ),
+    Document(
+        page_content=(
+            "After the war, Feynman became a professor at Cornell University and later at the "
+            "California Institute of Technology (Caltech). In 1965, he won the Nobel Prize in "
+            "Physics for his work on quantum electrodynamics, shared with Julian Schwinger and "
+            "Sin-Itiro Tomonaga.\n\n"
+            "He became famous for his lectures, especially the Feynman Lectures on Physics, which "
+            "are still used today. In 1986, he served on the Rogers Commission that investigated "
+            "the Space Shuttle Challenger disaster.\n\n"
+            "Feynman died on February 15, 1988, in Los Angeles, California, after a long battle "
+            "with cancer."
+        ),
+        metadata={"source": "later_career"},
+        id="3"
+    ),
+]
+
+```
+
+## Configure for summarization
+
+
+```python
+model = init_chat_model("claude-opus-4-20250514", max_tokens=32_000)
+
+summarizer = (
+    create_stuff_documents_chain(
+        model, 
+        prompt="Summarize the contents into 3 key sentences."
+    )
+    .compile(name='summarize')
+)
+
+print(summarizer.invoke({"documents": documents})['result'])
+```
+```output
+Here are 3 key sentences summarizing Richard Feynman's life:
+
+1. Richard Feynman was a brilliant physicist born in 1918 in Queens, New York, who showed early aptitude for science and engineering, eventually earning his PhD from Princeton University in 1942.
+
+2. During World War II, he worked on the Manhattan Project at Los Alamos Laboratory, contributing to the development of the atomic bomb while becoming known for his creativity, humor, and habit of picking locks to expose security flaws.
+
+3. After the war, he became a renowned professor at Cornell and Caltech, won the 1965 Nobel Prize in Physics for his work on quantum electrodynamics, created the famous Feynman Lectures on Physics, and served on the commission investigating the Challenger disaster before his death in 1988.
+```
+### Structured summarization
+
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List
+
+class BulletPoint(BaseModel):
+    """Represents a single key idea with supporting document references."""
+    content: str = Field(description="A concise bullet point summarizing a key idea.")
+    source_doc_ids: List[str] = Field(default_factory=list, description="Document IDs supporting this bullet point.")
+
+class StructuredSummary(BaseModel):
+    """Structured summary including a title and supporting bullet points."""
+    title: str = Field(description="A concise title summarizing the main theme.")
+    bullet_points: List[BulletPoint] = Field(description="List of bullet points with supporting document references.")
+
+model = init_chat_model("claude-opus-4-20250514", max_tokens=32_000)
+
+chain = (
+    create_stuff_documents_chain(
+        model,
+        response_format=StructuredSummary,
+    )
+    .compile(name='structured_summary_extractor')
+)
+
+structured_summary = chain.invoke({"documents": documents})['result']
+
+print(f"Title: {structured_summary.title}")
+
+for bullet_point in structured_summary.bullet_points:
+    if not bullet_point.source_doc_ids:
+        continue
+    sources = ', '.join(bullet_point.source_doc_ids)
+    print(f" * {bullet_point.content} ({sources})")
+
+```
+```output
+Title: Richard Feynman: The Life and Legacy of a Nobel Prize-Winning Physicist
+ * Born May 11, 1918 in Queens, New York, showing early interest in science and engineering, repairing radios as a teenager (1)
+ * Educated at MIT for undergraduate studies and earned PhD in physics from Princeton University in 1942 (1)
+ * Worked on the Manhattan Project at Los Alamos Laboratory during WWII under Hans Bethe, contributing to the development of the atomic bomb (1, 2)
+ * Known for his creativity, humor, and unconventional habits like picking locks and cracking safes at Los Alamos (2)
+ * Became professor at Cornell University and later at Caltech after the war (3)
+ * Won the 1965 Nobel Prize in Physics for quantum electrodynamics work, shared with Julian Schwinger and Sin-Itiro Tomonaga (3)
+ * Created the famous Feynman Lectures on Physics, which remain widely used educational resources (3)
+ * Served on the Rogers Commission investigating the Space Shuttle Challenger disaster in 1986 (3)
+ * Died February 15, 1988 in Los Angeles, California after battling cancer (3)
+```
+## Configure for extraction
+
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List
+
+class Fact(BaseModel):
+    """Fact about Richard Feynman."""
+    content: str = Field(description="The content of the fact. No more than a few words.")
+    iso_8601_date: Optional[str] = Field(default=None, description="The date associated with the fact if available. Formatted as YYYY-MM-DD.")
+    source_doc_ids: List[str] = Field(default_factory=list, description="The document or documents in which the fact appeared.")
+
+class Data(BaseModel):
+    """Facts to extract"""
+    facts: List[Fact]
+
+model = init_chat_model("claude-opus-4-20250514", max_tokens=32_000)
+
+chain = (
+    create_stuff_documents_chain(
+        model,
+        response_format=Data,
+    )
+    .compile(name='fact_extractor')
+)
+
+fact_data = chain.invoke({"documents": documents})['result']
+
+print("Extracted facts that have dates:")
+for fact in fact_data.facts:
+    if not fact.source_doc_ids:
+        continue
+    if not fact.iso_8601_date:
+        continue
+    date_str = f" on {fact.iso_8601_date}" if fact.iso_8601_date else ""
+    sources = ', '.join(fact.source_doc_ids)
+    print(f" * {date_str}: {fact.content} (sources: {sources})")
+
+```
+```output
+Extracted facts that have dates:
+ *  on 1918-05-11: Born in Queens, New York (sources: 1)
+ *  on 1942: PhD from Princeton University (sources: 1)
+ *  on 1965: Won Nobel Prize in Physics (sources: 3)
+ *  on 1986: Served on Rogers Commission (sources: 3)
+ *  on 1988-02-15: Died in Los Angeles, California (sources: 3)
+```
+## Use for Q&A
+
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List
+
+model = init_chat_model("claude-3-5-haiku-latest", max_tokens=5_000)
+
+chain = (
+    create_stuff_documents_chain(model)
+    .compile(name='Q&A')
+)
+
+response = chain.invoke({
+    "documents": documents,
+    # A question can be provided during run time. 
+    "question": "Identify locations where Richard Feynman spent significant time"
+})
+print(response['result'])
+```
+```output
+Based on the documents, here are the key locations where Richard Feynman spent significant time:
+
+1. Queens, New York - His birthplace
+2. Massachusetts Institute of Technology (MIT) - Undergraduate studies
+3. Princeton University - PhD studies
+4. Los Alamos Laboratory, New Mexico - Worked on the Manhattan Project during World War II
+5. Cornell University - Professor
+6. California Institute of Technology (Caltech) - Professor
+7. Los Angeles, California - Where he died in 1988
+```
+## Refinment
+
+Refinment can be achieved using LangGraph's persistence layer.
+
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+import uuid
+
+model = init_chat_model("claude-3-5-haiku-latest", max_tokens=5_000)
+
+checkpointer = InMemorySaver()
+
+class Fact(BaseModel):
+    """Fact."""
+    content: str = Field(description="The content of the fact. No more than a few words.")
+    source_doc_ids: List[str] = Field(default_factory=list, description="The document or documents in which the fact appeared.")
+
+class Data(BaseModel):
+    """Facts to extract"""
+    facts: List[Fact]
+
+chain = (
+    create_stuff_documents_chain(
+        model, 
+        prompt="Extract any facts about Richard Feynman's time at Caltech.",
+        response_format=Data
+    )
+    .compile(name='Q&A', checkpointer=checkpointer)
+)
+
+thread_id = uuid.uuid4()
+
+response = chain.invoke(
+    {
+        "documents": documents,
+    },
+    {
+        'configurable': {
+            'thread_id': thread_id,
+        }
+    }
+)
+
+for fact in response['result'].facts:
+    sources = ', '.join(fact.source_doc_ids)
+    print(f" * {fact.content} (sources: {sources})")
+```
+```output
+ * Became professor at Caltech (sources: 3)
+ * Gave famous Feynman Lectures on Physics (sources: 3)
+ * Served on Rogers Commission investigating Challenger disaster (sources: 3)
+```
+
+```python
+response = chain.invoke(
+    {
+        "documents": [
+            Document(id=4, page_content="Richard Feynman used to eat a ton of icecream while at Caltech")
+        ],
+    },
+    {
+        'configurable': {
+            'thread_id': thread_id,
+        }
+    }
+)
+
+
+for fact in response['result'].facts:
+    sources = ', '.join(fact.source_doc_ids)
+    print(f" * {fact.content} (sources: {sources})")
+```
+```output
+ * Became professor at Caltech (sources: 3)
+ * Gave famous Feynman Lectures on Physics (sources: 3)
+ * Served on Rogers Commission investigating Challenger disaster (sources: 3)
+ * Loved eating ice cream at Caltech (sources: 4)
+```
