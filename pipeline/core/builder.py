@@ -49,6 +49,7 @@ class DocumentationBuilder:
             ".yml",
             ".yaml",
             ".css",
+            ".js",
         }
 
     def build_all(self) -> None:
@@ -503,7 +504,7 @@ class DocumentationBuilder:
         Returns:
             True if the file should be shared, False if it should be version-specific.
         """
-        # Shared files: docs.json, images directory
+        # Shared files: docs.json, images directory, JavaScript files
         relative_path = file_path.relative_to(self.src_dir)
         
         # docs.json should be shared
@@ -512,6 +513,10 @@ class DocumentationBuilder:
         
         # Images directory should be shared
         if "images" in relative_path.parts:
+            return True
+        
+        # JavaScript and CSS files should be shared (used for custom scripts/styles)
+        if file_path.suffix.lower() in {".js", ".css"}:
             return True
             
         return False
