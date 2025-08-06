@@ -38,7 +38,14 @@ README.md             # This file
    uv sync --all-groups
    ```
 
-4. **Use the docs CLI tool:**
+4. **Install Mintlify CLI**
+
+   The docs CLI uses parts of the Mintlify CLI so you need to install that too.
+   ```bash
+   npm i -g mint
+   ```
+
+5. **Use the docs CLI tool:**
    
    After setup, you'll have access to the `docs` command:
    ```bash
