@@ -74,12 +74,12 @@ class DocumentationBuilder:
             shutil.rmtree(self.build_dir)
         self.build_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build LangGraph versioned content (oss/ -> langgraph/python/ and langgraph/javascript/)
+        # Build LangGraph versioned content (oss/ -> python/oss/ and javascript/oss/)
         logger.info("Building LangGraph Python version...")
-        self._build_langgraph_version("langgraph/python", "python")
+        self._build_langgraph_version("python/oss", "python")
         
         logger.info("Building LangGraph JavaScript version...")
-        self._build_langgraph_version("langgraph/javascript", "js")
+        self._build_langgraph_version("javascript/oss", "js")
 
         # Build unversioned content (same content regardless of version)
         logger.info("Building LangGraph Platform content...")
@@ -504,7 +504,7 @@ class DocumentationBuilder:
         Returns:
             True if the file should be shared, False if it should be version-specific.
         """
-        # Shared files: docs.json, images directory, JavaScript files
+        # Shared files: docs.json, images directory, JavaScript files, snippets
         relative_path = file_path.relative_to(self.src_dir)
         
         # docs.json should be shared
@@ -513,6 +513,10 @@ class DocumentationBuilder:
         
         # Images directory should be shared
         if "images" in relative_path.parts:
+            return True
+        
+        # Snippets directory should be shared
+        if "snippets" in relative_path.parts:
             return True
         
         # JavaScript and CSS files should be shared (used for custom scripts/styles)
