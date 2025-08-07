@@ -36,6 +36,7 @@ def test_builder_initialization() -> None:
             ".yml",
             ".yaml",
             ".css",
+            ".js",
         }
 
 
