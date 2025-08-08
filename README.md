@@ -20,6 +20,10 @@ README.md             # This file
 
 ### Quick Start
 
+#### Install the Mintlify CLI
+
+Install `mint` from https://mintlify.com/docs/installation
+
 #### Setup Virtual Environment (Recommended)
 
 1. **Install uv:**
