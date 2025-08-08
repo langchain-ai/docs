@@ -9,6 +9,7 @@ import yaml
 from tqdm import tqdm
 
 from pipeline.preprocessors import preprocess_markdown
+from pipeline.tools.notebook.convert import convert_notebook
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class DocumentationBuilder:
         self.copy_extensions: set[str] = {
             ".mdx",
             ".md",
+            ".ipynb",
             ".json",
             ".svg",
             ".png",
@@ -50,6 +52,35 @@ class DocumentationBuilder:
             ".yaml",
             ".css",
         }
+
+    def _should_ignore_file(self, file_path: Path) -> bool:
+        """Check if a file should be ignored during build.
+
+        This method filters out cached files, temporary files, and other
+        files that should not be included in the build process.
+
+        Args:
+            file_path: Path to the file to check.
+
+        Returns:
+            True if the file should be ignored, False otherwise.
+        """
+        filename = file_path.name
+
+        # Ignore files starting with .~ (cached/temporary files)
+        if filename.startswith(".~"):
+            return True
+
+        # Ignore files starting with ~ (backup files)
+        if filename.startswith("~"):
+            return True
+
+        # Ignore hidden files starting with . (except specific ones we want)
+        if filename.startswith(".") and filename not in {".gitkeep"}:
+            return True
+
+        # Ignore common temporary file patterns
+        return bool(filename.endswith((".tmp", ".temp")))
 
     def build_all(self) -> None:
         """Build all documentation files from source to build directory.
@@ -76,7 +107,8 @@ class DocumentationBuilder:
 
         # Collect all files to process
         all_files = [
-            file_path for file_path in self.src_dir.rglob("*") if file_path.is_file()
+            file_path for file_path in self.src_dir.rglob("*")
+            if file_path.is_file() and not self._should_ignore_file(file_path)
         ]
 
         if not all_files:
@@ -188,6 +220,34 @@ class DocumentationBuilder:
             logger.exception("Failed to process markdown file %s", input_path)
             raise
 
+    def _process_notebook_file(self, input_path: Path, output_path: Path) -> None:
+        """Process a Jupyter notebook file and convert to markdown.
+
+        This method converts a Jupyter notebook to markdown, applies preprocessing,
+        and writes the processed content to the output path as an .mdx file.
+
+        Args:
+            input_path: Path to the source notebook file.
+            output_path: Path where the processed file should be written.
+        """
+        try:
+            # Convert notebook to markdown
+            markdown_content = convert_notebook(input_path)
+
+            # Apply markdown preprocessing
+            processed_content = self._process_markdown_content(markdown_content, input_path)
+
+            # Convert .ipynb to .mdx
+            output_path = output_path.with_suffix(".mdx")
+
+            # Write the processed content
+            with output_path.open("w", encoding="utf-8") as f:
+                f.write(processed_content)
+
+        except Exception:
+            logger.exception("Failed to process notebook file %s", input_path)
+            raise
+
     def build_file(self, file_path: Path) -> None:
         """Build a single file by copying it to the build directory.
 
@@ -227,6 +287,10 @@ class DocumentationBuilder:
             if file_path.suffix.lower() in {".md", ".mdx"}:
                 self._process_markdown_file(file_path, output_path)
                 logger.info("Processed markdown: %s", relative_path)
+            # Handle notebook files with conversion to markdown
+            elif file_path.suffix.lower() == ".ipynb":
+                self._process_notebook_file(file_path, output_path)
+                logger.info("Converted notebook: %s", relative_path)
             else:
                 shutil.copy2(file_path, output_path)
                 logger.info("Copied: %s", relative_path)
@@ -268,6 +332,10 @@ class DocumentationBuilder:
             # Handle markdown files with preprocessing
             if file_path.suffix.lower() in {".md", ".mdx"}:
                 self._process_markdown_file(file_path, output_path)
+                return True
+            # Handle notebook files with conversion to markdown
+            if file_path.suffix.lower() == ".ipynb":
+                self._process_notebook_file(file_path, output_path)
                 return True
             shutil.copy2(file_path, output_path)
             return True
