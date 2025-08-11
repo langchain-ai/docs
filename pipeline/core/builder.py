@@ -74,12 +74,12 @@ class DocumentationBuilder:
             shutil.rmtree(self.build_dir)
         self.build_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build LangGraph versioned content (oss/ -> python/oss/ and javascript/oss/)
+        # Build LangGraph versioned content (oss/ -> oss/python/ and oss/javascript/)
         logger.info("Building LangGraph Python version...")
-        self._build_langgraph_version("python/oss", "python")
+        self._build_langgraph_version("oss/python", "python")
         
         logger.info("Building LangGraph JavaScript version...")
-        self._build_langgraph_version("javascript/oss", "js")
+        self._build_langgraph_version("oss/javascript", "js")
 
         # Build unversioned content (same content regardless of version)
         logger.info("Building LangGraph Platform content...")
