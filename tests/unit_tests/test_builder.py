@@ -50,7 +50,6 @@ def test_build_all_empty_directory() -> None:
         builder.build_all()
         assert not fs.list_build_files()
 
-
     def test_build_all_supported_files() -> None:
         """Test building all supported file types.
 
@@ -62,14 +61,11 @@ def test_build_all_empty_directory() -> None:
             File(path="oss/index.mdx", content="# Welcome"),
             File(path="oss/config.json", content='{"name": "test"}'),
             File(path="oss/guides/setup.md", content="# Setup Guide"),
-            
             # LangGraph Platform files
             File(path="langgraph-platform/index.mdx", content="# Platform"),
             File(path="langgraph-platform/guide.md", content="# Guide"),
-            
             # LangChain Labs files
             File(path="labs/index.mdx", content="# Labs"),
-            
             # Shared files
             File(path="images/logo.png", bytes=b"PNG_DATA"),
             File(path="docs.json", content='{"name": "test"}'),
@@ -81,36 +77,34 @@ def test_build_all_empty_directory() -> None:
 
             # Verify all files were copied with correct structure
             build_files = set(str(p) for p in fs.list_build_files())
-            
+
             # Python version of LangGraph files
             assert "oss/python/index.mdx" in build_files
             assert "oss/python/config.json" in build_files
             assert "oss/python/guides/setup.md" in build_files
-            
+
             # JavaScript version of LangGraph files
             assert "oss/javascript/index.mdx" in build_files
             assert "oss/javascript/config.json" in build_files
             assert "oss/javascript/guides/setup.md" in build_files
-            
+
             # LangGraph Platform files
             assert "langgraph-platform/index.mdx" in build_files
             assert "langgraph-platform/guide.md" in build_files
-            
+
             # LangChain Labs files
             assert "labs/index.mdx" in build_files
-            
+
             # Shared files
             assert "images/logo.png" in build_files
             assert "docs.json" in build_files
-            
+
             # Total number of files should be:
             # - 3 files * 2 versions (Python/JavaScript) for LangGraph
             # - 2 files for Platform
             # - 1 file for Labs
             # - 2 shared files
             assert len(build_files) == 11
-
-
 
     def test_build_all_unsupported_files() -> None:
         """Test building with unsupported file types.
@@ -131,7 +125,6 @@ def test_build_all_empty_directory() -> None:
                 path="oss/data.csv",
                 content="col1,col2\n1,2",
             ),
-
             # Platform files with supported and unsupported types
             File(
                 path="langgraph-platform/guide.md",
@@ -141,7 +134,6 @@ def test_build_all_empty_directory() -> None:
                 path="langgraph-platform/ignored.txt",
                 content="This should be ignored",
             ),
-
             # Labs files with supported and unsupported types
             File(
                 path="labs/index.mdx",
@@ -151,7 +143,6 @@ def test_build_all_empty_directory() -> None:
                 path="labs/data.csv",
                 content="col1,col2\n1,2",
             ),
-
             # Shared files with supported and unsupported types
             File(
                 path="images/logo.png",
@@ -198,7 +189,6 @@ def test_build_all_empty_directory() -> None:
             # - 1 file for Labs
             # - 1 shared file
             assert len(build_files) == 4
-
 
 
 def test_build_single_file() -> None:
