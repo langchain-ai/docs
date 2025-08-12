@@ -67,7 +67,11 @@ class DocumentationBuilder:
         Displays:
             Progress bars showing build progress for each version.
         """
-        logger.info("Building versioned documentation from %s to %s", self.src_dir, self.build_dir)
+        logger.info(
+            "Building versioned documentation from %s to %s",
+            self.src_dir,
+            self.build_dir,
+        )
 
         # Clear build directory
         if self.build_dir.exists():
@@ -77,14 +81,14 @@ class DocumentationBuilder:
         # Build LangGraph versioned content (oss/ -> oss/python/ and oss/javascript/)
         logger.info("Building LangGraph Python version...")
         self._build_langgraph_version("oss/python", "python")
-        
+
         logger.info("Building LangGraph JavaScript version...")
         self._build_langgraph_version("oss/javascript", "js")
 
         # Build unversioned content (same content regardless of version)
         logger.info("Building LangGraph Platform content...")
         self._build_unversioned_content("langgraph-platform", "langgraph-platform")
-        
+
         logger.info("Building LangChain Labs content...")
         self._build_unversioned_content("labs", "labs")
 
@@ -123,7 +127,9 @@ class DocumentationBuilder:
             logger.exception("Failed to convert %s to JSON", yaml_file_path)
             raise
 
-    def _process_markdown_content(self, content: str, file_path: Path, target_language: str = None) -> str:
+    def _process_markdown_content(
+        self, content: str, file_path: Path, target_language: str | None = None
+    ) -> str:
         """Process markdown content with preprocessing.
 
         This method applies preprocessing (cross-reference resolution and
@@ -139,12 +145,16 @@ class DocumentationBuilder:
         """
         try:
             # Apply markdown preprocessing
-            return preprocess_markdown(content, file_path, target_language=target_language)
+            return preprocess_markdown(
+                content, file_path, target_language=target_language
+            )
         except Exception:
             logger.exception("Failed to process markdown content from %s", file_path)
             raise
 
-    def _process_markdown_file(self, input_path: Path, output_path: Path, target_language: str = None) -> None:
+    def _process_markdown_file(
+        self, input_path: Path, output_path: Path, target_language: str | None = None
+    ) -> None:
         """Process a markdown file with preprocessing and copy to output.
 
         This method reads a markdown file, applies preprocessing (cross-reference
@@ -162,7 +172,9 @@ class DocumentationBuilder:
                 content = f.read()
 
             # Apply markdown preprocessing
-            processed_content = self._process_markdown_content(content, input_path, target_language)
+            processed_content = self._process_markdown_content(
+                content, input_path, target_language
+            )
 
             # Convert .md to .mdx if needed
             if input_path.suffix.lower() == ".md":
@@ -321,7 +333,8 @@ class DocumentationBuilder:
             return
 
         all_files = [
-            file_path for file_path in oss_dir.rglob("*") 
+            file_path
+            for file_path in oss_dir.rglob("*")
             if file_path.is_file() and not self._is_shared_file(file_path)
         ]
 
@@ -345,9 +358,13 @@ class DocumentationBuilder:
                 relative_path = file_path.relative_to(oss_dir)
                 # Build to output_dir/ (not output_dir/oss/)
                 output_path = self.build_dir / output_dir / relative_path
-                
+
                 result = self._build_single_file(
-                    file_path, output_path, target_language, pbar, f"{output_dir}/{relative_path}"
+                    file_path,
+                    output_path,
+                    target_language,
+                    pbar,
+                    f"{output_dir}/{relative_path}",
                 )
                 if result:
                     copied_count += 1
@@ -375,7 +392,8 @@ class DocumentationBuilder:
             return
 
         all_files = [
-            file_path for file_path in src_path.rglob("*") 
+            file_path
+            for file_path in src_path.rglob("*")
             if file_path.is_file() and not self._is_shared_file(file_path)
         ]
 
@@ -399,9 +417,13 @@ class DocumentationBuilder:
                 relative_path = file_path.relative_to(src_path)
                 # Build directly to output_dir/
                 output_path = self.build_dir / output_dir / relative_path
-                
+
                 result = self._build_single_file(
-                    file_path, output_path, "python", pbar, f"{output_dir}/{relative_path}"
+                    file_path,
+                    output_path,
+                    "python",
+                    pbar,
+                    f"{output_dir}/{relative_path}",
                 )
                 if result:
                     copied_count += 1
@@ -417,7 +439,12 @@ class DocumentationBuilder:
         )
 
     def _build_single_file(
-        self, file_path: Path, output_path: Path, target_language: str, pbar: tqdm, display_path: str
+        self,
+        file_path: Path,
+        output_path: Path,
+        target_language: str,
+        pbar: tqdm,
+        display_path: str,
     ) -> bool:
         """Build a single file with progress bar integration.
 
@@ -506,30 +533,31 @@ class DocumentationBuilder:
         """
         # Shared files: docs.json, images directory, JavaScript files, snippets
         relative_path = file_path.relative_to(self.src_dir)
-        
+
         # docs.json should be shared
         if file_path.name == "docs.json":
             return True
-        
+
         # Images directory should be shared
         if "images" in relative_path.parts:
             return True
-        
+
         # Snippets directory should be shared
         if "snippets" in relative_path.parts:
             return True
-        
+
         # JavaScript and CSS files should be shared (used for custom scripts/styles)
         if file_path.suffix.lower() in {".js", ".css"}:
             return True
-            
+
         return False
 
     def _copy_shared_files(self) -> None:
         """Copy files that should be shared between versions."""
         # Collect shared files
         shared_files = [
-            file_path for file_path in self.src_dir.rglob("*") 
+            file_path
+            for file_path in self.src_dir.rglob("*")
             if file_path.is_file() and self._is_shared_file(file_path)
         ]
 
