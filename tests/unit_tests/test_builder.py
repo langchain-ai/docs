@@ -51,57 +51,154 @@ def test_build_all_empty_directory() -> None:
         assert not fs.list_build_files()
 
 
-def test_build_all_supported_files() -> None:
-    """Test building all supported file types.
+    def test_build_all_supported_files() -> None:
+        """Test building all supported file types.
 
-    Verifies that the builder correctly copies all supported file types
-    while maintaining directory structure.
-    """
-    files = [
-        File(path="index.mdx", content="# Welcome"),
-        File(path="config.json", content='{"name": "test"}'),
-        File(path="images/logo.png", bytes=b"PNG_DATA"),
-        File(path="guides/setup.md", content="# Setup Guide"),
-    ]
+        Verifies that the builder correctly copies all supported file types
+        while maintaining directory structure.
+        """
+        files = [
+            # LangGraph (oss) files - both Python and JavaScript versions
+            File(path="oss/index.mdx", content="# Welcome"),
+            File(path="oss/config.json", content='{"name": "test"}'),
+            File(path="oss/guides/setup.md", content="# Setup Guide"),
+            
+            # LangGraph Platform files
+            File(path="langgraph-platform/index.mdx", content="# Platform"),
+            File(path="langgraph-platform/guide.md", content="# Guide"),
+            
+            # LangChain Labs files
+            File(path="labs/index.mdx", content="# Labs"),
+            
+            # Shared files
+            File(path="images/logo.png", bytes=b"PNG_DATA"),
+            File(path="docs.json", content='{"name": "test"}'),
+        ]
 
-    with file_system(files) as fs:
-        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-        builder.build_all()
+        with file_system(files) as fs:
+            builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+            builder.build_all()
 
-        # Verify all files were copied
-        build_files = fs.list_build_files()
-        assert len(build_files) == 4
-        assert Path("index.mdx") in build_files
-        assert Path("config.json") in build_files
-        assert Path("images/logo.png") in build_files
-        assert Path("guides/setup.mdx") in build_files
+            # Verify all files were copied with correct structure
+            build_files = set(str(p) for p in fs.list_build_files())
+            
+            # Python version of LangGraph files
+            assert "oss/python/index.mdx" in build_files
+            assert "oss/python/config.json" in build_files
+            assert "oss/python/guides/setup.md" in build_files
+            
+            # JavaScript version of LangGraph files
+            assert "oss/javascript/index.mdx" in build_files
+            assert "oss/javascript/config.json" in build_files
+            assert "oss/javascript/guides/setup.md" in build_files
+            
+            # LangGraph Platform files
+            assert "langgraph-platform/index.mdx" in build_files
+            assert "langgraph-platform/guide.md" in build_files
+            
+            # LangChain Labs files
+            assert "labs/index.mdx" in build_files
+            
+            # Shared files
+            assert "images/logo.png" in build_files
+            assert "docs.json" in build_files
+            
+            # Total number of files should be:
+            # - 3 files * 2 versions (Python/JavaScript) for LangGraph
+            # - 2 files for Platform
+            # - 1 file for Labs
+            # - 2 shared files
+            assert len(build_files) == 11
 
 
-def test_build_all_unsupported_files() -> None:
-    """Test building with unsupported file types.
 
-    Verifies that the builder skips unsupported file types.
-    """
-    files = [
-        File(
-            path="index.mdx",
-            content="# Welcome",
-        ),
-        File(
-            path="ignored.txt",
-            content="This should be ignored",
-        ),
-    ]
+    def test_build_all_unsupported_files() -> None:
+        """Test building with unsupported file types.
 
-    with file_system(files) as fs:
-        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-        builder.build_all()
+        Verifies that the builder skips unsupported file types.
+        """
+        files = [
+            # LangGraph files with supported and unsupported types
+            File(
+                path="oss/index.mdx",
+                content="# Welcome",
+            ),
+            File(
+                path="oss/ignored.txt",
+                content="This should be ignored",
+            ),
+            File(
+                path="oss/data.csv",
+                content="col1,col2\n1,2",
+            ),
 
-        # Verify only supported files were copied
-        build_files = fs.list_build_files()
-        assert len(build_files) == 1
-        assert Path("index.mdx") in build_files
-        assert not fs.build_file_exists("ignored.txt")
+            # Platform files with supported and unsupported types
+            File(
+                path="langgraph-platform/guide.md",
+                content="# Guide",
+            ),
+            File(
+                path="langgraph-platform/ignored.txt",
+                content="This should be ignored",
+            ),
+
+            # Labs files with supported and unsupported types
+            File(
+                path="labs/index.mdx",
+                content="# Labs",
+            ),
+            File(
+                path="labs/data.csv",
+                content="col1,col2\n1,2",
+            ),
+
+            # Shared files with supported and unsupported types
+            File(
+                path="images/logo.png",
+                bytes=b"PNG_DATA",
+            ),
+            File(
+                path="ignored.txt",
+                content="This should be ignored",
+            ),
+        ]
+
+        with file_system(files) as fs:
+            builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+            builder.build_all()
+
+            # Verify only supported files were copied
+            build_files = set(str(p) for p in fs.list_build_files())
+
+            # Python version of LangGraph files (only .mdx)
+            assert "oss/python/index.mdx" in build_files
+            assert "oss/python/ignored.txt" not in build_files
+            assert "oss/python/data.csv" not in build_files
+
+            # JavaScript version of LangGraph files (only .mdx)
+            assert "oss/javascript/index.mdx" in build_files
+            assert "oss/javascript/ignored.txt" not in build_files
+            assert "oss/javascript/data.csv" not in build_files
+
+            # Platform files (only .md)
+            assert "langgraph-platform/guide.md" in build_files
+            assert "langgraph-platform/ignored.txt" not in build_files
+
+            # Labs files (only .mdx)
+            assert "labs/index.mdx" in build_files
+            assert "labs/data.csv" not in build_files
+
+            # Shared files (only .png)
+            assert "images/logo.png" in build_files
+            assert "ignored.txt" not in build_files
+
+            # Total number of files should be:
+            # - 1 file * 2 versions (Python/JavaScript) for LangGraph
+            # - 1 file for Platform
+            # - 1 file for Labs
+            # - 1 shared file
+            assert len(build_files) == 4
+
 
 
 def test_build_single_file() -> None:
