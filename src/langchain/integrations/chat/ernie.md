@@ -1,0 +1,66 @@
+---
+sidebar_label: Ernie Bot Chat
+---
+
+# ErnieBotChat
+
+[ERNIE-Bot](https://cloud.baidu.com/doc/WENXINWORKSHOP/s/jlil56u11) is a large language model developed by Baidu, covering a huge amount of Chinese data.
+This notebook covers how to get started with ErnieBot chat models.
+
+**Deprecated Warning**
+
+We recommend users switch from `langchain_community.chat_models.ErnieBotChat` to `langchain_community.chat_models.QianfanChatEndpoint`.
+
+documentation for `QianfanChatEndpoint` is [here](/oss/integrations/chat/baidu_qianfan_endpoint/).
+
+There are 4 reasons why we recommend users to use `QianfanChatEndpoint`:
+
+1. `QianfanChatEndpoint` supports more LLMs in the Qianfan platform.
+2. `QianfanChatEndpoint` supports streaming mode.
+3. `QianfanChatEndpoint` support function calling usage.
+4. `ErnieBotChat` is no longer maintained and has been deprecated.
+
+Some tips for migration:
+
+- change `ernie_client_id` to `qianfan_ak`, also change `ernie_client_secret` to `qianfan_sk`.
+- install `qianfan` package. like `pip install qianfan`
+- change `ErnieBotChat` to `QianfanChatEndpoint`.
+
+
+```python
+from langchain_community.chat_models.baidu_qianfan_endpoint import QianfanChatEndpoint
+
+chat = QianfanChatEndpoint(
+    qianfan_ak="your qianfan ak",
+    qianfan_sk="your qianfan sk",
+)
+```
+
+## Usage
+
+
+```python
+from langchain_community.chat_models import ErnieBotChat
+from langchain_core.messages import HumanMessage
+
+chat = ErnieBotChat(
+    ernie_client_id="YOUR_CLIENT_ID", ernie_client_secret="YOUR_CLIENT_SECRET"
+)
+```
+
+or you can set `client_id` and `client_secret` in your environment variables
+```bash
+export ERNIE_CLIENT_ID=YOUR_CLIENT_ID
+export ERNIE_CLIENT_SECRET=YOUR_CLIENT_SECRET
+```
+
+
+```python
+chat([HumanMessage(content="hello there, who are you?")])
+```
+
+
+
+```output
+AIMessage(content='Hello, I am an artificial intelligence language model. My purpose is to help users answer questions or provide information. What can I do for you?', additional_kwargs={}, example=False)
+```

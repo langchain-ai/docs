@@ -1,0 +1,143 @@
+---
+sidebar_label: ChatFriendli
+---
+
+# ChatFriendli
+
+> [Friendli](https://friendli.ai/) enhances AI application performance and optimizes cost savings with scalable, efficient deployment options, tailored for high-demand AI workloads.
+
+This tutorial guides you through integrating `ChatFriendli` for chat applications using LangChain. `ChatFriendli` offers a flexible approach to generating conversational AI responses, supporting both synchronous and asynchronous calls.
+
+## Setup
+
+Ensure the `langchain_community` and `friendli-client` are installed.
+
+```sh
+pip install -U langchain-community friendli-client.
+```
+
+Sign in to [Friendli Suite](https://suite.friendli.ai/) to create a Personal Access Token, and set it as the `FRIENDLI_TOKEN` environment.
+
+
+```python
+import getpass
+import os
+
+if "FRIENDLI_TOKEN" not in os.environ:
+    os.environ["FRIENDLI_TOKEN"] = getpass.getpass("Friendi Personal Access Token: ")
+```
+
+You can initialize a Friendli chat model with selecting the model you want to use. The default model is `mixtral-8x7b-instruct-v0-1`. You can check the available models at [docs.friendli.ai](https://docs.periflow.ai/guides/serverless_endpoints/pricing#text-generation-models).
+
+
+```python
+from langchain_community.chat_models.friendli import ChatFriendli
+
+chat = ChatFriendli(model="meta-llama-3.1-8b-instruct", max_tokens=100, temperature=0)
+```
+
+## Usage
+
+`FrienliChat` supports all methods of [`ChatModel`](/docs/how_to#chat-models) including async APIs.
+
+You can also use functionality of  `invoke`, `batch`, `generate`, and `stream`.
+
+
+```python
+from langchain_core.messages.human import HumanMessage
+from langchain_core.messages.system import SystemMessage
+
+system_message = SystemMessage(content="Answer questions as short as you can.")
+human_message = HumanMessage(content="Tell me a joke.")
+messages = [system_message, human_message]
+
+chat.invoke(messages)
+```
+
+
+
+```output
+AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-d47c1056-54e8-4ea9-ad63-07cf74b834b7-0')
+```
+
+
+
+```python
+chat.batch([messages, messages])
+```
+
+
+
+```output
+[AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-36775b84-2a7a-48f0-8c68-df23ffffe4b2-0'),
+ AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-b204be41-bc06-4d3a-9f74-e66ab1e60e4f-0')]
+```
+
+
+
+```python
+chat.generate([messages, messages])
+```
+
+
+
+```output
+LLMResult(generations=[[ChatGeneration(text="Why don't eggs tell jokes? They'd crack each other up.", message=AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-2e4cb949-8c51-40d5-92a0-cd0ac577db83-0'))], [ChatGeneration(text="Why don't eggs tell jokes? They'd crack each other up.", message=AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-afcdd1be-463c-4e50-9731-7a9f5958e396-0'))]], llm_output={}, run=[RunInfo(run_id=UUID('2e4cb949-8c51-40d5-92a0-cd0ac577db83')), RunInfo(run_id=UUID('afcdd1be-463c-4e50-9731-7a9f5958e396'))], type='LLMResult')
+```
+
+
+
+```python
+for chunk in chat.stream(messages):
+    print(chunk.content, end="", flush=True)
+```
+```output
+Why don't eggs tell jokes? They'd crack each other up.
+```
+You can also use all functionality of async APIs: `ainvoke`, `abatch`, `agenerate`, and `astream`.
+
+
+```python
+await chat.ainvoke(messages)
+```
+
+
+
+```output
+AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-ba8062fb-68af-47b8-bd7b-d1e01b914744-0')
+```
+
+
+
+```python
+await chat.abatch([messages, messages])
+```
+
+
+
+```output
+[AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-5d2c77ab-2637-45da-8bbe-1b1f18a22369-0'),
+ AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-f1338470-8b52-4d6e-9428-a694a08ae484-0')]
+```
+
+
+
+```python
+await chat.agenerate([messages, messages])
+```
+
+
+
+```output
+LLMResult(generations=[[ChatGeneration(text="Why don't eggs tell jokes? They'd crack each other up.", message=AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-d4e44569-39cc-40cc-93fc-de53e599fd51-0'))], [ChatGeneration(text="Why don't eggs tell jokes? They'd crack each other up.", message=AIMessage(content="Why don't eggs tell jokes? They'd crack each other up.", additional_kwargs={}, response_metadata={}, id='run-54647cc2-bee3-4154-ad00-2e547993e6d7-0'))]], llm_output={}, run=[RunInfo(run_id=UUID('d4e44569-39cc-40cc-93fc-de53e599fd51')), RunInfo(run_id=UUID('54647cc2-bee3-4154-ad00-2e547993e6d7'))], type='LLMResult')
+```
+
+
+
+```python
+async for chunk in chat.astream(messages):
+    print(chunk.content, end="", flush=True)
+```
+```output
+Why don't eggs tell jokes? They'd crack each other up.
+```

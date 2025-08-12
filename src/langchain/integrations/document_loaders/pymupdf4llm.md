@@ -1,0 +1,426 @@
+---
+sidebar_label: PyMuPDF4LLM
+---
+
+# PyMuPDF4LLMLoader
+
+This notebook provides a quick overview for getting started with PyMuPDF4LLM [document loader](https://python.langchain.com/docs/concepts/#document-loaders). For detailed documentation of all PyMuPDF4LLMLoader features and configurations head to the [GitHub repository](https://github.com/lakinduboteju/langchain-pymupdf4llm).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support |
+| :--- | :--- | :---: | :---: |  :---: |
+| [PyMuPDF4LLMLoader](https://github.com/lakinduboteju/langchain-pymupdf4llm) | [langchain-pymupdf4llm](https://pypi.org/project/langchain-pymupdf4llm) | ✅ | ❌ | ❌ |
+
+### Loader features
+
+| Source | Document Lazy Loading | Native Async Support | Extract Images | Extract Tables |
+| :---: | :---: | :---: | :---: | :---: |
+| PyMuPDF4LLMLoader | ✅ | ❌ | ✅ | ✅ |
+
+## Setup
+
+To access PyMuPDF4LLM document loader you'll need to install the `langchain-pymupdf4llm` integration package.
+
+### Credentials
+
+No credentials are required to use PyMuPDF4LLMLoader.
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+Install **langchain-community** and **langchain-pymupdf4llm**.
+
+
+```python
+%pip install -qU langchain-community langchain-pymupdf4llm
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Initialization
+
+Now we can instantiate our model object and load documents:
+
+
+```python
+from langchain_pymupdf4llm import PyMuPDF4LLMLoader
+
+file_path = "./example_data/layout-parser-paper.pdf"
+loader = PyMuPDF4LLMLoader(file_path)
+```
+
+## Load
+
+
+```python
+docs = loader.load()
+docs[0]
+```
+
+
+
+```output
+Document(metadata={'producer': 'pdfTeX-1.40.21', 'creator': 'LaTeX with hyperref', 'creationdate': '2021-06-22T01:27:10+00:00', 'source': './example_data/layout-parser-paper.pdf', 'file_path': './example_data/layout-parser-paper.pdf', 'total_pages': 16, 'format': 'PDF 1.5', 'title': '', 'author': '', 'subject': '', 'keywords': '', 'moddate': '2021-06-22T01:27:10+00:00', 'trapped': '', 'modDate': 'D:20210622012710Z', 'creationDate': 'D:20210622012710Z', 'page': 0}, page_content='\`\`\`\nLayoutParser: A Unified Toolkit for Deep\n\n## Learning Based Document Image Analysis\n\n\`\`\`\n\nZejiang Shen[1] (�), Ruochen Zhang[2], Melissa Dell[3], Benjamin Charles Germain\nLee[4], Jacob Carlson[3], and Weining Li[5]\n\n1 Allen Institute for AI\n\`\`\`\n              shannons@allenai.org\n\n\`\`\`\n2 Brown University\n\`\`\`\n             ruochen zhang@brown.edu\n\n\`\`\`\n3 Harvard University\n_{melissadell,jacob carlson}@fas.harvard.edu_\n4 University of Washington\n\`\`\`\n              bcgl@cs.washington.edu\n\n\`\`\`\n5 University of Waterloo\n\`\`\`\n              w422li@uwaterloo.ca\n\n\`\`\`\n\n**Abstract. Recent advances in document image analysis (DIA) have been**\nprimarily driven by the application of neural networks. Ideally, research\noutcomes could be easily deployed in production and extended for further\ninvestigation. However, various factors like loosely organized codebases\nand sophisticated model configurations complicate the easy reuse of important innovations by a wide audience. Though there have been on-going\nefforts to improve reusability and simplify deep learning (DL) model\ndevelopment in disciplines like natural language processing and computer\nvision, none of them are optimized for challenges in the domain of DIA.\nThis represents a major gap in the existing toolkit, as DIA is central to\nacademic research across a wide range of disciplines in the social sciences\nand humanities. This paper introduces LayoutParser, an open-source\nlibrary for streamlining the usage of DL in DIA research and applications. The core LayoutParser library comes with a set of simple and\nintuitive interfaces for applying and customizing DL models for layout detection, character recognition, and many other document processing tasks.\nTo promote extensibility, LayoutParser also incorporates a community\nplatform for sharing both pre-trained models and full document digitization pipelines. We demonstrate that LayoutParser is helpful for both\nlightweight and large-scale digitization pipelines in real-word use cases.\n[The library is publicly available at https://layout-parser.github.io.](https://layout-parser.github.io)\n\n**Keywords: Document Image Analysis · Deep Learning · Layout Analysis**\n\n    - Character Recognition · Open Source library · Toolkit.\n\n### 1 Introduction\n\n\nDeep Learning(DL)-based approaches are the state-of-the-art for a wide range of\ndocument image analysis (DIA) tasks including document image classification [11,\n\n')
+```
+
+
+
+```python
+import pprint
+
+pprint.pp(docs[0].metadata)
+```
+```output
+{'producer': 'pdfTeX-1.40.21',
+ 'creator': 'LaTeX with hyperref',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'file_path': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'format': 'PDF 1.5',
+ 'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'trapped': '',
+ 'modDate': 'D:20210622012710Z',
+ 'creationDate': 'D:20210622012710Z',
+ 'page': 0}
+```
+## Lazy Load
+
+
+```python
+pages = []
+for doc in loader.lazy_load():
+    pages.append(doc)
+    if len(pages) >= 10:
+        # do some paged operation, e.g.
+        # index.upsert(page)
+
+        pages = []
+len(pages)
+```
+
+
+
+```output
+6
+```
+
+
+
+```python
+from IPython.display import Markdown, display
+
+part = pages[0].page_content[778:1189]
+print(part)
+# Markdown rendering
+display(Markdown(part))
+```
+
+
+```python
+pprint.pp(pages[0].metadata)
+```
+```output
+{'producer': 'pdfTeX-1.40.21',
+ 'creator': 'LaTeX with hyperref',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'file_path': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'format': 'PDF 1.5',
+ 'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'trapped': '',
+ 'modDate': 'D:20210622012710Z',
+ 'creationDate': 'D:20210622012710Z',
+ 'page': 10}
+```
+The metadata attribute contains at least the following keys:
+- source
+- page (if in mode *page*)
+- total_page
+- creationdate
+- creator
+- producer
+
+Additional metadata are specific to each parser.
+These pieces of information can be helpful (to categorize your PDFs for example).
+
+## Splitting mode & custom pages delimiter
+
+When loading the PDF file you can split it in two different ways:
+- By page
+- As a single text flow
+
+By default PyMuPDF4LLMLoader will split the PDF by page.
+
+### Extract the PDF by page. Each page is extracted as a langchain Document object:
+
+
+```python
+loader = PyMuPDF4LLMLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+)
+docs = loader.load()
+
+print(len(docs))
+pprint.pp(docs[0].metadata)
+```
+```output
+16
+{'producer': 'pdfTeX-1.40.21',
+ 'creator': 'LaTeX with hyperref',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'file_path': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'format': 'PDF 1.5',
+ 'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'trapped': '',
+ 'modDate': 'D:20210622012710Z',
+ 'creationDate': 'D:20210622012710Z',
+ 'page': 0}
+```
+In this mode the pdf is split by pages and the resulting Documents metadata contains the `page` (page number). But in some cases we could want to process the pdf as a single text flow (so we don't cut some paragraphs in half). In this case you can use the *single* mode :
+
+### Extract the whole PDF as a single langchain Document object:
+
+
+```python
+loader = PyMuPDF4LLMLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="single",
+)
+docs = loader.load()
+
+print(len(docs))
+pprint.pp(docs[0].metadata)
+```
+```output
+1
+{'producer': 'pdfTeX-1.40.21',
+ 'creator': 'LaTeX with hyperref',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'file_path': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'format': 'PDF 1.5',
+ 'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'trapped': '',
+ 'modDate': 'D:20210622012710Z',
+ 'creationDate': 'D:20210622012710Z'}
+```
+Logically, in this mode, the `page` (page_number) metadata disappears. Here's how to clearly identify where pages end in the text flow :
+
+### Add a custom *pages_delimiter* to identify where are ends of pages in *single* mode:
+
+
+```python
+loader = PyMuPDF4LLMLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="single",
+    pages_delimiter="\n-------THIS IS A CUSTOM END OF PAGE-------\n\n",
+)
+docs = loader.load()
+
+part = docs[0].page_content[10663:11317]
+print(part)
+display(Markdown(part))
+```
+
+The default `pages_delimiter` is \n-----\n\n.
+But this could simply be \n, or \f to clearly indicate a page change, or \<!-- PAGE BREAK --> for seamless injection in a Markdown viewer without a visual effect.
+
+# Extract images from the PDF
+
+You can extract images from your PDFs (in text form) with a choice of three different solutions:
+- rapidOCR (lightweight Optical Character Recognition tool)
+- Tesseract (OCR tool with high precision)
+- Multimodal language model
+
+The result is inserted at the end of text of the page.
+
+### Extract images from the PDF with rapidOCR:
+
+
+```python
+%pip install -qU rapidocr-onnxruntime pillow
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+from langchain_community.document_loaders.parsers import RapidOCRBlobParser
+
+loader = PyMuPDF4LLMLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    extract_images=True,
+    images_parser=RapidOCRBlobParser(),
+)
+docs = loader.load()
+
+part = docs[5].page_content[1863:]
+print(part)
+display(Markdown(part))
+```
+
+Be careful, RapidOCR is designed to work with Chinese and English, not other languages.
+
+### Extract images from the PDF with Tesseract:
+
+
+```python
+%pip install -qU pytesseract
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+from langchain_community.document_loaders.parsers import TesseractBlobParser
+
+loader = PyMuPDF4LLMLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    extract_images=True,
+    images_parser=TesseractBlobParser(),
+)
+docs = loader.load()
+
+print(docs[5].page_content[1863:])
+```
+
+### Extract images from the PDF with multimodal model:
+
+
+```python
+%pip install -qU langchain-openai
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+```
+
+
+
+```output
+True
+```
+
+
+
+```python
+from getpass import getpass
+
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass("OpenAI API key =")
+```
+
+
+```python
+from langchain_community.document_loaders.parsers import LLMImageBlobParser
+from langchain_openai import ChatOpenAI
+
+loader = PyMuPDF4LLMLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    extract_images=True,
+    images_parser=LLMImageBlobParser(
+        model=ChatOpenAI(model="gpt-4o-mini", max_tokens=1024)
+    ),
+)
+docs = loader.load()
+
+print(docs[5].page_content[1863:])
+```
+
+# Extract tables from the PDF
+
+With PyMUPDF4LLM you can extract tables from your PDFs in *markdown* format :
+
+
+```python
+loader = PyMuPDF4LLMLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    # "lines_strict" is the default strategy and
+    # is the most accurate for tables with column and row lines,
+    # but may not work well with all documents.
+    # "lines" is a less strict strategy that may work better with
+    # some documents.
+    # "text" is the least strict strategy and may work better
+    # with documents that do not have tables with lines.
+    table_strategy="lines",
+)
+docs = loader.load()
+
+part = docs[4].page_content[3210:]
+print(part)
+display(Markdown(part))
+```
+
+## Working with Files
+
+Many document loaders involve parsing files. The difference between such loaders usually stems from how the file is parsed, rather than how the file is loaded. For example, you can use `open` to read the binary content of either a PDF or a markdown file, but you need different parsing logic to convert that binary data into text.
+
+As a result, it can be helpful to decouple the parsing logic from the loading logic, which makes it easier to re-use a given parser regardless of how the data was loaded.
+You can use this strategy to analyze different files, with the same parsing parameters.
+
+
+```python
+from langchain_community.document_loaders import FileSystemBlobLoader
+from langchain_community.document_loaders.generic import GenericLoader
+from langchain_pymupdf4llm import PyMuPDF4LLMParser
+
+loader = GenericLoader(
+    blob_loader=FileSystemBlobLoader(
+        path="./example_data/",
+        glob="*.pdf",
+    ),
+    blob_parser=PyMuPDF4LLMParser(),
+)
+docs = loader.load()
+
+part = docs[0].page_content[:562]
+print(part)
+display(Markdown(part))
+```
+
+## API reference
+
+For detailed documentation of all PyMuPDF4LLMLoader features and configurations head to the GitHub repository: https://github.com/lakinduboteju/langchain-pymupdf4llm

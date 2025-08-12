@@ -1,0 +1,262 @@
+# Gel 
+
+> An implementation of LangChain vectorstore abstraction using `gel` as the backend.
+
+[Gel](https://www.geldata.com/) is an open-source PostgreSQL data layer optimized for fast development to production cycle. It comes with a high-level strictly typed graph-like data model, composable hierarchical query language, full SQL support, migrations, Auth and AI modules.
+
+The code lives in an integration package called [langchain-gel](https://github.com/geldata/langchain-gel).
+
+## Setup
+
+First install relevant packages:
+
+
+```python
+! pip install -qU gel langchain-gel 
+```
+
+## Initialization
+
+In order to use Gel as a backend for your `VectorStore`, you're going to need a working Gel instance.
+Fortunately, it doesn't have to involve Docker containers or anything complicated, unless you want to!
+
+To set up a local instance, run:
+
+
+```python
+! gel project init --non-interactive
+```
+
+If you are using [Gel Cloud](https://cloud.geldata.com/) (and you should!), add one more argument to that command:
+
+```bash
+gel project init --server-instance <org-name>/<instance-name>
+```
+
+For a comprehensive list of ways to run Gel, take a look at [Running Gel](https://docs.geldata.com/reference/running) section of the reference docs.
+
+### Set up the schema
+
+[Gel schema](https://docs.geldata.com/reference/datamodel) is an explicit high-level description of your application's data model. 
+Aside from enabling you to define exactly how your data is going to be laid out, it drives Gel's many powerful features such as links, access policies, functions, triggers, constraints, indexes, and more.
+
+The LangChain's `VectorStore` expects the following layout for the schema:
+
+
+```python
+schema_content = """
+using extension pgvector;
+                                    
+module default {
+    scalar type EmbeddingVector extending ext::pgvector::vector<1536>;
+
+    type Record {
+        required collection: str;
+        text: str;
+        embedding: EmbeddingVector; 
+        external_id: str {
+            constraint exclusive;
+        };
+        metadata: json;
+
+        index ext::pgvector::hnsw_cosine(m := 16, ef_construction := 128)
+            on (.embedding)
+    } 
+}
+""".strip()
+
+with open("dbschema/default.gel", "w") as f:
+    f.write(schema_content)
+```
+
+In order to apply schema changes to the database, run a migration using Gel's [migration mechanism](https://docs.geldata.com/reference/datamodel/migrations):
+
+
+```python
+! gel migration create --non-interactive
+! gel migrate
+```
+
+From this point onward, `GelVectorStore` can be used as a drop-in replacement for any other vectorstore available in LangChain.
+
+## Instantiation
+
+<EmbeddingTabs/>
+
+
+
+```python
+# | output: false
+# | echo: false
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+```
+
+
+```python
+from langchain_gel import GelVectorStore
+
+vector_store = GelVectorStore(
+    embeddings=embeddings,
+)
+```
+
+## Manage vector store
+
+### Add items to vector store
+
+Note that adding documents by ID will over-write any existing documents that match that ID.
+
+
+```python
+from langchain_core.documents import Document
+
+docs = [
+    Document(
+        page_content="there are cats in the pond",
+        metadata={"id": "1", "location": "pond", "topic": "animals"},
+    ),
+    Document(
+        page_content="ducks are also found in the pond",
+        metadata={"id": "2", "location": "pond", "topic": "animals"},
+    ),
+    Document(
+        page_content="fresh apples are available at the market",
+        metadata={"id": "3", "location": "market", "topic": "food"},
+    ),
+    Document(
+        page_content="the market also sells fresh oranges",
+        metadata={"id": "4", "location": "market", "topic": "food"},
+    ),
+    Document(
+        page_content="the new art exhibit is fascinating",
+        metadata={"id": "5", "location": "museum", "topic": "art"},
+    ),
+    Document(
+        page_content="a sculpture exhibit is also at the museum",
+        metadata={"id": "6", "location": "museum", "topic": "art"},
+    ),
+    Document(
+        page_content="a new coffee shop opened on Main Street",
+        metadata={"id": "7", "location": "Main Street", "topic": "food"},
+    ),
+    Document(
+        page_content="the book club meets at the library",
+        metadata={"id": "8", "location": "library", "topic": "reading"},
+    ),
+    Document(
+        page_content="the library hosts a weekly story time for kids",
+        metadata={"id": "9", "location": "library", "topic": "reading"},
+    ),
+    Document(
+        page_content="a cooking class for beginners is offered at the community center",
+        metadata={"id": "10", "location": "community center", "topic": "classes"},
+    ),
+]
+
+vector_store.add_documents(docs, ids=[doc.metadata["id"] for doc in docs])
+```
+
+### Delete items from vector store
+
+
+```python
+vector_store.delete(ids=["3"])
+```
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent. 
+
+### Filtering Support
+
+The vectorstore supports a set of filters that can be applied against the metadata fields of the documents.
+
+| Operator | Meaning/Category        |
+|----------|-------------------------|
+| \$eq      | Equality (==)           |
+| \$ne      | Inequality (!=)         |
+| \$lt      | Less than (&lt;)           |
+| \$lte     | Less than or equal (&lt;=) |
+| \$gt      | Greater than (>)        |
+| \$gte     | Greater than or equal (>=) |
+| \$in      | Special Cased (in)      |
+| \$nin     | Special Cased (not in)  |
+| \$between | Special Cased (between) |
+| \$like    | Text (like)             |
+| \$ilike   | Text (case-insensitive like) |
+| \$and     | Logical (and)           |
+| \$or      | Logical (or)            |
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+
+```python
+results = vector_store.similarity_search(
+    "kitty", k=10, filter={"id": {"$in": ["1", "5", "2", "9"]}}
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+If you provide a dict with multiple fields, but no operators, the top level will be interpreted as a logical **AND** filter
+
+
+```python
+vector_store.similarity_search(
+    "ducks",
+    k=10,
+    filter={
+        "id": {"$in": ["1", "5", "2", "9"]},
+        "location": {"$in": ["pond", "market"]},
+    },
+)
+```
+
+
+```python
+vector_store.similarity_search(
+    "ducks",
+    k=10,
+    filter={
+        "$and": [
+            {"id": {"$in": ["1", "5", "2", "9"]}},
+            {"location": {"$in": ["pond", "market"]}},
+        ]
+    },
+)
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+
+```python
+results = vector_store.similarity_search_with_score(query="cats", k=1)
+for doc, score in results:
+    print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains. 
+
+
+```python
+retriever = vector_store.as_retriever(search_kwargs={"k": 1})
+retriever.invoke("kitty")
+```
+
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Tutorials](/oss/tutorials/)
+- [How-to: Question and answer with RAG](https://python.langchain.com/docs/how_to/#qa-with-rag)
+- [Retrieval conceptual docs](https://python.langchain.com/docs/concepts/retrieval)
+
+## API reference
+
+For detailed documentation of all GelVectorStore features and configurations head to the API reference: https://python.langchain.com/api_reference/

@@ -1,0 +1,141 @@
+---
+sidebar_label: ZhipuAI
+---
+
+# ZhipuAIEmbeddings
+
+This will help you get started with ZhipuAI embedding models using LangChain. For detailed documentation on `ZhipuAIEmbeddings` features and configuration options, please refer to the [API reference](https://bigmodel.cn/dev/api#vector).
+
+## Overview
+### Integration details
+
+| Provider | Package |
+|:--------:|:-------:|
+| [ZhipuAI](/oss/integrations/providers/zhipuai/) | [langchain-community](https://python.langchain.com/api_reference/community/embeddings/langchain_community.embeddings.zhipuai.ZhipuAIEmbeddings.html) |
+
+## Setup
+
+To access ZhipuAI embedding models you'll need to create a/an ZhipuAI account, get an API key, and install the `zhipuai` integration package.
+
+### Credentials
+
+Head to [https://bigmodel.cn/](https://bigmodel.cn/usercenter/apikeys) to sign up to ZhipuAI and generate an API key. Once you've done this set the ZHIPUAI_API_KEY environment variable:
+
+
+```python
+import getpass
+import os
+
+if not os.getenv("ZHIPUAI_API_KEY"):
+    os.environ["ZHIPUAI_API_KEY"] = getpass.getpass("Enter your ZhipuAI API key: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+
+
+```python
+# os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain ZhipuAI integration lives in the `zhipuai` package:
+
+
+```python
+%pip install -qU zhipuai
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```python
+from langchain_community.embeddings import ZhipuAIEmbeddings
+
+embeddings = ZhipuAIEmbeddings(
+    model="embedding-3",
+    # With the `embedding-3` class
+    # of models, you can specify the size
+    # of the embeddings you want returned.
+    # dimensions=1024
+)
+```
+
+## Indexing and Retrieval
+
+Embedding models are often used in retrieval-augmented generation (RAG) flows, both as part of indexing data as well as later retrieving it. For more detailed instructions, please see our [RAG tutorials](/oss/tutorials/rag).
+
+Below, see how to index and retrieve data using the `embeddings` object we initialized above. In this example, we will index and retrieve a sample document in the `InMemoryVectorStore`.
+
+
+```python
+# Create a vector store with a sample text
+from langchain_core.vectorstores import InMemoryVectorStore
+
+text = "LangChain is the framework for building context-aware reasoning applications"
+
+vectorstore = InMemoryVectorStore.from_texts(
+    [text],
+    embedding=embeddings,
+)
+
+# Use the vectorstore as a retriever
+retriever = vectorstore.as_retriever()
+
+# Retrieve the most similar text
+retrieved_documents = retriever.invoke("What is LangChain?")
+
+# show the retrieved document's content
+retrieved_documents[0].page_content
+```
+
+
+
+```output
+'LangChain is the framework for building context-aware reasoning applications'
+```
+
+
+## Direct Usage
+
+Under the hood, the vectorstore and retriever implementations are calling `embeddings.embed_documents(...)` and `embeddings.embed_query(...)` to create embeddings for the text(s) used in `from_texts` and retrieval `invoke` operations, respectively.
+
+You can directly call these methods to get embeddings for your own use cases.
+
+### Embed single texts
+
+You can embed single texts or documents with `embed_query`:
+
+
+```python
+single_vector = embeddings.embed_query(text)
+print(str(single_vector)[:100])  # Show the first 100 characters of the vector
+```
+```output
+[-0.022979736, 0.007785797, 0.04598999, 0.012741089, -0.01689148, 0.008277893, 0.016464233, 0.009246
+```
+### Embed multiple texts
+
+You can embed multiple texts with `embed_documents`:
+
+
+```python
+text2 = (
+    "LangGraph is a library for building stateful, multi-actor applications with LLMs"
+)
+two_vectors = embeddings.embed_documents([text, text2])
+for vector in two_vectors:
+    print(str(vector)[:100])  # Show the first 100 characters of the vector
+```
+```output
+[-0.022979736, 0.007785797, 0.04598999, 0.012741089, -0.01689148, 0.008277893, 0.016464233, 0.009246
+[-0.02330017, -0.013916016, 0.00022411346, 0.017196655, -0.034240723, 0.011131287, 0.011497498, -0.0
+```
+## API Reference
+
+For detailed documentation on `ZhipuAIEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/community/embeddings/langchain_community.embeddings.zhipuai.ZhipuAIEmbeddings.html).
