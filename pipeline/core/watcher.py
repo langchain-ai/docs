@@ -67,7 +67,8 @@ class DocsFileHandler(FileSystemEventHandler):
         src_path = event.src_path
 
         file_path = Path(src_path)
-        if file_path.suffix.lower() in self.builder.copy_extensions:
+        if (file_path.suffix.lower() in self.builder.copy_extensions and
+            not self.builder._should_ignore_file(file_path)):
             logger.info("File changed: %s", file_path)
             # Put file change event in queue for async processing
             self.loop.call_soon_threadsafe(self.event_queue.put_nowait, file_path)
