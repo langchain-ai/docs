@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -50,6 +51,12 @@ class DocumentationBuilder:
             ".yaml",
             ".css",
             ".js",
+        }
+
+        # Mapping of language codes to full names for URLs
+        self.language_url_names = {
+            "python": "python",
+            "js": "javascript",
         }
 
     def build_all(self) -> None:
@@ -127,6 +134,39 @@ class DocumentationBuilder:
             logger.exception("Failed to convert %s to JSON", yaml_file_path)
             raise
 
+    def _rewrite_oss_links(self, content: str, target_language: str | None) -> str:
+        """Rewrite /oss/ links to include the target language.
+
+        Args:
+            content: The markdown content to process.
+            target_language: Target language ("python" or "js") or None to skip rewriting.
+
+        Returns:
+            Content with rewritten links.
+        """
+        if not target_language:
+            return content
+
+        def rewrite_link(match: re.Match) -> str:
+            """Rewrite a single link match."""
+            pre = match.group(1)  # Everything before the URL
+            url = match.group(2)  # The URL
+            post = match.group(3)  # Everything after the URL
+
+            # Only rewrite absolute /oss/ paths
+            if url.startswith("/oss/"):
+                parts = url.split("/")
+                # Insert full language name after "oss"
+                parts.insert(2, self.language_url_names[target_language])
+                url = "/".join(parts)
+
+            return f"{pre}{url}{post}"
+
+        # Match markdown links and HTML links/anchors
+        # This handles both [text](/oss/path) and <a href="/oss/path">
+        pattern = r'(\[.*?\]\(|\bhref="|")(/oss/[^")\s]+)([")\s])'
+        return re.sub(pattern, rewrite_link, content)
+
     def _process_markdown_content(
         self, content: str, file_path: Path, target_language: str | None = None
     ) -> str:
@@ -144,10 +184,15 @@ class DocumentationBuilder:
             The processed markdown content.
         """
         try:
-            # Apply markdown preprocessing
-            return preprocess_markdown(
+            # First apply standard markdown preprocessing
+            content = preprocess_markdown(
                 content, file_path, target_language=target_language
             )
+
+            # Then rewrite /oss/ links to include language
+            content = self._rewrite_oss_links(content, target_language)
+
+            return content
         except Exception:
             logger.exception("Failed to process markdown content from %s", file_path)
             raise
