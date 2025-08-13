@@ -31,7 +31,7 @@ from langchain_auth import Client
 client = Client(api_key="your-langsmith-api-key")
 ```
 
-### 2. Set Up OAuth Providers
+### 2. Set Up OAuth Providers (one time)
 
 Before agents can authenticate, you need to configure OAuth providers:
 
@@ -49,35 +49,40 @@ github_provider = await client.create_oauth_provider(
 )
 ```
 
-### 3. Authenticate from Agent
+### 3. Authenticate from An Agent
 
 #### In LangGraph Context
 
-When authentication is required, the sdk will throw an [interrupt](https://langchain-ai.github.io/langgraph/how-tos/human_in_the_loop/add-human-in-the-loop/#pause-using-interrupt). After the caller completes the OAuth flow out of band, execution will resume from the same point.
+By default, tokens will be scoped to the calling agent using the Assistant ID parameter.
 
 ```python
-# Default: agent-scoped token (restricted to this assistant)
 auth_result = await client.authenticate(
     provider="github",
     scopes=["repo"],
     user_id="your_user_id" # Any unique identifier to scope this token to the human caller
 )
 
-# OAuth flow is handled automatically via interrupts
-
-token = auth_result.token  # Ready to use after OAuth completes
-```
-
-If you need a token that works across multiple agents:
-
-```python
-# User-scoped token (works for any agent under this user)
+# Or if you'd like a token that can be used by any agent, set agent_scoped=False
 auth_result = await client.authenticate(
     provider="github",
     scopes=["repo"],
     user_id="your_user_id",
     agent_scoped=False
 )
+```
+
+During execution, when authentication is required, the SDK will throw an [interrupt](https://langchain-ai.github.io/langgraph/how-tos/human_in_the_loop/add-human-in-the-loop/#pause-using-interrupt). The agent execution pauses and presents the OAuth URL to the user:
+
+![LangGraph Studio interrupt showing OAuth URL](./images/langgraph-auth-interrupt.png)
+
+After the user completes OAuth authentication and we receive the callback from the provider, they will see the auth success page:
+
+![GitHub OAuth success page](./images/github-auth-success.png)
+
+The agent resumes execution from the point it left off. The token can now be used for any API calls. We store and refresh OAuth tokens on our side, meaning any future uses of this service and scope from this user and agent will not require an OAuth flow.
+
+```python
+token = auth_result.token
 ```
 
 #### Outside LangGraph Context
@@ -100,81 +105,4 @@ if auth_result.needs_auth:
     token = completed_auth.token
 else:
     token = auth_result.token
-```
-
-## Usage Examples
-
-### From a LangGraph Agent
-
-When running inside a LangGraph context, the authentication flow uses interrupts for a seamless user experience:
-
-```python
-from langchain_auth import Client
-from langgraph.graph import StateGraph
-
-def create_agent_with_auth():
-    client = Client(api_key="your-api-key")
-    
-    async def authenticate_node(state):
-        # This will interrupt and prompt user for OAuth
-        auth_result = await client.authenticate(
-            provider="github",
-            scopes=["repo"],
-            user_id=state["user_id"]
-        )
-        
-        # When resumed, token will be available
-        state["github_token"] = auth_result.token
-        return state
-    
-    # Add to your LangGraph workflow
-    graph = StateGraph(...)
-    graph.add_node("auth", authenticate_node)
-    return graph.compile()
-```
-
-### Outside of LangGraph Context
-
-Here's a basic agent that uses GitHub authentication outside of LangGraph:
-
-```python
-import asyncio
-from langchain_auth import Client
-
-async def simple_github_agent():
-    """A simple agent that authenticates with GitHub and fetches user info."""
-    client = Client(api_key="your-api-key")
-    
-    try:
-        # Authenticate with GitHub
-        auth_result = await client.authenticate(
-            provider="github",
-            scopes=["read:user"],
-            user_id="agent_user"
-        )
-        
-        # Handle OAuth flow if needed
-        if auth_result.needs_auth:
-            print(f"Please complete OAuth at: {auth_result.auth_url}")
-            auth_result = await client.wait_for_completion(auth_result.auth_id)
-        
-        # Now we have a token - agent can use it for GitHub API calls
-        token = auth_result.token
-        print(f"Agent authenticated successfully!")
-        
-        # Example: Use token with GitHub API
-        import httpx
-        async with httpx.AsyncClient() as http_client:
-            response = await http_client.get(
-                "https://api.github.com/user",
-                headers={"Authorization": f"Bearer {token}"}
-            )
-            user_data = response.json()
-            print(f"Authenticated as: {user_data['login']}")
-        
-    finally:
-        await client.close()
-
-# Run the agent
-asyncio.run(simple_github_agent())
 ```
