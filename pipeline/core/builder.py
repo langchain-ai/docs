@@ -153,8 +153,8 @@ class DocumentationBuilder:
             url = match.group(2)  # The URL
             post = match.group(3)  # Everything after the URL
 
-            # Only rewrite absolute /oss/ paths
-            if url.startswith("/oss/"):
+            # Only rewrite absolute /oss/ paths that don't contain 'images'
+            if url.startswith("/oss/") and "images" not in url:
                 parts = url.split("/")
                 # Insert full language name after "oss"
                 parts.insert(2, self.language_url_names[target_language])
