@@ -170,122 +170,7 @@ for provider in providers:
 
 ## Usage Examples
 
-### GitHub Authentication
-
-```python
-import asyncio
-from langchain_auth import Client
-
-async def github_example():
-    client = Client(api_key="your-api-key")
-    
-    # Authenticate with GitHub
-    auth_result = await client.authenticate(
-        provider="github",
-        scopes=["repo", "read:user"],
-        user_id="developer123"
-    )
-    
-    if auth_result.needs_auth:
-        print(f"Please visit: {auth_result.auth_url}")
-        # Wait for OAuth completion
-        completed_result = await client.wait_for_completion(
-            auth_id=auth_result.auth_id
-        )
-        token = completed_result.token
-    else:
-        token = auth_result.token
-    
-    # Use token for GitHub API calls
-    print(f"GitHub access token: {token[:10]}...")
-    await client.close()
-
-asyncio.run(github_example())
-```
-
-### Google Workspace Authentication
-
-```python
-async def google_workspace_example():
-    client = Client(api_key="your-api-key")
-    
-    auth_result = await client.authenticate(
-        provider="google_workspace",
-        scopes=[
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/gmail.readonly"
-        ],
-        user_id="user456"
-    )
-    
-    if auth_result.needs_auth:
-        print(f"Google OAuth required: {auth_result.auth_url}")
-        completed_result = await client.wait_for_completion(
-            auth_id=auth_result.auth_id,
-            timeout=300
-        )
-        token = completed_result.token
-    else:
-        token = auth_result.token
-    
-    # Use token for Google APIs
-    await client.close()
-```
-
-### Multi-Service Agent
-
-```python
-class MultiServiceAgent:
-    def __init__(self, auth_client):
-        self.auth_client = auth_client
-        self.tokens = {}
-    
-    async def authenticate_service(self, provider, scopes, user_id):
-        """Authenticate with a specific service."""
-        auth_result = await self.auth_client.authenticate(
-            provider=provider,
-            scopes=scopes,
-            user_id=user_id
-        )
-        
-        if auth_result.needs_auth:
-            print(f"Authentication required for {provider}: {auth_result.auth_url}")
-            completed_result = await self.auth_client.wait_for_completion(
-                auth_id=auth_result.auth_id
-            )
-            self.tokens[provider] = completed_result.token
-        else:
-            self.tokens[provider] = auth_result.token
-        
-        return self.tokens[provider]
-    
-    async def setup_all_services(self, user_id):
-        """Authenticate with all required services."""
-        # GitHub
-        await self.authenticate_service(
-            provider="github",
-            scopes=["repo"],
-            user_id=user_id
-        )
-        
-        # Google Workspace
-        await self.authenticate_service(
-            provider="google_workspace",
-            scopes=["https://www.googleapis.com/auth/drive"],
-            user_id=user_id
-        )
-        
-        print("All services authenticated successfully!")
-
-# Usage
-async def run_agent():
-    client = Client(api_key="your-api-key")
-    agent = MultiServiceAgent(client)
-    await agent.setup_all_services("user789")
-    await client.close()
-```
-
-## LangGraph Integration
+### From a LangGraph Agent
 
 When running inside a LangGraph context, the authentication flow uses interrupts for a seamless user experience:
 
@@ -312,4 +197,50 @@ def create_agent_with_auth():
     graph = StateGraph(...)
     graph.add_node("auth", authenticate_node)
     return graph.compile()
+```
+
+### Outside of LangGraph Context
+
+Here's a basic agent that uses GitHub authentication outside of LangGraph:
+
+```python
+import asyncio
+from langchain_auth import Client
+
+async def simple_github_agent():
+    """A simple agent that authenticates with GitHub and fetches user info."""
+    client = Client(api_key="your-api-key")
+    
+    try:
+        # Authenticate with GitHub
+        auth_result = await client.authenticate(
+            provider="github",
+            scopes=["read:user"],
+            user_id="agent_user"
+        )
+        
+        # Handle OAuth flow if needed
+        if auth_result.needs_auth:
+            print(f"Please complete OAuth at: {auth_result.auth_url}")
+            auth_result = await client.wait_for_completion(auth_result.auth_id)
+        
+        # Now we have a token - agent can use it for GitHub API calls
+        token = auth_result.token
+        print(f"Agent authenticated successfully!")
+        
+        # Example: Use token with GitHub API
+        import httpx
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.get(
+                "https://api.github.com/user",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            user_data = response.json()
+            print(f"Authenticated as: {user_data['login']}")
+        
+    finally:
+        await client.close()
+
+# Run the agent
+asyncio.run(simple_github_agent())
 ```
