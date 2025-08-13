@@ -1,0 +1,315 @@
+LangChain Agent Auth enables secure access from agents to other systems via OAuth 2.0 credentials. With LangChain Agent Auth, build your agents to securely connect to any system on your behalf.
+
+## Overview
+
+LangChain Agent Auth is designed to solve the challenge of secure authentication for autonomous agents. Instead of embedding credentials directly in agent code or requiring manual intervention for each API call, agents can use the OAuth flow to obtain time-limited access tokens for external services.
+
+The system consists of:
+- **Authentication Server**: Manages OAuth flows and stores credentials securely
+- **Client SDK**: Python library for easy integration with agents
+- **Provider Management**: Configuration for OAuth providers like GitHub, Google Workspace, etc.
+
+## Installation
+
+Install the client SDK:
+
+```bash
+pip install langchain-auth
+```
+
+For use with LangGraph:
+```bash
+pip install 'langchain-auth[langgraph]'
+```
+
+## Quick Start
+
+### 1. Initialize the Client
+
+```python
+from langchain_auth import Client
+
+client = Client(
+    api_key="your-api-key",
+    api_url="http://localhost:8080"  # Default URL
+)
+```
+
+### 2. Set Up OAuth Providers
+
+Before agents can authenticate, you need to configure OAuth providers:
+
+```python
+# Create GitHub provider
+github_provider = await client.create_oauth_provider(
+    provider_id="github",
+    name="GitHub",
+    client_id="your-github-client-id",
+    client_secret="your-github-client-secret",
+    auth_url="https://github.com/login/oauth/authorize",
+    token_url="https://github.com/login/oauth/access_token",
+    user_info_url="https://api.github.com/user",
+    scopes=["read:user", "repo"]
+)
+```
+
+### 3. Authenticate from Agent
+
+```python
+# Authenticate with GitHub
+auth_result = await client.authenticate(
+    provider="github",
+    scopes=["repo"],
+    user_id="user123"
+)
+
+if auth_result.needs_auth:
+    print(f"Visit: {auth_result.auth_url}")
+    # Wait for user to complete OAuth flow
+    completed_result = await client.wait_for_completion(
+        auth_id=auth_result.auth_id,
+        timeout=300
+    )
+    access_token = completed_result.token
+else:
+    access_token = auth_result.token
+
+# Use the token to access GitHub API
+```
+
+## Client SDK Reference
+
+### Client Class
+
+The main interface for interacting with the authentication service.
+
+#### `authenticate(provider, scopes, user_id=None, agent_id=None)`
+
+Initiates OAuth authentication flow.
+
+**Parameters:**
+- `provider` (str): OAuth provider name (e.g., "github", "google_workspace")
+- `scopes` (list): Required OAuth scopes
+- `user_id` (str, optional): User ID for user-scoped tokens
+- `agent_id` (str, optional): Agent ID for agent-scoped tokens
+
+**Returns:** `AuthResult` object
+
+**Example:**
+```python
+auth_result = await client.authenticate(
+    provider="github",
+    scopes=["read:user", "repo"],
+    user_id="user123"
+)
+```
+
+#### `wait_for_completion(auth_id, timeout=300)`
+
+Waits for OAuth authentication to be completed by the user.
+
+**Parameters:**
+- `auth_id` (str): Authentication ID from `authenticate()` call
+- `timeout` (int): Maximum time to wait in seconds
+
+**Returns:** `AuthResult` with access token
+
+**Example:**
+```python
+if auth_result.needs_auth:
+    completed_result = await client.wait_for_completion(
+        auth_id=auth_result.auth_id,
+        timeout=300
+    )
+    token = completed_result.token
+```
+
+#### `create_oauth_provider(...)`
+
+Creates a new OAuth provider configuration.
+
+**Parameters:**
+- `provider_id` (str): Unique provider identifier
+- `name` (str): Human-readable provider name
+- `client_id` (str): OAuth client ID
+- `client_secret` (str): OAuth client secret
+- `auth_url` (str): Authorization URL
+- `token_url` (str): Token exchange URL
+- `user_info_url` (str, optional): User info endpoint URL
+- `scopes` (list, optional): Default scopes
+
+**Example:**
+```python
+provider = await client.create_oauth_provider(
+    provider_id="google_workspace",
+    name="Google Workspace",
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    auth_url="https://accounts.google.com/o/oauth2/v2/auth",
+    token_url="https://oauth2.googleapis.com/token",
+    user_info_url="https://www.googleapis.com/oauth2/v2/userinfo",
+    scopes=[
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/drive"
+    ]
+)
+```
+
+#### `list_oauth_providers()`
+
+Retrieves all configured OAuth providers.
+
+**Returns:** List of `OAuthProvider` objects
+
+**Example:**
+```python
+providers = await client.list_oauth_providers()
+for provider in providers:
+    print(f"{provider.provider_id}: {provider.name}")
+```
+
+## Usage Examples
+
+### GitHub Authentication
+
+```python
+import asyncio
+from langchain_auth import Client
+
+async def github_example():
+    client = Client(api_key="your-api-key")
+    
+    # Authenticate with GitHub
+    auth_result = await client.authenticate(
+        provider="github",
+        scopes=["repo", "read:user"],
+        user_id="developer123"
+    )
+    
+    if auth_result.needs_auth:
+        print(f"Please visit: {auth_result.auth_url}")
+        # Wait for OAuth completion
+        completed_result = await client.wait_for_completion(
+            auth_id=auth_result.auth_id
+        )
+        token = completed_result.token
+    else:
+        token = auth_result.token
+    
+    # Use token for GitHub API calls
+    print(f"GitHub access token: {token[:10]}...")
+    await client.close()
+
+asyncio.run(github_example())
+```
+
+### Google Workspace Authentication
+
+```python
+async def google_workspace_example():
+    client = Client(api_key="your-api-key")
+    
+    auth_result = await client.authenticate(
+        provider="google_workspace",
+        scopes=[
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/gmail.readonly"
+        ],
+        user_id="user456"
+    )
+    
+    if auth_result.needs_auth:
+        print(f"Google OAuth required: {auth_result.auth_url}")
+        completed_result = await client.wait_for_completion(
+            auth_id=auth_result.auth_id,
+            timeout=300
+        )
+        token = completed_result.token
+    else:
+        token = auth_result.token
+    
+    # Use token for Google APIs
+    await client.close()
+```
+
+### Multi-Service Agent
+
+```python
+class MultiServiceAgent:
+    def __init__(self, auth_client):
+        self.auth_client = auth_client
+        self.tokens = {}
+    
+    async def authenticate_service(self, provider, scopes, user_id):
+        """Authenticate with a specific service."""
+        auth_result = await self.auth_client.authenticate(
+            provider=provider,
+            scopes=scopes,
+            user_id=user_id
+        )
+        
+        if auth_result.needs_auth:
+            print(f"Authentication required for {provider}: {auth_result.auth_url}")
+            completed_result = await self.auth_client.wait_for_completion(
+                auth_id=auth_result.auth_id
+            )
+            self.tokens[provider] = completed_result.token
+        else:
+            self.tokens[provider] = auth_result.token
+        
+        return self.tokens[provider]
+    
+    async def setup_all_services(self, user_id):
+        """Authenticate with all required services."""
+        # GitHub
+        await self.authenticate_service(
+            provider="github",
+            scopes=["repo"],
+            user_id=user_id
+        )
+        
+        # Google Workspace
+        await self.authenticate_service(
+            provider="google_workspace",
+            scopes=["https://www.googleapis.com/auth/drive"],
+            user_id=user_id
+        )
+        
+        print("All services authenticated successfully!")
+
+# Usage
+async def run_agent():
+    client = Client(api_key="your-api-key")
+    agent = MultiServiceAgent(client)
+    await agent.setup_all_services("user789")
+    await client.close()
+```
+
+## LangGraph Integration
+
+When running inside a LangGraph context, the authentication flow uses interrupts for a seamless user experience:
+
+```python
+from langchain_auth import Client
+from langgraph.graph import StateGraph
+
+def create_agent_with_auth():
+    client = Client(api_key="your-api-key")
+    
+    async def authenticate_node(state):
+        # This will interrupt and prompt user for OAuth
+        auth_result = await client.authenticate(
+            provider="github",
+            scopes=["repo"],
+            user_id=state["user_id"]
+        )
+        
+        # When resumed, token will be available
+        state["github_token"] = auth_result.token
+        return state
+    
+    # Add to your LangGraph workflow
+    graph = StateGraph(...)
+    graph.add_node("auth", authenticate_node)
+    return graph.compile()
+```
