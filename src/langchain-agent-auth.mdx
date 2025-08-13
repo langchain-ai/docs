@@ -10,16 +10,16 @@ The system consists of:
 
 ## Installation
 
-Install the client SDK:
+Install the client SDK for use with LangGraph:
+```bash
+pip install 'langchain-auth[langgraph]'
+```
 
+or for use outside of LangGraph:
 ```bash
 pip install langchain-auth
 ```
 
-For use with LangGraph:
-```bash
-pip install 'langchain-auth[langgraph]'
-```
 
 ## Quick Start
 
@@ -51,15 +51,54 @@ github_provider = await client.create_oauth_provider(
 
 ### 3. Authenticate from Agent
 
+#### In LangGraph Context
+
+When calling from a LangGraph agent, tokens are automatically scoped to your specific assistant:
+
 ```python
+# Default: agent-scoped token (restricted to this assistant)
 auth_result = await client.authenticate(
     provider="github",
     scopes=["repo"],
-    user_id="{CALLING_USER_ID}" # Any unique identifier for the human user calling this agent
+    user_id="your_user_id" # Any unique identifier to scope this token to the human caller
 )
 
-if not auth_result.needs_auth:
-    pass # Use auth_result.token for api calls to the service
+# OAuth flow is handled automatically via interrupts
+
+token = auth_result.token  # Ready to use after OAuth completes
+```
+
+If you need a token that works across multiple agents:
+
+```python
+# User-scoped token (works for any agent under this user)
+auth_result = await client.authenticate(
+    provider="github",
+    scopes=["repo"],
+    user_id="your_user_id",
+    agent_scoped=False
+)
+```
+
+#### Outside LangGraph Context
+
+When calling from standalone scripts or non-LangGraph agents:
+
+```python
+# Default: user-scoped token (works for any agent under this user)
+auth_result = await client.authenticate(
+    provider="github",
+    scopes=["repo"],
+    user_id="your_user_id"
+)
+
+if auth_result.needs_auth:
+    print(f"Complete OAuth at: {auth_result.auth_url}")
+    # Wait for completion
+    completed_auth = await client.wait_for_completion(auth_result.auth_id)
+    token = completed_auth.token
+else:
+    token = auth_result.token
 ```
 
 ## Usage Examples
