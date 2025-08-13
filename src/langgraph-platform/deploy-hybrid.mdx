@@ -19,10 +19,10 @@ Before deploying, review the [conceptual guide for the Hybrid](/langgraph-platfo
 ### Prerequisites
 
 1. `KEDA` is installed on your cluster.
-```bash
-  helm repo add kedacore https://kedacore.github.io/charts
-  helm install keda kedacore/keda --namespace keda --create-namespace
-```
+    ```bash
+      helm repo add kedacore https://kedacore.github.io/charts
+      helm install keda kedacore/keda --namespace keda --create-namespace
+    ```
 2. A valid `Ingress` controller is installed on your cluster.
 3. You have slack space in your cluster for multiple deployments. `Cluster-Autoscaler` is recommended to automatically provision new nodes.
 4. You will need to enable egress to two control plane URLs. The listener polls these endpoints for deployments:
@@ -31,35 +31,57 @@ Before deploying, review the [conceptual guide for the Hybrid](/langgraph-platfo
 
 ### Setup
 
-1. You give us your LangSmith organization ID. We will enable the Self-Hosted Data Plane for your organization.
-2. We provide you a [Helm chart](https://github.com/langchain-ai/helm/tree/main/charts/langgraph-dataplane) which you run to setup your Kubernetes cluster. This chart contains a few important components.
-    1. `langgraph-listener`: This is a service that listens to LangChain's [control plane](/langgraph-platform/control-plane) for changes to your deployments and creates/updates downstream CRDs.
-    2. `LangGraphPlatform CRD`: A CRD for LangGraph Platform deployments. This contains the spec for managing an instance of a LangGraph Platform deployment.
-    3. `langgraph-platform-operator`: This operator handles changes to your LangGraph Platform CRDs.
-3. Configure your `langgraph-dataplane-values.yaml` file.
-```bash
-  config:
-    langsmithApiKey: "" # API Key of your Workspace
-    langsmithWorkspaceId: "" # Workspace ID
-    hostBackendUrl: "https://api.host.langchain.com" # Only override this if on EU
-    smithBackendUrl: "https://api.smith.langchain.com" # Only override this if on EU
-```
-4. Deploy `langgraph-dataplane` Helm chart.
-```bash
-  helm repo add langchain https://github.com/langchain-ai/helm
-  helm repo update
-  helm upgrade -i langgraph-dataplane langchain/langgraph-dataplane --values langgraph-dataplane-values.yaml --wait --debug
-```
-5. If successful, you will see three services start up in your namespace.
-```bash
-  NAME                                            READY   STATUS              RESTARTS   AGE
-  langgraph-dataplane-listener-6dd4749445-zjmr4   0/1     ContainerCreating   0          26s
-  langgraph-dataplane-operator-6b88879f9b-t76gk   1/1     Running             0          26s
-  langgraph-dataplane-redis-0                     1/1     Running             0          25s
-```
+1. Provide your LangSmith organization ID to us. Your LangSmith organization will be configured to deploy the data plane in your cloud.
+2. Create a listener from the LangSmith UI. The `Listener` data model is configured for the actual ["listener" application](/langgraph-platform/data-plane#”listener”-application).
+    1. In the left-hand navigation, select `LangGraph Platform` > `Listeners`.
+    2. In the top-right of the page, select `+ Create Listener`.
+    3. Enter a unique `Compute ID` for the listener. The `Compute ID` is a user-defined identifier that should be unique across all listeners in the current LangSmith workspace. The `Compute ID` is displayed to end users when they are creating a new deployment. Ensure that the `Compute ID` provides context to the end user about where their LangGraph Server deployments will be deployed to. For example, a `Compute ID` can be set to `k8s-cluster-name-dev-01`. In this example, the name of the Kubernetes cluster is `k8s-cluster-name`, `dev` denotes that the cluster is reserved for "development" workloads, and `01` is a numerical suffix to reduce naming collisions.
+    4. Enter one or more Kubernetes namespaces. Later, the "listener" application will be configured to deploy to each of these namespaces.
+    5. In the top-right on the page, select `Submit`.
+    6. After the listener is created, copy the listener ID. You will use it later when installing the actual "listener" application.
+3. A [Helm chart](https://github.com/langchain-ai/helm/tree/main/charts/langgraph-dataplane) is provided to install the necesssary components in your Kubernetes cluster.
+    - `langgraph-listener`: This is a service that listens to LangChain's [control plane](/langgraph-platform/control-plane) for changes to your deployments and creates/updates downstream CRDs. This is the ["listener" application](/langgraph-platform/data-plane#”listener”-application).
+    - `LangGraphPlatform CRD`: A CRD for LangGraph Platform deployments. This contains the spec for managing an instance of a LangGraph Platform deployment.
+    - `langgraph-platform-operator`: This operator handles changes to your LangGraph Platform CRDs.
+4. Configure your `langgraph-dataplane-values.yaml` file.
+    ```bash
+      config:
+        langsmithApiKey: "" # API Key of your Workspace
+        langsmithWorkspaceId: "" # Workspace ID
+        hostBackendUrl: "https://api.host.langchain.com" # Only override this if on EU
+        smithBackendUrl: "https://api.smith.langchain.com" # Only override this if on EU
+        langgraphListenerId: "" # Listener ID from Step 2-6
+        watchNamespaces: "" # comma-separated list of Kubernetes namespaces that the listener and operator will deploy to
+        enableLGPDeploymentHealthCheck: "true" # enable/disable health check step for deployments
 
-6. You create a deployment from the [control plane UI](/langgraph-platform/control-plane#control-plane-ui).
+      ingress:
+        hostname: "" # specify a hostname that will be configured for all deployments
 
-## Amazon ECS
-
-Coming soon!
+      operator:
+        createCRDs: true # set this to `false`, if the CRD has been previously installed
+    ```
+    - `config.langsmithApiKey`: The `langgraph-listener` deployment authenticates with LangChain's LangGraph control plane API with the `langsmithApiKey`.
+    - `config.langsmithWorkspaceId`: The `langgraph-listener` deployment is coupled to LangGraph Server deployments in the LangSmith workspace. In other words, the `langgraph-listener` deployment can only manage LangGraph Server deployments in the specified LangSmith workspace ID.
+    - `config.langgraphListenerId`: In addition to being coupled with a LangSmith workspace, the `langgraph-listener` deployment is also coupled to a listener. When a new LangGraph Server deployment is created, it is automatically coupled to a `langgraphListenerId`. Specifying `langgraphListenerId` ensures that the `langgraph-listener` deployment can only manage LangGraph Server deployments that are coupled to `langgraphListenerId`.
+    - `config.watchNamespaces`: A comma-separated list of Kubernetes namespaces that the `langgraph-listener` deployment will deploy to. This list should match the list of namespaces specified in step 2-4.
+    - `config.enableLGPDeploymentHealthCheck`: To disable the LangGraph Server health check, set this to `false`.
+    - `ingress.hostname`: As part of the deployment workflow, the `langgraph-listener` deployment attempts to call the LangGraph Server health check endpoint (`GET /ok`) to verify that the application has started up correctly. A typical setup involves creating a shared DNS record or domain for LangGraph Server deployments. This is not managed by LangGraph Platform. Once created, set `ingress.hostname` to the domain, which will be used to complete the health check.
+    - `operator.createCRDs`: Set this value to `false` if the Kubernetes cluster already has the `LangGraphPlatform CRD` installed. During installation, an error will occur if the CRD is already installed. This situation may occur if multiple listeners are deployed on the same Kubernetes cluster.
+5. Deploy `langgraph-dataplane` Helm chart.
+    ```bash
+      helm repo add langchain https://github.com/langchain-ai/helm
+      helm repo update
+      helm upgrade -i langgraph-dataplane langchain/langgraph-dataplane --values langgraph-dataplane-values.yaml --wait --debug
+    ```
+6. If successful, you will see three services start up in your namespace.
+    ```bash
+      NAME                                            READY   STATUS              RESTARTS   AGE
+      langgraph-dataplane-listener-6dd4749445-zjmr4   0/1     ContainerCreating   0          26s
+      langgraph-dataplane-operator-6b88879f9b-t76gk   1/1     Running             0          26s
+      langgraph-dataplane-redis-0                     1/1     Running             0          25s
+    ```
+7. Create a deployment from the [control plane UI](/langgraph-platform/control-plane#control-plane-ui).
+    1. Select the desired listener from the list of `Compute IDs` in the dropdown menu.
+    2. Select the Kubernetes namespace to deploy to.
+    3. Fill out all other required fields and select `Submit` in the top-right of the panel.
+    4. The deployment will be deployed on the Kubernetes cluster where the listener is deployed and in the Kubernetes namespace specified in step 7-2.
