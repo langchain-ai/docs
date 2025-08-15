@@ -1,15 +1,24 @@
 """Documentation builder implementation."""
 
+import copy
 import json
 import logging
 import re
 import shutil
 from pathlib import Path
+from typing import cast
 
 import yaml
 from tqdm import tqdm
 
-from pipeline.preprocessors import preprocess_markdown
+from pipeline.preprocessors import has_conditional_blocks, preprocess_markdown
+from pipeline.tools.mintlify import (
+    MintlifyConfig,
+    NavigationDropdown,
+    NavigationGroup,
+    NavigationTab,
+    NavigationVersion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,53 +94,80 @@ class DocumentationBuilder:
             shutil.rmtree(self.build_dir)
         self.build_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build LangGraph versioned content (oss/ -> oss/python/ and oss/javascript/)
-        logger.info("Building LangGraph Python version...")
-        self._build_langgraph_version("oss/python", "python")
+        # Get all top-level directories in the source directory
+        top_level_dirs = set()
+        for item in self.src_dir.iterdir():
+            if item.is_dir():
+                top_level_dirs.add(item.name)
 
-        logger.info("Building LangGraph JavaScript version...")
-        self._build_langgraph_version("oss/javascript", "js")
+        # Get unique list of all conditional files and extract top-level directories
+        conditional_dirs = set()
+        for file_path in self._get_conditional_files():
+            relative_path = file_path.relative_to(self.src_dir)
+            if relative_path.parts:
+                top_level_dir = relative_path.parts[0]
+                conditional_dirs.add(top_level_dir)
 
-        # Build unversioned content (same content regardless of version)
-        logger.info("Building LangGraph Platform content...")
-        self._build_unversioned_content("langgraph-platform", "langgraph-platform")
+        # Build versioned content for directories that contain conditional files
+        for conditional_dir in conditional_dirs:
+            self._build_conditional_docset(
+                conditional_dir, f"{conditional_dir}/python", "python"
+            )
+            self._build_conditional_docset(
+                conditional_dir, f"{conditional_dir}/javascript", "js"
+            )
 
-        logger.info("Building LangChain Labs content...")
-        self._build_unversioned_content("labs", "labs")
+        # Build unversioned content for directories that don't contain conditional files
+        for top_level_dir in top_level_dirs - conditional_dirs:
+            self._build_docset(top_level_dir, top_level_dir)
 
-        # Copy shared files (docs.json, images, etc.)
+        # Copy shared files (images, etc.)
         logger.info("Copying shared files...")
         self._copy_shared_files()
 
+        # Build config files
+        logger.info("Building config file...")
+        config_file_path = self.src_dir / "docs.json"
+        if config_file_path.exists():
+            output_config_path = self.build_dir / "docs.json"
+            self._build_config_file(
+                config_file_path, output_config_path, conditional_dirs
+            )
+
         logger.info("✅ New structure build complete")
 
-    def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
-        """Convert a YAML file to JSON format.
-
-        This method loads a docs.yml file using YAML safe_load and writes
-        the corresponding docs.json file to the build directory.
+    def _read_yaml_file(self, yaml_file_path: Path) -> dict:
+        """Read a YAML file and return its content.
 
         Args:
             yaml_file_path: Path to the source YAML file.
-            output_path: Path where the JSON file should be written.
+
+        Returns:
+            The content of the YAML file as a dictionary.
         """
         try:
             # Load YAML content
             with yaml_file_path.open("r", encoding="utf-8") as yaml_file:
-                yaml_content = yaml.safe_load(yaml_file)
-
-            # Convert output path from .yml to .json
-            json_output_path = output_path.with_suffix(".json")
-
-            # Write JSON content
-            with json_output_path.open("w", encoding="utf-8") as json_file:
-                json.dump(yaml_content, json_file, indent=2, ensure_ascii=False)
+                return yaml.safe_load(yaml_file)
 
         except yaml.YAMLError:
             logger.exception("Failed to parse YAML file %s", yaml_file_path)
             raise
-        except Exception:
-            logger.exception("Failed to convert %s to JSON", yaml_file_path)
+
+    def _read_json_file(self, json_file_path: Path) -> dict:
+        """Read a JSON file and return its content.
+
+        Args:
+            json_file_path: Path to the source JSON file.
+
+        Returns:
+            The content of the JSON file as a dictionary.
+        """
+        try:
+            with json_file_path.open("r", encoding="utf-8") as json_file:
+                return json.load(json_file)
+        except json.JSONDecodeError:
+            logger.exception("Failed to parse JSON file %s", json_file_path)
             raise
 
     def _rewrite_oss_links(self, content: str, target_language: str | None) -> str:
@@ -139,7 +175,8 @@ class DocumentationBuilder:
 
         Args:
             content: The markdown content to process.
-            target_language: Target language ("python" or "js") or None to skip rewriting.
+            target_language: Target language ("python" or "js") or None to skip
+                rewriting.
 
         Returns:
             Content with rewritten links.
@@ -190,9 +227,7 @@ class DocumentationBuilder:
             )
 
             # Then rewrite /oss/ links to include language
-            content = self._rewrite_oss_links(content, target_language)
-
-            return content
+            return self._rewrite_oss_links(content, target_language)
         except Exception:
             logger.exception("Failed to process markdown content from %s", file_path)
             raise
@@ -259,15 +294,8 @@ class DocumentationBuilder:
         # Create output directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Handle special case for docs.yml files
-        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
-            ".yml",
-            ".yaml",
-        }:
-            self._convert_yaml_to_json(file_path, output_path)
-            logger.info("Converted YAML to JSON: %s", relative_path)
-        # For other files, copy directly if supported
-        elif file_path.suffix.lower() in self.copy_extensions:
+        # Copy other supported files directly
+        if file_path.suffix.lower() in self.copy_extensions:
             # Handle markdown files with preprocessing
             if file_path.suffix.lower() in {".md", ".mdx"}:
                 self._process_markdown_file(file_path, output_path)
@@ -301,13 +329,6 @@ class DocumentationBuilder:
         # Create output directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Handle special case for docs.yml files
-        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
-            ".yml",
-            ".yaml",
-        }:
-            self._convert_yaml_to_json(file_path, output_path)
-            return True
         # Copy other supported files directly
         if file_path.suffix.lower() in self.copy_extensions:
             # Handle markdown files with preprocessing
@@ -364,22 +385,25 @@ class DocumentationBuilder:
             skipped_count,
         )
 
-    def _build_langgraph_version(self, output_dir: str, target_language: str) -> None:
-        """Build LangGraph (oss/) content for a specific version.
+    def _build_conditional_docset(
+        self, source_dir: str, output_dir: str, target_language: str
+    ) -> None:
+        """Build a docset from a fenced directory.
 
         Args:
-            output_dir: Output directory (e.g., "langgraph/python", "langgraph/javascript").
+            source_dir: Source directory (e.g., "oss", "labs").
+            output_dir: Output directory (e.g., "oss/python", "oss/javascript").
             target_language: Target language for conditional blocks ("python" or "js").
         """
         # Only process files in the oss/ directory
-        oss_dir = self.src_dir / "oss"
-        if not oss_dir.exists():
-            logger.warning("oss/ directory not found, skipping LangGraph build")
+        src_path = self.src_dir / source_dir
+        if not src_path.exists():
+            logger.warning("%s directory not found, skipping build", src_path)
             return
 
         all_files = [
             file_path
-            for file_path in oss_dir.rglob("*")
+            for file_path in src_path.rglob("*")
             if file_path.is_file() and not self._is_shared_file(file_path)
         ]
 
@@ -400,7 +424,7 @@ class DocumentationBuilder:
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from oss/ directory
-                relative_path = file_path.relative_to(oss_dir)
+                relative_path = file_path.relative_to(src_path)
                 # Build to output_dir/ (not output_dir/oss/)
                 output_path = self.build_dir / output_dir / relative_path
 
@@ -424,7 +448,7 @@ class DocumentationBuilder:
             skipped_count,
         )
 
-    def _build_unversioned_content(self, source_dir: str, output_dir: str) -> None:
+    def _build_docset(self, source_dir: str, output_dir: str) -> None:
         """Build unversioned content (langgraph-platform/ or labs/).
 
         Args:
@@ -509,13 +533,6 @@ class DocumentationBuilder:
         # Create output directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Handle special case for docs.yml files
-        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
-            ".yml",
-            ".yaml",
-        }:
-            self._convert_yaml_to_json(file_path, output_path)
-            return True
         # Copy other supported files
         if file_path.suffix.lower() in self.copy_extensions:
             # Handle markdown files with preprocessing
@@ -526,46 +543,158 @@ class DocumentationBuilder:
             return True
         return False
 
-    def _build_version_file_with_progress(
-        self, file_path: Path, version_dir: str, target_language: str, pbar: tqdm
-    ) -> bool:
-        """Build a single file for a specific version with progress bar integration.
+    def _build_config_file(
+        self, file_path: Path, output_path: Path, conditional_dirs: set[str]
+    ) -> None:
+        """Build a docs.json file.
 
         Args:
             file_path: Path to the source file to be built.
-            version_dir: Directory name for this version (e.g., "python", "javascript").
-            target_language: Target language for conditional blocks ("python" or "js").
-            pbar: tqdm progress bar instance for updating the description.
-
-        Returns:
-            True if the file was copied, False if it was skipped.
+            output_path: Full output path for the file.
+            conditional_dirs: Set of conditional directories.
         """
-        relative_path = file_path.relative_to(self.src_dir)
-        # Add version prefix to the output path
-        output_path = self.build_dir / version_dir / relative_path
-
-        # Update progress bar description with current file
-        pbar.set_postfix_str(f"{version_dir}/{relative_path}")
-
-        # Create output directory if needed
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         # Handle special case for docs.yml files
         if file_path.name == "docs.yml" and file_path.suffix.lower() in {
             ".yml",
             ".yaml",
         }:
-            self._convert_yaml_to_json(file_path, output_path)
-            return True
-        # Copy other supported files
-        if file_path.suffix.lower() in self.copy_extensions:
-            # Handle markdown files with preprocessing
-            if file_path.suffix.lower() in {".md", ".mdx"}:
-                self._process_markdown_file(file_path, output_path, target_language)
-                return True
-            shutil.copy2(file_path, output_path)
-            return True
+            config = cast("MintlifyConfig", self._read_yaml_file(file_path))
+        elif file_path.name == "docs.json" and file_path.suffix.lower() in {
+            ".json",
+        }:
+            config = cast("MintlifyConfig", self._read_json_file(file_path))
+        else:
+            logger.warning("Unsupported config file: %s", file_path)
+            return
+
+        def crawl_versions(
+            versions: list[NavigationVersion],
+        ) -> list[NavigationVersion]:
+            dropdown_mapping = [
+                {
+                    "title": "Python",
+                    "icon": "python",
+                    "version_path": "python",
+                },
+                {
+                    "title": "JavaScript",
+                    "icon": "square-js",
+                    "version_path": "javascript",
+                },
+            ]
+            for index, version in enumerate(versions):
+                if self._config_version_has_conditional_pages(
+                    version, conditional_dirs
+                ):
+                    tabs = version.get("tabs")
+                    if tabs:
+                        versions[index] = NavigationVersion(
+                            version=version["version"],
+                            dropdowns=self._expand_config_tabs(tabs, dropdown_mapping),
+                        )
+            return versions
+
+        def crawl_config(config: MintlifyConfig) -> MintlifyConfig:
+            navigation = config.get("navigation")
+            if navigation and navigation.get("versions"):
+                versions = navigation.get("versions")
+                if versions is not None:
+                    navigation["versions"] = crawl_versions(versions)
+            return config
+
+        output_config = crawl_config(copy.deepcopy(config))
+
+        # Write the processed docs content
+        with output_path.open("w", encoding="utf-8") as f:
+            json.dump(output_config, f, indent=2)
+
+    def _config_version_has_conditional_pages(
+        self, version: NavigationVersion, conditional_dirs: set[str]
+    ) -> bool:
+        """Check if a docs version has conditional pages.
+
+        Args:
+            version: The version dictionary to check.
+            conditional_dirs: Set of conditional directories.
+        """
+
+        def crawl_group(group: NavigationGroup) -> bool:
+            for page in group["pages"]:
+                if isinstance(page, str) and "/" in page:
+                    first_dir = page.split("/", 1)[0]
+                    if first_dir in conditional_dirs:
+                        return True
+                elif isinstance(page, dict) and "group" in page:
+                    if crawl_group(page):
+                        return True
+            return False
+
+        def crawl_tabs(tabs: list[NavigationTab]) -> bool:
+            for tab in tabs:
+                groups = tab.get("groups")
+                if groups:
+                    for group in groups:
+                        if crawl_group(group):
+                            return True
+            return False
+
+        tabs = version.get("tabs")
+        if tabs:
+            return crawl_tabs(tabs)
+
         return False
+
+    def _expand_config_tabs(
+        self, tabs: list[NavigationTab], dropdown_mapping: list[dict]
+    ) -> list[NavigationDropdown]:
+        """Expand mintlify navigation tabs into dropdowns.
+
+        Args:
+            tabs: The tabs to expand.
+            dropdown_mapping: A mapping of version names to their expanded versions.
+        """
+
+        def replace_page_version(page: str, version_path: str) -> str:
+            if "/" in page:
+                first_dir = page.split("/", 1)[0]
+                rest_of_path = "/".join(page.split("/")[1:])
+                return f"{first_dir}/{version_path}/{rest_of_path}"
+            return f"{version_path}/{page}"
+
+        def crawl_tabs(
+            tabs: list[NavigationTab], *, version_path: str
+        ) -> list[NavigationTab]:
+            for index, tab in enumerate(tabs):
+                tabs[index] = crawl_tab(tab, version_path=version_path)
+            return tabs
+
+        def crawl_tab(tab: NavigationTab, *, version_path: str) -> NavigationTab:
+            groups = tab.get("groups")
+            if groups:
+                for index, group in enumerate(groups):
+                    groups[index] = crawl_group(group, version_path=version_path)
+            return tab
+
+        def crawl_group(
+            group: NavigationGroup, *, version_path: str
+        ) -> NavigationGroup:
+            for index, page in enumerate(group["pages"]):
+                if isinstance(page, str) and "/" in page:
+                    group["pages"][index] = replace_page_version(page, version_path)
+                elif isinstance(page, dict) and "group" in page:
+                    group["pages"][index] = crawl_group(page, version_path=version_path)
+            return group
+
+        return [
+            NavigationDropdown(
+                dropdown=mapping["title"],
+                icon=mapping["icon"],
+                tabs=crawl_tabs(
+                    copy.deepcopy(tabs), version_path=mapping["version_path"]
+                ),
+            )
+            for mapping in dropdown_mapping
+        ]
 
     def _is_shared_file(self, file_path: Path) -> bool:
         """Check if a file should be shared between versions rather than duplicated.
@@ -579,10 +708,6 @@ class DocumentationBuilder:
         # Shared files: docs.json, images directory, JavaScript files, snippets
         relative_path = file_path.relative_to(self.src_dir)
 
-        # docs.json should be shared
-        if file_path.name == "docs.json":
-            return True
-
         # Images directory should be shared
         if "images" in relative_path.parts:
             return True
@@ -592,10 +717,7 @@ class DocumentationBuilder:
             return True
 
         # JavaScript and CSS files should be shared (used for custom scripts/styles)
-        if file_path.suffix.lower() in {".js", ".css"}:
-            return True
-
-        return False
+        return file_path.suffix.lower() in {".js", ".css"}
 
     def _copy_shared_files(self) -> None:
         """Copy files that should be shared between versions."""
@@ -623,3 +745,35 @@ class DocumentationBuilder:
                 copied_count += 1
 
         logger.info("✅ Shared files copied: %d files", copied_count)
+
+    def _is_conditional_file(self, file_path: Path) -> bool:
+        """Check if a file is a code fenced file.
+
+        Args:
+            file_path: Path to check.
+
+        Returns:
+            True if the file is a code fenced file, False otherwise.
+        """
+        if file_path.suffix.lower() not in {".md", ".mdx"}:
+            return False
+
+        try:
+            with file_path.open("r", encoding="utf-8") as f:
+                content = f.read()
+            return has_conditional_blocks(content)
+        except Exception:
+            logger.exception("Failed to read file %s", file_path)
+            return False
+
+    def _get_conditional_files(self) -> list[Path]:
+        """Get all fenced files in the source directory.
+
+        Returns:
+            List of Path objects pointing to fenced files.
+        """
+        return [
+            file_path
+            for file_path in self.src_dir.rglob("*")
+            if file_path.is_file() and self._is_conditional_file(file_path)
+        ]

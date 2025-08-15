@@ -14,6 +14,12 @@ from pipeline.preprocessors.handle_auto_links import replace_autolinks
 
 logger = logging.getLogger(__name__)
 
+CONDITIONAL_BLOCK_PATTERN = re.compile(
+    r"(?P<indent>[ \t]*):::(?P<language>\w+)\s*\n"
+    r"(?P<content>((?:.*\n)*?))"  # Capture the content inside the block
+    r"(?P=indent)[ \t]*:::"  # Match closing with same indentation
+)
+
 
 def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
     """Apply conditional rendering to markdown content.
@@ -37,12 +43,6 @@ def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
         msg = "target_language must be 'python' or 'js'"
         raise ValueError(msg)
 
-    pattern = re.compile(
-        r"(?P<indent>[ \t]*):::(?P<language>\w+)\s*\n"
-        r"(?P<content>((?:.*\n)*?))"  # Capture the content inside the block
-        r"(?P=indent)[ \t]*:::"  # Match closing with same indentation
-    )
-
     def replace_conditional_blocks(match: re.Match) -> str:
         """Keep active conditionals."""
         language = match.group("language")
@@ -58,7 +58,12 @@ def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
         # If the language does not match, return an empty string
         return ""
 
-    return pattern.sub(replace_conditional_blocks, md_text)
+    return CONDITIONAL_BLOCK_PATTERN.sub(replace_conditional_blocks, md_text)
+
+
+def has_conditional_blocks(md_text: str) -> bool:
+    """Check if the markdown content has conditional blocks."""
+    return CONDITIONAL_BLOCK_PATTERN.search(md_text) is not None
 
 
 def preprocess_markdown(
