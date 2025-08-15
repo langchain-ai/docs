@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -49,64 +50,60 @@ class DocumentationBuilder:
             ".yml",
             ".yaml",
             ".css",
+            ".js",
+        }
+
+        # Mapping of language codes to full names for URLs
+        self.language_url_names = {
+            "python": "python",
+            "js": "javascript",
         }
 
     def build_all(self) -> None:
         """Build all documentation files from source to build directory.
 
-        This method clears the build directory and copies all supported files
-        from the source directory, maintaining the directory structure.
+        This method clears the build directory and creates version-specific builds
+        for both Python and JavaScript documentation.
 
         The process includes:
         1. Clearing the existing build directory
-        2. Recreating the build directory
-        3. Collecting all files to process
-        4. Processing files with a progress bar
-        5. Copying only files with supported extensions
+        2. Building Python version with python/ prefix
+        3. Building JavaScript version with javascript/ prefix
+        4. Copying shared files (images, configs, etc.)
 
         Displays:
-            A progress bar showing build progress and file counts.
+            Progress bars showing build progress for each version.
         """
-        logger.info("Building from %s to %s", self.src_dir, self.build_dir)
+        logger.info(
+            "Building versioned documentation from %s to %s",
+            self.src_dir,
+            self.build_dir,
+        )
 
         # Clear build directory
         if self.build_dir.exists():
             shutil.rmtree(self.build_dir)
         self.build_dir.mkdir(parents=True, exist_ok=True)
 
-        # Collect all files to process
-        all_files = [
-            file_path for file_path in self.src_dir.rglob("*") if file_path.is_file()
-        ]
+        # Build LangGraph versioned content (oss/ -> oss/python/ and oss/javascript/)
+        logger.info("Building LangGraph Python version...")
+        self._build_langgraph_version("oss/python", "python")
 
-        if not all_files:
-            logger.info("No files found to build")
-            return
+        logger.info("Building LangGraph JavaScript version...")
+        self._build_langgraph_version("oss/javascript", "js")
 
-        # Process files with progress bar
-        copied_count: int = 0
-        skipped_count: int = 0
+        # Build unversioned content (same content regardless of version)
+        logger.info("Building LangGraph Platform content...")
+        self._build_unversioned_content("langgraph-platform", "langgraph-platform")
 
-        with tqdm(
-            total=len(all_files),
-            desc="Building files",
-            unit="file",
-            ncols=80,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-        ) as pbar:
-            for file_path in all_files:
-                result = self._build_file_with_progress(file_path, pbar)
-                if result:
-                    copied_count += 1
-                else:
-                    skipped_count += 1
-                pbar.update(1)
+        logger.info("Building LangChain Labs content...")
+        self._build_unversioned_content("labs", "labs")
 
-        logger.info(
-            "✅ Build complete: %d files copied, %d files skipped",
-            copied_count,
-            skipped_count,
-        )
+        # Copy shared files (docs.json, images, etc.)
+        logger.info("Copying shared files...")
+        self._copy_shared_files()
+
+        logger.info("✅ New structure build complete")
 
     def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
         """Convert a YAML file to JSON format.
@@ -137,7 +134,42 @@ class DocumentationBuilder:
             logger.exception("Failed to convert %s to JSON", yaml_file_path)
             raise
 
-    def _process_markdown_content(self, content: str, file_path: Path) -> str:
+    def _rewrite_oss_links(self, content: str, target_language: str | None) -> str:
+        """Rewrite /oss/ links to include the target language.
+
+        Args:
+            content: The markdown content to process.
+            target_language: Target language ("python" or "js") or None to skip rewriting.
+
+        Returns:
+            Content with rewritten links.
+        """
+        if not target_language:
+            return content
+
+        def rewrite_link(match: re.Match) -> str:
+            """Rewrite a single link match."""
+            pre = match.group(1)  # Everything before the URL
+            url = match.group(2)  # The URL
+            post = match.group(3)  # Everything after the URL
+
+            # Only rewrite absolute /oss/ paths that don't contain 'images'
+            if url.startswith("/oss/") and "images" not in url:
+                parts = url.split("/")
+                # Insert full language name after "oss"
+                parts.insert(2, self.language_url_names[target_language])
+                url = "/".join(parts)
+
+            return f"{pre}{url}{post}"
+
+        # Match markdown links and HTML links/anchors
+        # This handles both [text](/oss/path) and <a href="/oss/path">
+        pattern = r'(\[.*?\]\(|\bhref="|")(/oss/[^")\s]+)([")\s])'
+        return re.sub(pattern, rewrite_link, content)
+
+    def _process_markdown_content(
+        self, content: str, file_path: Path, target_language: str | None = None
+    ) -> str:
         """Process markdown content with preprocessing.
 
         This method applies preprocessing (cross-reference resolution and
@@ -146,18 +178,28 @@ class DocumentationBuilder:
         Args:
             content: The markdown content to process.
             file_path: Path to the source file (for error reporting).
+            target_language: Target language for conditional blocks ("python" or "js").
 
         Returns:
             The processed markdown content.
         """
         try:
-            # Apply markdown preprocessing
-            return preprocess_markdown(content, file_path)
+            # First apply standard markdown preprocessing
+            content = preprocess_markdown(
+                content, file_path, target_language=target_language
+            )
+
+            # Then rewrite /oss/ links to include language
+            content = self._rewrite_oss_links(content, target_language)
+
+            return content
         except Exception:
             logger.exception("Failed to process markdown content from %s", file_path)
             raise
 
-    def _process_markdown_file(self, input_path: Path, output_path: Path) -> None:
+    def _process_markdown_file(
+        self, input_path: Path, output_path: Path, target_language: str | None = None
+    ) -> None:
         """Process a markdown file with preprocessing and copy to output.
 
         This method reads a markdown file, applies preprocessing (cross-reference
@@ -167,6 +209,7 @@ class DocumentationBuilder:
         Args:
             input_path: Path to the source markdown file.
             output_path: Path where the processed file should be written.
+            target_language: Target language for conditional blocks ("python" or "js").
         """
         try:
             # Read the source markdown content
@@ -174,7 +217,9 @@ class DocumentationBuilder:
                 content = f.read()
 
             # Apply markdown preprocessing
-            processed_content = self._process_markdown_content(content, input_path)
+            processed_content = self._process_markdown_content(
+                content, input_path, target_language
+            )
 
             # Convert .md to .mdx if needed
             if input_path.suffix.lower() == ".md":
@@ -318,3 +363,263 @@ class DocumentationBuilder:
             copied_count,
             skipped_count,
         )
+
+    def _build_langgraph_version(self, output_dir: str, target_language: str) -> None:
+        """Build LangGraph (oss/) content for a specific version.
+
+        Args:
+            output_dir: Output directory (e.g., "langgraph/python", "langgraph/javascript").
+            target_language: Target language for conditional blocks ("python" or "js").
+        """
+        # Only process files in the oss/ directory
+        oss_dir = self.src_dir / "oss"
+        if not oss_dir.exists():
+            logger.warning("oss/ directory not found, skipping LangGraph build")
+            return
+
+        all_files = [
+            file_path
+            for file_path in oss_dir.rglob("*")
+            if file_path.is_file() and not self._is_shared_file(file_path)
+        ]
+
+        if not all_files:
+            logger.info("No files found in oss/ directory for %s", output_dir)
+            return
+
+        # Process files with progress bar
+        copied_count: int = 0
+        skipped_count: int = 0
+
+        with tqdm(
+            total=len(all_files),
+            desc=f"Building {output_dir} files",
+            unit="file",
+            ncols=80,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        ) as pbar:
+            for file_path in all_files:
+                # Calculate relative path from oss/ directory
+                relative_path = file_path.relative_to(oss_dir)
+                # Build to output_dir/ (not output_dir/oss/)
+                output_path = self.build_dir / output_dir / relative_path
+
+                result = self._build_single_file(
+                    file_path,
+                    output_path,
+                    target_language,
+                    pbar,
+                    f"{output_dir}/{relative_path}",
+                )
+                if result:
+                    copied_count += 1
+                else:
+                    skipped_count += 1
+                pbar.update(1)
+
+        logger.info(
+            "✅ %s complete: %d files copied, %d files skipped",
+            output_dir,
+            copied_count,
+            skipped_count,
+        )
+
+    def _build_unversioned_content(self, source_dir: str, output_dir: str) -> None:
+        """Build unversioned content (langgraph-platform/ or labs/).
+
+        Args:
+            source_dir: Source directory name (e.g., "langgraph-platform", "labs").
+            output_dir: Output directory name (same as source_dir).
+        """
+        src_path = self.src_dir / source_dir
+        if not src_path.exists():
+            logger.warning("%s/ directory not found, skipping", source_dir)
+            return
+
+        all_files = [
+            file_path
+            for file_path in src_path.rglob("*")
+            if file_path.is_file() and not self._is_shared_file(file_path)
+        ]
+
+        if not all_files:
+            logger.info("No files found in %s/ directory", source_dir)
+            return
+
+        # Process files with progress bar
+        copied_count: int = 0
+        skipped_count: int = 0
+
+        with tqdm(
+            total=len(all_files),
+            desc=f"Building {output_dir} files",
+            unit="file",
+            ncols=80,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        ) as pbar:
+            for file_path in all_files:
+                # Calculate relative path from source directory
+                relative_path = file_path.relative_to(src_path)
+                # Build directly to output_dir/
+                output_path = self.build_dir / output_dir / relative_path
+
+                result = self._build_single_file(
+                    file_path,
+                    output_path,
+                    "python",
+                    pbar,
+                    f"{output_dir}/{relative_path}",
+                )
+                if result:
+                    copied_count += 1
+                else:
+                    skipped_count += 1
+                pbar.update(1)
+
+        logger.info(
+            "✅ %s complete: %d files copied, %d files skipped",
+            output_dir,
+            copied_count,
+            skipped_count,
+        )
+
+    def _build_single_file(
+        self,
+        file_path: Path,
+        output_path: Path,
+        target_language: str,
+        pbar: tqdm,
+        display_path: str,
+    ) -> bool:
+        """Build a single file with progress bar integration.
+
+        Args:
+            file_path: Path to the source file to be built.
+            output_path: Full output path for the file.
+            target_language: Target language for conditional blocks ("python" or "js").
+            pbar: tqdm progress bar instance for updating the description.
+            display_path: Path to display in progress bar.
+
+        Returns:
+            True if the file was copied, False if it was skipped.
+        """
+        # Update progress bar description with current file
+        pbar.set_postfix_str(display_path)
+
+        # Create output directory if needed
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Handle special case for docs.yml files
+        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
+            ".yml",
+            ".yaml",
+        }:
+            self._convert_yaml_to_json(file_path, output_path)
+            return True
+        # Copy other supported files
+        if file_path.suffix.lower() in self.copy_extensions:
+            # Handle markdown files with preprocessing
+            if file_path.suffix.lower() in {".md", ".mdx"}:
+                self._process_markdown_file(file_path, output_path, target_language)
+                return True
+            shutil.copy2(file_path, output_path)
+            return True
+        return False
+
+    def _build_version_file_with_progress(
+        self, file_path: Path, version_dir: str, target_language: str, pbar: tqdm
+    ) -> bool:
+        """Build a single file for a specific version with progress bar integration.
+
+        Args:
+            file_path: Path to the source file to be built.
+            version_dir: Directory name for this version (e.g., "python", "javascript").
+            target_language: Target language for conditional blocks ("python" or "js").
+            pbar: tqdm progress bar instance for updating the description.
+
+        Returns:
+            True if the file was copied, False if it was skipped.
+        """
+        relative_path = file_path.relative_to(self.src_dir)
+        # Add version prefix to the output path
+        output_path = self.build_dir / version_dir / relative_path
+
+        # Update progress bar description with current file
+        pbar.set_postfix_str(f"{version_dir}/{relative_path}")
+
+        # Create output directory if needed
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Handle special case for docs.yml files
+        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
+            ".yml",
+            ".yaml",
+        }:
+            self._convert_yaml_to_json(file_path, output_path)
+            return True
+        # Copy other supported files
+        if file_path.suffix.lower() in self.copy_extensions:
+            # Handle markdown files with preprocessing
+            if file_path.suffix.lower() in {".md", ".mdx"}:
+                self._process_markdown_file(file_path, output_path, target_language)
+                return True
+            shutil.copy2(file_path, output_path)
+            return True
+        return False
+
+    def _is_shared_file(self, file_path: Path) -> bool:
+        """Check if a file should be shared between versions rather than duplicated.
+
+        Args:
+            file_path: Path to check.
+
+        Returns:
+            True if the file should be shared, False if it should be version-specific.
+        """
+        # Shared files: docs.json, images directory, JavaScript files, snippets
+        relative_path = file_path.relative_to(self.src_dir)
+
+        # docs.json should be shared
+        if file_path.name == "docs.json":
+            return True
+
+        # Images directory should be shared
+        if "images" in relative_path.parts:
+            return True
+
+        # Snippets directory should be shared
+        if "snippets" in relative_path.parts:
+            return True
+
+        # JavaScript and CSS files should be shared (used for custom scripts/styles)
+        if file_path.suffix.lower() in {".js", ".css"}:
+            return True
+
+        return False
+
+    def _copy_shared_files(self) -> None:
+        """Copy files that should be shared between versions."""
+        # Collect shared files
+        shared_files = [
+            file_path
+            for file_path in self.src_dir.rglob("*")
+            if file_path.is_file() and self._is_shared_file(file_path)
+        ]
+
+        if not shared_files:
+            logger.info("No shared files found")
+            return
+
+        copied_count = 0
+        for file_path in shared_files:
+            relative_path = file_path.relative_to(self.src_dir)
+            output_path = self.build_dir / relative_path
+
+            # Create output directory if needed
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if file_path.suffix.lower() in self.copy_extensions:
+                shutil.copy2(file_path, output_path)
+                copied_count += 1
+
+        logger.info("✅ Shared files copied: %d files", copied_count)

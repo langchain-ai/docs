@@ -1,0 +1,112 @@
+---
+title: LangChain Agent Auth
+---
+LangChain Agent Auth enables secure access from agents to any other system using OAuth 2.0 credentials. With LangChain Agent Auth, build your agents to securely connect to any system on a person's behalf.
+
+## Overview
+
+LangChain Agent Auth solves the challenge of secure authentication for autonomous agents. Instead of embedding credentials in agent code or requiring manual intervention for each API call, agents use the OAuth flow to obtain time-limited access tokens for external services. The system includes an authentication server for managing OAuth flows and storing credentials, as well as a Python client SDK for integrating with agents.
+
+
+## Installation
+
+Install directly from the wheel file for use with LangGraph:
+
+```bash
+pip install https://docs.langchain.com/langchain_auth-0.1.0-py3-none-any.whl[langgraph]
+```
+
+For use without LangGraph:
+
+```bash
+pip install https://docs.langchain.com/langchain_auth-0.1.0-py3-none-any.whl
+```
+
+
+## Quickstart
+
+### 1. Initialize the client
+
+```python
+from langchain_auth import Client
+
+client = Client(api_key="your-langsmith-api-key")
+```
+
+### 2. Set up OAuth providers
+
+Before agents can authenticate, you need to configure an OAuth provider:
+
+```python
+# Create GitHub provider
+github_provider = await client.create_oauth_provider(
+    provider_id="github",
+    name="GitHub",
+    client_id="your-github-client-id",
+    client_secret="your-github-client-secret",
+    auth_url="https://github.com/login/oauth/authorize",
+    token_url="https://github.com/login/oauth/access_token",
+    user_info_url="https://api.github.com/user",
+    scopes=["repo"] # Provide one or more scopes you would like to be available for this provider
+)
+```
+
+### 3. Authenticate from an agent
+
+The client `authenticate()` API is used to get OAuth tokens from pre-configured providers. On the first call, it takes the caller through an OAuth 2.0 auth flow.
+
+#### In LangGraph context
+
+By default, tokens are scoped to the calling agent using the Assistant ID parameter.
+
+```python
+auth_result = await client.authenticate(
+    provider="github",
+    scopes=["repo"],
+    user_id="your_user_id" # Any unique identifier to scope this token to the human caller
+)
+
+# Or if you'd like a token that can be used by any agent, set agent_scoped=False
+auth_result = await client.authenticate(
+    provider="github",
+    scopes=["repo"],
+    user_id="your_user_id",
+    agent_scoped=False
+)
+```
+
+During execution, if authentication is required, the SDK will throw an [interrupt](https://langchain-ai.github.io/langgraph/how-tos/human_in_the_loop/add-human-in-the-loop/#pause-using-interrupt). The agent execution pauses and presents the OAuth URL to the user:
+
+![LangGraph Studio interrupt showing OAuth URL](../../images/langgraph-auth-interrupt.png)
+
+After the user completes OAuth authentication and we receive the callback from the provider, they will see the auth success page.
+
+![GitHub OAuth success page](../../images/github-auth-success.png)
+
+The agent then resumes execution from the point it left off at, and the token can be used for any API calls. We store and refresh OAuth tokens so that future uses of the service by either the user or agent do not require an OAuth flow.
+
+```python
+token = auth_result.token
+```
+
+#### Outside LangGraph context
+
+Provide the `auth_url` to the user for out-of-band OAuth flows.
+
+
+```python
+# Default: user-scoped token (works for any agent under this user)
+auth_result = await client.authenticate(
+    provider="github",
+    scopes=["repo"],
+    user_id="your_user_id"
+)
+
+if auth_result.needs_auth:
+    print(f"Complete OAuth at: {auth_result.auth_url}")
+    # Wait for completion
+    completed_auth = await client.wait_for_completion(auth_result.auth_id)
+    token = completed_auth.token
+else:
+    token = auth_result.token
+```
