@@ -1,0 +1,304 @@
+---
+title: Egress for subscription metrics and operational metadata
+sidebarTitle: Configure egress for subscription metrics
+---
+
+<Info>
+  This section only applies to customers who are not running in offline mode and assumes you are using a self-hosted LangSmith instance serving version 0.9.0 or later. Previous versions of LangSmith did not have this feature.
+</Info>
+
+Self-Hosted LangSmith instances store all information locally and will never send sensitive information outside of your network. We currently only track platform usage for billing purposes according to the entitlements in your order. In order to better remotely support our customers, we do require egress to `https://beacon.langchain.com`.
+
+In the future, we will be introducing support diagnostics to help us ensure that the LangSmith platform is running at an optimal level within your environment.
+
+<Warning>
+  **This will require egress to `https://beacon.langchain.com` from your network.**
+</Warning>
+
+Generally, data that we send to Beacon can be categorized as follows:
+
+* Subscription Metrics
+
+  * Subscription metrics are used to determine level of access and utilization of LangSmith. This includes, but are not limited to:
+
+    * Number of traces
+    * Seats allocated per contract
+    * Seats in currently use
+
+* Operational Metadata
+  * This metadata will contain and collect the above subscription metrics to assist with remote support, allowing the LangChain team to diagnose and troubleshoot performance issues more effectively and proactively.
+
+## LangSmith Telemetry
+
+As of version ***0.11***, LangSmith deployments will by default send telemetry data back to our backend. All telemetry data is associated with an organization and deployment, but never identified with individual users. We ***do not collect PII*** (personally identifiable information) in any form.
+
+### What we use it for
+
+* To provide more proactive support and faster troubleshooting of self-hosted instances.
+* Assisting with performance tuning.
+* Understanding real-world usage to prioritize improvements.
+
+### What we collect
+
+* **Request metadata**: anonymized request counts, sizes, and durations.
+* **Database metrics**: query durations, error rates, and performance counters.
+* **Distributed traces**: end-to-end traces with timing and error information for high-latency or failed requests.
+
+<Info>
+  We do not collect actual payload contents, database records, or any data that can identify your end users or customers.
+</Info>
+
+### How to disable
+
+Set the following values in your `langsmith_config.yaml` file:
+
+```yaml
+config:
+  telemetry:
+    metrics: false
+    traces: false
+```
+
+## Example payloads
+
+In an effort to maximize transparency, we provide sample payloads here:
+
+### License Verification
+
+**Endpoint:**
+
+`POST beacon.langchain.com/v1/beacon/verify`
+
+**Request:**
+
+```json
+{
+  "license": "<YOUR_LICENSE_KEY>"
+}
+```
+
+**Response:**
+
+```json
+{
+  "token": "Valid JWT" //Short-lived JWT token to avoid repeated license checks
+}
+```
+
+### Usage Reporting
+
+**Endpoint:**
+
+`POST beacon.langchain.com/v1/beacon/ingest-traces`
+
+**Request:**
+
+```json
+{
+  "license": "<YOUR_LICENSE_KEY>",
+  "trace_transactions": [
+    {
+      "id": "af28dfea-5358-463d-a2dc-37df1da72498",
+      "tenant_id": "3a1c2b6f-4430-4b92-8a5b-79b8b567bbc1",
+      "session_id": "b26ae531-cdb3-42a5-8bcf-05355199fe27",
+      "trace_count": 5,
+      "start_insertion_time": "2025-01-06T10:00:00Z",
+      "end_insertion_time": "2025-01-06T11:00:00Z",
+      "start_interval_time": "2025-01-06T09:00:00Z",
+      "end_interval_time": "2025-01-06T10:00:00Z",
+      "status": "completed",
+      "num_failed_send_attempts": 0,
+      "transaction_type": "type1",
+      "organization_id": "c5b5f53a-4716-4326-8967-d4f7f7799735"
+    }
+  ]
+}
+```
+
+**Response:**
+
+```json
+{
+  "inserted_count": 1 //Number of transactions successfully ingested
+}
+```
+
+### Telemetry: Metrics
+
+**Endpoint:**
+
+`POST beacon.langchain.com/v1/beacon/v1/metrics`
+
+**Request:**
+
+```json
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "resource.name",
+            "value": { "stringValue": "langsmith-metrics" }
+          },
+          {
+            "key": "env",
+            "value": { "stringValue": "ls_self_hosted" }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "langsmith.metrics",
+            "version": "0.1.0"
+          },
+          "metrics": [
+            {
+              "name": "langsmith_http_requests_latency",
+              "unit": "seconds",
+              "description": "Request latency of LangSmith services",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "asDouble": 12.34,
+                    "startTimeUnixNano": 1678886400000000000,
+                    "timeUnixNano": 1678886400000000000,
+                    "attributes": [
+                      {
+                        "key": "endpoint",
+                        "value": { "stringValue": "/sessions" }
+                      },
+                      { "key": "method", "value": { "stringValue": "GET" } },
+                      {
+                        "key": "service_name",
+                        "value": { "stringValue": "langsmith_backend" }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "langsmith_http_requests_failed",
+              "unit": "1",
+              "description": "Counter of failed requests for LangSmith services",
+              "sum": {
+                "dataPoints": [
+                  {
+                    "asInt": 456,
+                    "startTimeUnixNano": 1678886400000000000,
+                    "timeUnixNano": 1678886400000000000,
+                    "attributes": [
+                      {
+                        "key": "endpoint",
+                        "value": { "stringValue": "/info" }
+                      },
+                      { "key": "method", "value": { "stringValue": "POST" } },
+                      {
+                        "key": "service_name",
+                        "value": { "stringValue": "langsmith_platform_backend" }
+                      }
+                    ],
+                    "aggregationTemporality": 2,
+                    "isMonotonic": true
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Telemetry: Traces
+
+**Endpoint:**
+
+`POST beacon.langchain.com/v1/beacon/v1/traces`
+
+**Request:**
+
+```json
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "env",
+            "value": {
+              "stringValue": "ls_self_hosted"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "langsmith_backend"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {},
+          "spans": [
+            {
+              "traceId": "71699b6fe85982c7c8995ea3d9c95df2",
+              "spanId": "3c191d03fa8be0",
+              "parentSpanId": "",
+              "name": "receive_request",
+              "startTimeUnixNano": "1581452772000000321",
+              "endTimeUnixNano": "1581452773000000789",
+              "droppedAttributesCount": 1,
+              "events": [
+                {
+                  "timeUnixNano": "1581452773000000123",
+                  "name": "parse_request",
+                  "attributes": [
+                    {
+                      "key": "request_size",
+                      "value": {
+                        "stringValue": "100"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 2
+                },
+                {
+                  "timeUnixNano": "1581452773000000123",
+                  "name": "event",
+                  "droppedAttributesCount": 2
+                }
+              ],
+              "droppedEventsCount": 1,
+              "status": {
+                "message": "status-cancelled",
+                "code": 2
+              }
+            },
+            {
+              "traceId": "71699b6fe85982c7c8995ea3d9c95df2",
+              "spanId": "0932ksdka12345",
+              "parentSpanId": "3c191d03fa8be0",
+              "name": "process_request",
+              "startTimeUnixNano": "1581452772000000321",
+              "endTimeUnixNano": "1581452773000000789",
+              "links": [],
+              "droppedLinksCount": 3,
+              "status": {}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Our Commitment
+
+LangChain will not store any sensitive information in the Subscription Metrics or Operational Metadata. Any data collected will not be shared with a third party. If you have any concerns about the data being sent, please reach out to your account team.
