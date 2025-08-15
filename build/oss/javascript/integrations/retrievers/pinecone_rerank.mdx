@@ -1,0 +1,160 @@
+# Pinecone Rerank
+
+> This notebook shows how to use **PineconeRerank** for two-stage vector retrieval reranking using Pinecone's hosted reranking API as demonstrated in `langchain_pinecone/libs/pinecone/rerank.py`.
+
+## Setup
+Install the `langchain-pinecone` package.
+
+
+```python
+%pip install -qU "langchain-pinecone"
+```
+
+## Credentials
+Set your Pinecone API key to use the reranking API.
+
+
+```python
+import os
+from getpass import getpass
+
+os.environ["PINECONE_API_KEY"] = os.getenv("PINECONE_API_KEY") or getpass(
+    "Enter your Pinecone API key: "
+)
+```
+
+## Instantiation
+Use `PineconeRerank` to rerank a list of documents by relevance to a query.
+
+
+```python
+from langchain_core.documents import Document
+from langchain_pinecone import PineconeRerank
+
+# Initialize reranker
+reranker = PineconeRerank(model="bge-reranker-v2-m3")
+
+# Sample documents
+documents = [
+    Document(page_content="Paris is the capital of France."),
+    Document(page_content="Berlin is the capital of Germany."),
+    Document(page_content="The Eiffel Tower is in Paris."),
+]
+
+# Rerank documents
+query = "What is the capital of France?"
+reranked_docs = reranker.compress_documents(documents, query)
+
+# Print results
+for doc in reranked_docs:
+    score = doc.metadata.get("relevance_score")
+    print(f"Score: {score:.4f} | Content: {doc.page_content}")
+```
+```output
+/Users/jakit/customers/aurelio/langchain-pinecone/libs/pinecone/.venv/lib/python3.10/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm
+``````output
+Score: 0.9998 | Content: Paris is the capital of France.
+Score: 0.1950 | Content: The Eiffel Tower is in Paris.
+Score: 0.0042 | Content: Berlin is the capital of Germany.
+```
+## Usage
+### Reranking with Top-N
+Specify `top_n` to limit the number of returned documents.
+
+
+```python
+# Return only top-1 result
+reranker_top1 = PineconeRerank(model="bge-reranker-v2-m3", top_n=1)
+top1_docs = reranker_top1.compress_documents(documents, query)
+print("Top-1 Result:")
+for doc in top1_docs:
+    print(f"Score: {doc.metadata['relevance_score']:.4f} | Content: {doc.page_content}")
+```
+```output
+Top-1 Result:
+Score: 0.9998 | Content: Paris is the capital of France.
+```
+## Reranking with Custom Rank Fields
+If your documents are dictionaries or have custom fields, use `rank_fields` to specify the field to rank on.
+
+
+```python
+# Sample dictionary documents with 'text' field
+docs_dict = [
+    {
+        "id": "doc1",
+        "text": "Article about renewable energy.",
+        "title": "Renewable Energy",
+    },
+    {"id": "doc2", "text": "Report on economic growth.", "title": "Economic Growth"},
+    {
+        "id": "doc3",
+        "text": "News on climate policy changes.",
+        "title": "Climate Policy",
+    },
+]
+
+# Initialize reranker with rank_fields
+reranker_text = PineconeRerank(model="bge-reranker-v2-m3", rank_fields=["text"])
+climate_docs = reranker_text.rerank(docs_dict, "Latest news on climate change.")
+
+# Show IDs and scores
+for res in climate_docs:
+    print(f"ID: {res['id']} | Score: {res['score']:.4f}")
+```
+```output
+ID: doc3 | Score: 0.9892
+ID: doc1 | Score: 0.0006
+ID: doc2 | Score: 0.0000
+```
+We can rerank based on title field
+
+
+```python
+economic_docs = reranker_text.rerank(docs_dict, "Economic forecast.")
+
+# Show IDs and scores
+for res in economic_docs:
+    print(
+        f"ID: {res['id']} | Score: {res['score']:.4f} | Title: {res['document']['title']}"
+    )
+```
+```output
+ID: doc2 | Score: 0.8918 | Title: Economic Growth
+ID: doc3 | Score: 0.0002 | Title: Climate Policy
+ID: doc1 | Score: 0.0000 | Title: Renewable Energy
+```
+## Reranking with Additional Parameters
+You can pass model-specific parameters (e.g., `truncate`) directly to `.rerank()`.
+
+How to handle inputs longer than those supported by the model. Accepted values: END or NONE.
+END truncates the input sequence at the input token limit. NONE returns an error when the input exceeds the input token limit.
+
+
+```python
+# Rerank with custom truncate parameter
+docs_simple = [
+    {"id": "docA", "text": "Quantum entanglement is a physical phenomenon..."},
+    {"id": "docB", "text": "Classical mechanics describes motion..."},
+]
+
+reranked = reranker.rerank(
+    documents=docs_simple,
+    query="Explain the concept of quantum entanglement.",
+    truncate="END",
+)
+# Print reranked IDs and scores
+for res in reranked:
+    print(f"ID: {res['id']} | Score: {res['score']:.4f}")
+```
+```output
+ID: docA | Score: 0.6950
+ID: docB | Score: 0.0001
+```
+## Use within a chain
+
+## API reference
+- `PineconeRerank(model, top_n, rank_fields, return_documents)`
+- `.rerank(documents, query, rank_fields=None, model=None, top_n=None, truncate="END")`
+- `.compress_documents(documents, query)` (returns `Document` objects with `relevance_score` in metadata)

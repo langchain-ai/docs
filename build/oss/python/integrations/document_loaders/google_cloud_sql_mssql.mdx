@@ -1,0 +1,400 @@
+# Google Cloud SQL for SQL server
+
+> [Cloud SQL](https://cloud.google.com/sql) is a fully managed relational database service that offers high performance, seamless integration, and impressive scalability. It offers [MySQL](https://cloud.google.com/sql/mysql), [PostgreSQL](https://cloud.google.com/sql/postgres), and [SQL Server](https://cloud.google.com/sql/sqlserver) database engines. Extend your database application to build AI-powered experiences leveraging Cloud SQL's Langchain integrations.
+
+This notebook goes over how to use [Cloud SQL for SQL server](https://cloud.google.com/sql/sqlserver) to [save, load and delete langchain documents](/docs/how_to#document-loaders) with `MSSQLLoader` and `MSSQLDocumentSaver`.
+
+Learn more about the package on [GitHub](https://github.com/googleapis/langchain-google-cloud-sql-mssql-python/).
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/googleapis/langchain-google-cloud-sql-mssql-python/blob/main/docs/document_loader.ipynb)
+
+## Before You Begin
+
+To run this notebook, you will need to do the following:
+
+* [Create a Google Cloud Project](https://developers.google.com/workspace/guides/create-project)
+* [Enable the Cloud SQL Admin API.](https://console.cloud.google.com/marketplace/product/google/sqladmin.googleapis.com)
+* [Create a Cloud SQL for SQL server instance](https://cloud.google.com/sql/docs/sqlserver/create-instance)
+* [Create a Cloud SQL database](https://cloud.google.com/sql/docs/sqlserver/create-manage-databases)
+* [Add an IAM database user to the database](https://cloud.google.com/sql/docs/sqlserver/create-manage-users) (Optional)
+
+After confirmed access to database in the runtime environment of this notebook, filling the following values and run the cell before running example scripts.
+
+
+```python
+# @markdown Please fill in the both the Google Cloud region and name of your Cloud SQL instance.
+REGION = "us-central1"  # @param {type:"string"}
+INSTANCE = "test-instance"  # @param {type:"string"}
+
+# @markdown Please fill in user name and password of your Cloud SQL instance.
+DB_USER = "sqlserver"  # @param {type:"string"}
+DB_PASS = "password"  # @param {type:"string"}
+
+# @markdown Please specify a database and a table for demo purpose.
+DATABASE = "test"  # @param {type:"string"}
+TABLE_NAME = "test-default"  # @param {type:"string"}
+```
+
+### 🦜🔗 Library Installation
+
+The integration lives in its own `langchain-google-cloud-sql-mssql` package, so we need to install it.
+
+
+```python
+%pip install --upgrade --quiet langchain-google-cloud-sql-mssql
+```
+
+**Colab only**: Uncomment the following cell to restart the kernel or use the button to restart the kernel. For Vertex AI Workbench you can restart the terminal using the button on top.
+
+
+```python
+# # Automatically restart kernel after installs so that your environment can access the new packages
+# import IPython
+
+# app = IPython.Application.instance()
+# app.kernel.do_shutdown(True)
+```
+
+### 🔐 Authentication
+
+Authenticate to Google Cloud as the IAM user logged into this notebook in order to access your Google Cloud Project.
+
+- If you are using Colab to run this notebook, use the cell below and continue.
+- If you are using Vertex AI Workbench, check out the setup instructions [here](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/setup-env).
+
+
+```python
+from google.colab import auth
+
+auth.authenticate_user()
+```
+
+### ☁ Set Your Google Cloud Project
+Set your Google Cloud project so that you can leverage Google Cloud resources within this notebook.
+
+If you don't know your project ID, try the following:
+
+* Run `gcloud config list`.
+* Run `gcloud projects list`.
+* See the support page: [Locate the project ID](https://support.google.com/googleapi/answer/7014113).
+
+
+```python
+# @markdown Please fill in the value below with your Google Cloud project ID and then run the cell.
+
+PROJECT_ID = "my-project-id"  # @param {type:"string"}
+
+# Set the project id
+!gcloud config set project {PROJECT_ID}
+```
+
+### 💡 API Enablement
+The `langchain-google-cloud-sql-mssql` package requires that you [enable the Cloud SQL Admin API](https://console.cloud.google.com/flows/enableapi?apiid=sqladmin.googleapis.com) in your Google Cloud Project.
+
+
+```python
+# enable Cloud SQL Admin API
+!gcloud services enable sqladmin.googleapis.com
+```
+
+## Basic Usage
+
+### MSSQLEngine Connection Pool
+
+Before saving or loading documents from MSSQL table, we need first configures a connection pool to Cloud SQL database. The `MSSQLEngine` configures a [SQLAlchemy connection pool](https://docs.sqlalchemy.org/en/20/core/pooling.html#module-sqlalchemy.pool) to your Cloud SQL database, enabling successful connections from your application and following industry best practices.
+
+To create a `MSSQLEngine` using `MSSQLEngine.from_instance()` you need to provide only 4 things:
+
+1. `project_id` : Project ID of the Google Cloud Project where the Cloud SQL instance is located.
+1. `region` : Region where the Cloud SQL instance is located.
+1. `instance` : The name of the Cloud SQL instance.
+1. `database` : The name of the database to connect to on the Cloud SQL instance.
+1. `user` : Database user to use for built-in database authentication and login.
+1. `password` : Database password to use for built-in database authentication and login.
+
+
+```python
+from langchain_google_cloud_sql_mssql import MSSQLEngine
+
+engine = MSSQLEngine.from_instance(
+    project_id=PROJECT_ID,
+    region=REGION,
+    instance=INSTANCE,
+    database=DATABASE,
+    user=DB_USER,
+    password=DB_PASS,
+)
+```
+
+### Initialize a table
+
+Initialize a table of default schema via `MSSQLEngine.init_document_table(<table_name>)`. Table Columns:
+
+- page_content (type: text)
+- langchain_metadata (type: JSON)
+
+`overwrite_existing=True` flag means the newly initialized table will replace any existing table of the same name.
+
+
+```python
+engine.init_document_table(TABLE_NAME, overwrite_existing=True)
+```
+
+### Save documents
+
+Save langchain documents with `MSSQLDocumentSaver.add_documents(<documents>)`. To initialize `MSSQLDocumentSaver` class you need to provide 2 things:
+
+1. `engine` - An instance of a `MSSQLEngine` engine.
+2. `table_name` - The name of the table within the Cloud SQL database to store langchain documents.
+
+
+```python
+from langchain_core.documents import Document
+from langchain_google_cloud_sql_mssql import MSSQLDocumentSaver
+
+test_docs = [
+    Document(
+        page_content="Apple Granny Smith 150 0.99 1",
+        metadata={"fruit_id": 1},
+    ),
+    Document(
+        page_content="Banana Cavendish 200 0.59 0",
+        metadata={"fruit_id": 2},
+    ),
+    Document(
+        page_content="Orange Navel 80 1.29 1",
+        metadata={"fruit_id": 3},
+    ),
+]
+saver = MSSQLDocumentSaver(engine=engine, table_name=TABLE_NAME)
+saver.add_documents(test_docs)
+```
+
+### Load documents
+
+Load langchain documents with `MSSQLLoader.load()` or `MSSQLLoader.lazy_load()`. `lazy_load` returns a generator that only queries database during the iteration. To initialize `MSSQLDocumentSaver` class you need to provide:
+
+1. `engine` - An instance of a `MSSQLEngine` engine.
+2. `table_name` - The name of the table within the Cloud SQL database to store langchain documents.
+
+
+```python
+from langchain_google_cloud_sql_mssql import MSSQLLoader
+
+loader = MSSQLLoader(engine=engine, table_name=TABLE_NAME)
+docs = loader.lazy_load()
+for doc in docs:
+    print("Loaded documents:", doc)
+```
+
+### Load documents via query
+
+Other than loading documents from a table, we can also choose to load documents from a view generated from a SQL query. For example:
+
+
+```python
+from langchain_google_cloud_sql_mssql import MSSQLLoader
+
+loader = MSSQLLoader(
+    engine=engine,
+    query=f"select * from \"{TABLE_NAME}\" where JSON_VALUE(langchain_metadata, '$.fruit_id') = 1;",
+)
+onedoc = loader.load()
+onedoc
+```
+
+The view generated from SQL query can have different schema than default table. In such cases, the behavior of MSSQLLoader is the same as loading from table with non-default schema. Please refer to section [Load documents with customized document page content & metadata](#load-documents-with-customized-document-page-content--metadata).
+
+### Delete documents
+
+Delete a list of langchain documents from MSSQL table with `MSSQLDocumentSaver.delete(<documents>)`.
+
+For table with default schema (page_content, langchain_metadata), the deletion criteria is:
+
+A `row` should be deleted if there exists a `document` in the list, such that
+
+- `document.page_content` equals `row[page_content]`
+- `document.metadata` equals `row[langchain_metadata]`
+
+
+```python
+from langchain_google_cloud_sql_mssql import MSSQLLoader
+
+loader = MSSQLLoader(engine=engine, table_name=TABLE_NAME)
+docs = loader.load()
+print("Documents before delete:", docs)
+saver.delete(onedoc)
+print("Documents after delete:", loader.load())
+```
+
+## Advanced Usage
+
+### Load documents with customized document page content & metadata
+
+First we prepare an example table with non-default schema, and populate it with some arbitrary data.
+
+
+```python
+import sqlalchemy
+
+with engine.connect() as conn:
+    conn.execute(sqlalchemy.text(f'DROP TABLE IF EXISTS "{TABLE_NAME}"'))
+    conn.commit()
+    conn.execute(
+        sqlalchemy.text(
+            f"""
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[{TABLE_NAME}]') AND type in (N'U'))
+                BEGIN
+                    CREATE TABLE [dbo].[{TABLE_NAME}](
+                        fruit_id INT IDENTITY(1,1) PRIMARY KEY,
+                        fruit_name VARCHAR(100) NOT NULL,
+                        variety VARCHAR(50),
+                        quantity_in_stock INT NOT NULL,
+                        price_per_unit DECIMAL(6,2) NOT NULL,
+                        organic BIT NOT NULL
+                    )
+                END
+            """
+        )
+    )
+    conn.execute(
+        sqlalchemy.text(
+            f"""
+            INSERT INTO "{TABLE_NAME}" (fruit_name, variety, quantity_in_stock, price_per_unit, organic)
+            VALUES
+                ('Apple', 'Granny Smith', 150, 0.99, 1),
+                ('Banana', 'Cavendish', 200, 0.59, 0),
+                ('Orange', 'Navel', 80, 1.29, 1);
+            """
+        )
+    )
+    conn.commit()
+```
+
+If we still load langchain documents with default parameters of `MSSQLLoader` from this example table, the `page_content` of loaded documents will be the first column of the table, and `metadata` will be consisting of key-value pairs of all the other columns.
+
+
+```python
+loader = MSSQLLoader(
+    engine=engine,
+    table_name=TABLE_NAME,
+)
+loader.load()
+```
+
+We can specify the content and metadata we want to load by setting the `content_columns` and `metadata_columns` when initializing the `MSSQLLoader`.
+
+1. `content_columns`: The columns to write into the `page_content` of the document.
+2. `metadata_columns`: The columns to write into the `metadata` of the document.
+
+For example here, the values of columns in `content_columns` will be joined together into a space-separated string, as `page_content` of loaded documents, and `metadata` of loaded documents will only contain key-value pairs of columns specified in `metadata_columns`.
+
+
+```python
+loader = MSSQLLoader(
+    engine=engine,
+    table_name=TABLE_NAME,
+    content_columns=[
+        "variety",
+        "quantity_in_stock",
+        "price_per_unit",
+        "organic",
+    ],
+    metadata_columns=["fruit_id", "fruit_name"],
+)
+loader.load()
+```
+
+### Save document with customized page content & metadata
+
+In order to save langchain document into table with customized metadata fields. We need first create such a table via `MSSQLEngine.init_document_table()`, and specify the list of `metadata_columns` we want it to have. In this example, the created table will have table columns:
+
+- description (type: text): for storing fruit description.
+- fruit_name (type text): for storing fruit name.
+- organic (type tinyint(1)): to tell if the fruit is organic.
+- other_metadata (type: JSON): for storing other metadata information of the fruit.
+
+We can use the following parameters with `MSSQLEngine.init_document_table()` to create the table:
+
+1. `table_name`: The name of the table within the Cloud SQL database to store langchain documents.
+2. `metadata_columns`: A list of `sqlalchemy.Column` indicating the list of metadata columns we need.
+3. `content_column`: The name of column to store `page_content` of langchain document. Default: `page_content`.
+4. `metadata_json_column`: The name of JSON column to store extra `metadata` of langchain document. Default: `langchain_metadata`.
+
+
+```python
+engine.init_document_table(
+    TABLE_NAME,
+    metadata_columns=[
+        sqlalchemy.Column(
+            "fruit_name",
+            sqlalchemy.UnicodeText,
+            primary_key=False,
+            nullable=True,
+        ),
+        sqlalchemy.Column(
+            "organic",
+            sqlalchemy.Boolean,
+            primary_key=False,
+            nullable=True,
+        ),
+    ],
+    content_column="description",
+    metadata_json_column="other_metadata",
+    overwrite_existing=True,
+)
+```
+
+Save documents with `MSSQLDocumentSaver.add_documents(<documents>)`. As you can see in this example, 
+
+- `document.page_content` will be saved into `description` column.
+- `document.metadata.fruit_name` will be saved into `fruit_name` column.
+- `document.metadata.organic` will be saved into `organic` column.
+- `document.metadata.fruit_id` will be saved into `other_metadata` column in JSON format.
+
+
+```python
+test_docs = [
+    Document(
+        page_content="Granny Smith 150 0.99",
+        metadata={"fruit_id": 1, "fruit_name": "Apple", "organic": 1},
+    ),
+]
+saver = MSSQLDocumentSaver(
+    engine=engine,
+    table_name=TABLE_NAME,
+    content_column="description",
+    metadata_json_column="other_metadata",
+)
+saver.add_documents(test_docs)
+```
+
+
+```python
+with engine.connect() as conn:
+    result = conn.execute(sqlalchemy.text(f'select * from "{TABLE_NAME}";'))
+    print(result.keys())
+    print(result.fetchall())
+```
+
+### Delete documents with customized page content & metadata
+
+We can also delete documents from table with customized metadata columns via `MSSQLDocumentSaver.delete(<documents>)`. The deletion criteria is:
+
+A `row` should be deleted if there exists a `document` in the list, such that
+
+- `document.page_content` equals `row[page_content]`
+- For every metadata field `k` in `document.metadata`
+    - `document.metadata[k]` equals `row[k]` or `document.metadata[k]` equals `row[langchain_metadata][k]`
+- There no extra metadata field presents in `row` but not in `document.metadata`.
+
+
+
+
+```python
+loader = MSSQLLoader(engine=engine, table_name=TABLE_NAME)
+docs = loader.load()
+print("Documents before delete:", docs)
+saver.delete(docs)
+print("Documents after delete:", loader.load())
+```

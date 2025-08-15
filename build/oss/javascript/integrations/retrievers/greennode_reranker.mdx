@@ -1,0 +1,223 @@
+---
+sidebar_label: GreenNode
+---
+
+# GreenNodeRetriever
+
+>[GreenNode](https://greennode.ai/) is a global AI solutions provider and a **NVIDIA Preferred Partner**, delivering full-stack AI capabilities—from infrastructure to application—for enterprises across the US, MENA, and APAC regions. Operating on **world-class infrastructure** (LEED Gold, TIA‑942, Uptime Tier III), GreenNode empowers enterprises, startups, and researchers with a comprehensive suite of AI services
+
+This notebook provides a walkthrough on getting started with the `GreenNodeRerank` retriever. It enables you to perform document search using built-in connectors or by integrating your own data sources, leveraging GreenNode's reranking capabilities for improved relevance.
+
+### Integration details
+
+- **Provider**: [GreenNode Serverless AI](https://aiplatform.console.greennode.ai/playground)
+- **Model Types**: Reranking models
+- **Primary Use Case**: Reranking search results based on semantic relevance
+- **Available Models**: Includes [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) and other high-performance reranking models
+- **Scoring**: Returns relevance scores used to reorder document candidates based on query alignment
+
+## Setup
+
+To access GreenNode models you'll need to create a GreenNode account, get an API key, and install the `langchain-greennode` integration package.
+
+### Credentials
+
+Head to [this page](https://aiplatform.console.greennode.ai/api-keys) to sign up to GreenNode AI Platform and generate an API key. Once you've done this, set the GREENNODE_API_KEY environment variable:
+
+
+```python
+import getpass
+import os
+
+if not os.getenv("GREENNODE_API_KEY"):
+    os.environ["GREENNODE_API_KEY"] = getpass.getpass("Enter your GreenNode API key: ")
+```
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+This retriever lives in the `langchain-greennode` package:
+
+
+```python
+%pip install -qU langchain-greennode
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Instantiation
+
+The `GreenNodeRerank` class can be instantiated with optional parameters for the API key and model name:
+
+
+```python
+from langchain_greennode import GreenNodeRerank
+
+# Initialize the embeddings model
+reranker = GreenNodeRerank(
+    # api_key="YOUR_API_KEY",  # You can pass the API key directly
+    model="BAAI/bge-reranker-v2-m3",  # The default embedding model
+    top_n=3,
+)
+```
+
+## Usage
+
+### Reranking Search Results
+
+Reranking models enhance retrieval-augmented generation (RAG) workflows by refining and reordering initial search results based on semantic relevance. The example below demonstrates how to integrate GreenNodeRerank with a base retriever to improve the quality of retrieved documents.
+
+
+```python
+from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+from langchain_greennode import GreenNodeEmbeddings
+
+# Initialize the embeddings model
+embeddings = GreenNodeEmbeddings(
+    # api_key="YOUR_API_KEY",  # You can pass the API key directly
+    model="BAAI/bge-m3"  # The default embedding model
+)
+
+# Prepare documents (finance/economics domain)
+docs = [
+    Document(
+        page_content="Inflation represents the rate at which the general level of prices for goods and services rises"
+    ),
+    Document(
+        page_content="Central banks use interest rates to control inflation and stabilize the economy"
+    ),
+    Document(
+        page_content="Cryptocurrencies like Bitcoin operate on decentralized blockchain networks"
+    ),
+    Document(
+        page_content="Stock markets are influenced by corporate earnings, investor sentiment, and economic indicators"
+    ),
+]
+
+# Create a vector store and a base retriever
+vector_store = FAISS.from_documents(docs, embeddings)
+base_retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+
+
+rerank_retriever = ContextualCompressionRetriever(
+    base_compressor=reranker, base_retriever=base_retriever
+)
+
+# Perform retrieval with reranking
+query = "How do central banks fight rising prices?"
+results = rerank_retriever.get_relevant_documents(query)
+
+results
+```
+```output
+/var/folders/bs/g52lln652z11zjp98qf9wcy40000gn/T/ipykernel_96362/2544494776.py:41: LangChainDeprecationWarning: The method `BaseRetriever.get_relevant_documents` was deprecated in langchain-core 0.1.46 and will be removed in 1.0. Use :meth:`~invoke` instead.
+  results = rerank_retriever.get_relevant_documents(query)
+```
+
+
+```output
+[Document(metadata={'relevance_score': 0.125}, page_content='Central banks use interest rates to control inflation and stabilize the economy'),
+ Document(metadata={'relevance_score': 0.004913330078125}, page_content='Inflation represents the rate at which the general level of prices for goods and services rises'),
+ Document(metadata={'relevance_score': 1.6689300537109375e-05}, page_content='Cryptocurrencies like Bitcoin operate on decentralized blockchain networks')]
+```
+
+
+### Direct Usage
+
+The `GreenNodeRerank` class can be used independently to perform reranking of retrieved documents based on relevance scores. This functionality is particularly useful in scenarios where a primary retrieval step (e.g., keyword or vector search) returns a broad set of candidates, and a secondary model is needed to refine the results using more sophisticated semantic understanding. The class accepts a query and a list of candidate documents and returns a reordered list based on predicted relevance.
+
+
+```python
+test_documents = [
+    Document(
+        page_content="Carson City is the capital city of the American state of Nevada."
+    ),
+    Document(
+        page_content="Washington, D.C. (also known as simply Washington or D.C.) is the capital of the United States."
+    ),
+    Document(
+        page_content="Capital punishment has existed in the United States since beforethe United States was a country."
+    ),
+    Document(
+        page_content="The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean. Its capital is Saipan."
+    ),
+]
+
+test_query = "What is the capital of the United States?"
+results = reranker.rerank(test_documents, test_query)
+results
+```
+
+
+
+```output
+[{'index': 1, 'relevance_score': 1.0},
+ {'index': 0, 'relevance_score': 0.01165771484375},
+ {'index': 3, 'relevance_score': 0.0012054443359375}]
+```
+
+
+## Use within a chain
+
+GreenNodeRerank works seamlessly in LangChain RAG pipelines. Here's an example of creating a simple RAG chain with the GreenNodeRerank:
+
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_greennode import ChatGreenNode
+
+# Initialize LLM
+llm = ChatGreenNode(model="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B")
+
+# Create a prompt template
+prompt = ChatPromptTemplate.from_template(
+    """
+Answer the question based only on the following context:
+
+Context:
+{context}
+
+Question: {question}
+"""
+)
+
+
+# Format documents function
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+# Create RAG chain
+rag_chain = (
+    {"context": rerank_retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+# Run the chain
+answer = rag_chain.invoke("How do central banks fight rising prices?")
+answer
+```
+
+
+
+```output
+'\n\nCentral banks combat rising prices, or inflation, by adjusting interest rates. By raising interest rates, they increase the cost of borrowing, which discourages spending and investment. This reduction in demand helps slow down the rate of price increases, thereby controlling inflation and contributing to economic stability.'
+```
+
+
+## API reference
+
+For more details about the GreenNode Serverless AI API, visit the [GreenNode Serverless AI Documentation](https://aiplatform.console.greennode.ai/api-docs/maas).
