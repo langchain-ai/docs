@@ -1,4 +1,6 @@
-# Writer Text Splitter
+---
+title: "Text splitters"
+---
 
 This notebook provides a quick overview for getting started with Writer's [text splitter](/oss/concepts/text_splitters/).
 
