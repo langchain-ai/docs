@@ -1,0 +1,356 @@
+---
+title: Configure LangSmith for scale
+sidebarTitle: Configure for scale
+---
+
+A self-hosted LangSmith instance can handle a large number of traces and users. The default configuration for the self-hosted deployment can handle substantial load, and you can configure your deployment to be able to achieve higher scale. This page describes scaling considerations and provides some examples to help configure your self-hosted instance.
+
+For example configurations, refer to [Example LangSmith configurations for scale](#example-langsmith-configurations-for-scale).
+
+## Trace ingestion (write path)
+
+Common usage that put load on the write path:
+
+- Ingesting traces via the Python or JavaScript LangSmith SDK
+- Ingesting traces via the `@traceable` wrapper
+- Submitting traces via the `/runs/multipart` endpoint
+
+Services that play a large role in trace ingestion:
+
+- Platform backend service: Receives initial request to ingest traces and places traces on a Redis queue
+- Redis cache: Used to queue traces that need to be persisted
+- Queue service: Persists traces for querying
+- ClickHouse: Persistent storage used for traces
+
+When scaling up the write path (trace ingestion), it is helpful to monitor the four services/resources listed above. Here are some typical changes that can help increase performance of trace ingestion:
+
+- Give ClickHouse more resources (CPU and memory) if it is approaching resource limits.
+- Increase the number of platform-backend pods if ingest requests are taking long to respond.
+- Increase queue service pod replicas if traces are not being processed from Redis fast enough.
+- Use a larger Redis cache if you notice that the current Redis instance is reaching resource limits. This could also be a reason why ingest requests take a long time.
+
+## Trace querying (read path)
+
+Common usage that puts load on the read path:
+
+- Users on the frontend looking at tracing projects or individual traces
+- Scripts used to query for trace info
+- Hitting either the `/runs/query` or `/runs/<run-id>` api endpoints
+
+Services that play a large role in querying traces:
+
+- Backend service: Receives the request and submits a query to ClickHouse to then respond to the request
+- ClickHouse: Persistent storage for traces. This is the main database that is queried when requesting trace info.
+
+When scaling up the read path (trace querying), it is helpful to monitor the two services/resources listed above. Here are some typical changes that can help improve performance of trace querying:
+
+- Increase the number of backend service pods. This would be most impactful if backend service pods are reaching 1 core CPU usage.
+- Give ClickHouse more resources (CPU or Memory). ClickHouse can be very resource intensive, but it should lead to better performance.
+- Move to a [replicated ClickHouse cluster](/langsmith/self-host-external-clickhouse#ha-replicated-clickhouse-cluster). Adding replicas of ClickHouse helps with read performance, but we recommend staying below 5 replicas (start with 3).
+
+For more precise guidance on how this translates to helm chart values, refer to the examples the following [section](#example-langsmith-configurations-for-scale). If you are unsure why your LangSmith instance cannot handle a certain load pattern, contact the LangChain team.
+
+## Example LangSmith configurations for scale
+
+Below we provide some example LangSmith configurations based on expected read and write loads.
+
+For read load (trace querying):
+
+- Low means roughly 5 users looking at traces at a time (about 10 requests per second)
+- Medium means roughly 20 users looking at traces at a time (about 40 requests per second)
+- High means roughly 50 users looking at traces at a time (about 100 requests per second)
+
+For write load (trace ingestion):
+
+- Low means up to 10 traces submitted per second
+- Medium means up to 100 traces submitted per second
+- High means up to 1000 traces submitted per second
+
+<Note>
+The exact optimal configuration depends on your usage and trace payloads. Use the examples below in combination with the information above and your specific usage to update your LangSmith configuration as you see fit. If you have any questions, please reach out to the LangChain team.
+</Note>
+
+### Low reads, low writes
+
+The default LangSmith configuration will handle this load. No custom resource configuration is needed here.
+
+### Low reads, high writes
+
+You have a very high scale of trace ingestions, but single digit number of users on the frontend querying traces at any one time.
+
+For this, we recommend a configuration like this:
+
+```yaml
+config:
+  blobStorage:
+    # Please also set the other keys to connect to your blob storage. See configuration section.
+    enabled: true
+  settings:
+    redisRunsExpirySeconds: "3600"
+# ttl:
+#   enabled: true
+#   ttl_period_seconds:
+#     longlived: "7776000"  # 90 days (default is 400 days)
+#     shortlived: "604800"  # 7 days (default is 14 days)
+
+frontend:
+  deployment:
+    replicas: 4 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 4
+#   minReplicas: 2
+
+platformBackend:
+  deployment:
+    replicas: 20 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 20
+#   minReplicas: 8
+
+## Note that we are actively working on improving performance of this service to reduce the number of replicas.
+queue:
+  deployment:
+    replicas: 160 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 160
+#   minReplicas: 40
+
+backend:
+  deployment:
+    replicas: 5 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 5
+#   minReplicas: 3
+
+## Ensure your Redis cache is at least 200 GB
+redis:
+  external:
+    enabled: true
+    existingSecretName: langsmith-redis-secret # Set the connection url for your external Redis instance (200+ GB)
+
+clickhouse:
+  statefulSet:
+    persistence:
+      # This may depend on your configured TTL (see config section).
+      # We recommend 600Gi for every shortlived TTL day if operating at this scale constantly.
+      size: 4200Gi # This assumes 7 days TTL and operating a this scale constantly.
+    resources:
+      requests:
+        cpu: "10"
+        memory: "32Gi"
+      limits:
+        cpu: "16"
+        memory: "48Gi"
+
+commonEnv:
+  - name: "CLICKHOUSE_ASYNC_INSERT_WAIT_PCT_FLOAT"
+    value: "0"
+```
+
+### High reads, low writes
+
+You have a relatively low scale of trace ingestions, but many frontend users querying traces and/or have scripts that hit the `/runs/query` or `/runs/<run-id>` endpoints frequently.
+
+**For this, we strongly recommend setting up a replicated ClickHouse cluster to enable high read scale at low latency.** See our [external ClickHouse doc](/langsmith/self-host-external-clickhouse#ha-replicated-clickhouse-cluster) for more guidance on how to setup a replicated ClickHouse cluster. For this load pattern, we recommend using a 3 node replicated setup, where each replica in the cluster should have resource requests of 8+ cores and 16+ GB memory, and resource limit of 12 cores and 32 GB memory.
+
+For this, we recommend a configuration like this:
+
+```yaml
+config:
+  blobStorage:
+    # Please also set the other keys to connect to your blob storage. See configuration section.
+    enabled: true
+
+frontend:
+  deployment:
+    replicas: 2
+
+queue:
+  deployment:
+    replicas: 6 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 6
+#   minReplicas: 4
+
+backend:
+  deployment:
+    replicas: 40 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 40
+#   minReplicas: 16
+
+# We strongly recommend setting up a replicated clickhouse cluster for this load.
+# Update these values as needed to connect to your replicated clickhouse cluster.
+clickhouse:
+  external:
+    # If using a 3 node replicated setup, each replica in the cluster should have resource requests of 8+ cores and 16+ GB memory, and resource limit of 12 cores and 32 GB memory.
+    enabled: true
+    host: langsmith-ch-clickhouse-replicated.default.svc.cluster.local
+    port: "8123"
+    nativePort: "9000"
+    user: "default"
+    password: "password"
+    database: "default"
+    cluster: "replicated"
+```
+
+### Medium reads, medium writes
+
+This is a good all around configuration that should be able to handle most usage patterns of LangSmith. In internal testing, this configuration allowed us to scale to 100 traces ingested per second and 40 read requests per second.
+
+For this, we recommend a configuration like this:
+
+```yaml
+config:
+  blobStorage:
+    # Please also set the other keys to connect to your blob storage. See configuration section.
+    enabled: true
+  settings:
+    redisRunsExpirySeconds: "3600"
+
+frontend:
+  deployment:
+    replicas: 2
+
+queue:
+  deployment:
+    replicas: 10 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 10
+#   minReplicas: 5
+
+backend:
+  deployment:
+    replicas: 16 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 16
+#   minReplicas: 8
+
+redis:
+  statefulSet:
+    resources:
+      requests:
+        memory: 13Gi
+      limits:
+        memory: 13Gi
+
+  # -- For external redis instead use something like below --
+  # external:
+  #   enabled: true
+  #   connectionUrl: "<URL>" OR existingSecretName: "<SECRET-NAME>"
+
+clickhouse:
+  statefulSet:
+    persistence:
+      # This may depend on your configured TTL.
+      # We recommend 60Gi for every shortlived TTL day if operating at this scale constantly.
+      size: 420Gi # This assumes 7 days TTL and operating a this scale constantly.
+    resources:
+      requests:
+        cpu: "16"
+        memory: "24Gi"
+      limits:
+        cpu: "28"
+        memory: "40Gi"
+
+commonEnv:
+  - name: "CLICKHOUSE_ASYNC_INSERT_WAIT_PCT_FLOAT"
+    value: "0"
+```
+
+<Warning>
+If you still notice slow reads with the above configuration, we recommend moving to a [replicated Clickhouse cluster setup](/langsmith/self-host-external-clickhouse#ha-replicated-clickhouse-cluster)
+</Warning>
+
+### High reads, high writes
+
+You have a very high rate of trace ingestion (approaching 1000 traces submitted per second) and also have many users querying traces on the frontend (over 50 users) and/or scripts that are consistently making requests to `/runs/query` or `/runs/<run-id>` endpoints.
+
+**For this, we very strongly recommend setting up a replicated ClickHouse cluster to prevent degraded read performance at high write scale.** See our [external ClickHouse doc](/langsmith/self-host-external-clickhouse#ha-replicated-clickhouse-cluster) for more guidance on how to set up a replicated ClickHouse cluster. For this load pattern, we recommend using a 3 node replicated setup, where each replica in the cluster should have resource requests of 14+ cores and 24+ GB memory, and resource limit of 20 cores and 48 GB memory. We also recommend that each node/instance of ClickHouse has 600 Gi of volume storage for each day of TTL that you enable (as per the configuration below).
+
+Overall, we recommend a configuration like this:
+
+```yaml
+config:
+  blobStorage:
+    # Please also set the other keys to connect to your blob storage. See configuration section.
+    enabled: true
+  settings:
+    redisRunsExpirySeconds: "3600"
+# ttl:
+#   enabled: true
+#   ttl_period_seconds:
+#     longlived: "7776000"  # 90 days (default is 400 days)
+#     shortlived: "604800"  # 7 days (default is 14 days)
+
+frontend:
+  deployment:
+    replicas: 4 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 4
+#   minReplicas: 2
+
+platformBackend:
+  deployment:
+    replicas: 20 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 20
+#   minReplicas: 8
+
+## Note that we are actively working on improving performance of this service to reduce the number of replicas.
+queue:
+  deployment:
+    replicas: 160 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 160
+#   minReplicas: 40
+
+backend:
+  deployment:
+    replicas: 50 # OR enable autoscaling to this level (example below)
+# autoscaling:
+#   enabled: true
+#   maxReplicas: 50
+#   minReplicas: 20
+
+## Ensure your Redis cache is at least 200 GB
+redis:
+  external:
+    enabled: true
+    existingSecretName: langsmith-redis-secret # Set the connection url for your external Redis instance (200+ GB)
+
+# We strongly recommend setting up a replicated clickhouse cluster for this load.
+# Update these values as needed to connect to your replicated clickhouse cluster.
+clickhouse:
+  external:
+    # If using a 3 node replicated setup, each replica in the cluster should have resource requests of 14+ cores and 24+ GB memory, and resource limit of 20 cores and 48 GB memory.
+    enabled: true
+    host: langsmith-ch-clickhouse-replicated.default.svc.cluster.local
+    port: "8123"
+    nativePort: "9000"
+    user: "default"
+    password: "password"
+    database: "default"
+    cluster: "replicated"
+
+commonEnv:
+  - name: "CLICKHOUSE_ASYNC_INSERT_WAIT_PCT_FLOAT"
+    value: "0"
+```
+
+<Note>
+Ensure that the Kubernetes cluster is configured with sufficient resources to scale to the recommended size. After deployment, all of the pods in the Kubernetes cluster should be in a `Running` state. Pods stuck in `Pending` may indicate that you are reaching node pool limits or need larger nodes.
+
+Also, ensure that any ingress controller deployed on the cluster is able to handle the desired load to prevent bottlenecks.
+</Note>
