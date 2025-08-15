@@ -28,6 +28,7 @@
                 button.classList.add('version-picker-button');
             }
         });
+        
     }
     
     // Run immediately
