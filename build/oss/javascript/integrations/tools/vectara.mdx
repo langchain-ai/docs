@@ -1,0 +1,340 @@
+# Vectara
+
+[Vectara](https://vectara.com/) is the trusted AI Assistant and Agent platform which focuses on enterprise readiness for mission-critical applications. For more [details](../providers/vectara.ipynb).
+
+
+[Vectara](https://vectara.com/)  provides several tools that can be used with LangChain.
+- **VectaraSearch**: For semantic search over your corpus
+- **VectaraRAG**: For generating summaries using RAG
+- **VectaraIngest**: For ingesting documents into your corpus
+- **VectaraAddFiles**: For uploading the files
+
+
+## Setup
+
+To use the `Vectara Tools` you first need to install the partner package.
+
+
+
+```python
+!uv pip install -U pip && uv pip install -qU langchain-vectara langgraph
+```
+
+# Getting Started
+
+To get started, use the following steps:
+1. If you don't already have one, [Sign up](https://www.vectara.com/integrations/langchain) for your free Vectara trial.
+2. Within your account you can create one or more corpora. Each corpus represents an area that stores text data upon ingest from input documents. To create a corpus, use the **"Create Corpus"** button. You then provide a name to your corpus as well as a description. Optionally you can define filtering attributes and apply some advanced options. If you click on your created corpus, you can see its name and corpus ID right on the top.
+3. Next you'll need to create API keys to access the corpus. Click on the **"Access Control"** tab in the corpus view and then the **"Create API Key"** button. Give your key a name, and choose whether you want query-only or query+index for your key. Click "Create" and you now have an active API key. Keep this key confidential. 
+
+To use LangChain with Vectara, you'll need to have these two values: `corpus_key` and `api_key`.
+You can provide `VECTARA_API_KEY` to LangChain in two ways:
+
+## Instantiation
+
+1. Include in your environment these two variables: `VECTARA_API_KEY`.
+
+   For example, you can set these variables using os.environ and getpass as follows:
+
+```python
+import os
+import getpass
+
+os.environ["VECTARA_API_KEY"] = getpass.getpass("Vectara API Key:")
+```
+
+2. Add them to the `Vectara` vectorstore constructor:
+
+```python
+vectara = Vectara(
+    vectara_api_key=vectara_api_key
+)
+```
+
+In this notebook we assume they are provided in the environment.
+
+
+```python
+import os
+
+os.environ["VECTARA_API_KEY"] = "<VECTARA_API_KEY>"
+os.environ["VECTARA_CORPUS_KEY"] = "<VECTARA_CORPUS_KEY>"
+os.environ["OPENAI_API_KEY"] = "<OPENAI_API_KEY>"
+
+from langchain_vectara import Vectara
+from langchain_vectara.tools import (
+    VectaraAddFiles,
+    VectaraIngest,
+    VectaraRAG,
+    VectaraSearch,
+)
+from langchain_vectara.vectorstores import (
+    ChainReranker,
+    CorpusConfig,
+    CustomerSpecificReranker,
+    File,
+    GenerationConfig,
+    MmrReranker,
+    SearchConfig,
+    VectaraQueryConfig,
+)
+
+vectara = Vectara(vectara_api_key=os.getenv("VECTARA_API_KEY"))
+```
+
+First we load the state-of-the-union text into Vectara.
+
+Note that we use the `VectaraAddFiles` tool which does not require any local processing or chunking - Vectara receives the file content and performs all the necessary pre-processing, chunking and embedding of the file into its knowledge store.
+
+In this case it uses a .txt file but the same works for many other [file types](https://docs.vectara.com/docs/api-reference/indexing-apis/file-upload/file-upload-filetypes).
+
+
+```python
+corpus_key = os.getenv("VECTARA_CORPUS_KEY")
+
+add_files_tool = VectaraAddFiles(
+    name="add_files_tool",
+    description="Upload files about state of the union",
+    vectorstore=vectara,
+    corpus_key=corpus_key,
+)
+
+file_obj = File(
+    file_path="../document_loaders/example_data/state_of_the_union.txt",
+    metadata={"source": "text_file"},
+)
+add_files_tool.run({"files": [file_obj]})
+```
+
+
+
+```output
+'Successfully uploaded 1 files to Vectara corpus test-langchain with IDs: state_of_the_union.txt'
+```
+
+
+## Vectara RAG (retrieval augmented generation)
+
+We now create a `VectaraQueryConfig` object to control the retrieval and summarization options:
+* We enable summarization, specifying we would like the LLM to pick the top 7 matching chunks and respond in English
+
+Using this configuration, let's create a LangChain tool `VectaraRAG` object that encpasulates the full Vectara RAG pipeline:
+
+
+```python
+generation_config = GenerationConfig(
+    max_used_search_results=7,
+    response_language="eng",
+    generation_preset_name="vectara-summary-ext-24-05-med-omni",
+    enable_factual_consistency_score=True,
+)
+search_config = SearchConfig(
+    corpora=[CorpusConfig(corpus_key=corpus_key)],
+    limit=25,
+    reranker=ChainReranker(
+        rerankers=[
+            CustomerSpecificReranker(reranker_id="rnk_272725719", limit=100),
+            MmrReranker(diversity_bias=0.2, limit=100),
+        ]
+    ),
+)
+
+config = VectaraQueryConfig(
+    search=search_config,
+    generation=generation_config,
+)
+
+query_str = "what did Biden say?"
+
+vectara_rag_tool = VectaraRAG(
+    name="rag-tool",
+    description="Get answers about state of the union",
+    vectorstore=vectara,
+    corpus_key=corpus_key,
+    config=config,
+)
+```
+
+## Invocation
+
+
+```python
+vectara_rag_tool.run(query_str)
+```
+
+
+
+```output
+'{\n  "summary": "President Biden discussed several key topics in his recent statements. He emphasized the importance of keeping schools open and noted that with a high vaccination rate and reduced hospitalizations, most Americans can safely return to normal activities [1]. He addressed the need to hold social media platforms accountable for their impact on children and called for stronger privacy protections and mental health services [2]. Biden also announced measures against Russia, including preventing its central bank from defending the Ruble and targeting Russian oligarchs\' assets, as well as closing American airspace to Russian flights [3], [7]. Additionally, he reaffirmed the need to protect women\'s rights, particularly the right to choose as affirmed in Roe v. Wade [5].",\n  "factual_consistency_score": 0.5415039\n}'
+```
+
+
+## Vectara as a langchain retriever
+
+The `VectaraSearch` tool can be used just as a retriever. 
+
+In this case, it behaves just like any other LangChain retriever. The main use of this mode is for semantic search, and in this case we disable summarization:
+
+
+```python
+search_config = SearchConfig(
+    corpora=[CorpusConfig(corpus_key=corpus_key)],
+    limit=25,
+    reranker=ChainReranker(
+        rerankers=[
+            CustomerSpecificReranker(reranker_id="rnk_272725719", limit=100),
+            MmrReranker(diversity_bias=0.2, limit=100),
+        ]
+    ),
+)
+
+search_tool = VectaraSearch(
+    name="Search tool",
+    description="Search for information about state of the union",
+    vectorstore=vectara,
+    corpus_key=corpus_key,
+    search_config=search_config,
+)
+
+search_tool.run({"query": "What did Biden say?"})
+```
+
+
+
+```output
+'[\n  {\n    "index": 0,\n    "content": "The vast majority of federal workers will once again work in person. Our schools are open. Let\\u2019s keep it that way. Our kids need to be in school. And with 75% of adult Americans fully vaccinated and hospitalizations down by 77%, most Americans can remove their masks, return to work, stay in the classroom, and move forward safely.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.9988395571708679\n  },\n  {\n    "index": 1,\n    "content": "Children were also struggling before the pandemic. Bullying, violence, trauma, and the harms of social media. As Frances Haugen, who is here with us tonight, has shown, we must hold social media platforms accountable for the national experiment they\\u2019re conducting on our children for profit. It\\u2019s time to strengthen privacy protections, ban targeted advertising to children, demand tech companies stop collecting personal data on our children. And let\\u2019s get all Americans the mental health services they need.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6355851888656616\n  },\n  {\n    "index": 2,\n    "content": "Preventing Russia\\u2019s central bank from defending the Russian Ruble making Putin\\u2019s $630 Billion \\u201cwar fund\\u201d worthless. We are choking off Russia\\u2019s access to technology that will sap its economic strength and weaken its military for years to come. Tonight I say to the Russian oligarchs and corrupt leaders who have bilked billions of dollars off this violent regime no more. The U.S. Department of Justice is assembling a dedicated task force to go after the crimes of Russian oligarchs. We are joining with our European allies to find and seize your yachts your luxury apartments your private jets.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6353664994239807\n  },\n  {\n    "index": 3,\n    "content": "When they came home, many of the world\\u2019s fittest and best trained warriors were never the same. Dizziness. \\n\\nA cancer that would put them in a flag-draped coffin. I know. \\n\\nOne of those soldiers was my son Major Beau Biden. We don\\u2019t know for sure if a burn pit was the cause of his brain cancer, or the diseases of so many of our troops. But I\\u2019m committed to finding out everything we can.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6315145492553711\n  },\n  {\n    "index": 4,\n    "content": "Let\\u2019s get it done once and for all. Advancing liberty and justice also requires protecting the rights of women. The constitutional right affirmed in Roe v. Wade\\u2014standing precedent for half a century\\u2014is under attack as never before. If we want to go forward\\u2014not backward\\u2014we must protect access to health care. Preserve a woman\\u2019s right to choose.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6307355165481567\n  },\n  {\n    "index": 5,\n    "content": "That\\u2019s why the Justice Department required body cameras, banned chokeholds, and restricted no-knock warrants for its officers. That\\u2019s why the American Rescue Plan provided $350 Billion that cities, states, and counties can use to hire more police and invest in proven strategies like community violence interruption\\u2014trusted messengers breaking the cycle of violence and trauma and giving young people hope. We should all agree: The answer is not to Defund the police. The answer is to FUND the police with the resources and training they need to protect our communities. I ask Democrats and Republicans alike: Pass my budget and keep our neighborhoods safe.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6283233761787415\n  },\n  {\n    "index": 6,\n    "content": "The U.S. Department of Justice is assembling a dedicated task force to go after the crimes of Russian oligarchs. We are joining with our European allies to find and seize your yachts your luxury apartments your private jets. We are coming for your ill-begotten gains. And tonight I am announcing that we will join our allies in closing off American air space to all Russian flights \\u2013 further isolating Russia \\u2013 and adding an additional squeeze \\u2013on their economy. The Ruble has lost 30% of its value.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6250241994857788\n  },\n  {\n    "index": 7,\n    "content": "Tonight, I can announce that the United States has worked with 30 other countries to release 60 Million barrels of oil from reserves around the world. America will lead that effort, releasing 30 Million barrels from our own Strategic Petroleum Reserve. And we stand ready to do more if necessary, unified with our allies. These steps will help blunt gas prices here at home. And I know the news about what\\u2019s happening can seem alarming.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6240909099578857\n  },\n  {\n    "index": 8,\n    "content": "So tonight I\\u2019m offering a Unity Agenda for the Nation. Four big things we can do together. First, beat the opioid epidemic. There is so much we can do. Increase funding for prevention, treatment, harm reduction, and recovery.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6232858896255493\n  },\n  {\n    "index": 9,\n    "content": "We won\\u2019t be able to compete for the jobs of the 21st Century if we don\\u2019t fix that. That\\u2019s why it was so important to pass the Bipartisan Infrastructure Law\\u2014the most sweeping investment to rebuild America in history. This was a bipartisan effort, and I want to thank the members of both parties who worked to make it happen. We\\u2019re done talking about infrastructure weeks. We\\u2019re going to have an infrastructure decade.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6227864027023315\n  },\n  {\n    "index": 10,\n    "content": "We\\u2019re going to have an infrastructure decade. It is going to transform America and put us on a path to win the economic competition of the 21st Century that we face with the rest of the world\\u2014particularly with China. As I\\u2019ve told Xi Jinping, it is never a good bet to bet against the American people. We\\u2019ll create good jobs for millions of Americans, modernizing roads, airports, ports, and waterways all across America. And we\\u2019ll do it all to withstand the devastating effects of the climate crisis and promote environmental justice.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6180555820465088\n  },\n  {\n    "index": 11,\n    "content": "It delivered immediate economic relief for tens of millions of Americans. Helped put food on their table, keep a roof over their heads, and cut the cost of health insurance. And as my Dad used to say, it gave people a little breathing room. And unlike the $2 Trillion tax cut passed in the previous administration that benefitted the top 1% of Americans, the American Rescue Plan helped working people\\u2014and left no one behind. Lots of jobs. \\n\\nIn fact\\u2014our economy created over 6.5 Million new jobs just last year, more jobs created in one year  \\nthan ever before in the history of America.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6175862550735474\n  },\n  {\n    "index": 12,\n    "content": "Our purpose is found. Our future is forged. Well I know this nation. We will meet the test. To protect freedom and liberty, to expand fairness and opportunity.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6163091659545898\n  },\n  {\n    "index": 13,\n    "content": "He rejected repeated efforts at diplomacy. He thought the West and NATO wouldn\\u2019t respond. And he thought he could divide us at home. We were ready.  Here is what we did. We prepared extensively and carefully.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6160664558410645\n  },\n  {\n    "index": 14,\n    "content": "The federal government spends about $600 Billion a year to keep the country safe and secure. There\\u2019s been a law on the books for almost a century \\nto make sure taxpayers\\u2019 dollars support American jobs and businesses. Every Administration says they\\u2019ll do it, but we are actually doing it. We will buy American to make sure everything from the deck of an aircraft carrier to the steel on highway guardrails are made in America. But to compete for the best jobs of the future, we also need to level the playing field with China and other competitors.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6155637502670288\n  },\n  {\n    "index": 15,\n    "content": "And while you\\u2019re at it, pass the Disclose Act so Americans can know who is funding our elections. Tonight, I\\u2019d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer\\u2014an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service. One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court. And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.6151937246322632\n  },\n  {\n    "index": 16,\n    "content": "He loved building Legos with their daughter. But cancer from prolonged exposure to burn pits ravaged Heath\\u2019s lungs and body. Danielle says Heath was a fighter to the very end. He didn\\u2019t know how to stop fighting, and neither did she. Through her pain she found purpose to demand we do better.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.5935490727424622\n  },\n  {\n    "index": 17,\n    "content": "Six days ago, Russia\\u2019s Vladimir Putin sought to shake the foundations of the free world thinking he could make it bend to his menacing ways. But he badly miscalculated. He thought he could roll into Ukraine and the world would roll over. Instead he met a wall of strength he never imagined. He met the Ukrainian people.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.5424350500106812\n  },\n  {\n    "index": 18,\n    "content": "All told, we created 369,000 new manufacturing jobs in America just last year. Powered by people I\\u2019ve met like JoJo Burgess, from generations of union steelworkers from Pittsburgh, who\\u2019s here with us tonight. As Ohio Senator Sherrod Brown says, \\u201cIt\\u2019s time to bury the label \\u201cRust Belt.\\u201d It\\u2019s time. \\n\\nBut with all the bright spots in our economy, record job growth and higher wages, too many families are struggling to keep up with the bills. Inflation is robbing them of the gains they might otherwise feel.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.4970792531967163\n  },\n  {\n    "index": 19,\n    "content": "Putin\\u2019s latest attack on Ukraine was premeditated and unprovoked. He rejected repeated efforts at diplomacy. He thought the West and NATO wouldn\\u2019t respond. And he thought he could divide us at home. We were ready.  Here is what we did.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.4501495063304901\n  },\n  {\n    "index": 20,\n    "content": "And with an unwavering resolve that freedom will always triumph over tyranny. Six days ago, Russia\\u2019s Vladimir Putin sought to shake the foundations of the free world thinking he could make it bend to his menacing ways. But he badly miscalculated. He thought he could roll into Ukraine and the world would roll over. Instead he met a wall of strength he never imagined.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.35465705394744873\n  },\n  {\n    "index": 21,\n    "content": "But most importantly as Americans. With a duty to one another to the American people to the Constitution. And with an unwavering resolve that freedom will always triumph over tyranny. Six days ago, Russia\\u2019s Vladimir Putin sought to shake the foundations of the free world thinking he could make it bend to his menacing ways. But he badly miscalculated.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.3056836426258087\n  },\n  {\n    "index": 22,\n    "content": "But cancer from prolonged exposure to burn pits ravaged Heath\\u2019s lungs and body. Danielle says Heath was a fighter to the very end. He didn\\u2019t know how to stop fighting, and neither did she. Through her pain she found purpose to demand we do better. Tonight, Danielle\\u2014we are.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.30382269620895386\n  },\n  {\n    "index": 23,\n    "content": "Danielle says Heath was a fighter to the very end. He didn\\u2019t know how to stop fighting, and neither did she. Through her pain she found purpose to demand we do better. Tonight, Danielle\\u2014we are. The VA is pioneering new ways of linking toxic exposures to diseases, already helping more veterans get benefits.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.1369067132472992\n  },\n  {\n    "index": 24,\n    "content": "Groups of citizens blocking tanks with their bodies. Everyone from students to retirees teachers turned soldiers defending their homeland. In this struggle as President Zelenskyy said in his speech to the European Parliament \\u201cLight will win over darkness.\\u201d The Ukrainian Ambassador to the United States is here tonight. Let each of us here tonight in this Chamber send an unmistakable signal to Ukraine and to the world.",\n    "source": "text_file",\n    "metadata": {\n      "X-TIKA:Parsed-By": "org.apache.tika.parser.csv.TextAndCSVParser",\n      "Content-Encoding": "UTF-8",\n      "X-TIKA:detectedEncoding": "UTF-8",\n      "X-TIKA:encodingDetector": "UniversalEncodingDetector",\n      "Content-Type": "text/plain; charset=UTF-8",\n      "source": "text_file",\n      "framework": "langchain"\n    },\n    "score": 0.04977428913116455\n  }\n]'
+```
+
+
+## Chaining with Vectara tools
+
+You can chain Vectara tools with other LangChain components. The example shows how to:
+- Set up a ChatOpenAI model for additional processing
+- Create a custom prompt template for specific summarization needs
+- Chain multiple components together using LangChain's Runnable interface
+- Process and format the JSON response from Vectara
+
+
+```python
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema.output_parser import StrOutputParser
+from langchain.schema.runnable import RunnableSerializable
+from langchain_openai.chat_models import ChatOpenAI
+
+llm = ChatOpenAI(temperature=0)
+
+# Create a prompt template
+template = """
+Based on the following information from the State of the Union address:
+
+{rag_result}
+
+Please provide a concise summary that focuses on the key points mentioned.
+If there are any specific numbers or statistics, be sure to include them.
+"""
+prompt = ChatPromptTemplate.from_template(template)
+
+
+# Create a function to get RAG results
+def get_rag_result(query: str) -> str:
+    result = vectara_rag_tool.run(query)
+    result_dict = json.loads(result)
+    return result_dict["summary"]
+
+
+# Create the chain
+chain: RunnableSerializable = (
+    {"rag_result": get_rag_result} | prompt | llm | StrOutputParser()
+)
+
+# Run the chain
+chain.invoke("What were the key economic points in Biden's speech?")
+```
+
+
+
+```output
+"President Biden's State of the Union address highlighted key economic points, including closing the coverage gap and making savings permanent, cutting energy costs by $500 annually through climate change initiatives, and providing tax credits for energy efficiency. He emphasized doubling clean energy production and reducing electric vehicle costs. Biden proposed cutting child care costs, making housing more affordable, and offering Pre-K for young children. He assured that no one earning under $400,000 would face new taxes and emphasized the need for a fair tax system. His plan to fight inflation focuses on lowering costs without reducing wages, increasing domestic production, and closing tax loopholes for the wealthy. Additionally, he advocated for raising the minimum wage, extending the Child Tax Credit, and ensuring fair pay and opportunities for workers."
+```
+
+
+## Use within an agent
+
+The code below demonstrates how to use Vectara tools with LangChain to create an agent.
+
+
+```python
+import json
+
+from langchain_core.messages import HumanMessage
+from langchain_openai.chat_models import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+# Set up the tools and LLM
+tools = [vectara_rag_tool]
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# Construct the ReAct agent
+agent_executor = create_react_agent(llm, tools)
+
+question = (
+    "What is an API key? What is a JWT token? When should I use one or the other?"
+)
+input_data = {"messages": [HumanMessage(content=question)]}
+
+
+agent_executor.invoke(input_data)
+```
+
+
+
+```output
+{'messages': [HumanMessage(content='What is an API key? What is a JWT token? When should I use one or the other?', additional_kwargs={}, response_metadata={}, id='2d0d23c4-ca03-4164-8417-232ce12b47df'),
+  AIMessage(content="An API key and a JWT (JSON Web Token) are both methods used for authentication and authorization in web applications, but they serve different purposes and have different characteristics.\n\n### API Key\n- **Definition**: An API key is a unique identifier used to authenticate a client making requests to an API. It is typically a long string of characters that is passed along with the API request.\n- **Usage**: API keys are often used for simple authentication scenarios where the client needs to be identified, but there is no need for complex user authentication or session management.\n- **Security**: API keys can be less secure than other methods because they are often static and can be easily exposed if not handled properly. They should be kept secret and not included in public code repositories.\n- **When to Use**: Use API keys for server-to-server communication, when you need to track usage, or when you want to restrict access to certain features of an API.\n\n### JWT (JSON Web Token)\n- **Definition**: A JWT is a compact, URL-safe means of representing claims to be transferred between two parties. It consists of three parts: a header, a payload, and a signature. The payload typically contains user information and claims.\n- **Usage**: JWTs are commonly used for user authentication and authorization in web applications. They allow for stateless authentication, meaning the server does not need to store session information.\n- **Security**: JWTs can be more secure than API keys because they can include expiration times and can be signed to verify their authenticity. However, if a JWT is compromised, it can be used until it expires.\n- **When to Use**: Use JWTs when you need to authenticate users, manage sessions, or pass claims between parties securely. They are particularly useful in single-page applications (SPAs) and microservices architectures.\n\n### Summary\n- **API Key**: Best for simple authentication and tracking API usage. Less secure and static.\n- **JWT**: Best for user authentication and authorization with claims. More secure and supports stateless sessions.\n\nIn general, choose the method that best fits your application's security requirements and architecture.", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 436, 'prompt_tokens': 66, 'total_tokens': 502, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_name': 'gpt-4o-mini-2024-07-18', 'system_fingerprint': 'fp_dbaca60df0', 'id': 'chatcmpl-BPZK7UZveFJrGkT3iwjNQ2XHCmbqF', 'finish_reason': 'stop', 'logprobs': None}, id='run-4717221a-cd77-4627-aa34-3ee1b2a3803e-0', usage_metadata={'input_tokens': 66, 'output_tokens': 436, 'total_tokens': 502, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})]}
+```
+
+
+## VectaraIngest Example
+
+The `VectaraIngest` tool allows you to directly ingest text content into your Vectara corpus. This is useful when you have text content that you want to add to your corpus without having to create a file first.
+
+Here's an example of how to use it:
+
+
+```python
+ingest_tool = VectaraIngest(
+    name="ingest_tool",
+    description="Add new documents about planets",
+    vectorstore=vectara,
+    corpus_key=corpus_key,
+)
+
+# Test ingest functionality
+texts = ["Mars is a red planet.", "Venus has a thick atmosphere."]
+
+metadatas = [{"type": "planet Mars"}, {"type": "planet Venus"}]
+
+ingest_tool.run(
+    {
+        "texts": texts,
+        "metadatas": metadatas,
+        "doc_metadata": {"test_case": "langchain tool"},
+    }
+)
+```
+
+
+
+```output
+'Successfully ingested 2 documents into Vectara corpus test-langchain with IDs: 0de5bbb6c6f0ac632c8d6cda43f02929, 5021e73c9a9128b05c7a94b299744190'
+```
+
+
+## API reference
+
+For details checkout implementation of Vectara [tools](https://github.com/vectara/langchain-vectara/blob/main/libs/vectara/langchain_vectara/tools.py).
+
+
+```python
+
+```

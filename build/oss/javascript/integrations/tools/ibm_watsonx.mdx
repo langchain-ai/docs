@@ -1,0 +1,326 @@
+---
+sidebar_label: IBM watsonx.ai
+---
+
+# IBM watsonx.ai
+
+>WatsonxToolkit is a wrapper for IBM [watsonx.ai](https://www.ibm.com/products/watsonx-ai) Toolkit.
+
+This example shows how to use `watsonx.ai` Toolkit using `LangChain`.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/toolkits/ibm/) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [WatsonxToolkit](https://python.langchain.com/api_reference/ibm/toolkit/langchain_ibm.toolkit.WatsonxToolkit.html) | [langchain-ibm](https://python.langchain.com/api_reference/ibm/index.html) | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-ibm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-ibm?style=flat-square&label=%20) |
+
+## Setup
+
+To access IBM watsonx.ai toolkit you'll need to create an IBM watsonx.ai account, get an API key, and install the `langchain-ibm` integration package.
+
+### Credentials
+
+This cell defines the WML credentials required to work with watsonx Toolkit.
+
+**Action:** Provide the IBM Cloud user API key. For details, see
+[documentation](https://cloud.ibm.com/docs/account?topic=account-userapikey&interface=ui).
+
+
+```python
+import os
+from getpass import getpass
+
+watsonx_api_key = getpass()
+os.environ["WATSONX_APIKEY"] = watsonx_api_key
+```
+
+Additionaly you are able to pass additional secrets as an environment variable. 
+
+
+```python
+import os
+
+os.environ["WATSONX_URL"] = "your service instance url"
+os.environ["WATSONX_TOKEN"] = "your token for accessing the service instance"
+```
+
+### Installation
+
+The LangChain IBM integration lives in the `langchain-ibm` package:
+
+
+```python
+!pip install -qU langchain-ibm
+```
+
+## Instantiation
+
+
+Initialize the `WatsonxToolkit` class.
+
+
+
+
+```python
+from langchain_ibm import WatsonxToolkit
+
+watsonx_toolkit = WatsonxToolkit(
+    url="https://us-south.ml.cloud.ibm.com",
+)
+```
+
+For certain requirements, there is an option to pass the IBM's [`APIClient`](https://ibm.github.io/watsonx-ai-python-sdk/base.html#apiclient) object into the `WatsonxToolkit` class.
+
+
+```python
+from ibm_watsonx_ai import APIClient
+
+api_client = APIClient(...)
+
+watsonx_toolkit = WatsonxToolkit(
+    watsonx_client=api_client,
+)
+```
+
+## Tools
+
+
+### Get all tools
+It is possible to get all available tools as a list of `WatsonxTool` objects.
+
+
+```python
+watsonx_toolkit.get_tools()
+```
+```output
+[WatsonxTool(name='GoogleSearch', description='Search for online trends, news, current events, real-time information, or research topics.', args_schema=<class 'langchain_ibm.toolkit.ToolArgsSchema'>, agent_description='Search for online trends, news, current events, real-time information, or research topics.', tool_config_schema={'title': 'config schema for GoogleSearch tool', 'type': 'object', 'properties': {'maxResults': {'title': 'Max number of results to return', 'type': 'integer', 'minimum': 1, 'maximum': 20}}}, watsonx_client=<ibm_watsonx_ai.client.APIClient object at 0x127e0f490>),
+ WatsonxTool(name='WebCrawler', description='Useful for when you need to summarize a webpage. Do not use for Web search.', args_schema=<class 'langchain_ibm.toolkit.ToolArgsSchema'>, agent_description='Useful for when you need to summarize a webpage. Do not use for Web search.', tool_input_schema={'type': 'object', 'properties': {'url': {'title': 'url', 'description': 'URL for the webpage to be scraped', 'type': 'string', 'pattern': '^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$'}}, 'required': ['url']}, watsonx_client=<ibm_watsonx_ai.client.APIClient object at 0x127e0f490>),
+ WatsonxTool(name='SDXLTurbo', description='Generate an image from text using Stability.ai', args_schema=<class 'langchain_ibm.toolkit.ToolArgsSchema'>, agent_description='Generate an image from text. Not for image refining. Use very precise language about the desired image, including setting, lighting, style, filters and lenses used. Do not ask the tool to refine an image.', watsonx_client=<ibm_watsonx_ai.client.APIClient object at 0x127e0f490>),
+ WatsonxTool(name='Weather', description='Find the weather for a city.', args_schema=<class 'langchain_ibm.toolkit.ToolArgsSchema'>, agent_description='Find the weather for a city.', tool_input_schema={'type': 'object', 'properties': {'location': {'title': 'location', 'description': 'Name of the location', 'type': 'string'}, 'country': {'title': 'country', 'description': 'Name of the state or country', 'type': 'string'}}, 'required': ['location']}, watsonx_client=<ibm_watsonx_ai.client.APIClient object at 0x127e0f490>),
+ WatsonxTool(name='RAGQuery', description='Search the documents in a vector index.', args_schema=<class 'langchain_ibm.toolkit.ToolArgsSchema'>, agent_description='Search information in documents to provide context to a user query. Useful when asked to ground the answer in specific knowledge about {indexName}', tool_config_schema={'title': 'config schema for RAGQuery tool', 'type': 'object', 'properties': {'vectorIndexId': {'title': 'Vector index identifier', 'type': 'string'}, 'projectId': {'title': 'Project identifier', 'type': 'string'}, 'spaceId': {'title': 'Space identifier', 'type': 'string'}}, 'required': ['vectorIndexId'], 'oneOf': [{'required': ['projectId']}, {'required': ['spaceId']}]}, watsonx_client=<ibm_watsonx_ai.client.APIClient object at 0x127e0f490>)]
+```
+### Get a tool
+You can also get a specific `WatsonxTool` by name.
+
+
+```python
+google_search = watsonx_toolkit.get_tool(tool_name="GoogleSearch")
+```
+
+## Invocation
+
+### Invoke the tool with a simple input
+
+
+```python
+search_result = google_search.invoke(input="IBM")
+search_result
+```
+
+
+
+```output
+{'output': '[{"title":"IBM - United States","description":"Technology & Consulting. From next-generation AI to cutting edge hybrid cloud solutions to the deep expertise of IBM Consulting, IBM has what it takes to help\xa0...","url":"https://www.ibm.com/us-en"},{"title":"IBM - Wikipedia","description":"International Business Machines Corporation (using the trademark IBM), nicknamed Big Blue, is an American multinational technology company headquartered in\xa0...","url":"https://en.wikipedia.org/wiki/IBM"},{"title":"IBM Envizi ESG Suite","description":"Envizi systemizes the capture, transformation and consolidation of disparate sustainability data into a single source of truth and delivers actionable insights.","url":"https://www.ibm.com/products/envizi"},{"title":"IBM Research","description":"Tools + Code · BeeAI Framework. Open-source framework for building, deploying, and serving powerful agentic workflows at scale. · Docling. An open-source tool\xa0...","url":"https://research.ibm.com/"},{"title":"IBM SkillsBuild: Free Skills-Based Learning From Technology Experts","description":"IBM SkillsBuildPower your future in tech with job skills, courses, and credentials—for free. Power your future in tech with job skills, courses, and credentials\xa0...","url":"https://skillsbuild.org/"},{"title":"IBM | LinkedIn","description":"Locations · Primary. International Business Machines Corp. · 590 Madison Ave · 90 Grayston Dr · Plaza Independencia 721 · 388 Phahon Yothin Road · Jalan Prof.","url":"https://www.linkedin.com/company/ibm"},{"title":"International Business Machines Corporation (IBM)","description":"PROFITABILITY_AND_INCOME_STATEMENT · 9.60% · (TTM). 3.06% · (TTM). 24.06% · (TTM). 62.75B · (TTM). 6.02B · (TTM). 6.41. BALANCE_SHEET_AND_CASH_FLOW. (MRQ).","url":"https://finance.yahoo.com/quote/IBM/"},{"title":"Zurich - IBM Research","description":"The location in Zurich is one of IBM\'s 12 global research labs. IBM has maintained a research laboratory in Switzerland since 1956.","url":"https://research.ibm.com/labs/zurich"},{"title":"IBM (@ibm) • Instagram photos and videos","description":"Science, Technology & Engineering. We partner with developers, data scientists, CTOs and other creators to make the world work better.","url":"https://www.instagram.com/ibm/?hl=en"},{"title":"IBM Newsroom","description":"News and press releases from around the IBM world. Media contacts. Sources by topic and by region. IBM Media center. Explore IBM\'s latest and most popular\xa0...","url":"https://newsroom.ibm.com/"}]'}
+```
+
+
+To fetch a list of received results, you can execute the below cell.
+
+
+```python
+import json
+
+output = json.loads(search_result.get("output"))
+output
+```
+
+### Invoke the tool with a configuration
+
+To check if a tool has a config schema and view its properties you can look at the tool's `tool_config_schema`.
+
+In this example, the tool has a config schema that contains `maxResults` parameter to set maximum number of results to be returned.
+
+
+```python
+google_search.tool_config_schema
+```
+
+
+
+```output
+{'title': 'config schema for GoogleSearch tool',
+ 'type': 'object',
+ 'properties': {'maxResults': {'title': 'Max number of results to return',
+   'type': 'integer',
+   'minimum': 1,
+   'maximum': 20}}}
+```
+
+
+To set `tool_config` parameters, you need to use `set_tool_config()` method and pass correct `dict` according to above `tool_config_schema`.
+
+
+```python
+import json
+
+config = {"maxResults": 3}
+google_search.set_tool_config(config)
+
+search_result = google_search.invoke(input="IBM")
+output = json.loads(search_result.get("output"))
+```
+
+There is supposed to be maximum 3 results.
+
+
+```python
+print(len(output))
+```
+```output
+3
+```
+### Invoke the tool with an input schema
+
+We need to get another tool (with an input schema) for the example purpose.
+
+
+```python
+weather_tool = watsonx_toolkit.get_tool("Weather")
+```
+
+To check if a tool has an input schema and view its properties, you can look at the tool's `tool_input_schema`.
+
+In this example, the tool has an input schema that contains one required and one optional parameter.
+
+
+```python
+weather_tool.tool_input_schema
+```
+
+
+
+```output
+{'type': 'object',
+ 'properties': {'location': {'title': 'location',
+   'description': 'Name of the location',
+   'type': 'string'},
+  'country': {'title': 'country',
+   'description': 'Name of the state or country',
+   'type': 'string'}},
+ 'required': ['location']}
+```
+
+
+To correctly pass an input to `invoke()`, you need to create an `invoke_input` dictionary with required parameter as a key with its value.
+
+
+```python
+invoke_input = {
+    "location": "New York",
+}
+
+weather_result = weather_tool.invoke(input=invoke_input)
+weather_result
+```
+
+
+
+```output
+{'output': 'Current weather in New York:\nTemperature: 0°C\nRain: 0mm\nRelative humidity: 63%\nWind: 7.6km/h\n'}
+```
+
+
+This time the output is a single string value. To fetch and print it you can execute the below cell.
+
+
+```python
+output = weather_result.get("output")
+print(output)
+```
+```output
+Current weather in New York:
+Temperature: 0°C
+Rain: 0mm
+Relative humidity: 63%
+Wind: 7.6km/h
+```
+### Invoke the tool with a ToolCall
+
+We can also invoke the tool with a ToolCall, in which case a ToolMessage will be returned:
+
+
+```python
+invoke_input = {
+    "location": "Los Angeles",
+}
+tool_call = dict(
+    args=invoke_input,
+    id="1",
+    name=weather_tool.name,
+    type="tool_call",
+)
+weather_tool.invoke(input=tool_call)
+```
+
+
+
+```output
+ToolMessage(content='{"output": "Current weather in Los Angeles:\\nTemperature: 8.6°C\\nRain: 0mm\\nRelative humidity: 61%\\nWind: 8.4km/h\\n"}', name='Weather', tool_call_id='1')
+```
+
+
+## Use within an agent
+
+
+```python
+from langchain_ibm import ChatWatsonx
+
+llm = ChatWatsonx(
+    model_id="meta-llama/llama-3-3-70b-instruct",
+    url="https://us-south.ml.cloud.ibm.com",
+    project_id="PASTE YOUR PROJECT_ID HERE",
+)
+```
+
+
+```python
+from langgraph.prebuilt import create_react_agent
+
+tools = [weather_tool]
+agent = create_react_agent(llm, tools)
+```
+
+
+```python
+example_query = "What is the weather in Boston?"
+
+events = agent.stream(
+    {"messages": [("user", example_query)]},
+    stream_mode="values",
+)
+for event in events:
+    event["messages"][-1].pretty_print()
+```
+```output
+================================ Human Message =================================
+
+What is the weather in Boston?
+================================== Ai Message ==================================
+Tool Calls:
+  Weather (chatcmpl-tool-6a6c21402c824e43bdd2e8ba390af4a8)
+ Call ID: chatcmpl-tool-6a6c21402c824e43bdd2e8ba390af4a8
+  Args:
+    location: Boston
+================================= Tool Message =================================
+Name: Weather
+
+{"output": "Current weather in Boston:\nTemperature: -1°C\nRain: 0mm\nRelative humidity: 53%\nWind: 8.3km/h\n"}
+================================== Ai Message ==================================
+
+The current weather in Boston is -1°C with 0mm of rain, a relative humidity of 53%, and a wind speed of 8.3km/h.
+```
+## API reference
+
+For detailed documentation of all `WatsonxToolkit` features and configurations head to the [API reference](https://python.langchain.com/api_reference/ibm/toolkit/langchain_ibm.toolkit.WatsonxToolkit.html).
