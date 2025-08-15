@@ -281,7 +281,7 @@ class DocusaurusParser:
 
                 return f"{link_text}({new_url})"
 
-            # Handle relative links (./file or ../category/file)
+            # Handle relative links (/oss/file or ../category/file)
             if link_url.startswith(("./", "../")) and link_url.endswith(".md"):
                 # Remove .md extension if present
                 new_url = link_url[:-3]  # Remove .md
