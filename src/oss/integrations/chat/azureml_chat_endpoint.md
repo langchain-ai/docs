@@ -1,8 +1,6 @@
 ---
-sidebar_label: Azure ML Endpoint
+title: AzureMLChatOnlineEndpoint
 ---
-
-# AzureMLChatOnlineEndpoint
 
 >[Azure Machine Learning](https://azure.microsoft.com/en-us/products/machine-learning/) is a platform used to build, train, and deploy machine learning models. Users can explore the types of models to deploy in the Model Catalog, which provides foundational and general purpose models from different providers.
 >

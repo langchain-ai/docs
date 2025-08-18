@@ -1,8 +1,6 @@
 ---
-sidebar_label: Xinference
+title: ChatXinference
 ---
-
-# ChatXinference
 
 [Xinference](https://github.com/xorbitsai/inference) is a powerful and versatile library designed to serve LLMs, 
 speech recognition models, and multimodal models, even on your laptop. It supports a variety of models compatible with GGML, such as chatglm, baichuan, whisper, vicuna, orca, and many others.

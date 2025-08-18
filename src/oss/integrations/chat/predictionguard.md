@@ -1,4 +1,6 @@
-# ChatPredictionGuard
+---
+title: ChatPredictionGuard
+---
 
 >[Prediction Guard](https://predictionguard.com) is a secure, scalable GenAI platform that safeguards sensitive data, prevents common AI malfunctions, and runs on affordable hardware.
 

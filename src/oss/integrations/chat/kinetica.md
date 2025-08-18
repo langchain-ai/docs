@@ -1,8 +1,6 @@
 ---
-sidebar_label: Kinetica
+title: Kinetica Language To SQL Chat Model
 ---
-
-# Kinetica Language To SQL Chat Model
 
 This notebook demonstrates how to use Kinetica to transform natural language into SQL
 and simplify the process of data retrieval. This demo is intended to show the mechanics

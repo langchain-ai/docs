@@ -1,8 +1,6 @@
 ---
-sidebar_label: Groq
+title: ChatGroq
 ---
-
-# ChatGroq
 
 This will help you get started with Groq [chat models](../../concepts/chat_models). For detailed documentation of all ChatGroq features and configurations head to the [API reference](https://python.langchain.com/api_reference/groq/chat_models/langchain_groq.chat_models.ChatGroq.html). For a list of all Groq models, visit this [link](https://console.groq.com/docs/models?utm_source=langchain).
 

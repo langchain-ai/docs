@@ -1,4 +1,6 @@
-# ChatHuggingFace
+---
+title: ChatHuggingFace
+---
 
 This will help you get started with `langchain_huggingface` [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatHuggingFace` features and configurations head to the [API reference](https://python.langchain.com/api_reference/huggingface/chat_models/langchain_huggingface.chat_models.huggingface.ChatHuggingFace.html). For a list of models supported by Hugging Face check out [this page](https://huggingface.co/models).
 

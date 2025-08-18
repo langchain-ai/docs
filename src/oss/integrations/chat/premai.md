@@ -1,8 +1,6 @@
 ---
-sidebar_label: PremAI
+title: ChatPremAI
 ---
-
-# ChatPremAI
 
 [PremAI](https://premai.io/) is an all-in-one platform that simplifies the creation of robust, production-ready applications powered by Generative AI. By streamlining the development process, PremAI allows you to concentrate on enhancing user experience and driving overall growth for your application. You can quickly start using our platform [here](https://docs.premai.io/quick-start).
 

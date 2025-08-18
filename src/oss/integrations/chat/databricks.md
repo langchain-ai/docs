@@ -1,8 +1,6 @@
 ---
-sidebar_label: Databricks
+title: ChatDatabricks
 ---
-
-# ChatDatabricks
 
 > [Databricks](https://www.databricks.com/) Lakehouse Platform unifies data, analytics, and AI on one platform. 
 

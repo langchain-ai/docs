@@ -1,4 +1,6 @@
-# Dappier AI
+---
+title: Dappier AI
+---
 
 **Dappier: Powering AI with Dynamic, Real-Time Data Models**
 

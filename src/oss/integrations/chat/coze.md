@@ -1,8 +1,6 @@
 ---
-sidebar_label: Coze Chat
+title: Chat with Coze Bot
 ---
-
-# Chat with Coze Bot
 
 ChatCoze chat models API by coze.com. For more information, see [https://www.coze.com/open/docs/chat](https://www.coze.com/open/docs/chat)
 

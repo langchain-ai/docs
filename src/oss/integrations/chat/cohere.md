@@ -1,8 +1,6 @@
 ---
-sidebar_label: Cohere
+title: Cohere
 ---
-
-# Cohere
 
 This notebook covers how to get started with [Cohere chat models](https://cohere.com/chat).
 

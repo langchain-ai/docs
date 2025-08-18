@@ -1,4 +1,6 @@
-# [Deprecated] Experimental Anthropic Tools Wrapper
+---
+title: (Deprecated) Experimental Anthropic Tools Wrapper
+---
 
 <Warning>
 **The Anthropic API officially supports tool-calling so this workaround is no longer needed. Please use [ChatAnthropic](/oss/integrations/chat/anthropic) with `langchain-anthropic>=0.1.15`.**

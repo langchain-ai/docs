@@ -1,8 +1,6 @@
 ---
-sidebar_label: LiteLLM
+title: ChatLiteLLM and ChatLiteLLMRouter
 ---
-
-# ChatLiteLLM and ChatLiteLLMRouter
 
 [LiteLLM](https://github.com/BerriAI/litellm) is a library that simplifies calling Anthropic, Azure, Huggingface, Replicate, etc.
 

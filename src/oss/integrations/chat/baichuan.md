@@ -1,8 +1,6 @@
 ---
-sidebar_label: Baichuan Chat
+title: Chat with Baichuan-192K
 ---
-
-# Chat with Baichuan-192K
 
 Baichuan chat models API by Baichuan Intelligent Technology. For more information, see [https://platform.baichuan-ai.com/docs/api](https://platform.baichuan-ai.com/docs/api)
 

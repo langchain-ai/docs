@@ -1,8 +1,6 @@
 ---
-sidebar_label: xAI
+title: ChatXAI
 ---
-
-# ChatXAI
 
 
 This page will help you get started with xAI [chat models](../../concepts/chat_models). For detailed documentation of all `ChatXAI` features and configurations, head to the [API reference](https://python.langchain.com/api_reference/xai/chat_models/langchain_xai.chat_models.ChatXAI.html).

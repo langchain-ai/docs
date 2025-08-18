@@ -1,9 +1,6 @@
 ---
-sidebar_label: CloudflareWorkersAI
+title: ChatCloudflareWorkersAI
 ---
-
-# ChatCloudflareWorkersAI
-
 
 This will help you get started with CloudflareWorkersAI [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatCloudflareWorkersAI features and configurations head to the [API reference](https://python.langchain.com/docs/integrations/chat/cloudflare_workersai/).
 

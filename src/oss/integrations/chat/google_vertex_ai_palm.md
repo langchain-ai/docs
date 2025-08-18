@@ -1,8 +1,6 @@
 ---
-sidebar_label: Google Cloud Vertex AI
+title: ChatVertexAI
 ---
-
-# ChatVertexAI
 
 This page provides a quick overview for getting started with VertexAI [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatVertexAI features and configurations head to the [API reference](https://python.langchain.com/api_reference/google_vertexai/chat_models/langchain_google_vertexai.chat_models.ChatVertexAI.html).
 

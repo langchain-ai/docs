@@ -1,6 +1,8 @@
 <a href="https://colab.research.google.com/github/langchain-ai/langchain/blob/master/docs/docs/integrations/chat/maritalk.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
-# Maritalk
+---
+title: Maritalk
+---
 
 MariTalk is an assistant developed by the Brazilian company [Maritaca AI](https://www.maritaca.ai).
 MariTalk is based on language models that have been specially trained to understand Portuguese well.

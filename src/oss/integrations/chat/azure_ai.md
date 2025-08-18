@@ -1,8 +1,6 @@
 ---
-sidebar_label: AzureAIChatCompletionsModel
+title: AzureAIChatCompletionsModel
 ---
-
-# AzureAIChatCompletionsModel
 
 This will help you get started with AzureAIChatCompletionsModel [chat models](/oss/concepts/chat_models). For detailed documentation of all AzureAIChatCompletionsModel features and configurations, head to the [API reference](https://python.langchain.com/api_reference/azure_ai/chat_models/langchain_azure_ai.chat_models.AzureAIChatCompletionsModel.html)
 

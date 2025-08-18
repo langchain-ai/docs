@@ -1,8 +1,6 @@
 ---
-sidebar_label: Goodfire
+title: ChatGoodfire
 ---
-
-# ChatGoodfire
 
 This will help you get started with Goodfire [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatGoodfire features and configurations head to the [PyPI project page](https://pypi.org/project/langchain-goodfire/), or go directly to the [Goodfire SDK docs](https://docs.goodfire.ai/sdk-reference/example). All of the Goodfire-specific functionality (e.g. SAE features, variants, etc.) is available via the main `goodfire` package. This integration is a wrapper around the Goodfire SDK.
 

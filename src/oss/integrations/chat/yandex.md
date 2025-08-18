@@ -1,8 +1,6 @@
 ---
-sidebar_label: YandexGPT
+title: ChatYandexGPT
 ---
-
-# ChatYandexGPT
 
 This notebook goes over how to use Langchain with [YandexGPT](https://cloud.yandex.com/en/services/yandexgpt) chat model.
 

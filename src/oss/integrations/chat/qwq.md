@@ -1,8 +1,6 @@
 ---
-sidebar_label: Qwen QwQ
+title: ChatQwQ
 ---
-
-# ChatQwQ
 
 This will help you get started with QwQ [chat models](../../concepts/chat_models). For detailed documentation of all ChatQwQ features and configurations head to the [API reference](https://pypi.org/project/langchain-qwq/).
 

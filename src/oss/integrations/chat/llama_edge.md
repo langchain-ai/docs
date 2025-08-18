@@ -1,4 +1,6 @@
-# LlamaEdge
+---
+title: LlamaEdge
+---
 
 [LlamaEdge](https://github.com/second-state/LlamaEdge) allows you to chat with LLMs of [GGUF](https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/README.md) format both locally and via chat service.
 

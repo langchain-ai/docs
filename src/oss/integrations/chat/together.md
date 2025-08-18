@@ -1,8 +1,6 @@
 ---
-sidebar_label: Together
+title: ChatTogether
 ---
-
-# ChatTogether
 
 
 This page will help you get started with Together AI [chat models](../../concepts/chat_models). For detailed documentation of all ChatTogether features and configurations, head to the [API reference](https://python.langchain.com/api_reference/together/chat_models/langchain_together.chat_models.ChatTogether.html).

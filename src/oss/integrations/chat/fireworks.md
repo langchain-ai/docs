@@ -1,8 +1,6 @@
 ---
-sidebar_label: Fireworks
+title: ChatFireworks
 ---
-
-# ChatFireworks
 
 This doc helps you get started with Fireworks AI [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatFireworks features and configurations head to the [API reference](https://python.langchain.com/api_reference/fireworks/chat_models/langchain_fireworks.chat_models.ChatFireworks.html).
 

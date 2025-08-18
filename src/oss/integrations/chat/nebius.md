@@ -1,8 +1,6 @@
 ---
-sidebar_label: Nebius
+title: Nebius Chat Models
 ---
-
-# Nebius Chat Models
 
 This page will help you get started with Nebius AI Studio [chat models](../../concepts/chat_models). For detailed documentation of all ChatNebius features and configurations head to the [API reference](https://python.langchain.com/api_reference/nebius/chat_models/langchain_nebius.chat_models.ChatNebius.html).
 

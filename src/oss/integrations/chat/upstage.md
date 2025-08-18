@@ -1,8 +1,6 @@
 ---
-sidebar_label: Upstage
+title: ChatUpstage
 ---
-
-# ChatUpstage
 
 This notebook covers how to get started with Upstage chat models.
 

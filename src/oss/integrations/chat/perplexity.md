@@ -1,8 +1,6 @@
 ---
-sidebar_label: Perplexity
+title: ChatPerplexity
 ---
-
-# ChatPerplexity
 
 
 This page will help you get started with Perplexity [chat models](../../concepts/chat_models). For detailed documentation of all `ChatPerplexity` features and configurations head to the [API reference](https://python.langchain.com/api_reference/perplexity/chat_models/langchain_perplexity.chat_models.ChatPerplexity.html).

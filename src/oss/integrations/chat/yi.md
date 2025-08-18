@@ -1,4 +1,6 @@
-# ChatYI
+---
+title: ChatYI
+---
 
 This will help you get started with Yi [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatYi features and configurations head to the [API reference](https://python.langchain.com/api_reference/lanchain_community/chat_models/lanchain_community.chat_models.yi.ChatYi.html).
 

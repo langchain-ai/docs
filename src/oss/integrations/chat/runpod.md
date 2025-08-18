@@ -1,4 +1,6 @@
-# RunPod Chat Model
+---
+title: RunPod Chat Model
+---
 
 Get started with RunPod chat models.
 

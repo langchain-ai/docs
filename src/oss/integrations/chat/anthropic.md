@@ -1,8 +1,6 @@
 ---
-sidebar_label: Anthropic
+title: ChatAnthropic
 ---
-
-# ChatAnthropic
 
 This notebook provides a quick overview for getting started with Anthropic [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatAnthropic features and configurations head to the [API reference](https://python.langchain.com/api_reference/anthropic/chat_models/langchain_anthropic.chat_models.ChatAnthropic.html).
 

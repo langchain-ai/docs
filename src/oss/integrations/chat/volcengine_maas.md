@@ -1,8 +1,6 @@
 ---
-sidebar_label: Volc Engine Maas
+title: VolcEngineMaasChat
 ---
-
-# VolcEngineMaasChat
 
 This notebook provides you with a guide on how to get started with volc engine maas chat models.
 

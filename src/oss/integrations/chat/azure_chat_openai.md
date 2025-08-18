@@ -1,8 +1,6 @@
 ---
-sidebar_label: Azure OpenAI
+title: AzureChatOpenAI
 ---
-
-# AzureChatOpenAI
 
 This guide will help you get started with AzureOpenAI [chat models](/oss/concepts/chat_models). For detailed documentation of all AzureChatOpenAI features and configurations head to the [API reference](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.azure.AzureChatOpenAI.html).
 

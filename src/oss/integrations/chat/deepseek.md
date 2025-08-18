@@ -1,9 +1,6 @@
 ---
-sidebar_label: DeepSeek
+title: ChatDeepSeek
 ---
-
-# ChatDeepSeek
-
 
 This will help you get started with DeepSeek's hosted [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatDeepSeek features and configurations head to the [API reference](https://python.langchain.com/api_reference/deepseek/chat_models/langchain_deepseek.chat_models.ChatDeepSeek.html).
 

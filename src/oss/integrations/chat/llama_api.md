@@ -1,8 +1,6 @@
 ---
-sidebar_label: Llama API
+title: ChatLlamaAPI
 ---
-
-# ChatLlamaAPI
 
 This notebook shows how to use LangChain with [LlamaAPI](https://llama-api.com/) - a hosted version of Llama2 that adds in support for function calling.
 

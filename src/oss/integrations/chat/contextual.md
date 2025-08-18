@@ -1,8 +1,6 @@
 ---
-sidebar_label: ContextualAI
+title: ChatContextual
 ---
-
-# ChatContextual
 
 This will help you get started with Contextual AI's Grounded Language Model [chat models](/oss/concepts/chat_models/).
 

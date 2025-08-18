@@ -1,8 +1,6 @@
 ---
-sidebar_label: MiniMax
+title: MiniMaxChat
 ---
-
-# MiniMaxChat
 
 [Minimax](https://api.minimax.chat) is a Chinese startup that provides LLM service for companies and individuals.
 

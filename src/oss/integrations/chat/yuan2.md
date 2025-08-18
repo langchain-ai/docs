@@ -1,8 +1,6 @@
 ---
-sidebar_label: Yuan2.0
+title: Yuan2.0
 ---
-
-# Yuan2.0
 
 This notebook shows how to use [YUAN2 API](https://github.com/IEIT-Yuan/Yuan-2.0/blob/main/docs/inference_server.md) in LangChain with the langchain.chat_models.ChatYuan2.
 

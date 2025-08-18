@@ -1,8 +1,6 @@
 ---
-sidebar_label: GPTRouter
+title: GPTRouter
 ---
-
-# GPTRouter
 
 [GPTRouter](https://github.com/Writesonic/GPTRouter) is an open source LLM API Gateway that offers a universal API for 30+ LLMs, vision, and image models, with smart fallbacks based on uptime and latency, automatic retries, and streaming.
 

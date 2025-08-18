@@ -1,4 +1,6 @@
-# SparkLLM Chat
+---
+title: SparkLLM Chat
+---
 
 SparkLLM chat models API by iFlyTek. For more information, see [iFlyTek Open Platform](https://www.xfyun.cn/).
 

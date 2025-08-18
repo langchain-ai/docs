@@ -1,8 +1,6 @@
 ---
-sidebar_label: Tencent Hunyuan
+title: Tencent Hunyuan
 ---
-
-# Tencent Hunyuan
 
 >[Tencent's hybrid model API](https://cloud.tencent.com/document/product/1729) (`Hunyuan API`) 
 > implements dialogue communication, content generation, 

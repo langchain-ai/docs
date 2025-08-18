@@ -1,8 +1,6 @@
 ---
-sidebar_label: vLLM Chat
+title: vLLM Chat
 ---
-
-# vLLM Chat
 
 vLLM can be deployed as a server that mimics the OpenAI API protocol. This allows vLLM to be used as a drop-in replacement for applications using OpenAI API. This server can be queried in the same format as OpenAI API.
 

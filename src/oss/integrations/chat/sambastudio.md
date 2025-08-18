@@ -1,8 +1,6 @@
 ---
-sidebar_label: SambaStudio
+title: ChatSambaStudio
 ---
-
-# ChatSambaStudio
 
 This will help you get started with SambaStudio [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatStudio features and configurations head to the [API reference](https://docs.sambanova.ai/sambastudio/latest/index.html).
 

@@ -1,4 +1,6 @@
-# ChatOctoAI
+---
+title: ChatOctoAI
+---
 
 [OctoAI](https://docs.octoai.cloud/docs) offers easy access to efficient compute and enables users to integrate their choice of AI models into applications. The `OctoAI` compute service helps you run, tune, and scale AI applications easily.
 

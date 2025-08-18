@@ -1,8 +1,6 @@
 ---
-sidebar_label: SambaNovaCloud
+title: ChatSambaNovaCloud
 ---
-
-# ChatSambaNovaCloud
 
 This will help you get started with SambaNovaCloud [chat models](/oss/concepts/chat_models/). For detailed documentation of all ChatSambaNovaCloud features and configurations head to the [API reference](https://docs.sambanova.ai/cloud/docs/get-started/overview).
 

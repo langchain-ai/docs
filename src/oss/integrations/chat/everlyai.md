@@ -1,8 +1,6 @@
 ---
-sidebar_label: EverlyAI
+title: ChatEverlyAI
 ---
-
-# ChatEverlyAI
 
 >[EverlyAI](https://everlyai.xyz) allows you to run your ML models at scale in the cloud. It also provides API access to [several LLM models](https://everlyai.xyz).
 

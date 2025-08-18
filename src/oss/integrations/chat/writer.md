@@ -1,4 +1,6 @@
-# Chat Writer
+---
+title: Chat Writer
+---
 
 This notebook provides a quick overview for getting started with Writer [chat](/oss/concepts/chat_models/).
 

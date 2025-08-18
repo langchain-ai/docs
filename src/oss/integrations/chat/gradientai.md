@@ -1,8 +1,6 @@
 ---
-sidebar_label: DigitalOcean Gradient
+title: ChatGradient
 ---
-
-# ChatGradient
 
 This will help you getting started with DigitalOcean Gradient Chat Models.
 

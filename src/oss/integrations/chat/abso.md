@@ -1,8 +1,6 @@
 ---
-sidebar_label: Abso
+title: ChatAbso
 ---
-
-# ChatAbso
 
 This will help you get started with ChatAbso [chat models](https://python.langchain.com/docs/concepts/chat_models/). For detailed documentation of all ChatAbso features and configurations, head to the [API reference](https://python.langchain.com/api_reference/en/latest/chat_models/langchain_abso.chat_models.ChatAbso.html).
 

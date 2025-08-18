@@ -1,8 +1,6 @@
 ---
-sidebar_label: Cerebras
+title: ChatCerebras
 ---
-
-# ChatCerebras
 
 This notebook provides a quick overview for getting started with Cerebras [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatCerebras features and configurations head to the [API reference](https://python.langchain.com/api_reference/cerebras/chat_models/langchain_cerebras.chat_models.ChatCerebras.html#).
 

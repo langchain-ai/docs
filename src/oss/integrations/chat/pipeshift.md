@@ -1,8 +1,6 @@
 ---
-sidebar_label: Pipeshift
+title: ChatPipeshift
 ---
-
-# ChatPipeshift
 
 This will help you get started with Pipeshift [chat models](/oss/concepts/chat_models/). For detailed documentation of all ChatPipeshift features and configurations head to the [API reference](https://dashboard.pipeshift.com/docs).
 

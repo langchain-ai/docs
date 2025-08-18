@@ -1,8 +1,6 @@
 ---
-sidebar_label: NVIDIA AI Endpoints
+title: ChatNVIDIA
 ---
-
-# ChatNVIDIA
 
 This will help you get started with NVIDIA [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatNVIDIA` features and configurations head to the [API reference](https://python.langchain.com/api_reference/nvidia_ai_endpoints/chat_models/langchain_nvidia_ai_endpoints.chat_models.ChatNVIDIA.html).
 

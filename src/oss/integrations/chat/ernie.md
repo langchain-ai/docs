@@ -1,8 +1,6 @@
 ---
-sidebar_label: Ernie Bot Chat
+title: ErnieBotChat
 ---
-
-# ErnieBotChat
 
 [ERNIE-Bot](https://cloud.baidu.com/doc/WENXINWORKSHOP/s/jlil56u11) is a large language model developed by Baidu, covering a huge amount of Chinese data.
 This notebook covers how to get started with ErnieBot chat models.

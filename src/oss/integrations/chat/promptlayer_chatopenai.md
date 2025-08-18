@@ -1,8 +1,6 @@
 ---
-sidebar_label: PromptLayer ChatOpenAI
+title: PromptLayerChatOpenAI
 ---
-
-# PromptLayerChatOpenAI
 
 This example showcases how to connect to [PromptLayer](https://www.promptlayer.com) to start recording your ChatOpenAI requests.
 

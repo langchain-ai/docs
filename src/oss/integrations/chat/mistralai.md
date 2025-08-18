@@ -1,8 +1,6 @@
 ---
-sidebar_label: MistralAI
+title: ChatMistralAI
 ---
-
-# ChatMistralAI
 
 This will help you get started with Mistral [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatMistralAI` features and configurations head to the [API reference](https://python.langchain.com/api_reference/mistralai/chat_models/langchain_mistralai.chat_models.ChatMistralAI.html). The `ChatMistralAI` class is built on top of the [Mistral API](https://docs.mistral.ai/api/). For a list of all the models supported by Mistral, check out [this page](https://docs.mistral.ai/getting-started/models/).
 

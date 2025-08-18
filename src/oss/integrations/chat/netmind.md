@@ -1,8 +1,6 @@
 ---
-sidebar_label: Netmind
+title: ChatNetmind
 ---
-
-# ChatNetmind
 
 This will help you get started with Netmind [chat models](https://www.netmind.ai/). For detailed documentation of all ChatNetmind features and configurations head to the [API reference](https://github.com/protagolabs/langchain-netmind).
 

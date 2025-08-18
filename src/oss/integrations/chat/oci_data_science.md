@@ -1,8 +1,6 @@
 ---
-sidebar_label: ChatOCIModelDeployment
+title: ChatOCIModelDeployment
 ---
-
-# ChatOCIModelDeployment
 
 This will help you get started with OCIModelDeployment [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatOCIModelDeployment features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.oci_data_science.ChatOCIModelDeployment.html).
 

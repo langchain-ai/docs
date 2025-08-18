@@ -1,8 +1,6 @@
 ---
-sidebar_label: Naver
+title: ChatClovaX
 ---
-
-# ChatClovaX
 
 This notebook provides a quick overview for getting started with Naver’s HyperCLOVA X [chat models](https://python.langchain.com/docs/concepts/chat_models) via CLOVA Studio. For detailed documentation of all ChatClovaX features and configurations head to the [API reference](https://guide.ncloud-docs.com/docs/clovastudio-dev-langchain).
 

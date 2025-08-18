@@ -1,8 +1,6 @@
 ---
-sidebar_label: Nebula (Symbl.ai)
+title: Nebula (Symbl.ai)
 ---
-
-# Nebula (Symbl.ai)
 
 This notebook covers how to get started with [Nebula](https://docs.symbl.ai/docs/nebula-llm) - Symbl.ai's chat model.
 

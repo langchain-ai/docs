@@ -1,8 +1,6 @@
 ---
-sidebar_label: OCIGenAI
+title: ChatOCIGenAI
 ---
-
-# ChatOCIGenAI
 
 This notebook provides a quick overview for getting started with OCIGenAI [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatOCIGenAI features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.oci_generative_ai.ChatOCIGenAI.html).
 

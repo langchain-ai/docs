@@ -1,8 +1,6 @@
 ---
-sidebar_label: ZHIPU AI
+title: ZHIPU AI
 ---
-
-# ZHIPU AI
 
 This notebook shows how to use [ZHIPU AI API](https://open.bigmodel.cn/dev/api) in LangChain with the langchain.chat_models.ChatZhipuAI.
 

@@ -1,8 +1,6 @@
 ---
-sidebar_label: Reka
+title: ChatReka
 ---
-
-# ChatReka
 
 This notebook provides a quick overview for getting started with Reka [chat models](../../concepts/chat_models). 
 

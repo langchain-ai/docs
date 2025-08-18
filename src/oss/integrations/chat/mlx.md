@@ -1,4 +1,6 @@
-# MLX
+---
+title: MLX
+---
 
 This notebook shows how to get started using `MLX` LLM's as chat models.
 

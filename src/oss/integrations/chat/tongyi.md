@@ -1,8 +1,6 @@
 ---
-sidebar_label: Tongyi Qwen
+title: ChatTongyi
 ---
-
-# ChatTongyi
 Tongyi Qwen is a large language model developed by Alibaba's Damo Academy. It is capable of understanding user intent through natural language understanding and semantic analysis, based on user input in natural language. It provides services and assistance to users in different domains and tasks. By providing clear and detailed instructions, you can obtain results that better align with your expectations.
 In this notebook, we will introduce how to use langchain with [Tongyi](https://www.aliyun.com/product/dashscope) mainly in `Chat` corresponding
  to the package `langchain/chat_models` in langchain

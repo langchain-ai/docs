@@ -1,8 +1,6 @@
 ---
-sidebar_label: ChatFriendli
+title: ChatFriendli
 ---
-
-# ChatFriendli
 
 > [Friendli](https://friendli.ai/) enhances AI application performance and optimizes cost savings with scalable, efficient deployment options, tailored for high-demand AI workloads.
 

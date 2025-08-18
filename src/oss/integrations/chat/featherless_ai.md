@@ -1,9 +1,6 @@
 ---
-sidebar_label: Featherless AI
+title: ChatFeatherlessAi
 ---
-
-# ChatFeatherlessAi
-
 
 This will help you get started with FeatherlessAi [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatFeatherlessAi features and configurations head to the [API reference](https://python.langchain.com/api_reference/__package_name_short_snake__/chat_models/__module_name__.chat_models.ChatFeatherlessAi.html).
 

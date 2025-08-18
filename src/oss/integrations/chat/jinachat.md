@@ -1,4 +1,6 @@
-# JinaChat
+---
+title: JinaChat
+---
 
 This notebook covers how to get started with JinaChat chat models.
 

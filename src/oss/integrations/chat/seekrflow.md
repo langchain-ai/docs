@@ -1,4 +1,6 @@
-# ChatSeekrFlow
+---
+title: ChatSeekrFlow
+---
 
 > [Seekr](https://www.seekr.com/) provides AI-powered solutions for structured, explainable, and transparent AI interactions.
 

@@ -1,8 +1,6 @@
 ---
-sidebar_label: OpenAI
+title: ChatOpenAI
 ---
-
-# ChatOpenAI
 
 This notebook provides a quick overview for getting started with OpenAI [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatOpenAI features and configurations head to the [API reference](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html).
 
