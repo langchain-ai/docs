@@ -1,4 +1,6 @@
-# Fake Embeddings
+---
+title: Fake Embeddings
+---
 
 LangChain also provides a fake embedding class. You can use this to test your pipelines.
 

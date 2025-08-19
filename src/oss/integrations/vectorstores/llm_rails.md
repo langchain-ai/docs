@@ -1,4 +1,6 @@
-# LLMRails
+---
+title: LLMRails
+---
 
 >[LLMRails](https://www.llmrails.com/) is a API platform for building GenAI applications. It provides an easy-to-use API for document indexing and querying that is managed by LLMRails and is optimized for performance and accuracy. 
 See the [LLMRails API documentation ](https://docs.llmrails.com/) for more information on how to use the API.

@@ -1,4 +1,6 @@
-# LM Format Enforcer
+---
+title: LM Format Enforcer
+---
 
 [LM Format Enforcer](https://github.com/noamgat/lm-format-enforcer) is a library that enforces the output format of language models by filtering tokens.
 

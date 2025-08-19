@@ -1,4 +1,6 @@
-# Deep Lake
+---
+title: Deep Lake
+--- 
 
 >[Deep Lake](https://www.activeloop.ai) is a multimodal database for building AI applications
 >[Deep Lake](https://github.com/activeloopai/deeplake) is a database for AI.

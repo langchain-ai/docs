@@ -1,4 +1,6 @@
-# GPT4All
+---
+title: GPT4All
+---
 
 [GitHub:nomic-ai/gpt4all](https://github.com/nomic-ai/gpt4all) an ecosystem of open-source chatbots trained on a massive collections of clean assistant data including code, stories and dialogue.
 

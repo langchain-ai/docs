@@ -1,4 +1,6 @@
-# Microsoft SharePoint
+---
+title: Microsoft SharePoint
+---
 
 > [Microsoft SharePoint](https://en.wikipedia.org/wiki/SharePoint) is a website-based collaboration system that uses workflow applications, “list” databases, and other web parts and security features to empower business teams to work together developed by Microsoft.
 

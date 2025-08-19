@@ -1,4 +1,6 @@
-# Xata
+---
+title: Xata
+---
 
 >[Xata](https://xata.io) is a serverless data platform, based on `PostgreSQL` and `Elasticsearch`. It provides a Python SDK for interacting with your database, and a UI for managing your data. With the `XataChatMessageHistory` class, you can use Xata databases for longer-term persistence of chat sessions.
 

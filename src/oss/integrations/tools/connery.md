@@ -1,4 +1,6 @@
-# Connery Toolkit and Tools
+---
+title: Connery Toolkit and Tools
+---
 
 Using the Connery toolkit and tools, you can integrate Connery Actions into your LangChain agent.
 

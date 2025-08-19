@@ -1,4 +1,6 @@
-# Baseten
+---
+title: Baseten
+---
 
 [Baseten](https://baseten.co) is a [Provider](/oss/integrations/providers/baseten) in the LangChain ecosystem that implements the LLMs component.
 

@@ -1,4 +1,6 @@
-# Portkey
+---
+title: Portkey
+---
 
 [Portkey](https://portkey.ai) is the Control Panel for AI apps. With it's popular AI Gateway and Observability Suite, hundreds of teams ship **reliable**, **cost-efficient**, and **fast** apps.
 

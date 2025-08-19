@@ -1,4 +1,6 @@
-# SparkLLM Text Embeddings
+---
+title: SparkLLM Text Embeddings
+---
 
 Official Website: https://www.xfyun.cn/doc/spark/Embedding_new_api.html
 

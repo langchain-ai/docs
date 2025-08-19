@@ -1,4 +1,6 @@
-# Titan Takeoff
+---
+title: Titan Takeoff
+---
 
 `TitanML` helps businesses build and deploy better, smaller, cheaper, and faster NLP models through our training, compression, and inference optimization platform.
 

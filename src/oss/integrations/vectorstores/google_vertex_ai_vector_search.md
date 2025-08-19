@@ -1,4 +1,6 @@
-# Google Vertex AI Vector Search
+---
+title: Google Vertex AI Vector Search
+---
 
 This notebook shows how to use functionality related to the `Google Cloud Vertex AI Vector Search` vector database.
 

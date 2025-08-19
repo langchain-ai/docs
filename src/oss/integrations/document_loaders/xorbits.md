@@ -1,4 +1,6 @@
-# Xorbits Pandas DataFrame
+---
+title: Xorbits Pandas DataFrame
+---
 
 This notebook goes over how to load data from a [xorbits.pandas](https://doc.xorbits.io/en/latest/reference/pandas/frame.html) DataFrame.
 

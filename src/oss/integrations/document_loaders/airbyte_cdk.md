@@ -1,4 +1,6 @@
-# Airbyte CDK (Deprecated)
+---
+title: Airbyte CDK (Deprecated)
+---
 
 Note: `AirbyteCDKLoader` is deprecated. Please use [`AirbyteLoader`](/oss/integrations/document_loaders/airbyte) instead.
 

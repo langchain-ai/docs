@@ -1,4 +1,6 @@
-# MathPixPDFLoader
+---
+title: MathPixPDFLoader
+---
 
 Inspired by Daniel Gross's snippet here: [https://gist.github.com/danielgross/3ab4104e14faccc12b49200843adab21](https://gist.github.com/danielgross/3ab4104e14faccc12b49200843adab21)
 

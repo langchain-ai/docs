@@ -1,4 +1,6 @@
-# Weather
+---
+title: Weather
+---
 
 >[OpenWeatherMap](https://openweathermap.org/) is an open-source weather service provider
 

@@ -1,4 +1,6 @@
-# Weights & Biases tracing
+---
+title: Weights & Biases tracing
+---
 
 There are two recommended ways to trace your LangChains:
 

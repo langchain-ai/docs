@@ -1,4 +1,7 @@
-# Baichuan LLM
+---
+title: Baichuan LLM
+---
+
 Baichuan Inc. (https://www.baichuan-ai.com/) is a Chinese startup in the era of AGI, dedicated to addressing fundamental human needs: Efficiency, Health, and Happiness.
 
 

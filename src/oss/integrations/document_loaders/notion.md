@@ -1,4 +1,6 @@
-# Notion DB 2/2
+---
+title: Notion DB 2/2
+---
 
 >[Notion](https://www.notion.so/) is a collaboration platform with modified Markdown support that integrates kanban boards, tasks, wikis and databases. It is an all-in-one workspace for notetaking, knowledge and data management, and project and task management.
 

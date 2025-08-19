@@ -1,8 +1,6 @@
 ---
-sidebar_label: Pipeshift
+title: Pipeshift
 ---
-
-# Pipeshift
 
 This will help you get started with Pipeshift completion models (LLMs) using LangChain. For detailed documentation on `Pipeshift` features and configuration options, please refer to the [API reference](https://dashboard.pipeshift.com/docs).
 

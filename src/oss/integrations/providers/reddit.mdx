@@ -1,4 +1,6 @@
-# Reddit
+---
+title: Reddit
+---
 
 >[Reddit](https://www.reddit.com) is an American social news aggregation, content rating, and discussion website.
 

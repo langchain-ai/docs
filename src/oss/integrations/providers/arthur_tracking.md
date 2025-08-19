@@ -1,4 +1,6 @@
-# Arthur
+---
+title: Arthur
+---
 
 >[Arthur](https://arthur.ai) is a model monitoring and observability platform.
 

@@ -1,5 +1,6 @@
-# Trubrics
-
+---
+title: Trubrics
+---
 
 >[Trubrics](https://trubrics.com) is an LLM user analytics platform that lets you collect, analyse and manage user
 prompts & feedback on AI models.

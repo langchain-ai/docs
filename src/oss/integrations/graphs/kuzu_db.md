@@ -1,4 +1,6 @@
-# Kuzu
+---
+title: Kuzu
+---
 
 > [Kùzu](https://kuzudb.com/) is an embeddable, scalable, extremely fast graph database.
 > It is permissively licensed with an MIT license, and you can see its source code [here](https://github.com/kuzudb/kuzu).

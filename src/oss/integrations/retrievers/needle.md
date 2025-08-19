@@ -1,4 +1,7 @@
-## Needle Retriever
+---
+title: Needle
+---
+
 [Needle](https://needle-ai.com) makes it easy to create your RAG pipelines with minimal effort. 
 
 For more details, refer to our [API documentation](https://docs.needle-ai.com/docs/api-reference/needle-api)

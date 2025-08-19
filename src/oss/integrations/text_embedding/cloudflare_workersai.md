@@ -1,4 +1,6 @@
-# Cloudflare Workers AI
+---
+title: Cloudflare Workers AI
+---
 
 >[Cloudflare, Inc. (Wikipedia)](https://en.wikipedia.org/wiki/Cloudflare) is an American company that provides content delivery network services, cloud cybersecurity, DDoS mitigation, and ICANN-accredited domain registration services.
 

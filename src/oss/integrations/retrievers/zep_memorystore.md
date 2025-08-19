@@ -1,4 +1,7 @@
-# Zep Open Source
+---
+title: Zep Open Source
+---
+
 ## Retriever Example for [Zep](https://docs.getzep.com/)
 
 > Recall, understand, and extract data from chat histories. Power personalized AI experiences.

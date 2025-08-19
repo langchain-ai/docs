@@ -1,4 +1,6 @@
-# Xorbits inference (Xinference)
+---
+title: Xorbits inference (Xinference)
+---
 
 This notebook goes over how to use Xinference embeddings within LangChain
 

@@ -1,4 +1,6 @@
-# SearxNG Search
+---
+title: SearxNG Search
+---
 
 This notebook goes over how to use a self hosted `SearxNG` search API to search the web.
 

@@ -1,4 +1,6 @@
-# Kay.ai
+---
+title: Kay.ai
+---
 
 >[Kai Data API](https://www.kay.ai/) built for RAG 🕵️ We are curating the world's largest datasets as high-quality embeddings so your AI agents can retrieve context on the fly. Latest models, fast retrieval, and zero infra.
 

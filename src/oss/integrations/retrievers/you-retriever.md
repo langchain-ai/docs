@@ -1,4 +1,6 @@
-# You.com
+---
+title: You.com
+---
 
 >[you.com API](https://api.you.com) is a suite of tools designed to help developers ground the output of LLMs in the most recent, most accurate, most relevant information that may not have been included in their training dataset.
 

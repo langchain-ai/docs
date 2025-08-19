@@ -1,4 +1,6 @@
-# Airtable
+---
+title: Airtable
+---
 
 >[Airtable](https://en.wikipedia.org/wiki/Airtable) is a cloud collaboration service.
 `Airtable` is a spreadsheet-database hybrid, with the features of a database but applied to a spreadsheet. 

@@ -1,4 +1,6 @@
-# Embedding Documents using Optimized and Quantized Embedders
+---
+title: Embedding Documents using Optimized and Quantized Embedders
+---
 
 Embedding all documents using Quantized Embedders.
 

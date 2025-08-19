@@ -1,4 +1,6 @@
-# BrightDataUnlocker
+---
+title: BrightDataUnlocker
+---
 
 [Bright Data](https://brightdata.com/) provides a powerful Web Unlocker API that allows you to access websites that might be protected by anti-bot measures, geo-restrictions, or other access limitations, making it particularly useful for AI agents requiring reliable web content extraction.
 

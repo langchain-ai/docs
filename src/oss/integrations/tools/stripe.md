@@ -1,8 +1,6 @@
 ---
-sidebar_label: Stripe
+title: StripeAgentToolkit
 ---
-
-# StripeAgentToolkit
 
 This guide provides a quick overview for getting started with Stripe's agent toolkit.
 

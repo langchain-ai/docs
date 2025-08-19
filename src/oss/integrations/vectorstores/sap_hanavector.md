@@ -1,4 +1,6 @@
-# SAP HANA Cloud Vector Engine
+---
+title: SAP HANA Cloud Vector Engine
+---
 
 >[SAP HANA Cloud Vector Engine](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/sap-hana-cloud-sap-hana-database-vector-engine-guide) is a vector store fully integrated into the `SAP HANA Cloud` database.
 

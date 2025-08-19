@@ -1,4 +1,6 @@
-# Google Jobs
+---
+title: Google Jobs
+---
 
 This notebook goes over how to use the Google Jobs Tool to fetch current Job postings.
 

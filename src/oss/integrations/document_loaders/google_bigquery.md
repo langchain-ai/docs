@@ -1,4 +1,6 @@
-# Google BigQuery
+---
+title: Google BigQuery
+---
 
 >[Google BigQuery](https://cloud.google.com/bigquery) is a serverless and cost-effective enterprise data warehouse that works across clouds and scales with your data.
 `BigQuery` is a part of the `Google Cloud Platform`.

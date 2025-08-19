@@ -1,4 +1,6 @@
-# AstraDB
+---
+title: AstraDB
+---
 
 > [DataStax Astra DB](https://docs.datastax.com/en/astra-db-serverless/index.html) is a serverless 
 > AI-ready database built on `Apache Cassandra®` and made conveniently available 

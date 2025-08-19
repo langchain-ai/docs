@@ -1,4 +1,6 @@
-# Neo4j
+---
+title: Neo4j
+---
 
 >[Neo4j](https://neo4j.com/docs/getting-started/) is a graph database management system developed by `Neo4j, Inc`.
 

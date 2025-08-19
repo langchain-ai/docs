@@ -1,4 +1,6 @@
-# Dataherald
+---
+title: Dataherald
+---
 
 This notebook goes over how to use the dataherald component.
 

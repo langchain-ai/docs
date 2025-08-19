@@ -1,4 +1,6 @@
-# Elasticsearch
+---
+title: Elasticsearch
+---
 
 > [Elasticsearch](https://www.elastic.co/elasticsearch/) is a distributed, RESTful search and analytics engine.
 > It provides a distributed, multi-tenant-capable full-text search engine with an HTTP web interface and schema-free

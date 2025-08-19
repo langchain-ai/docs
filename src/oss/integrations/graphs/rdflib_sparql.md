@@ -1,4 +1,6 @@
-# RDFLib
+---
+title: RDFLib
+---
 
 >[RDFLib](https://rdflib.readthedocs.io/) is a pure Python package for working with [RDF](https://en.wikipedia.org/wiki/Resource_Description_Framework). `RDFLib` contains most things you need to work with `RDF`, including:
 >- parsers and serializers for RDF/XML, N3, NTriples, N-Quads, Turtle, TriX, Trig and JSON-LD

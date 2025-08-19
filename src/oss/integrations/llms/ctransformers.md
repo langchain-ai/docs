@@ -1,4 +1,6 @@
-# C Transformers
+---
+title: C Transformers
+---
 
 The [C Transformers](https://github.com/marella/ctransformers) library provides Python bindings for GGML models.
 

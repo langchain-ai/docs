@@ -1,4 +1,6 @@
-# PlayWright Browser Toolkit
+---
+title: PlayWright Browser Toolkit
+---
 
 >[Playwright](https://github.com/microsoft/playwright) is an open-source automation tool developed by `Microsoft` that allows you to programmatically control and automate web browsers. It is designed for end-to-end testing, scraping, and automating tasks across various web browsers such as `Chromium`, `Firefox`, and `WebKit`.
 

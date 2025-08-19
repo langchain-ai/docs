@@ -1,4 +1,6 @@
-# PGVecto.rs
+---
+title: PGVecto.rs
+---
 
 This notebook shows how to use functionality related to the Postgres vector database ([pgvecto.rs](https://github.com/tensorchord/pgvecto.rs)).
 

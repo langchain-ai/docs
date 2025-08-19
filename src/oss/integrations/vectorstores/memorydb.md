@@ -1,4 +1,6 @@
-# Amazon MemoryDB
+---
+title: Amazon MemoryDB
+---
 
 >[Vector Search](https://docs.aws.amazon.com/memorydb/latest/devguide/vector-search.html/) introduction and langchain integration guide.
 

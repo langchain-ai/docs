@@ -1,4 +1,6 @@
-# PGVector
+---
+title: PGVector
+---
 
 > An implementation of LangChain vectorstore abstraction using `postgres` as the backend and utilizing the `pgvector` extension.
 

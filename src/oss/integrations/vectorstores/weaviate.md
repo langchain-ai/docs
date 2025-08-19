@@ -1,8 +1,6 @@
 ---
-sidebar_label: Weaviate
+title: Weaviate
 ---
-
-# Weaviate
 
 This notebook covers how to get started with the Weaviate vector store in LangChain, using the `langchain-weaviate` package.
 

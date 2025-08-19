@@ -1,4 +1,6 @@
-# Chroma
+---
+title: Chroma
+---
 
 This notebook covers how to get started with the `Chroma` vector store.
 

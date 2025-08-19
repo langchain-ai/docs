@@ -1,4 +1,7 @@
-# Valyu Deep Search
+---
+title: Valyu Deep Search
+---
+
 >[Valyu](https://www.valyu.network/) allows AI applications and agents to search the internet and proprietary data sources for relevant LLM ready information.
 
 This notebook goes over how to use Valyu in LangChain.

@@ -1,4 +1,6 @@
-# BiliBili
+---
+title: BiliBili
+---
 
 >[Bilibili](https://www.bilibili.com/) is one of the most beloved long-form video sites in China.
 

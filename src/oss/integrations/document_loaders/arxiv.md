@@ -1,4 +1,6 @@
-# ArxivLoader
+---
+title: ArxivLoader
+---
 
 [arXiv](https://arxiv.org/) is an open-access archive for 2 million scholarly articles in the fields of physics, mathematics, computer science, quantitative biology, quantitative finance, statistics, electrical engineering and systems science, and economics.
 

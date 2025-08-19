@@ -1,4 +1,6 @@
-# TextEmbed - Embedding Inference Server
+---
+title: TextEmbed - Embedding Inference Server
+---
 
 TextEmbed is a high-throughput, low-latency REST API designed for serving vector embeddings. It supports a wide range of sentence-transformer models and frameworks, making it suitable for various applications in natural language processing.
 

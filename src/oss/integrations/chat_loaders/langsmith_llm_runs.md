@@ -1,4 +1,6 @@
-# LangSmith LLM Runs
+---
+title: LangSmith LLM Runs
+---
 
 This notebook demonstrates how to directly load data from LangSmith's LLM runs and fine-tune a model on that data.
 The process is simple and comprises 3 steps.

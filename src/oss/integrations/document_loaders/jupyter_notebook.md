@@ -1,4 +1,6 @@
-# Jupyter Notebook
+---
+title: Jupyter Notebook
+---
 
 >[Jupyter Notebook](https://en.wikipedia.org/wiki/Project_Jupyter#Applications) (formerly `IPython Notebook`) is a web-based interactive computational environment for creating notebook documents.
 

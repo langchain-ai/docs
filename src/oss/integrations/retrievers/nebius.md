@@ -1,8 +1,6 @@
 ---
-sidebar_label: Nebius
+title: Nebius
 ---
-
-# Nebius Retriever
 
 The `NebiusRetriever` enables efficient similarity search using embeddings from [Nebius AI Studio](https://studio.nebius.ai/). It leverages high-quality embedding models to enable semantic search over documents.
 

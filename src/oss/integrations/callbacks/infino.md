@@ -1,4 +1,6 @@
-# Infino
+---
+title: Infino
+---
 
 >[Infino](https://github.com/infinohq/infino) is a scalable telemetry store designed for logs, metrics, and traces. Infino can function as a standalone observability solution or as the storage layer in your observability stack.
 

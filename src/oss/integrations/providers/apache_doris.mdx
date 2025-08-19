@@ -1,4 +1,6 @@
-# Apache Doris
+---
+title: Apache Doris
+---
 
 >[Apache Doris](https://doris.apache.org/) is a modern data warehouse for real-time analytics.
 It delivers lightning-fast analytics on real-time data at scale.

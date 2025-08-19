@@ -1,4 +1,6 @@
-# Modern Treasury
+---
+title: Modern Treasury
+---
 
 >[Modern Treasury](https://www.moderntreasury.com/) simplifies complex payment operations. It is a unified platform to power products and processes that move money.
 >- Connect to banks and payment systems

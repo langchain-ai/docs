@@ -1,8 +1,6 @@
 ---
-sidebar_label: openGauss
+title: openGauss VectorStore
 ---
-
-# openGauss VectorStore
 
 This notebook covers how to get started with the openGauss VectorStore. [openGauss](https://opengauss.org/en/) is a high-performance relational database with native vector storage and retrieval capabilities. This integration enables ACID-compliant vector operations within LangChain applications, combining traditional SQL functionality with modern AI-driven similarity search.
  vector store.

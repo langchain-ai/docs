@@ -1,4 +1,6 @@
-# Pandas DataFrame
+---
+title: Pandas DataFrame
+---
 
 This notebook goes over how to load data from a [pandas](https://pandas.pydata.org/pandas-docs/stable/user_guide/index) DataFrame.
 

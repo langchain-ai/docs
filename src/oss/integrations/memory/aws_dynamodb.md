@@ -1,4 +1,6 @@
-# AWS DynamoDB
+---
+title: AWS DynamoDB
+---
 
 >[Amazon AWS DynamoDB](https://awscli.amazonaws.com/v2/documentation/api/latest/reference/dynamodb/index.html) is a fully managed `NoSQL` database service that provides fast and predictable performance with seamless scalability.
 

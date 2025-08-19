@@ -1,4 +1,6 @@
-# ApertureDB
+---
+title: ApertureDB
+---
 
 [ApertureDB](https://docs.aperturedata.io) is a database that stores, indexes, and manages multi-modal data like text, images, videos, bounding boxes, and embeddings, together with their associated metadata.
 

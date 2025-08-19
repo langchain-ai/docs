@@ -1,4 +1,6 @@
-# Vald
+---
+title: Vald
+---
 
 > [Vald](https://github.com/vdaas/vald) is a highly scalable distributed fast approximate nearest neighbor (ANN) dense vector search engine.
 

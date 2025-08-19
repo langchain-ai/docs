@@ -1,4 +1,6 @@
-# Google Speech-to-Text Audio Transcripts
+---
+title: Google Speech-to-Text Audio Transcripts
+---
 
 The `SpeechToTextLoader` allows to transcribe audio files with the [Google Cloud Speech-to-Text API](https://cloud.google.com/speech-to-text) and loads the transcribed text into documents.
 

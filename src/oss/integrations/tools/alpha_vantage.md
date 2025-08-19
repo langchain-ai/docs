@@ -1,4 +1,6 @@
-# Alpha Vantage
+---
+title: Alpha Vantage
+---
 
 >[Alpha Vantage](https://www.alphavantage.co) Alpha Vantage provides realtime and historical financial market data through a set of powerful and developer-friendly data APIs and spreadsheets.
 

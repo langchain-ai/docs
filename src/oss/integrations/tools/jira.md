@@ -1,4 +1,6 @@
-# Jira Toolkit
+---
+title: Jira Toolkit
+---
 
 This notebook goes over how to use the `Jira` toolkit.
 

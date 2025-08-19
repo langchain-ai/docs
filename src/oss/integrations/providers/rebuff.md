@@ -1,4 +1,6 @@
-# Rebuff
+---
+title: Rebuff
+---
 
 >[Rebuff](https://docs.rebuff.ai/) is a self-hardening prompt injection detector.
 It is designed to protect AI applications from prompt injection (PI) attacks through a multi-stage defense.

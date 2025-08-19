@@ -1,4 +1,6 @@
-# Kinetica Vectorstore based Retriever
+---
+title: Kinetica Vectorstore based Retriever
+---
 
 >[Kinetica](https://www.kinetica.com/) is a database with integrated support for vector similarity search
 

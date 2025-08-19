@@ -1,4 +1,6 @@
-# PGVectorStore
+---
+title: PGVectorStore
+---
 
 `PGVectorStore` is an implementation of a LangChain vectorstore using `postgres` as the backend.
 

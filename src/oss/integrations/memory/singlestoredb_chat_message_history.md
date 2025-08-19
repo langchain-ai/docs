@@ -1,4 +1,6 @@
-# SingleStoreDB
+---
+title: SingleStoreDB
+---
 
 This notebook goes over how to use SingleStoreDB to store chat message history.
 

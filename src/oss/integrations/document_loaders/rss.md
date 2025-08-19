@@ -1,4 +1,6 @@
-# RSS Feeds
+---
+title: RSS Feeds
+---
 
 This covers how to load HTML news articles from a list of RSS feed URLs into a document format that we can use downstream.
 

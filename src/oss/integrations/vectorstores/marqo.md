@@ -1,4 +1,6 @@
-# Marqo
+---
+title: Marqo
+---
 
 This notebook shows how to use functionality related to the Marqo vectorstore.
 

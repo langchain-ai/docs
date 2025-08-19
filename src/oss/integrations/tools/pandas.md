@@ -1,4 +1,6 @@
-# Pandas Dataframe
+---
+title: Pandas Dataframe
+---
 
 This notebook shows how to use agents to interact with a `Pandas DataFrame`. It is mostly optimized for question answering.
 

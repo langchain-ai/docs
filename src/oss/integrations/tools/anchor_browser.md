@@ -1,8 +1,6 @@
 ---
-sidebar_label: anchor_browser
+title: Anchor Browser
 ---
-
-# Anchor Browser
 
 Anchor is a platform for AI Agentic browser automation, which solves the challenge of automating workflows for web applications that lack APIs or have limited API coverage. It simplifies the creation, deployment, and management of browser-based automations, transforming complex web interactions into simple API endpoints.
 

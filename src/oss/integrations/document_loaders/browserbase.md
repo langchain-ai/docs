@@ -1,4 +1,6 @@
-# Browserbase
+---
+title: Browserbase
+---
 
 [Browserbase](https://browserbase.com) is a developer platform to reliably run, manage, and monitor headless browsers.
 

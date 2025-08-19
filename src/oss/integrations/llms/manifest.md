@@ -1,4 +1,6 @@
-# Manifest
+---
+title: Manifest
+---
 
 This notebook goes over how to use Manifest and LangChain.
 

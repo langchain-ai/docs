@@ -1,4 +1,7 @@
-# OpenLM
+---
+title: OpenLM
+---
+
 [OpenLM](https://github.com/r2d4/openlm) is a zero-dependency OpenAI-compatible LLM provider that can call different inference endpoints directly via HTTP. 
 
 

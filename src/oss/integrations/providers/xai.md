@@ -1,4 +1,6 @@
-# xAI
+---
+title: xAI
+---
 
 [xAI](https://console.x.ai) offers an API to interact with Grok models.
 

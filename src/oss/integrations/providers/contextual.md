@@ -1,4 +1,6 @@
-# Contextual AI
+---
+title: Contextual AI
+---
 
 Contextual AI provides state-of-the-art RAG components designed specifically for accurate and reliable enterprise AI applications. Our LangChain integration exposes standalone API endpoints for our specialized models:
 

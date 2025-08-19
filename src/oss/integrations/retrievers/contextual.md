@@ -1,4 +1,6 @@
-# Contextual AI Reranker
+---
+title: Contextual AI Reranker
+---
 
 Contextual AI's Instruction-Following Reranker is the world's first reranker designed to follow custom instructions about how to prioritize documents based on specific criteria like recency, source, and metadata. With superior performance on the BEIR benchmark (scoring 61.2 and outperforming competitors by significant margins), it delivers unprecedented control and accuracy for enterprise RAG applications.
 

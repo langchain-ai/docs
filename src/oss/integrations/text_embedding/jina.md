@@ -1,4 +1,6 @@
-# Jina
+---
+title: Jina
+---
 
 You can check the list of available models from [here](https://jina.ai/embeddings/).
 

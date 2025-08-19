@@ -1,4 +1,6 @@
-# Identity-enabled RAG using PebbloRetrievalQA
+---
+title: Identity-enabled RAG using PebbloRetrievalQA
+---
 
 > PebbloRetrievalQA is a Retrieval chain with Identity & Semantic Enforcement for question-answering
 against a vector database.

@@ -1,4 +1,6 @@
-# IFTTT WebHooks
+---
+title: IFTTT WebHooks
+---
 
 This notebook shows how to use IFTTT Webhooks.
 

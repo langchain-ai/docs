@@ -1,4 +1,6 @@
-# Tencent COS Directory
+---
+title: Tencent COS Directory
+---
 
 >[Tencent Cloud Object Storage (COS)](https://www.tencentcloud.com/products/cos) is a distributed 
 > storage service that enables you to store any amount of data from anywhere via HTTP/HTTPS protocols. 

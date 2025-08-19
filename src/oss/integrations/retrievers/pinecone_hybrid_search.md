@@ -1,4 +1,6 @@
-# Pinecone Hybrid Search
+---
+title: Pinecone Hybrid Search
+---
 
 >[Pinecone](https://docs.pinecone.io/docs/overview) is a vector database with broad functionality.
 

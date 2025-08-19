@@ -1,4 +1,6 @@
-# SAP HANA Cloud Vector Engine
+---
+title: SAP HANA Cloud Vector Engine
+---
 
 For more information on how to setup the SAP HANA vetor store, take a look at the [documentation](/oss/integrations/vectorstores/sap_hanavector.ipynb).
 

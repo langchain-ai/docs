@@ -1,4 +1,6 @@
-# News URL
+---
+title: News URL
+---
 
 This covers how to load HTML news articles from a list of URLs into a document format that we can use downstream.
 

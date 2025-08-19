@@ -1,8 +1,6 @@
 ---
-sidebar_label: IBM watsonx.ai
+title: IBM watsonx.ai
 ---
-
-# WatsonxRerank
 
 >WatsonxRerank is a wrapper for IBM [watsonx.ai](https://www.ibm.com/products/watsonx-ai) foundation models.
 

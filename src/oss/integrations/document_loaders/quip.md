@@ -1,4 +1,6 @@
-# Quip
+---
+title: Quip
+---
 
 >[Quip](https://quip.com) is a collaborative productivity software suite for mobile and Web. It allows groups of people to create and edit documents and spreadsheets as a group, typically for business purposes.
 

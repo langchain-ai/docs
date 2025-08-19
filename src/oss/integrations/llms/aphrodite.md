@@ -1,4 +1,6 @@
-# Aphrodite Engine
+---
+title: Aphrodite Engine
+---
 
 [Aphrodite](https://github.com/PygmalionAI/aphrodite-engine) is the open-source large-scale inference engine designed to serve thousands of users on the [PygmalionAI](https://pygmalion.chat) website.
 

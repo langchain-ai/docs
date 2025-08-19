@@ -1,4 +1,6 @@
-# Kinetica
+---
+title: Kinetica
+---
 
 This notebooks goes over how to load documents from Kinetica
 

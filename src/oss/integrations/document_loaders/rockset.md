@@ -1,4 +1,6 @@
-# Rockset
+---
+title: Rockset
+---
 
 ⚠️ **Deprecation Notice: Rockset Integration Disabled**
 > 

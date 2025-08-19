@@ -1,4 +1,6 @@
-# ArangoDB
+---
+title: ArangoDB
+---
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arangodb/interactive_tutorials/blob/master/notebooks/Langchain.ipynb)
 

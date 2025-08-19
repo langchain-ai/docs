@@ -1,4 +1,6 @@
-# AssemblyAI Audio Transcripts
+---
+title: AssemblyAI Audio Transcripts
+---
 
 The `AssemblyAIAudioTranscriptLoader` allows to transcribe audio files with the [AssemblyAI API](https://www.assemblyai.com) and loads the transcribed text into documents.
 

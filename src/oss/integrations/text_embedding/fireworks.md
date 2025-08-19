@@ -1,8 +1,6 @@
 ---
-sidebar_label: Fireworks
+title: FireworksEmbeddings
 ---
-
-# FireworksEmbeddings
 
 This will help you get started with Fireworks embedding models using LangChain. For detailed documentation on `FireworksEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/fireworks/embeddings/langchain_fireworks.embeddings.FireworksEmbeddings.html).
 

@@ -1,4 +1,6 @@
-# Salesforce
+---
+title: Salesforce
+---
 
 A tool for interacting with Salesforce CRM using LangChain.
 

@@ -1,4 +1,6 @@
-# Twitter (via Apify)
+---
+title: Twitter (via Apify)
+---
 
 This notebook shows how to load chat messages from Twitter to fine-tune on. We do this by utilizing Apify. 
 

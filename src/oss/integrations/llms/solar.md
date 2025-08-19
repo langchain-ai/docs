@@ -1,4 +1,6 @@
-# Solar
+---
+title: Solar
+---
 
 *This community integration is deprecated. You should use [`ChatUpstage`](../../chat/upstage) instead to access Solar LLM via the chat model connector.*
 

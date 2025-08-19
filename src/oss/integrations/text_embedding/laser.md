@@ -1,4 +1,6 @@
-# LASER Language-Agnostic SEntence Representations Embeddings by Meta AI
+---
+title: LASER Language-Agnostic SEntence Representations Embeddings by Meta AI
+---
 
 >[LASER](https://github.com/facebookresearch/LASER/) is a Python library developed by the Meta AI Research team and used for creating multilingual sentence embeddings for over 147 languages as of 2/25/2024 
 >- List of supported languages at https://github.com/facebookresearch/flores/blob/main/flores200/README.md#languages-in-flores-200

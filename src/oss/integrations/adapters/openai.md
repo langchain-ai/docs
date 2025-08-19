@@ -1,4 +1,6 @@
-# OpenAI Adapter
+---
+title: OpenAI Adapter
+---
 
 **Please ensure OpenAI library is version 1.0.0 or higher; otherwise, refer to the older doc [OpenAI Adapter(Old)](/oss/integrations/adapters/openai-old/).**
 

@@ -1,4 +1,6 @@
-# Javelin AI Gateway Tutorial
+---
+title: Javelin AI Gateway Tutorial
+---
 
 This Jupyter Notebook will explore how to interact with the Javelin AI Gateway using the Python SDK. 
 The Javelin AI Gateway facilitates the utilization of large language models (LLMs) like OpenAI, Cohere, Anthropic, and others by 

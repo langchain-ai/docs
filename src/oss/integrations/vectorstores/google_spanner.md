@@ -1,4 +1,7 @@
-# Google Spanner
+---
+title: Google Spanner
+---
+
 > [Spanner](https://cloud.google.com/spanner) is a highly scalable database that combines unlimited scalability with relational semantics, such as secondary indexes, strong consistency, schemas, and SQL providing 99.999% availability in one easy solution.
 
 This notebook goes over how to use `Spanner` for Vector Search with `SpannerVectorStore` class.

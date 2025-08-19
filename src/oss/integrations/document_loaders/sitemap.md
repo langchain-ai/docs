@@ -1,4 +1,6 @@
-# Sitemap
+---
+title: SitemapLoader
+---
 
 Extends from the `WebBaseLoader`, `SitemapLoader` loads a sitemap from a given URL, and then scrapes and loads all pages in the sitemap, returning each page as a Document.
 

@@ -1,4 +1,6 @@
-# Google El Carro for Oracle Workloads
+---
+title: Google El Carro for Oracle Workloads
+---
 
 > Google [El Carro Oracle Operator](https://github.com/GoogleCloudPlatform/elcarro-oracle-operator)
 offers a way to run Oracle databases in Kubernetes as a portable, open source,

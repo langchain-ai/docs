@@ -1,4 +1,6 @@
-# Netmind
+---
+title: Netmind
+---
 
 [Netmind AI](https://www.netmind.ai/) Build AI Faster, Smarter, and More Affordably.
 Train, Fine-tune, Run Inference, and Scale with our Global GPU Network—Your all-in-one AI Engine.

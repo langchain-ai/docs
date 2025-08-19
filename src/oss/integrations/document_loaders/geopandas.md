@@ -1,4 +1,6 @@
-# Geopandas
+---
+title: Geopandas
+---
 
 [Geopandas](https://geopandas.org/en/stable/index.html) is an open-source project to make working with geospatial data in python easier. 
 

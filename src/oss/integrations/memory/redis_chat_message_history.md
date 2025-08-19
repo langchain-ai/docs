@@ -1,4 +1,6 @@
-# Redis Chat Message History
+---
+title: Redis Chat Message History
+---
 
 >[Redis (Remote Dictionary Server)](https://en.wikipedia.org/wiki/Redis) is an open-source in-memory storage, used as a distributed, in-memory key–value database, cache and message broker, with optional durability. `Redis` offers low-latency reads and writes. Redis is the most popular NoSQL database, and one of the most popular databases overall.
 

@@ -1,4 +1,6 @@
-# YouTube
+---
+title: YouTube
+---
 
 >[YouTube Search](https://github.com/joetats/youtube_search) package searches `YouTube` videos avoiding using their heavily rate-limited API.
 >

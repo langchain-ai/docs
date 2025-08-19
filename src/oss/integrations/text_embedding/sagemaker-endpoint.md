@@ -1,4 +1,6 @@
-# SageMaker
+---
+title: SageMaker
+---
 
 Let's load the `SageMaker Endpoints Embeddings` class. The class can be used if you host, e.g. your own Hugging Face model on SageMaker.
 

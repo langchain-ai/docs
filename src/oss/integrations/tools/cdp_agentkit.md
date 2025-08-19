@@ -1,8 +1,6 @@
 ---
-sidebar_label: CDP
+title: CDP Agentkit Toolkit
 ---
-
-# CDP Agentkit Toolkit
 
 The `CDP Agentkit` toolkit contains tools that enable an LLM agent to interact with the [Coinbase Developer Platform](https://docs.cdp.coinbase.com/). The toolkit provides a wrapper around the CDP SDK, allowing agents to perform onchain operations like transfers, trades, and smart contract interactions.
 

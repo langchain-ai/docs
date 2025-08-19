@@ -1,4 +1,6 @@
-# lakeFS
+---
+title: lakeFS
+---
 
 >[lakeFS](https://docs.lakefs.io/) provides scalable version control over the data lake, and uses Git-like semantics to create and access those versions.
 

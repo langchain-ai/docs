@@ -1,4 +1,6 @@
-# YouTube transcripts
+---
+title: YouTube transcripts
+---
 
 >[YouTube](https://www.youtube.com/) is an online video sharing and social media platform created by Google.
 

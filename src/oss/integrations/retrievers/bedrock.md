@@ -1,8 +1,6 @@
 ---
-sidebar_label: Bedrock (Knowledge Bases)
+title: Bedrock (Knowledge Bases)
 ---
-
-# Bedrock (Knowledge Bases) Retriever
 
 This guide will help you get started with the AWS Knowledge Bases [retriever](/oss/concepts/retrievers).
 

@@ -1,4 +1,6 @@
-# Amazon Neptune with Cypher
+---
+title: Amazon Neptune with Cypher
+---
 
 >[Amazon Neptune](https://aws.amazon.com/neptune/) is a high-performance graph analytics and serverless database for superior scalability and availability.
 >

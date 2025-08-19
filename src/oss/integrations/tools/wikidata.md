@@ -1,4 +1,6 @@
-# Wikidata
+---
+title: Wikidata
+---
 
 >[Wikidata](https://wikidata.org/) is a free and open knowledge base that can be read and edited by both humans and machines. Wikidata is one of the world's largest open knowledge bases.
 

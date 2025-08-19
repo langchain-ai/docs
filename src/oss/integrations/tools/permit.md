@@ -1,8 +1,6 @@
 ---
-sidebar_label: Permit
+title: Permit
 ---
-
-# Permit
 
 Permit is an access control platform that provides fine-grained, real-time permission management using various models such as RBAC, ABAC, and ReBAC. It enables organizations to enforce dynamic policies across their applications, ensuring that only authorized users can access specific resources.
 

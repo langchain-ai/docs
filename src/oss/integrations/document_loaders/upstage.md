@@ -1,8 +1,6 @@
 ---
-sidebar_label: Upstage
+title: Upstage
 ---
-
-# UpstageDocumentParseLoader
 
 This notebook covers how to get started with `UpstageDocumentParseLoader`.
 

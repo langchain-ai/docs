@@ -1,4 +1,6 @@
-# Metal
+---
+title: Metal
+---
 
 >[Metal](https://github.com/getmetal/metal-python) is a managed service for ML Embeddings.
 

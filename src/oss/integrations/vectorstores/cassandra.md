@@ -1,4 +1,6 @@
-# Apache Cassandra
+---
+title: Apache Cassandra
+---
 
 This page provides a quickstart for using [Apache Cassandra®](https://cassandra.apache.org/) as a Vector Store.
 

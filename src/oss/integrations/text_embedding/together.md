@@ -1,8 +1,6 @@
 ---
-sidebar_label: Together AI
+title: TogetherEmbeddings
 ---
-
-# TogetherEmbeddings
 
 This will help you get started with Together embedding models using LangChain. For detailed documentation on `TogetherEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/together/embeddings/langchain_together.embeddings.TogetherEmbeddings.html).
 

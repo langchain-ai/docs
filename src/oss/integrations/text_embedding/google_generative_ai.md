@@ -1,8 +1,6 @@
 ---
-sidebar_label: Google Gemini
+title: Google Generative AI Embeddings (AI Studio & Gemini API)
 ---
-
-# Google Generative AI Embeddings (AI Studio & Gemini API)
 
 Connect to Google's generative AI embeddings service using the `GoogleGenerativeAIEmbeddings` class, found in the [langchain-google-genai](https://pypi.org/project/langchain-google-genai/) package.
 

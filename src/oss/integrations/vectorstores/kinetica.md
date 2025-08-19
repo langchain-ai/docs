@@ -1,8 +1,6 @@
 ---
-sidebar_label: Kinetica
+title: Kinetica Vectorstore API
 ---
-
-# Kinetica Vectorstore API
 
 >[Kinetica](https://www.kinetica.com/) is a database with integrated support for vector similarity search
 

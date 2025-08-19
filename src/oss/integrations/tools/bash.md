@@ -1,4 +1,6 @@
-# Shell (bash)
+---
+title: Shell (bash)
+---
 
 Giving agents access to the shell is powerful (though risky outside a sandboxed environment).
 

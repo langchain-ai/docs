@@ -1,4 +1,6 @@
-# Google Cloud Text-to-Speech
+---
+title: Google Cloud Text-to-Speech
+---
 
 >[Google Cloud Text-to-Speech](https://cloud.google.com/text-to-speech) enables developers to synthesize natural-sounding speech with 100+ voices, available in multiple languages and variants. It applies DeepMind’s groundbreaking research in WaveNet and Google’s powerful neural networks to deliver the highest fidelity possible.
 >

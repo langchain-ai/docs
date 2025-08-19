@@ -1,4 +1,6 @@
-# Outline
+---
+title: Outline
+---
 
 >[Outline](https://www.getoutline.com/) is an open-source collaborative knowledge base platform designed for team information sharing.
 

@@ -1,8 +1,6 @@
 ---
-sidebar_label: Upstage
+title: Upstage Groundedness Check
 ---
-
-# Upstage Groundedness Check
 
 This notebook covers how to get started with Upstage groundedness check models.
 

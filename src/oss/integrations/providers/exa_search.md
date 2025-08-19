@@ -1,4 +1,6 @@
-# Exa
+---
+title: Exa
+---
 
 >[Exa](https://exa.ai/) is a knowledge API for AI and developers.
 >

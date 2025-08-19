@@ -1,4 +1,6 @@
-# IBM watsonx.ai
+---
+title: IBM watsonx.ai
+---
 
 >[WatsonxLLM](https://ibm.github.io/watsonx-ai-python-sdk/fm_extensions.html#langchain) is a wrapper for IBM [watsonx.ai](https://www.ibm.com/products/watsonx-ai) foundation models.
 

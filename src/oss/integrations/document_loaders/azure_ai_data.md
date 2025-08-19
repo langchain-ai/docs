@@ -1,4 +1,6 @@
-# Azure AI Data
+---
+title: Azure AI Data
+---
 
 >[Azure AI Studio](https://ai.azure.com/) provides the capability to upload data assets to cloud storage and register existing data assets from the following sources:
 >

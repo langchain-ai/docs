@@ -1,8 +1,6 @@
 ---
-sidebar_label: Vectorize
+title: VectorizeRetriever
 ---
-
-# VectorizeRetriever
 
 This notebook shows how to use the LangChain Vectorize retriever.
 

@@ -1,4 +1,6 @@
-# Bookend AI
+---
+title: Bookend AI
+---
 
 Let's load the Bookend AI Embeddings class.
 

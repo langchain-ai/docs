@@ -1,4 +1,6 @@
-# Postgres
+---
+title: Postgres
+---
 
 >[PostgreSQL](https://en.wikipedia.org/wiki/PostgreSQL) also known as `Postgres`, is a free and open-source relational database management system (RDBMS) emphasizing extensibility and SQL compliance.
 

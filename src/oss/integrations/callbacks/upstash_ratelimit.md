@@ -1,4 +1,6 @@
-# Upstash Ratelimit Callback
+---
+title: Upstash Ratelimit Callback
+---
 
 In this guide, we will go over how to add rate limiting based on number of requests or the number of tokens using `UpstashRatelimitHandler`. This handler uses [ratelimit library of Upstash](https://github.com/upstash/ratelimit-py/), which utilizes [Upstash Redis](https://upstash.com/docs/redis/overall/getstarted).
 

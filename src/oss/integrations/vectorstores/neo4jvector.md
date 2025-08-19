@@ -1,4 +1,6 @@
-# Neo4j Vector Index
+---
+title: Neo4j Vector Index
+---
 
 >[Neo4j](https://neo4j.com/) is an open-source graph database with integrated support for vector similarity search
 

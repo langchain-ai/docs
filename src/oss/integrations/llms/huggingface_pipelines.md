@@ -1,4 +1,6 @@
-# Hugging Face Local Pipelines
+---
+title: Hugging Face Local Pipelines
+---
 
 Hugging Face models can be run locally through the `HuggingFacePipeline` class.
 

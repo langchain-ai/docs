@@ -1,4 +1,6 @@
-# Source Code
+---
+title: Source Code
+---
 
 This notebook covers how to load source code files using a special approach with language parsing: each top-level function and class in the code is loaded into separate documents. Any remaining code top-level code outside the already loaded functions and classes will be loaded into a separate document.
 

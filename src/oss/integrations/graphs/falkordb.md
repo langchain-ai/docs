@@ -1,4 +1,6 @@
-# FalkorDB
+---
+title: FalkorDB
+---
 
 >[FalkorDB](https://www.falkordb.com/) is a low-latency Graph Database that delivers knowledge to GenAI.
 

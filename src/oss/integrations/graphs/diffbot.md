@@ -1,4 +1,6 @@
-# Diffbot
+---
+title: Diffbot
+---
 
 >[Diffbot](https://docs.diffbot.com/docs/getting-started-with-diffbot) is a suite of ML-based products that make it easy to structure web data.
 >

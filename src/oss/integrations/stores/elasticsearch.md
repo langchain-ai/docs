@@ -1,8 +1,6 @@
 ---
-sidebar_label: Elasticsearch
+title: ElasticsearchEmbeddingsCache
 ---
-
-# ElasticsearchEmbeddingsCache
 
 This will help you get started with Elasticsearch [key-value stores](/oss/concepts/key_value_stores). For detailed documentation of all `ElasticsearchEmbeddingsCache` features and configurations head to the [API reference](https://python.langchain.com/api_reference/elasticsearch/cache/langchain_elasticsearch.cache.ElasticsearchEmbeddingsCache.html).
 

@@ -1,4 +1,6 @@
-# Google Scholar
+---
+title: Google Scholar
+---
 
 This notebook goes through how to use Google Scholar Tool
 

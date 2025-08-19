@@ -1,8 +1,6 @@
 ---
-sidebar_label: LangSmith
+title: LangSmithLoader
 ---
-
-# LangSmithLoader
 
 This guide provides a quick overview for getting started with the LangSmith [document loader](https://python.langchain.com/docs/concepts/document_loaders). For detailed documentation of all LangSmithLoader features and configurations head to the [API reference](https://python.langchain.com/api_reference/core/document_loaders/langchain_core.document_loaders.langsmith.LangSmithLoader.html).
 

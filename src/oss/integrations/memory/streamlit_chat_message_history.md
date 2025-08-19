@@ -1,4 +1,6 @@
-# Streamlit
+---
+title: Streamlit
+---
 
 >[Streamlit](https://docs.streamlit.io/) is an open-source Python library that makes it easy to create and share beautiful, 
 custom web apps for machine learning and data science.

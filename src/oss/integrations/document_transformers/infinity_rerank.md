@@ -1,4 +1,6 @@
-# Infinity Reranker
+---
+title: Infinity Reranker
+---
 
 `Infinity` is a high-throughput, low-latency REST API for serving text-embeddings, reranking models and clip. 
 For more info, please visit [here](https://github.com/michaelfeil/infinity?tab=readme-ov-file#reranking).

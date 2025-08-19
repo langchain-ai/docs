@@ -1,4 +1,6 @@
-# Yuque
+---
+title: Yuque
+---
 
 >[Yuque](https://www.yuque.com/) is a professional cloud-based knowledge base for team collaboration in documentation.
 

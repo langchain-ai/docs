@@ -1,4 +1,6 @@
-# PaymanAI
+---
+title: PaymanAI
+---
 
 PaymanAI provides functionality to send and receive payments (fiat and crypto) on behalf of an AI Agent. To get started:
 

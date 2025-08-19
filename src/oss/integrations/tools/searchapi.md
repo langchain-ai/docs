@@ -1,4 +1,6 @@
-# SearchApi
+---
+title: SearchApi
+---
 
 This notebook shows examples of how to use SearchApi to search the web. Go to [https://www.searchapi.io/](https://www.searchapi.io/) to sign up for a free account and get API key.
 

@@ -1,4 +1,6 @@
-# Docling
+---
+title: Docling
+---
 
 [Docling](https://github.com/DS4SD/docling) parses PDF, DOCX, PPTX, HTML, and other formats into a rich unified representation including document layout, tables etc., making them ready for generative AI workflows like RAG.
 
@@ -6,7 +8,6 @@ This integration provides Docling's capabilities via the `DoclingLoader` documen
 
 ## Overview
 
-<!-- 
 ### Integration details
 
 | Class | Package | Local | Serializable | JS support|
@@ -17,7 +18,7 @@ This integration provides Docling's capabilities via the `DoclingLoader` documen
 | Source | Document Lazy Loading | Native Async Support
 | :---: | :---: | :---: | 
 | DoclingLoader | ✅ | ❌ | 
- -->
+
 
 The presented `DoclingLoader` component enables you to:
 - use various document types in your LLM applications with ease and speed, and

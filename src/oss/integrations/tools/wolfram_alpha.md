@@ -1,4 +1,6 @@
-# Wolfram Alpha
+---
+title: Wolfram Alpha
+---
 
 This notebook goes over how to use the wolfram alpha component.
 

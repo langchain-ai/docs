@@ -1,4 +1,6 @@
-# Google Bigtable
+---
+title: Google Bigtable
+---
 
 > [Bigtable](https://cloud.google.com/bigtable) is a key-value and wide-column store, ideal for fast access to structured, semi-structured, or unstructured data. Extend your database application to build AI-powered experiences leveraging Bigtable's Langchain integrations.
 

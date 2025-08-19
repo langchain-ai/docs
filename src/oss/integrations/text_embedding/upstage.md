@@ -1,8 +1,6 @@
 ---
-sidebar_label: Upstage
+title: UpstageEmbeddings
 ---
-
-# UpstageEmbeddings
 
 This notebook covers how to get started with Upstage embedding models.
 

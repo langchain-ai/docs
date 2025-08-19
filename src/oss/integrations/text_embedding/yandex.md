@@ -1,4 +1,6 @@
-# YandexGPT
+---
+title: YandexGPT
+---
 
 This notebook goes over how to use Langchain with [YandexGPT](https://cloud.yandex.com/en/services/yandexgpt) embeddings models.
 

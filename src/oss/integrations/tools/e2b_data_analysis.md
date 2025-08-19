@@ -1,4 +1,6 @@
-# E2B Data Analysis
+---
+title: E2B Data Analysis
+---
 
 [E2B's cloud environments](https://e2b.dev) are great runtime sandboxes for LLMs.
 

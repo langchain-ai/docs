@@ -1,4 +1,6 @@
-# LocalAI
+---
+title: LocalAI
+---
 
 <Info>
 **`langchain-localai` is a 3rd party integration package for LocalAI. It provides a simple way to use LocalAI services in Langchain.**

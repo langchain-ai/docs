@@ -1,4 +1,6 @@
-# JaguarDB Vector Database
+---
+title: JaguarDB Vector Database
+---
 
 >[JaguarDB Vector Database](http://www.jaguardb.com/windex.html
 >

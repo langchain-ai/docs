@@ -1,4 +1,6 @@
-# Azure Cosmos DB for Apache Gremlin
+---
+title: Azure Cosmos DB for Apache Gremlin
+---
 
 >[Azure Cosmos DB for Apache Gremlin](https://learn.microsoft.com/en-us/azure/cosmos-db/gremlin/introduction) is a graph database service that can be used to store massive graphs with billions of vertices and edges. You can query the graphs with millisecond latency and evolve the graph structure easily.
 >

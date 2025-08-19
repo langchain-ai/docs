@@ -1,4 +1,6 @@
-# PDFPlumber
+---
+title: PDFPlumber
+---
 
 Like PyMuPDF, the output Documents contain detailed metadata about the PDF and its pages, and returns one document per page.
 

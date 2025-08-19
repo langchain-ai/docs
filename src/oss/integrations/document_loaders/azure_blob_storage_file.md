@@ -1,4 +1,6 @@
-# Azure Blob Storage File
+---
+title: Azure Blob Storage File
+---
 
 >[Azure Files](https://learn.microsoft.com/en-us/azure/storage/files/storage-files-introduction) offers fully managed file shares in the cloud that are accessible via the industry standard Server Message Block (`SMB`) protocol, Network File System (`NFS`) protocol, and `Azure Files REST API`.
 

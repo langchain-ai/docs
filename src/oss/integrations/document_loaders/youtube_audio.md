@@ -1,4 +1,6 @@
-# YouTube audio
+---
+title: YouTube audio
+---
 
 Building chat or QA applications on YouTube videos is a topic of high interest.
 

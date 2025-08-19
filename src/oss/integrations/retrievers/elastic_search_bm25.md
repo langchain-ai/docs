@@ -1,4 +1,6 @@
-# ElasticSearch BM25
+---
+title: ElasticSearch BM25
+---
 
 >[Elasticsearch](https://www.elastic.co/elasticsearch/) is a distributed, RESTful search and analytics engine. It provides a distributed, multitenant-capable full-text search engine with an HTTP web interface and schema-free JSON documents.
 

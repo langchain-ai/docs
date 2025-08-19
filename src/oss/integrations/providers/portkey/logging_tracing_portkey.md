@@ -1,4 +1,6 @@
-# Log, Trace, and Monitor
+---
+title: Log, Trace, and Monitor
+---
 
 When building apps or agents using Langchain, you end up making multiple API calls to fulfill a single user request. However, these requests are not chained when you want to analyse them. With [**Portkey**](/oss/integrations/providers/portkey/), all the embeddings, completions, and other requests from a single user request will get logged and traced to a common ID, enabling you to gain full visibility of user interactions.
 

@@ -1,4 +1,6 @@
-# Recursive URL
+---
+title: Recursive URL
+---
 
 The `RecursiveUrlLoader` lets you recursively scrape all child links from a root URL and parse them into Documents.
 

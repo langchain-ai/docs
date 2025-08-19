@@ -1,8 +1,6 @@
 ---
-sidebar_label: Google Vertex AI Search
+title: Google Vertex AI Search
 ---
-
-# Google Vertex AI Search
 
 >[Google Vertex AI Search](https://cloud.google.com/enterprise-search) (formerly known as `Enterprise Search` on `Generative AI App Builder`) is a part of the [Vertex AI](https://cloud.google.com/vertex-ai) machine learning platform offered by `Google Cloud`.
 >

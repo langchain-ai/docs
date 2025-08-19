@@ -1,4 +1,6 @@
-# MyScale
+---
+title: MyScale
+---
 
 >[MyScale](https://docs.myscale.com/en/overview/) is a cloud-based database optimized for AI applications and solutions, built on the open-source [ClickHouse](https://github.com/ClickHouse/ClickHouse). 
 

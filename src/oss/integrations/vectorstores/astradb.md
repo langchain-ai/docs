@@ -1,4 +1,6 @@
-# Astra DB Vector Store
+---
+title: Astra DB Vector Store
+---
 
 This page provides a quickstart for using Astra DB as a Vector Store.
 

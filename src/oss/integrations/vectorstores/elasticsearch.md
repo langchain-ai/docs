@@ -1,4 +1,6 @@
-# Elasticsearch
+---
+title: Elasticsearch
+---
 
 >[Elasticsearch](https://www.elastic.co/elasticsearch/) is a distributed, RESTful search and analytics engine, capable of performing both vector and lexical search. It is built on top of the Apache Lucene library. 
 

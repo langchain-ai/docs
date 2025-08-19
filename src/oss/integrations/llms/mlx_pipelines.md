@@ -1,4 +1,6 @@
-# MLX Local Pipelines
+---
+title: MLX Local Pipelines
+---
 
 MLX models can be run locally through the `MLXPipeline` class.
 

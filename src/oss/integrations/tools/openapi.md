@@ -1,4 +1,6 @@
-# OpenAPI Toolkit
+---
+title: OpenAPI Toolkit
+---
 
 We can construct agents to consume arbitrary APIs, here APIs conformant to the `OpenAPI`/`Swagger` specification.
 

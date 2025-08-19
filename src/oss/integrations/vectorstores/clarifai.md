@@ -1,4 +1,6 @@
-# Clarifai
+---
+title: Clarifai
+---
 
 >[Clarifai](https://www.clarifai.com/) is an AI Platform that provides the full AI lifecycle ranging from data exploration, data labeling, model training, evaluation, and inference. A Clarifai application can be used as a vector database after uploading inputs. 
 

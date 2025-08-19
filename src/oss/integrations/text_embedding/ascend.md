@@ -1,3 +1,7 @@
+---
+title: Ascend
+---
+
 ```python
 from langchain_community.embeddings import AscendEmbeddings
 

@@ -1,4 +1,6 @@
-# Twilio
+---
+title: Twilio
+---
 
 This notebook goes over how to use the [Twilio](https://www.twilio.com) API wrapper to send a message through SMS or [Twilio Messaging Channels](https://www.twilio.com/docs/messaging/channels).
 

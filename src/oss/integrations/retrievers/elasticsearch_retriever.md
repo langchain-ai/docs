@@ -1,8 +1,6 @@
 ---
-sidebar_label: Elasticsearch
+title: Elasticsearch
 ---
-
-# ElasticsearchRetriever
 
 >[Elasticsearch](https://www.elastic.co/elasticsearch/) is a distributed, RESTful search and analytics engine. It provides a distributed, multitenant-capable full-text search engine with an HTTP web interface and schema-free JSON documents. It supports keyword search, vector search, hybrid search and complex filtering.
 

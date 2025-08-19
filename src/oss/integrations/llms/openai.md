@@ -1,4 +1,6 @@
-# OpenAI
+---
+title: OpenAI
+---
 
 <Warning>
 **You are currently on a page documenting the use of OpenAI [text completion models](/oss/concepts/text_llms). The latest and most popular OpenAI models are [chat completion models](/oss/concepts/chat_models).**

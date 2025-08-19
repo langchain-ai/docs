@@ -1,4 +1,6 @@
-# Fireworks
+---
+title: Fireworks
+---
 
 <Warning>
 **You are currently on a page documenting the use of Fireworks models as [text completion models](/oss/concepts/text_llms). Many popular Fireworks models are [chat completion models](/oss/concepts/chat_models).**

@@ -1,4 +1,6 @@
-# Embedchain
+---
+title: Embedchain
+---
 
 >[Embedchain](https://github.com/embedchain/embedchain) is a RAG framework to create data pipelines. It loads, indexes, retrieves and syncs all the data.
 >

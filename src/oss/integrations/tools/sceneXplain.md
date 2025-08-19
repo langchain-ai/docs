@@ -1,5 +1,6 @@
-# SceneXplain
-
+---
+title: SceneXplain
+---
 
 [SceneXplain](https://scenex.jina.ai/) is an ImageCaptioning service accessible through the SceneXplain Tool.
 

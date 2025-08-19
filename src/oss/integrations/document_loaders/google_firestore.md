@@ -1,4 +1,6 @@
-# Google Firestore (Native Mode)
+---
+title: Google Firestore (Native Mode)
+---
 
 > [Firestore](https://cloud.google.com/firestore) is a serverless document-oriented database that scales to meet any demand. Extend your database application to build AI-powered experiences leveraging Firestore's Langchain integrations.
 

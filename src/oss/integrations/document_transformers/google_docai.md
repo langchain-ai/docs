@@ -1,5 +1,6 @@
-# Google Cloud Document AI
-
+---
+title: Google Cloud Document AI
+---
 
 Document AI is a document understanding platform from Google Cloud to transform unstructured data from documents into structured data, making it easier to understand, analyze, and consume.
 

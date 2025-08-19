@@ -1,4 +1,6 @@
-# Runhouse
+---
+title: Runhouse
+---
 
 [Runhouse](https://github.com/run-house/runhouse) allows remote compute and data across environments and users. See the [Runhouse docs](https://www.run.house/docs).
 

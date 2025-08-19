@@ -1,8 +1,6 @@
 ---
-sidebar_label: VDMS
+title: Intel's Visual Data Management System (VDMS)
 ---
-
-# Intel's Visual Data Management System (VDMS)
 
 This notebook covers how to get started with VDMS as a vector store.
 

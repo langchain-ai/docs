@@ -1,4 +1,6 @@
-# Figma
+---
+title: Figma
+---
 
 >[Figma](https://www.figma.com/) is a collaborative web application for interface design.
 

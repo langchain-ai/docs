@@ -1,4 +1,6 @@
-# Doctran: extract properties
+---
+title: Doctran extract properties
+---
 
 We can extract useful features of documents using the [Doctran](https://github.com/psychic-api/doctran) library, which uses OpenAI's function calling feature to extract specific metadata.
 

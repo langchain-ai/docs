@@ -1,4 +1,6 @@
-# Google Trends
+---
+title: Google Trends
+---
 
 This notebook goes over how to use the Google Trends Tool to fetch trends information.
 

@@ -1,4 +1,6 @@
-# AWS S3 Directory
+---
+title: AWS S3 Directory
+---
 
 >[Amazon Simple Storage Service (Amazon S3)](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-folders.html) is an object storage service
 

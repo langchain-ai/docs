@@ -1,4 +1,6 @@
-# ScaNN
+---
+title: ScaNN
+---
 
 ScaNN (Scalable Nearest Neighbors) is a method for efficient vector similarity search at scale.
 

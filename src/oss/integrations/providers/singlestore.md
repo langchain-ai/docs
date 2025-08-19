@@ -1,4 +1,6 @@
-# SingleStore Integration
+---
+title: SingleStore Integration
+---
 
 [SingleStore](https://singlestore.com/) is a high-performance, distributed SQL database designed to excel in both [cloud](https://www.singlestore.com/cloud/) and on-premises environments. It offers a versatile feature set, seamless deployment options, and exceptional performance.
 

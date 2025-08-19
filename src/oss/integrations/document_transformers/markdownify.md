@@ -1,4 +1,6 @@
-# Markdownify
+---
+title: Markdownify
+---
 
 > [markdownify](https://github.com/matthewwithanm/python-markdownify) is a Python package that converts HTML documents to Markdown format with customizable options for handling tags (links, images, ...), heading styles and other.
 

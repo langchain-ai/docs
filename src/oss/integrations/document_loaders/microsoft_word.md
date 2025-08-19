@@ -1,4 +1,6 @@
-# Microsoft Word
+---
+title: Microsoft Word
+---
 
 >[Microsoft Word](https://www.microsoft.com/en-us/microsoft-365/word) is a word processor developed by Microsoft.
 

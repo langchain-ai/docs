@@ -1,4 +1,6 @@
-# Cogniswitch Toolkit
+---
+title: Cogniswitch Toolkit
+---
 
 CogniSwitch is used to build production ready applications that can consume, organize and retrieve knowledge flawlessly. Using the framework of your choice, in this case Langchain, CogniSwitch helps alleviate the stress of decision making when it comes to, choosing the right storage and retrieval formats. It also eradicates reliability issues and hallucinations when it comes to responses that are generated. 
 

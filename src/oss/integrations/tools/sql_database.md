@@ -1,4 +1,6 @@
-# SQLDatabase Toolkit
+---
+title: SQLDatabase Toolkit
+---
 
 This will help you get started with the SQL Database [toolkit](/oss/concepts/tools/#toolkits). For detailed documentation of all `SQLDatabaseToolkit` features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/agent_toolkits/langchain_community.agent_toolkits.sql.toolkit.SQLDatabaseToolkit.html).
 

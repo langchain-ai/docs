@@ -1,4 +1,6 @@
-# Grobid
+---
+title: Grobid
+---
 
 GROBID is a machine learning library for extracting, parsing, and re-structuring raw documents.
 

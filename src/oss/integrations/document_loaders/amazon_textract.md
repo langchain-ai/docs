@@ -1,4 +1,6 @@
-# Amazon Textract 
+---
+title: Amazon Textract 
+---
 
 >[Amazon Textract](https://docs.aws.amazon.com/managedservices/latest/userguide/textract.html) is a machine learning (ML) service that automatically extracts text, handwriting, and data from scanned documents.
 >

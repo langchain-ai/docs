@@ -1,4 +1,6 @@
-# Activeloop Deep Memory
+---
+title: Activeloop Deep Memory
+---
 
 >[Activeloop Deep Memory](https://docs.activeloop.ai/performance-features/deep-memory) is a suite of tools that enables you to optimize your Vector Store for your use-case and achieve higher accuracy in your LLM apps.
 

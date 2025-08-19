@@ -1,4 +1,7 @@
-# Docugami
+---
+title: Docugami
+---
+
 This notebook covers how to load documents from `Docugami`. It provides the advantages of using this system over alternative data loaders.
 
 ## Prerequisites

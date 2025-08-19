@@ -1,4 +1,6 @@
-# Confluence
+---
+title: Confluence
+---
 
 [Confluence](https://www.atlassian.com/software/confluence) is a wiki collaboration platform designed to save and organize all project-related materials. As a knowledge base, Confluence primarily serves content management activities.
 

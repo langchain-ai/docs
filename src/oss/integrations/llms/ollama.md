@@ -1,8 +1,6 @@
 ---
-sidebar_label: Ollama
+title: Ollama
 ---
-
-# OllamaLLM
 
 <Warning>
 **You are currently on a page documenting the use of Ollama models as [text completion models](/oss/concepts/text_llms). Many popular Ollama models are [chat completion models](/oss/concepts/chat_models).**

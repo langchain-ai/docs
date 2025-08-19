@@ -1,8 +1,6 @@
 ---
-sidebar_label: SambaStudio
+title: SambaStudioEmbeddings
 ---
-
-# SambaStudioEmbeddings
 
 This will help you get started with SambaNova's SambaStudio embedding models using LangChain. For detailed documentation on `SambaStudioEmbeddings` features and configuration options, please refer to the [API reference](https://docs.sambanova.ai/sambastudio/latest/index.html).
 

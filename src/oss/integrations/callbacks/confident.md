@@ -1,4 +1,6 @@
-# Confident
+---
+title: Confident
+---
 
 >[DeepEval](https://confident-ai.com) package for unit testing LLMs.
 > Using Confident, everyone can build robust language models through faster iterations

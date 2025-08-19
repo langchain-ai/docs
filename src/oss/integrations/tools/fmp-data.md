@@ -1,4 +1,6 @@
-# FMP Data
+---
+title: FMP Data
+---
 
 Access financial market data through natural language queries.
 

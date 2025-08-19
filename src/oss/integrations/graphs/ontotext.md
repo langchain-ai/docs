@@ -1,4 +1,6 @@
-# Ontotext GraphDB
+---
+title: Ontotext GraphDB
+---
 
 >[Ontotext GraphDB](https://graphdb.ontotext.com/) is a graph database and knowledge discovery tool compliant with [RDF](https://www.w3.org/RDF/) and [SPARQL](https://www.w3.org/TR/sparql11-query/).
 

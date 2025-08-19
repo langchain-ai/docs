@@ -1,4 +1,6 @@
-# ZenGuard AI
+---
+title: ZenGuard AI
+---
 
 <a href="https://colab.research.google.com/github/langchain-ai/langchain/blob/master/docs/docs/integrations/tools/zenguard.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" /></a>
 

@@ -1,4 +1,6 @@
-# MariaDB
+---
+title: MariaDB
+---
 
 LangChain's MariaDB integration (langchain-mariadb) provides vector capabilities for working with MariaDB version 11.7.1 and above, distributed under the MIT license. Users can use the provided implementations as-is or customize them for specific needs.
  Key features include:

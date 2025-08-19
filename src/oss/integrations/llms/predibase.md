@@ -1,4 +1,6 @@
-# Predibase
+---
+title: Predibase
+---
 
 [Predibase](https://predibase.com/) allows you to train, fine-tune, and deploy any ML model—from linear regression to large language model. 
 

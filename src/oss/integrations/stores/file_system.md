@@ -1,8 +1,6 @@
 ---
-sidebar_label: Local Filesystem
+title: LocalFileStore
 ---
-
-# LocalFileStore
 
 This will help you get started with local filesystem [key-value stores](/oss/concepts/key_value_stores). For detailed documentation of all LocalFileStore features and configurations head to the [API reference](https://python.langchain.com/api_reference/langchain/storage/langchain.storage.file_system.LocalFileStore.html).
 

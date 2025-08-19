@@ -1,4 +1,6 @@
-# Infinity
+---
+title: Infinity
+---
 
 `Infinity` allows to create `Embeddings` using a MIT-licensed Embedding Server. 
 

@@ -1,4 +1,6 @@
-# Google AlloyDB for PostgreSQL
+---
+title: Google AlloyDB for PostgreSQL
+---
 
 > [Google Cloud AlloyDB for PostgreSQL](https://cloud.google.com/alloydb) is a fully managed `PostgreSQL` compatible database service for your most demanding enterprise workloads. `AlloyDB` combines the best of `Google Cloud` with `PostgreSQL`, for superior performance, scale, and availability. Extend your database application to build AI-powered experiences leveraging `AlloyDB` Langchain integrations.
 

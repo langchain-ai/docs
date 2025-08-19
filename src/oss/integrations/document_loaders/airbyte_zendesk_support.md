@@ -1,4 +1,6 @@
-# Airbyte Zendesk Support (Deprecated)
+---
+title: Airbyte Zendesk Support (Deprecated)
+---
 
 Note: This connector-specific loader is deprecated. Please use [`AirbyteLoader`](/oss/integrations/document_loaders/airbyte) instead.
 

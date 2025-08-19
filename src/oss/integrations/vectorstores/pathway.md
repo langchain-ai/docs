@@ -1,4 +1,7 @@
-# Pathway
+---
+title: Pathway
+---
+
 > [Pathway](https://pathway.com/) is an open data processing framework. It allows you to easily develop data transformation pipelines and Machine Learning applications that work with live data sources and changing data.
 
 This notebook demonstrates how to use a live `Pathway` data indexing pipeline with `Langchain`. You can query the results of this pipeline from your chains in the same manner as you would a regular vector store. However, under the hood, Pathway updates the index on each data change giving you always up-to-date answers.

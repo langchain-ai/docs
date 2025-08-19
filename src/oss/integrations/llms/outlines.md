@@ -1,4 +1,6 @@
-# Outlines
+---
+title: Outlines
+---
 
 This will help you get started with Outlines LLM. For detailed documentation of all Outlines features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/llms/langchain_community.llms.outlines.Outlines.html).
 

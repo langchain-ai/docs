@@ -1,4 +1,6 @@
-# PowerBI Toolkit
+---
+title: PowerBI Toolkit
+---
 
 This notebook showcases an agent interacting with a `Power BI Dataset`. The agent is answering more general questions about a dataset, as well as recover from errors.
 

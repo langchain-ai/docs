@@ -1,8 +1,6 @@
 ---
-sidebar_label: Compass DeFi Toolkit
+title: Compass DeFi Toolkit
 ---
-
-# Compass LangChain Toolkit
 
 Interact with various DeFi protocols. Non-custodial.Tools return *unsigned transactions*. The toolkit is built on top of a Universal DeFi API ([Compass API](https://api.compasslabs.ai/)) allowing agents to perform financial operations like:
 

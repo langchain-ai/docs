@@ -1,4 +1,6 @@
-# Obsidian
+---
+title: Obsidian
+---
 
 >[Obsidian](https://obsidian.md/) is a powerful and extensible knowledge base
 that works on top of your local folder of plain text files.

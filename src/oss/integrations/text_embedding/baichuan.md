@@ -1,4 +1,6 @@
-# Baichuan Text Embeddings
+---
+title: Baichuan Text Embeddings
+---
 
 As of today (Jan 25th, 2024) BaichuanTextEmbeddings ranks #1 in C-MTEB (Chinese Multi-Task Embedding Benchmark) leaderboard.
 

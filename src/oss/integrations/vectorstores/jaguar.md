@@ -1,4 +1,6 @@
-# Jaguar Vector Database
+---
+title: Jaguar Vector Database
+---
 
 1. It is a distributed vector database
 2. The “ZeroMove” feature of JaguarDB enables instant horizontal scalability

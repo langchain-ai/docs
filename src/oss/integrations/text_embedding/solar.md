@@ -1,4 +1,6 @@
-# Solar
+---
+title: Solar
+---
 
 [Solar](https://console.upstage.ai/services/embedding) offers an embeddings service.
 

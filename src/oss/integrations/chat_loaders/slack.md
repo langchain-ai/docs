@@ -1,4 +1,6 @@
-# Slack
+---
+title: Slack
+---
 
 This notebook shows how to use the Slack chat loader. This class helps map exported slack conversations to LangChain chat messages.
 

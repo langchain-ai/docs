@@ -1,4 +1,6 @@
-# JSONFormer
+---
+title: JSONFormer
+---
 
 [JSONFormer](https://github.com/1rgs/jsonformer) is a library that wraps local Hugging Face pipeline models for structured decoding of a subset of the JSON Schema.
 

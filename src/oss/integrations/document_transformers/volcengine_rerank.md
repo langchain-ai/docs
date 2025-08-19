@@ -1,4 +1,6 @@
-# Volcengine Reranker
+---
+title: Volcengine Reranker
+---
 
 This notebook shows how to use Volcengine Reranker for document compression and retrieval. [Volcengine](https://www.volcengine.com/) is a cloud service platform developed by ByteDance, the parent company of TikTok.
 

@@ -1,4 +1,6 @@
-# ClearML
+---
+title: ClearML
+---
 
 > [ClearML](https://github.com/allegroai/clearml) is a ML/DL development and production suite, it contains 5 main modules:
 > - `Experiment Manager` - Automagical experiment tracking, environments and results

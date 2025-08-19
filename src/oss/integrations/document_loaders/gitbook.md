@@ -1,4 +1,6 @@
-# GitBook
+---
+title: GitBook
+---
 
 >[GitBook](https://docs.gitbook.com/) is a modern documentation platform where teams can document everything from products to internal knowledge bases and APIs.
 

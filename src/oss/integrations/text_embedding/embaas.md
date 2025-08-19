@@ -1,4 +1,6 @@
-# Embaas
+---
+title: Embaas
+---
 
 [embaas](https://embaas.io) is a fully managed NLP API service that offers features like embedding generation, document text extraction, document to embeddings and more. You can choose a [variety of pre-trained models](https://embaas.io/docs/models/embeddings).
 

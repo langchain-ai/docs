@@ -1,4 +1,6 @@
-# Azure Container Apps dynamic sessions
+---
+title: Azure Container Apps dynamic sessions
+---
 
 Azure Container Apps dynamic sessions provides a secure and scalable way to run a Python code interpreter in Hyper-V isolated sandboxes. This allows your agents to run potentially untrusted code in a secure environment. The code interpreter environment includes many popular Python packages, such as NumPy, pandas, and scikit-learn. See the [Azure Container App docs](https://learn.microsoft.com/en-us/azure/container-apps/sessions-code-interpreter) for more info on how sessions work.
 

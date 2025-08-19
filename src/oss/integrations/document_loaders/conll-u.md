@@ -1,4 +1,6 @@
-# CoNLL-U
+---
+title: CoNLL-U
+---
 
 >[CoNLL-U](https://universaldependencies.org/format.html) is revised version of the CoNLL-X format. Annotations are encoded in plain text files (UTF-8, normalized to NFC, using only the LF character as line break, including an LF character at the end of file) with three types of lines:
 >- Word lines containing the annotation of a word/token in 10 fields separated by single tab characters; see below.

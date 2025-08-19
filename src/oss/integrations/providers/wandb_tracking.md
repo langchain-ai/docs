@@ -1,4 +1,6 @@
-# Weights & Biases tracking
+---
+title: Weights & Biases tracking
+---
 
 This notebook goes over how to track your LangChain experiments into one centralized `Weights and Biases` dashboard. 
 

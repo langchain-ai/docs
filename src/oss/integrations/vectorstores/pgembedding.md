@@ -1,4 +1,6 @@
-# Postgres Embedding
+---
+title: Postgres Embedding
+---
 
 > [Postgres Embedding](https://github.com/neondatabase/pg_embedding) is an open-source vector similarity search for `Postgres` that uses  `Hierarchical Navigable Small Worlds (HNSW)` for approximate nearest neighbor search.
 

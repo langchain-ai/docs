@@ -1,4 +1,6 @@
-# WebBaseLoader
+---
+title: WebBaseLoader
+---
 
 This covers how to use `WebBaseLoader` to load all text from `HTML` webpages into a document format that we can use downstream. For more custom logic for loading webpages look at some child class examples such as `IMSDbLoader`, `AZLyricsLoader`, and `CollegeConfidentialLoader`. 
 

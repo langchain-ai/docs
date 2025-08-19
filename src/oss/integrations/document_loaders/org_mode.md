@@ -1,4 +1,6 @@
-# Org-mode
+---
+title: Org-mode
+---
 
 >A [Org Mode document](https://en.wikipedia.org/wiki/Org-mode) is a document editing, formatting, and organizing mode, designed for notes, planning, and authoring within the free software text editor Emacs.
 

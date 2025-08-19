@@ -1,4 +1,6 @@
-# DashScope Reranker
+---
+title: DashScope Reranker
+---
 
 This notebook shows how to use DashScope Reranker for document compression and retrieval. [DashScope](https://dashscope.aliyun.com/) is the generative AI service from Alibaba Cloud (Aliyun).
 

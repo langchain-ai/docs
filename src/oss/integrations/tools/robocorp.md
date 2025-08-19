@@ -1,4 +1,6 @@
-# Robocorp Toolkit
+---
+title: Robocorp Toolkit
+---
 
 This notebook covers how to get started with [Robocorp Action Server](https://github.com/robocorp/robocorp) action toolkit and LangChain.
 

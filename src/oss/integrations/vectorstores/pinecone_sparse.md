@@ -1,4 +1,6 @@
-# Pinecone (sparse)
+---
+title: Pinecone (sparse)
+---
 
 >[Pinecone](https://docs.pinecone.io/docs/overview) is a vector database with broad functionality.
 

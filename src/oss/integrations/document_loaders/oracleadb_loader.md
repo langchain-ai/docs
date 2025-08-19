@@ -1,4 +1,6 @@
-# Oracle Autonomous Database
+---
+title: Oracle Autonomous Database
+---
 
 Oracle autonomous database is a cloud database that uses machine learning to automate database tuning, security, backups, updates, and other routine management tasks traditionally performed by DBAs.
 

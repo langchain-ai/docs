@@ -1,4 +1,6 @@
-# ArXiv
+---
+title: ArXiv
+---
 
 This notebook goes over how to use the `arxiv` tool with an agent. 
 

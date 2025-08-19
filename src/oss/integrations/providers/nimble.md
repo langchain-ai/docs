@@ -1,10 +1,9 @@
 ---
-sidebar_label: Nimble
+title: Nimble
 ---
 
-# Nimble
+[Nimble](https://www.linkedin.com/company/nimbledata) is the first business external data platform, making data decision-making easier than ever, with our award-winning AI-powered data structuring technology Nimble connects business users with the public web knowledge.
 
-  [Nimble](https://www.linkedin.com/company/nimbledata) is the first business external data platform, making data decision-making easier than ever, with our award-winning AI-powered data structuring technology Nimble connects business users with the public web knowledge.
 We empower businesses with mission-critical real-time external data to unlock advanced business intelligence, price comparison, and other public data for sales and marketing. We translate data into immediate business value.
 
 If you'd like to learn more about Nimble, visit us at [nimbleway.com](https://www.nimbleway.com/).

@@ -1,4 +1,7 @@
-# Clova Embeddings
+---
+title: Clova Embeddings
+---
+
 [Clova](https://api.ncloud-docs.com/docs/ai-naver-clovastudio-summary) offers an embeddings service
 
 This example goes over how to use LangChain to interact with Clova inference for text embedding.

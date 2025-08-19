@@ -1,8 +1,6 @@
 ---
-sidebar_label: Cohere
+title: CohereEmbeddings
 ---
-
-# CohereEmbeddings
 
 This will help you get started with Cohere embedding models using LangChain. For detailed documentation on `CohereEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/cohere/embeddings/langchain_cohere.embeddings.CohereEmbeddings.html).
 

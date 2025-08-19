@@ -1,4 +1,6 @@
-# Cassandra 
+---
+title: Cassandra
+---
 
 >[Apache Cassandra®](https://cassandra.apache.org) is a `NoSQL`, row-oriented, highly scalable and highly available database, well suited for storing large amounts of data.
 

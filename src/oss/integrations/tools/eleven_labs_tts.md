@@ -1,4 +1,6 @@
-# ElevenLabs Text2Speech
+---
+title: ElevenLabs Text2Speech
+---
 
 This notebook shows how to interact with the `ElevenLabs API` to achieve text-to-speech capabilities.
 

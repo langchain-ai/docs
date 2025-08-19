@@ -1,4 +1,7 @@
-# Zep Cloud
+---
+title: Zep Cloud
+---
+
 > Recall, understand, and extract data from chat histories. Power personalized AI experiences.
 
 > [Zep](https://www.getzep.com) is a long-term memory service for AI Assistant apps.

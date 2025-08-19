@@ -1,4 +1,6 @@
-# MiniMax
+---
+title: MiniMax
+---
 
 [MiniMax](https://api.minimax.chat/document/guides/embeddings?id=6464722084cdc277dfaa966a) offers an embeddings service.
 

@@ -1,4 +1,6 @@
-# Passio NutritionAI
+---
+title: Passio NutritionAI
+---
 
 To best understand how NutritionAI can give your agents super food-nutrition powers, let's build an agent that can find that information via Passio NutritionAI.
 

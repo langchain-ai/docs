@@ -1,4 +1,6 @@
-# Azure OpenAI
+---
+title: Azure OpenAI
+---
 
 <Warning>
 **You are currently on a page documenting the use of Azure OpenAI [text completion models](/oss/concepts/text_llms). The latest and most popular Azure OpenAI models are [chat completion models](/oss/concepts/chat_models).**

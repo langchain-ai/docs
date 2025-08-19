@@ -1,8 +1,6 @@
 ---
-sidebar_label: Redis
+title: RedisStore
 ---
-
-# RedisStore
 
 This will help you get started with Redis [key-value stores](/oss/concepts/key_value_stores). For detailed documentation of all `RedisStore` features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/storage/langchain_community.storage.redis.RedisStore.html).
 

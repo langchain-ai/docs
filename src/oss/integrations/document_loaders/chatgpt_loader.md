@@ -1,4 +1,6 @@
-# ChatGPT Data
+---
+title: ChatGPT Data
+---
 
 >[ChatGPT](https://chat.openai.com) is an artificial intelligence (AI) chatbot developed by OpenAI.
 

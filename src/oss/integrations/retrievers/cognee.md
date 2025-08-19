@@ -1,5 +1,5 @@
 ---
-sidebar_label: Cognee
+title: Cognee
 ---
 
 # CogneeRetriever

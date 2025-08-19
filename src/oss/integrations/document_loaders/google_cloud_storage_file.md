@@ -1,4 +1,6 @@
-# Google Cloud Storage File
+---
+title: Google Cloud Storage File
+---
 
 >[Google Cloud Storage](https://en.wikipedia.org/wiki/Google_Cloud_Storage) is a managed service for storing unstructured data.
 

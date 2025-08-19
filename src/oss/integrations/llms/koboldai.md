@@ -1,4 +1,6 @@
-# KoboldAI API
+---
+title: KoboldAI API
+---
 
 [KoboldAI](https://github.com/KoboldAI/KoboldAI-Client) is a "a browser-based front-end for AI-assisted writing with multiple local & remote AI models...". It has a public and local API that is able to be used in langchain.
 

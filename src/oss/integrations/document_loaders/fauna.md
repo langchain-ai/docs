@@ -1,4 +1,6 @@
-# Fauna
+---
+title: Fauna
+---
 
 >[Fauna](https://fauna.com/) is a Document Database.
 

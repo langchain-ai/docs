@@ -1,4 +1,6 @@
-# Aim
+---
+title: Aim
+---
 
 Aim makes it super easy to visualize and debug LangChain executions. Aim tracks inputs and outputs of LLMs and tools, as well as actions of agents. 
 

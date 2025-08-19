@@ -1,4 +1,6 @@
-# Gradient
+---
+title: Gradient
+---
 
 `Gradient` allows to create `Embeddings` as well fine tune and get completions on LLMs with a simple web API.
 

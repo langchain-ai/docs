@@ -1,4 +1,6 @@
-# SageMaker Tracking
+---
+title: SageMaker Tracking
+---
 
 >[Amazon SageMaker](https://aws.amazon.com/sagemaker/) is a fully managed service that is used to quickly and easily build, train and deploy machine learning (ML) models. 
 

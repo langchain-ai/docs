@@ -1,4 +1,6 @@
-# OpenWeatherMap
+---
+title: OpenWeatherMap
+---
 
 This notebook goes over how to use the `OpenWeatherMap` component to fetch weather information.
 

@@ -1,4 +1,6 @@
-# Ionic Shopping Tool
+---
+title: Ionic Shopping Tool
+---
 
 [Ionic](https://www.ioniccommerce.com/) is a plug and play ecommerce marketplace for AI Assistants. By including the [Ionic Tool](https://github.com/ioniccommerce/ionic_langchain) in your agent, you are effortlessly providing your users with the ability to shop and transact directly within your agent, and you'll get a cut of the transaction.
 

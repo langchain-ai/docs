@@ -1,4 +1,6 @@
-# Google Serper
+---
+title: Google Serper
+---
 
 This notebook goes over how to use the `Google Serper` component to search the web. First you need to sign up for a free account at [serper.dev](https://serper.dev) and get your api key.
 

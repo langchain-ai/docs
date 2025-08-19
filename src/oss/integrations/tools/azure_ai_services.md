@@ -1,4 +1,6 @@
-# Azure AI Services Toolkit
+---
+title: Azure AI Services Toolkit
+---
 
 This toolkit is used to interact with the `Azure AI Services API` to achieve some multimodal capabilities.
 

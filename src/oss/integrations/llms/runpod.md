@@ -1,4 +1,6 @@
-# RunPod LLM
+---
+title: RunPod
+---
 
 Get started with RunPod LLMs.
 

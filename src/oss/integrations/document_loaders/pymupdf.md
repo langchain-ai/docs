@@ -1,4 +1,6 @@
-# PyMuPDFLoader
+---
+title: PyMuPDFLoader
+---
 
 This notebook provides a quick overview for getting started with `PyMuPDF` [document loader](https://python.langchain.com/docs/concepts/document_loaders). For detailed documentation of all __ModuleName__Loader features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PyMuPDFLoader.html).
 

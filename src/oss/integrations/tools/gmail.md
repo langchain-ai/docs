@@ -1,4 +1,6 @@
-# Gmail Toolkit
+---
+title: Gmail Toolkit
+---
 
 This will help you get started with the GMail [toolkit](/oss/concepts/tools/#toolkits). This toolkit interacts with the GMail API to read messages, draft and send messages, and more. For detailed documentation of all GmailToolkit features and configurations head to the [API reference](https://python.langchain.com/api_reference/google_community/gmail/langchain_google_community.gmail.toolkit.GmailToolkit.html).
 

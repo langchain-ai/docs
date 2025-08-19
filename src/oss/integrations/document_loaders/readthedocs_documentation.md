@@ -1,4 +1,6 @@
-# ReadTheDocs Documentation
+---
+title: ReadTheDocs Documentation
+---
 
 >[Read the Docs](https://readthedocs.org/) is an open-sourced free software documentation hosting platform. It generates documentation written with the `Sphinx` documentation generator.
 

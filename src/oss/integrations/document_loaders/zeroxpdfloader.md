@@ -1,4 +1,6 @@
-# ZeroxPDFLoader
+---
+title: ZeroxPDFLoader
+---
 
 `ZeroxPDFLoader` is a document loader that leverages the [Zerox](https://github.com/getomni-ai/zerox) library. Zerox converts PDF documents into images, processes them using a vision-capable language model, and generates a structured Markdown representation. This loader allows for asynchronous operations and provides page-level document extraction.
 

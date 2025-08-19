@@ -1,4 +1,6 @@
-# Redis Cache for LangChain
+---
+title: Redis Cache for LangChain
+---
 
 This notebook demonstrates how to use the `RedisCache` and `RedisSemanticCache` classes from the langchain-redis package to implement caching for LLM responses.
 

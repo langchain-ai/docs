@@ -1,4 +1,6 @@
-# Open Document Format (ODT)
+---
+title: Open Document Format (ODT)
+---
 
 >The [Open Document Format for Office Applications (ODF)](https://en.wikipedia.org/wiki/OpenDocument), also known as `OpenDocument`, is an open file format for word processing documents, spreadsheets, presentations and graphics and using ZIP-compressed XML files. It was developed with the aim of providing an open, XML-based file format specification for office applications.
 

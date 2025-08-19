@@ -1,4 +1,6 @@
-# Image captions
+---
+title: Image captions
+---
 
 By default, the loader utilizes the pre-trained [Salesforce BLIP image captioning model](https://huggingface.co/Salesforce/blip-image-captioning-base).
 

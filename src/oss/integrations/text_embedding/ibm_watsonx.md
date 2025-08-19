@@ -1,4 +1,6 @@
-# IBM watsonx.ai
+---
+title: IBM watsonx.ai
+---
 
 >WatsonxEmbeddings is a wrapper for IBM [watsonx.ai](https://www.ibm.com/products/watsonx-ai) foundation models.
 

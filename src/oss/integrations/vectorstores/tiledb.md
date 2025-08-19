@@ -1,4 +1,6 @@
-# TileDB
+---
+title: TileDB
+---
 
 > [TileDB](https://github.com/TileDB-Inc/TileDB) is a powerful engine for indexing and querying dense and sparse multi-dimensional arrays.
 

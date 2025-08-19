@@ -1,8 +1,7 @@
 ---
-sidebar_label: Konko
+title: Konko
 ---
 
-# Konko
 
 >[Konko](https://www.konko.ai/) API is a fully managed Web API designed to help application developers:
 

@@ -1,4 +1,6 @@
-# Gel 
+---
+title: Gel
+---
 
 > An implementation of LangChain vectorstore abstraction using `gel` as the backend.
 

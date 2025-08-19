@@ -1,4 +1,6 @@
-# Upstash Vector
+---
+title: Upstash Vector
+---
 
 > [Upstash Vector](https://upstash.com/docs/vector/overall/whatisvector) is a serverless vector database designed for working with vector embeddings.
 >

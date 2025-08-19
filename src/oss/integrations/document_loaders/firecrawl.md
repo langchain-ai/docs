@@ -1,4 +1,6 @@
-# FireCrawl
+---
+title: FireCrawl
+---
 
 [FireCrawl](https://firecrawl.dev/?ref=langchain) crawls and convert any website into LLM-ready data. It crawls all accessible subpages and give you clean markdown and metadata for each. No sitemap required.
 

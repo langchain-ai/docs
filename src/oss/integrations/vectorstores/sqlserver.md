@@ -1,4 +1,6 @@
-# SQLServer 
+---
+title: SQLServer 
+---
 
 >Azure SQL provides a dedicated [Vector data type](https:\learn.microsoft.com\sql\t-sql\data-types\vector-data-type?view=azuresqldb-current&viewFallbackFrom=sql-server-ver16&tabs=csharp-sample) that simplifies the creation, storage, and querying of vector embeddings directly within a relational database. This eliminates the need for separate vector databases and related integrations, increasing the security of your solutions while reducing the overall complexity.
 

@@ -1,4 +1,6 @@
-# Writer PDF Parser
+---
+title: Writer PDF Parser
+---
 
 This guide provides a quick overview for getting started with the Writer `PDFParser` [document loader](/oss/concepts/document_loaders/).
 

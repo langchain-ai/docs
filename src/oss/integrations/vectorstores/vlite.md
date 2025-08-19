@@ -1,4 +1,6 @@
-# vlite
+---
+title: vlite
+---
 
 VLite is a simple and blazing fast vector database that allows you to store and retrieve data semantically using embeddings. Made with numpy, vlite is a lightweight batteries-included database to implement RAG, similarity search, and embeddings into your projects.
 

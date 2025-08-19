@@ -1,8 +1,6 @@
 ---
-sidebar_label: SambaNovaCloud
+title: SambaNovaCloudEmbeddings
 ---
-
-# SambaNovaCloudEmbeddings
 
 This will help you get started with SambaNovaCloud embedding models using LangChain. For detailed documentation on `SambaNovaCloudEmbeddings` features and configuration options, please refer to the [API reference](https://docs.sambanova.ai/cloud/docs/get-started/overview).
 

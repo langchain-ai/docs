@@ -1,4 +1,6 @@
-# Merge Documents Loader
+---
+title: Merge Documents Loader
+---
 
 Merge the documents returned from a set of specified data loaders.
 

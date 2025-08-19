@@ -1,4 +1,6 @@
-# ChatGPT Plugins
+---
+title: ChatGPT Plugins
+---
 
 <Warning>
 **Deprecated**

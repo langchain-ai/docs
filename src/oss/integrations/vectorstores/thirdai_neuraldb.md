@@ -1,4 +1,6 @@
-# ThirdAI NeuralDB
+---
+title: ThirdAI NeuralDB
+---
 
 >[NeuralDB](https://www.thirdai.com/neuraldb-enterprise/) is a CPU-friendly and fine-tunable vector store developed by [ThirdAI](https://www.thirdai.com/).
 

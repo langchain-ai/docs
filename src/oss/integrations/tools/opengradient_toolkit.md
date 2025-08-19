@@ -1,8 +1,6 @@
 ---
-sidebar_label: OpenGradient
+title: OpenGradientToolkit
 ---
-
-# OpenGradientToolkit
 
 This notebook shows how to build tools using the OpenGradient toolkit. This toolkit gives users the ability to create custom tools based on models and workflows on the [OpenGradient network](https://www.opengradient.ai/).
 

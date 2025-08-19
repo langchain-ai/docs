@@ -1,4 +1,6 @@
-# Google Firestore in Datastore Mode
+---
+title: Google Firestore in Datastore Mode
+---
 
 > [Firestore in Datastore Mode](https://cloud.google.com/datastore) is a NoSQL document database built for automatic scaling, high performance and ease of application development. Extend your database application to build AI-powered experiences leveraging Datastore's Langchain integrations.
 

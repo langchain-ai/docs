@@ -1,4 +1,6 @@
-# CerebriumAI
+---
+title: CerebriumAI
+---
 
 `Cerebrium` is an AWS Sagemaker alternative. It also provides API access to [several LLM models](https://docs.cerebrium.ai/cerebrium/prebuilt-models/deployment).
 

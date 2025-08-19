@@ -1,4 +1,6 @@
-# Eden AI
+---
+title: Eden AI
+---
 
 This Jupyter Notebook demonstrates how to use Eden AI tools with an Agent.
 

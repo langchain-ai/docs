@@ -1,4 +1,6 @@
-# JSONLoader
+---
+title: JSONLoader
+---
 
 This guide provides a quick overview for getting started with JSON [document loader](https://python.langchain.com/docs/concepts/document_loaders). For detailed documentation of all JSONLoader features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.json_loader.JSONLoader.html).
 

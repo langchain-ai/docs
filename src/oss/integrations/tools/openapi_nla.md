@@ -1,4 +1,6 @@
-# Natural Language API Toolkits
+---
+title: Natural Language API Toolkits
+---
 
 `Natural Language API` Toolkits (`NLAToolkits`) permit LangChain Agents to efficiently plan and combine calls across endpoints. 
 

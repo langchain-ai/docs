@@ -1,4 +1,6 @@
-# Motörhead
+---
+title: Motörhead
+---
 
 >[Motörhead](https://github.com/getmetal/motorhead) is a memory server implemented in Rust. It automatically handles incremental summarization in the background and allows for stateless applications.
 

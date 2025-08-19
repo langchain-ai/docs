@@ -1,4 +1,6 @@
-# HugeGraph
+---
+title: HugeGraph
+---
 
 >[HugeGraph](https://hugegraph.apache.org/) is a convenient, efficient, and adaptable graph database compatible with
 >the `Apache TinkerPop3` framework and the `Gremlin` query language.

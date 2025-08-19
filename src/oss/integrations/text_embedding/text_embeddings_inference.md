@@ -1,4 +1,6 @@
-# Text Embeddings Inference
+---
+title: Text Embeddings Inference
+---
 
 >[Hugging Face Text Embeddings Inference (TEI)](https://huggingface.co/docs/text-embeddings-inference/index) is a toolkit for deploying and serving open-source
 > text embeddings and sequence classification models. `TEI` enables high-performance extraction for the most popular models,

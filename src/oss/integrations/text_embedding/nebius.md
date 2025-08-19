@@ -1,8 +1,6 @@
 ---
-sidebar_label: Nebius
+title: Nebius
 ---
-
-# Nebius Text Embeddings
 
 [Nebius AI Studio](https://studio.nebius.ai/) provides API access to high-quality embedding models through a unified interface. The Nebius embedding models convert text into numerical vectors that capture semantic meaning, making them useful for various applications like semantic search, clustering, and recommendations.
 

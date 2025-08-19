@@ -1,4 +1,6 @@
-# Comet Tracing
+---
+title: Comet Tracing
+---
 
 There are two ways to trace your LangChains executions with Comet:
 

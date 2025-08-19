@@ -1,5 +1,6 @@
-# Atlas
-
+---
+title: Atlas
+---
 
 >[Atlas](https://docs.nomic.ai/index.html) is a platform by Nomic made for interacting with both small and internet scale unstructured datasets. It enables anyone to visualize, search, and share massive datasets in their browser.
 

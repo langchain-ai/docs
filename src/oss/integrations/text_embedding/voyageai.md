@@ -1,4 +1,6 @@
-# Voyage AI
+---
+title: Voyage AI
+---
 
 >[Voyage AI](https://www.voyageai.com/) provides cutting-edge embedding/vectorizations models.
 

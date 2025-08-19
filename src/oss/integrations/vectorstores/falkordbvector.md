@@ -1,4 +1,7 @@
-# FalkorDBVectorStore
+---
+title: FalkorDBVectorStore
+---
+
 <a href="https://docs.falkordb.com/" target="_blank">FalkorDB</a> is an open-source graph database with integrated support for vector similarity search
 
 it supports:

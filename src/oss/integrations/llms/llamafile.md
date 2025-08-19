@@ -1,4 +1,6 @@
-# Llamafile
+---
+title: Llamafile
+---
 
 [Llamafile](https://github.com/Mozilla-Ocho/llamafile) lets you distribute and run LLMs with a single file.
 

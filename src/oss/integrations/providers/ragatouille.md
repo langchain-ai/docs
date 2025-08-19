@@ -1,4 +1,6 @@
-# RAGatouille
+---
+title: RAGatouille
+---
 
 >[RAGatouille](https://github.com/bclavie/RAGatouille) makes it as simple as can be to use `ColBERT`! [ColBERT](https://github.com/stanford-futuredata/ColBERT) is a fast and accurate retrieval model, enabling scalable BERT-based search over large text collections in tens of milliseconds.
 >

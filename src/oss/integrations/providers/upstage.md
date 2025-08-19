@@ -1,4 +1,6 @@
-# Upstage
+---
+title: Upstage
+---
 
 >[Upstage](https://upstage.ai) is a leading artificial intelligence (AI) company specializing in delivering above-human-grade performance LLM components.
 >

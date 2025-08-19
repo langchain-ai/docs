@@ -1,4 +1,6 @@
-# OpenLLM
+---
+title: OpenLLM
+---
 
 [🦾 OpenLLM](https://github.com/bentoml/OpenLLM) lets developers run any **open-source LLMs** as **OpenAI-compatible API** endpoints with **a single command**.
 

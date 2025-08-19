@@ -1,8 +1,6 @@
 ---
-sidebar_label: Azure AI Search
+title: Azure AI Search
 ---
-
-# AzureAISearchRetriever
 
 [Azure AI Search](https://learn.microsoft.com/azure/search/search-what-is-azure-search) (formerly known as `Azure Cognitive Search`) is a Microsoft cloud search service that gives developers infrastructure, APIs, and tools for information retrieval of vector, keyword, and hybrid queries at scale.
 

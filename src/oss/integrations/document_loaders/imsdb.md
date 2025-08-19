@@ -1,4 +1,6 @@
-# IMSDb
+---
+title: IMSDb
+---
 
 >[IMSDb](https://imsdb.com/) is the `Internet Movie Script Database`.
 

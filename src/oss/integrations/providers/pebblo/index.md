@@ -1,4 +1,6 @@
-# Pebblo
+---
+title: Pebblo
+---
 
 [Pebblo](https://www.daxa.ai/pebblo) enables developers to safely load and retrieve data to promote their Gen AI app to deployment without
 worrying about the organization’s compliance and security requirements. The Pebblo SafeLoader identifies semantic topics and entities found in the

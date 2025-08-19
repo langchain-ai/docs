@@ -1,4 +1,7 @@
-# Psychic
+---
+title: Psychic
+---
+
 This notebook covers how to load documents from `Psychic`. See [here](/oss/integrations/providers/psychic) for more details.
 
 ## Prerequisites

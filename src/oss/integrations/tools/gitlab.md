@@ -1,4 +1,6 @@
-# Gitlab Toolkit
+---
+title: Gitlab Toolkit
+---
 
 The `Gitlab` toolkit contains tools that enable an LLM agent to interact with a gitlab repository. 
 The tool is a wrapper for the [python-gitlab](https://github.com/python-gitlab/python-gitlab) library. 

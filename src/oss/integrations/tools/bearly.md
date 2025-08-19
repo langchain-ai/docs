@@ -1,4 +1,6 @@
-# Bearly Code Interpreter
+---
+title: Bearly Code Interpreter
+---
 
 > Bearly Code Interpreter allows for remote execution of code. This makes it perfect for a code sandbox for agents, to allow for safe implementation of things like Code Interpreter
 

@@ -1,4 +1,6 @@
-# MCP Toolbox for Databases
+---
+title: MCP Toolbox for Databases
+---
 
 Integrate your databases with LangChain agents using MCP Toolbox.
 

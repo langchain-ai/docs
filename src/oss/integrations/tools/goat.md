@@ -1,8 +1,6 @@
 ---
-sidebar_label: GOAT
+title: GOAT
 ---
-
-# GOAT
 
 [GOAT](https://github.com/goat-sdk/goat) is the finance toolkit for AI agents.
 

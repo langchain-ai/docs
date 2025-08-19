@@ -1,4 +1,6 @@
-# WhyLabs
+---
+title: WhyLabs
+---
 
 >[WhyLabs](https://docs.whylabs.ai/docs/) is an observability platform designed to monitor data pipelines and ML applications for data quality regressions, data drift, and model performance degradation. Built on top of an open-source package called `whylogs`, the platform enables Data Scientists and Engineers to:
 >- Set up in minutes: Begin generating statistical profiles of any dataset using whylogs, the lightweight open-source library.

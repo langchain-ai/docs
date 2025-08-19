@@ -1,8 +1,6 @@
 ---
-sidebar_label: Valthera
+title: Valthera
 ---
-
-# Valthera
 
 Enable AI agents to engage users when they're most likely to respond.
 

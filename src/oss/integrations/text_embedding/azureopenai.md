@@ -1,8 +1,6 @@
 ---
-sidebar_label: AzureOpenAI
+title: AzureOpenAI
 ---
-
-# AzureOpenAIEmbeddings
 
 This will help you get started with AzureOpenAI embedding models using LangChain. For detailed documentation on `AzureOpenAIEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/openai/embeddings/langchain_openai.embeddings.azure.AzureOpenAIEmbeddings.html).
 

@@ -1,8 +1,7 @@
 ---
-sidebar_label: Anthropic
+title: AnthropicLLM
 ---
 
-# AnthropicLLM
 
 <Warning>
 **You are currently on a page documenting the use of Anthropic legacy Claude 2 models as [text completion models](/oss/concepts/text_llms). The latest and most popular Anthropic models are [chat completion models](/oss/concepts/chat_models), and the text completion models have been deprecated.**

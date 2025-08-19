@@ -1,4 +1,6 @@
-# Bedrock
+---
+title: Bedrock
+---
 
 <Warning>
 **You are currently on a page documenting the use of Amazon Bedrock models as [text completion models](/oss/concepts/text_llms). Many popular models available on Bedrock are [chat completion models](/oss/concepts/chat_models).**

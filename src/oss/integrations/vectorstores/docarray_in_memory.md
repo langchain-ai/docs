@@ -1,4 +1,6 @@
-# DocArray InMemorySearch
+---
+title: DocArray InMemorySearch
+---
 
 >[DocArrayInMemorySearch](https://docs.docarray.org/user_guide/storing/index_in_memory/) is a document index provided by [Docarray](https://github.com/docarray/docarray) that stores documents in memory. It is a great starting point for small datasets, where you may not want to launch a database server.
 

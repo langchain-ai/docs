@@ -1,4 +1,6 @@
-# Cloudflare Workers AI
+---
+title: Cloudflare Workers AI
+---
 
 [Cloudflare AI documentation](https://developers.cloudflare.com/workers-ai/models/) listed all generative text models available.
 

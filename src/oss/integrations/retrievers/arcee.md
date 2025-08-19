@@ -1,4 +1,6 @@
-# Arcee
+---
+title: Arcee
+---
 
 >[Arcee](https://www.arcee.ai/about/about-us) helps with the development of the SLMs—small, specialized, secure, and scalable language models.
 

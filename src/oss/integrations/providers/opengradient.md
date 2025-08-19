@@ -1,8 +1,7 @@
 ---
-sidebar_label: OpenGradient
+title: OpenGradient
 ---
 
-# OpenGradient
 [OpenGradient](https://www.opengradient.ai/) is a decentralized AI computing network enabling globally accessible, permissionless, and verifiable ML model inference.
 
 The OpenGradient langchain package currently offers a toolkit that allows developers to build their own custom ML inference tools for models on the OpenGradient network. This was previously a challenge because of the context-window polluting nature of large model parameters -- imagine having to give your agent a 200x200 array of floating-point data!

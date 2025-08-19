@@ -1,8 +1,6 @@
 ---
-sidebar_label: Netmind
+title: Netmind
 ---
-
-# NetmindEmbeddings
 
 This will help you get started with Netmind embedding models using LangChain. For detailed documentation on `NetmindEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/).
 

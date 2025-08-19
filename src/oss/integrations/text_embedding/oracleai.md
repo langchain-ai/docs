@@ -1,4 +1,7 @@
-# Oracle AI Vector Search: Generate Embeddings
+---
+title: Oracle AI Vector Search Generate Embeddings
+---
+
 Oracle AI Vector Search is designed for Artificial Intelligence (AI) workloads that allows you to query data based on semantics, rather than keywords.
 One of the biggest benefits of Oracle AI Vector Search is that semantic search on unstructured data can be combined with relational search on business data in one single system.
 This is not only powerful but also significantly more effective because you don't need to add a specialized vector database, eliminating the pain of data fragmentation between multiple systems.

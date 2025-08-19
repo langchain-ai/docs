@@ -1,4 +1,6 @@
-# Unstructured
+---
+title: Unstructured
+---
 
 This notebook covers how to use `Unstructured` [document loader](https://python.langchain.com/docs/concepts/document_loaders) to load files of many types. `Unstructured` currently supports loading of text files, powerpoints, html, pdfs, images, and more.
 

@@ -1,4 +1,6 @@
-# OCI Data Science Model Deployment Endpoint
+---
+title: OCI Data Science Model Deployment Endpoint
+---
 
 [OCI Data Science](https://docs.oracle.com/en-us/iaas/data-science/using/home.htm) is a fully managed and serverless platform for data science teams to build, train, and manage machine learning models in the Oracle Cloud Infrastructure.
 

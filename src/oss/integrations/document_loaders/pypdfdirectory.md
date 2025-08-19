@@ -1,4 +1,6 @@
-# PyPDFDirectoryLoader
+---
+title: PyPDFDirectoryLoader
+---
 
 This loader loads all PDF files from a specific directory.
 

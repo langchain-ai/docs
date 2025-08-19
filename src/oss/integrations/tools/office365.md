@@ -1,4 +1,6 @@
-# Office365 Toolkit
+---
+title: Office365 Toolkit
+---
 
 >[Microsoft 365](https://www.office.com/) is a product family of productivity software, collaboration and cloud-based services owned by `Microsoft`.
 >

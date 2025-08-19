@@ -1,4 +1,7 @@
-# DuckDB
+---
+title: DuckDB
+---
+
 This notebook shows how to use `DuckDB` as a vector store.
 
 

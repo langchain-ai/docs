@@ -1,4 +1,7 @@
-# Self Hosted
+---
+title: Self Hosted
+---
+
 Let's load the `SelfHostedEmbeddings`, `SelfHostedHuggingFaceEmbeddings`, and `SelfHostedHuggingFaceInstructEmbeddings` classes.
 
 

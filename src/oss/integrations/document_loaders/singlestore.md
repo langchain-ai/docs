@@ -1,8 +1,6 @@
 ---
-sidebar_label: SingleStore
+title: SingleStoreLoader
 ---
-
-# SingleStoreLoader
 
 The `SingleStoreLoader` allows you to load documents directly from a SingleStore database table. It is part of the `langchain-singlestore` integration package.
 

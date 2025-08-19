@@ -1,4 +1,6 @@
-# HuggingFace Hub Tools
+---
+title: HuggingFace Hub Tools
+---
 
 >[Huggingface Tools](https://huggingface.co/docs/transformers/v4.29.0/en/custom_tools) that supporting text I/O can be
 loaded directly using the `load_huggingface_tool` function.

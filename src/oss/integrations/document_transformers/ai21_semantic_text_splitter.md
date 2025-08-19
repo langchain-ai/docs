@@ -1,4 +1,6 @@
-# AI21SemanticTextSplitter
+---
+title: AI21SemanticTextSplitter
+---
 
 This example goes over how to use AI21SemanticTextSplitter in LangChain.
 

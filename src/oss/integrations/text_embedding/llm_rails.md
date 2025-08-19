@@ -1,4 +1,6 @@
-# LLMRails
+---
+title: LLMRails
+---
 
 Let's load the LLMRails Embeddings class.
 

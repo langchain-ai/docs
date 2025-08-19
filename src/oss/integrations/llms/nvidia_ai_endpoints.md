@@ -1,4 +1,6 @@
-# NVIDIA
+---
+title: NVIDIA
+---
 
 This will help you get started with NVIDIA [models](/oss/concepts/text_llms). For detailed documentation of all `NVIDIA` features and configurations head to the [API reference](https://python.langchain.com/api_reference/nvidia_ai_endpoints/llms/langchain_nvidia_ai_endpoints.chat_models.NVIDIA.html).
 

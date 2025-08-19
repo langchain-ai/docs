@@ -1,4 +1,6 @@
-# Dell PowerScale Document Loader
+---
+title: Dell PowerScale Document Loader
+---
 
 [Dell PowerScale](https://www.dell.com/en-us/shop/powerscale-family/sf/powerscale) is an enterprise scale out storage system that hosts industry leading OneFS filesystem that can be hosted on-prem or deployed in the cloud.
 

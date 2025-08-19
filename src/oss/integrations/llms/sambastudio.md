@@ -1,4 +1,6 @@
-# SambaStudio
+---
+title: SambaStudio
+---
 
 **[SambaNova](https://sambanova.ai/)'s** [Sambastudio](https://sambanova.ai/technology/full-stack-ai-platform) is a platform that allows you to train, run batch inference jobs, and deploy online inference endpoints to run open source models that you fine tuned yourself.
 

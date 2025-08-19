@@ -1,4 +1,6 @@
-# DuckDuckGo Search
+---
+title: DuckDuckGo Search
+---
 
 This guide shows over how to use the DuckDuckGo search component.
 

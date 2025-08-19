@@ -1,4 +1,6 @@
-# LLMLingua Document Compressor
+---
+title: LLMLingua Document Compressor
+---
 
 >[LLMLingua](https://github.com/microsoft/LLMLingua) utilizes a compact, well-trained language model (e.g., GPT2-small, LLaMA-7B) to identify and remove non-essential tokens in prompts. This approach enables efficient inference with large language models (LLMs), achieving up to 20x compression with minimal performance loss.
 

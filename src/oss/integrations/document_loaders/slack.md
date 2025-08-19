@@ -1,4 +1,6 @@
-# Slack
+---
+title: Slack
+---
 
 >[Slack](https://slack.com/) is an instant messaging program.
 

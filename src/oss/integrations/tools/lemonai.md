@@ -1,4 +1,6 @@
-# Lemon Agent
+---
+title: Lemon Agent
+---
 
 >[Lemon Agent](https://github.com/felixbrock/lemon-agent) helps you build powerful AI assistants in minutes and automate workflows by allowing for accurate and reliable read and write operations in tools like `Airtable`, `Hubspot`, `Discord`, `Notion`, `Slack` and `Github`.
 

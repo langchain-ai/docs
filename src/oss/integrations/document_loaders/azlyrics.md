@@ -1,4 +1,6 @@
-# AZLyrics
+---
+title: AZLyrics
+---
 
 >[AZLyrics](https://www.azlyrics.com/) is a large, legal, every day growing collection of lyrics.
 

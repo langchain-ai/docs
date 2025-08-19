@@ -1,4 +1,6 @@
-# StochasticAI
+---
+title: StochasticAI
+---
 
 >[Stochastic Acceleration Platform](https://docs.stochastic.ai/docs/introduction/) aims to simplify the life cycle of a Deep Learning model. From uploading and versioning the model, through training, compression and acceleration to putting it into production.
 

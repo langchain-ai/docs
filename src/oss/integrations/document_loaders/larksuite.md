@@ -1,4 +1,6 @@
-# LarkSuite (FeiShu)
+---
+title: LarkSuite (FeiShu)
+---
 
 >[LarkSuite](https://www.larksuite.com/) is an enterprise collaboration platform developed by ByteDance.
 

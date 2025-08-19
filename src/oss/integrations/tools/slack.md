@@ -1,4 +1,6 @@
-# Slack Toolkit
+---
+title: Slack Toolkit
+---
 
 This will help you get started with the Slack [toolkit](/oss/concepts/tools/#toolkits). For detailed documentation of all SlackToolkit features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/agent_toolkits/langchain_community.agent_toolkits.slack.toolkit.SlackToolkit.html).
 

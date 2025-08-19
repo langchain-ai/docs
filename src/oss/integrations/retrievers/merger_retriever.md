@@ -1,4 +1,6 @@
-# LOTR (Merger Retriever)
+---
+title: LOTR (Merger Retriever)
+---
 
 >`Lord of the Retrievers (LOTR)`, also known as `MergerRetriever`, takes a list of retrievers as input and merges the results of their get_relevant_documents() methods into a single list. The merged results will be a list of documents that are relevant to the query and that have been ranked by the different retrievers.
 

@@ -1,4 +1,6 @@
-# Naver Search
+---
+title: Naver Search
+---
 
 The Naver Search Tool provides a simple interface to search Naver and get results.
 

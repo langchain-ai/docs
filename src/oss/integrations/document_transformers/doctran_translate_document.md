@@ -1,4 +1,6 @@
-# Doctran: language translation
+---
+title: Doctran language translation
+---
 
 Comparing documents through embeddings has the benefit of working across multiple languages. "Harrison says hello" and "Harrison dice hola" will occupy similar positions in the vector space because they have the same meaning semantically.
 

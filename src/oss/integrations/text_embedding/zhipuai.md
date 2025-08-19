@@ -1,8 +1,6 @@
 ---
-sidebar_label: ZhipuAI
+title: ZhipuAIEmbeddings
 ---
-
-# ZhipuAIEmbeddings
 
 This will help you get started with ZhipuAI embedding models using LangChain. For detailed documentation on `ZhipuAIEmbeddings` features and configuration options, please refer to the [API reference](https://bigmodel.cn/dev/api#vector).
 

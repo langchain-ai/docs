@@ -1,4 +1,6 @@
-# Yahoo Finance News
+---
+title: Yahoo Finance News
+---
 
 This notebook goes over how to use the `yahoo_finance_news` tool with an agent. 
 

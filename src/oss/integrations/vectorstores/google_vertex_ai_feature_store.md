@@ -1,4 +1,6 @@
-# Google Vertex AI Feature Store
+---
+title: Google Vertex AI Feature Store
+---
 
 > [Google Cloud Vertex Feature Store](https://cloud.google.com/vertex-ai/docs/featurestore/latest/overview) streamlines your ML feature management and online serving processes by letting you serve at low-latency your data in [Google Cloud BigQuery](https://cloud.google.com/bigquery?hl=en), including the capacity to perform approximate neighbor retrieval for embeddings
 

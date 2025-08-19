@@ -116,8 +116,7 @@ Gemini supports a range of tools that are executed server-side.
 
 <Info>
 **Requires ``langchain-google-vertexai>=2.0.11``**
-
-:::
+</Info>
 
 Gemini can execute a Google search and use the results to [ground its responses](https://ai.google.dev/gemini-api/docs/grounding):
 
@@ -132,8 +131,10 @@ response = llm.invoke("What is today's news?")
 
 ### Code execution
 
-</Info>info Requires ``langchain-google-vertexai>=2.0.25``
-:::
+<Info>
+**Requires ``langchain-google-vertexai>=2.0.25``**
+</Info>
+
 
 Gemini can [generate and execute Python code](https://ai.google.dev/gemini-api/docs/code-execution):
 

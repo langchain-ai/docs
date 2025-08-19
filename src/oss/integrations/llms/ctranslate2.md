@@ -1,4 +1,6 @@
-# CTranslate2
+---
+title: CTranslate2
+---
 
 **CTranslate2** is a C++ and Python library for efficient inference with Transformer models.
 

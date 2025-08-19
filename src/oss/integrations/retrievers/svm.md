@@ -1,4 +1,6 @@
-# SVM
+---
+title: SVM
+---
 
 >[Support vector machines (SVMs)](https://scikit-learn.org/stable/modules/svm.html#support-vector-machines) are a set of supervised learning methods used for classification, regression and outliers detection.
 

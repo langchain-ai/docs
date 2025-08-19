@@ -1,8 +1,6 @@
 ---
-sidebar_label: Zotero
+title: Zotero
 ---
-
-# ZoteroRetriever
 
 This will help you get started with the Zotero [retriever](/oss/concepts/retrievers). For detailed documentation of all ZoteroRetriever features and configurations head to the [Github page](https://github.com/TimBMK/langchain-zotero-retriever).
 

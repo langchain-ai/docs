@@ -1,4 +1,6 @@
-# Remembrall
+---
+title: Remembrall
+---
 
 This page covers how to use the [Remembrall](https://remembrall.dev) ecosystem within LangChain.
 

@@ -1,4 +1,6 @@
-# MongoDB Atlas
+---
+title: MongoDB Atlas
+---
 
 >[MongoDB Atlas](https://www.mongodb.com/) is a document database that can be 
 used as a vector database.

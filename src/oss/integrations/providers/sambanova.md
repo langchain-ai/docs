@@ -1,4 +1,6 @@
-# SambaNova
+---
+title: SambaNova
+---
 
 Customers are turning to [SambaNova](https://sambanova.ai/) to quickly deploy state-of-the-art AI capabilities to gain competitive advantage. Our purpose-built enterprise-scale AI platform is the technology backbone for the next generation of AI computing. We power the foundation models that unlock the valuable business insights trapped in data.
 

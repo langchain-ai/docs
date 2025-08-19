@@ -1,8 +1,6 @@
 ---
-sidebar_label: Tilores
+title: Tilores
 ---
-
-# Tilores
 
 This notebook covers how to get started with the [Tilores](/oss/integrations/providers/tilores) tools.
 For a more complex example you can checkout our [customer insights chatbot example](https://github.com/tilotech/identity-rag-customer-insights-chatbot).

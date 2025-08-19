@@ -1,4 +1,6 @@
-# Tilores
+---
+title: Tilores
+---
 
 [Tilores](https://tilores.io) is a platform that provides advanced entity resolution solutions for data integration and management. Using cutting-edge algorithms, machine learning, and a user-friendly interfaces, Tilores helps organizations match, resolve, and consolidate data from disparate sources, ensuring high-quality, consistent information.
 

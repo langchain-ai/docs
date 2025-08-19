@@ -1,4 +1,6 @@
-# Anyscale
+---
+title: Anyscale
+---
 
 Let's load the Anyscale Embedding class.
 

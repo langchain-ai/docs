@@ -1,4 +1,6 @@
-# Amadeus Toolkit
+---
+title: Amadeus Toolkit
+---
 
 This notebook walks you through connecting LangChain to the `Amadeus` travel APIs.
 

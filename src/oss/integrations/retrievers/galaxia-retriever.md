@@ -1,8 +1,6 @@
 ---
-sidebar_label: Galaxia
+title: Galaxia
 ---
-
-# Galaxia Retriever
 
 Galaxia is GraphRAG solution, which automates document processing, knowledge base (Graph Language Model) creation and retrieval:
 [galaxia-rag](https://smabbler.gitbook.io/smabbler/api-rag/smabblers-api-rag)

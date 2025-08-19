@@ -1,4 +1,6 @@
-# Async Chromium
+---
+title: Async Chromium
+---
 
 Chromium is one of the browsers supported by Playwright, a library used to control browser automation. 
 

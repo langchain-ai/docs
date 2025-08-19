@@ -1,4 +1,7 @@
-# Zep Cloud
+---
+title: Zep Cloud
+---
+
 ## Retriever Example for [Zep Cloud](https://docs.getzep.com/)
 
 > Recall, understand, and extract data from chat histories. Power personalized AI experiences.

@@ -1,4 +1,6 @@
-# Aerospike
+---
+title: Aerospike
+---
 
 [Aerospike Vector Search](https://aerospike.com/docs/vector) (AVS) is an
 extension to the Aerospike Database that enables searches across very large

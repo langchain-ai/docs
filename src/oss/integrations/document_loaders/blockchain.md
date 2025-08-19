@@ -1,4 +1,6 @@
-# Blockchain
+---
+title: Blockchain
+---
 
 The intention of this notebook is to provide a means of testing functionality in the Langchain Document Loader for Blockchain.
 

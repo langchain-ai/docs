@@ -1,8 +1,6 @@
 ---
-sidebar_label: Google Vertex AI
+title: Google Vertex AI Embeddings
 ---
-
-# Google Vertex AI Embeddings
 
 This will help you get started with Google Vertex AI Embeddings models using LangChain. For detailed documentation on `Google Vertex AI Embeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/google_vertexai/embeddings/langchain_google_vertexai.embeddings.VertexAIEmbeddings.html).
 

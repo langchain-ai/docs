@@ -1,4 +1,6 @@
-# Bagel
+---
+title: Bagel
+---
 
 > [Bagel](https://www.bagel.net/) (`Open Inference platform for AI`), is like GitHub for AI data.
 It is a collaborative platform where users can create,

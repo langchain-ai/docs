@@ -1,8 +1,6 @@
 ---
-sidebar_label: PullMdLoader
+title: PullMdLoader
 ---
-
-# PullMdLoader
 
 Loader for converting URLs into Markdown using the pull.md service.
 

@@ -1,4 +1,7 @@
-# Intel Weight-Only Quantization
+---
+title: Intel Weight-Only Quantization
+---
+
 ## Weight-Only Quantization for Huggingface Models with Intel Extension for Transformers Pipelines
 
 Hugging Face models can be run locally with Weight-Only quantization through the `WeightOnlyQuantPipeline` class.

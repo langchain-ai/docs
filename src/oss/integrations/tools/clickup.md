@@ -1,4 +1,6 @@
-# ClickUp Toolkit
+---
+title: ClickUp Toolkit
+---
 
 >[ClickUp](https://clickup.com/) is an all-in-one productivity platform that provides small and large teams across industries with flexible and customizable work management solutions, tools, and functions. 
 

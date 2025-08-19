@@ -1,4 +1,6 @@
-# MoonshotChat
+---
+title: MoonshotChat
+---
 
 [Moonshot](https://platform.moonshot.cn/) is a Chinese startup that provides LLM service for companies and individuals.
 

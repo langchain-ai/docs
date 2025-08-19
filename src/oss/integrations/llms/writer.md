@@ -1,4 +1,6 @@
-# Writer LLM
+---
+title: Writer LLM
+---
 
 [Writer](https://writer.com/) is a platform to generate different language content.
 

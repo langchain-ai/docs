@@ -1,4 +1,6 @@
-# Gradio
+---
+title: Gradio
+---
 
 There are many 1000s of `Gradio` apps on `Hugging Face Spaces`. This library puts them at the tips of your LLM's fingers 🦾
 

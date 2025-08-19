@@ -1,4 +1,6 @@
-# ValyuContext
+---
+title: ValyuContext
+---
 
 >[Valyu](https://www.valyu.network/) allows AI applications and agents to search the internet and proprietary data sources for relevant LLM ready information.
 

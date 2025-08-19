@@ -1,4 +1,6 @@
-# Snowflake
+---
+title: Snowflake
+---
 
 This notebooks goes over how to load documents from Snowflake
 

@@ -1,4 +1,6 @@
-# John Snow Labs
+---
+title: John Snow Labs
+---
 
 >[John Snow Labs](https://nlp.johnsnowlabs.com/) NLP & LLM ecosystem includes software libraries for state-of-the-art AI at scale, Responsible AI, No-Code AI, and access to over 20,000 models for Healthcare, Legal, Finance, etc.
 >

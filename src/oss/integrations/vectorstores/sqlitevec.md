@@ -1,8 +1,6 @@
 ---
-sidebar_label: SQLiteVec
+title: SQLiteVec
 ---
-
-# SQLite as a Vector Store with SQLiteVec
 
 This notebook covers how to get started with the SQLiteVec vector store.
 

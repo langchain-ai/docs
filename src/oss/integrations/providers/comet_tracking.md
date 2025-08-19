@@ -1,4 +1,6 @@
-# Comet
+---
+title: Comet
+---
 
 >[Comet](https://www.comet.com/) machine learning platform integrates with your existing infrastructure
 >and tools so you can manage, visualize, and optimize models—from training runs to production monitoring

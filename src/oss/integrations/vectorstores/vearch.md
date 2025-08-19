@@ -1,4 +1,6 @@
-# Vearch
+---
+title: Vearch
+---
 
 >[Vearch](https://vearch.readthedocs.io) is the vector search infrastructure for deeping learning and AI applications.
 

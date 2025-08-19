@@ -1,3 +1,7 @@
+---
+title: ScrapFly
+---
+
 [ScrapFly](https://scrapfly.io/) is a web scraping API with headless browser capabilities, proxies, and anti-bot bypass. It allows for extracting web page data into accessible LLM markdown or text.
 
 #### Installation

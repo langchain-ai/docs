@@ -1,8 +1,7 @@
 ---
-sidebar_label: ScrapingAnt
+title: ScrapingAnt
 ---
 
-# ScrapingAnt
 [ScrapingAnt](https://scrapingant.com/) is a web scraping API with headless browser capabilities, proxies, and anti-bot bypass. It allows for extracting web page data into accessible LLM markdown.
 
 This particular integration uses only Markdown extraction feature, but don't hesitate to [reach out to us](mailto:support@scrapingant.com) if you need more features provided by ScrapingAnt, but not yet implemented in this integration.

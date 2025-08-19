@@ -1,8 +1,6 @@
 ---
-sidebar_label: AstraDB
+title: AstraDBByteStore
 ---
-
-# AstraDBByteStore
 
 This will help you get started with Astra DB [key-value stores](/oss/concepts/key_value_stores). For detailed documentation of all `AstraDBByteStore` features and configurations head to the [API reference](https://python.langchain.com/api_reference/astradb/storage/langchain_astradb.storage.AstraDBByteStore.html).
 

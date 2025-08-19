@@ -1,4 +1,6 @@
-# FlashRank reranker
+---
+title: FlashRank reranker
+---
 
 >[FlashRank](https://github.com/PrithivirajDamodaran/FlashRank) is the Ultra-lite & Super-fast Python library to add re-ranking to your existing search & retrieval pipelines. It is based on SoTA cross-encoders, with gratitude to all the model owners.
 

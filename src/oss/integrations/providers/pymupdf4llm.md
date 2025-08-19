@@ -1,4 +1,6 @@
-# PyMuPDF4LLM
+---
+title: PyMuPDF4LLM
+---
 
 [PyMuPDF4LLM](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm) is aimed to make it easier to extract PDF content in Markdown format, needed for LLM & RAG applications.
 

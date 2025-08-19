@@ -1,4 +1,6 @@
-# Ray Serve
+---
+title: Ray Serve
+---
 
 [Ray Serve](https://docs.ray.io/en/latest/serve/index.html) is a scalable model serving library for building online inference APIs. Serve is particularly well suited for system composition, enabling you to build a complex inference service consisting of multiple chains and business logic all in Python code. 
 

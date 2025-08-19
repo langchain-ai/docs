@@ -1,4 +1,6 @@
-# Runpod
+---
+title: Runpod
+---
 
 [RunPod](https://www.runpod.io/) provides GPU cloud infrastructure, including Serverless endpoints optimized for deploying and scaling AI models.
 

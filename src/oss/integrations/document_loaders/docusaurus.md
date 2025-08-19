@@ -1,4 +1,7 @@
-# Docusaurus
+---
+title: Docusaurus
+---
+
 > [Docusaurus](https://docusaurus.io/) is a static-site generator which provides out-of-the-box documentation features.
 
 By utilizing the existing `SitemapLoader`, this loader scans and loads all pages from a given Docusaurus application and returns the main documentation content of each page as a Document.

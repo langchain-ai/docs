@@ -1,4 +1,6 @@
-# OpenSearch
+---
+title: OpenSearch
+---
 
 > [OpenSearch](https://opensearch.org/) is a scalable, flexible, and extensible open-source software suite for search, analytics, and observability applications licensed under Apache 2.0. `OpenSearch` is a distributed search and analytics engine based on `Apache Lucene`.
 

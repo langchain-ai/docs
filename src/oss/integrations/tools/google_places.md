@@ -1,4 +1,6 @@
-# Google Places
+---
+title: Google Places
+---
 
 This notebook goes through how to use Google Places API
 

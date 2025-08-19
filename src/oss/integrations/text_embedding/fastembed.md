@@ -1,4 +1,6 @@
-# FastEmbed by Qdrant
+---
+title: FastEmbed by Qdrant
+---
 
 >[FastEmbed](https://qdrant.github.io/fastembed/) from [Qdrant](https://qdrant.tech) is a lightweight, fast, Python library built for embedding generation. 
 >

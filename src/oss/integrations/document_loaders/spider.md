@@ -1,4 +1,7 @@
-# Spider
+---
+title: Spider
+---
+
 [Spider](https://spider.cloud/) is the [fastest](https://github.com/spider-rs/spider/blob/main/benches/BENCHMARKS.md) and most affordable crawler and scraper that returns LLM-ready data.
 
 ## Setup

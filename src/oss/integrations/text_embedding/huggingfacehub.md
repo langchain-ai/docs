@@ -1,4 +1,7 @@
-# Hugging Face
+---
+title: Hugging Face
+---
+
 Let's load the Hugging Face Embedding class.
 
 

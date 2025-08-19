@@ -1,4 +1,6 @@
-# DashScope
+---
+title: DashScope
+---
 
 Let's load the DashScope Embedding class.
 

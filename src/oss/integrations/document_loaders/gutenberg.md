@@ -1,4 +1,6 @@
-# Gutenberg
+---
+title: Gutenberg
+---
 
 >[Project Gutenberg](https://www.gutenberg.org/about/) is an online library of free eBooks.
 

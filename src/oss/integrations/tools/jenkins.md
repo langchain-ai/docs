@@ -1,4 +1,6 @@
-# Jenkins
+---
+title: Jenkins
+---
 
 Tools for interacting with [Jenkins](https://www.jenkins.io/).
 

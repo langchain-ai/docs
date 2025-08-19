@@ -1,5 +1,6 @@
-# Writer Tools
-
+---
+title: Writer Tools
+---
 
 This guide provides a quick overview for getting started with Writer [tools](https://python.langchain.com/docs/concepts/tools/). For detailed documentation of all Writer features and configurations head to the [Writer docs](https://dev.writer.com/home).
 

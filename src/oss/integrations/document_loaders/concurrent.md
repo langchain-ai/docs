@@ -1,4 +1,6 @@
-# Concurrent Loader
+---
+title: Concurrent Loader
+---
 
 Works just like the GenericLoader but concurrently for those who choose to optimize their workflow.
 

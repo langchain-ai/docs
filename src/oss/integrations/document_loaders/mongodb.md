@@ -1,4 +1,6 @@
-# MongoDB
+---
+title: MongoDB
+---
 
 [MongoDB](https://www.mongodb.com/) is a NoSQL , document-oriented database that supports JSON-like documents with a dynamic schema.
 

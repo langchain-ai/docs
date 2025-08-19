@@ -1,4 +1,6 @@
-# Human as a tool
+---
+title: Human as a tool
+---
 
 Human are AGI so they can certainly be used as a tool to help out AI agent 
 when it is confused.

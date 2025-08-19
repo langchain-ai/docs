@@ -1,4 +1,6 @@
-# Upstash Redis
+---
+title: Upstash Redis
+---
 
 >[Upstash](https://upstash.com/docs/introduction) is a provider of the serverless `Redis`, `Kafka`, and `QStash` APIs.
 

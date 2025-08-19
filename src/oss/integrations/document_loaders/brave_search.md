@@ -1,5 +1,6 @@
-# Brave Search
-
+---
+title: Brave Search
+---
 
 >[Brave Search](https://en.wikipedia.org/wiki/Brave_Search) is a search engine developed by Brave Software.
 > - `Brave Search` uses its own web index. As of May 2022, it covered over 10 billion pages and was used to serve 92% 

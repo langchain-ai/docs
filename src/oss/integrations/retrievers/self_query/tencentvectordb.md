@@ -1,4 +1,6 @@
-# Tencent Cloud VectorDB
+---
+title: Tencent Cloud VectorDB
+---
 
 > [Tencent Cloud VectorDB](https://cloud.tencent.com/document/product/1709) is a fully managed, self-developed, enterprise-level distributed database    service designed for storing, retrieving, and analyzing multi-dimensional vector data.
 

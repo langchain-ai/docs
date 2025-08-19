@@ -1,4 +1,6 @@
-# Golden Query
+---
+title: Golden Query
+---
 
 >[Golden](https://golden.com) provides a set of natural language APIs for querying and enrichment using the Golden Knowledge Graph e.g. queries such as: `Products from OpenAI`, `Generative ai companies with series a funding`, and `rappers who invest` can be used to retrieve structured data about relevant entities.
 >

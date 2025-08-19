@@ -1,8 +1,6 @@
 ---
-sidebar_label: YoutubeLoaderDL
+title: YoutubeLoaderDL
 ---
-
-# YoutubeLoaderDL
 
 Loader for Youtube leveraging the `yt-dlp` library.
 

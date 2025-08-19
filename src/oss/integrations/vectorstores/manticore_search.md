@@ -1,4 +1,6 @@
-# ManticoreSearch VectorStore
+---
+title: ManticoreSearch VectorStore
+---
 
 [ManticoreSearch](https://manticoresearch.com/) is an open-source search engine that offers fast, scalable, and user-friendly capabilities. Originating as a fork of [Sphinx Search](http://sphinxsearch.com/), it has evolved to incorporate modern search engine features and improvements. ManticoreSearch distinguishes itself with its robust performance and ease of integration into various applications.
 

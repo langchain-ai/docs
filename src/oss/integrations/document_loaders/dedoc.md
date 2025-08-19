@@ -1,4 +1,6 @@
-# Dedoc
+---
+title: Dedoc
+---
 
 This sample demonstrates the use of `Dedoc` in combination with `LangChain` as a `DocumentLoader`.
 

@@ -1,8 +1,6 @@
 ---
-sidebar_label: Lindorm
+title: LindormVectorStore
 ---
-
-# LindormVectorStore
 
 This notebook covers how to get started with the Lindorm vector store.
 

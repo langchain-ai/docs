@@ -1,4 +1,6 @@
-# Reddit Search 
+---
+title: Reddit Search
+---
 
 In this notebook, we learn how the Reddit search tool works.  
 First make sure that you have installed praw with the command below:  

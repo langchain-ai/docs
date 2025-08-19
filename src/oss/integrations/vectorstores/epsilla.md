@@ -1,4 +1,6 @@
-# Epsilla
+---
+title: Epsilla
+---
 
 >[Epsilla](https://www.epsilla.com) is an open-source vector database that leverages the advanced parallel graph traversal techniques for vector indexing. Epsilla is licensed under GPL-3.0.
 

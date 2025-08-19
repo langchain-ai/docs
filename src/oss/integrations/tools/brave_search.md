@@ -1,4 +1,6 @@
-# Brave Search
+---
+title: Brave Search
+---
 
 This notebook goes over how to use the Brave Search tool.
 Go to the [Brave Website](https://brave.com/search/api/) to sign up for a free account and get an API key.

@@ -1,4 +1,6 @@
-# NASA Toolkit
+---
+title: NASA Toolkit
+---
 
 This notebook shows how to use agents to interact with the NASA toolkit. The toolkit provides access to the NASA Image and Video Library API, with potential to expand and include other accessible NASA APIs in future iterations.
 

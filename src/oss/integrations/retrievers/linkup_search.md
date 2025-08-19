@@ -1,8 +1,6 @@
 ---
-sidebar_label: LinkupSearchRetriever
+title: LinkupSearchRetriever
 ---
-
-# LinkupSearchRetriever
 
 > [Linkup](https://www.linkup.so/) provides an API to connect LLMs to the web and the Linkup Premium Partner sources.
 

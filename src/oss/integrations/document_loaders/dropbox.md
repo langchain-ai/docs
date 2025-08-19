@@ -1,4 +1,6 @@
-# Dropbox
+---
+title: Dropbox
+---
 
 [Dropbox](https://en.wikipedia.org/wiki/Dropbox) is a file hosting service that brings everything-traditional files, cloud content, and web shortcuts together in one place.
 

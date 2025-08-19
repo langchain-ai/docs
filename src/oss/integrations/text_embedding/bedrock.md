@@ -1,4 +1,6 @@
-# Bedrock
+---
+title: Bedrock
+---
 
 >[Amazon Bedrock](https://aws.amazon.com/bedrock/) is a fully managed service that offers a choice of 
 > high-performing foundation models (FMs) from leading AI companies like `AI21 Labs`, `Anthropic`, `Cohere`, 

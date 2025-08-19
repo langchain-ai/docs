@@ -1,4 +1,6 @@
-# BREEBS (Open Knowledge)
+---
+title: Breebs
+---
 
 >[BREEBS](https://www.breebs.com/) is an open collaborative knowledge platform. 
 Anybody can create a Breeb, a knowledge capsule, based on PDFs stored on a Google Drive folder.

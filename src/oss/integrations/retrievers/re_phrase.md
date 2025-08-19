@@ -1,4 +1,6 @@
-# RePhraseQuery
+---
+title: RePhraseQuery
+---
 
 `RePhraseQuery` is a simple retriever that applies an LLM between the user input and the query passed by the retriever.
 

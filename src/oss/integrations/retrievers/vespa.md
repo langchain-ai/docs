@@ -1,4 +1,6 @@
-# Vespa
+---
+title: Vespa
+---
 
 >[Vespa](https://vespa.ai/) is a fully featured search engine and vector database. It supports vector search (ANN), lexical search, and search in structured data, all in the same query.
 

@@ -1,4 +1,6 @@
-# SerpAPI
+---
+title: SerpAPI
+---
 
 This notebook goes over how to use the SerpAPI component to search the web.
 

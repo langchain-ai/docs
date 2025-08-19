@@ -1,4 +1,6 @@
-# Polars DataFrame
+---
+title: Polars DataFrame
+---
 
 This notebook goes over how to load data from a [polars](https://pola-rs.github.io/polars-book/user-guide/) DataFrame.
 

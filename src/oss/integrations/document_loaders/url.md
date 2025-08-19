@@ -1,4 +1,6 @@
-# URL
+---
+title: URL
+---
 
 This example covers how to load `HTML` documents from a list of `URLs` into the `Document` format that we can use downstream.
 

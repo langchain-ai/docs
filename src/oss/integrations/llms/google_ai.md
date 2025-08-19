@@ -1,4 +1,6 @@
-# Google AI
+---
+title: Google AI
+---
 
 
 <Warning>

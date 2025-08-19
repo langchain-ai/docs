@@ -1,4 +1,6 @@
-# Neo4j
+---
+title: Neo4j
+---
 
 >[Neo4j](https://neo4j.com/docs/) is a graph database that stores nodes and relationships, that also supports native vector search.
 

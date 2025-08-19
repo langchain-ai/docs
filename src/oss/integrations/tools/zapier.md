@@ -1,4 +1,6 @@
-# Zapier Natural Language Actions
+---
+title: Zapier Natural Language Actions
+---
 
 **Deprecated** This API will be sunset on 2023-11-17: https://nla.zapier.com/start/
  
@@ -213,7 +215,7 @@ Best regards,
 ```
 
 
-## Example Using OAuth Access Token{#oauth}
+## Example Using OAuth Access Token
 The below snippet shows how to initialize the wrapper with a procured OAuth access token. Note the argument being passed in as opposed to setting an environment variable. Review the [authentication docs](https://nla.zapier.com/docs/authentication/#oauth-credentials) for full user-facing oauth developer support.
 
 The developer is tasked with handling the OAuth handshaking to procure and refresh the access token.

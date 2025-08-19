@@ -1,4 +1,6 @@
-# BrightDataWebScraperAPI
+---
+title: BrightDataWebScraperAPI
+---
 
 [Bright Data](https://brightdata.com/) provides a powerful Web Scraper API that allows you to extract structured data from 100+ ppular domains, including Amazon product details, LinkedIn profiles, and more, making it particularly useful for AI agents requiring reliable structured web data feeds.
 

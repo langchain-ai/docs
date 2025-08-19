@@ -1,4 +1,6 @@
-# Argilla
+---
+title: Argilla
+---
 
 >[Argilla](https://argilla.io/) is an open-source data curation platform for LLMs.
 > Using Argilla, everyone can build robust language models through faster data curation 

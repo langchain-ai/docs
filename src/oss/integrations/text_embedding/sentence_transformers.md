@@ -1,4 +1,6 @@
-# Sentence Transformers on Hugging Face
+---
+title: Sentence Transformers on Hugging Face
+---
 
 >[Hugging Face sentence-transformers](https://huggingface.co/sentence-transformers) is a Python framework for state-of-the-art sentence, text and image embeddings.
 >You can use these embedding models from the `HuggingFaceEmbeddings` class.

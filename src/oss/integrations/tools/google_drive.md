@@ -1,4 +1,6 @@
-# Google Drive
+---
+title: Google Drive
+---
 
 This notebook walks through connecting a LangChain to the `Google Drive API`.
 

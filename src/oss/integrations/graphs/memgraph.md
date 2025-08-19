@@ -1,4 +1,6 @@
-# Memgraph
+---
+title: Memgraph
+---
 
 Memgraph is an open-source graph database, tuned for dynamic analytics environments and compatible with Neo4j. To query the database, Memgraph uses Cypher - the most widely adopted, fully-specified, and open query language for property graph databases.
 

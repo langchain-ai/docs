@@ -1,4 +1,6 @@
-# Google Finance
+---
+title: Google Finance
+---
 
 This notebook goes over how to use the Google Finance Tool to get information from the Google Finance page.
 

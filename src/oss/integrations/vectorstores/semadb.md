@@ -1,4 +1,6 @@
-# SemaDB
+---
+title: SemaDB
+---
 
 > [SemaDB](https://www.semafind.com/products/semadb) from [SemaFind](https://www.semafind.com) is a no fuss vector similarity database for building AI applications. The hosted `SemaDB Cloud` offers a no fuss developer experience to get started.
 

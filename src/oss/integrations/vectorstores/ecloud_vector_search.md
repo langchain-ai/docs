@@ -1,4 +1,6 @@
-# China Mobile ECloud ElasticSearch VectorSearch
+---
+title: China Mobile ECloud ElasticSearch VectorSearch
+---
 
 >[China Mobile ECloud VectorSearch](https://ecloud.10086.cn/portal/product/elasticsearch) is a fully managed, enterprise-level distributed search and analysis service. China Mobile ECloud VectorSearch provides low-cost, high-performance, and reliable retrieval and analysis platform level product services for structured/unstructured data. As a vector database , it supports multiple index types and similarity distance methods. 
 

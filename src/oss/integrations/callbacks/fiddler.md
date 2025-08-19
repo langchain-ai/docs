@@ -1,4 +1,6 @@
-# Fiddler
+---
+title: Fiddler
+---
 
 >[Fiddler](https://www.fiddler.ai/) is the pioneer in enterprise Generative and Predictive system ops, offering a unified platform that enables Data Science, MLOps, Risk, Compliance, Analytics, and other LOB teams to monitor, explain, analyze, and improve ML deployments at enterprise scale. 
 

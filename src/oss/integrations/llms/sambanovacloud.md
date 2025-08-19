@@ -1,4 +1,6 @@
-# SambaNovaCloud
+---
+title: SambaNovaCloud
+---
 
 **[SambaNova](https://sambanova.ai/)'s [SambaNova Cloud](https://cloud.sambanova.ai/)** is a platform for performing inference with open-source models
 

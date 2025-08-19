@@ -1,4 +1,6 @@
-# Momento Vector Index (MVI)
+---
+title: Momento Vector Index (MVI)
+---
 
 >[MVI](https://gomomento.com): the most productive, easiest to use, serverless vector index for your data. To get started with MVI, simply sign up for an account. There's no need to handle infrastructure, manage servers, or be concerned about scaling. MVI is a service that scales automatically to meet your needs.
 

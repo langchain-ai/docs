@@ -1,4 +1,6 @@
-# Images
+---
+title: Images
+---
 
 This covers how to load images into a document format that we can use downstream with other LangChain modules.
 

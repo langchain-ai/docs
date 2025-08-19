@@ -1,4 +1,6 @@
-# ExLlamaV2
+---
+title: ExLlamaV2
+---
 
 [ExLlamav2](https://github.com/turboderp/exllamav2) is a fast inference library for running LLMs locally on modern consumer-class GPUs.
 

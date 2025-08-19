@@ -1,4 +1,6 @@
-# Databricks
+---
+title: Databricks
+---
 
 > [Databricks](https://www.databricks.com/) Lakehouse Platform unifies data, analytics, and AI on one platform.
 

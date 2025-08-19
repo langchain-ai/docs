@@ -1,4 +1,6 @@
-# Roam
+---
+title: Roam
+---
 
 >[ROAM](https://roamresearch.com/) is a note-taking tool for networked thought, designed to create a personal knowledge base.
 

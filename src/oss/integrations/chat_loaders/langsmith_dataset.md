@@ -1,4 +1,6 @@
-# LangSmith Chat Datasets
+---
+title: LangSmith Chat Datasets
+---
 
 This notebook demonstrates an easy way to load a LangSmith chat dataset and fine-tune a model on that data.
 The process is simple and comprises 3 steps.

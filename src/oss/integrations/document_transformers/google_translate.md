@@ -1,4 +1,6 @@
-# Google Translate
+---
+title: Google Translate
+---
 
 [Google Translate](https://translate.google.com/) is a multilingual neural machine translation service developed by Google to translate text, documents and websites from one language into another.
 

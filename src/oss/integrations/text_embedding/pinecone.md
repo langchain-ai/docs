@@ -1,4 +1,6 @@
-# Pinecone Embeddings
+---
+title: Pinecone Embeddings
+---
 
 Pinecone's inference API can be accessed via `PineconeEmbeddings`. Providing text embeddings via the Pinecone service. We start by installing prerequisite libraries:
 

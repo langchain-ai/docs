@@ -1,8 +1,6 @@
 ---
-sidebar_label: TavilySearchAPI
+title: TavilySearchAPI
 ---
-
-# TavilySearchAPIRetriever
 
 >[Tavily's Search API](https://tavily.com) is a search engine built specifically for AI agents (LLMs), delivering real-time, accurate, and factual results at speed.
 

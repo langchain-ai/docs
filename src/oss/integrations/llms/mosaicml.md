@@ -1,4 +1,6 @@
-# MosaicML
+---
+title: MosaicML
+---
 
 [MosaicML](https://docs.mosaicml.com/en/latest/inference.html) offers a managed inference service. You can either use a variety of open-source models, or deploy your own.
 

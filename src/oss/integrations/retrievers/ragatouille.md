@@ -1,5 +1,6 @@
-# RAGatouille
-
+---
+title: RAGatouille
+---
 
 >[RAGatouille](https://github.com/bclavie/RAGatouille) makes it as simple as can be to use `ColBERT`!
 >
@@ -88,7 +89,8 @@ RAG.index(
 ``````output
 /Users/harrisonchase/.pyenv/versions/3.10.1/envs/langchain/lib/python3.10/site-packages/torch/cuda/amp/grad_scaler.py:125: UserWarning: torch.cuda.amp.GradScaler is enabled, but CUDA is not available.  Disabling.
   warnings.warn(
-  0%|          | 0/2 [00:00<?, ?it/s]/Users/harrisonchase/.pyenv/versions/3.10.1/envs/langchain/lib/python3.10/site-packages/torch/amp/autocast_mode.py:250: UserWarning: User provided device_type of 'cuda', but CUDA is not available. Disabling
+
+  0%|          | 0/2 [00:00<?, ?it/s]/Users/harrisonchase/.pyenv/versions/3.10.1/envs/langchain/lib/python3.10/site-packages/torch/amp/autocast_mode.py:250: UserWarning: User provided device_type of 'cuda', but CUDA is not available. Disabling
   warnings.warn(
 ``````output
 [Jan 07, 10:38:24] [0] 		 #> Encoding 81 passages..
@@ -104,7 +106,27 @@ WARNING clustering 10001 points to 1024 centroids: please provide at least 39936
 [Jan 07, 10:38:27] [0] 		 #> Saving the indexing plan to .ragatouille/colbert/indexes/Miyazaki-123/plan.json ..
 Clustering 10001 points in 128D to 1024 clusters, redo 1 times, 20 iterations
   Preprocessing in 0.00 s
-  Iteration 0 (0.02 s, search 0.02 s): objective=3772.41 imbalance=1.562 nsplit=0         Iteration 1 (0.02 s, search 0.02 s): objective=2408.99 imbalance=1.470 nsplit=1         Iteration 2 (0.03 s, search 0.03 s): objective=2243.87 imbalance=1.450 nsplit=0         Iteration 3 (0.04 s, search 0.04 s): objective=2168.48 imbalance=1.444 nsplit=0         Iteration 4 (0.05 s, search 0.05 s): objective=2134.26 imbalance=1.449 nsplit=0         Iteration 5 (0.06 s, search 0.05 s): objective=2117.18 imbalance=1.449 nsplit=0         Iteration 6 (0.06 s, search 0.06 s): objective=2108.43 imbalance=1.449 nsplit=0         Iteration 7 (0.07 s, search 0.07 s): objective=2102.62 imbalance=1.450 nsplit=0         Iteration 8 (0.08 s, search 0.08 s): objective=2100.68 imbalance=1.451 nsplit=0         Iteration 9 (0.09 s, search 0.08 s): objective=2099.66 imbalance=1.451 nsplit=0         Iteration 10 (0.10 s, search 0.09 s): objective=2099.03 imbalance=1.451 nsplit=0         Iteration 11 (0.10 s, search 0.10 s): objective=2098.67 imbalance=1.453 nsplit=0         Iteration 12 (0.11 s, search 0.11 s): objective=2097.78 imbalance=1.455 nsplit=0         Iteration 13 (0.12 s, search 0.12 s): objective=2097.31 imbalance=1.455 nsplit=0         Iteration 14 (0.13 s, search 0.12 s): objective=2097.13 imbalance=1.455 nsplit=0         Iteration 15 (0.14 s, search 0.13 s): objective=2097.09 imbalance=1.455 nsplit=0         Iteration 16 (0.14 s, search 0.14 s): objective=2097.09 imbalance=1.455 nsplit=0         Iteration 17 (0.15 s, search 0.15 s): objective=2097.09 imbalance=1.455 nsplit=0         Iteration 18 (0.16 s, search 0.15 s): objective=2097.09 imbalance=1.455 nsplit=0         Iteration 19 (0.17 s, search 0.16 s): objective=2097.09 imbalance=1.455 nsplit=0       [0.037, 0.038, 0.041, 0.036, 0.035, 0.036, 0.034, 0.036, 0.034, 0.034, 0.036, 0.037, 0.032, 0.039, 0.035, 0.039, 0.033, 0.035, 0.035, 0.037, 0.037, 0.037, 0.037, 0.037, 0.038, 0.034, 0.037, 0.035, 0.036, 0.037, 0.036, 0.04, 0.037, 0.037, 0.036, 0.034, 0.037, 0.035, 0.038, 0.039, 0.037, 0.039, 0.035, 0.036, 0.036, 0.035, 0.035, 0.038, 0.037, 0.033, 0.036, 0.032, 0.034, 0.035, 0.037, 0.037, 0.041, 0.037, 0.039, 0.033, 0.035, 0.033, 0.036, 0.036, 0.038, 0.036, 0.037, 0.038, 0.035, 0.035, 0.033, 0.034, 0.032, 0.038, 0.037, 0.037, 0.036, 0.04, 0.033, 0.037, 0.035, 0.04, 0.036, 0.04, 0.032, 0.037, 0.036, 0.037, 0.034, 0.042, 0.037, 0.035, 0.035, 0.038, 0.034, 0.036, 0.041, 0.035, 0.036, 0.037, 0.041, 0.04, 0.036, 0.036, 0.035, 0.036, 0.034, 0.033, 0.036, 0.033, 0.037, 0.038, 0.036, 0.033, 0.038, 0.037, 0.038, 0.037, 0.039, 0.04, 0.034, 0.034, 0.036, 0.039, 0.033, 0.037, 0.035, 0.037]
+  Iteration 0 (0.02 s, search 0.02 s): objective=3772.41 imbalance=1.562 nsplit=0       
+  Iteration 1 (0.02 s, search 0.02 s): objective=2408.99 imbalance=1.470 nsplit=1       
+  Iteration 2 (0.03 s, search 0.03 s): objective=2243.87 imbalance=1.450 nsplit=0       
+  Iteration 3 (0.04 s, search 0.04 s): objective=2168.48 imbalance=1.444 nsplit=0       
+  Iteration 4 (0.05 s, search 0.05 s): objective=2134.26 imbalance=1.449 nsplit=0       
+  Iteration 5 (0.06 s, search 0.05 s): objective=2117.18 imbalance=1.449 nsplit=0       
+  Iteration 6 (0.06 s, search 0.06 s): objective=2108.43 imbalance=1.449 nsplit=0       
+  Iteration 7 (0.07 s, search 0.07 s): objective=2102.62 imbalance=1.450 nsplit=0       
+  Iteration 8 (0.08 s, search 0.08 s): objective=2100.68 imbalance=1.451 nsplit=0       
+  Iteration 9 (0.09 s, search 0.08 s): objective=2099.66 imbalance=1.451 nsplit=0       
+  Iteration 10 (0.10 s, search 0.09 s): objective=2099.03 imbalance=1.451 nsplit=0       
+  Iteration 11 (0.10 s, search 0.10 s): objective=2098.67 imbalance=1.453 nsplit=0       
+  Iteration 12 (0.11 s, search 0.11 s): objective=2097.78 imbalance=1.455 nsplit=0       
+  Iteration 13 (0.12 s, search 0.12 s): objective=2097.31 imbalance=1.455 nsplit=0       
+  Iteration 14 (0.13 s, search 0.12 s): objective=2097.13 imbalance=1.455 nsplit=0       
+  Iteration 15 (0.14 s, search 0.13 s): objective=2097.09 imbalance=1.455 nsplit=0       
+  Iteration 16 (0.14 s, search 0.14 s): objective=2097.09 imbalance=1.455 nsplit=0       
+  Iteration 17 (0.15 s, search 0.15 s): objective=2097.09 imbalance=1.455 nsplit=0       
+  Iteration 18 (0.16 s, search 0.15 s): objective=2097.09 imbalance=1.455 nsplit=0       
+  Iteration 19 (0.17 s, search 0.16 s): objective=2097.09 imbalance=1.455 nsplit=0       
+[0.037, 0.038, 0.041, 0.036, 0.035, 0.036, 0.034, 0.036, 0.034, 0.034, 0.036, 0.037, 0.032, 0.039, 0.035, 0.039, 0.033, 0.035, 0.035, 0.037, 0.037, 0.037, 0.037, 0.037, 0.038, 0.034, 0.037, 0.035, 0.036, 0.037, 0.036, 0.04, 0.037, 0.037, 0.036, 0.034, 0.037, 0.035, 0.038, 0.039, 0.037, 0.039, 0.035, 0.036, 0.036, 0.035, 0.035, 0.038, 0.037, 0.033, 0.036, 0.032, 0.034, 0.035, 0.037, 0.037, 0.041, 0.037, 0.039, 0.033, 0.035, 0.033, 0.036, 0.036, 0.038, 0.036, 0.037, 0.038, 0.035, 0.035, 0.033, 0.034, 0.032, 0.038, 0.037, 0.037, 0.036, 0.04, 0.033, 0.037, 0.035, 0.04, 0.036, 0.04, 0.032, 0.037, 0.036, 0.037, 0.034, 0.042, 0.037, 0.035, 0.035, 0.038, 0.034, 0.036, 0.041, 0.035, 0.036, 0.037, 0.041, 0.04, 0.036, 0.036, 0.035, 0.036, 0.034, 0.033, 0.036, 0.033, 0.037, 0.038, 0.036, 0.033, 0.038, 0.037, 0.038, 0.037, 0.039, 0.04, 0.034, 0.034, 0.036, 0.039, 0.033, 0.037, 0.035, 0.037]
 [Jan 07, 10:38:27] [0] 		 #> Encoding 81 passages..
 ``````output
 0it [00:00, ?it/s]

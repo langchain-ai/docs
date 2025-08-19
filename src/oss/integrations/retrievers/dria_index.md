@@ -1,4 +1,6 @@
-# Dria
+---
+title: Dria
+---
 
 >[Dria](https://dria.co/) is a hub of public RAG models for developers to both contribute and utilize a shared embedding lake. This notebook demonstrates how to use the `Dria API` for data retrieval tasks.
 

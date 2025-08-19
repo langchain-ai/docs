@@ -1,9 +1,6 @@
 ---
-sidebar_label: Box
+title: BoxLoader and BoxBlobLoader
 ---
-
-# BoxLoader and BoxBlobLoader
-
 
 The `langchain-box` package provides two methods to index your files from Box: `BoxLoader` and `BoxBlobLoader`. `BoxLoader` allows you to ingest text representations of files that have a text representation in Box. The `BoxBlobLoader` allows you download the blob for any document or image file for processing with the blob parser of your choice.
 

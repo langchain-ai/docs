@@ -1,8 +1,6 @@
 ---
-sidebar_label: Memgraph
+title: MemgraphToolkit
 ---
-
-# MemgraphToolkit
 
 This will help you get started with the Memgraph [toolkit](/oss/concepts/tools/#toolkits). 
 

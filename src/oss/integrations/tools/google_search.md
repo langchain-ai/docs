@@ -1,4 +1,6 @@
-# Google Search
+---
+title: Google Search
+---
 
 This notebook goes over how to use the google search component.
 

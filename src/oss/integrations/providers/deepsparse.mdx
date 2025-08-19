@@ -1,4 +1,6 @@
-# DeepSparse
+---
+title: DeepSparse
+---
 
 This page covers how to use the [DeepSparse](https://github.com/neuralmagic/deepsparse) inference runtime within LangChain.
 It is broken into two parts: installation and setup, and then examples of DeepSparse usage.

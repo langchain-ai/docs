@@ -1,4 +1,6 @@
-# PySpark
+---
+title: PySpark
+---
 
 This notebook goes over how to load data from a [PySpark](https://spark.apache.org/docs/latest/api/python/) DataFrame.
 

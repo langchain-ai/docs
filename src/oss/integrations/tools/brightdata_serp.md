@@ -1,4 +1,6 @@
-# BrightDataSERP
+---
+title: BrightDataSERP
+---
 
 [Bright Data](https://brightdata.com/) provides a powerful SERP API that allows you to query search engines (Google,Bing.DuckDuckGo,Yandex) with geo-targeting and advanced customization options, particularly useful for AI agents requiring real-time web information.
 

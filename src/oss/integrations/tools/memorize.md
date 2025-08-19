@@ -1,4 +1,6 @@
-# Memorize
+---
+title: Memorize
+---
 
 Fine-tuning LLM itself to memorize information using unsupervised learning.
 

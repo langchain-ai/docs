@@ -1,4 +1,6 @@
-# Lantern
+---
+title: Lantern
+---
 
 >[Lantern](https://github.com/lanterndata/lantern) is an open-source vector similarity search for `Postgres`
 

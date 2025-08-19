@@ -1,4 +1,6 @@
-# Datadog Logs
+---
+title: Datadog Logs
+---
 
 >[Datadog](https://www.datadoghq.com/) is a monitoring and analytics platform for cloud-scale applications.
 

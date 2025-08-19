@@ -1,4 +1,6 @@
-# PromptLayer OpenAI
+---
+title: PromptLayer OpenAI
+---
 
 `PromptLayer` is the first platform that allows you to track, manage, and share your GPT prompt engineering. `PromptLayer` acts a middleware between your code and `OpenAI’s` python library.
 

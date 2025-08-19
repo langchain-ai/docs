@@ -1,5 +1,6 @@
-# ForefrontAI
-
+---
+title: ForefrontAI
+---
 
 The `Forefront` platform gives you the ability to fine-tune and use [open-source large language models](https://docs.forefront.ai/get-started/models).
 

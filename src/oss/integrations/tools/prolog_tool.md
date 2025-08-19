@@ -1,4 +1,6 @@
-# Prolog
+---
+title: Prolog
+---
 
 LangChain tools that use Prolog rules to generate answers.
 

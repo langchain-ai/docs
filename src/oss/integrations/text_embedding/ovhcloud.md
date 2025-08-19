@@ -1,4 +1,6 @@
-# OVHcloud
+---
+title: OVHcloud
+---
 
 > In order to use this model you need to create a new token on the AI Endpoints website: https://endpoints.ai.cloud.ovh.net/.
 

@@ -1,4 +1,6 @@
-# ADS4GPTs
+---
+title: ADS4GPTs
+---
 
 Integrate AI native advertising into your Agentic application.
 

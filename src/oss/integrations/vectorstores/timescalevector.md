@@ -1,4 +1,6 @@
-# Timescale Vector (Postgres)
+---
+title: Timescale Vector (Postgres)
+---
 
 >[Timescale Vector](https://www.timescale.com/ai?utm_campaign=vectorlaunch&utm_source=langchain&utm_medium=referral) is `PostgreSQL++` vector database for AI applications.
 

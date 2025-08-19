@@ -1,3 +1,7 @@
+---
+title: Model2Vec
+---
+
 Model2Vec is a technique to turn any sentence transformer into a really small static model
 [model2vec](https://github.com/MinishLab/model2vec) can be used to generate embeddings.
 

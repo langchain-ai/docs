@@ -1,4 +1,6 @@
-# College Confidential
+---
+title: College Confidential
+---
 
 >[College Confidential](https://www.collegeconfidential.com/) gives information on 3,800+ colleges and universities.
 

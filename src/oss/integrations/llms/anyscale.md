@@ -1,4 +1,6 @@
-# Anyscale
+---
+title: Anyscale
+---
 
 [Anyscale](https://www.anyscale.com/) is a fully-managed [Ray](https://www.ray.io/) platform, on which you can build, deploy, and manage scalable AI and Python applications
 

@@ -1,3 +1,7 @@
+---
+title: RSpace
+---
+
 This notebook shows how to use the RSpace document loader to import research notes and documents from RSpace Electronic
 Lab Notebook into Langchain pipelines.
 

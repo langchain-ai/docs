@@ -1,4 +1,6 @@
-# Github Toolkit
+---
+title: Github Toolkit
+---
 
 The `Github` toolkit contains tools that enable an LLM agent to interact with a github repository. 
 The tool is a wrapper for the [PyGitHub](https://github.com/PyGithub/PyGithub) library. 

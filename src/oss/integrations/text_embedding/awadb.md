@@ -1,4 +1,6 @@
-# AwaDB
+---
+title: AwaDB
+---
 
 >[AwaDB](https://github.com/awa-ai/awadb) is an AI Native database for the search and storage of embedding vectors used by LLM Applications.
 

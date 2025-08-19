@@ -1,4 +1,6 @@
-# LLM Sherpa
+---
+title: LLM Sherpa
+---
 
 This notebook covers how to use `LLM Sherpa` to load files of many types. `LLM Sherpa` supports different file formats including DOCX, PPTX, HTML, TXT, and XML.
 

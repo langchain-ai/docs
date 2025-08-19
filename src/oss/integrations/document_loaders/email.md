@@ -1,4 +1,6 @@
-# Email
+---
+title: Email
+---
 
 This notebook shows how to load email (`.eml`) or `Microsoft Outlook` (`.msg`) files.
 

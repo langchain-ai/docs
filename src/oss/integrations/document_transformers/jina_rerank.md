@@ -1,4 +1,6 @@
-# Jina Reranker
+---
+title: Jina Reranker
+---
 
 This notebook shows how to use Jina Reranker for document compression and retrieval.
 

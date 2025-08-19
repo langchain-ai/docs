@@ -1,4 +1,6 @@
-# RELLM
+---
+title: RELLM
+---
 
 [RELLM](https://github.com/r2d4/rellm) is a library that wraps local Hugging Face pipeline models for structured decoding.
 

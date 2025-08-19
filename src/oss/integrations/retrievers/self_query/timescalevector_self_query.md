@@ -1,4 +1,6 @@
-# Timescale Vector (Postgres) 
+---
+title: Timescale Vector (Postgres) 
+---
 
 >[Timescale Vector](https://www.timescale.com/ai) is `PostgreSQL++` for AI applications. It enables you to efficiently store and query billions of vector embeddings in `PostgreSQL`.
 >

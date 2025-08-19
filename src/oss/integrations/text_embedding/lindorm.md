@@ -1,8 +1,7 @@
 ---
-sidebar_label: Lindorm
+title: Lindorm
 ---
 
-# LindormAIEmbeddings
 
 This will help you get started with Lindorm embedding models using LangChain. 
 

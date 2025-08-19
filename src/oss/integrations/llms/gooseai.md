@@ -1,4 +1,6 @@
-# GooseAI
+---
+title: GooseAI
+---
 
 `GooseAI` is a fully managed NLP-as-a-Service, delivered via API. GooseAI provides access to [these models](https://goose.ai/docs/models).
 

@@ -1,4 +1,6 @@
-# Azure Cognitive Services Toolkit
+---
+title: Azure Cognitive Services Toolkit
+---
 
 This toolkit is used to interact with the `Azure Cognitive Services API` to achieve some multimodal capabilities.
 

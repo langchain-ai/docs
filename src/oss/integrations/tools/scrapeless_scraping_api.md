@@ -1,4 +1,6 @@
-# Scrapeless
+---
+title: Scrapeless Scraping API
+---
 
 **Scrapeless** offers flexible and feature-rich data acquisition services with extensive parameter customization and multi-format export support. These capabilities empower LangChain to integrate and leverage external data more effectively. The core functional modules include:
 

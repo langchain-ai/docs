@@ -1,8 +1,6 @@
 ---
-sidebar_label: Upstash Redis
+title: UpstashRedisByteStore
 ---
-
-# UpstashRedisByteStore
 
 This will help you get started with Upstash redis [key-value stores](/oss/concepts/key_value_stores). For detailed documentation of all `UpstashRedisByteStore` features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/storage/langchain_community.storage.upstash_redis.UpstashRedisByteStore.html).
 

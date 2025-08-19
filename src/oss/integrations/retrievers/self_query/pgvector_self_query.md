@@ -1,4 +1,6 @@
-# PGVector (Postgres)
+---
+title: PGVector (Postgres)
+---
 
 >[PGVector](https://github.com/pgvector/pgvector) is a vector similarity search package for `Postgres` data base.
 

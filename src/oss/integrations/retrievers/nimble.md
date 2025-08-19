@@ -1,5 +1,5 @@
 ---
-sidebar_label: Nimble
+title: Nimble
 ---
 
 # NimbleSearchRetriever

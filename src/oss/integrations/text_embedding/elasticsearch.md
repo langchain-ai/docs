@@ -1,4 +1,7 @@
-# Elasticsearch
+---
+title: Elasticsearch
+---
+
 Walkthrough of how to generate embeddings using a hosted embedding model in Elasticsearch
 
 The easiest way to instantiate the `ElasticsearchEmbeddings` class it either

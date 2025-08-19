@@ -1,5 +1,6 @@
-# Banana
-
+---
+title: Banana
+---
 
 [Banana](https://www.banana.dev/about-us) is focused on building the machine learning infrastructure.
 

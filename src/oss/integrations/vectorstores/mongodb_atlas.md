@@ -1,4 +1,6 @@
-# MongoDB Atlas
+---
+title: MongoDB Atlas
+---
 
 This notebook covers how to MongoDB Atlas vector search in LangChain, using the `langchain-mongodb` package.
 

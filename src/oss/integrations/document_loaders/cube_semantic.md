@@ -1,4 +1,6 @@
-# Cube Semantic Layer
+---
+title: Cube Semantic Layer
+---
 
 This notebook demonstrates the process of retrieving Cube's data model metadata in a format suitable for passing to LLMs as embeddings, thereby enhancing contextual information.
 

@@ -1,4 +1,7 @@
-# Arcee
+---
+title: Arcee
+---
+
 This notebook demonstrates how to use the `Arcee` class for generating text using Arcee's Domain Adapted Language Models (DALMs).
 
 

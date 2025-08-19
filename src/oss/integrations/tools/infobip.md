@@ -1,4 +1,7 @@
-# Infobip
+---
+title: Infobip
+---
+
 This notebook that shows how to use [Infobip](https://www.infobip.com/) API wrapper to send SMS messages, emails.
 
 Infobip provides many services, but this notebook will focus on SMS and Email services. You can find more information about the API and other channels [here](https://www.infobip.com/docs/api).

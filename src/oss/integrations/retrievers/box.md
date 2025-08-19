@@ -1,8 +1,6 @@
 ---
-sidebar_label: Box
+title: BoxRetriever
 ---
-
-# BoxRetriever
 
 This will help you get started with the Box [retriever](/oss/concepts/retrievers). For detailed documentation of all BoxRetriever features and configurations head to the [API reference](https://python.langchain.com/api_reference/box/retrievers/langchain_box.retrievers.box.BoxRetriever.html).
 

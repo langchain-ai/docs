@@ -1,4 +1,6 @@
-# Google Cloud Storage Directory
+---
+title: Google Cloud Storage Directory
+---
 
 >[Google Cloud Storage](https://en.wikipedia.org/wiki/Google_Cloud_Storage) is a managed service for storing unstructured data.
 

@@ -1,4 +1,6 @@
-# Open City Data
+---
+title: Open City Data
+---
 
 [Socrata](https://dev.socrata.com/foundry/data.sfgov.org/vw6y-z8j6) provides an API for city open data. 
 

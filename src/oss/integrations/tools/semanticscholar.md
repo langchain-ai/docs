@@ -1,4 +1,6 @@
-# Semantic Scholar API Tool
+---
+title: Semantic Scholar API Tool
+---
 
 This notebook demos how to use the semantic scholar tool with an agent.
 

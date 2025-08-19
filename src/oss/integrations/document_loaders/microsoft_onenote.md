@@ -1,4 +1,6 @@
-# Microsoft OneNote
+---
+title: Microsoft OneNote
+---
 
 This notebook covers how to load documents from `OneNote`.
 

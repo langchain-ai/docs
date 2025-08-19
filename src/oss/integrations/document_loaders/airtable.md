@@ -1,5 +1,6 @@
-# Airtable
-
+---
+title: Airtable
+---
 
 ```python
 %pip install --upgrade --quiet  pyairtable

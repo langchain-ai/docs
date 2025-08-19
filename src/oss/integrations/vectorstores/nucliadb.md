@@ -1,4 +1,6 @@
-# NucliaDB
+---
+title: NucliaDB
+---
 
 You can use a local NucliaDB instance or use [Nuclia Cloud](https://nuclia.cloud).
 

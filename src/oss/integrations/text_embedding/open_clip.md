@@ -1,4 +1,6 @@
-# OpenClip
+---
+title: OpenClip
+---
 
 [OpenClip](https://github.com/mlfoundations/open_clip/tree/main) is an source implementation of OpenAI's CLIP.
 

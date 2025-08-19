@@ -1,8 +1,6 @@
 ---
-sidebar_label: Databricks
+title: DatabricksEmbeddings
 ---
-
-# DatabricksEmbeddings
 
 > [Databricks](https://www.databricks.com/) Lakehouse Platform unifies data, analytics, and AI on one platform.
 

@@ -1,4 +1,6 @@
-# Pinecone Rerank
+---
+title: Pinecone Rerank
+---
 
 > This notebook shows how to use **PineconeRerank** for two-stage vector retrieval reranking using Pinecone's hosted reranking API as demonstrated in `langchain_pinecone/libs/pinecone/rerank.py`.
 

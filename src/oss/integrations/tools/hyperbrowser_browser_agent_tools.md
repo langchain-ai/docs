@@ -1,8 +1,6 @@
 ---
-sidebar_label: Hyperbrowser Browser Agent Tools
+title: Hyperbrowser Browser Agent Tools
 ---
-
-# Hyperbrowser Browser Agent Tools
 
 [Hyperbrowser](https://hyperbrowser.ai) is a platform for running, running browser agents, and scaling headless browsers. It lets you launch and manage browser sessions at scale and provides easy to use solutions for any webscraping needs, such as scraping a single page or crawling an entire site.
 

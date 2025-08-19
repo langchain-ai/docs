@@ -1,4 +1,6 @@
-# Google Lens
+---
+title: Google Lens
+---
 
 This notebook goes over how to use the Google Lens Tool to fetch information on an image.
 

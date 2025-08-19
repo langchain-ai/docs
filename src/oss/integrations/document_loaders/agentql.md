@@ -1,4 +1,6 @@
-# AgentQLLoader
+---
+title: AgentQLLoader
+---
 
 [AgentQL](https://www.agentql.com/)'s document loader provides structured data extraction from any web page using an [AgentQL query](https://docs.agentql.com/agentql-query). AgentQL can be used across multiple languages and web pages without breaking over time and change.
 

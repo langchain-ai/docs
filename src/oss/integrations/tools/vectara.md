@@ -1,4 +1,6 @@
-# Vectara
+---
+title: Vectara
+---
 
 [Vectara](https://vectara.com/) is the trusted AI Assistant and Agent platform which focuses on enterprise readiness for mission-critical applications. For more [details](../providers/vectara.ipynb).
 

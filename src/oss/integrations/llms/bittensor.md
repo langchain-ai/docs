@@ -1,4 +1,6 @@
-# Bittensor
+---
+title: Bittensor
+---
 
 >[Bittensor](https://bittensor.com/) is a mining network, similar to Bitcoin, that includes built-in incentives designed to encourage miners to contribute compute + knowledge.
 >

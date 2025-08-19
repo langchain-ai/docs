@@ -1,4 +1,6 @@
-# Meilisearch
+---
+title: Meilisearch
+---
 
 > [Meilisearch](https://meilisearch.com) is an open-source, lightning-fast, and hyper relevant search engine. It comes with great defaults to help developers build snappy search experiences. 
 >

@@ -1,4 +1,6 @@
-# Amazon Document DB
+---
+title: Amazon Document DB
+---
 
 >[Amazon DocumentDB (with MongoDB Compatibility)](https://docs.aws.amazon.com/documentdb/) makes it easy to set up, operate, and scale MongoDB-compatible databases in the cloud.
 > With Amazon DocumentDB, you can run the same application code and use the same drivers and tools that you use with MongoDB.

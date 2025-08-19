@@ -1,4 +1,6 @@
-# Microsoft Excel
+---
+title: Microsoft Excel
+---
 
 The `UnstructuredExcelLoader` is used to load `Microsoft Excel` files. The loader works with both `.xlsx` and `.xls` files. The page content will be the raw text of the Excel file. If you use the loader in `"elements"` mode, an HTML representation of the Excel file will be available in the document metadata under the `text_as_html` key.
 

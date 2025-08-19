@@ -1,4 +1,6 @@
-# BibTeX
+---
+title: BibTeX
+---
 
 >[BibTeX](https://www.ctan.org/pkg/bibtex) is a file format and reference management system commonly used in conjunction with `LaTeX` typesetting. It serves as a way to organize and store bibliographic information for academic and research documents.
 

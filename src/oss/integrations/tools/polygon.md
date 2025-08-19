@@ -1,4 +1,6 @@
-# Polygon IO Toolkit and Tools
+---
+title: Polygon IO Toolkit and Tools
+---
 
 This notebook shows how to use agents to interact with the [Polygon IO](https://polygon.io/) toolkit. The toolkit provides access to Polygon's Stock Market Data API.
 

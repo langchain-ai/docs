@@ -1,4 +1,6 @@
-# DashVector
+---
+title: DashVector
+---
 
 > [DashVector](https://help.aliyun.com/document_detail/2510225.html) is a fully managed vector DB service that supports high-dimension dense and sparse vectors, real-time insertion and filtered search. It is built to scale automatically and can adapt to different application requirements.
 > The vector retrieval service `DashVector` is based on the `Proxima` core of the efficient vector engine independently developed by `DAMO Academy`,

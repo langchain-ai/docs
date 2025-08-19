@@ -1,4 +1,6 @@
-# Vectara self-querying 
+---
+title: Vectara self-querying 
+---
 
 [Vectara](https://vectara.com/) is the trusted AI Assistant and Agent platform which focuses on enterprise readiness for mission-critical applications.
 Vectara serverless RAG-as-a-service provides all the components of RAG behind an easy-to-use API, including:

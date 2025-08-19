@@ -1,4 +1,6 @@
-# Spark SQL Toolkit
+---
+title: Spark SQL Toolkit
+---
 
 This notebook shows how to use agents to interact with `Spark SQL`. Similar to [SQL Database Agent](/oss/integrations/tools/sql_database), it is designed to address general inquiries about `Spark SQL` and facilitate error recovery.
 

@@ -1,4 +1,6 @@
-# iMessage
+---
+title: iMessage
+---
 
 This notebook shows how to use the iMessage chat loader. This class helps convert iMessage conversations to LangChain chat messages.
 

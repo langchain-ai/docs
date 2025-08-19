@@ -1,4 +1,6 @@
-# Zilliz Cloud Pipeline
+---
+title: Zilliz Cloud Pipeline
+---
 
 > [Zilliz Cloud Pipelines](https://docs.zilliz.com/docs/pipelines) transform your unstructured data to a searchable vector collection, chaining up the embedding, ingestion, search, and deletion of your data.
 > 

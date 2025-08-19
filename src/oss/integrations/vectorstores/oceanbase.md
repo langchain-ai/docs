@@ -1,8 +1,6 @@
 ---
-sidebar_label: Oceanbase
+title: OceanbaseVectorStore
 ---
-
-# OceanbaseVectorStore
 
 This notebook covers how to get started with the Oceanbase vector store.
 

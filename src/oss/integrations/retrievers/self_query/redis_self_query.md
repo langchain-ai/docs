@@ -1,4 +1,6 @@
-# Redis
+---
+title: Redis
+---
 
 >[Redis](https://redis.com) is an open-source key-value store that can be used as a cache, message broker, database, vector database and more.
 

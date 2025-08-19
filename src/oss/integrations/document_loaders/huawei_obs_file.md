@@ -1,4 +1,7 @@
-# Huawei OBS File
+---
+title: Huawei OBS File
+---
+
 The following code demonstrates how to load an object from the Huawei OBS (Object Storage Service) as document.
 
 

@@ -1,4 +1,6 @@
-# Volc Engine
+---
+title: Volc Engine
+---
 
 This guide provides you with a guide on how to load the Volcano Embedding class.
 

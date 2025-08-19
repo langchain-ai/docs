@@ -1,4 +1,6 @@
-# FalkorDB
+---
+title: FalkorDB
+---
 
 >What is `FalkorDB`?
 

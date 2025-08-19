@@ -1,4 +1,6 @@
-# Dall-E Image Generator
+---
+title: Dall-E Image Generator
+---
 
 >[OpenAI Dall-E](https://openai.com/dall-e-3) are text-to-image models developed by `OpenAI` using deep learning methodologies to generate digital images from natural language descriptions, called "prompts".
 

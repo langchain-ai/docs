@@ -1,4 +1,6 @@
-# FinancialDatasets Toolkit
+---
+title: FinancialDatasets Toolkit
+---
 
 The [financial datasets](https://financialdatasets.ai/) stock market API provides REST endpoints that let you get financial data for 16,000+ tickers spanning 30+ years.
 

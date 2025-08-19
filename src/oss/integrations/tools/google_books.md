@@ -1,4 +1,6 @@
-# Google Books
+---
+title: Google Books
+---
 
 The Google Books tool that supports the ReAct pattern and allows you to search the Google Books API. Google Books is the largest API in the world that keeps track of books in a curated manner. It has over 40 million entries, which can give users a significant amount of data.
 

@@ -1,4 +1,6 @@
-# Browserless
+---
+title: Browserless
+---
 
 Browserless is a service that allows you to run headless Chrome instances in the cloud. It's a great way to run browser-based automation at scale without having to worry about managing your own infrastructure.
 

@@ -1,4 +1,6 @@
-# Petals
+---
+title: Petals
+---
 
 `Petals` runs 100B+ language models at home, BitTorrent-style.
 

@@ -1,4 +1,6 @@
-# Rememberizer
+---
+title: Rememberizer
+---
 
 >[Rememberizer](https://rememberizer.ai/) is a knowledge enhancement service for AI applications created by  SkyDeck AI Inc.
 

@@ -1,4 +1,6 @@
-# NVIDIA NIMs 
+---
+title: NVIDIA NIMs 
+---
 
 The `langchain-nvidia-ai-endpoints` package contains LangChain integrations building applications with models on 
 NVIDIA NIM inference microservice. NIM supports models across domains like chat, embedding, and re-ranking models 

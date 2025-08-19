@@ -194,8 +194,6 @@ AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_o9udf3EVOWi
 
 <Info>
 **Requires ``langchain-openai>=0.1.21``**
-
-
 </Info>
 
 As of Aug 6, 2024, OpenAI supports a `strict` argument when calling tools that will enforce that the tool argument schema is respected by the model. See more here: https://platform.openai.com/docs/guides/function-calling
@@ -281,8 +279,6 @@ structured_response = structured_llm.invoke(
 
 <Info>
 **Requires ``langchain-openai>=0.3.29``**
-
-
 </Info>
 
 [Custom tools](https://platform.openai.com/docs/guides/function-calling#custom-tools) support tools with arbitrary string inputs. They can be particularly useful when you expect your string arguments to be long or complex.
@@ -400,8 +396,6 @@ Name: do_math
 
 <Info>
 **Requires ``langchain-openai>=0.3.9``**
-
-
 </Info>
 
 OpenAI supports a [Responses](https://platform.openai.com/docs/guides/responses-vs-chat-completions) API that is oriented toward building [agentic](/oss/concepts/agents/) applications. It includes a suite of [built-in tools](https://platform.openai.com/docs/guides/tools?api-mode=responses), including web and file search. It also supports management of [conversation state](https://platform.openai.com/docs/guides/conversation-state?api-mode=responses), allowing you to continue a conversational thread without explicitly passing in previous messages, as well as the output from [reasoning processes](https://platform.openai.com/docs/guides/reasoning?api-mode=responses).
@@ -491,21 +485,18 @@ See the [streaming guide](/oss/how-to/chat_streaming/) for more detail.
 
 
 <Info>
-**Requires ``langchain-openai>=0.3.19``**
-
-:::
+**Requires `langchain-openai>=0.3.19`**
+</Info>
 
 
 To trigger an image generation, pass `{"type": "image_generation"}` to the model as you would another tool.
 
-</Info>tip
-
+<Tip>
 You can also pass built-in tools as invocation params:
 ```python
 llm.invoke("...", tools=[{"type": "image_generation"}])
 ```
-
-:::
+</Tip>
 
 
 ```python
@@ -1260,8 +1251,7 @@ content_block = {
 
 <Info>
 **Requires `langchain-openai>=0.2.6`**
-
-:::
+</Info>
 
 Some OpenAI models (such as their `gpt-4o` and `gpt-4o-mini` series) support [Predicted Outputs](https://platform.openai.com/docs/guides/latency-optimization#use-predicted-outputs), which allow you to pass in a known portion of the LLM's expected output ahead of time to reduce latency. This is useful for cases such as editing text or code, where only a small part of the model's output will change.
 
@@ -1331,9 +1321,9 @@ Note that currently predictions are billed as additional tokens and may increase
 
 ## Audio Generation (Preview)
 
-</Info>info
+<Info>
 Requires `langchain-openai>=0.2.3`
-:::
+</Info>
 
 OpenAI has a new [audio generation feature](https://platform.openai.com/docs/guides/audio?audio-generation-quickstart-example=audio-out) that allows you to use audio inputs and outputs with the `gpt-4o-audio-preview` model.
 

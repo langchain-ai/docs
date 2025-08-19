@@ -1,4 +1,6 @@
-# vLLM
+---
+title: vLLM
+---
 
 [vLLM](https://vllm.readthedocs.io/en/latest/index.html) is a fast and easy-to-use library for LLM inference and serving, offering:
 

@@ -1,4 +1,6 @@
-# Athena
+---
+title: Athena
+---
 
 >[Amazon Athena](https://aws.amazon.com/athena/) is a serverless, interactive analytics service built
 >on open-source frameworks, supporting open-table and file formats. `Athena` provides a simplified,

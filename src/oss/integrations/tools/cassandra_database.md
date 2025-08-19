@@ -1,4 +1,6 @@
-# Cassandra Database Toolkit
+---
+title: Cassandra Database Toolkit
+---
 
 >`Apache Cassandra®` is a widely used database for storing transactional application data. The introduction of functions and >tooling in Large Language Models has opened up some exciting use cases for existing data in Generative AI applications. 
 

@@ -1,4 +1,6 @@
-# Chaindesk
+---
+title: Chaindesk
+---
 
 >[Chaindesk platform](https://docs.chaindesk.ai/introduction) brings data from anywhere (Datsources: Text, PDF, Word, PowerPpoint, Excel, Notion, Airtable, Google Sheets, etc..) into Datastores (container of multiple Datasources).
 Then your Datastores can be connected to ChatGPT via Plugins or any other Large Langue Model (LLM) via the `Chaindesk API`.

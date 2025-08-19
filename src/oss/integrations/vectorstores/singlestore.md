@@ -1,8 +1,6 @@
 ---
-sidebar_label: SingleStore
+title: SingleStoreVectorStore
 ---
-
-# SingleStoreVectorStore
 
 >[SingleStore](https://singlestore.com/) is a robust, high-performance distributed SQL database solution designed to excel in both [cloud](https://www.singlestore.com/cloud/) and on-premises environments. Boasting a versatile feature set, it offers seamless deployment options while delivering unparalleled performance.
 

@@ -1,4 +1,6 @@
-# Cohere RAG
+---
+title: Cohere RAG
+---
 
 >[Cohere](https://cohere.ai/about) is a Canadian startup that provides natural language processing models that help companies improve human-machine interactions.
 

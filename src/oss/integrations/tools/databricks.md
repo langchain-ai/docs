@@ -1,4 +1,6 @@
-# Databricks Unity Catalog (UC)
+---
+title: Databricks Unity Catalog (UC)
+---
 
 This notebook shows how to use UC functions as LangChain tools, with both LangChain and LangGraph agent APIs.
 

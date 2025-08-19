@@ -1,4 +1,6 @@
-# Airbyte JSON (Deprecated)
+---
+title: Airbyte JSON (Deprecated)
+---
 
 Note: `AirbyteJSONLoader` is deprecated. Please use [`AirbyteLoader`](/oss/integrations/document_loaders/airbyte) instead.
 

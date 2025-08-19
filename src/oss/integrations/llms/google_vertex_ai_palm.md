@@ -1,4 +1,6 @@
-# Google Cloud Vertex AI
+---
+title: Google Cloud Vertex AI
+---
 
 <Warning>
 **You are currently on a page documenting the use of Google Vertex [text completion models](/oss/concepts/text_llms). Many Google models are [chat completion models](/oss/concepts/chat_models).**

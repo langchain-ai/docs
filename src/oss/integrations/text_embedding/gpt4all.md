@@ -1,4 +1,6 @@
-# GPT4All
+---
+title: GPT4All
+---
 
 [GPT4All](https://gpt4all.io/index.html) is a free-to-use, locally running, privacy-aware chatbot. There is no GPU or internet required. It features popular models and its own models such as GPT4All Falcon, Wizard, etc.
 

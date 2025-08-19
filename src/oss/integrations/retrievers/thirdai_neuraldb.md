@@ -1,4 +1,7 @@
-# **NeuralDB**
+---
+title: NeuralDB
+---
+
 NeuralDB is a CPU-friendly and fine-tunable retrieval engine developed by ThirdAI.
 
 ### **Initialization**

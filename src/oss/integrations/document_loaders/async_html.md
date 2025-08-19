@@ -1,4 +1,6 @@
-# AsyncHtml
+---
+title: AsyncHtml
+---
 
 `AsyncHtmlLoader` loads raw HTML from a list of URLs concurrently.
 

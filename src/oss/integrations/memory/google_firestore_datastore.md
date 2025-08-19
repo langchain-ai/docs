@@ -1,4 +1,6 @@
-# Google Firestore (Datastore Mode)
+---
+title: Google Firestore (Datastore Mode)
+---
 
 > [Google Cloud Firestore in Datastore](https://cloud.google.com/datastore) is a serverless document-oriented database that scales to meet any demand. Extend your database application to build AI-powered experiences leveraging `Datastore's` Langchain integrations.
 

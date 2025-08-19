@@ -1,4 +1,6 @@
-# Aleph Alpha
+---
+title: Aleph Alpha
+---
 
 [The Luminous series](https://docs.aleph-alpha.com/docs/category/luminous/) is a family of large language models.
 

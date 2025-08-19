@@ -1,4 +1,6 @@
-# Mastodon
+---
+title: Mastodon
+---
 
 >[Mastodon](https://joinmastodon.org/) is a federated social media and social networking service.
 
