@@ -1,6 +1,6 @@
 # Volc Engine
 
-This notebook provides you with a guide on how to load the Volcano Embedding class.
+This guide provides you with a guide on how to load the Volcano Embedding class.
 
 
 ## API Initialization

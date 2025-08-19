@@ -4,7 +4,7 @@ sidebar_label: Jina Search
 
 # Jina Search
 
-This notebook provides a quick overview for getting started with Jina [tool](/oss/integrations/tools/). For detailed documentation of all Jina features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/tools/langchain_community.tools.jina_search.tool.JinaSearch.html).
+This guide provides a quick overview for getting started with Jina [tool](/oss/integrations/tools/). For detailed documentation of all Jina features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/tools/langchain_community.tools.jina_search.tool.JinaSearch.html).
 
 ## Overview
 

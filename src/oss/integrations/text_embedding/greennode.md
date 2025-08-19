@@ -6,7 +6,7 @@ sidebar_label: GreenNode
 
 >[GreenNode](https://greennode.ai/) is a global AI solutions provider and a **NVIDIA Preferred Partner**, delivering full-stack AI capabilities—from infrastructure to application—for enterprises across the US, MENA, and APAC regions. Operating on **world-class infrastructure** (LEED Gold, TIA‑942, Uptime Tier III), GreenNode empowers enterprises, startups, and researchers with a comprehensive suite of AI services
 
-This notebook provides a guide to getting started with `GreenNodeEmbeddings`. It enables you to perform semantic document search using various built-in connectors or your own custom data sources by generating high-quality vector representations of text.
+This guide provides a guide to getting started with `GreenNodeEmbeddings`. It enables you to perform semantic document search using various built-in connectors or your own custom data sources by generating high-quality vector representations of text.
 
 ## Overview
 ### Integration details

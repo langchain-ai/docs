@@ -2,7 +2,7 @@
 title: ChatCerebras
 ---
 
-This notebook provides a quick overview for getting started with Cerebras [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatCerebras features and configurations head to the [API reference](https://python.langchain.com/api_reference/cerebras/chat_models/langchain_cerebras.chat_models.ChatCerebras.html#).
+This guide provides a quick overview for getting started with Cerebras [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatCerebras features and configurations head to the [API reference](https://python.langchain.com/api_reference/cerebras/chat_models/langchain_cerebras.chat_models.ChatCerebras.html#).
 
 At Cerebras, we've developed the world's largest and fastest AI processor, the Wafer-Scale Engine-3 (WSE-3). The Cerebras CS-3 system, powered by the WSE-3, represents a new class of AI supercomputer that sets the standard for generative AI training and inference with unparalleled performance and scalability.
 

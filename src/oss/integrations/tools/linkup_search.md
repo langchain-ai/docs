@@ -6,7 +6,7 @@ sidebar_label: LinkupSearchTool
 
 > [Linkup](https://www.linkup.so/) provides an API to connect LLMs to the web and the Linkup Premium Partner sources.
 
-This notebook provides a quick overview for getting started with LinkupSearchTool [tool](/oss/concepts/tools/). For detailed documentation of all LinkupSearchTool features and configurations head to the [API reference](https://python.langchain.com/api_reference/linkup/tools/linkup_langchain.search_tool.LinkupSearchTool.html).
+This guide provides a quick overview for getting started with LinkupSearchTool [tool](/oss/concepts/tools/). For detailed documentation of all LinkupSearchTool features and configurations head to the [API reference](https://python.langchain.com/api_reference/linkup/tools/linkup_langchain.search_tool.LinkupSearchTool.html).
 
 ## Overview
 

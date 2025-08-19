@@ -2,7 +2,7 @@
 title: Chat Writer
 ---
 
-This notebook provides a quick overview for getting started with Writer [chat](/oss/concepts/chat_models/).
+This guide provides a quick overview for getting started with Writer [chat](/oss/concepts/chat_models/).
 
 Writer has several chat models. You can find information about their latest models and their costs, context windows, and supported input types in the [Writer docs](https://dev.writer.com/home).
 

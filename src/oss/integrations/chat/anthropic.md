@@ -2,7 +2,7 @@
 title: ChatAnthropic
 ---
 
-This notebook provides a quick overview for getting started with Anthropic [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatAnthropic features and configurations head to the [API reference](https://python.langchain.com/api_reference/anthropic/chat_models/langchain_anthropic.chat_models.ChatAnthropic.html).
+This guide provides a quick overview for getting started with Anthropic [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatAnthropic features and configurations head to the [API reference](https://python.langchain.com/api_reference/anthropic/chat_models/langchain_anthropic.chat_models.ChatAnthropic.html).
 
 Anthropic has several chat models. You can find information about their latest models and their costs, context windows, and supported input types in the [Anthropic docs](https://docs.anthropic.com/en/docs/models-overview).
 

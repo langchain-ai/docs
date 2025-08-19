@@ -2,7 +2,7 @@
 title: ChatClovaX
 ---
 
-This notebook provides a quick overview for getting started with Naver’s HyperCLOVA X [chat models](https://python.langchain.com/docs/concepts/chat_models) via CLOVA Studio. For detailed documentation of all ChatClovaX features and configurations head to the [API reference](https://guide.ncloud-docs.com/docs/clovastudio-dev-langchain).
+This guide provides a quick overview for getting started with Naver’s HyperCLOVA X [chat models](https://python.langchain.com/docs/concepts/chat_models) via CLOVA Studio. For detailed documentation of all ChatClovaX features and configurations head to the [API reference](https://guide.ncloud-docs.com/docs/clovastudio-dev-langchain).
 
 [CLOVA Studio](http://clovastudio.ncloud.com/) has several chat models. You can find information about the latest models, including their costs, context windows, and supported input types, in the CLOVA Studio Guide [documentation](https://guide.ncloud-docs.com/docs/clovastudio-model).
 

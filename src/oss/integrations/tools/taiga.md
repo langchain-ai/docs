@@ -4,7 +4,7 @@ sidebar_label: Taiga
 
 # Taiga
 
-This notebook provides a quick overview for getting started with Taiga tooling in [langchain_taiga](https://github.com/Shikenso-Analytics/langchain-taiga/blob/main/docs/tools.ipynb). For more details on each tool and configuration, see the docstrings in your repository or relevant doc pages.
+This guide provides a quick overview for getting started with Taiga tooling in [langchain_taiga](https://github.com/Shikenso-Analytics/langchain-taiga/blob/main/docs/tools.ipynb). For more details on each tool and configuration, see the docstrings in your repository or relevant doc pages.
 
 
 

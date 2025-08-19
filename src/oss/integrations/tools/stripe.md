@@ -4,7 +4,7 @@ sidebar_label: Stripe
 
 # StripeAgentToolkit
 
-This notebook provides a quick overview for getting started with Stripe's agent toolkit.
+This guide provides a quick overview for getting started with Stripe's agent toolkit.
 
 You can read more about `StripeAgentToolkit` in [Stripe's launch blog](https://stripe.dev/blog/adding-payments-to-your-agentic-workflows) or on the project's [PyPi page](https://pypi.org/project/stripe-agent-toolkit/).
 

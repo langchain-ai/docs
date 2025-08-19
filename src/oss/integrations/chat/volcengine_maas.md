@@ -2,7 +2,7 @@
 title: VolcEngineMaasChat
 ---
 
-This notebook provides you with a guide on how to get started with volc engine maas chat models.
+This guide provides you with a guide on how to get started with volc engine maas chat models.
 
 
 ```python

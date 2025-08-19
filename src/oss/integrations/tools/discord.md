@@ -4,7 +4,7 @@ sidebar_label: Discord
 
 # Discord
 
-This notebook provides a quick overview for getting started with Discord tooling in [langchain_discord](/oss/integrations/tools/). For more details on each tool and configuration, see the docstrings in your repository or relevant doc pages.
+This guide provides a quick overview for getting started with Discord tooling in [langchain_discord](/oss/integrations/tools/). For more details on each tool and configuration, see the docstrings in your repository or relevant doc pages.
 
 ## Overview
 

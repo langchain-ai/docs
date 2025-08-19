@@ -4,7 +4,7 @@ title: ChatDatabricks
 
 > [Databricks](https://www.databricks.com/) Lakehouse Platform unifies data, analytics, and AI on one platform. 
 
-This notebook provides a quick overview for getting started with Databricks [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatDatabricks features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.databricks.ChatDatabricks.html).
+This guide provides a quick overview for getting started with Databricks [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatDatabricks features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.databricks.ChatDatabricks.html).
 
 ## Overview
 

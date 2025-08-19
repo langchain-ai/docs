@@ -1,6 +1,6 @@
 # Volc Engine Maas
 
-This notebook provides you with a guide on how to get started with Volc Engine's MaaS llm models.
+This guide provides you with a guide on how to get started with Volc Engine's MaaS llm models.
 
 
 ```python

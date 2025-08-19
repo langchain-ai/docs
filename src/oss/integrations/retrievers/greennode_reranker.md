@@ -6,7 +6,7 @@ sidebar_label: GreenNode
 
 >[GreenNode](https://greennode.ai/) is a global AI solutions provider and a **NVIDIA Preferred Partner**, delivering full-stack AI capabilities—from infrastructure to application—for enterprises across the US, MENA, and APAC regions. Operating on **world-class infrastructure** (LEED Gold, TIA‑942, Uptime Tier III), GreenNode empowers enterprises, startups, and researchers with a comprehensive suite of AI services
 
-This notebook provides a walkthrough on getting started with the `GreenNodeRerank` retriever. It enables you to perform document search using built-in connectors or by integrating your own data sources, leveraging GreenNode's reranking capabilities for improved relevance.
+This guide provides a walkthrough on getting started with the `GreenNodeRerank` retriever. It enables you to perform document search using built-in connectors or by integrating your own data sources, leveraging GreenNode's reranking capabilities for improved relevance.
 
 ### Integration details
 

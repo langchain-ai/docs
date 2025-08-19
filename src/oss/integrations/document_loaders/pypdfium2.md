@@ -1,6 +1,6 @@
 # PyPDFium2Loader
 
-This notebook provides a quick overview for getting started with `PyPDF` [document loader](https://python.langchain.com/docs/concepts/document_loaders). For detailed documentation of all DocumentLoader features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PyPDFium2Loader.html).
+This guide provides a quick overview for getting started with `PyPDF` [document loader](https://python.langchain.com/docs/concepts/document_loaders). For detailed documentation of all DocumentLoader features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PyPDFium2Loader.html).
 
   
 

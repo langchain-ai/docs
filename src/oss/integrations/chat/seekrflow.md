@@ -4,7 +4,7 @@ title: ChatSeekrFlow
 
 > [Seekr](https://www.seekr.com/) provides AI-powered solutions for structured, explainable, and transparent AI interactions.
 
-This notebook provides a quick overview for getting started with Seekr [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatSeekrFlow` features and configurations, head to the [API reference](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.seekrflow.ChatSeekrFlow.html).
+This guide provides a quick overview for getting started with Seekr [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatSeekrFlow` features and configurations, head to the [API reference](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.seekrflow.ChatSeekrFlow.html).
 
 ## Overview
 

@@ -3,7 +3,7 @@
 > [Databricks](https://www.databricks.com/) Lakehouse Platform unifies data, analytics, and AI on one platform.
 
 
-This notebook provides a quick overview for getting started with Databricks [LLM models](https://python.langchain.com/docs/concepts/text_llms). For detailed documentation of all features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/llms/langchain_community.llms.databricks.Databricks.html).
+This guide provides a quick overview for getting started with Databricks [LLM models](https://python.langchain.com/docs/concepts/text_llms). For detailed documentation of all features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/llms/langchain_community.llms.databricks.Databricks.html).
 
 ## Overview
 

@@ -12,7 +12,7 @@ Key Features:
 - Powerful APIs - Easy to use APIs for scraping/crawling any site, and much more
 - Bypass Anti-Bot Measures - Built-in stealth mode, ad blocking, automatic CAPTCHA solving, and rotating proxies
 
-This notebook provides a quick overview for getting started with Hyperbrowser tools.
+This guide provides a quick overview for getting started with Hyperbrowser tools.
 
 For more information about Hyperbrowser, please visit the [Hyperbrowser website](https://hyperbrowser.ai) or if you want to check out the docs, you can visit the [Hyperbrowser docs](https://docs.hyperbrowser.ai).
 

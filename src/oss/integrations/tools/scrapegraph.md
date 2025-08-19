@@ -4,7 +4,7 @@ sidebar_label: ScrapeGraph
 
 # ScrapeGraph
 
-This notebook provides a quick overview for getting started with ScrapeGraph [tools](/oss/integrations/tools/). For detailed documentation of all ScrapeGraph features and configurations head to the [API reference](https://python.langchain.com/docs/integrations/tools/scrapegraph).
+This guide provides a quick overview for getting started with ScrapeGraph [tools](/oss/integrations/tools/). For detailed documentation of all ScrapeGraph features and configurations head to the [API reference](https://python.langchain.com/docs/integrations/tools/scrapegraph).
 
 For more information about ScrapeGraph AI:
 - [ScrapeGraph AI Website](https://scrapegraphai.com)

@@ -2,7 +2,7 @@
 title: "Text splitters"
 ---
 
-This notebook provides a quick overview for getting started with Writer's [text splitter](/oss/concepts/text_splitters/).
+This guide provides a quick overview for getting started with Writer's [text splitter](/oss/concepts/text_splitters/).
 
 Writer's [context-aware splitting endpoint](https://dev.writer.com/api-guides/tools#context-aware-text-splitting) provides intelligent text splitting capabilities for long documents (up to 4000 words). Unlike simple character-based splitting, it preserves the semantic meaning and context between chunks, making it ideal for processing long-form content while maintaining coherence. In `langchain-writer`, we provide usage of Writer's context-aware splitting endpoint as a LangChain text splitter.
 

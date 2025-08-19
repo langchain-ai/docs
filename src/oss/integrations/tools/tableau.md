@@ -1,6 +1,6 @@
 # Tableau
 
-This notebook provides a quick overview for getting started with [Tableau](https://help.tableau.com/current/api/vizql-data-service/en-us/index.html). 
+This guide provides a quick overview for getting started with [Tableau](https://help.tableau.com/current/api/vizql-data-service/en-us/index.html). 
 
 ### Overview
 

@@ -2,7 +2,7 @@
 title: ChatOpenAI
 ---
 
-This notebook provides a quick overview for getting started with OpenAI [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatOpenAI features and configurations head to the [API reference](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html).
+This guide provides a quick overview for getting started with OpenAI [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatOpenAI features and configurations head to the [API reference](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html).
 
 OpenAI has several chat models. You can find information about their latest models and their costs, context windows, and supported input types in the [OpenAI docs](https://platform.openai.com/docs/models).
 

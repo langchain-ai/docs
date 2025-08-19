@@ -8,7 +8,7 @@ Steam toolkit has two tools:
 - `Game Details`
 - `Recommended Games`
 
-This notebook provides a walkthrough of using Steam API with LangChain to retrieve Steam game recommendations based on your current Steam Game Inventory or to gather information regarding some Steam Games which you provide.
+This guide provides a walkthrough of using Steam API with LangChain to retrieve Steam game recommendations based on your current Steam Game Inventory or to gather information regarding some Steam Games which you provide.
 
 ## Setting up
 

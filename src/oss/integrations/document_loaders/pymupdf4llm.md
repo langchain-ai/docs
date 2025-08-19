@@ -4,7 +4,7 @@ sidebar_label: PyMuPDF4LLM
 
 # PyMuPDF4LLMLoader
 
-This notebook provides a quick overview for getting started with PyMuPDF4LLM [document loader](https://python.langchain.com/docs/concepts/#document-loaders). For detailed documentation of all PyMuPDF4LLMLoader features and configurations head to the [GitHub repository](https://github.com/lakinduboteju/langchain-pymupdf4llm).
+This guide provides a quick overview for getting started with PyMuPDF4LLM [document loader](https://python.langchain.com/docs/concepts/#document-loaders). For detailed documentation of all PyMuPDF4LLMLoader features and configurations head to the [GitHub repository](https://github.com/lakinduboteju/langchain-pymupdf4llm).
 
 ## Overview
 
