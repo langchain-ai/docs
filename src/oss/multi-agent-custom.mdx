@@ -26,7 +26,7 @@ To set up communication between the agents in a multi-agent system you can use [
 To implement handoffs, you can return `Command` objects from your agent nodes or tools:
 
 :::python
-```python
+```python {highlight={13,14,23,24,25}}
 from typing import Annotated
 from langchain_core.tools import tool, InjectedToolCallId
 from langgraph.prebuilt import create_react_agent, InjectedState
@@ -39,9 +39,7 @@ def create_handoff_tool(*, agent_name: str, description: str | None = None):
 
     @tool(name, description=description)
     def handoff_tool(
-        # highlight-next-line
         state: Annotated[MessagesState, InjectedState], # (1)!
-        # highlight-next-line
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         tool_message = {
@@ -51,11 +49,8 @@ def create_handoff_tool(*, agent_name: str, description: str | None = None):
             "tool_call_id": tool_call_id,
         }
         return Command(  # (2)!
-            # highlight-next-line
             goto=agent_name,  # (3)!
-            # highlight-next-line
             update={"messages": state["messages"] + [tool_message]},  # (4)!
-            # highlight-next-line
             graph=Command.PARENT,  # (5)!
         )
     return handoff_tool
@@ -148,31 +143,29 @@ function createHandoffTool({
 :::
 
 <Warning>
-  This handoff implementation assumes that:
-  
-  * each agent receives overall message history (across all agents) in the multi-agent system as its input. If you want more control over agent inputs, see [this section](#control-agent-inputs)
-  * each agent outputs its internal messages history to the overall message history of the multi-agent system. If you want more control over **how agent outputs are added**, wrap the agent in a separate node function:
-    :::python
-    ```python
-    def call_hotel_assistant(state):
-        # return agent's final response,
-        # excluding inner monologue
-        response = hotel_assistant.invoke(state)
-        # highlight-next-line
-        return {"messages": response["messages"][-1]}
-    ```
-    :::
-    :::js
-    ```typescript
-    const callHotelAssistant = async (state) => {
-      // return agent's final response,
-      // excluding inner monologue
-      const response = await hotelAssistant.invoke(state);
-      // highlight-next-line
-      return { messages: [response.messages.at(-1)] };
-    };
-    ```
-    :::
+This handoff implementation assumes that:
+
+* each agent receives overall message history (across all agents) in the multi-agent system as its input. If you want more control over agent inputs, see [this section](#control-agent-inputs)
+* each agent outputs its internal messages history to the overall message history of the multi-agent system. If you want more control over **how agent outputs are added**, wrap the agent in a separate node function:
+:::python
+```python {highlight={5}}
+def call_hotel_assistant(state):
+    # return agent's final response,
+    # excluding inner monologue
+    response = hotel_assistant.invoke(state)
+    return {"messages": response["messages"][-1]}
+```
+:::
+:::js
+```javascript {highlight={5}}
+const callHotelAssistant = async (state) => {
+  // return agent's final response,
+  // excluding inner monologue
+  const response = await hotelAssistant.invoke(state);
+  return { messages: [response.messages.at(-1)] };
+};
+```
+:::
 </Warning>
 
 ### Control agent inputs
@@ -180,13 +173,12 @@ function createHandoffTool({
 :::python
 You can use the @[`Send()`][Send] primitive to directly send data to the worker agents during the handoff. For example, you can request that the calling agent populate a task description for the next agent:
 
-```python
+```python {highlight={6,27}}
 
 from typing import Annotated
 from langchain_core.tools import tool, InjectedToolCallId
 from langgraph.prebuilt import InjectedState
 from langgraph.graph import StateGraph, START, MessagesState
-# highlight-next-line
 from langgraph.types import Command, Send
 
 def create_task_description_handoff_tool(
@@ -208,7 +200,6 @@ def create_task_description_handoff_tool(
         task_description_message = {"role": "user", "content": task_description}
         agent_input = {**state, "messages": [task_description_message]}
         return Command(
-            # highlight-next-line
             goto=[Send(agent_name, agent_input)],
             graph=Command.PARENT,
         )
@@ -220,7 +211,7 @@ def create_task_description_handoff_tool(
 :::js
 You can use the @[`Send()`][Send] primitive to directly send data to the worker agents during the handoff. For example, you can request that the calling agent populate a task description for the next agent:
 
-```typescript
+```python {highlight={32}}
 import { tool } from "@langchain/core/tools";
 import { Command, Send, MessagesZodState } from "@langchain/langgraph";
 import { z } from "zod";
@@ -252,7 +243,6 @@ function createTaskDescriptionHandoffTool({
       };
       
       return new Command({
-        // highlight-next-line
         goto: [new Send(agentName, agentInput)],
         graph: Command.PARENT,
       });
@@ -280,7 +270,7 @@ See the multi-agent [supervisor](/oss/agent-supervisor#4-create-delegation-tasks
 You can use handoffs in any agents built with LangGraph. We recommend using the prebuilt [agent](/oss/agentic-architectures) or [`ToolNode`](/oss/call-tools#toolnode), as they natively support handoffs tools returning `Command`. Below is an example of how you can implement a multi-agent system for booking travel using handoffs:
 
 :::python
-```python
+```typescript {highlight={16,17,21,22,28,29}}
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, START, MessagesState
 
@@ -296,25 +286,19 @@ transfer_to_flight_assistant = create_handoff_tool(agent_name="flight_assistant"
 # Define agents
 flight_assistant = create_react_agent(
     model="anthropic:claude-3-5-sonnet-latest",
-    # highlight-next-line
     tools=[..., transfer_to_hotel_assistant],
-    # highlight-next-line
     name="flight_assistant"
 )
 hotel_assistant = create_react_agent(
     model="anthropic:claude-3-5-sonnet-latest",
-    # highlight-next-line
     tools=[..., transfer_to_flight_assistant],
-    # highlight-next-line
     name="hotel_assistant"
 )
 
 # Define multi-agent graph
 multi_agent_graph = (
     StateGraph(MessagesState)
-    # highlight-next-line
     .add_node(flight_assistant)
-    # highlight-next-line
     .add_node(hotel_assistant)
     .add_edge(START, "flight_assistant")
     .compile()
@@ -323,7 +307,7 @@ multi_agent_graph = (
 :::
 
 :::js
-```typescript
+```typescript {highlight={28,29,34,35,40,41}}
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { StateGraph, START, MessagesZodState } from "@langchain/langgraph";
 import { z } from "zod";
@@ -351,25 +335,19 @@ const transferToFlightAssistant = createHandoffTool({
 // Define agents
 const flightAssistant = createReactAgent({
   llm: model,
-  // highlight-next-line
   tools: [/* ... */, transferToHotelAssistant],
-  // highlight-next-line
   name: "flight_assistant",
 });
 
 const hotelAssistant = createReactAgent({
   llm: model,
-  // highlight-next-line
   tools: [/* ... */, transferToFlightAssistant],
-  // highlight-next-line
   name: "hotel_assistant",
 });
 
 // Define multi-agent graph
 const multiAgentGraph = new StateGraph(MessagesZodState)
-  // highlight-next-line
   .addNode("flight_assistant", flightAssistant)
-  // highlight-next-line
   .addNode("hotel_assistant", hotelAssistant)
   .addEdge(START, "flight_assistant")
   .compile();
@@ -378,7 +356,7 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
 
 <Accordion title="Full example: Multi-agent system for booking travel">
   :::python
-  ```python
+  ```python {highlight={56,57,66,67,68,94,96,100,102,124}}
   from typing import Annotated
   from langchain_core.messages import convert_to_messages
   from langchain_core.tools import tool, InjectedToolCallId
@@ -434,9 +412,7 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
   
       @tool(name, description=description)
       def handoff_tool(
-          # highlight-next-line
           state: Annotated[MessagesState, InjectedState], # (1)!
-          # highlight-next-line
           tool_call_id: Annotated[str, InjectedToolCallId],
       ) -> Command:
           tool_message = {
@@ -446,11 +422,8 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
               "tool_call_id": tool_call_id,
           }
           return Command(  # (2)!
-              # highlight-next-line
               goto=agent_name,  # (3)!
-              # highlight-next-line
               update={"messages": state["messages"] + [tool_message]},  # (4)!
-              # highlight-next-line
               graph=Command.PARENT,  # (5)!
           )
       return handoff_tool
@@ -477,18 +450,14 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
   # Define agents
   flight_assistant = create_react_agent(
       model="anthropic:claude-3-5-sonnet-latest",
-      # highlight-next-line
       tools=[book_flight, transfer_to_hotel_assistant],
       prompt="You are a flight booking assistant",
-      # highlight-next-line
       name="flight_assistant"
   )
   hotel_assistant = create_react_agent(
       model="anthropic:claude-3-5-sonnet-latest",
-      # highlight-next-line
       tools=[book_hotel, transfer_to_flight_assistant],
       prompt="You are a hotel booking assistant",
-      # highlight-next-line
       name="hotel_assistant"
   )
   
@@ -511,11 +480,10 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
               }
           ]
       },
-      # highlight-next-line
       subgraphs=True
   ):
       pretty_print_messages(chunk)
-  ```
+```
   
   1. Access agent's state
   2. The `Command` primitive allows specifying a state update and a node transition as a single operation, making it useful for implementing handoffs.
@@ -525,7 +493,7 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
   :::
   
   :::js
-  ```typescript
+  ```javascript {highlight={52,63,64,65,122,124,129,131,151}}
   import { tool } from "@langchain/core/tools";
   import { createReactAgent } from "@langchain/langgraph/prebuilt";
   import { StateGraph, START, MessagesZodState, Command } from "@langchain/langgraph";
@@ -577,7 +545,6 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
   
     return tool(
       async (_, config) => {
-        // highlight-next-line
         const state = config.state; // (1)!
         const toolCallId = config.toolCall.id;
   
@@ -589,11 +556,8 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
         };
   
         return new Command({
-          // highlight-next-line
           goto: agentName, // (3)!
-          // highlight-next-line
           update: { messages: [...state.messages, toolMessage] }, // (4)!
-          // highlight-next-line
           graph: Command.PARENT, // (5)!
         });
       },
@@ -651,19 +615,15 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
   // Define agents
   const flightAssistant = createReactAgent({
     llm: model,
-    // highlight-next-line
     tools: [bookFlight, transferToHotelAssistant],
     prompt: "You are a flight booking assistant",
-    // highlight-next-line
     name: "flight_assistant",
   });
   
   const hotelAssistant = createReactAgent({
     llm: model,
-    // highlight-next-line
     tools: [bookHotel, transferToFlightAssistant],
     prompt: "You are a hotel booking assistant",
-    // highlight-next-line
     name: "hotel_assistant",
   });
   
@@ -684,14 +644,13 @@ const multiAgentGraph = new StateGraph(MessagesZodState)
         },
       ],
     },
-    // highlight-next-line
     { subgraphs: true }
   );
   
   for await (const chunk of stream) {
     prettyPrintMessages(chunk);
   }
-  ```
+```
   
   1. Access agent's state
   2. The `Command` primitive allows specifying a state update and a node transition as a single operation, making it useful for implementing handoffs.
