@@ -1,0 +1,1311 @@
+---
+title: Call tools
+---
+[Tools](/oss/javascript/tools) encapsulate a callable function and its input schema. These can be passed to compatible chat models, allowing the model to decide whether to invoke a tool and determine the appropriate arguments.
+
+You can [define your own tools](#define-a-tool) or use [prebuilt tools](#prebuilt-tools)
+
+## Define a tool
+
+
+
+Define a basic tool with the [tool](https://js.langchain.com/docs/api/core/tools/classes/tool.html) function:
+
+```javascript {highlight={4}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const multiply = tool(
+  (input) => {
+    return input.a * input.b;
+  },
+  {
+    name: "multiply",
+    description: "Multiply two numbers.",
+    schema: z.object({
+      a: z.number().describe("First operand"),
+      b: z.number().describe("Second operand"),
+    }),
+  }
+);
+```
+
+
+## Run a tool
+
+Tools conform to the [Runnable interface](https://python.langchain.com/docs/concepts/runnables/), which means you can run a tool using the `invoke` method:
+
+
+
+```typescript
+await multiply.invoke({ a: 6, b: 7 }); // returns 42
+```
+
+
+If the tool is invoked with `type="tool_call"`, it will return a [ToolMessage](https://python.langchain.com/docs/concepts/messages/#toolmessage):
+
+
+
+```typescript
+const toolCall = {
+  type: "tool_call",
+  id: "1",
+  name: "multiply",
+  args: { a: 42, b: 7 },
+};
+await multiply.invoke(toolCall); // returns a ToolMessage object
+```
+
+Output:
+
+```
+ToolMessage {
+  content: "294",
+  name: "multiply",
+  tool_call_id: "1"
+}
+```
+
+
+## Use in an agent
+
+
+
+To create a tool-calling agent, you can use the prebuilt [createReactAgent](https://js.langchain.com/docs/api/langgraph_prebuilt/functions/createReactAgent.html):
+
+```javascript {highlight={3,19}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+
+const multiply = tool(
+  (input) => {
+    return input.a * input.b;
+  },
+  {
+    name: "multiply",
+    description: "Multiply two numbers.",
+    schema: z.object({
+      a: z.number().describe("First operand"),
+      b: z.number().describe("Second operand"),
+    }),
+  }
+);
+
+const agent = createReactAgent({
+  llm: new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" }),
+  tools: [multiply],
+});
+
+await agent.invoke({
+  messages: [{ role: "user", content: "what's 42 x 7?" }],
+});
+```
+
+
+
+
+## Use in a workflow
+
+If you are writing a custom workflow, you will need to:
+
+1. register the tools with the chat model
+2. call the tool if the model decides to use it
+
+
+
+Use `model.bindTools()` to register the tools with the model.
+
+```javascript {highlight={5}}
+import { ChatOpenAI } from "@langchain/openai";
+
+const model = new ChatOpenAI({ model: "gpt-4o" });
+
+const modelWithTools = model.bindTools([multiply]);
+```
+
+
+LLMs automatically determine if a tool invocation is necessary and handle calling the tool with the appropriate arguments.
+
+<Accordion title="Extended example: attach tools to a chat model">
+
+  
+  ```javascript {highlight={20}}
+  import { tool } from "@langchain/core/tools";
+  import { ChatOpenAI } from "@langchain/openai";
+  import { z } from "zod";
+  
+  const multiply = tool(
+    (input) => {
+      return input.a * input.b;
+    },
+    {
+      name: "multiply",
+      description: "Multiply two numbers.",
+      schema: z.object({
+        a: z.number().describe("First operand"),
+        b: z.number().describe("Second operand"),
+      }),
+    }
+  );
+  
+  const model = new ChatOpenAI({ model: "gpt-4o" });
+  const modelWithTools = model.bindTools([multiply]);
+  
+  const responseMessage = await modelWithTools.invoke("what's 42 x 7?");
+  const toolCall = responseMessage.tool_calls[0];
+  
+  await multiply.invoke(toolCall);
+```
+  
+  ```
+  ToolMessage {
+    content: "294",
+    name: "multiply",
+    tool_call_id: "toolu_0176DV4YKSD8FndkeuuLj36c"
+  }
+  ```
+
+</Accordion>
+
+#### ToolNode
+
+
+
+To execute tools in custom workflows, use the prebuilt [`ToolNode`](https://js.langchain.com/docs/api/langgraph_prebuilt/classes/ToolNode.html) or implement your own custom node.
+
+`ToolNode` is a specialized node for executing tools in a workflow. It provides the following features:
+
+* Supports both synchronous and asynchronous tools.
+* Executes multiple tools concurrently.
+* Handles errors during tool execution (`handleToolErrors: true`, enabled by default). See [handling tool errors](#handle-errors) for more details.
+* **Input**: `MessagesZodState`, where the last message is an `AIMessage` containing the `tool_calls` parameter.
+* **Output**: `MessagesZodState` updated with the resulting [`ToolMessage`](https://js.langchain.com/docs/concepts/messages/#toolmessage) from executed tools.
+
+```javascript {highlight={1,33}}
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+
+const getWeather = tool(
+  (input) => {
+    if (["sf", "san francisco"].includes(input.location.toLowerCase())) {
+      return "It's 60 degrees and foggy.";
+    } else {
+      return "It's 90 degrees and sunny.";
+    }
+  },
+  {
+    name: "get_weather",
+    description: "Call to get the current weather.",
+    schema: z.object({
+      location: z.string().describe("Location to get the weather for."),
+    }),
+  }
+);
+
+const getCoolestCities = tool(
+  () => {
+    return "nyc, sf";
+  },
+  {
+    name: "get_coolest_cities",
+    description: "Get a list of coolest cities",
+    schema: z.object({
+      noOp: z.string().optional().describe("No-op parameter."),
+    }),
+  }
+);
+
+const toolNode = new ToolNode([getWeather, getCoolestCities]);
+await toolNode.invoke({ messages: [...] });
+```
+
+
+<Accordion title="Single tool call">
+
+  
+  ```javascript {highlight={24}}
+  import { AIMessage } from "@langchain/core/messages";
+  import { ToolNode } from "@langchain/langgraph/prebuilt";
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  
+  // Define tools
+  const getWeather = tool(
+    (input) => {
+      if (["sf", "san francisco"].includes(input.location.toLowerCase())) {
+        return "It's 60 degrees and foggy.";
+      } else {
+        return "It's 90 degrees and sunny.";
+      }
+    },
+    {
+      name: "get_weather",
+      description: "Call to get the current weather.",
+      schema: z.object({
+        location: z.string().describe("Location to get the weather for."),
+      }),
+    }
+  );
+  
+  const toolNode = new ToolNode([getWeather]);
+  
+  const messageWithSingleToolCall = new AIMessage({
+    content: "",
+    tool_calls: [
+      {
+        name: "get_weather",
+        args: { location: "sf" },
+        id: "tool_call_id",
+        type: "tool_call",
+      }
+    ],
+  });
+  
+  await toolNode.invoke({ messages: [messageWithSingleToolCall] });
+```
+  
+  ```
+  { messages: [ToolMessage { content: "It's 60 degrees and foggy.", name: "get_weather", tool_call_id: "tool_call_id" }] }
+  ```
+
+</Accordion>
+
+<Accordion title="Multiple tool calls">
+
+  
+  ```javascript {highlight={37,57}}
+  import { AIMessage } from "@langchain/core/messages";
+  import { ToolNode } from "@langchain/langgraph/prebuilt";
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  
+  // Define tools
+  const getWeather = tool(
+    (input) => {
+      if (["sf", "san francisco"].includes(input.location.toLowerCase())) {
+        return "It's 60 degrees and foggy.";
+      } else {
+        return "It's 90 degrees and sunny.";
+      }
+    },
+    {
+      name: "get_weather",
+      description: "Call to get the current weather.",
+      schema: z.object({
+        location: z.string().describe("Location to get the weather for."),
+      }),
+    }
+  );
+  
+  const getCoolestCities = tool(
+    () => {
+      return "nyc, sf";
+    },
+    {
+      name: "get_coolest_cities",
+      description: "Get a list of coolest cities",
+      schema: z.object({
+        noOp: z.string().optional().describe("No-op parameter."),
+      }),
+    }
+  );
+  
+  const toolNode = new ToolNode([getWeather, getCoolestCities]);
+  
+  const messageWithMultipleToolCalls = new AIMessage({
+    content: "",
+    tool_calls: [
+      {
+        name: "get_coolest_cities",
+        args: {},
+        id: "tool_call_id_1",
+        type: "tool_call",
+      },
+      {
+        name: "get_weather",
+        args: { location: "sf" },
+        id: "tool_call_id_2",
+        type: "tool_call",
+      },
+    ],
+  });
+  
+  await toolNode.invoke({ messages: [messageWithMultipleToolCalls] }); // (1)!
+```
+  
+  1. `ToolNode` will execute both tools in parallel
+  
+  ```
+  {
+    messages: [
+      ToolMessage { content: "nyc, sf", name: "get_coolest_cities", tool_call_id: "tool_call_id_1" },
+      ToolMessage { content: "It's 60 degrees and foggy.", name: "get_weather", tool_call_id: "tool_call_id_2" }
+    ]
+  }
+  ```
+
+</Accordion>
+
+<Accordion title="Use with a chat model">
+
+  
+  ```javascript {highlight={23,26,28}}
+  import { ChatOpenAI } from "@langchain/openai";
+  import { ToolNode } from "@langchain/langgraph/prebuilt";
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  
+  const getWeather = tool(
+    (input) => {
+      if (["sf", "san francisco"].includes(input.location.toLowerCase())) {
+        return "It's 60 degrees and foggy.";
+      } else {
+        return "It's 90 degrees and sunny.";
+      }
+    },
+    {
+      name: "get_weather",
+      description: "Call to get the current weather.",
+      schema: z.object({
+        location: z.string().describe("Location to get the weather for."),
+      }),
+    }
+  );
+  
+  const toolNode = new ToolNode([getWeather]);
+  
+  const model = new ChatOpenAI({ model: "gpt-4o" });
+  const modelWithTools = model.bindTools([getWeather]); // (1)!
+  
+  const responseMessage = await modelWithTools.invoke("what's the weather in sf?");
+  await toolNode.invoke({ messages: [responseMessage] });
+```
+  
+  1. Use `.bindTools()` to attach the tool schema to the chat model
+  
+  ```
+  { messages: [ToolMessage { content: "It's 60 degrees and foggy.", name: "get_weather", tool_call_id: "toolu_01Pnkgw5JeTRxXAU7tyHT4UW" }] }
+  ```
+
+</Accordion>
+
+<Accordion title="Use in a tool-calling agent">
+  This is an example of creating a tool-calling agent from scratch using `ToolNode`. You can also use LangGraph's prebuilt [agent](/oss/javascript/prebuilts).
+  
+
+  
+  ```javascript {highlight={25,28,48}}
+  import { ChatOpenAI } from "@langchain/openai";
+  import { ToolNode } from "@langchain/langgraph/prebuilt";
+  import { StateGraph, MessagesZodState, START, END } from "@langchain/langgraph";
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  import { isAIMessage } from "@langchain/core/messages";
+  
+  const getWeather = tool(
+    (input) => {
+      if (["sf", "san francisco"].includes(input.location.toLowerCase())) {
+        return "It's 60 degrees and foggy.";
+      } else {
+        return "It's 90 degrees and sunny.";
+      }
+    },
+    {
+      name: "get_weather",
+      description: "Call to get the current weather.",
+      schema: z.object({
+        location: z.string().describe("Location to get the weather for."),
+      }),
+    }
+  );
+  
+  const toolNode = new ToolNode([getWeather]);
+  
+  const model = new ChatOpenAI({ model: "gpt-4o" });
+  const modelWithTools = model.bindTools([getWeather]);
+  
+  const shouldContinue = (state: z.infer<typeof MessagesZodState>) => {
+    const messages = state.messages;
+    const lastMessage = messages.at(-1);
+    if (lastMessage && isAIMessage(lastMessage) && lastMessage.tool_calls?.length) {
+      return "tools";
+    }
+    return END;
+  };
+  
+  const callModel = async (state: z.infer<typeof MessagesZodState>) => {
+    const messages = state.messages;
+    const response = await modelWithTools.invoke(messages);
+    return { messages: [response] };
+  };
+  
+  const builder = new StateGraph(MessagesZodState)
+    // Define the two nodes we will cycle between
+    .addNode("agent", callModel)
+    .addNode("tools", toolNode)
+    .addEdge(START, "agent")
+    .addConditionalEdges("agent", shouldContinue, ["tools", END])
+    .addEdge("tools", "agent");
+  
+  const graph = builder.compile();
+  
+  await graph.invoke({
+    messages: [{ role: "user", content: "what's the weather in sf?" }]
+  });
+```
+  
+  ```
+  {
+    messages: [
+      HumanMessage { content: "what's the weather in sf?" },
+      AIMessage {
+        content: [{ text: "I'll help you check the weather in San Francisco right now.", type: "text" }, { id: "toolu_01A4vwUEgBKxfFVc5H3v1CNs", input: { location: "San Francisco" }, name: "get_weather", type: "tool_use" }],
+        tool_calls: [{ name: "get_weather", args: { location: "San Francisco" }, id: "toolu_01A4vwUEgBKxfFVc5H3v1CNs", type: "tool_call" }]
+      },
+      ToolMessage { content: "It's 60 degrees and foggy." },
+      AIMessage { content: "The current weather in San Francisco is 60 degrees and foggy. Typical San Francisco weather with its famous marine layer!" }
+    ]
+  }
+  ```
+
+</Accordion>
+
+## Tool customization
+
+For more control over tool behavior, use the `@tool` decorator.
+
+### Parameter descriptions
+
+
+
+Auto-generate descriptions from schema:
+
+```javascript {highlight={4}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const multiply = tool(
+  (input) => {
+    return input.a * input.b;
+  },
+  {
+    name: "multiply",
+    description: "Multiply two numbers.",
+    schema: z.object({
+      a: z.number().describe("First operand"),
+      b: z.number().describe("Second operand"),
+    }),
+  }
+);
+```
+
+
+### Explicit input schema
+
+
+
+### Tool name
+
+Override the default tool name using the first argument or name property:
+
+
+
+```javascript {highlight={4}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const multiply = tool(
+  (input) => {
+    return input.a * input.b;
+  },
+  {
+    name: "multiply_tool", // Custom name
+    description: "Multiply two numbers.",
+    schema: z.object({
+      a: z.number().describe("First operand"),
+      b: z.number().describe("Second operand"),
+    }),
+  }
+);
+```
+
+
+## Context management
+
+Tools within LangGraph sometimes require context data, such as runtime-only arguments (e.g., user IDs or session details), that should not be controlled by the model. LangGraph provides three methods for managing such context:
+
+| Type                                    | Usage Scenario                           | Mutable | Lifetime                 |
+| --------------------------------------- | ---------------------------------------- | ------- | ------------------------ |
+| [Configuration](#configuration)         | Static, immutable runtime data           | ❌      | Single invocation        |
+| [Short-term memory](#short-term-memory) | Dynamic, changing data during invocation | ✅      | Single invocation        |
+| [Long-term memory](#long-term-memory)   | Persistent, cross-session data           | ✅      | Across multiple sessions |
+
+### Configuration
+
+
+
+Use configuration when you have **immutable** runtime data that tools require, such as user identifiers. You pass these arguments via [`LangGraphRunnableConfig`](https://js.langchain.com/docs/api/langgraph/interfaces/LangGraphRunnableConfig.html) at invocation and access them in the tool:
+
+```javascript {highlight={6,20}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const getUserInfo = tool(
+  async (_, config: LangGraphRunnableConfig) => {
+    const userId = config?.configurable?.user_id;
+    return userId === "user_123" ? "User is John Smith" : "Unknown user";
+  },
+  {
+    name: "get_user_info",
+    description: "Retrieve user information based on user ID.",
+    schema: z.object({}),
+  }
+);
+
+// Invocation example with an agent
+await agent.invoke(
+  { messages: [{ role: "user", content: "look up user info" }] },
+  { configurable: { user_id: "user_123" } }
+);
+```
+
+
+<Accordion title="Extended example: Access config in tools">
+
+  
+  ```javascript {highlight={8,9,26}}
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  import { createReactAgent } from "@langchain/langgraph/prebuilt";
+  import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+  import { ChatAnthropic } from "@langchain/anthropic";
+  
+  const getUserInfo = tool(
+    async (_, config: LangGraphRunnableConfig) => {
+      const userId = config?.configurable?.user_id;
+      return userId === "user_123" ? "User is John Smith" : "Unknown user";
+    },
+    {
+      name: "get_user_info",
+      description: "Look up user info.",
+      schema: z.object({}),
+    }
+  );
+  
+  const agent = createReactAgent({
+    llm: new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" }),
+    tools: [getUserInfo],
+  });
+  
+  await agent.invoke(
+    { messages: [{ role: "user", content: "look up user information" }] },
+    { configurable: { user_id: "user_123" } }
+  );
+```
+
+</Accordion>
+
+### Short-term memory
+
+Short-term memory maintains **dynamic** state that changes during a single execution.
+
+
+
+To **access** (read) the graph state inside the tools, you can use the [`getContextVariable`](https://v03.api.js.langchain.com/functions/_langchain_core.context.getContextVariable.html) function:
+
+```javascript {highlight={8,9}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { getContextVariable } from "@langchain/core/context";
+import { MessagesZodState } from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const getUserName = tool(
+  async (_, config: LangGraphRunnableConfig) => {
+    const currentState = getContextVariable("currentState") as z.infer<
+      typeof MessagesZodState
+    > & { userName?: string };
+    return currentState?.userName || "Unknown user";
+  },
+  {
+    name: "get_user_name",
+    description: "Retrieve the current user name from state.",
+    schema: z.object({}),
+  }
+);
+```
+
+
+
+
+To **update** short-term memory, you can use tools that return a `Command` to update state:
+
+```javascript {highlight={7,8,9,10,11,12,13,14,15,16,17}}
+import { Command } from "@langchain/langgraph";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const updateUserName = tool(
+  async (input) => {
+    return new Command({
+      update: {
+        userName: input.newName,
+        messages: [
+          {
+            role: "assistant",
+            content: `Updated user name to ${input.newName}`,
+          },
+        ],
+      },
+    });
+  },
+  {
+    name: "update_user_name",
+    description: "Update user name in short-term memory.",
+    schema: z.object({
+      newName: z.string().describe("The new user name"),
+    }),
+  }
+);
+```
+
+
+<Warning>
+
+  
+  If you want to use tools that return `Command` and update graph state, you can either use prebuilt [`createReactAgent`](https://langchain-ai.github.io/langgraphjs/reference/functions/langgraph_prebuilt.createReactAgent.html) / [ToolNode](https://langchain-ai.github.io/langgraphjs/reference/classes/langgraph_prebuilt.ToolNode.html) components, or implement your own tool-executing node that collects `Command` objects returned by the tools and returns a list of them, e.g.:
+  
+  ```typescript
+  const callTools = async (state: State) => {
+    // ...
+    const commands = await Promise.all(
+      toolCalls.map(toolCall => toolsByName[toolCall.name].invoke(toolCall))
+    );
+    return commands;
+  };
+  ```
+
+</Warning>
+
+### Long-term memory
+
+Use [long-term memory](/oss/javascript/memory#long-term-memory) to store user-specific or application-specific data across conversations. This is useful for applications like chatbots, where you want to remember user preferences or other information.
+
+To use long-term memory, you need to:
+
+1. [Configure a store](/oss/javascript/add-memory#add-long-term-memory) to persist data across invocations.
+2. Access the store from within tools.
+
+
+
+To **access** information in the store:
+
+```javascript {highlight={9,13}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const getUserInfo = tool(
+  async (_, config: LangGraphRunnableConfig) => {
+    // Same as that provided to `builder.compile({ store })`
+    // or `createReactAgent`
+    const store = config.store;
+    if (!store) throw new Error("Store not provided");
+
+    const userId = config?.configurable?.user_id;
+    const userInfo = await store.get(["users"], userId);
+    return userInfo?.value ? JSON.stringify(userInfo.value) : "Unknown user";
+  },
+  {
+    name: "get_user_info",
+    description: "Look up user info.",
+    schema: z.object({}),
+  }
+);
+```
+
+
+<Accordion title="Access long-term memory">
+
+  
+  ```javascript {highlight={8,10,22,26,39,45}}
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  import { createReactAgent } from "@langchain/langgraph/prebuilt";
+  import { InMemoryStore } from "@langchain/langgraph";
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+  
+  const store = new InMemoryStore(); // (1)!
+  
+  await store.put(  // (2)!
+    ["users"],  // (3)!
+    "user_123",  // (4)!
+    {
+      name: "John Smith",
+      language: "English",
+    } // (5)!
+  );
+  
+  const getUserInfo = tool(
+    async (_, config: LangGraphRunnableConfig) => {
+      // Same as that provided to `createReactAgent`
+      const store = config.store; // (6)!
+      if (!store) throw new Error("Store not provided");
+  
+      const userId = config?.configurable?.user_id;
+      const userInfo = await store.get(["users"], userId); // (7)!
+      return userInfo?.value ? JSON.stringify(userInfo.value) : "Unknown user";
+    },
+    {
+      name: "get_user_info",
+      description: "Look up user info.",
+      schema: z.object({}),
+    }
+  );
+  
+  const agent = createReactAgent({
+    llm: new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" }),
+    tools: [getUserInfo],
+    store: store // (8)!
+  });
+  
+  // Run the agent
+  await agent.invoke(
+    { messages: [{ role: "user", content: "look up user information" }] },
+    { configurable: { user_id: "user_123" } }
+  );
+```
+  
+  1. The `InMemoryStore` is a store that stores data in memory. In production, you would typically use a database or other persistent storage. Please review the [store documentation](https://python.langchain.com/api_reference/langgraph/index.html#module-langgraph.store) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
+  2. For this example, we write some sample data to the store using the `put` method. Please see the [BaseStore.put](https://js.langchain.com/docs/api/langgraph_store/classes/BaseStore.html#put) API reference for more details.
+  3. The first argument is the namespace. This is used to group related data together. In this case, we are using the `users` namespace to group user data.
+  4. A key within the namespace. This example uses a user ID for the key.
+  5. The data that we want to store for the given user.
+  6. The store is accessible from the config object that is passed to the tool. This enables the tool to access the store when running.
+  7. The `get` method is used to retrieve data from the store. The first argument is the namespace, and the second argument is the key. This will return a `StoreValue` object, which contains the value and metadata about the value.
+  8. The `store` is passed to the agent. This enables the agent to access the store when running tools.
+
+</Accordion>
+
+
+
+To **update** information in the store:
+
+```javascript {highlight={9,13}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const saveUserInfo = tool(
+  async (input, config: LangGraphRunnableConfig) => {
+    // Same as that provided to `builder.compile({ store })`
+    // or `createReactAgent`
+    const store = config.store;
+    if (!store) throw new Error("Store not provided");
+
+    const userId = config?.configurable?.user_id;
+    await store.put(["users"], userId, input.userInfo);
+    return "Successfully saved user info.";
+  },
+  {
+    name: "save_user_info",
+    description: "Save user info.",
+    schema: z.object({
+      userInfo: z.string().describe("User information to save"),
+    }),
+  }
+);
+```
+
+
+<Accordion title="Update long-term memory">
+
+  
+  ```javascript {highlight={17,21,34,40}}
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  import { createReactAgent } from "@langchain/langgraph/prebuilt";
+  import { InMemoryStore } from "@langchain/langgraph";
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import type { LangGraphRunnableConfig } from "@langchain/langgraph";
+  
+  const store = new InMemoryStore(); // (1)!
+  
+  const UserInfoSchema = z.object({ // (2)!
+    name: z.string(),
+  });
+  
+  const saveUserInfo = tool(
+    async (input, config: LangGraphRunnableConfig) => { // (3)!
+      // Same as that provided to `createReactAgent`
+      const store = config.store; // (4)!
+      if (!store) throw new Error("Store not provided");
+  
+      const userId = config?.configurable?.user_id;
+      await store.put(["users"], userId, input); // (5)!
+      return "Successfully saved user info.";
+    },
+    {
+      name: "save_user_info",
+      description: "Save user info.",
+      schema: UserInfoSchema,
+    }
+  );
+  
+  const agent = createReactAgent({
+    llm: new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" }),
+    tools: [saveUserInfo],
+    store: store
+  });
+  
+  // Run the agent
+  await agent.invoke(
+    { messages: [{ role: "user", content: "My name is John Smith" }] },
+    { configurable: { user_id: "user_123" } } // (6)!
+  );
+  
+  // You can access the store directly to get the value
+  const userInfo = await store.get(["users"], "user_123");
+  console.log(userInfo?.value);
+```
+  
+  1. The `InMemoryStore` is a store that stores data in memory. In production, you would typically use a database or other persistent storage. Please review the [store documentation](https://python.langchain.com/api_reference/langgraph/index.html#module-langgraph.store) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
+  2. The `UserInfoSchema` is a Zod schema that defines the structure of the user information. The LLM will use this to format the response according to the schema.
+  3. The `saveUserInfo` function is a tool that allows an agent to update user information. This could be useful for a chat application where the user wants to update their profile information.
+  4. The store is accessible from the config object that is passed to the tool. This enables the tool to access the store when running.
+  5. The `put` method is used to store data in the store. The first argument is the namespace, and the second argument is the key. This will store the user information in the store.
+  6. The `user_id` is passed in the config. This is used to identify the user whose information is being updated.
+
+</Accordion>
+
+## Advanced tool features
+
+### Immediate return
+
+
+
+Use `returnDirect: true` to immediately return a tool's result without executing additional logic.
+
+This is useful for tools that should not trigger further processing or tool calls, allowing you to return results directly to the user.
+
+```javascript {highlight={4,15}}
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const add = tool(
+  (input) => {
+    return input.a + input.b;
+  },
+  {
+    name: "add",
+    description: "Add two numbers",
+    schema: z.object({
+      a: z.number(),
+      b: z.number(),
+    }),
+    returnDirect: true,
+  }
+);
+```
+
+
+<Accordion title="Extended example: Using return_direct in a prebuilt agent">
+
+  
+  ```javascript {highlight={6,17}}
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  import { createReactAgent } from "@langchain/langgraph/prebuilt";
+  import { ChatAnthropic } from "@langchain/anthropic";
+  
+  const add = tool(
+    (input) => {
+      return input.a + input.b;
+    },
+    {
+      name: "add",
+      description: "Add two numbers",
+      schema: z.object({
+        a: z.number(),
+        b: z.number(),
+      }),
+      returnDirect: true,
+    }
+  );
+  
+  const agent = createReactAgent({
+    llm: new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" }),
+    tools: [add]
+  });
+  
+  await agent.invoke({
+    messages: [{ role: "user", content: "what's 3 + 5?" }]
+  });
+```
+
+</Accordion>
+
+<Warning>
+  **Using without prebuilt components**
+
+  
+  If you are building a custom workflow and are not relying on `createReactAgent` or `ToolNode`, you will also
+  need to implement the control flow to handle `returnDirect: true`.
+
+</Warning>
+
+### Force tool use
+
+If you need to force a specific tool to be used, you will need to configure this at the **model** level using the `tool_choice` parameter in the bind_tools method.
+
+Force specific tool usage via tool_choice:
+
+
+
+```javascript {highlight={20}}
+const greet = tool(
+  (input) => {
+    return `Hello ${input.userName}!`;
+  },
+  {
+    name: "greet",
+    description: "Greet user.",
+    schema: z.object({
+      userName: z.string(),
+    }),
+    returnDirect: true,
+  }
+);
+
+const tools = [greet];
+
+const configuredModel = model.bindTools(
+  tools,
+  // Force the use of the 'greet' tool
+  { tool_choice: { type: "tool", name: "greet" } }
+);
+```
+
+
+<Accordion title="Extended example: Force tool usage in an agent">
+
+  
+  To force the agent to use specific tools, you can set the `tool_choice` option in `model.bindTools()`:
+  
+  ```javascript {highlight={6,16,24}}
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  import { createReactAgent } from "@langchain/langgraph/prebuilt";
+  import { ChatOpenAI } from "@langchain/openai";
+  
+  const greet = tool(
+    (input) => {
+      return `Hello ${input.userName}!`;
+    },
+    {
+      name: "greet",
+      description: "Greet user.",
+      schema: z.object({
+        userName: z.string(),
+      }),
+      returnDirect: true,
+    }
+  );
+  
+  const tools = [greet];
+  const model = new ChatOpenAI({ model: "gpt-4o" });
+  
+  const agent = createReactAgent({
+    llm: model.bindTools(tools, { tool_choice: { type: "tool", name: "greet" } }),
+    tools: tools
+  });
+  
+  await agent.invoke({
+    messages: [{ role: "user", content: "Hi, I am Bob" }]
+  });
+```
+
+</Accordion>
+
+<Warning>
+  **Avoid infinite loops**
+
+  
+  Forcing tool usage without stopping conditions can create infinite loops. Use one of the following safeguards:
+  
+  * Mark the tool with [`returnDirect: true`](#immediate-return) to end the loop after execution.
+  * Set [`recursionLimit`](/oss/javascript/graph-api#recursion-limit) to restrict the number of execution steps.
+
+</Warning>
+
+<Tip>
+  **Tool choice configuration**
+  The `tool_choice` parameter is used to configure which tool should be used by the model when it decides to call a tool. This is useful when you want to ensure that a specific tool is always called for a particular task or when you want to override the model's default behavior of choosing a tool based on its internal logic.
+  
+  Note that not all models support this feature, and the exact configuration may vary depending on the model you are using.
+</Tip>
+
+### Disable parallel calls
+
+
+
+For supported providers, you can disable parallel tool calling by setting `parallel_tool_calls: false` via the `model.bindTools()` method:
+
+```javascript {highlight={3}}
+model.bindTools(
+  tools,
+  { parallel_tool_calls: false }
+);
+```
+
+
+<Accordion title="Extended example: disable parallel tool calls in a prebuilt agent">
+
+  
+  ```javascript {highlight={39}}
+  import { ChatOpenAI } from "@langchain/openai";
+  import { tool } from "@langchain/core/tools";
+  import { z } from "zod";
+  import { createReactAgent } from "@langchain/langgraph/prebuilt";
+  
+  const add = tool(
+    (input) => {
+      return input.a + input.b;
+    },
+    {
+      name: "add",
+      description: "Add two numbers",
+      schema: z.object({
+        a: z.number(),
+        b: z.number(),
+      }),
+    }
+  );
+  
+  const multiply = tool(
+    (input) => {
+      return input.a * input.b;
+    },
+    {
+      name: "multiply",
+      description: "Multiply two numbers.",
+      schema: z.object({
+        a: z.number(),
+        b: z.number(),
+      }),
+    }
+  );
+  
+  const model = new ChatOpenAI({ model: "gpt-4o", temperature: 0 });
+  const tools = [add, multiply];
+  
+  const agent = createReactAgent({
+    // disable parallel tool calls
+    llm: model.bindTools(tools, { parallel_tool_calls: false }),
+    tools: tools
+  });
+  
+  await agent.invoke({
+    messages: [{ role: "user", content: "what's 3 + 5 and 4 * 7?" }]
+  });
+```
+
+</Accordion>
+
+### Handle errors
+
+
+
+LangGraph provides built-in error handling for tool execution through the prebuilt [ToolNode](https://js.langchain.com/docs/api/langgraph_prebuilt/classes/ToolNode.html) component, used both independently and in prebuilt agents.
+
+By **default**, `ToolNode` catches exceptions raised during tool execution and returns them as `ToolMessage` objects with a status indicating an error.
+
+```typescript
+import { AIMessage } from "@langchain/core/messages";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const multiply = tool(
+  (input) => {
+    if (input.a === 42) {
+      throw new Error("The ultimate error");
+    }
+    return input.a * input.b;
+  },
+  {
+    name: "multiply",
+    description: "Multiply two numbers",
+    schema: z.object({
+      a: z.number(),
+      b: z.number(),
+    }),
+  }
+);
+
+// Default error handling (enabled by default)
+const toolNode = new ToolNode([multiply]);
+
+const message = new AIMessage({
+  content: "",
+  tool_calls: [
+    {
+      name: "multiply",
+      args: { a: 42, b: 7 },
+      id: "tool_call_id",
+      type: "tool_call",
+    },
+  ],
+});
+
+const result = await toolNode.invoke({ messages: [message] });
+```
+
+Output:
+
+```
+{ messages: [
+  ToolMessage {
+    content: "Error: The ultimate error\n Please fix your mistakes.",
+    name: "multiply",
+    tool_call_id: "tool_call_id",
+    status: "error"
+  }
+]}
+```
+
+
+#### Disable error handling
+
+To propagate exceptions directly, disable error handling:
+
+
+
+```typescript
+const toolNode = new ToolNode([multiply], { handleToolErrors: false });
+```
+
+
+With error handling disabled, exceptions raised by tools will propagate up, requiring explicit management.
+
+#### Custom error messages
+
+Provide a custom error message by setting the error handling parameter to a string:
+
+
+
+```typescript
+const toolNode = new ToolNode([multiply], {
+  handleToolErrors:
+    "Can't use 42 as the first operand, please switch operands!",
+});
+```
+
+Example output:
+
+```typescript
+{ messages: [
+  ToolMessage {
+    content: "Can't use 42 as the first operand, please switch operands!",
+    name: "multiply",
+    tool_call_id: "tool_call_id",
+    status: "error"
+  }
+]}
+```
+
+
+#### Error handling in agents
+
+
+
+Error handling in prebuilt agents (`createReactAgent`) leverages `ToolNode`:
+
+```typescript
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const agent = createReactAgent({
+  llm: new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" }),
+  tools: [multiply],
+});
+
+// Default error handling
+await agent.invoke({
+  messages: [{ role: "user", content: "what's 42 x 7?" }],
+});
+```
+
+To disable or customize error handling in prebuilt agents, explicitly pass a configured `ToolNode`:
+
+```typescript
+const customToolNode = new ToolNode([multiply], {
+  handleToolErrors: "Cannot use 42 as a first operand!",
+});
+
+const agentCustom = createReactAgent({
+  llm: new ChatAnthropic({ model: "claude-3-5-sonnet-20240620" }),
+  tools: customToolNode,
+});
+
+await agentCustom.invoke({
+  messages: [{ role: "user", content: "what's 42 x 7?" }],
+});
+```
+
+
+### Handle large numbers of tools
+
+As the number of available tools grows, you may want to limit the scope of the LLM's selection, to decrease token consumption and to help manage sources of error in LLM reasoning.
+
+To address this, you can dynamically adjust the tools available to a model by retrieving relevant tools at runtime using semantic search.
+
+See [`langgraph-bigtool`](https://github.com/langchain-ai/langgraph-bigtool) prebuilt library for a ready-to-use implementation.
+
+## Prebuilt tools
+
+### LLM provider tools
+
+
+
+You can use prebuilt tools from model providers by passing a dictionary with tool specs to the `tools` parameter of `createReactAgent`. For example, to use the `web_search_preview` tool from OpenAI:
+
+```typescript
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { ChatOpenAI } from "@langchain/openai";
+
+const agent = createReactAgent({
+  llm: new ChatOpenAI({ model: "gpt-4o-mini" }),
+  tools: [{ type: "web_search_preview" }],
+});
+
+const response = await agent.invoke({
+  messages: [
+    { role: "user", content: "What was a positive news story from today?" },
+  ],
+});
+```
+
+Please consult the documentation for the specific model you are using to see which tools are available and how to use them.
+
+
+### LangChain tools
+
+Additionally, LangChain supports a wide range of prebuilt tool integrations for interacting with APIs, databases, file systems, web data, and more. These tools extend the functionality of agents and enable rapid development.
+
+
+
+You can browse the full list of available integrations in the [LangChain integrations directory](https://js.langchain.com/docs/integrations/tools/).
+
+Some commonly used tool categories include:
+
+* **Search**: Tavily, SerpAPI
+* **Code interpreters**: Web browsers, calculators
+* **Databases**: SQL, vector databases
+* **Web data**: Web scraping and browsing
+* **APIs**: Various API integrations
+
+These integrations can be configured and added to your agents using the same `tools` parameter shown in the examples above.
+
