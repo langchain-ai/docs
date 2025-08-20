@@ -238,7 +238,7 @@ For `TypedDict` state schemas, we can define reducers by annotating the correspo
 
 In the earlier example, our node updated the `"messages"` key in the state by appending a message to it. Below, we add a reducer to this key, such that updates are automatically appended:
 
-```python
+```python {highlight={8}}
 from typing_extensions import Annotated
 
 def add(left, right):
@@ -246,17 +246,15 @@ def add(left, right):
     return left + right
 
 class State(TypedDict):
-    # highlight-next-line
     messages: Annotated[list[AnyMessage], add]
     extra_field: int
 ```
 
 Now our node can be simplified:
 
-```python
+```python {highlight={3}}
 def node(state: State):
     new_message = AIMessage("Hello!")
-    # highlight-next-line
     return {"messages": [new_message], "extra_field": 10}
 ```
 :::
@@ -266,11 +264,10 @@ For Zod state schemas, we can define reducers by using the special `.langgraph.r
 
 In the earlier example, our node updated the `"messages"` key in the state by appending a message to it. Below, we add a reducer to this key, such that updates are automatically appended:
 
-```typescript
+```typescript {highlight={4}}
 import "@langchain/langgraph/zod";
 
 const State = z.object({
-  // highlight-next-line
   messages: z.array(z.custom<BaseMessage>()).langgraph.reducer((x, y) => x.concat(y)),
   extraField: z.number(),
 });
@@ -278,10 +275,9 @@ const State = z.object({
 
 Now our node can be simplified:
 
-```typescript
+```typescript {highlight={3}}
 const node = (state: z.infer<typeof State>) => {
   const newMessage = new AIMessage("Hello!");
-  // highlight-next-line
   return { messages: [newMessage], extraField: 10 };
 };
 ```
@@ -341,11 +337,10 @@ In practice, there are additional considerations for updating lists of messages:
 :::python
 LangGraph includes a built-in reducer `add_messages` that handles these considerations:
 
-```python
+```python {highlight={4}}
 from langgraph.graph.message import add_messages
 
 class State(TypedDict):
-    # highlight-next-line
     messages: Annotated[list[AnyMessage], add_messages]
     extra_field: int
 
@@ -356,8 +351,7 @@ def node(state: State):
 graph = StateGraph(State).add_node(node).set_entry_point("node").compile()
 ```
 
-```python
-# highlight-next-line
+```python {highlight={1}}
 input_message = {"role": "user", "content": "Hi"}
 
 result = graph.invoke({"messages": [input_message]})
@@ -388,11 +382,10 @@ class State(MessagesState):
 :::js
 LangGraph includes a built-in `MessagesZodState` that handles these considerations:
 
-```typescript
+```typescript {highlight={4}}
 import { MessagesZodState } from "@langchain/langgraph";
 
 const State = z.object({
-  // highlight-next-line
   messages: MessagesZodState.shape.messages,
   extraField: z.number(),
 });
@@ -406,8 +399,7 @@ const graph = new StateGraph(State)
   .compile();
 ```
 
-```typescript
-// highlight-next-line
+```typescript {highlight={1}}
 const inputMessage = { role: "user", content: "Hi" };
 
 const result = await graph.invoke({ messages: [inputMessage] });
@@ -897,7 +889,7 @@ To add runtime configuration:
 See below for a simple example:
 
 :::python
-```python
+```python {highlight={13,14,16,21,29,30}}
 from langgraph.graph import END, StateGraph, START
 from langgraph.runtime import Runtime
 from typing_extensions import TypedDict
@@ -910,18 +902,14 @@ class ContextSchema(TypedDict):
 class State(TypedDict):
     my_state_value: str
 
-# highlight-next-line
 def node(state: State, runtime: Runtime[ContextSchema]):
-    # highlight-next-line
     if runtime.context["my_runtime_value"] == "a":
         return {"my_state_value": 1}
-        # highlight-next-line
     elif runtime.context["my_runtime_value"] == "b":
         return {"my_state_value": 2}
     else:
         raise ValueError("Unknown values.")
 
-# highlight-next-line
 builder = StateGraph(State, context_schema=ContextSchema)
 builder.add_node(node)
 builder.add_edge(START, "node")
@@ -930,9 +918,7 @@ builder.add_edge("node", END)
 graph = builder.compile()
 
 # 3. Pass in configuration at runtime:
-# highlight-next-line
 print(graph.invoke({}, context={"my_runtime_value": "a"}))
-# highlight-next-line
 print(graph.invoke({}, context={"my_runtime_value": "b"}))
 ```
 
@@ -943,7 +929,7 @@ print(graph.invoke({}, context={"my_runtime_value": "b"}))
 :::
 
 :::js
-```typescript
+```typescript {highlight={17,19,30,31}}
 import { StateGraph, END, START } from "@langchain/langgraph";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
@@ -960,10 +946,8 @@ const State = z.object({
 
 const graph = new StateGraph(State)
   .addNode("node", (state, config) => {
-    // highlight-next-line
     if (config?.configurable?.myRuntimeValue === "a") {
       return { myStateValue: 1 };
-      // highlight-next-line
     } else if (config?.configurable?.myRuntimeValue === "b") {
       return { myStateValue: 2 };
     } else {
@@ -975,9 +959,7 @@ const graph = new StateGraph(State)
   .compile();
 
 // 3. Pass in configuration at runtime:
-// highlight-next-line
 console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "a" } }));
-// highlight-next-line
 console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
 ```
 
@@ -1023,7 +1005,7 @@ console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
   # Usage
   input_message = {"role": "user", "content": "hi"}
   # With no configuration, uses default (Anthropic)
-  response_1 = graph.invoke({"messages": [input_message]})["messages"][-1]
+  response_1 = graph.invoke({"messages": [input_message]}, context=ContextSchema())["messages"][-1]
   # Or, can set OpenAI
   response_2 = graph.invoke({"messages": [input_message]}, context={"model_provider": "openai"})["messages"][-1]
   
@@ -1214,7 +1196,7 @@ There are many use cases where you may wish for your node to have a custom retry
 To configure a retry policy, pass the `retry_policy` parameter to the [add_node](https://langchain-ai.github.io/langgraph/reference/graphs/#langgraph.graph.state.StateGraph.add_node). The `retry_policy` parameter takes in a `RetryPolicy` named tuple object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
 
 ```python
-from langgraph.pregel import RetryPolicy
+from langgraph.types import RetryPolicy
 
 builder.add_node(
     "node_name",
@@ -1268,7 +1250,7 @@ By default, the retry policy retries on any exception except for the following:
   from typing_extensions import TypedDict
   from langchain.chat_models import init_chat_model
   from langgraph.graph import END, MessagesState, StateGraph, START
-  from langgraph.pregel import RetryPolicy
+  from langgraph.types import RetryPolicy
   from langchain_community.utilities import SQLDatabase
   from langchain_core.messages import AIMessage
   
@@ -1659,15 +1641,14 @@ Note that:
   **Built-in shorthand**
   `langgraph>=0.2.46` includes a built-in short-hand `add_sequence` for adding node sequences. You can compile the same graph as follows:
   
-  ```python
-  # highlight-next-line
+  ```python {highlight={1}}
   builder = StateGraph(State).add_sequence([step_1, step_2, step_3])
   builder.add_edge(START, "step_1")
   
   graph = builder.compile()
   
   graph.invoke({"value_1": "c"})
-  ```
+```
 </Tip>
 :::
 
@@ -1847,7 +1828,7 @@ Deferring node execution is useful when you want to delay the execution of a nod
 
 The above example showed how to fan-out and fan-in when each path was only one step. But what if one branch had more than one step? Let's add a node `"b_2"` in the `"b"` branch:
 
-```python
+```python {highlight={35}}
 import operator
 from typing import Annotated, Any
 from typing_extensions import TypedDict
@@ -1882,7 +1863,6 @@ builder.add_node(a)
 builder.add_node(b)
 builder.add_node(b_2)
 builder.add_node(c)
-# highlight-next-line
 builder.add_node(d, defer=True)
 builder.add_edge(START, "a")
 builder.add_edge("a", "b")
@@ -1922,7 +1902,7 @@ In the above example, nodes `"b"` and `"c"` are executed concurrently in the sam
 :::python
 If your fan-out should vary at runtime based on the state, you can use [add_conditional_edges](https://langchain-ai.github.io/langgraph/reference/graphs.md#langgraph.graph.StateGraph.add_conditional_edges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
 
-```python
+```python {highlight={14,37}}
 import operator
 from typing import Annotated, Literal, Sequence
 from typing_extensions import TypedDict
@@ -1936,7 +1916,6 @@ class State(TypedDict):
 
 def a(state: State):
     print(f'Adding "A" to {state["aggregate"]}')
-    # highlight-next-line
     return {"aggregate": ["A"], "which": "c"}
 
 def b(state: State):
@@ -1960,7 +1939,6 @@ def conditional_edge(state: State) -> Literal["b", "c"]:
     # to determine the next node
     return state["which"]
 
-# highlight-next-line
 builder.add_conditional_edges("a", conditional_edge)
 
 graph = builder.compile()
@@ -1989,7 +1967,7 @@ Adding "C" to ['A']
 :::js
 If your fan-out should vary at runtime based on the state, you can use [addConditionalEdges](https://langchain-ai.github.io/langgraphjs/reference/classes/langgraph.StateGraph.html#addConditionalEdges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
 
-```typescript
+```typescript {highlight={14,33}}
 import "@langchain/langgraph/zod";
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { z } from "zod";
@@ -2003,7 +1981,6 @@ const State = z.object({
 
 const nodeA = (state: z.infer<typeof State>) => {
   console.log(`Adding "A" to ${state.aggregate}`);
-  // highlight-next-line
   return { aggregate: ["A"], which: "c" };
 };
 
@@ -2023,7 +2000,6 @@ const conditionalEdge = (state: z.infer<typeof State>): "b" | "c" => {
   return state.which as "b" | "c";
 };
 
-// highlight-next-line
 const graph = new StateGraph(State)
   .addNode("a", nodeA)  
   .addNode("b", nodeB)
@@ -2668,13 +2644,11 @@ See example below. To demonstrate async invocations of underlying LLMs, we will 
 
 <ChatModelTabs />
 
-```python
+```python {highlight={4,5,12}}
 from langchain.chat_models import init_chat_model
 from langgraph.graph import MessagesState, StateGraph
 
-# highlight-next-line
 async def node(state: MessagesState): # (1)!
-    # highlight-next-line
     new_message = await llm.ainvoke(state["messages"]) # (2)!
     return {"messages": [new_message]}
 
@@ -2682,7 +2656,6 @@ builder = StateGraph(MessagesState).add_node(node).set_entry_point("node")
 graph = builder.compile()
 
 input_message = {"role": "user", "content": "Hello"}
-# highlight-next-line
 result = await graph.ainvoke({"messages": [input_message]}) # (3)!
 ```
 
@@ -2919,13 +2892,12 @@ Let's demonstrate this using the above example. We'll do so by changing `nodeA` 
 </Warning>
 
 :::python
-```python
+```python {highlight={6,23,33,37}}
 import operator
 from typing_extensions import Annotated
 
 class State(TypedDict):
     # NOTE: we define a reducer here
-    # highlight-next-line
     foo: Annotated[str, operator.add]
 
 def node_a(state: State):
@@ -2943,7 +2915,6 @@ def node_a(state: State):
         goto=goto,
         # this tells LangGraph to navigate to node_b or node_c in the parent graph
         # NOTE: this will navigate to the closest parent graph relative to the subgraph
-        # highlight-next-line
         graph=Command.PARENT,
     )
 
@@ -2954,12 +2925,10 @@ def node_b(state: State):
     # NOTE: since we've defined a reducer, we don't need to manually append
     # new characters to existing 'foo' value. instead, reducer will append these
     # automatically (via operator.add)
-    # highlight-next-line
     return {"foo": "b"}
 
 def node_c(state: State):
     print("Called C")
-    # highlight-next-line
     return {"foo": "c"}
 
 builder = StateGraph(State)
@@ -2982,14 +2951,13 @@ Called C
 :::
 
 :::js
-```typescript
+```typescript {highlight={7,20,34,39}}
 import "@langchain/langgraph/zod";
 import { StateGraph, START, Command } from "@langchain/langgraph";
 import { z } from "zod";
 
 const State = z.object({
   // NOTE: we define a reducer here
-  // highlight-next-line
   foo: z.string().langgraph.reducer((x, y) => x + y),
 });
 
@@ -3003,7 +2971,6 @@ const nodeA = (state: z.infer<typeof State>) => {
     goto: value,
     // this tells LangGraph to navigate to nodeB or nodeC in the parent graph
     // NOTE: this will navigate to the closest parent graph relative to the subgraph
-    // highlight-next-line
     graph: Command.PARENT,
   });
 };
@@ -3018,13 +2985,11 @@ const nodeB = (state: z.infer<typeof State>) => {
   // NOTE: since we've defined a reducer, we don't need to manually append
   // new characters to existing 'foo' value. instead, reducer will append these
   // automatically
-  // highlight-next-line
   return { foo: "b" };
 };
 
 const nodeC = (state: z.infer<typeof State>) => {
   console.log("Called C");
-  // highlight-next-line
   return { foo: "c" };
 };
 

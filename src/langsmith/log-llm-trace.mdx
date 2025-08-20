@@ -585,6 +585,60 @@ You can add a `usage_metadata` key to the function's response to set manual toke
   </Tab>
 </Tabs>
 
+## Time-to-first-token
+
+If you are using `traceable` or one of our SDK wrappers, LangSmith will automatically populate time-to-first-token for streaming LLM runs.
+However, if you are using the `RunTree` API directly, you will need to add a `new_token` event to the run tree in order to properly populate time-to-first-token.
+
+Here's an example:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from langsmith.run_trees import RunTree
+    run_tree = RunTree(
+        name="CustomChatModel",
+        run_type="llm",
+        inputs={ ... }
+    )
+    run_tree.post()
+    llm_stream = ...
+    first_token = None
+    for token in llm_stream:
+        if first_token is None:
+          first_token = token
+          run_tree.add_event({
+            "name": "new_token"
+          })
+    run_tree.end(outputs={ ... })
+    run_tree.patch()
+    ```
+  </Tab>
+  <Tab title="TypeScript">
+    ```typescript
+    import { RunTree } from "langsmith";
+    const runTree = new RunTree({
+        name: "CustomChatModel",
+        run_type: "llm",
+        inputs: { ... },
+    });
+    await runTree.postRun();
+    const llmStream = ...;
+    let firstToken;
+    for (const token of llmStream) {
+        if (firstToken == null) {
+          firstToken = token;
+          runTree.addEvent({ name: "new_token" });
+        }
+    }
+    await runTree.end({
+        outputs: { ... },
+    });
+    await runTree.patchRun();
+    ```
+  </Tab>
+</Tabs>
+
 ## Instruct-style models
 
 For instruct-style models (string in, string out), your inputs must contain a key `prompt` with a string value. Other inputs are also permitted. The output must return an object that, when serialized, contains the key `choices` with a list of dictionaries/objects. Each must contain the key `text` with a string value. The same rules for `metadata` and `usage_metadata` apply as for chat-style models.
