@@ -1,0 +1,40 @@
+The `wrap_anthropic` methods in Python allows you to wrap your Anthropic client in order to automatically log traces -- no decorator or function wrapping required! Using the wrapper ensures that messages, including tool calls and multimodal content blocks will be rendered nicely in LangSmith. The wrapper works seamlessly with the `@traceable` decorator or `traceable` function and you can use both in the same application.
+
+<Note>
+  The `LANGSMITH_TRACING` environment variable must be set to `'true'` in order for traces to be logged to LangSmith, even when using `wrap_anthropic`. This allows you to toggle tracing on and off without changing your code.
+
+  Additionally, you will need to set the `LANGSMITH_API_KEY` environment variable to your API key (see [Setup](/) for more information).
+
+  By default, the traces will be logged to a project named `default`. To log traces to a different project, see [this section](/langsmith/log-traces-to-project).
+</Note>
+
+```python
+import anthropic
+from langsmith import traceable
+from langsmith.wrappers import wrap_anthropic
+
+client = wrap_anthropic(anthropic.Anthropic())
+
+# You can also wrap the async client as well
+# async_client = wrap_anthropic(anthropic.AsyncAnthropic())
+
+@traceable(run_type="tool", name="Retrieve Context")
+def my_tool(question: str) -> str:
+    return "During this morning's meeting, we solved all world conflict."
+
+@traceable(name="Chat Pipeline")
+def chat_pipeline(question: str):
+    context = my_tool(question)
+    messages = [
+        { "role": "user", "content": f"Question: {question}\nContext: {context}"}
+    ]
+    chat_completion = client.messages.create(
+      model="claude-sonnet-4-20250514",
+      messages=messages,
+      max_tokens=3,
+      system="You are a helpful assistant. Please respond to the user's request only based on the given context."
+    )
+    return chat_completion.choices[0].message.content
+
+chat_pipeline("Can you summarize this morning's meetings?")
+```
