@@ -1,0 +1,358 @@
+---
+title: 6. Time travel
+---
+
+import V1Alpha from '/snippets/v1-alpha.mdx';
+
+<V1Alpha />
+
+
+import chatTabs from '/snippets/chat-model-tabs.mdx';
+
+In a typical chatbot workflow, the user interacts with the bot one or more times to accomplish a task. [Memory](/oss/javascript/3-add-memory) and a [human-in-the-loop](/oss/javascript/4-human-in-the-loop) enable checkpoints in the graph state and control future responses.
+
+What if you want a user to be able to start from a previous response and explore a different outcome? Or what if you want users to be able to rewind your chatbot's work to fix mistakes or try a different strategy, something that is common in applications like autonomous software engineers?
+
+You can create these types of experiences using LangGraph's built-in **time travel** functionality.
+
+<Note>
+  This tutorial builds on [Customize state](/oss/javascript/5-customize-state).
+</Note>
+
+## 1. Rewind your graph
+
+
+
+Rewind your graph by fetching a checkpoint using the graph's `getStateHistory` method. You can then resume execution at this previous point in time.
+
+
+
+
+```typescript
+import {
+  StateGraph,
+  START,
+  END,
+  MessagesZodState,
+  MemorySaver,
+} from "@langchain/langgraph";
+import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
+import { TavilySearch } from "@langchain/tavily";
+import { ChatOpenAI } from "@langchain/openai";
+import { z } from "zod";
+
+const State = z.object({ messages: MessagesZodState.shape.messages });
+
+const tools = [new TavilySearch({ maxResults: 2 })];
+const llmWithTools = new ChatOpenAI({ model: "gpt-4o-mini" }).bindTools(tools);
+const memory = new MemorySaver();
+
+const graph = new StateGraph(State)
+  .addNode("chatbot", async (state) => ({
+    messages: [await llmWithTools.invoke(state.messages)],
+  }))
+  .addNode("tools", new ToolNode(tools))
+  .addConditionalEdges("chatbot", toolsCondition, ["tools", END])
+  .addEdge("tools", "chatbot")
+  .addEdge(START, "chatbot")
+  .compile({ checkpointer: memory });
+```
+
+
+## 2. Add steps
+
+Add steps to your graph. Every step will be checkpointed in its state history:
+
+
+
+```typescript
+import { randomUUID } from "node:crypto";
+const threadId = randomUUID();
+
+let iter = 0;
+
+for (const userInput of [
+  "I'm learning LangGraph. Could you do some research on it for me?",
+  "Ya that's helpful. Maybe I'll build an autonomous agent with it!",
+]) {
+  iter += 1;
+
+  console.log(`\n--- Conversation Turn ${iter} ---\n`);
+  const events = await graph.stream(
+    { messages: [{ role: "user", content: userInput }] },
+    { configurable: { thread_id: threadId }, streamMode: "values" }
+  );
+
+  for await (const event of events) {
+    if ("messages" in event) {
+      const lastMessage = event.messages.at(-1);
+
+      console.log(
+        "=".repeat(32),
+        `${lastMessage?.getType()} Message`,
+        "=".repeat(32)
+      );
+      console.log(lastMessage?.text);
+    }
+  }
+}
+```
+
+```
+--- Conversation Turn 1 ---
+
+================================ human Message ================================
+I'm learning LangGraph.js. Could you do some research on it for me?
+================================ ai Message ================================
+I'll search for information about LangGraph.js for you.
+================================ tool Message ================================
+{
+  "query": "LangGraph.js framework TypeScript langchain what is it tutorial guide",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "url": "https://techcommunity.microsoft.com/blog/educatordeveloperblog/an-absolute-beginners-guide-to-langgraph-js/4212496",
+      "title": "An Absolute Beginner's Guide to LangGraph.js",
+      "content": "(...)",
+      "score": 0.79369855,
+      "raw_content": null
+    },
+    {
+      "url": "https://langchain-ai.github.io/langgraphjs/",
+      "title": "LangGraph.js",
+      "content": "(...)",
+      "score": 0.78154784,
+      "raw_content": null
+    }
+  ],
+  "response_time": 2.37
+}
+================================ ai Message ================================
+Let me provide you with an overview of LangGraph.js based on the search results:
+
+LangGraph.js is a JavaScript/TypeScript library that's part of the LangChain ecosystem, specifically designed for creating and managing complex LLM (Large Language Model) based workflows. Here are the key points about LangGraph.js:
+
+1. Purpose:
+- It's a low-level orchestration framework for building controllable agents
+- Particularly useful for creating agentic workflows where LLMs decide the course of action based on current state
+- Helps model workflows as graphs with nodes and edges
+
+(...)
+
+--- Conversation Turn 2 ---
+
+================================ human Message ================================
+Ya that's helpful. Maybe I'll build an autonomous agent with it!
+================================ ai Message ================================
+Let me search for specific information about building autonomous agents with LangGraph.js.
+================================ tool Message ================================
+{
+  "query": "how to build autonomous agents with LangGraph.js examples tutorial react agent",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "url": "https://ai.google.dev/gemini-api/docs/langgraph-example",
+      "title": "ReAct agent from scratch with Gemini 2.5 and LangGraph",
+      "content": "(...)",
+      "score": 0.7602419,
+      "raw_content": null
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=ZfjaIshGkmk",
+      "title": "Build Autonomous AI Agents with ReAct and LangGraph Tools",
+      "content": "(...)",
+      "score": 0.7471924,
+      "raw_content": null
+    }
+  ],
+  "response_time": 1.98
+}
+================================ ai Message ================================
+Based on the search results, I can provide you with a practical overview of how to build an autonomous agent with LangGraph.js. Here's what you need to know:
+
+1. Basic Structure for Building an Agent:
+- LangGraph.js provides a ReAct (Reason + Act) pattern implementation
+- The basic components include:
+  - State management for conversation history
+  - Nodes for different actions
+  - Edges for decision-making flow
+  - Tools for specific functionalities
+
+(...)
+
+```
+
+
+## 3. Replay the full state history
+
+Now that you have added steps to the chatbot, you can `replay` the full state history to see everything that occurred.
+
+
+
+```typescript
+import type { StateSnapshot } from "@langchain/langgraph";
+
+let toReplay: StateSnapshot | undefined;
+for await (const state of graph.getStateHistory({
+  configurable: { thread_id: threadId },
+})) {
+  console.log(
+    `Num Messages: ${state.values.messages.length}, Next: ${JSON.stringify(
+      state.next
+    )}`
+  );
+  console.log("-".repeat(80));
+  if (state.values.messages.length === 6) {
+    // We are somewhat arbitrarily selecting a specific state based on the number of chat messages in the state.
+    toReplay = state;
+  }
+}
+```
+
+```
+Num Messages: 8 Next:  []
+--------------------------------------------------------------------------------
+Num Messages: 7 Next:  ["chatbot"]
+--------------------------------------------------------------------------------
+Num Messages: 6 Next:  ["tools"]
+--------------------------------------------------------------------------------
+Num Messages: 7, Next: ["chatbot"]
+--------------------------------------------------------------------------------
+Num Messages: 6, Next: ["tools"]
+--------------------------------------------------------------------------------
+Num Messages: 5, Next: ["chatbot"]
+--------------------------------------------------------------------------------
+Num Messages: 4, Next: ["__start__"]
+--------------------------------------------------------------------------------
+Num Messages: 4, Next: []
+--------------------------------------------------------------------------------
+Num Messages: 3, Next: ["chatbot"]
+--------------------------------------------------------------------------------
+Num Messages: 2, Next: ["tools"]
+--------------------------------------------------------------------------------
+Num Messages: 1, Next: ["chatbot"]
+--------------------------------------------------------------------------------
+Num Messages: 0, Next: ["__start__"]
+--------------------------------------------------------------------------------
+```
+
+
+Checkpoints are saved for every step of the graph. This **spans invocations** so you can rewind across a full thread's history.
+
+## Resume from a checkpoint
+
+
+
+Resume from the `toReplay` state, which is after a specific node in one of the graph invocations. Resuming from this point will call the next scheduled node.
+
+
+
+
+Resume from the `toReplay` state, which is after the `chatbot` node in one of the graph invocations. Resuming from this point will call the next scheduled node.
+
+```typescript
+console.log(toReplay.next);
+console.log(toReplay.config);
+```
+
+```
+["tools"]
+{
+  configurable: {
+    thread_id: "007708b8-ea9b-4ff7-a7ad-3843364dbf75",
+    checkpoint_ns: "",
+    checkpoint_id: "1efd43e3-0c1f-6c4e-8006-891877d65740"
+  }
+}
+```
+
+
+## 4. Load a state from a moment-in-time
+
+
+
+The checkpoint's `toReplay.config` contains a `checkpoint_id` timestamp. Providing this `checkpoint_id` value tells LangGraph's checkpointer to **load** the state from that moment in time.
+
+```typescript
+// The `checkpoint_id` in the `toReplay.config` corresponds to a state we've persisted to our checkpointer.
+for await (const event of await graph.stream(null, {
+  ...toReplay?.config,
+  streamMode: "values",
+})) {
+  if ("messages" in event) {
+    const lastMessage = event.messages.at(-1);
+
+    console.log(
+      "=".repeat(32),
+      `${lastMessage?.getType()} Message`,
+      "=".repeat(32)
+    );
+    console.log(lastMessage?.text);
+  }
+}
+```
+
+```
+================================ ai Message ================================
+Let me search for specific information about building autonomous agents with LangGraph.js.
+================================ tool Message ================================
+{
+  "query": "how to build autonomous agents with LangGraph.js examples tutorial",
+  "follow_up_questions": null,
+  "answer": null,
+  "images": [],
+  "results": [
+    {
+      "url": "https://www.mongodb.com/developer/languages/typescript/build-javascript-ai-agent-langgraphjs-mongodb/",
+      "title": "Build a JavaScript AI Agent With LangGraph.js and MongoDB",
+      "content": "(...)",
+      "score": 0.7672197,
+      "raw_content": null
+    },
+    {
+      "url": "https://medium.com/@lorevanoudenhove/how-to-build-ai-agents-with-langgraph-a-step-by-step-guide-5d84d9c7e832",
+      "title": "How to Build AI Agents with LangGraph: A Step-by-Step Guide",
+      "content": "(...)",
+      "score": 0.7407191,
+      "raw_content": null
+    }
+  ],
+  "response_time": 0.82
+}
+================================ ai Message ================================
+Based on the search results, I can share some practical information about building autonomous agents with LangGraph.js. Here are some concrete examples and approaches:
+
+1. Example HR Assistant Agent:
+- Can handle HR-related queries using employee information
+- Features include:
+  - Starting and continuing conversations
+  - Looking up information using vector search
+  - Persisting conversation state using checkpoints
+  - Managing threaded conversations
+
+2. Energy Savings Calculator Agent:
+- Functions as a lead generation tool for solar panel sales
+- Capabilities include:
+  - Calculating potential energy savings
+  - Handling multi-step conversations
+  - Processing user inputs for personalized estimates
+  - Managing conversation state
+
+(...)
+```
+
+The graph resumed execution from the `tools` node. You can tell this is the case since the first value printed above is the response from our search engine tool.
+
+
+**Congratulations!** You've now used time-travel checkpoint traversal in LangGraph. Being able to rewind and explore alternative paths opens up a world of possibilities for debugging, experimentation, and interactive applications.
+
+## Learn more
+
+Take your LangGraph journey further by exploring deployment and advanced features:
+
+* **[LangGraph Server quickstart](/langgraph-platform/local-server)**: Launch a LangGraph server locally and interact with it using the REST API and LangGraph Studio Web UI.
+* **[LangGraph Platform quickstart](/langgraph-platform/deployment-quickstart)**: Deploy your LangGraph app using LangGraph Platform.
