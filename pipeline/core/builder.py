@@ -99,6 +99,9 @@ class DocumentationBuilder:
         logger.info("Building LangChain Labs content...")
         self._build_unversioned_content("labs", "labs")
 
+        logger.info("Building LangSmith content...")
+        self._build_unversioned_content("langsmith", "langsmith")
+
         # Copy shared files (docs.json, images, etc.)
         logger.info("Copying shared files...")
         self._copy_shared_files()
@@ -425,7 +428,7 @@ class DocumentationBuilder:
         )
 
     def _build_unversioned_content(self, source_dir: str, output_dir: str) -> None:
-        """Build unversioned content (langgraph-platform/ or labs/).
+        """Build unversioned content (langgraph-platform/, labs/, langsmith/).
 
         Args:
             source_dir: Source directory name (e.g., "langgraph-platform", "labs").
