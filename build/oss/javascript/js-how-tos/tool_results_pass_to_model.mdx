@@ -1,0 +1,279 @@
+# How to pass tool outputs to chat models
+
+```{=mdx}
+<Info>
+**Prerequisites**
+
+This guide assumes familiarity with the following concepts:
+
+- [LangChain Tools](/oss/javascript/concepts/tools)
+- [Tool calling](/oss/javascript/concepts/tool_calling)
+- [Using chat models to call tools](/oss/javascript/how-to/tool_calling)
+- [Defining custom tools](/oss/javascript/how-to/custom_tools/)
+
+</Info>
+```
+Some models are capable of [**tool calling**](/oss/javascript/concepts/tool_calling) - generating arguments that conform to a specific user-provided schema. This guide will demonstrate how to use those tool calls to actually call a function and properly pass the results back to the model.
+
+![](../../static/img/tool_invocation.png)
+
+![](../../static/img/tool_results.png)
+
+First, let's define our tools and our model:
+
+
+```typescript
+import { z } from "zod";
+import { tool } from "@langchain/core/tools";
+
+const addTool = tool(async ({ a, b }) => {
+  return a + b;
+}, {
+  name: "add",
+  schema: z.object({
+    a: z.number(),
+    b: z.number(),
+  }),
+  description: "Adds a and b.",
+});
+
+const multiplyTool = tool(async ({ a, b }) => {
+  return a * b;
+}, {
+  name: "multiply",
+  schema: z.object({
+    a: z.number(),
+    b: z.number(),
+  }),
+  description: "Multiplies a and b.",
+});
+
+const tools = [addTool, multiplyTool];
+```
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+
+Now, let's get the model to call a tool. We'll add it to a list of messages that we'll treat as conversation history:
+
+
+```typescript
+import { HumanMessage } from "@langchain/core/messages";
+
+const llmWithTools = llm.bindTools(tools);
+
+const messages = [
+  new HumanMessage("What is 3 * 12? Also, what is 11 + 49?"),
+];
+
+const aiMessage = await llmWithTools.invoke(messages);
+
+console.log(aiMessage);
+
+messages.push(aiMessage);
+```
+```output
+AIMessage {
+  "id": "chatcmpl-9p1NbC7sfZP0FE0bNfFiVYbPuWivg",
+  "content": "",
+  "additional_kwargs": {
+    "tool_calls": [
+      {
+        "id": "call_RbUuLMYf3vgcdSQ8bhy1D5Ty",
+        "type": "function",
+        "function": "[Object]"
+      },
+      {
+        "id": "call_Bzz1qgQjTlQIHMcEaDAdoH8X",
+        "type": "function",
+        "function": "[Object]"
+      }
+    ]
+  },
+  "response_metadata": {
+    "tokenUsage": {
+      "completionTokens": 50,
+      "promptTokens": 87,
+      "totalTokens": 137
+    },
+    "finish_reason": "tool_calls",
+    "system_fingerprint": "fp_400f27fa1f"
+  },
+  "tool_calls": [
+    {
+      "name": "multiply",
+      "args": {
+        "a": 3,
+        "b": 12
+      },
+      "type": "tool_call",
+      "id": "call_RbUuLMYf3vgcdSQ8bhy1D5Ty"
+    },
+    {
+      "name": "add",
+      "args": {
+        "a": 11,
+        "b": 49
+      },
+      "type": "tool_call",
+      "id": "call_Bzz1qgQjTlQIHMcEaDAdoH8X"
+    }
+  ],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 87,
+    "output_tokens": 50,
+    "total_tokens": 137
+  }
+}
+2
+```
+Next let's invoke the tool functions using the args the model populated!
+
+Conveniently, if we invoke a LangChain `Tool` with a `ToolCall`, we'll automatically get back a `ToolMessage` that can be fed back to the model:
+
+```{=mdx}
+<Warning>
+**Compatibility**
+
+
+This functionality requires `@langchain/core>=0.2.16`. Please see here for a [guide on upgrading](/oss/javascript/how-to/installation/#installing-integration-packages).
+
+If you are on earlier versions of `@langchain/core`, you will need to access construct a `ToolMessage` manually using fields from the tool call.
+
+</Warning>
+```
+```typescript
+const toolsByName = {
+  add: addTool,
+  multiply: multiplyTool,
+}
+
+for (const toolCall of aiMessage.tool_calls) {
+  const selectedTool = toolsByName[toolCall.name];
+  const toolMessage = await selectedTool.invoke(toolCall);
+  messages.push(toolMessage);
+}
+
+console.log(messages);
+```
+```output
+[
+  HumanMessage {
+    "content": "What is 3 * 12? Also, what is 11 + 49?",
+    "additional_kwargs": {},
+    "response_metadata": {}
+  },
+  AIMessage {
+    "id": "chatcmpl-9p1NbC7sfZP0FE0bNfFiVYbPuWivg",
+    "content": "",
+    "additional_kwargs": {
+      "tool_calls": [
+        {
+          "id": "call_RbUuLMYf3vgcdSQ8bhy1D5Ty",
+          "type": "function",
+          "function": "[Object]"
+        },
+        {
+          "id": "call_Bzz1qgQjTlQIHMcEaDAdoH8X",
+          "type": "function",
+          "function": "[Object]"
+        }
+      ]
+    },
+    "response_metadata": {
+      "tokenUsage": {
+        "completionTokens": 50,
+        "promptTokens": 87,
+        "totalTokens": 137
+      },
+      "finish_reason": "tool_calls",
+      "system_fingerprint": "fp_400f27fa1f"
+    },
+    "tool_calls": [
+      {
+        "name": "multiply",
+        "args": {
+          "a": 3,
+          "b": 12
+        },
+        "type": "tool_call",
+        "id": "call_RbUuLMYf3vgcdSQ8bhy1D5Ty"
+      },
+      {
+        "name": "add",
+        "args": {
+          "a": 11,
+          "b": 49
+        },
+        "type": "tool_call",
+        "id": "call_Bzz1qgQjTlQIHMcEaDAdoH8X"
+      }
+    ],
+    "invalid_tool_calls": [],
+    "usage_metadata": {
+      "input_tokens": 87,
+      "output_tokens": 50,
+      "total_tokens": 137
+    }
+  },
+  ToolMessage {
+    "content": "36",
+    "name": "multiply",
+    "additional_kwargs": {},
+    "response_metadata": {},
+    "tool_call_id": "call_RbUuLMYf3vgcdSQ8bhy1D5Ty"
+  },
+  ToolMessage {
+    "content": "60",
+    "name": "add",
+    "additional_kwargs": {},
+    "response_metadata": {},
+    "tool_call_id": "call_Bzz1qgQjTlQIHMcEaDAdoH8X"
+  }
+]
+```
+And finally, we'll invoke the model with the tool results. The model will use this information to generate a final answer to our original query:
+
+
+```typescript
+await llmWithTools.invoke(messages);
+```
+```output
+AIMessage {
+  "id": "chatcmpl-9p1NttGpWjx1cQoVIDlMhumYq12Pe",
+  "content": "3 * 12 is 36, and 11 + 49 is 60.",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "tokenUsage": {
+      "completionTokens": 19,
+      "promptTokens": 153,
+      "totalTokens": 172
+    },
+    "finish_reason": "stop",
+    "system_fingerprint": "fp_18cc0f1fa0"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 153,
+    "output_tokens": 19,
+    "total_tokens": 172
+  }
+}
+```
+Note that each `ToolMessage` must include a `tool_call_id` that matches an `id` in the original tool calls that the model generates. This helps the model match tool responses with tool calls.
+
+Tool calling agents, like those in [LangGraph](https://langchain-ai.github.io/langgraphjs/tutorials/introduction/), use this basic flow to answer queries and solve tasks.
+
+## Related
+
+You've now seen how to pass tool calls back to a model.
+
+These guides may interest you next:
+
+- [LangGraph quickstart](https://langchain-ai.github.io/langgraphjs/tutorials/introduction/)
+- Few shot prompting [with tools](/oss/javascript/how-to/tools_few_shot/)
+- Stream [tool calls](/oss/javascript/how-to/tool_streaming/)
+- Pass [runtime values to tools](/oss/javascript/how-to/tool_runtime)
+- Getting [structured outputs](/oss/javascript/how-to/structured_output/) from models

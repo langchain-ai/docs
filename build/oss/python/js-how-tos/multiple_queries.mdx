@@ -1,0 +1,207 @@
+# How to generate multiple queries to retrieve data for
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following concepts:
+
+- [Vector stores](/oss/python/concepts/#vectorstores)
+- [Retrievers](/oss/python/concepts/retrievers)
+- [Retrieval-augmented generation (RAG)](/oss/python/tutorials/rag)
+
+</Info>
+
+Distance-based vector database retrieval embeds (represents) queries in high-dimensional space and finds similar embedded documents based on "distance".
+But retrieval may produce different results with subtle changes in query wording or if the embeddings do not capture the semantics of the data well.
+Prompt engineering / tuning is sometimes done to manually address these problems, but can be tedious.
+
+The [`MultiQueryRetriever`](https://api.js.langchain.com/classes/langchain.retrievers_multi_query.MultiQueryRetriever.html) automates the process of prompt tuning by using an LLM to generate multiple queries from different perspectives for a given user input query.
+For each query, it retrieves a set of relevant documents and takes the unique union across all queries to get a larger set of potentially relevant documents.
+By generating multiple perspectives on the same question, the `MultiQueryRetriever` can help overcome some of the limitations of the distance-based retrieval and get a richer set of results.
+
+## Get started
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/anthropic @langchain/cohere
+</Npm2Yarn>
+```
+```typescript
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import { CohereEmbeddings } from "@langchain/cohere";
+import { MultiQueryRetriever } from "langchain/retrievers/multi_query";
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const embeddings = new CohereEmbeddings();
+
+const vectorstore = await MemoryVectorStore.fromTexts(
+  [
+    "Buildings are made out of brick",
+    "Buildings are made out of wood",
+    "Buildings are made out of stone",
+    "Cars are made out of metal",
+    "Cars are made out of plastic",
+    "mitochondria is the powerhouse of the cell",
+    "mitochondria is made of lipids",
+  ],
+  [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }],
+  embeddings
+);
+
+const model = new ChatAnthropic({
+  model: "claude-3-sonnet-20240229"
+});
+
+const retriever = MultiQueryRetriever.fromLLM({
+  llm: model,
+  retriever: vectorstore.asRetriever(),
+});
+
+const query = "What are mitochondria made of?";
+const retrievedDocs = await retriever.invoke(query);
+
+/*
+  Generated queries: What are the components of mitochondria?,What substances comprise the mitochondria organelle?  ,What is the molecular composition of mitochondria?
+*/
+
+console.log(retrievedDocs);
+```
+```output
+[
+  Document {
+    pageContent: "mitochondria is made of lipids",
+    metadata: {}
+  },
+  Document {
+    pageContent: "mitochondria is the powerhouse of the cell",
+    metadata: {}
+  },
+  Document {
+    pageContent: "Buildings are made out of brick",
+    metadata: { id: 1 }
+  },
+  Document {
+    pageContent: "Buildings are made out of wood",
+    metadata: { id: 2 }
+  }
+]
+```
+## Customization
+
+You can also supply a custom prompt to tune what types of questions are generated.
+You can also pass a custom output parser to parse and split the results of the LLM call into a list of queries.
+
+
+```typescript
+import { LLMChain } from "langchain/chains";
+import { pull } from "langchain/hub";
+import { BaseOutputParser } from "@langchain/core/output_parsers";
+import { PromptTemplate } from "@langchain/core/prompts";
+
+
+type LineList = {
+  lines: string[];
+};
+
+class LineListOutputParser extends BaseOutputParser<LineList> {
+  static lc_name() {
+    return "LineListOutputParser";
+  }
+
+  lc_namespace = ["langchain", "retrievers", "multiquery"];
+
+  async parse(text: string): Promise<LineList> {
+    const startKeyIndex = text.indexOf("<questions>");
+    const endKeyIndex = text.indexOf("</questions>");
+    const questionsStartIndex =
+      startKeyIndex === -1 ? 0 : startKeyIndex + "<questions>".length;
+    const questionsEndIndex = endKeyIndex === -1 ? text.length : endKeyIndex;
+    const lines = text
+      .slice(questionsStartIndex, questionsEndIndex)
+      .trim()
+      .split("\n")
+      .filter((line) => line.trim() !== "");
+    return { lines };
+  }
+
+  getFormatInstructions(): string {
+    throw new Error("Not implemented.");
+  }
+}
+
+// Default prompt is available at: https://smith.langchain.com/hub/jacob/multi-vector-retriever-german
+const prompt: PromptTemplate = await pull(
+  "jacob/multi-vector-retriever-german"
+);
+
+const vectorstore = await MemoryVectorStore.fromTexts(
+  [
+    "Gebäude werden aus Ziegelsteinen hergestellt",
+    "Gebäude werden aus Holz hergestellt",
+    "Gebäude werden aus Stein hergestellt",
+    "Autos werden aus Metall hergestellt",
+    "Autos werden aus Kunststoff hergestellt",
+    "Mitochondrien sind die Energiekraftwerke der Zelle",
+    "Mitochondrien bestehen aus Lipiden",
+  ],
+  [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }],
+  embeddings
+);
+const model = new ChatAnthropic({});
+const llmChain = new LLMChain({
+  llm: model,
+  prompt,
+  outputParser: new LineListOutputParser(),
+});
+const retriever = new MultiQueryRetriever({
+  retriever: vectorstore.asRetriever(),
+  llmChain,
+});
+
+const query = "What are mitochondria made of?";
+const retrievedDocs = await retriever.invoke(query);
+
+/*
+  Generated queries: Was besteht ein Mitochondrium?,Aus welchen Komponenten setzt sich ein Mitochondrium zusammen?  ,Welche Moleküle finden sich in einem Mitochondrium?
+*/
+
+console.log(retrievedDocs);
+```
+```output
+[
+  Document {
+    pageContent: "Mitochondrien bestehen aus Lipiden",
+    metadata: {}
+  },
+  Document {
+    pageContent: "Mitochondrien sind die Energiekraftwerke der Zelle",
+    metadata: {}
+  },
+  Document {
+    pageContent: "Gebäude werden aus Stein hergestellt",
+    metadata: { id: 3 }
+  },
+  Document {
+    pageContent: "Autos werden aus Metall hergestellt",
+    metadata: { id: 4 }
+  },
+  Document {
+    pageContent: "Gebäude werden aus Holz hergestellt",
+    metadata: { id: 2 }
+  },
+  Document {
+    pageContent: "Gebäude werden aus Ziegelsteinen hergestellt",
+    metadata: { id: 1 }
+  }
+]
+```
+## Next steps
+
+You've now learned how to use the `MultiQueryRetriever` to query a vector store with automatically generated queries.
+
+See the individual sections for deeper dives on specific retrievers, the [broader tutorial on RAG](/oss/python/tutorials/rag), or this section to learn how to
+[create your own custom retriever over any data source](/oss/python/how-to/custom_retriever/).

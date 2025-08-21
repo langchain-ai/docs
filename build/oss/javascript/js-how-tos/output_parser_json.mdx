@@ -1,0 +1,117 @@
+# How to parse JSON output
+
+While some model providers support [built-in ways to return structured output](/oss/javascript/how-to/structured_output), not all do. We can use an output parser to help users to specify an arbitrary JSON schema via the prompt, query a model for outputs that conform to that schema, and finally parse that schema as JSON.
+
+:::{.callout-note}
+Keep in mind that large language models are leaky abstractions! You'll have to use an LLM with sufficient capacity to generate well-formed JSON.
+:::
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following concepts:
+
+- [Chat models](/oss/javascript/concepts/chat_models)
+- [Output parsers](/oss/javascript/concepts/output_parsers)
+- [Prompt templates](/oss/javascript/concepts/prompt_templates)
+- [Structured output](/oss/javascript/how-to/structured_output)
+- [Chaining runnables together](/oss/javascript/how-to/sequence/)
+
+</Info>
+
+The [`JsonOutputParser`](https://api.js.langchain.com/classes/langchain_core.output_parsers.JsonOutputParser.html) is one built-in option for prompting for and then parsing JSON output.
+
+```{=mdx}
+<ChatModelTabs />
+```
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+const model = new ChatOpenAI({
+  model: "gpt-4o",
+  temperature: 0,
+})
+
+import { JsonOutputParser } from "@langchain/core/output_parsers"
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+
+// Define your desired data structure. Only used for typing the parser output.
+interface Joke {
+  setup: string
+  punchline: string
+}
+
+// A query and format instructions used to prompt a language model.
+const jokeQuery = "Tell me a joke.";
+const formatInstructions = "Respond with a valid JSON object, containing two fields: 'setup' and 'punchline'."
+
+// Set up a parser + inject instructions into the prompt template.
+const parser = new JsonOutputParser<Joke>()
+
+const prompt = ChatPromptTemplate.fromTemplate(
+  "Answer the user query.\n{format_instructions}\n{query}\n"
+);
+
+const partialedPrompt = await prompt.partial({
+  format_instructions: formatInstructions
+});
+
+const chain = partialedPrompt.pipe(model).pipe(parser);
+
+await chain.invoke({ query: jokeQuery });
+```
+
+
+
+```output
+{
+  setup: "Why don't scientists trust atoms?",
+  punchline: "Because they make up everything!"
+}
+```
+
+
+## Streaming
+
+The `JsonOutputParser` also supports streaming partial chunks. This is useful when the model returns partial JSON output in multiple chunks. The parser will keep track of the partial chunks and return the final JSON output when the model finishes generating the output.
+
+
+```typescript
+for await (const s of await chain.stream({ query: jokeQuery })) {
+    console.log(s)
+}
+```
+```output
+{}
+{ setup: "" }
+{ setup: "Why" }
+{ setup: "Why don't" }
+{ setup: "Why don't scientists" }
+{ setup: "Why don't scientists trust" }
+{ setup: "Why don't scientists trust atoms" }
+{ setup: "Why don't scientists trust atoms?", punchline: "" }
+{ setup: "Why don't scientists trust atoms?", punchline: "Because" }
+{
+  setup: "Why don't scientists trust atoms?",
+  punchline: "Because they"
+}
+{
+  setup: "Why don't scientists trust atoms?",
+  punchline: "Because they make"
+}
+{
+  setup: "Why don't scientists trust atoms?",
+  punchline: "Because they make up"
+}
+{
+  setup: "Why don't scientists trust atoms?",
+  punchline: "Because they make up everything"
+}
+{
+  setup: "Why don't scientists trust atoms?",
+  punchline: "Because they make up everything!"
+}
+```
+## Next steps
+
+You've now learned one way to prompt a model to return structured JSON. Next, check out the [broader guide on obtaining structured output](/oss/javascript/how-to/structured_output) for other techniques.

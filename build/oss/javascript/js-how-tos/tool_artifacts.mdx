@@ -1,0 +1,211 @@
+# How to return artifacts from a tool
+
+```{=mdx}
+<Info>
+**Prerequisites**
+
+This guide assumes familiarity with the following concepts:
+
+- [ToolMessage](/oss/javascript/concepts/messages/#toolmessage)
+- [Tools](/oss/javascript/concepts/tools)
+- [Tool calling](/oss/javascript/concepts/tool_calling)
+
+</Info>
+```
+Tools are utilities that can be called by a model, and whose outputs are designed to be fed back to a model. Sometimes, however, there are artifacts of a tool's execution that we want to make accessible to downstream components in our chain or agent, but that we don't want to expose to the model itself.
+
+For example if a tool returns something like a custom object or an image, we may want to pass some metadata about this output to the model without passing the actual output to the model. At the same time, we may want to be able to access this full output elsewhere, for example in downstream tools.
+
+The Tool and [ToolMessage](https://api.js.langchain.com/classes/langchain_core.messages_tool.ToolMessage.html) interfaces make it possible to distinguish between the parts of the tool output meant for the model (this is the `ToolMessage.content`) and those parts which are meant for use outside the model (`ToolMessage.artifact`).
+
+```{=mdx}
+<Warning>
+**Compatibility**
+
+
+This functionality requires `@langchain/core>=0.2.16`. Please see here for a [guide on upgrading](/oss/javascript/how-to/installation/#installing-integration-packages).
+
+</Warning>
+```
+## Defining the tool
+
+If we want our tool to distinguish between message content and other artifacts, we need to specify `response_format: "content_and_artifact"` when defining our tool and make sure that we return a tuple of [`content`, `artifact`]:
+
+
+```typescript
+import { z } from "zod";
+import { tool } from "@langchain/core/tools";
+
+const randomIntToolSchema = z.object({
+  min: z.number(),
+  max: z.number(),
+  size: z.number(),
+});
+
+const generateRandomInts = tool(async ({ min, max, size }) => {
+  const array: number[] = [];
+  for (let i = 0; i < size; i++) {
+    array.push(Math.floor(Math.random() * (max - min + 1)) + min);
+  }
+  return [
+    `Successfully generated array of ${size} random ints in [${min}, ${max}].`,
+    array,
+  ];
+}, {
+  name: "generateRandomInts",
+  description: "Generate size random ints in the range [min, max].",
+  schema: randomIntToolSchema,
+  responseFormat: "content_and_artifact",
+});
+```
+## Invoking the tool with ToolCall
+
+If we directly invoke our tool with just the tool arguments, you'll notice that we only get back the content part of the `Tool` output:
+
+
+```typescript
+await generateRandomInts.invoke({min: 0, max: 9, size: 10});
+```
+```output
+Successfully generated array of 10 random ints in [0, 9].
+```
+In order to get back both the content and the artifact, we need to invoke our model with a `ToolCall` (which is just a dictionary with `"name"`, `"args"`, `"id"` and `"type"` keys), which has additional info needed to generate a ToolMessage like the tool call ID:
+
+
+```typescript
+await generateRandomInts.invoke(
+  {
+    name: "generate_random_ints",
+    args: {min: 0, max: 9, size: 10},
+    id: "123", // Required
+    type: "tool_call", // Required
+  }
+);
+```
+```output
+ToolMessage {
+  lc_serializable: true,
+  lc_kwargs: {
+    content: 'Successfully generated array of 10 random ints in [0, 9].',
+    artifact: [
+      0, 6, 5, 5, 7,
+      0, 6, 3, 7, 5
+    ],
+    tool_call_id: '123',
+    name: 'generateRandomInts',
+    additional_kwargs: {},
+    response_metadata: {}
+  },
+  lc_namespace: [ 'langchain_core', 'messages' ],
+  content: 'Successfully generated array of 10 random ints in [0, 9].',
+  name: 'generateRandomInts',
+  additional_kwargs: {},
+  response_metadata: {},
+  id: undefined,
+  tool_call_id: '123',
+  artifact: [
+    0, 6, 5, 5, 7,
+    0, 6, 3, 7, 5
+  ]
+}
+```
+## Using with a model
+
+With a [tool-calling model](/oss/javascript/how-to/tool_calling/), we can easily use a model to call our Tool and generate ToolMessages:
+
+```{=mdx}
+<ChatModelTabs
+  customVarName="llm"
+/>
+```
+```typescript
+const llmWithTools = llm.bindTools([generateRandomInts])
+
+const aiMessage = await llmWithTools.invoke("generate 6 positive ints less than 25")
+aiMessage.tool_calls
+```
+```output
+[
+  {
+    name: 'generateRandomInts',
+    args: { min: 1, max: 24, size: 6 },
+    id: 'toolu_019ygj3YuoU6qFzR66juXALp',
+    type: 'tool_call'
+  }
+]
+```
+
+```typescript
+await generateRandomInts.invoke(aiMessage.tool_calls[0])
+```
+```output
+ToolMessage {
+  lc_serializable: true,
+  lc_kwargs: {
+    content: 'Successfully generated array of 6 random ints in [1, 24].',
+    artifact: [ 18, 20, 16, 15, 17, 19 ],
+    tool_call_id: 'toolu_019ygj3YuoU6qFzR66juXALp',
+    name: 'generateRandomInts',
+    additional_kwargs: {},
+    response_metadata: {}
+  },
+  lc_namespace: [ 'langchain_core', 'messages' ],
+  content: 'Successfully generated array of 6 random ints in [1, 24].',
+  name: 'generateRandomInts',
+  additional_kwargs: {},
+  response_metadata: {},
+  id: undefined,
+  tool_call_id: 'toolu_019ygj3YuoU6qFzR66juXALp',
+  artifact: [ 18, 20, 16, 15, 17, 19 ]
+}
+```
+If we just pass in the tool call args, we'll only get back the content:
+
+
+```typescript
+await generateRandomInts.invoke(aiMessage.tool_calls[0]["args"])
+```
+```output
+Successfully generated array of 6 random ints in [1, 24].
+```
+If we wanted to declaratively create a chain, we could do this:
+
+
+```typescript
+const extractToolCalls = (aiMessage) => aiMessage.tool_calls;
+
+const chain = llmWithTools.pipe(extractToolCalls).pipe(generateRandomInts.map());
+
+await chain.invoke("give me a random number between 1 and 5");
+```
+```output
+[
+  ToolMessage {
+    lc_serializable: true,
+    lc_kwargs: {
+      content: 'Successfully generated array of 1 random ints in [1, 5].',
+      artifact: [Array],
+      tool_call_id: 'toolu_01CskofJCQW8chkUzmVR1APU',
+      name: 'generateRandomInts',
+      additional_kwargs: {},
+      response_metadata: {}
+    },
+    lc_namespace: [ 'langchain_core', 'messages' ],
+    content: 'Successfully generated array of 1 random ints in [1, 5].',
+    name: 'generateRandomInts',
+    additional_kwargs: {},
+    response_metadata: {},
+    id: undefined,
+    tool_call_id: 'toolu_01CskofJCQW8chkUzmVR1APU',
+    artifact: [ 1 ]
+  }
+]
+```
+## Related
+
+You've now seen how to return additional artifacts from a tool call.
+
+These guides may interest you next:
+
+- [Creating custom tools](/oss/javascript/how-to/custom_tools)
+- [Building agents with LangGraph](https://langchain-ai.github.io/langgraphjs/)

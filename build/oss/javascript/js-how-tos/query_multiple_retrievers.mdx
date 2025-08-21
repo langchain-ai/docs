@@ -1,0 +1,194 @@
+# How to handle multiple retrievers
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following:
+
+- [Query analysis](/oss/javascript/tutorials/rag#query-analysis)
+
+</Info>
+
+Sometimes, a query analysis technique may allow for selection of which retriever to use. To use this, you will need to add some logic to select the retriever to do. We will show a simple example (using mock data) of how to do that.
+
+## Setup
+
+### Install dependencies
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/openai @langchain/core zod chromadb
+</Npm2Yarn>
+```
+### Set environment variables
+
+```
+OPENAI_API_KEY=your-api-key
+
+# Optional, use LangSmith for best-in-class observability
+LANGSMITH_API_KEY=your-api-key
+LANGSMITH_TRACING=true
+
+# Reduce tracing latency if you are not in a serverless environment
+# LANGCHAIN_CALLBACKS_BACKGROUND=true
+```
+### Create Index
+
+We will create a vectorstore over fake information.
+
+
+```typescript
+import { Chroma } from "@langchain/community/vectorstores/chroma"
+import { OpenAIEmbeddings } from "@langchain/openai"
+import "chromadb";
+
+const texts = ["Harrison worked at Kensho"]
+const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" })
+const vectorstore = await Chroma.fromTexts(texts, {}, embeddings, {
+  collectionName: "harrison"
+})
+const retrieverHarrison = vectorstore.asRetriever(1)
+
+const textsAnkush = ["Ankush worked at Facebook"]
+const embeddingsAnkush = new OpenAIEmbeddings({ model: "text-embedding-3-small" })
+const vectorstoreAnkush = await Chroma.fromTexts(textsAnkush, {}, embeddingsAnkush, {
+  collectionName: "ankush"
+})
+const retrieverAnkush = vectorstoreAnkush.asRetriever(1)
+```
+## Query analysis
+
+We will use function calling to structure the output. We will let it return multiple queries.
+
+
+```typescript
+import { z } from "zod";
+
+const searchSchema = z.object({
+    query: z.string().describe("Query to look up"),
+    person: z.string().describe("Person to look things up for. Should be `HARRISON` or `ANKUSH`.")
+})
+```
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+
+
+```typescript
+// @lc-docs-hide-cell
+import { ChatOpenAI } from '@langchain/openai';
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o",
+  temperature: 0,
+})
+```
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
+
+const system = `You have the ability to issue search queries to get information to help answer user information.`
+const prompt = ChatPromptTemplate.fromMessages(
+[
+    ["system", system],
+    ["human", "{question}"],
+]
+)
+const llmWithTools = llm.withStructuredOutput(searchSchema, {
+name: "Search"
+})
+const queryAnalyzer = RunnableSequence.from([
+    {
+        question: new RunnablePassthrough(),
+    },
+    prompt,
+    llmWithTools
+])
+```
+
+We can see that this allows for routing between retrievers
+
+
+```typescript
+await queryAnalyzer.invoke("where did Harrison Work")
+```
+
+
+
+```output
+{ query: "workplace of Harrison", person: "HARRISON" }
+```
+
+
+
+```typescript
+await queryAnalyzer.invoke("where did ankush Work")
+```
+
+
+
+```output
+{ query: "Workplace of Ankush", person: "ANKUSH" }
+```
+
+
+## Retrieval with query analysis
+
+So how would we include this in a chain? We just need some simple logic to select the retriever and pass in the search query
+
+
+```typescript
+const retrievers = {
+    HARRISON: retrieverHarrison,
+    ANKUSH: retrieverAnkush,
+}
+```
+
+
+```typescript
+import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
+
+const chain = async (question: string, config?: RunnableConfig) => {
+    const response = await queryAnalyzer.invoke(question, config);
+    const retriever = retrievers[response.person];
+    return retriever.invoke(response.query, config);
+}
+
+const customChain = new RunnableLambda({ func: chain });
+```
+
+
+```typescript
+await customChain.invoke("where did Harrison Work")
+```
+
+
+
+```output
+[ Document { pageContent: "Harrison worked at Kensho", metadata: {} } ]
+```
+
+
+
+```typescript
+await customChain.invoke("where did ankush Work")
+```
+
+
+
+```output
+[ Document { pageContent: "Ankush worked at Facebook", metadata: {} } ]
+```
+
+
+## Next steps
+
+You've now learned some techniques for handling multiple retrievers in a query analysis system.
+
+Next, check out some of the other query analysis guides in this section, like [how to deal with cases where no query is generated](/oss/javascript/how-to/query_no_queries).

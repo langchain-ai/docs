@@ -1,0 +1,358 @@
+# How to stream tool calls
+
+When tools are called in a streaming context, 
+[message chunks](https://api.js.langchain.com/classes/langchain_core_messages.AIMessageChunk.html) 
+will be populated with [tool call chunk](https://api.js.langchain.com/types/langchain_core_messages_tool.ToolCallChunk.html) 
+objects in a list via the `.tool_call_chunks` attribute. A `ToolCallChunk` includes 
+optional string fields for the tool `name`, `args`, and `id`, and includes an optional 
+integer field `index` that can be used to join chunks together. Fields are optional 
+because portions of a tool call may be streamed across different chunks (e.g., a chunk 
+that includes a substring of the arguments may have null values for the tool name and id).
+
+Because message chunks inherit from their parent message class, an 
+[`AIMessageChunk`](https://api.js.langchain.com/classes/langchain_core_messages.AIMessageChunk.html) 
+with tool call chunks will also include `.tool_calls` and `.invalid_tool_calls` fields. 
+These fields are parsed best-effort from the message's tool call chunks.
+
+Note that not all providers currently support streaming for tool calls. Before we start let's define our tools and our model.
+
+
+```typescript
+import { z } from "zod";
+import { tool } from "@langchain/core/tools";
+import { ChatOpenAI } from "@langchain/openai";
+
+const addTool = tool(async (input) => {
+  return input.a + input.b;
+}, {
+  name: "add",
+  description: "Adds a and b.",
+  schema: z.object({
+    a: z.number(),
+    b: z.number(),
+  }),
+});
+
+const multiplyTool = tool(async (input) => {
+  return input.a * input.b;
+}, {
+  name: "multiply",
+  description: "Multiplies a and b.",
+  schema: z.object({
+    a: z.number(),
+    b: z.number(),
+  }),
+});
+
+const tools = [addTool, multiplyTool];
+
+const model = new ChatOpenAI({
+  model: "gpt-4o",
+  temperature: 0,
+});
+
+const modelWithTools = model.bindTools(tools);
+```
+
+Now let's define our query and stream our output:
+
+
+```typescript
+const query = "What is 3 * 12? Also, what is 11 + 49?";
+
+const stream = await modelWithTools.stream(query);
+
+for await (const chunk of stream) {
+  console.log(chunk.tool_call_chunks);
+}
+```
+```output
+[]
+[
+  {
+    name: 'multiply',
+    args: '',
+    id: 'call_MdIlJL5CAYD7iz9gTm5lwWtJ',
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: '{"a"',
+    id: undefined,
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: ': 3, ',
+    id: undefined,
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: '"b": 1',
+    id: undefined,
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: '2}',
+    id: undefined,
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'add',
+    args: '',
+    id: 'call_ihL9W6ylSRlYigrohe9SClmW',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: '{"a"',
+    id: undefined,
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: ': 11,',
+    id: undefined,
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: ' "b": ',
+    id: undefined,
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: undefined,
+    args: '49}',
+    id: undefined,
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[]
+[]
+```
+Note that adding message chunks will merge their corresponding tool call chunks. This is the principle by which LangChain's various [tool output parsers](/oss/python/how-to/output_parser_structured) support streaming.
+
+For example, below we accumulate tool call chunks:
+
+
+```typescript
+import { concat } from "@langchain/core/utils/stream";
+
+const stream = await modelWithTools.stream(query);
+
+let gathered = undefined;
+
+for await (const chunk of stream) {
+  gathered = gathered !== undefined ? concat(gathered, chunk) : chunk;
+  console.log(gathered.tool_call_chunks);
+}
+```
+```output
+[]
+[
+  {
+    name: 'multiply',
+    args: '',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a"',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, ',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 1',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  },
+  {
+    name: 'add',
+    args: '',
+    id: 'call_ufY7lDSeCQwWbdq1XQQ2PBHR',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  },
+  {
+    name: 'add',
+    args: '{"a"',
+    id: 'call_ufY7lDSeCQwWbdq1XQQ2PBHR',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  },
+  {
+    name: 'add',
+    args: '{"a": 11,',
+    id: 'call_ufY7lDSeCQwWbdq1XQQ2PBHR',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  },
+  {
+    name: 'add',
+    args: '{"a": 11, "b": ',
+    id: 'call_ufY7lDSeCQwWbdq1XQQ2PBHR',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  },
+  {
+    name: 'add',
+    args: '{"a": 11, "b": 49}',
+    id: 'call_ufY7lDSeCQwWbdq1XQQ2PBHR',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  },
+  {
+    name: 'add',
+    args: '{"a": 11, "b": 49}',
+    id: 'call_ufY7lDSeCQwWbdq1XQQ2PBHR',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+[
+  {
+    name: 'multiply',
+    args: '{"a": 3, "b": 12}',
+    id: 'call_0zGpgVz81Ew0HA4oKblG0s0a',
+    index: 0,
+    type: 'tool_call_chunk'
+  },
+  {
+    name: 'add',
+    args: '{"a": 11, "b": 49}',
+    id: 'call_ufY7lDSeCQwWbdq1XQQ2PBHR',
+    index: 1,
+    type: 'tool_call_chunk'
+  }
+]
+```
+At the end, we can see the final aggregated tool call chunks include the fully gathered raw string value:
+
+
+```typescript
+console.log(typeof gathered.tool_call_chunks[0].args);
+```
+```output
+string
+```
+And we can also see the fully parsed tool call as an object at the end:
+
+
+```typescript
+console.log(typeof gathered.tool_calls[0].args);
+```
+```output
+object
+```

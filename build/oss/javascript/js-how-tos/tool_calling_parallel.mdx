@@ -1,0 +1,136 @@
+# How to disable parallel tool calling
+
+```{=mdx}
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following concepts:
+
+- [LangChain Tools](/oss/javascript/concepts/tools)
+- [Tool calling](/oss/javascript/concepts/tool_calling)
+- [Custom tools](/oss/javascript/how-to/custom_tools)
+
+</Info>
+```
+<Info>
+**OpenAI-specific**
+
+
+This API is currently only supported by OpenAI.
+
+</Info>
+
+OpenAI models perform tool calling in parallel by default. That means that if we ask a question like `"What is the weather in Tokyo, New York, and Chicago?"` and we have a tool for getting the weather, it will call the tool 3 times in parallel. We can force it to call only a single tool once by using the `parallel_tool_call` call option.
+
+First let's set up our tools and model:
+
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+import { z } from "zod";
+import { tool } from "@langchain/core/tools";
+
+const adderTool = tool(async ({ a, b }) => {
+  return a + b;
+}, {
+  name: "add",
+  description: "Adds a and b",
+  schema: z.object({
+    a: z.number(),
+    b: z.number(),
+  })
+});
+
+const multiplyTool = tool(async ({ a, b }) => {
+  return a * b;
+}, {
+  name: "multiply",
+  description: "Multiplies a and b",
+  schema: z.object({
+    a: z.number(),
+    b: z.number(),
+  })
+});
+
+const tools = [adderTool, multiplyTool];
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+});
+```
+Now let's show a quick example of how disabling parallel tool calls work:
+
+
+```typescript
+const llmWithTools = llm.bindTools(tools, { parallel_tool_calls: false });
+
+const result = await llmWithTools.invoke("Please call the first tool two times");
+
+result.tool_calls;
+```
+```output
+[
+  {
+    name: 'add',
+    args: { a: 5, b: 3 },
+    type: 'tool_call',
+    id: 'call_5bKOYerdQU6J5ERJJYnzYsGn'
+  }
+]
+```
+As we can see, even though we explicitly told the model to call a tool twice, by disabling parallel tool calls the model was constrained to only calling one.
+
+Compare this to calling the model without passing `parallel_tool_calls` as false:
+
+
+```typescript
+const llmWithNoBoundParam = llm.bindTools(tools);
+
+const result2 = await llmWithNoBoundParam.invoke("Please call the first tool two times");
+
+result2.tool_calls;
+```
+```output
+[
+  {
+    name: 'add',
+    args: { a: 1, b: 2 },
+    type: 'tool_call',
+    id: 'call_Ni0tF0nNtY66BBwB5vEP6oI4'
+  },
+  {
+    name: 'add',
+    args: { a: 3, b: 4 },
+    type: 'tool_call',
+    id: 'call_XucnTCfFqP1JBs3LtbOq5w3d'
+  }
+]
+```
+You can see that you get two tool calls.
+
+You can also pass the parameter in at runtime like this:
+
+
+```typescript
+const result3 = await llmWithNoBoundParam.invoke("Please call the first tool two times", {
+  parallel_tool_calls: false,
+});
+
+result3.tool_calls;
+```
+```output
+[
+  {
+    name: 'add',
+    args: { a: 1, b: 2 },
+    type: 'tool_call',
+    id: 'call_TWo6auul71NUg1p0suzBKARt'
+  }
+]
+```
+## Related
+
+- [How to: create custom tools](/oss/javascript/how-to/custom_tools)
+- [How to: pass run time values to tools](/oss/javascript/how-to/tool_runtime)

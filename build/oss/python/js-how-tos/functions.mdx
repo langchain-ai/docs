@@ -1,0 +1,248 @@
+# How to run custom functions
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following concepts:
+
+- [LangChain Expression Language (LCEL)](/oss/python/concepts/lcel)
+- [Chaining runnables](/oss/python/how-to/sequence/)
+
+</Info>
+
+You can use arbitrary functions as [Runnables](https://api.js.langchain.com/classes/langchain_core.runnables.Runnable.html). This is useful for formatting or when you need functionality not provided by other LangChain components, and custom functions used as Runnables are called [`RunnableLambdas`](https://api.js.langchain.com/classes/langchain_core.runnables.RunnableLambda.html).
+
+Note that all inputs to these functions need to be a SINGLE argument. If you have a function that accepts multiple arguments, you should write a wrapper that accepts a single dict input and unpacks it into multiple argument.
+
+This guide will cover:
+
+- How to explicitly create a runnable from a custom function using the `RunnableLambda` constructor
+- Coercion of custom functions into runnables when used in chains
+- How to accept and use run metadata in your custom function
+- How to stream with custom functions by having them return generators
+
+## Using the constructor
+
+Below, we explicitly wrap our custom logic using a `RunnableLambda` method:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/openai @langchain/core
+</Npm2Yarn>
+```
+```typescript
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { RunnableLambda } from "@langchain/core/runnables";
+import { ChatOpenAI } from "@langchain/openai";
+
+const lengthFunction = (input: { foo: string }): { length: string } => {
+  return {
+    length: input.foo.length.toString(),
+  };
+};
+
+const model = new ChatOpenAI({ model: "gpt-4o" });
+
+const prompt = ChatPromptTemplate.fromTemplate("What is {length} squared?");
+
+const chain = RunnableLambda.from(lengthFunction)
+  .pipe(prompt)
+  .pipe(model)
+  .pipe(new StringOutputParser());
+
+await chain.invoke({ "foo": "bar" });
+```
+
+
+
+```output
+"3 squared is \\(3^2\\), which means multiplying 3 by itself. \n" +
+  "\n" +
+  "\\[3^2 = 3 \\times 3 = 9\\]\n" +
+  "\n" +
+  "So, 3 squared"... 6 more characters
+```
+
+
+## Automatic coercion in chains
+
+When using custom functions in chains with [`RunnableSequence.from`](https://api.js.langchain.com/classes/langchain_core.runnables.RunnableSequence.html#from) static method, you can omit the explicit `RunnableLambda` creation and rely on coercion.
+
+Here's a simple example with a function that takes the output from the model and returns the first five letters of it:
+
+
+```typescript
+import { RunnableSequence } from "@langchain/core/runnables";
+
+const storyPrompt = ChatPromptTemplate.fromTemplate("Tell me a short story about {topic}");
+
+const storyModel = new ChatOpenAI({ model: "gpt-4o" });
+
+const chainWithCoercedFunction = RunnableSequence.from([
+  storyPrompt,
+  storyModel,
+  (input) => input.content.slice(0, 5),
+]);
+
+await chainWithCoercedFunction.invoke({ "topic": "bears" });
+```
+
+
+
+```output
+"Once "
+```
+
+
+Note that we didn't need to wrap the custom function `(input) => input.content.slice(0, 5)` in a `RunnableLambda` method. The custom function is **coerced** into a runnable. See [this section](/oss/python/how-to/sequence/#coercion) for more information.
+
+## Passing run metadata
+
+Runnable lambdas can optionally accept a [RunnableConfig](https://api.js.langchain.com/interfaces/langchain_core.runnables.RunnableConfig.html) parameter, which they can use to pass callbacks, tags, and other configuration information to nested runs.
+
+
+```typescript
+import { type RunnableConfig } from "@langchain/core/runnables";
+
+const echo = (text: string, config: RunnableConfig) => {
+  const prompt = ChatPromptTemplate.fromTemplate("Reverse the following text: {text}");
+  const model = new ChatOpenAI({ model: "gpt-4o" });
+  const chain = prompt.pipe(model).pipe(new StringOutputParser());
+  return chain.invoke({ text }, config);
+};
+
+const output = await RunnableLambda.from(echo).invoke("foo", {
+  tags: ["my-tag"],
+  callbacks: [{
+    handleLLMEnd: (output) => console.log(output),
+  }],
+});
+```
+```output
+{
+  generations: [
+    [
+      {
+        text: "oof",
+        message: AIMessage {
+          lc_serializable: true,
+          lc_kwargs: [Object],
+          lc_namespace: [Array],
+          content: "oof",
+          name: undefined,
+          additional_kwargs: [Object],
+          response_metadata: [Object],
+          tool_calls: [],
+          invalid_tool_calls: []
+        },
+        generationInfo: { finish_reason: "stop" }
+      }
+    ]
+  ],
+  llmOutput: {
+    tokenUsage: { completionTokens: 2, promptTokens: 13, totalTokens: 15 }
+  }
+}
+```
+# Streaming
+
+You can use generator functions (ie. functions that use the `yield` keyword, and behave like iterators) in a chain.
+
+The signature of these generators should be `AsyncGenerator<Input> -> AsyncGenerator<Output>`.
+
+These are useful for:
+- implementing a custom output parser
+- modifying the output of a previous step, while preserving streaming capabilities
+
+Here's an example of a custom output parser for comma-separated lists. First, we create a chain that generates such a list as text:
+
+
+```typescript
+const streamingPrompt = ChatPromptTemplate.fromTemplate(
+  "Write a comma-separated list of 5 animals similar to: {animal}. Do not include numbers"
+);
+
+const strChain = streamingPrompt.pipe(model).pipe(new StringOutputParser());
+
+const stream = await strChain.stream({ animal: "bear" });
+
+for await (const chunk of stream) {
+  console.log(chunk);
+}
+```
+```output
+Lion
+,
+ wolf
+,
+ tiger
+,
+ cougar
+,
+ leopard
+```
+Next, we define a custom function that will aggregate the currently streamed output and yield it when the model generates the next comma in the list:
+
+
+```typescript
+// This is a custom parser that splits an iterator of llm tokens
+// into a list of strings separated by commas
+async function* splitIntoList(input) {
+  // hold partial input until we get a comma
+  let buffer = "";
+  for await (const chunk of input) {
+    // add current chunk to buffer
+    buffer += chunk;
+    // while there are commas in the buffer
+    while (buffer.includes(",")) {
+      // split buffer on comma
+      const commaIndex = buffer.indexOf(",");
+      // yield everything before the comma
+      yield [buffer.slice(0, commaIndex).trim()];
+      // save the rest for the next iteration
+      buffer = buffer.slice(commaIndex + 1);
+    }
+  }
+  // yield the last chunk
+  yield [buffer.trim()];
+}
+
+const listChain = strChain.pipe(splitIntoList);
+
+const listChainStream = await listChain.stream({"animal": "bear"});
+
+for await (const chunk of listChainStream) {
+  console.log(chunk);
+}
+```
+```output
+[ "wolf" ]
+[ "lion" ]
+[ "tiger" ]
+[ "cougar" ]
+[ "cheetah" ]
+```
+Invoking it gives a full array of values:
+
+
+```typescript
+await listChain.invoke({"animal": "bear"})
+```
+
+
+
+```output
+[ "lion", "tiger", "wolf", "cougar", "jaguar" ]
+```
+
+
+## Next steps
+
+Now you've learned a few different ways to use custom logic within your chains, and how to implement streaming.
+
+To learn more, see the other how-to guides on runnables in this section.

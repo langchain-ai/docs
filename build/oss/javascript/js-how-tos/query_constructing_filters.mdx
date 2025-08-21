@@ -1,0 +1,106 @@
+# How to construct filters
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following:
+
+- [Query analysis](/oss/javascript/tutorials/rag#query-analysis)
+
+</Info>
+
+We may want to do query analysis to extract filters to pass into retrievers. One way we ask the LLM to represent these filters is as a Zod schema. There is then the issue of converting that Zod schema into a filter that can be passed into a retriever. 
+
+This can be done manually, but LangChain also provides some "Translators" that are able to translate from a common syntax into filters specific to each retriever. Here, we will cover how to use those translators.
+
+## Setup
+
+### Install dependencies
+
+```{=mdx}
+<Npm2Yarn>
+  @langchain/core zod
+</Npm2Yarn>
+```
+In this example, `year` and `author` are both attributes to filter on.
+
+
+```typescript
+import { z } from "zod";
+
+const searchSchema = z.object({
+  query: z.string(),
+  startYear: z.number().optional(),
+  author: z.string().optional(),
+})
+
+const searchQuery: z.infer<typeof searchSchema> = {
+  query: "RAG",
+  startYear: 2022,
+  author: "LangChain"
+}
+```
+```typescript
+import { Comparison, Comparator } from "langchain/chains/query_constructor/ir";
+
+function constructComparisons(query: z.infer<typeof searchSchema>): Comparison[] {
+  const comparisons: Comparison[] = [];
+  if (query.startYear !== undefined) {
+    comparisons.push(
+      new Comparison(
+        "gt" as Comparator,
+        "start_year",
+        query.startYear,
+      )
+    );
+  }
+  if (query.author !== undefined) {
+    comparisons.push(
+      new Comparison(
+        "eq" as Comparator,
+        "author",
+        query.author,
+      )
+    );
+  }
+  return comparisons;
+}
+
+const comparisons = constructComparisons(searchQuery);
+```
+
+
+```typescript
+import {
+  Operation,
+  Operator,
+} from "langchain/chains/query_constructor/ir";
+
+const _filter = new Operation("and" as Operator, comparisons)
+```
+
+
+```typescript
+import { ChromaTranslator } from "@langchain/community/structured_query/chroma";
+
+new ChromaTranslator().visitOperation(_filter)
+```
+
+
+
+```output
+{
+  "$and": [
+    { start_year: { "$gt": 2022 } },
+    { author: { "$eq": "LangChain" } }
+  ]
+}
+```
+
+
+## Next steps
+
+You've now learned how to create a specific filter from an arbitrary query.
+
+Next, check out some of the other query analysis guides in this section, like [how to use few-shotting to improve performance](/oss/javascript/how-to/query_no_queries).

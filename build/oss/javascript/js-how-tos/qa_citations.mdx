@@ -1,0 +1,805 @@
+# How to return citations
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following:
+
+- [Retrieval-augmented generation](/oss/javascript/tutorials/rag/)
+- [Returning structured data from a model](/oss/javascript/how-to/structured_output/)
+
+</Info>
+
+How can we get a model to cite which parts of the source documents it referenced in its response?
+
+To explore some techniques for extracting citations, let's first create a simple RAG chain. To start we'll just retrieve from the web using the [`TavilySearchAPIRetriever`](https://api.js.langchain.com/classes/langchain_community_retrievers_tavily_search_api.TavilySearchAPIRetriever.html).
+
+## Setup
+### Dependencies
+
+We’ll use an OpenAI chat model and embeddings and a Memory vector store in this walkthrough, but everything shown here works with any [ChatModel](/oss/javascript/concepts/chat_models) or [LLM](/oss/javascript/concepts/text_llms), [Embeddings](/oss/javascript/concepts/embedding_models/), and [VectorStore](/oss/javascript/concepts/vectorstores/) or [Retriever](/oss/javascript/concepts/retrievers).
+
+We’ll use the following packages:
+
+```bash
+npm install --save langchain @langchain/community @langchain/openai
+```
+
+We need to set environment variables for Tavily Search & OpenAI:
+
+```bash
+export OPENAI_API_KEY=YOUR_KEY
+export TAVILY_API_KEY=YOUR_KEY
+```
+
+### LangSmith
+
+Many of the applications you build with LangChain will contain multiple steps with multiple invocations of LLM calls. As these applications get more and more complex, it becomes crucial to be able to inspect what exactly is going on inside your chain or agent. The best way to do this is with [LangSmith](https://smith.langchain.com/).
+
+Note that LangSmith is not needed, but it is helpful. If you do want to use LangSmith, after you sign up at the link above, make sure to set your environment variables to start logging traces:
+
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=YOUR_KEY
+
+# Reduce tracing latency if you are not in a serverless environment
+# export LANGCHAIN_CALLBACKS_BACKGROUND=true
+```
+
+### Initial setup
+
+
+```typescript
+import { TavilySearchAPIRetriever } from "@langchain/community/retrievers/tavily_search_api";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  model: "gpt-3.5-turbo",
+  temperature: 0,
+});
+
+const retriever = new TavilySearchAPIRetriever({
+  k: 6,
+});
+
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", "You're a helpful AI assistant. Given a user question and some web article snippets, answer the user question. If none of the articles answer the question, just say you don't know.\n\nHere are the web articles:{context}"],
+  ["human", "{question}"],
+]);
+```
+
+Now that we've got a model, retriever and prompt, let's chain them all together. We'll need to add some logic for formatting our retrieved `Document`s to a string that can be passed to our prompt. We'll make it so our chain returns both the answer and the retrieved Documents.
+
+
+```typescript
+import { Document } from "@langchain/core/documents";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { RunnableMap, RunnablePassthrough } from "@langchain/core/runnables";
+
+/**
+ * Format the documents into a readable string.
+ */
+const formatDocs = (input: Record<string, any>): string => {
+  const { docs } = input;
+  return "\n\n" + docs.map((doc: Document) => `Article title: ${doc.metadata.title}\nArticle Snippet: ${doc.pageContent}`).join("\n\n");
+}
+// subchain for generating an answer once we've done retrieval
+const answerChain = prompt.pipe(llm).pipe(new StringOutputParser());
+const map = RunnableMap.from({
+  question: new RunnablePassthrough(),
+  docs: retriever,
+})
+// complete chain that calls the retriever -> formats docs to string -> runs answer subchain -> returns just the answer and retrieved docs.
+const chain = map.assign({ context: formatDocs }).assign({ answer: answerChain }).pick(["answer", "docs"])
+
+await chain.invoke("How fast are cheetahs?")
+```
+
+
+
+```output
+{
+  answer: "Cheetahs are the fastest land animals on Earth. They can reach speeds as high as 75 mph or 120 km/h."... 124 more characters,
+  docs: [
+    Document {
+      pageContent: "Contact Us − +\n" +
+        "Address\n" +
+        "Smithsonian's National Zoo & Conservation Biology Institute  3001 Connecticut"... 1343 more characters,
+      metadata: {
+        title: "Cheetah | Smithsonian's National Zoo and Conservation Biology Institute",
+        source: "https://nationalzoo.si.edu/animals/cheetah",
+        score: 0.96283,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "Now, their only hope lies in the hands of human conservationists, working tirelessly to save the che"... 880 more characters,
+      metadata: {
+        title: "How Fast Are Cheetahs, and Other Fascinating Facts About the World's ...",
+        source: "https://www.discovermagazine.com/planet-earth/how-fast-are-cheetahs-and-other-fascinating-facts-abou"... 21 more characters,
+        score: 0.96052,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely r"... 1048 more characters,
+      metadata: {
+        title: "Cheetah | Description, Speed, Habitat, Diet, Cubs, & Facts",
+        source: "https://www.britannica.com/animal/cheetah-mammal",
+        score: 0.93137,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "The science of cheetah speed\n" +
+        "The cheetah (Acinonyx jubatus) is the fastest land animal on Earth, cap"... 738 more characters,
+      metadata: {
+        title: "How Fast Can a Cheetah Run? - ThoughtCo",
+        source: "https://www.thoughtco.com/how-fast-can-a-cheetah-run-4587031",
+        score: 0.91385,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "One of two videos from National Geographic's award-winning multimedia coverage of cheetahs in the ma"... 60 more characters,
+      metadata: {
+        title: "The Science of a Cheetah's Speed | National Geographic",
+        source: "https://www.youtube.com/watch?v=icFMTB0Pi0g",
+        score: 0.90358,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "If a lion comes along, the cheetah will abandon its catch -- it can't fight off a lion, and chances "... 911 more characters,
+      metadata: {
+        title: "What makes a cheetah run so fast? | HowStuffWorks",
+        source: "https://animals.howstuffworks.com/mammals/cheetah-speed.htm",
+        score: 0.87824,
+        images: null
+      }
+    }
+  ]
+}
+```
+
+
+See a LangSmith trace [here](https://smith.langchain.com/public/bb0ed37e-b2be-4ae9-8b0d-ce2aff0b4b5e/r) that shows off the internals.
+
+## Tool calling
+
+### Cite documents
+Let's try using [tool calling](/oss/javascript/how-to/tool_calling) to make the model specify which of the provided documents it's actually referencing when answering. LangChain has some utils for converting objects or [Zod](https://zod.dev) objects to the JSONSchema format expected by providers like OpenAI. We'll use the [`.withStructuredOutput()`](/oss/javascript/how-to/structured_output/) method to get the model to output data matching our desired schema:
+
+
+```typescript
+import { z } from "zod";
+
+const llmWithTool1 = llm.withStructuredOutput(
+  z.object({
+    answer: z.string().describe("The answer to the user question, which is based only on the given sources."),
+    citations: z.array(z.number()).describe("The integer IDs of the SPECIFIC sources which justify the answer.")
+  }).describe("A cited source from the given text"),
+  {
+    name: "cited_answers"
+  }
+);
+
+const exampleQ = `What is Brian's height?
+
+Source: 1
+Information: Suzy is 6'2"
+
+Source: 2
+Information: Jeremiah is blonde
+
+Source: 3
+Information: Brian is 3 inches shorter than Suzy`;
+
+await llmWithTool1.invoke(exampleQ);
+```
+
+
+
+```output
+{
+  answer: `Brian is 6'2" - 3 inches = 5'11" tall.`,
+  citations: [ 1, 3 ]
+}
+```
+
+
+See a LangSmith trace [here](https://smith.langchain.com/public/28736c75-122e-4deb-9916-55c73eea3167/r) that shows off the internals
+
+Now we're ready to put together our chain
+
+
+```typescript
+import { Document } from "@langchain/core/documents";
+
+const formatDocsWithId = (docs: Array<Document>): string => {
+  return "\n\n" + docs.map((doc: Document, idx: number) => `Source ID: ${idx}\nArticle title: ${doc.metadata.title}\nArticle Snippet: ${doc.pageContent}`).join("\n\n");
+}
+// subchain for generating an answer once we've done retrieval
+const answerChain1 = prompt.pipe(llmWithTool1);
+const map1 = RunnableMap.from({
+  question: new RunnablePassthrough(),
+  docs: retriever,
+})
+// complete chain that calls the retriever -> formats docs to string -> runs answer subchain -> returns just the answer and retrieved docs.
+const chain1 = map1
+  .assign({ context: (input: { docs: Array<Document> }) => formatDocsWithId(input.docs) })
+  .assign({ cited_answer: answerChain1 })
+  .pick(["cited_answer", "docs"])
+  
+await chain1.invoke("How fast are cheetahs?")
+```
+
+
+
+```output
+{
+  cited_answer: {
+    answer: "Cheetahs can reach speeds as high as 75 mph or 120 km/h.",
+    citations: [ 1, 2, 5 ]
+  },
+  docs: [
+    Document {
+      pageContent: "One of two videos from National Geographic's award-winning multimedia coverage of cheetahs in the ma"... 60 more characters,
+      metadata: {
+        title: "The Science of a Cheetah's Speed | National Geographic",
+        source: "https://www.youtube.com/watch?v=icFMTB0Pi0g",
+        score: 0.97858,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely r"... 1048 more characters,
+      metadata: {
+        title: "Cheetah | Description, Speed, Habitat, Diet, Cubs, & Facts",
+        source: "https://www.britannica.com/animal/cheetah-mammal",
+        score: 0.97213,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "The science of cheetah speed\n" +
+        "The cheetah (Acinonyx jubatus) is the fastest land animal on Earth, cap"... 738 more characters,
+      metadata: {
+        title: "How Fast Can a Cheetah Run? - ThoughtCo",
+        source: "https://www.thoughtco.com/how-fast-can-a-cheetah-run-4587031",
+        score: 0.95759,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "Contact Us − +\n" +
+        "Address\n" +
+        "Smithsonian's National Zoo & Conservation Biology Institute  3001 Connecticut"... 1343 more characters,
+      metadata: {
+        title: "Cheetah | Smithsonian's National Zoo and Conservation Biology Institute",
+        source: "https://nationalzoo.si.edu/animals/cheetah",
+        score: 0.92422,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "Now, their only hope lies in the hands of human conservationists, working tirelessly to save the che"... 880 more characters,
+      metadata: {
+        title: "How Fast Are Cheetahs, and Other Fascinating Facts About the World's ...",
+        source: "https://www.discovermagazine.com/planet-earth/how-fast-are-cheetahs-and-other-fascinating-facts-abou"... 21 more characters,
+        score: 0.91867,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "The speeds attained by the cheetah may be only slightly greater than those achieved by the pronghorn"... 2527 more characters,
+      metadata: {
+        title: "Cheetah - Wikipedia",
+        source: "https://en.wikipedia.org/wiki/Cheetah",
+        score: 0.81617,
+        images: null
+      }
+    }
+  ]
+}
+```
+
+
+See a LangSmith trace [here](https://smith.langchain.com/public/86814255-b9b0-4c4f-9463-e795c9961451/r) that shows off the internals.
+
+### Cite snippets
+
+What if we want to cite actual text spans? We can try to get our model to return these, too.
+
+**Note**: Note that if we break up our documents so that we have many documents with only a sentence or two instead of a few long documents, citing documents becomes roughly equivalent to citing snippets, and may be easier for the model because the model just needs to return an identifier for each snippet instead of the actual text. We recommend trying both approaches and evaluating.
+
+
+```typescript
+import { Document } from "@langchain/core/documents";
+
+const citationSchema = z.object({
+  sourceId: z.number().describe("The integer ID of a SPECIFIC source which justifies the answer."),
+  quote: z.string().describe("The VERBATIM quote from the specified source that justifies the answer.")
+});
+
+const llmWithTool2 = llm.withStructuredOutput(
+  z.object({
+    answer: z.string().describe("The answer to the user question, which is based only on the given sources."),
+    citations: z.array(citationSchema).describe("Citations from the given sources that justify the answer.")
+  }), {
+    name: "quoted_answer",
+  })
+
+const answerChain2 = prompt.pipe(llmWithTool2);
+const map2 = RunnableMap.from({
+  question: new RunnablePassthrough(),
+  docs: retriever,
+})
+// complete chain that calls the retriever -> formats docs to string -> runs answer subchain -> returns just the answer and retrieved docs.
+const chain2 = map2
+  .assign({ context: (input: { docs: Array<Document> }) => formatDocsWithId(input.docs) })
+  .assign({ quoted_answer: answerChain2 })
+  .pick(["quoted_answer", "docs"]);
+  
+await chain2.invoke("How fast are cheetahs?")
+```
+
+
+
+```output
+{
+  quoted_answer: {
+    answer: "Cheetahs can reach speeds of up to 120kph or 75mph, making them the world’s fastest land animals.",
+    citations: [
+      {
+        sourceId: 5,
+        quote: "Cheetahs can reach speeds of up to 120kph or 75mph, making them the world’s fastest land animals."
+      },
+      {
+        sourceId: 1,
+        quote: "The cheetah (Acinonyx jubatus) is the fastest land animal on Earth, capable of reaching speeds as hi"... 25 more characters
+      },
+      {
+        sourceId: 3,
+        quote: "The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely r"... 72 more characters
+      }
+    ]
+  },
+  docs: [
+    Document {
+      pageContent: "Contact Us − +\n" +
+        "Address\n" +
+        "Smithsonian's National Zoo & Conservation Biology Institute  3001 Connecticut"... 1343 more characters,
+      metadata: {
+        title: "Cheetah | Smithsonian's National Zoo and Conservation Biology Institute",
+        source: "https://nationalzoo.si.edu/animals/cheetah",
+        score: 0.95973,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "The science of cheetah speed\n" +
+        "The cheetah (Acinonyx jubatus) is the fastest land animal on Earth, cap"... 738 more characters,
+      metadata: {
+        title: "How Fast Can a Cheetah Run? - ThoughtCo",
+        source: "https://www.thoughtco.com/how-fast-can-a-cheetah-run-4587031",
+        score: 0.92749,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "Now, their only hope lies in the hands of human conservationists, working tirelessly to save the che"... 880 more characters,
+      metadata: {
+        title: "How Fast Are Cheetahs, and Other Fascinating Facts About the World's ...",
+        source: "https://www.discovermagazine.com/planet-earth/how-fast-are-cheetahs-and-other-fascinating-facts-abou"... 21 more characters,
+        score: 0.92417,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely r"... 1048 more characters,
+      metadata: {
+        title: "Cheetah | Description, Speed, Habitat, Diet, Cubs, & Facts",
+        source: "https://www.britannica.com/animal/cheetah-mammal",
+        score: 0.92341,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "One of two videos from National Geographic's award-winning multimedia coverage of cheetahs in the ma"... 60 more characters,
+      metadata: {
+        title: "The Science of a Cheetah's Speed | National Geographic",
+        source: "https://www.youtube.com/watch?v=icFMTB0Pi0g",
+        score: 0.90025,
+        images: null
+      }
+    },
+    Document {
+      pageContent: "In fact, they are more closely related to kangaroos…\n" +
+        "Read more\n" +
+        "Animals on the Galapagos Islands: A G"... 987 more characters,
+      metadata: {
+        title: "How fast can cheetahs run, and what enables their incredible speed?",
+        source: "https://wildlifefaq.com/cheetah-speed/",
+        score: 0.87121,
+        images: null
+      }
+    }
+  ]
+}
+```
+
+
+You can check out a LangSmith trace [here](https://smith.langchain.com/public/f0588adc-1914-45e8-a2ed-4fa028cea0e1/r) that shows off the internals.
+
+## Direct prompting
+
+Not all models support tool-calling. We can achieve similar results with direct prompting. Let's see what this looks like using an older Anthropic chat model that is particularly proficient in working with XML:
+
+### Setup
+
+Install the LangChain Anthropic integration package:
+
+```bash
+npm install @langchain/anthropic
+```
+
+Add your Anthropic API key to your environment:
+
+```bash
+export ANTHROPIC_API_KEY=YOUR_KEY
+```
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { XMLOutputParser } from "@langchain/core/output_parsers";
+import { Document } from "@langchain/core/documents";
+import { RunnableLambda, RunnablePassthrough, RunnableMap } from "@langchain/core/runnables";
+
+const anthropic = new ChatAnthropic({
+  model: "claude-instant-1.2",
+  temperature: 0,
+});
+const system = `You're a helpful AI assistant. Given a user question and some web article snippets,
+answer the user question and provide citations. If none of the articles answer the question, just say you don't know.
+
+Remember, you must return both an answer and citations. A citation consists of a VERBATIM quote that
+justifies the answer and the ID of the quote article. Return a citation for every quote across all articles
+that justify the answer. Use the following format for your final output:
+
+<cited_answer>
+    <answer></answer>
+    <citations>
+        <citation><source_id></source_id><quote></quote></citation>
+        <citation><source_id></source_id><quote></quote></citation>
+        ...
+    </citations>
+</cited_answer>
+
+Here are the web articles:{context}`;
+
+const anthropicPrompt = ChatPromptTemplate.fromMessages([
+  ["system", system],
+  ["human", "{question}"]
+]);
+
+const formatDocsToXML = (docs: Array<Document>): string => {
+  const formatted: Array<string> = [];
+  docs.forEach((doc, idx) => {
+    const docStr = `<source id="${idx}">
+  <title>${doc.metadata.title}</title>
+  <article_snippet>${doc.pageContent}</article_snippet>
+</source>`
+    formatted.push(docStr);
+  });
+  return `\n\n<sources>${formatted.join("\n")}</sources>`;
+}
+
+const format3 = new RunnableLambda({
+  func: (input: { docs: Array<Document> }) => formatDocsToXML(input.docs)
+})
+const answerChain = anthropicPrompt
+  .pipe(anthropic)
+  .pipe(new XMLOutputParser())
+  .pipe(
+    new RunnableLambda({ func: (input: { cited_answer: any }) => input.cited_answer })
+  );
+const map3 = RunnableMap.from({
+  question: new RunnablePassthrough(),
+  docs: retriever,
+});
+const chain3 = map3.assign({ context: format3 }).assign({ cited_answer: answerChain }).pick(["cited_answer", "docs"])
+
+const res = await chain3.invoke("How fast are cheetahs?");
+
+console.log(JSON.stringify(res, null, 2));
+```
+```output
+{
+  "cited_answer": [
+    {
+      "answer": "Cheetahs can reach top speeds of around 75 mph, but can only maintain bursts of speed for short distances before tiring."
+    },
+    {
+      "citations": [
+        {
+          "citation": [
+            {
+              "source_id": "1"
+            },
+            {
+              "quote": "Scientists calculate a cheetah's top speed is 75 mph, but the fastest recorded speed is somewhat slower."
+            }
+          ]
+        },
+        {
+          "citation": [
+            {
+              "source_id": "3"
+            },
+            {
+              "quote": "The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely reach velocities of 80–100 km (50–62 miles) per hour while pursuing prey."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "docs": [
+    {
+      "pageContent": "One of two videos from National Geographic's award-winning multimedia coverage of cheetahs in the magazine's November 2012 iPad edition. See the other: http:...",
+      "metadata": {
+        "title": "The Science of a Cheetah's Speed | National Geographic",
+        "source": "https://www.youtube.com/watch?v=icFMTB0Pi0g",
+        "score": 0.96603,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "The science of cheetah speed\nThe cheetah (Acinonyx jubatus) is the fastest land animal on Earth, capable of reaching speeds as high as 75 mph or 120 km/h. Cheetahs are predators that sneak up on their prey and sprint a short distance to chase and attack.\n Key Takeaways: How Fast Can a Cheetah Run?\nFastest Cheetah on Earth\nScientists calculate a cheetah's top speed is 75 mph, but the fastest recorded speed is somewhat slower. The top 10 fastest animals are:\nThe pronghorn, an American animal resembling an antelope, is the fastest land animal in the Western Hemisphere. While a cheetah's top speed ranges from 65 to 75 mph (104 to 120 km/h), its average speed is only 40 mph (64 km/hr), punctuated by short bursts at its top speed. Basically, if a predator threatens to take a cheetah's kill or attack its young, a cheetah has to run.\n",
+      "metadata": {
+        "title": "How Fast Can a Cheetah Run? - ThoughtCo",
+        "source": "https://www.thoughtco.com/how-fast-can-a-cheetah-run-4587031",
+        "score": 0.96212,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "Now, their only hope lies in the hands of human conservationists, working tirelessly to save the cheetahs, the leopards and all the other wildlife of the scattered savannas and other habitats of Africa and Asia.\n Their tough paw pads and grippy claws are made to grab at the ground, and their large nasal passages and lungs facilitate the flow of oxygen and allow their rapid intake of air as they reach their top speeds.\n And though the two cats share a similar coloration, a cheetah's spots are circular while a leopard's spots are rose-shaped \"rosettes,\" with the centers of their spots showing off the tan color of their coats.\n Also classified as \"vulnerable\" are two of the cheetah's foremost foes, the lion and the leopard, the latter of which is commonly confused for the cheetah thanks to its own flecked fur.\n The cats are also consumers of the smallest of the bigger, bulkier antelopes, such as sables and kudus, and are known to gnaw on the occasional rabbit or bird.\n",
+      "metadata": {
+        "title": "How Fast Are Cheetahs, and Other Fascinating Facts About the World's ...",
+        "source": "https://www.discovermagazine.com/planet-earth/how-fast-are-cheetahs-and-other-fascinating-facts-about-the-worlds-quickest",
+        "score": 0.95688,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely reach velocities of 80–100 km (50–62 miles) per hour while pursuing prey.\ncheetah,\n(Acinonyx jubatus),\none of the world’s most-recognizable cats, known especially for its speed. Their fur is dark and includes a thick yellowish gray mane along the back, a trait that presumably offers better camouflage and increased protection from high temperatures during the day and low temperatures at night during the first few months of life. Cheetahs eat a variety of small animals, including game birds, rabbits, small antelopes (including the springbok, impala, and gazelle), young warthogs, and larger antelopes (such as the kudu, hartebeest, oryx, and roan).\n A cheetah eats a variety of small animals, including game birds, rabbits, small antelopes (including the springbok, impala, and gazelle), young warthogs, and larger antelopes (such as the kudu, hartebeest, oryx, and roan). Their faces are distinguished by prominent black lines that curve from the inner corner of each eye to the outer corners of the mouth, like a well-worn trail of inky tears.",
+      "metadata": {
+        "title": "Cheetah | Description, Speed, Habitat, Diet, Cubs, & Facts",
+        "source": "https://www.britannica.com/animal/cheetah-mammal",
+        "score": 0.95589,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "Contact Us − +\nAddress\nSmithsonian's National Zoo & Conservation Biology Institute  3001 Connecticut Ave., NW  Washington, DC 20008\nAbout the Zoo\n−\n+\nCareers\n−\n+\nNews & Media\n−\n+\nFooter Donate\n−\n+\nShop\n−\n+\nFollow us on social media\nSign Up for Emails\nFooter - SI logo, privacy, terms Conservation Efforts\nHistorically, cheetahs ranged widely throughout Africa and Asia, from the Cape of Good Hope to the Mediterranean, throughout the Arabian Peninsula and the Middle East, from Israel, India and Pakistan north to the northern shores of the Caspian and Aral Seas, and west through Uzbekistan, Turkmenistan, Afghanistan, and Pakistan into central India. Header Links\nToday's hours: 8 a.m. to 4 p.m. (last entry 3 p.m.)\nMega menu\nAnimals Global Nav Links\nElephant Cam\nSee the Smithsonian's National Zoo's Asian elephants — Spike, Bozie, Kamala, Swarna and Maharani — both inside the Elephant Community Center and outside in their yards.\n Conservation Global Nav Links\nAbout the Smithsonian Conservation Biology Institute\nCheetah\nAcinonyx jubatus\nBuilt for speed, the cheetah can accelerate from zero to 45 in just 2.5 seconds and reach top speeds of 60 to 70 mph, making it the fastest land mammal! Fun Facts\nConservation Status\nCheetah News\nTaxonomic Information\nAnimal News\nNZCBI staff in Front Royal, Virginia, are mourning the loss of Walnut, a white-naped crane who became an internet sensation for choosing one of her keepers as her mate.\n",
+      "metadata": {
+        "title": "Cheetah | Smithsonian's National Zoo and Conservation Biology Institute",
+        "source": "https://nationalzoo.si.edu/animals/cheetah",
+        "score": 0.94744,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "The speeds attained by the cheetah may be only slightly greater than those achieved by the pronghorn at 88.5 km/h (55.0 mph)[96] and the springbok at 88 km/h (55 mph),[97] but the cheetah additionally has an exceptional acceleration.[98]\nOne stride of a galloping cheetah measures 4 to 7 m (13 to 23 ft); the stride length and the number of jumps increases with speed.[60] During more than half the duration of the sprint, the cheetah has all four limbs in the air, increasing the stride length.[99] Running cheetahs can retain up to 90% of the heat generated during the chase. In December 2016 the results of an extensive survey detailing the distribution and demography of cheetahs throughout the range were published; the researchers recommended listing the cheetah as Endangered on the IUCN Red List.[25]\nThe cheetah was reintroduced in Malawi in 2017.[160]\nIn Asia\nIn 2001, the Iranian government collaborated with the CCF, the IUCN, Panthera Corporation, UNDP and the Wildlife Conservation Society on the Conservation of Asiatic Cheetah Project (CACP) to protect the natural habitat of the Asiatic cheetah and its prey.[161]\[162] Individuals on the periphery of the prey herd are common targets; vigilant prey which would react quickly on seeing the cheetah are not preferred.[47]\[60]\[122]\nCheetahs are one of the most iconic pursuit predators, hunting primarily throughout the day, sometimes with peaks at dawn and dusk; they tend to avoid larger predators like the primarily nocturnal lion.[66] Cheetahs in the Sahara and Maasai Mara in Kenya hunt after sunset to escape the high temperatures of the day.[123] Cheetahs use their vision to hunt instead of their sense of smell; they keep a lookout for prey from resting sites or low branches. This significantly sharpens the vision and enables the cheetah to swiftly locate prey against the horizon.[61]\[86] The cheetah is unable to roar due to the presence of a sharp-edged vocal fold within the larynx.[2]\[87]\nSpeed and acceleration\nThe cheetah is the world's fastest land animal.[88]\[89]\[90]\[91]\[92] Estimates of the maximum speed attained range from 80 to 128 km/h (50 to 80 mph).[60]\[63] A commonly quoted value is 112 km/h (70 mph), recorded in 1957, but this measurement is disputed.[93] The mouth can not be opened as widely as in other cats given the shorter length of muscles between the jaw and the skull.[60]\[65] A study suggested that the limited retraction of the cheetah's claws may result from the earlier truncation of the development of the middle phalanx bone in cheetahs.[77]\nThe cheetah has a total of 30 teeth; the dental formula is 3.1.3.13.1.2.1.",
+      "metadata": {
+        "title": "Cheetah - Wikipedia",
+        "source": "https://en.wikipedia.org/wiki/Cheetah",
+        "score": 0.81312,
+        "images": null
+      }
+    }
+  ]
+}
+```
+Check out this LangSmith trace [here](https://smith.langchain.com/public/e2e938e8-f847-4ea8-bc84-43d4eaf8e524/r) for more on the internals.
+
+## Retrieval post-processing
+
+Another approach is to post-process our retrieved documents to compress the content, so that the source content is already minimal enough that we don't need the model to cite specific sources or spans. For example, we could break up each document into a sentence or two, embed those and keep only the most relevant ones. LangChain has some built-in components for this. Here we'll use a [`RecursiveCharacterTextSplitter`](/oss/javascript/how-to/recursive_text_splitter), which creates chunks of a specified size by splitting on separator substrings, and an [`EmbeddingsFilter`](/oss/javascript/how-to/contextual_compression), which keeps only the texts with the most relevant embeddings.
+
+
+```typescript
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { EmbeddingsFilter } from "langchain/retrievers/document_compressors/embeddings_filter";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { DocumentInterface } from "@langchain/core/documents";
+import { RunnableMap, RunnablePassthrough } from "@langchain/core/runnables";
+
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 400,
+  chunkOverlap: 0,
+  separators: ["\n\n", "\n", ".", " "],
+  keepSeparator: false,
+});
+
+const compressor = new EmbeddingsFilter({
+  embeddings: new OpenAIEmbeddings(),
+  k: 10,
+});
+
+const splitAndFilter = async (input): Promise<Array<DocumentInterface>> => {
+  const { docs, question } = input;
+  const splitDocs = await splitter.splitDocuments(docs);
+  const statefulDocs = await compressor.compressDocuments(splitDocs, question);
+  return statefulDocs;
+};
+
+const retrieveMap = RunnableMap.from({
+  question: new RunnablePassthrough(),
+  docs: retriever,
+});
+
+const retriever = retrieveMap.pipe(splitAndFilter);
+const docs = await retriever.invoke("How fast are cheetahs?");
+for (const doc of docs) {
+  console.log(doc.pageContent, "\n\n");
+}
+```
+```output
+The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely reach velocities of 80–100 km (50–62 miles) per hour while pursuing prey.
+cheetah,
+(Acinonyx jubatus), 
+
+
+The science of cheetah speed
+The cheetah (Acinonyx jubatus) is the fastest land animal on Earth, capable of reaching speeds as high as 75 mph or 120 km/h. Cheetahs are predators that sneak up on their prey and sprint a short distance to chase and attack.
+ Key Takeaways: How Fast Can a Cheetah Run?
+Fastest Cheetah on Earth 
+
+
+Built for speed, the cheetah can accelerate from zero to 45 in just 2.5 seconds and reach top speeds of 60 to 70 mph, making it the fastest land mammal! Fun Facts
+Conservation Status
+Cheetah News
+Taxonomic Information
+Animal News
+NZCBI staff in Front Royal, Virginia, are mourning the loss of Walnut, a white-naped crane who became an internet sensation for choosing one of her keepers as her mate. 
+
+
+The speeds attained by the cheetah may be only slightly greater than those achieved by the pronghorn at 88.5 km/h (55.0 mph)[96] and the springbok at 88 km/h (55 mph),[97] but the cheetah additionally has an exceptional acceleration.[98] 
+
+
+The cheetah is the world's fastest land animal.[88]\[89]\[90]\[91]\[92] Estimates of the maximum speed attained range from 80 to 128 km/h (50 to 80 mph).[60]\[63] A commonly quoted value is 112 km/h (70 mph), recorded in 1957, but this measurement is disputed.[93] The mouth can not be opened as widely as in other cats given the shorter length of muscles between the jaw and the skull 
+
+
+Scientists calculate a cheetah's top speed is 75 mph, but the fastest recorded speed is somewhat slower. The top 10 fastest animals are: 
+
+
+One stride of a galloping cheetah measures 4 to 7 m (13 to 23 ft); the stride length and the number of jumps increases with speed.[60] During more than half the duration of the sprint, the cheetah has all four limbs in the air, increasing the stride length.[99] Running cheetahs can retain up to 90% of the heat generated during the chase 
+
+
+The pronghorn, an American animal resembling an antelope, is the fastest land animal in the Western Hemisphere. While a cheetah's top speed ranges from 65 to 75 mph (104 to 120 km/h), its average speed is only 40 mph (64 km/hr), punctuated by short bursts at its top speed. Basically, if a predator threatens to take a cheetah's kill or attack its young, a cheetah has to run. 
+
+
+A cheetah eats a variety of small animals, including game birds, rabbits, small antelopes (including the springbok, impala, and gazelle), young warthogs, and larger antelopes (such as the kudu, hartebeest, oryx, and roan). Their faces are distinguished by prominent black lines that curve from the inner corner of each eye to the outer corners of the mouth, like a well-worn trail of inky tears. 
+
+
+Cheetahs are one of the most iconic pursuit predators, hunting primarily throughout the day, sometimes with peaks at dawn and dusk; they tend to avoid larger predators like the primarily nocturnal lion.[66] Cheetahs in the Sahara and Maasai Mara in Kenya hunt after sunset to escape the high temperatures of the day
+```
+See the LangSmith trace [here](https://smith.langchain.com/public/ae6b1f52-c1fe-49ec-843c-92edf2104652/r) to see the internals.
+
+
+```typescript
+const chain4 = retrieveMap
+  .assign({ context: formatDocs })
+  .assign({ answer: answerChain })
+  .pick(["answer", "docs"]);
+  
+// Note the documents have an article "summary" in the metadata that is now much longer than the
+// actual document page content. This summary isn't actually passed to the model.
+const res = await chain4.invoke("How fast are cheetahs?");
+
+console.log(JSON.stringify(res, null, 2))
+```
+```output
+{
+  "answer": [
+    {
+      "answer": "\nCheetahs are the fastest land animals. They can reach top speeds between 75-81 mph (120-130 km/h). \n"
+    },
+    {
+      "citations": [
+        {
+          "citation": [
+            {
+              "source_id": "Article title: How Fast Can a Cheetah Run? - ThoughtCo"
+            },
+            {
+              "quote": "The science of cheetah speed\nThe cheetah (Acinonyx jubatus) is the fastest land animal on Earth, capable of reaching speeds as high as 75 mph or 120 km/h."
+            }
+          ]
+        },
+        {
+          "citation": [
+            {
+              "source_id": "Article title: Cheetah - Wikipedia"
+            },
+            {
+              "quote": "Scientists calculate a cheetah's top speed is 75 mph, but the fastest recorded speed is somewhat slower."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "docs": [
+    {
+      "pageContent": "The science of cheetah speed\nThe cheetah (Acinonyx jubatus) is the fastest land animal on Earth, capable of reaching speeds as high as 75 mph or 120 km/h. Cheetahs are predators that sneak up on their prey and sprint a short distance to chase and attack.\n Key Takeaways: How Fast Can a Cheetah Run?\nFastest Cheetah on Earth\nScientists calculate a cheetah's top speed is 75 mph, but the fastest recorded speed is somewhat slower. The top 10 fastest animals are:\nThe pronghorn, an American animal resembling an antelope, is the fastest land animal in the Western Hemisphere. While a cheetah's top speed ranges from 65 to 75 mph (104 to 120 km/h), its average speed is only 40 mph (64 km/hr), punctuated by short bursts at its top speed. Basically, if a predator threatens to take a cheetah's kill or attack its young, a cheetah has to run.\n",
+      "metadata": {
+        "title": "How Fast Can a Cheetah Run? - ThoughtCo",
+        "source": "https://www.thoughtco.com/how-fast-can-a-cheetah-run-4587031",
+        "score": 0.96949,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "The speeds attained by the cheetah may be only slightly greater than those achieved by the pronghorn at 88.5 km/h (55.0 mph)[96] and the springbok at 88 km/h (55 mph),[97] but the cheetah additionally has an exceptional acceleration.[98]\nOne stride of a galloping cheetah measures 4 to 7 m (13 to 23 ft); the stride length and the number of jumps increases with speed.[60] During more than half the duration of the sprint, the cheetah has all four limbs in the air, increasing the stride length.[99] Running cheetahs can retain up to 90% of the heat generated during the chase. In December 2016 the results of an extensive survey detailing the distribution and demography of cheetahs throughout the range were published; the researchers recommended listing the cheetah as Endangered on the IUCN Red List.[25]\nThe cheetah was reintroduced in Malawi in 2017.[160]\nIn Asia\nIn 2001, the Iranian government collaborated with the CCF, the IUCN, Panthera Corporation, UNDP and the Wildlife Conservation Society on the Conservation of Asiatic Cheetah Project (CACP) to protect the natural habitat of the Asiatic cheetah and its prey.[161]\[162] Individuals on the periphery of the prey herd are common targets; vigilant prey which would react quickly on seeing the cheetah are not preferred.[47]\[60]\[122]\nCheetahs are one of the most iconic pursuit predators, hunting primarily throughout the day, sometimes with peaks at dawn and dusk; they tend to avoid larger predators like the primarily nocturnal lion.[66] Cheetahs in the Sahara and Maasai Mara in Kenya hunt after sunset to escape the high temperatures of the day.[123] Cheetahs use their vision to hunt instead of their sense of smell; they keep a lookout for prey from resting sites or low branches. This significantly sharpens the vision and enables the cheetah to swiftly locate prey against the horizon.[61]\[86] The cheetah is unable to roar due to the presence of a sharp-edged vocal fold within the larynx.[2]\[87]\nSpeed and acceleration\nThe cheetah is the world's fastest land animal.[88]\[89]\[90]\[91]\[92] Estimates of the maximum speed attained range from 80 to 128 km/h (50 to 80 mph).[60]\[63] A commonly quoted value is 112 km/h (70 mph), recorded in 1957, but this measurement is disputed.[93] The mouth can not be opened as widely as in other cats given the shorter length of muscles between the jaw and the skull.[60]\[65] A study suggested that the limited retraction of the cheetah's claws may result from the earlier truncation of the development of the middle phalanx bone in cheetahs.[77]\nThe cheetah has a total of 30 teeth; the dental formula is 3.1.3.13.1.2.1.",
+      "metadata": {
+        "title": "Cheetah - Wikipedia",
+        "source": "https://en.wikipedia.org/wiki/Cheetah",
+        "score": 0.96423,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "One of two videos from National Geographic's award-winning multimedia coverage of cheetahs in the magazine's November 2012 iPad edition. See the other: http:...",
+      "metadata": {
+        "title": "The Science of a Cheetah's Speed | National Geographic",
+        "source": "https://www.youtube.com/watch?v=icFMTB0Pi0g",
+        "score": 0.96071,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "Contact Us − +\nAddress\nSmithsonian's National Zoo & Conservation Biology Institute  3001 Connecticut Ave., NW  Washington, DC 20008\nAbout the Zoo\n−\n+\nCareers\n−\n+\nNews & Media\n−\n+\nFooter Donate\n−\n+\nShop\n−\n+\nFollow us on social media\nSign Up for Emails\nFooter - SI logo, privacy, terms Conservation Efforts\nHistorically, cheetahs ranged widely throughout Africa and Asia, from the Cape of Good Hope to the Mediterranean, throughout the Arabian Peninsula and the Middle East, from Israel, India and Pakistan north to the northern shores of the Caspian and Aral Seas, and west through Uzbekistan, Turkmenistan, Afghanistan, and Pakistan into central India. Header Links\nToday's hours: 8 a.m. to 4 p.m. (last entry 3 p.m.)\nMega menu\nAnimals Global Nav Links\nElephant Cam\nSee the Smithsonian's National Zoo's Asian elephants — Spike, Bozie, Kamala, Swarna and Maharani — both inside the Elephant Community Center and outside in their yards.\n Conservation Global Nav Links\nAbout the Smithsonian Conservation Biology Institute\nCheetah\nAcinonyx jubatus\nBuilt for speed, the cheetah can accelerate from zero to 45 in just 2.5 seconds and reach top speeds of 60 to 70 mph, making it the fastest land mammal! Fun Facts\nConservation Status\nCheetah News\nTaxonomic Information\nAnimal News\nNZCBI staff in Front Royal, Virginia, are mourning the loss of Walnut, a white-naped crane who became an internet sensation for choosing one of her keepers as her mate.\n",
+      "metadata": {
+        "title": "Cheetah | Smithsonian's National Zoo and Conservation Biology Institute",
+        "source": "https://nationalzoo.si.edu/animals/cheetah",
+        "score": 0.91577,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "The maximum speed cheetahs have been measured at is 114 km (71 miles) per hour, and they routinely reach velocities of 80–100 km (50–62 miles) per hour while pursuing prey.\ncheetah,\n(Acinonyx jubatus),\none of the world’s most-recognizable cats, known especially for its speed. Their fur is dark and includes a thick yellowish gray mane along the back, a trait that presumably offers better camouflage and increased protection from high temperatures during the day and low temperatures at night during the first few months of life. Cheetahs eat a variety of small animals, including game birds, rabbits, small antelopes (including the springbok, impala, and gazelle), young warthogs, and larger antelopes (such as the kudu, hartebeest, oryx, and roan).\n A cheetah eats a variety of small animals, including game birds, rabbits, small antelopes (including the springbok, impala, and gazelle), young warthogs, and larger antelopes (such as the kudu, hartebeest, oryx, and roan). Their faces are distinguished by prominent black lines that curve from the inner corner of each eye to the outer corners of the mouth, like a well-worn trail of inky tears.",
+      "metadata": {
+        "title": "Cheetah | Description, Speed, Habitat, Diet, Cubs, & Facts",
+        "source": "https://www.britannica.com/animal/cheetah-mammal",
+        "score": 0.91163,
+        "images": null
+      }
+    },
+    {
+      "pageContent": "If a lion comes along, the cheetah will abandon its catch -- it can't fight off a lion, and chances are, the cheetah will lose its life along with its prey if it doesn't get out of there fast enough.\n Advertisement\nLots More Information\nMore Great Links\nSources\nPlease copy/paste the following text to properly cite this HowStuffWorks.com article:\nAdvertisement\nAdvertisement\nAdvertisement\nAdvertisement\nAdvertisement If confronted, a roughly 125-pound cheetah will always run rather than fight -- it's too weak, light and thin to have any chance against something like a lion, which can be twice as long as a cheetah and weigh more than 400 pounds (181.4 kg) Cheetah moms spend a lot of time teaching their cubs to chase, sometimes dragging live animals back to the den so the cubs can practice the chase-and-catch process.\n It's more like a bound at that speed, completing up to three strides per second, with only one foot on the ground at any time and several stages when feet don't touch the ground at all.",
+      "metadata": {
+        "title": "What makes a cheetah run so fast? | HowStuffWorks",
+        "source": "https://animals.howstuffworks.com/mammals/cheetah-speed.htm",
+        "score": 0.89019,
+        "images": null
+      }
+    }
+  ]
+}
+```
+Check out the LangSmith trace [here](https://smith.langchain.com/public/b767cca0-6061-4208-99f2-7f522b94a587/r) to see the internals.
+
+## Next steps
+
+You've now learned a few ways to return citations from your QA chains.
+
+Next, check out some of the other guides in this section, such as [how to add chat history](/oss/javascript/how-to/qa_chat_history_how_to).

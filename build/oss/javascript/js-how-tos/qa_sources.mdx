@@ -1,0 +1,206 @@
+# How to return sources
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following:
+
+- [Retrieval-augmented generation](/oss/javascript/tutorials/rag/)
+
+</Info>
+
+Often in Q&A applications it’s important to show users the sources that were used to generate the answer. The simplest way to do this is for the chain to return the Documents that were retrieved in each generation.
+
+We'll be using the [LLM Powered Autonomous Agents](https://lilianweng.github.io/posts/2023-06-23-agent/) blog post by Lilian Weng for retrieval content this notebook.
+
+## Setup
+### Dependencies
+
+We’ll use an OpenAI chat model and embeddings and a Memory vector store in this walkthrough, but everything shown here works with any [ChatModel](/oss/javascript/concepts/chat_models) or [LLM](/oss/javascript/concepts/text_llms), [Embeddings](/oss/javascript/concepts/embedding_models), and [VectorStore](/oss/javascript/concepts/vectorstores) or [Retriever](/oss/javascript/concepts/retrievers).
+
+We’ll use the following packages:
+
+```bash
+npm install --save langchain @langchain/openai cheerio
+```
+
+We need to set environment variable `OPENAI_API_KEY`:
+
+```bash
+export OPENAI_API_KEY=YOUR_KEY
+```
+
+
+### LangSmith
+
+Many of the applications you build with LangChain will contain multiple steps with multiple invocations of LLM calls. As these applications get more and more complex, it becomes crucial to be able to inspect what exactly is going on inside your chain or agent. The best way to do this is with [LangSmith](https://smith.langchain.com/).
+
+Note that LangSmith is not needed, but it is helpful. If you do want to use LangSmith, after you sign up at the link above, make sure to set your environment variables to start logging traces:
+
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=YOUR_KEY
+
+# Reduce tracing latency if you are not in a serverless environment
+# export LANGCHAIN_CALLBACKS_BACKGROUND=true
+```
+
+## Chain without sources
+
+Here is the Q&A app we built over the [LLM Powered Autonomous Agents](https://lilianweng.github.io/posts/2023-06-23-agent/) blog post by Lilian Weng in the [Quickstart](/oss/javascript/tutorials/qa_chat_history/).
+
+
+```typescript
+import "cheerio";
+import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { MemoryVectorStore } from "langchain/vectorstores/memory"
+import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
+import { pull } from "langchain/hub";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { formatDocumentsAsString } from "langchain/util/document";
+import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+
+const loader = new CheerioWebBaseLoader(
+  "https://lilianweng.github.io/posts/2023-06-23-agent/"
+);
+
+const docs = await loader.load();
+
+const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000, chunkOverlap: 200 });
+const splits = await textSplitter.splitDocuments(docs);
+const vectorStore = await MemoryVectorStore.fromDocuments(splits, new OpenAIEmbeddings());
+
+// Retrieve and generate using the relevant snippets of the blog.
+const retriever = vectorStore.asRetriever();
+const prompt = await pull<ChatPromptTemplate>("rlm/rag-prompt");
+const llm = new ChatOpenAI({ model: "gpt-3.5-turbo", temperature: 0 });
+
+const ragChain = RunnableSequence.from([
+  {
+    context: retriever.pipe(formatDocumentsAsString),
+    question: new RunnablePassthrough(),
+  },
+  prompt,
+  llm,
+  new StringOutputParser()
+]);
+```
+
+Let's see what this prompt actually looks like:
+
+
+```typescript
+console.log(prompt.promptMessages.map((msg) => msg.prompt.template).join("\n"));
+```
+```output
+You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
+Question: {question} 
+Context: {context} 
+Answer:
+```
+
+```typescript
+await ragChain.invoke("What is task decomposition?")
+```
+
+
+
+```output
+"Task decomposition is a technique used to break down complex tasks into smaller and simpler steps. T"... 254 more characters
+```
+
+
+## Adding sources
+
+With LCEL, we can easily pass the retrieved documents through the chain and return them in the final response:
+
+
+```typescript
+import {
+  RunnableMap,
+  RunnablePassthrough,
+  RunnableSequence
+} from "@langchain/core/runnables";
+import { formatDocumentsAsString } from "langchain/util/document";
+
+const ragChainWithSources = RunnableMap.from({
+  // Return raw documents here for now since we want to return them at
+  // the end - we'll format in the next step of the chain
+  context: retriever,
+  question: new RunnablePassthrough(),
+}).assign({
+  answer: RunnableSequence.from([
+    (input) => {
+      return {
+        // Now we format the documents as strings for the prompt
+        context: formatDocumentsAsString(input.context),
+        question: input.question
+      };
+    },
+    prompt,
+    llm,
+    new StringOutputParser()
+  ]),
+})
+
+await ragChainWithSources.invoke("What is Task Decomposition")
+```
+
+
+
+```output
+{
+  question: "What is Task Decomposition",
+  context: [
+    Document {
+      pageContent: "Fig. 1. Overview of a LLM-powered autonomous agent system.\n" +
+        "Component One: Planning#\n" +
+        "A complicated ta"... 898 more characters,
+      metadata: {
+        source: "https://lilianweng.github.io/posts/2023-06-23-agent/",
+        loc: { lines: [Object] }
+      }
+    },
+    Document {
+      pageContent: 'Task decomposition can be done (1) by LLM with simple prompting like "Steps for XYZ.\\n1.", "What are'... 887 more characters,
+      metadata: {
+        source: "https://lilianweng.github.io/posts/2023-06-23-agent/",
+        loc: { lines: [Object] }
+      }
+    },
+    Document {
+      pageContent: "Agent System Overview\n" +
+        "                \n" +
+        "                    Component One: Planning\n" +
+        "                 "... 850 more characters,
+      metadata: {
+        source: "https://lilianweng.github.io/posts/2023-06-23-agent/",
+        loc: { lines: [Object] }
+      }
+    },
+    Document {
+      pageContent: "Resources:\n" +
+        "1. Internet access for searches and information gathering.\n" +
+        "2. Long Term memory management"... 456 more characters,
+      metadata: {
+        source: "https://lilianweng.github.io/posts/2023-06-23-agent/",
+        loc: { lines: [Object] }
+      }
+    }
+  ],
+  answer: "Task decomposition is a technique used to break down complex tasks into smaller and simpler steps fo"... 230 more characters
+}
+```
+
+
+Check out the [LangSmith trace](https://smith.langchain.com/public/c3753531-563c-40d4-a6bf-21bfe8741d10/r) here to see the internals of the chain.
+
+## Next steps
+
+You've now learned how to return sources from your QA chains.
+
+Next, check out some of the other guides around RAG, such as [how to stream responses](/oss/javascript/how-to/qa_streaming).

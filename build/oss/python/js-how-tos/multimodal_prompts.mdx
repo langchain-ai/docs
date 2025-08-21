@@ -1,0 +1,108 @@
+# How to use multimodal prompts
+
+Here we demonstrate how to use prompt templates to format multimodal inputs to models. 
+
+In this example we will ask a model to describe an image.
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following concepts:
+
+- [Chat models](/oss/python/concepts/chat_models)
+- [LangChain Tools](/oss/python/concepts/tools)
+
+</Info>
+
+```{=mdx}
+import Npm2Yarn from "@theme/Npm2Yarn"
+
+<Npm2Yarn>
+  axios @langchain/openai @langchain/core
+</Npm2Yarn>
+```
+```typescript
+import axios from "axios";
+
+const imageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg";
+const axiosRes = await axios.get(imageUrl, { responseType: "arraybuffer" });
+const base64 = btoa(
+  new Uint8Array(axiosRes.data).reduce(
+    (data, byte) => data + String.fromCharCode(byte),
+    ''
+  )
+);
+```
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI } from "@langchain/openai";
+
+const model = new ChatOpenAI({ model: "gpt-4o" })
+```
+
+
+```typescript
+const prompt = ChatPromptTemplate.fromMessages(
+    [
+        ["system", "Describe the image provided"],
+        [
+            "user",
+            [{ type: "image_url", image_url: "data:image/jpeg;base64,{base64}" }],
+        ]
+    ]
+)
+```
+
+
+```typescript
+const chain = prompt.pipe(model);
+```
+
+
+```typescript
+const response = await chain.invoke({ base64 })
+console.log(response.content)
+```
+```output
+The image depicts a scenic outdoor landscape featuring a wooden boardwalk path extending forward through a large field of green grass and vegetation. On either side of the path, the grass is lush and vibrant, with a variety of bushes and low shrubs visible as well. The sky overhead is expansive and mostly clear, adorned with soft, wispy clouds, illuminated by the light giving a warm and serene ambiance. In the distant background, there are clusters of trees and additional foliage, suggesting a natural and tranquil setting, ideal for a peaceful walk or nature exploration.
+```
+We can also pass in multiple images.
+
+
+```typescript
+const promptWithMultipleImages = ChatPromptTemplate.fromMessages(
+    [
+        ["system", "compare the two pictures provided"],
+        [
+            "user",
+            [
+                {
+                    "type": "image_url",
+                    "image_url": "data:image/jpeg;base64,{imageData1}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": "data:image/jpeg;base64,{imageData2}",
+                },
+            ],
+        ],
+    ]
+)
+```
+
+
+```typescript
+const chainWithMultipleImages = promptWithMultipleImages.pipe(model);
+```
+
+
+```typescript
+const res = await chainWithMultipleImages.invoke({ imageData1: base64, imageData2: base64 })
+console.log(res.content)
+```
+```output
+The two images provided are identical. Both show a wooden boardwalk path extending into a grassy field under a blue sky with scattered clouds. The scenery includes green shrubs and trees in the background, with a bright and clear sky above.
+```

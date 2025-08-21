@@ -1,0 +1,204 @@
+# How to init any model in one line
+
+Many LLM applications let end users specify what model provider and model they want the application to be powered by. This requires writing some logic to initialize different [chat models](/oss/python/concepts/chat_models/) based on some user configuration. The `init_chat_model()` helper method makes it easy to initialize a number of different model integrations without having to worry about import paths and class names.
+
+<Tip>
+**Supported models**
+
+
+See the [init_chat_model()](https://python.langchain.com/api_reference/langchain/chat_models/langchain.chat_models.base.init_chat_model.html) API reference for a full list of supported integrations.
+
+Make sure you have the [integration packages](/oss/python/integrations/chat/) installed for any model providers you want to support. E.g. you should have `langchain-openai` installed to init an OpenAI model.
+
+</Tip>
+
+
+```python
+%pip install -qU langchain langchain-openai langchain-anthropic langchain-google-genai
+```
+
+## Basic usage
+
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Don't forget to set your environment variables for the API keys of the respective providers!
+# For example, you can set them in your terminal or in a .env file:
+# export OPENAI_API_KEY="your_openai_api_key"
+
+# Returns a langchain_openai.ChatOpenAI instance.
+gpt_4o = init_chat_model("gpt-4o", model_provider="openai", temperature=0)
+# Returns a langchain_anthropic.ChatAnthropic instance.
+claude_opus = init_chat_model(
+    "claude-3-opus-20240229", model_provider="anthropic", temperature=0
+)
+# Returns a langchain_google_vertexai.ChatVertexAI instance.
+gemini_15 = init_chat_model(
+    "gemini-2.5-pro", model_provider="google_genai", temperature=0
+)
+
+# Since all model integrations implement the ChatModel interface, you can use them in the same way.
+print("GPT-4o: " + gpt_4o.invoke("what's your name").content + "\n")
+print("Claude Opus: " + claude_opus.invoke("what's your name").content + "\n")
+print("Gemini 2.5: " + gemini_15.invoke("what's your name").content + "\n")
+```
+```output
+GPT-4o: I’m called ChatGPT. How can I assist you today?
+
+Claude Opus: My name is Claude. It's nice to meet you!
+
+Gemini 2.5: I do not have a name. I am a large language model, trained by Google.
+```
+## Inferring model provider
+
+For common and distinct model names `init_chat_model()` will attempt to infer the model provider. See the [API reference](https://python.langchain.com/api_reference/langchain/chat_models/langchain.chat_models.base.init_chat_model.html) for a full list of inference behavior. E.g. any model that starts with `gpt-3...` or `gpt-4...` will be inferred as using model provider `openai`.
+
+
+```python
+gpt_4o = init_chat_model("gpt-4o", temperature=0)
+claude_opus = init_chat_model("claude-3-opus-20240229", temperature=0)
+gemini_15 = init_chat_model("gemini-2.5-pro", temperature=0)
+```
+
+## Creating a configurable model
+
+You can also create a runtime-configurable model by specifying `configurable_fields`. If you don't specify a `model` value, then "model" and "model_provider" be configurable by default.
+
+
+```python
+configurable_model = init_chat_model(temperature=0)
+
+configurable_model.invoke(
+    "what's your name", config={"configurable": {"model": "gpt-4o"}}
+)
+```
+
+
+
+```output
+AIMessage(content='I’m called ChatGPT. How can I assist you today?', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 13, 'prompt_tokens': 11, 'total_tokens': 24, 'completion_tokens_details': {'accepted_prediction_tokens': 0, 'audio_tokens': 0, 'reasoning_tokens': 0, 'rejected_prediction_tokens': 0}, 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}}, 'model_name': 'gpt-4o-2024-08-06', 'system_fingerprint': 'fp_07871e2ad8', 'id': 'chatcmpl-BwCyyBpMqn96KED6zPhLm4k9SQMiQ', 'service_tier': 'default', 'finish_reason': 'stop', 'logprobs': None}, id='run--fada10c3-4128-406c-b83d-a850d16b365f-0', usage_metadata={'input_tokens': 11, 'output_tokens': 13, 'total_tokens': 24, 'input_token_details': {'audio': 0, 'cache_read': 0}, 'output_token_details': {'audio': 0, 'reasoning': 0}})
+```
+
+
+
+```python
+configurable_model.invoke(
+    "what's your name", config={"configurable": {"model": "claude-3-5-sonnet-latest"}}
+)
+```
+
+
+
+```output
+AIMessage(content="My name is Claude. It's nice to meet you!", additional_kwargs={}, response_metadata={'id': 'msg_01VDGrG9D6yefanbBG9zPJrc', 'model': 'claude-3-5-sonnet-20240620', 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0, 'input_tokens': 11, 'output_tokens': 15, 'server_tool_use': None, 'service_tier': 'standard'}, 'model_name': 'claude-3-5-sonnet-20240620'}, id='run--f0156087-debf-4b4b-9aaa-f3328a81ef92-0', usage_metadata={'input_tokens': 11, 'output_tokens': 15, 'total_tokens': 26, 'input_token_details': {'cache_read': 0, 'cache_creation': 0}})
+```
+
+
+### Configurable model with default values
+
+We can create a configurable model with default model values, specify which parameters are configurable, and add prefixes to configurable params:
+
+
+```python
+first_llm = init_chat_model(
+    model="gpt-4o",
+    temperature=0,
+    configurable_fields=("model", "model_provider", "temperature", "max_tokens"),
+    config_prefix="first",  # useful when you have a chain with multiple models
+)
+
+first_llm.invoke("what's your name")
+```
+
+
+
+```output
+AIMessage(content="I'm an AI created by OpenAI, and I don't have a personal name. How can I assist you today?", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 23, 'prompt_tokens': 11, 'total_tokens': 34}, 'model_name': 'gpt-4o-2024-05-13', 'system_fingerprint': 'fp_25624ae3a5', 'finish_reason': 'stop', 'logprobs': None}, id='run-3380f977-4b89-4f44-bc02-b64043b3166f-0', usage_metadata={'input_tokens': 11, 'output_tokens': 23, 'total_tokens': 34})
+```
+
+
+
+```python
+first_llm.invoke(
+    "what's your name",
+    config={
+        "configurable": {
+            "first_model": "claude-3-5-sonnet-latest",
+            "first_temperature": 0.5,
+            "first_max_tokens": 100,
+        }
+    },
+)
+```
+
+
+
+```output
+AIMessage(content="My name is Claude. It's nice to meet you!", additional_kwargs={}, response_metadata={'id': 'msg_01EFKSWpmsn2PSYPQa4cNHWb', 'model': 'claude-3-5-sonnet-20240620', 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 11, 'output_tokens': 15}}, id='run-3c58f47c-41b9-4e56-92e7-fb9602e3787c-0', usage_metadata={'input_tokens': 11, 'output_tokens': 15, 'total_tokens': 26})
+```
+
+
+### Using a configurable model declaratively
+
+We can call declarative operations like `bind_tools`, `with_structured_output`, `with_configurable`, etc. on a configurable model and chain a configurable model in the same way that we would a regularly instantiated chat model object.
+
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location"""
+
+    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+
+class GetPopulation(BaseModel):
+    """Get the current population in a given location"""
+
+    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+
+llm = init_chat_model(temperature=0)
+llm_with_tools = llm.bind_tools([GetWeather, GetPopulation])
+
+llm_with_tools.invoke(
+    "what's bigger in 2024 LA or NYC", config={"configurable": {"model": "gpt-4o"}}
+).tool_calls
+```
+
+
+
+```output
+[{'name': 'GetPopulation',
+  'args': {'location': 'Los Angeles, CA'},
+  'id': 'call_Ga9m8FAArIyEjItHmztPYA22',
+  'type': 'tool_call'},
+ {'name': 'GetPopulation',
+  'args': {'location': 'New York, NY'},
+  'id': 'call_jh2dEvBaAHRaw5JUDthOs7rt',
+  'type': 'tool_call'}]
+```
+
+
+
+```python
+llm_with_tools.invoke(
+    "what's bigger in 2024 LA or NYC",
+    config={"configurable": {"model": "claude-3-5-sonnet-latest"}},
+).tool_calls
+```
+
+
+
+```output
+[{'name': 'GetPopulation',
+  'args': {'location': 'Los Angeles, CA'},
+  'id': 'toolu_01JMufPf4F4t2zLj7miFeqXp',
+  'type': 'tool_call'},
+ {'name': 'GetPopulation',
+  'args': {'location': 'New York City, NY'},
+  'id': 'toolu_01RQBHcE8kEEbYTuuS8WqY1u',
+  'type': 'tool_call'}]
+```
