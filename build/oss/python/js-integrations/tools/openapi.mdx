@@ -1,0 +1,209 @@
+---
+title: OpenApi Toolkit
+---
+
+```{=mdx}
+
+<Warning>
+**Disclaimer ⚠️**
+
+
+This agent can make requests to external APIs. Use with caution, especially when granting access to users.
+
+Be aware that this agent could theoretically send requests with provided credentials or other sensitive data to unverified or potentially malicious URLs --although it should never in theory.
+
+Consider adding limitations to what actions can be performed via the agent, what APIs it can access, what headers can be passed, and more.
+
+In addition, consider implementing measures to validate URLs before sending requests, and to securely handle and protect sensitive data such as credentials.
+
+</Warning>
+
+```
+This will help you getting started with the [OpenApiToolkit](/oss/python/concepts/tools/#toolkits). For detailed documentation of all OpenApiToolkit features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain.agents.OpenApiToolkit.html).
+
+The `OpenAPIToolkit` has access to the following tools:
+
+| Name            | Description |
+|-----------------|-------------|
+| `requests_get`  | A portal to the internet. Use this when you need to get specific content from a website. Input should be a url string (i.e. "https://www.google.com"). The output will be the text response of the GET request. |
+| `requests_post` | Use this when you want to POST to a website. Input should be a json string with two keys: "url" and "data". The value of "url" should be a string, and the value of "data" should be a dictionary of key-value pairs you want to POST to the url as a JSON body. Be careful to always use double quotes for strings in the json string. The output will be the text response of the POST request. |
+| `json_explorer` | Can be used to answer questions about the openapi spec for the API. Always use this tool before trying to make a request. Example inputs to this tool: 'What are the required query parameters for a GET request to the /bar endpoint?' 'What are the required parameters in the request body for a POST request to the /foo endpoint?' Always give this tool a specific question. |
+
+## Setup
+
+This toolkit requires an OpenAPI spec file. The LangChain.js repository has a [sample OpenAPI spec file in the `examples` directory](https://github.com/langchain-ai/langchainjs/blob/cc21aa29102571204f4443a40b53d28581a12e30/examples/openai_openapi.yaml). You can use this file to test the toolkit.
+
+If you want to get automated tracing from runs of individual tools, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```typescript
+process.env.LANGSMITH_TRACING="true"
+process.env.LANGSMITH_API_KEY="your-api-key"
+```
+### Installation
+
+This toolkit lives in the `langchain` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  langchain @langchain/core
+</Npm2Yarn>
+```
+## Instantiation
+
+Now we can instantiate our toolkit. First, we need to define the LLM we would like to use in the toolkit.
+
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+```typescript
+// @lc-docs-hide-cell
+
+import { ChatOpenAI } from "@langchain/openai";
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+})
+```
+
+
+```typescript
+import { OpenApiToolkit } from "langchain/agents/toolkits"
+import * as fs from "fs";
+import * as yaml from "js-yaml";
+import { JsonSpec, JsonObject } from "langchain/tools";
+
+// Load & convert the OpenAPI spec from YAML to JSON.
+const yamlFile = fs.readFileSync("../../../../../examples/openai_openapi.yaml", "utf8");
+const data = yaml.load(yamlFile) as JsonObject;
+if (!data) {
+  throw new Error("Failed to load OpenAPI spec");
+}
+
+// Define headers for the API requests.
+const headers = {
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+};
+
+const toolkit = new OpenApiToolkit(new JsonSpec(data), llm, headers);
+```
+
+## Tools
+
+View available tools:
+
+
+```typescript
+const tools = toolkit.getTools();
+
+console.log(tools.map((tool) => ({
+  name: tool.name,
+  description: tool.description,
+})))
+```
+```output
+[
+  {
+    name: 'requests_get',
+    description: 'A portal to the internet. Use this when you need to get specific content from a website.\n' +
+      '  Input should be a url string (i.e. "https://www.google.com"). The output will be the text response of the GET request.'
+  },
+  {
+    name: 'requests_post',
+    description: 'Use this when you want to POST to a website.\n' +
+      '  Input should be a json string with two keys: "url" and "data".\n' +
+      '  The value of "url" should be a string, and the value of "data" should be a dictionary of\n' +
+      '  key-value pairs you want to POST to the url as a JSON body.\n' +
+      '  Be careful to always use double quotes for strings in the json string\n' +
+      '  The output will be the text response of the POST request.'
+  },
+  {
+    name: 'json_explorer',
+    description: '\n' +
+      'Can be used to answer questions about the openapi spec for the API. Always use this tool before trying to make a request. \n' +
+      'Example inputs to this tool: \n' +
+      "    'What are the required query parameters for a GET request to the /bar endpoint?'\n" +
+      "    'What are the required parameters in the request body for a POST request to the /foo endpoint?'\n" +
+      'Always give this tool a specific question.'
+  }
+]
+```
+## Use within an agent
+
+First, ensure you have LangGraph installed:
+
+```{=mdx}
+<Npm2Yarn>
+  @langchain/langgraph
+</Npm2Yarn>
+```
+```typescript
+import { createReactAgent } from "@langchain/langgraph/prebuilt"
+
+const agentExecutor = createReactAgent({ llm, tools });
+```
+
+
+```typescript
+const exampleQuery = "Make a POST request to openai /chat/completions. The prompt should be 'tell me a joke.'. Ensure you use the model 'gpt-4o-mini'."
+
+const events = await agentExecutor.stream(
+  { messages: [["user", exampleQuery]]},
+  { streamMode: "values", }
+)
+
+for await (const event of events) {
+  const lastMsg = event.messages[event.messages.length - 1];
+  if (lastMsg.tool_calls?.length) {
+    console.dir(lastMsg.tool_calls, { depth: null });
+  } else if (lastMsg.content) {
+    console.log(lastMsg.content);
+  }
+}
+```
+```output
+[
+  {
+    name: 'requests_post',
+    args: {
+      input: '{"url":"https://api.openai.com/v1/chat/completions","data":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"tell me a joke."}]}}'
+    },
+    type: 'tool_call',
+    id: 'call_1HqyZrbYgKFwQRfAtsZA2uL5'
+  }
+]
+{
+  "id": "chatcmpl-9t36IIuRCs0WGMEy69HUqPcKvOc1w",
+  "object": "chat.completion",
+  "created": 1722906986,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Why don't skeletons fight each other? \n\nThey don't have the guts!"
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 15,
+    "total_tokens": 27
+  },
+  "system_fingerprint": "fp_48196bc67a"
+}
+
+Here's a joke for you:
+
+**Why don't skeletons fight each other?**  
+They don't have the guts!
+```
+## API reference
+
+For detailed documentation of all OpenApiToolkit features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain.agents.OpenApiToolkit.html).

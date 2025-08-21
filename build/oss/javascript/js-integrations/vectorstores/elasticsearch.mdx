@@ -1,0 +1,233 @@
+---
+title: Elasticsearch
+---
+
+```{=mdx}
+
+<Tip>
+**Compatibility**
+
+Only available on Node.js.
+</Tip>
+
+```
+[Elasticsearch](https://github.com/elastic/elasticsearch) is a distributed, RESTful search engine optimized for speed and relevance on production-scale workloads. It supports also vector search using the [k-nearest neighbor](https://en.wikipedia.org/wiki/K-nearest_neighbors_algorithm) (kNN) algorithm and also [custom models for Natural Language Processing](https://www.elastic.co/blog/how-to-deploy-nlp-text-embeddings-and-vector-search) (NLP).
+You can read more about the support of vector search in Elasticsearch [here](https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html).
+
+This guide provides a quick overview for getting started with Elasticsearch [vector stores](/oss/javascript/concepts/#vectorstores). For detailed documentation of all `ElasticVectorSearch` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_vectorstores_elasticsearch.ElasticVectorSearch.html).
+
+## Overview
+
+### Integration details
+
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/elasticsearch/) |  Package latest |
+| :--- | :--- | :---: | :---: |
+| [`ElasticVectorSearch`](https://api.js.langchain.com/classes/langchain_community_vectorstores_elasticsearch.ElasticVectorSearch.html) | [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+
+## Setup
+
+To use Elasticsearch vector stores, you'll need to install the `@langchain/community` integration package.
+
+LangChain.js accepts [`@elastic/elasticsearch`](https://github.com/elastic/elasticsearch-js) as the client for Elasticsearch vectorstore. You'll need to install it as a peer dependency.
+
+This guide will also use [OpenAI embeddings](/oss/javascript/integrations/text_embedding/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/javascript/integrations/text_embedding) if you wish.
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @elastic/elasticsearch @langchain/openai @langchain/core
+</Npm2Yarn>
+```
+### Credentials
+
+To use Elasticsearch vector stores, you'll need to have an Elasticsearch instance running.
+
+You can use the [official Docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html) to get started, or you can use [Elastic Cloud](https://www.elastic.co/cloud/), Elastic's official cloud service.
+
+For connecting to Elastic Cloud you can read the documentation reported [here](https://www.elastic.co/guide/en/kibana/current/api-keys.html) for obtaining an API key.
+
+If you are using OpenAI embeddings for this guide, you'll need to set your OpenAI key as well:
+
+```typescript
+process.env.OPENAI_API_KEY = "YOUR_API_KEY";
+```
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```typescript
+// process.env.LANGSMITH_TRACING="true"
+// process.env.LANGSMITH_API_KEY="your-api-key"
+```
+## Instantiation
+
+Instatiating Elasticsearch will vary depending on where your instance is hosted.
+
+
+```typescript
+import {
+  ElasticVectorSearch,
+  type ElasticClientArgs,
+} from "@langchain/community/vectorstores/elasticsearch";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+import { Client, type ClientOptions } from "@elastic/elasticsearch";
+
+import * as fs from "node:fs";
+
+const embeddings = new OpenAIEmbeddings({
+  model: "text-embedding-3-small",
+});
+
+const config: ClientOptions = {
+  node: process.env.ELASTIC_URL ?? "https://127.0.0.1:9200",
+};
+
+if (process.env.ELASTIC_API_KEY) {
+  config.auth = {
+    apiKey: process.env.ELASTIC_API_KEY,
+  };
+} else if (process.env.ELASTIC_USERNAME && process.env.ELASTIC_PASSWORD) {
+  config.auth = {
+    username: process.env.ELASTIC_USERNAME,
+    password: process.env.ELASTIC_PASSWORD,
+  };
+}
+// Local Docker deploys require a TLS certificate
+if (process.env.ELASTIC_CERT_PATH) {
+  config.tls = {
+    ca: fs.readFileSync(process.env.ELASTIC_CERT_PATH),
+    rejectUnauthorized: false,
+  }
+}
+const clientArgs: ElasticClientArgs = {
+  client: new Client(config),
+  indexName: process.env.ELASTIC_INDEX ?? "test_vectorstore",
+};
+
+const vectorStore = new ElasticVectorSearch(embeddings, clientArgs);
+```
+## Manage vector store
+
+### Add items to vector store
+
+
+```typescript
+import type { Document } from "@langchain/core/documents";
+
+const document1: Document = {
+  pageContent: "The powerhouse of the cell is the mitochondria",
+  metadata: { source: "https://example.com" }
+};
+
+const document2: Document = {
+  pageContent: "Buildings are made out of brick",
+  metadata: { source: "https://example.com" }
+};
+
+const document3: Document = {
+  pageContent: "Mitochondria are made out of lipids",
+  metadata: { source: "https://example.com" }
+};
+
+const document4: Document = {
+  pageContent: "The 2024 Olympics are in Paris",
+  metadata: { source: "https://example.com" }
+}
+
+const documents = [document1, document2, document3, document4];
+
+await vectorStore.addDocuments(documents, { ids: ["1", "2", "3", "4"] });
+```
+```output
+[ '1', '2', '3', '4' ]
+```
+### Delete items from vector store
+
+You can delete values from the store by passing the same id you passed in:
+
+
+```typescript
+await vectorStore.delete({ ids: ["4"] });
+```
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+
+```typescript
+const filter = [{
+  operator: "match",
+  field: "source",
+  value: "https://example.com",
+}];
+
+const similaritySearchResults = await vectorStore.similaritySearch("biology", 2, filter);
+
+for (const doc of similaritySearchResults) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
+}
+```
+```output
+* The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
+* Mitochondria are made out of lipids [{"source":"https://example.com"}]
+```
+The vector store supports [Elasticsearch filter syntax](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-filter-context.html) operators.
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+
+```typescript
+const similaritySearchWithScoreResults = await vectorStore.similaritySearchWithScore("biology", 2, filter)
+
+for (const [doc, score] of similaritySearchWithScoreResults) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
+}
+```
+```output
+* [SIM=0.374] The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
+* [SIM=0.370] Mitochondria are made out of lipids [{"source":"https://example.com"}]
+```
+### Query by turning into retriever
+
+You can also transform the vector store into a [retriever](/oss/javascript/concepts/retrievers) for easier usage in your chains. 
+
+
+```typescript
+const retriever = vectorStore.asRetriever({
+  // Optional filter
+  filter: filter,
+  k: 2,
+});
+await retriever.invoke("biology");
+```
+```output
+[
+  Document {
+    pageContent: 'The powerhouse of the cell is the mitochondria',
+    metadata: { source: 'https://example.com' },
+    id: undefined
+  },
+  Document {
+    pageContent: 'Mitochondria are made out of lipids',
+    metadata: { source: 'https://example.com' },
+    id: undefined
+  }
+]
+```
+### Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Tutorials: working with external knowledge](/oss/javascript/tutorials/#working-with-external-knowledge).
+- [How-to: Question and answer with RAG](/oss/javascript/how-to/#qa-with-rag)
+- [Retrieval conceptual docs](/oss/javascript/concepts/retrieval)
+
+## API reference
+
+For detailed documentation of all `ElasticVectorSearch` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_vectorstores_elasticsearch.ElasticVectorSearch.html).
