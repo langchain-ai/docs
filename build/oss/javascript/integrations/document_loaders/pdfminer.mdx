@@ -1,0 +1,1815 @@
+---
+title: PDFMinerLoader
+---
+
+This guide provides a quick overview for getting started with `PDFMiner` [document loader](https://python.langchain.com/docs/concepts/document_loaders). For detailed documentation of all __ModuleName__Loader features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PDFMinerLoader.html).
+
+  
+
+## Overview
+### Integration details
+
+| Class                                                                                                                                                | Package | Local | Serializable | JS support|
+|:-----------------------------------------------------------------------------------------------------------------------------------------------------| :--- | :---: | :---: |  :---: |
+| [PDFMinerLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PDFMinerLoader.html) | [langchain-community](https://python.langchain.com/api_reference/community/index.html) | ✅ | ❌ | ❌ |
+
+---------   
+
+### Loader features
+
+|     Source     | Document Lazy Loading | Native Async Support | Extract Images | Extract Tables |
+|:--------------:| :---: | :---: | :---: |:---: |
+| PDFMinerLoader | ✅ | ❌ | ✅ | ✅ |
+
+  
+
+## Setup
+
+### Credentials
+
+No credentials are required to use PDFMinerLoader
+
+If you want to get automated best in-class tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+Install **langchain-community** and **pdfminer**.
+
+
+```python
+%pip install -qU langchain-community pdfminer.six
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Initialization
+
+Now we can instantiate our model object and load documents:
+
+
+```python
+from langchain_community.document_loaders import PDFMinerLoader
+
+file_path = "./example_data/layout-parser-paper.pdf"
+loader = PDFMinerLoader(file_path)
+```
+
+## Load
+
+
+```python
+docs = loader.load()
+docs[0]
+```
+
+
+
+```output
+Document(metadata={'author': '', 'creationdate': '2021-06-22T01:27:10+00:00', 'creator': 'LaTeX with hyperref', 'keywords': '', 'moddate': '2021-06-22T01:27:10+00:00', 'ptex.fullbanner': 'This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live 2020) kpathsea version 6.3.2', 'producer': 'pdfTeX-1.40.21', 'subject': '', 'title': '', 'trapped': 'False', 'total_pages': 16, 'source': './example_data/layout-parser-paper.pdf'}, page_content='1\n2\n0\n2\n\nn\nu\nJ\n\n1\n2\n\n]\n\nV\nC\n.\ns\nc\n[\n\n2\nv\n8\n4\n3\n5\n1\n.\n3\n0\n1\n2\n:\nv\ni\nX\nr\na\n\nLayoutParser: A Uniﬁed Toolkit for Deep\nLearning Based Document Image Analysis\n\nZejiang Shen1 ((cid:0)), Ruochen Zhang2, Melissa Dell3, Benjamin Charles Germain\nLee4, Jacob Carlson3, and Weining Li5\n\n1 Allen Institute for AI\nshannons@allenai.org\n2 Brown University\nruochen zhang@brown.edu\n3 Harvard University\n{melissadell,jacob carlson}@fas.harvard.edu\n4 University of Washington\nbcgl@cs.washington.edu\n5 University of Waterloo\nw422li@uwaterloo.ca\n\nAbstract. Recent advances in document image analysis (DIA) have been\nprimarily driven by the application of neural networks. Ideally, research\noutcomes could be easily deployed in production and extended for further\ninvestigation. However, various factors like loosely organized codebases\nand sophisticated model conﬁgurations complicate the easy reuse of im-\nportant innovations by a wide audience. Though there have been on-going\neﬀorts to improve reusability and simplify deep learning (DL) model\ndevelopment in disciplines like natural language processing and computer\nvision, none of them are optimized for challenges in the domain of DIA.\nThis represents a major gap in the existing toolkit, as DIA is central to\nacademic research across a wide range of disciplines in the social sciences\nand humanities. This paper introduces LayoutParser, an open-source\nlibrary for streamlining the usage of DL in DIA research and applica-\ntions. The core LayoutParser library comes with a set of simple and\nintuitive interfaces for applying and customizing DL models for layout de-\ntection, character recognition, and many other document processing tasks.\nTo promote extensibility, LayoutParser also incorporates a community\nplatform for sharing both pre-trained models and full document digiti-\nzation pipelines. We demonstrate that LayoutParser is helpful for both\nlightweight and large-scale digitization pipelines in real-word use cases.\nThe library is publicly available at https://layout-parser.github.io.\n\nKeywords: Document Image Analysis · Deep Learning · Layout Analysis\n· Character Recognition · Open Source library · Toolkit.\n\n1\n\nIntroduction\n\nDeep Learning(DL)-based approaches are the state-of-the-art for a wide range of\ndocument image analysis (DIA) tasks including document image classiﬁcation [11,\n\x0c2\n\nZ. Shen et al.\n\n37], layout detection [38, 22], table detection [26], and scene text detection [4].\nA generalized learning-based framework dramatically reduces the need for the\nmanual speciﬁcation of complicated rules, which is the status quo with traditional\nmethods. DL has the potential to transform DIA pipelines and beneﬁt a broad\nspectrum of large-scale document digitization projects.\n\nHowever, there are several practical diﬃculties for taking advantages of re-\ncent advances in DL-based methods: 1) DL models are notoriously convoluted\nfor reuse and extension. Existing models are developed using distinct frame-\nworks like TensorFlow [1] or PyTorch [24], and the high-level parameters can\nbe obfuscated by implementation details [8]. It can be a time-consuming and\nfrustrating experience to debug, reproduce, and adapt existing models for DIA,\nand many researchers who would beneﬁt the most from using these methods lack\nthe technical background to implement them from scratch. 2) Document images\ncontain diverse and disparate patterns across domains, and customized training\nis often required to achieve a desirable detection accuracy. Currently there is no\nfull-ﬂedged infrastructure for easily curating the target document image datasets\nand ﬁne-tuning or re-training the models. 3) DIA usually requires a sequence of\nmodels and other processing to obtain the ﬁnal outputs. Often research teams use\nDL models and then perform further document analyses in separate processes,\nand these pipelines are not documented in any central location (and often not\ndocumented at all). This makes it diﬃcult for research teams to learn about how\nfull pipelines are implemented and leads them to invest signiﬁcant resources in\nreinventing the DIA wheel.\n\nLayoutParser provides a uniﬁed toolkit to support DL-based document image\nanalysis and processing. To address the aforementioned challenges, LayoutParser\nis built with the following components:\n\n1. An oﬀ-the-shelf toolkit for applying DL models for layout detection, character\n\nrecognition, and other DIA tasks (Section 3)\n\n2. A rich repository of pre-trained neural network models (Model Zoo) that\n\nunderlies the oﬀ-the-shelf usage\n\n3. Comprehensive tools for eﬃcient document image data annotation and model\n\ntuning to support diﬀerent levels of customization\n\n4. A DL model hub and community platform for the easy sharing, distribu-\ntion, and discussion of DIA models and pipelines, to promote reusability,\nreproducibility, and extensibility (Section 4)\n\nThe library implements simple and intuitive Python APIs without sacriﬁcing\ngeneralizability and versatility, and can be easily installed via pip. Its convenient\nfunctions for handling document image data can be seamlessly integrated with\nexisting DIA pipelines. With detailed documentations and carefully curated\ntutorials, we hope this tool will beneﬁt a variety of end-users, and will lead to\nadvances in applications in both industry and academic research.\n\nLayoutParser is well aligned with recent eﬀorts for improving DL model\nreusability in other disciplines like natural language processing [8, 34] and com-\nputer vision [35], but with a focus on unique challenges in DIA. We show\nLayoutParser can be applied in sophisticated and large-scale digitization projects\n\x0cLayoutParser: A Uniﬁed Toolkit for DL-Based DIA\n\n3\n\nthat require precision, eﬃciency, and robustness, as well as simple and light-\nweight document processing tasks focusing on eﬃcacy and ﬂexibility (Section 5).\nLayoutParser is being actively maintained, and support for more deep learning\nmodels and novel methods in text-based layout analysis methods [37, 34] is\nplanned.\n\nThe rest of the paper is organized as follows. Section 2 provides an overview\nof related work. The core LayoutParser library, DL Model Zoo, and customized\nmodel training are described in Section 3, and the DL model hub and commu-\nnity platform are detailed in Section 4. Section 5 shows two examples of how\nLayoutParser can be used in practical DIA projects, and Section 6 concludes.\n\n2 Related Work\n\nRecently, various DL models and datasets have been developed for layout analysis\ntasks. The dhSegment [22] utilizes fully convolutional networks [20] for segmen-\ntation tasks on historical documents. Object detection-based methods like Faster\nR-CNN [28] and Mask R-CNN [12] are used for identifying document elements [38]\nand detecting tables [30, 26]. Most recently, Graph Neural Networks [29] have also\nbeen used in table detection [27]. However, these models are usually implemented\nindividually and there is no uniﬁed framework to load and use such models.\n\nThere has been a surge of interest in creating open-source tools for document\nimage processing: a search of document image analysis in Github leads to 5M\nrelevant code pieces 6; yet most of them rely on traditional rule-based methods\nor provide limited functionalities. The closest prior research to our work is the\nOCR-D project7, which also tries to build a complete toolkit for DIA. However,\nsimilar to the platform developed by Neudecker et al. [21], it is designed for\nanalyzing historical documents, and provides no supports for recent DL models.\nThe DocumentLayoutAnalysis project8 focuses on processing born-digital PDF\ndocuments via analyzing the stored PDF data. Repositories like DeepLayout9\nand Detectron2-PubLayNet10 are individual deep learning models trained on\nlayout analysis datasets without support for the full DIA pipeline. The Document\nAnalysis and Exploitation (DAE) platform [15] and the DeepDIVA project [2]\naim to improve the reproducibility of DIA methods (or DL models), yet they\nare not actively maintained. OCR engines like Tesseract [14], easyOCR11 and\npaddleOCR12 usually do not come with comprehensive functionalities for other\nDIA tasks like layout analysis.\n\nRecent years have also seen numerous eﬀorts to create libraries for promoting\nreproducibility and reusability in the ﬁeld of DL. Libraries like Dectectron2 [35],\n\n6 The number shown is obtained by specifying the search type as ‘code’.\n7 https://ocr-d.de/en/about\n8 https://github.com/BobLd/DocumentLayoutAnalysis\n9 https://github.com/leonlulu/DeepLayout\n10 https://github.com/hpanwar08/detectron2\n11 https://github.com/JaidedAI/EasyOCR\n12 https://github.com/PaddlePaddle/PaddleOCR\n\x0c4\n\nZ. Shen et al.\n\nFig. 1: The overall architecture of LayoutParser. For an input document image,\nthe core LayoutParser library provides a set of oﬀ-the-shelf tools for layout\ndetection, OCR, visualization, and storage, backed by a carefully designed layout\ndata structure. LayoutParser also supports high level customization via eﬃcient\nlayout annotation and model training functions. These improve model accuracy\non the target samples. The community platform enables the easy sharing of DIA\nmodels and whole digitization pipelines to promote reusability and reproducibility.\nA collection of detailed documentation, tutorials and exemplar projects make\nLayoutParser easy to learn and use.\n\nAllenNLP [8] and transformers [34] have provided the community with complete\nDL-based support for developing and deploying models for general computer\nvision and natural language processing problems. LayoutParser, on the other\nhand, specializes speciﬁcally in DIA tasks. LayoutParser is also equipped with a\ncommunity platform inspired by established model hubs such as Torch Hub [23]\nand TensorFlow Hub [1]. It enables the sharing of pretrained models as well as\nfull document processing pipelines that are unique to DIA tasks.\n\nThere have been a variety of document data collections to facilitate the\ndevelopment of DL models. Some examples include PRImA [3](magazine layouts),\nPubLayNet [38](academic paper layouts), Table Bank [18](tables in academic\npapers), Newspaper Navigator Dataset [16, 17](newspaper ﬁgure layouts) and\nHJDataset [31](historical Japanese document layouts). A spectrum of models\ntrained on these datasets are currently available in the LayoutParser model zoo\nto support diﬀerent use cases.\n\n3 The Core LayoutParser Library\n\nAt the core of LayoutParser is an oﬀ-the-shelf toolkit that streamlines DL-\nbased document image analysis. Five components support a simple interface\nwith comprehensive functionalities: 1) The layout detection models enable using\npre-trained or self-trained DL models for layout detection with just four lines\nof code. 2) The detected layout information is stored in carefully engineered\n\nEfficient Data AnnotationCustomized Model TrainingModel CustomizationDIA Model HubDIA Pipeline SharingCommunity PlatformLayout Detection ModelsDocument Images The Core LayoutParser LibraryOCR ModuleStorage & VisualizationLayout Data Structure\n\x0cLayoutParser: A Uniﬁed Toolkit for DL-Based DIA\n\n5\n\nTable 1: Current layout detection models in the LayoutParser model zoo\n\nDataset\n\nBase Model1 Large Model Notes\n\nPubLayNet [38]\nPRImA [3]\nNewspaper [17]\nTableBank [18]\nHJDataset [31]\n\nF / M\nM\nF\nF\nF / M\n\nM\n-\n-\nF\n-\n\nLayouts of modern scientiﬁc documents\nLayouts of scanned modern magazines and scientiﬁc reports\nLayouts of scanned US newspapers from the 20th century\nTable region on modern scientiﬁc and business document\nLayouts of history Japanese documents\n\n1 For each dataset, we train several models of diﬀerent sizes for diﬀerent needs (the trade-oﬀ between accuracy\nvs. computational cost). For “base model” and “large model”, we refer to using the ResNet 50 or ResNet 101\nbackbones [13], respectively. One can train models of diﬀerent architectures, like Faster R-CNN [28] (F) and Mask\nR-CNN [12] (M). For example, an F in the Large Model column indicates it has a Faster R-CNN model trained\nusing the ResNet 101 backbone. The platform is maintained and a number of additions will be made to the model\nzoo in coming months.\n\nlayout data structures, which are optimized for eﬃciency and versatility. 3) When\nnecessary, users can employ existing or customized OCR models via the uniﬁed\nAPI provided in the OCR module. 4) LayoutParser comes with a set of utility\nfunctions for the visualization and storage of the layout data. 5) LayoutParser\nis also highly customizable, via its integration with functions for layout data\nannotation and model training. We now provide detailed descriptions for each\ncomponent.\n\n3.1 Layout Detection Models\n\nIn LayoutParser, a layout model takes a document image as an input and\ngenerates a list of rectangular boxes for the target content regions. Diﬀerent\nfrom traditional methods, it relies on deep convolutional neural networks rather\nthan manually curated rules to identify content regions. It is formulated as an\nobject detection problem and state-of-the-art models like Faster R-CNN [28] and\nMask R-CNN [12] are used. This yields prediction results of high accuracy and\nmakes it possible to build a concise, generalized interface for layout detection.\nLayoutParser, built upon Detectron2 [35], provides a minimal API that can\nperform layout detection with only four lines of code in Python:\n\n1 import layoutparser as lp\n2 image = cv2 . imread ( " image_file " ) # load images\n3 model = lp . De t e c tro n2 Lay outM odel (\n\n" lp :// PubLayNet / f as t er _ r c nn _ R _ 50 _ F P N_ 3 x / config " )\n\n4\n5 layout = model . detect ( image )\n\nLayoutParser provides a wealth of pre-trained model weights using various\ndatasets covering diﬀerent languages, time periods, and document types. Due to\ndomain shift [7], the prediction performance can notably drop when models are ap-\nplied to target samples that are signiﬁcantly diﬀerent from the training dataset. As\ndocument structures and layouts vary greatly in diﬀerent domains, it is important\nto select models trained on a dataset similar to the test samples. A semantic syntax\nis used for initializing the model weights in LayoutParser, using both the dataset\nname and model name lp://<dataset-name>/<model-architecture-name>.\n\x0c6\n\nZ. Shen et al.\n\nFig. 2: The relationship between the three types of layout data structures.\nCoordinate supports three kinds of variation; TextBlock consists of the co-\nordinate information and extra features like block text, types, and reading orders;\na Layout object is a list of all possible layout elements, including other Layout\nobjects. They all support the same set of transformation and operation APIs for\nmaximum ﬂexibility.\n\nShown in Table 1, LayoutParser currently hosts 9 pre-trained models trained\non 5 diﬀerent datasets. Description of the training dataset is provided alongside\nwith the trained models such that users can quickly identify the most suitable\nmodels for their tasks. Additionally, when such a model is not readily available,\nLayoutParser also supports training customized layout models and community\nsharing of the models (detailed in Section 3.5).\n\n3.2 Layout Data Structures\n\nA critical feature of LayoutParser is the implementation of a series of data\nstructures and operations that can be used to eﬃciently process and manipulate\nthe layout elements. In document image analysis pipelines, various post-processing\non the layout analysis model outputs is usually required to obtain the ﬁnal\noutputs. Traditionally, this requires exporting DL model outputs and then loading\nthe results into other pipelines. All model outputs from LayoutParser will be\nstored in carefully engineered data types optimized for further processing, which\nmakes it possible to build an end-to-end document digitization pipeline within\nLayoutParser. There are three key components in the data structure, namely\nthe Coordinate system, the TextBlock, and the Layout. They provide diﬀerent\nlevels of abstraction for the layout data, and a set of APIs are supported for\ntransformations or operations on these classes.\n\x0cLayoutParser: A Uniﬁed Toolkit for DL-Based DIA\n\n7\n\nCoordinates are the cornerstones for storing layout information. Currently,\nthree types of Coordinate data structures are provided in LayoutParser, shown\nin Figure 2. Interval and Rectangle are the most common data types and\nsupport specifying 1D or 2D regions within a document. They are parameterized\nwith 2 and 4 parameters. A Quadrilateral class is also implemented to support\na more generalized representation of rectangular regions when the document\nis skewed or distorted, where the 4 corner points can be speciﬁed and a total\nof 8 degrees of freedom are supported. A wide collection of transformations\nlike shift, pad, and scale, and operations like intersect, union, and is_in,\nare supported for these classes. Notably, it is common to separate a segment\nof the image and analyze it individually. LayoutParser provides full support\nfor this scenario via image cropping operations crop_image and coordinate\ntransformations like relative_to and condition_on that transform coordinates\nto and from their relative representations. We refer readers to Table 2 for a more\ndetailed description of these operations13.\n\nBased on Coordinates, we implement the TextBlock class that stores both\nthe positional and extra features of individual layout elements. It also supports\nspecifying the reading orders via setting the parent ﬁeld to the index of the parent\nobject. A Layout class is built that takes in a list of TextBlocks and supports\nprocessing the elements in batch. Layout can also be nested to support hierarchical\nlayout structures. They support the same operations and transformations as the\nCoordinate classes, minimizing both learning and deployment eﬀort.\n\n3.3 OCR\n\nLayoutParser provides a uniﬁed interface for existing OCR tools. Though there\nare many OCR tools available, they are usually conﬁgured diﬀerently with distinct\nAPIs or protocols for using them. It can be ineﬃcient to add new OCR tools into\nan existing pipeline, and diﬃcult to make direct comparisons among the available\ntools to ﬁnd the best option for a particular project. To this end, LayoutParser\nbuilds a series of wrappers among existing OCR engines, and provides nearly\nthe same syntax for using them. It supports a plug-and-play style of using OCR\nengines, making it eﬀortless to switch, evaluate, and compare diﬀerent OCR\nmodules:\n\n1 ocr_agent = lp . TesseractAgent ()\n2 # Can be easily switched to other OCR software\n3 tokens = ocr_agent . detect ( image )\n\nThe OCR outputs will also be stored in the aforementioned layout data\nstructures and can be seamlessly incorporated into the digitization pipeline.\nCurrently LayoutParser supports the Tesseract and Google Cloud Vision OCR\nengines.\n\nLayoutParser also comes with a DL-based CNN-RNN OCR model [6] trained\nwith the Connectionist Temporal Classiﬁcation (CTC) loss [10]. It can be used\nlike the other OCR modules, and can be easily trained on customized datasets.\n\n13 This is also available in the LayoutParser documentation pages.\n\x0c8\n\nZ. Shen et al.\n\nTable 2: All operations supported by the layout elements. The same APIs are\nsupported across diﬀerent layout element classes including Coordinate types,\nTextBlock and Layout.\n\nOperation Name\n\nDescription\n\nblock.pad(top, bottom, right, left) Enlarge the current block according to the input\n\nblock.scale(fx, fy)\n\nblock.shift(dx, dy)\n\nScale the current block given the ratio\nin x and y direction\n\nMove the current block with the shift\ndistances in x and y direction\n\nblock1.is in(block2)\n\nWhether block1 is inside of block2\n\nblock1.intersect(block2)\n\nblock1.union(block2)\n\nblock1.relative to(block2)\n\nblock1.condition on(block2)\n\nReturn the intersection region of block1 and block2.\nCoordinate type to be determined based on the inputs.\n\nReturn the union region of block1 and block2.\nCoordinate type to be determined based on the inputs.\n\nConvert the absolute coordinates of block1 to\nrelative coordinates to block2\n\nCalculate the absolute coordinates of block1 given\nthe canvas block2’s absolute coordinates\n\nblock.crop image(image)\n\nObtain the image segments in the block region\n\n3.4 Storage and visualization\n\nThe end goal of DIA is to transform the image-based document data into a\nstructured database. LayoutParser supports exporting layout data into diﬀerent\nformats like JSON, csv, and will add the support for the METS/ALTO XML\nformat 14 . It can also load datasets from layout analysis-speciﬁc formats like\nCOCO [38] and the Page Format [25] for training layout models (Section 3.5).\nVisualization of the layout detection results is critical for both presentation\nand debugging. LayoutParser is built with an integrated API for displaying the\nlayout information along with the original document image. Shown in Figure 3, it\nenables presenting layout data with rich meta information and features in diﬀerent\nmodes. More detailed information can be found in the online LayoutParser\ndocumentation page.\n\n3.5 Customized Model Training\n\nBesides the oﬀ-the-shelf library, LayoutParser is also highly customizable with\nsupports for highly unique and challenging document analysis tasks. Target\ndocument images can be vastly diﬀerent from the existing datasets for train-\ning layout models, which leads to low layout detection accuracy. Training data\n\n14 https://altoxml.github.io\n\x0cLayoutParser: A Uniﬁed Toolkit for DL-Based DIA\n\n9\n\nFig. 3: Layout detection and OCR results visualization generated by the\nLayoutParser APIs. Mode I directly overlays the layout region bounding boxes\nand categories over the original image. Mode II recreates the original document\nvia drawing the OCR’d texts at their corresponding positions on the image\ncanvas. In this ﬁgure, tokens in textual regions are ﬁltered using the API and\nthen displayed.\n\ncan also be highly sensitive and not sharable publicly. To overcome these chal-\nlenges, LayoutParser is built with rich features for eﬃcient data annotation and\ncustomized model training.\n\nLayoutParser incorporates a toolkit optimized for annotating document lay-\nouts using object-level active learning [32]. With the help from a layout detection\nmodel trained along with labeling, only the most important layout objects within\neach image, rather than the whole image, are required for labeling. The rest of\nthe regions are automatically annotated with high conﬁdence predictions from\nthe layout detection model. This allows a layout dataset to be created more\neﬃciently with only around 60% of the labeling budget.\n\nAfter the training dataset is curated, LayoutParser supports diﬀerent modes\nfor training the layout models. Fine-tuning can be used for training models on a\nsmall newly-labeled dataset by initializing the model with existing pre-trained\nweights. Training from scratch can be helpful when the source dataset and\ntarget are signiﬁcantly diﬀerent and a large training set is available. However, as\nsuggested in Studer et al.’s work[33], loading pre-trained weights on large-scale\ndatasets like ImageNet [5], even from totally diﬀerent domains, can still boost\nmodel performance. Through the integrated API provided by LayoutParser,\nusers can easily compare model performances on the benchmark datasets.\n\x0c10\n\nZ. Shen et al.\n\nFig. 4: Illustration of (a) the original historical Japanese document with layout\ndetection results and (b) a recreated version of the document image that achieves\nmuch better character recognition recall. The reorganization algorithm rearranges\nthe tokens based on the their detected bounding boxes given a maximum allowed\nheight.\n\n4 LayoutParser Community Platform\n\nAnother focus of LayoutParser is promoting the reusability of layout detection\nmodels and full digitization pipelines. Similar to many existing deep learning\nlibraries, LayoutParser comes with a community model hub for distributing\nlayout models. End-users can upload their self-trained models to the model hub,\nand these models can be loaded into a similar interface as the currently available\nLayoutParser pre-trained models. For example, the model trained on the News\nNavigator dataset [17] has been incorporated in the model hub.\n\nBeyond DL models, LayoutParser also promotes the sharing of entire doc-\nument digitization pipelines. For example, sometimes the pipeline requires the\ncombination of multiple DL models to achieve better accuracy. Currently, pipelines\nare mainly described in academic papers and implementations are often not pub-\nlicly available. To this end, the LayoutParser community platform also enables\nthe sharing of layout pipelines to promote the discussion and reuse of techniques.\nFor each shared pipeline, it has a dedicated project page, with links to the source\ncode, documentation, and an outline of the approaches. A discussion panel is\nprovided for exchanging ideas. Combined with the core LayoutParser library,\nusers can easily build reusable components based on the shared pipelines and\napply them to solve their unique problems.\n\n5 Use Cases\n\nThe core objective of LayoutParser is to make it easier to create both large-scale\nand light-weight document digitization pipelines. Large-scale document processing\n\x0cLayoutParser: A Uniﬁed Toolkit for DL-Based DIA\n\n11\n\nfocuses on precision, eﬃciency, and robustness. The target documents may have\ncomplicated structures, and may require training multiple layout detection models\nto achieve the optimal accuracy. Light-weight pipelines are built for relatively\nsimple documents, with an emphasis on development ease, speed and ﬂexibility.\nIdeally one only needs to use existing resources, and model training should be\navoided. Through two exemplar projects, we show how practitioners in both\nacademia and industry can easily build such pipelines using LayoutParser and\nextract high-quality structured document data for their downstream tasks. The\nsource code for these projects will be publicly available in the LayoutParser\ncommunity hub.\n\n5.1 A Comprehensive Historical Document Digitization Pipeline\n\nThe digitization of historical documents can unlock valuable data that can shed\nlight on many important social, economic, and historical questions. Yet due to\nscan noises, page wearing, and the prevalence of complicated layout structures, ob-\ntaining a structured representation of historical document scans is often extremely\ncomplicated.\nIn this example, LayoutParser was\nused to develop a comprehensive\npipeline, shown in Figure 5, to gener-\nate high-quality structured data from\nhistorical Japanese ﬁrm ﬁnancial ta-\nbles with complicated layouts. The\npipeline applies two layout models to\nidentify diﬀerent levels of document\nstructures and two customized OCR\nengines for optimized character recog-\nnition accuracy.\n\nAs shown in Figure 4 (a), the\ndocument contains columns of text\nwritten vertically 15, a common style\nin Japanese. Due to scanning noise\nand archaic printing technology, the\ncolumns can be skewed or have vari-\nable widths, and hence cannot be eas-\nily identiﬁed via rule-based methods.\nWithin each column, words are sepa-\nrated by white spaces of variable size,\nand the vertical positions of objects\ncan be an indicator of their layout\ntype.\n\nFig. 5: Illustration of how LayoutParser\nhelps with the historical document digi-\ntization pipeline.\n\n15 A document page consists of eight rows like this. For simplicity we skip the row\n\nsegmentation discussion and refer readers to the source code when available.\n\x0c12\n\nZ. Shen et al.\n\nTo decipher the complicated layout\n\nstructure, two object detection models have been trained to recognize individual\ncolumns and tokens, respectively. A small training set (400 images with approxi-\nmately 100 annotations each) is curated via the active learning based annotation\ntool [32] in LayoutParser. The models learn to identify both the categories and\nregions for each token or column via their distinct visual features. The layout\ndata structure enables easy grouping of the tokens within each column, and\nrearranging columns to achieve the correct reading orders based on the horizontal\nposition. Errors are identiﬁed and rectiﬁed via checking the consistency of the\nmodel predictions. Therefore, though trained on a small dataset, the pipeline\nachieves a high level of layout detection accuracy: it achieves a 96.97 AP [19]\nscore across 5 categories for the column detection model, and a 89.23 AP across\n4 categories for the token detection model.\n\nA combination of character recognition methods is developed to tackle the\nunique challenges in this document. In our experiments, we found that irregular\nspacing between the tokens led to a low character recognition recall rate, whereas\nexisting OCR models tend to perform better on densely-arranged texts. To\novercome this challenge, we create a document reorganization algorithm that\nrearranges the text based on the token bounding boxes detected in the layout\nanalysis step. Figure 4 (b) illustrates the generated image of dense text, which is\nsent to the OCR APIs as a whole to reduce the transaction costs. The ﬂexible\ncoordinate system in LayoutParser is used to transform the OCR results relative\nto their original positions on the page.\n\nAdditionally, it is common for historical documents to use unique fonts\nwith diﬀerent glyphs, which signiﬁcantly degrades the accuracy of OCR models\ntrained on modern texts. In this document, a special ﬂat font is used for printing\nnumbers and could not be detected by oﬀ-the-shelf OCR engines. Using the highly\nﬂexible functionalities from LayoutParser, a pipeline approach is constructed\nthat achieves a high recognition accuracy with minimal eﬀort. As the characters\nhave unique visual structures and are usually clustered together, we train the\nlayout model to identify number regions with a dedicated category. Subsequently,\nLayoutParser crops images within these regions, and identiﬁes characters within\nthem using a self-trained OCR model based on a CNN-RNN [6]. The model\ndetects a total of 15 possible categories, and achieves a 0.98 Jaccard score16 and\na 0.17 average Levinstein distances17 for token prediction on the test set.\n\nOverall, it is possible to create an intricate and highly accurate digitization\npipeline for large-scale digitization using LayoutParser. The pipeline avoids\nspecifying the complicated rules used in traditional methods, is straightforward\nto develop, and is robust to outliers. The DL models also generate ﬁne-grained\nresults that enable creative approaches like page reorganization for OCR.\n\n16 This measures the overlap between the detected and ground-truth characters, and\n\nthe maximum is 1.\n\n17 This measures the number of edits from the ground-truth text to the predicted text,\n\nand lower is better.\n\x0cLayoutParser: A Uniﬁed Toolkit for DL-Based DIA\n\n13\n\nFig. 6: This lightweight table detector can identify tables (outlined in red) and\ncells (shaded in blue) in diﬀerent locations on a page. In very few cases (d), it\nmight generate minor error predictions, e.g, failing to capture the top text line of\na table.\n\n5.2 A light-weight Visual Table Extractor\n\nDetecting tables and parsing their structures (table extraction) are of central im-\nportance for many document digitization tasks. Many previous works [26, 30, 27]\nand tools 18 have been developed to identify and parse table structures. Yet they\nmight require training complicated models from scratch, or are only applicable\nfor born-digital PDF documents. In this section, we show how LayoutParser can\nhelp build a light-weight accurate visual table extractor for legal docket tables\nusing the existing resources with minimal eﬀort.\n\nThe extractor uses a pre-trained layout detection model for identifying the\ntable regions and some simple rules for pairing the rows and the columns in the\nPDF image. Mask R-CNN [12] trained on the PubLayNet dataset [38] from the\nLayoutParser Model Zoo can be used for detecting table regions. By ﬁltering\nout model predictions of low conﬁdence and removing overlapping predictions,\nLayoutParser can identify the tabular regions on each page, which signiﬁcantly\nsimpliﬁes the subsequent steps. By applying the line detection functions within\nthe tabular segments, provided in the utility module from LayoutParser, the\npipeline can identify the three distinct columns in the tables. A row clustering\nmethod is then applied via analyzing the y coordinates of token bounding boxes in\nthe left-most column, which are obtained from the OCR engines. A non-maximal\nsuppression algorithm is used to remove duplicated rows with extremely small\ngaps. Shown in Figure 6, the built pipeline can detect tables at diﬀerent positions\non a page accurately. Continued tables from diﬀerent pages are concatenated,\nand a structured table representation has been easily created.\n\n18 https://github.com/atlanhq/camelot, https://github.com/tabulapdf/tabula\n\x0c14\n\nZ. Shen et al.\n\n6 Conclusion\n\nLayoutParser provides a comprehensive toolkit for deep learning-based document\nimage analysis. The oﬀ-the-shelf library is easy to install, and can be used to\nbuild ﬂexible and accurate pipelines for processing documents with complicated\nstructures. It also supports high-level customization and enables easy labeling and\ntraining of DL models on unique document image datasets. The LayoutParser\ncommunity platform facilitates sharing DL models and DIA pipelines, inviting\ndiscussion and promoting code reproducibility and reusability. The LayoutParser\nteam is committed to keeping the library updated continuously and bringing\nthe most recent advances in DL-based DIA, such as multi-modal document\nmodeling [37, 36, 9] (an upcoming priority), to a diverse audience of end-users.\n\nAcknowledgements We thank the anonymous reviewers for their comments\nand suggestions. This project is supported in part by NSF Grant OIA-2033558\nand funding from the Harvard Data Science Initiative and Harvard Catalyst.\nZejiang Shen thanks Doug Downey for suggestions.\n\nReferences\n\n[1] Abadi, M., Agarwal, A., Barham, P., Brevdo, E., Chen, Z., Citro, C., Corrado,\nG.S., Davis, A., Dean, J., Devin, M., Ghemawat, S., Goodfellow, I., Harp, A.,\nIrving, G., Isard, M., Jia, Y., Jozefowicz, R., Kaiser, L., Kudlur, M., Levenberg,\nJ., Man´e, D., Monga, R., Moore, S., Murray, D., Olah, C., Schuster, M., Shlens, J.,\nSteiner, B., Sutskever, I., Talwar, K., Tucker, P., Vanhoucke, V., Vasudevan, V.,\nVi´egas, F., Vinyals, O., Warden, P., Wattenberg, M., Wicke, M., Yu, Y., Zheng,\nX.: TensorFlow: Large-scale machine learning on heterogeneous systems (2015),\nhttps://www.tensorflow.org/, software available from tensorﬂow.org\n\n[2] Alberti, M., Pondenkandath, V., W¨ursch, M., Ingold, R., Liwicki, M.: Deepdiva: a\nhighly-functional python framework for reproducible experiments. In: 2018 16th\nInternational Conference on Frontiers in Handwriting Recognition (ICFHR). pp.\n423–428. IEEE (2018)\n\n[3] Antonacopoulos, A., Bridson, D., Papadopoulos, C., Pletschacher, S.: A realistic\ndataset for performance evaluation of document layout analysis. In: 2009 10th\nInternational Conference on Document Analysis and Recognition. pp. 296–300.\nIEEE (2009)\n\n[4] Baek, Y., Lee, B., Han, D., Yun, S., Lee, H.: Character region awareness for text\ndetection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and\nPattern Recognition. pp. 9365–9374 (2019)\n\n[5] Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: ImageNet: A Large-Scale\n\nHierarchical Image Database. In: CVPR09 (2009)\n\n[6] Deng, Y., Kanervisto, A., Ling, J., Rush, A.M.: Image-to-markup generation with\ncoarse-to-ﬁne attention. In: International Conference on Machine Learning. pp.\n980–989. PMLR (2017)\n\n[7] Ganin, Y., Lempitsky, V.: Unsupervised domain adaptation by backpropagation.\nIn: International conference on machine learning. pp. 1180–1189. PMLR (2015)\n\x0cLayoutParser: A Uniﬁed Toolkit for DL-Based DIA\n\n15\n\n[8] Gardner, M., Grus, J., Neumann, M., Tafjord, O., Dasigi, P., Liu, N., Peters,\nM., Schmitz, M., Zettlemoyer, L.: Allennlp: A deep semantic natural language\nprocessing platform. arXiv preprint arXiv:1803.07640 (2018)\n(cid:32)Lukasz Garncarek, Powalski, R., Stanis(cid:32)lawek, T., Topolski, B., Halama, P.,\nGrali´nski, F.: Lambert: Layout-aware (language) modeling using bert for in-\nformation extraction (2020)\n\n[9]\n\n[10] Graves, A., Fern´andez, S., Gomez, F., Schmidhuber, J.: Connectionist temporal\nclassiﬁcation: labelling unsegmented sequence data with recurrent neural networks.\nIn: Proceedings of the 23rd international conference on Machine learning. pp.\n369–376 (2006)\n\n[11] Harley, A.W., Ufkes, A., Derpanis, K.G.: Evaluation of deep convolutional nets for\ndocument image classiﬁcation and retrieval. In: 2015 13th International Conference\non Document Analysis and Recognition (ICDAR). pp. 991–995. IEEE (2015)\n[12] He, K., Gkioxari, G., Doll´ar, P., Girshick, R.: Mask r-cnn. In: Proceedings of the\n\nIEEE international conference on computer vision. pp. 2961–2969 (2017)\n\n[13] He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition.\nIn: Proceedings of the IEEE conference on computer vision and pattern recognition.\npp. 770–778 (2016)\n\n[14] Kay, A.: Tesseract: An open-source optical character recognition engine. Linux J.\n\n2007(159), 2 (Jul 2007)\n\n[15] Lamiroy, B., Lopresti, D.: An open architecture for end-to-end document analysis\nbenchmarking. In: 2011 International Conference on Document Analysis and\nRecognition. pp. 42–47. IEEE (2011)\n\n[16] Lee, B.C., Weld, D.S.: Newspaper navigator: Open faceted search for 1.5\nmillion images. In: Adjunct Publication of the 33rd Annual ACM Sym-\nposium on User\nInterface Software and Technology. p. 120–122. UIST\n’20 Adjunct, Association for Computing Machinery, New York, NY, USA\n(2020). https://doi.org/10.1145/3379350.3416143, https://doi-org.offcampus.\nlib.washington.edu/10.1145/3379350.3416143\n\n[17] Lee, B.C.G., Mears, J., Jakeway, E., Ferriter, M., Adams, C., Yarasavage, N.,\nThomas, D., Zwaard, K., Weld, D.S.: The Newspaper Navigator Dataset: Extracting\nHeadlines and Visual Content from 16 Million Historic Newspaper Pages in\nChronicling America, p. 3055–3062. Association for Computing Machinery, New\nYork, NY, USA (2020), https://doi.org/10.1145/3340531.3412767\n\n[18] Li, M., Cui, L., Huang, S., Wei, F., Zhou, M., Li, Z.: Tablebank: Table benchmark\nfor image-based table detection and recognition. arXiv preprint arXiv:1903.01949\n(2019)\n\n[19] Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Doll´ar, P.,\nZitnick, C.L.: Microsoft coco: Common objects in context. In: European conference\non computer vision. pp. 740–755. Springer (2014)\n\n[20] Long, J., Shelhamer, E., Darrell, T.: Fully convolutional networks for semantic\nsegmentation. In: Proceedings of the IEEE conference on computer vision and\npattern recognition. pp. 3431–3440 (2015)\n\n[21] Neudecker, C., Schlarb, S., Dogan, Z.M., Missier, P., Suﬁ, S., Williams, A., Wolsten-\ncroft, K.: An experimental workﬂow development platform for historical document\ndigitisation and analysis. In: Proceedings of the 2011 workshop on historical\ndocument imaging and processing. pp. 161–168 (2011)\n\n[22] Oliveira, S.A., Seguin, B., Kaplan, F.: dhsegment: A generic deep-learning approach\nfor document segmentation. In: 2018 16th International Conference on Frontiers\nin Handwriting Recognition (ICFHR). pp. 7–12. IEEE (2018)\n\x0c16\n\nZ. Shen et al.\n\n[23] Paszke, A., Gross, S., Chintala, S., Chanan, G., Yang, E., DeVito, Z., Lin, Z.,\nDesmaison, A., Antiga, L., Lerer, A.: Automatic diﬀerentiation in pytorch (2017)\n[24] Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen,\nT., Lin, Z., Gimelshein, N., Antiga, L., et al.: Pytorch: An imperative style,\nhigh-performance deep learning library. arXiv preprint arXiv:1912.01703 (2019)\n[25] Pletschacher, S., Antonacopoulos, A.: The page (page analysis and ground-truth\nelements) format framework. In: 2010 20th International Conference on Pattern\nRecognition. pp. 257–260. IEEE (2010)\n\n[26] Prasad, D., Gadpal, A., Kapadni, K., Visave, M., Sultanpure, K.: Cascadetabnet:\nAn approach for end to end table detection and structure recognition from image-\nbased documents. In: Proceedings of the IEEE/CVF Conference on Computer\nVision and Pattern Recognition Workshops. pp. 572–573 (2020)\n\n[27] Qasim, S.R., Mahmood, H., Shafait, F.: Rethinking table recognition using graph\nneural networks. In: 2019 International Conference on Document Analysis and\nRecognition (ICDAR). pp. 142–147. IEEE (2019)\n\n[28] Ren, S., He, K., Girshick, R., Sun, J.: Faster r-cnn: Towards real-time object\ndetection with region proposal networks. In: Advances in neural information\nprocessing systems. pp. 91–99 (2015)\n\n[29] Scarselli, F., Gori, M., Tsoi, A.C., Hagenbuchner, M., Monfardini, G.: The graph\nneural network model. IEEE transactions on neural networks 20(1), 61–80 (2008)\n[30] Schreiber, S., Agne, S., Wolf, I., Dengel, A., Ahmed, S.: Deepdesrt: Deep learning\nfor detection and structure recognition of tables in document images. In: 2017 14th\nIAPR international conference on document analysis and recognition (ICDAR).\nvol. 1, pp. 1162–1167. IEEE (2017)\n\n[31] Shen, Z., Zhang, K., Dell, M.: A large dataset of historical japanese documents\nwith complex layouts. In: Proceedings of the IEEE/CVF Conference on Computer\nVision and Pattern Recognition Workshops. pp. 548–549 (2020)\n\n[32] Shen, Z., Zhao, J., Dell, M., Yu, Y., Li, W.: Olala: Object-level active learning\n\nbased layout annotation. arXiv preprint arXiv:2010.01762 (2020)\n\n[33] Studer, L., Alberti, M., Pondenkandath, V., Goktepe, P., Kolonko, T., Fischer,\nA., Liwicki, M., Ingold, R.: A comprehensive study of imagenet pre-training for\nhistorical document image analysis. In: 2019 International Conference on Document\nAnalysis and Recognition (ICDAR). pp. 720–725. IEEE (2019)\n\n[34] Wolf, T., Debut, L., Sanh, V., Chaumond, J., Delangue, C., Moi, A., Cistac, P.,\nRault, T., Louf, R., Funtowicz, M., et al.: Huggingface’s transformers: State-of-\nthe-art natural language processing. arXiv preprint arXiv:1910.03771 (2019)\n[35] Wu, Y., Kirillov, A., Massa, F., Lo, W.Y., Girshick, R.: Detectron2. https://\n\ngithub.com/facebookresearch/detectron2 (2019)\n\n[36] Xu, Y., Xu, Y., Lv, T., Cui, L., Wei, F., Wang, G., Lu, Y., Florencio, D., Zhang, C.,\nChe, W., et al.: Layoutlmv2: Multi-modal pre-training for visually-rich document\nunderstanding. arXiv preprint arXiv:2012.14740 (2020)\n\n[37] Xu, Y., Li, M., Cui, L., Huang, S., Wei, F., Zhou, M.: Layoutlm: Pre-training of\n\ntext and layout for document image understanding (2019)\n\n[38] Zhong, X., Tang, J., Yepes, A.J.: Publaynet:\n\nlayout analysis.\n\nument\nAnalysis and Recognition (ICDAR). pp. 1015–1022.\nhttps://doi.org/10.1109/ICDAR.2019.00166\n\nlargest dataset ever for doc-\nIn: 2019 International Conference on Document\nIEEE (Sep 2019).')
+```
+
+
+
+```python
+import pprint
+
+pprint.pp(docs[0].metadata)
+```
+```output
+{'author': '',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'creator': 'LaTeX with hyperref',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'ptex.fullbanner': 'This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live '
+                    '2020) kpathsea version 6.3.2',
+ 'producer': 'pdfTeX-1.40.21',
+ 'subject': '',
+ 'title': '',
+ 'trapped': 'False',
+ 'total_pages': 16,
+ 'source': './example_data/layout-parser-paper.pdf'}
+```
+## Lazy Load
+
+
+
+```python
+pages = []
+for doc in loader.lazy_load():
+    pages.append(doc)
+    if len(pages) >= 10:
+        # do some paged operation, e.g.
+        # index.upsert(page)
+
+        pages = []
+len(pages)
+```
+
+
+
+```output
+1
+```
+
+
+
+```python
+print(pages[0].page_content[:100])
+pprint.pp(pages[0].metadata)
+```
+```output
+1
+2
+0
+2
+
+n
+u
+J
+
+1
+2
+
+]
+
+V
+C
+.
+s
+c
+[
+
+2
+v
+8
+4
+3
+5
+1
+.
+3
+0
+1
+2
+:
+v
+i
+X
+r
+a
+
+LayoutParser: A Uniﬁed Too
+{'author': '',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'creator': 'LaTeX with hyperref',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'ptex.fullbanner': 'This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live '
+                    '2020) kpathsea version 6.3.2',
+ 'producer': 'pdfTeX-1.40.21',
+ 'subject': '',
+ 'title': '',
+ 'trapped': 'False',
+ 'total_pages': 16,
+ 'source': './example_data/layout-parser-paper.pdf'}
+```
+The metadata attribute contains at least the following keys:
+- source
+- page (if in mode *page*)
+- total_page
+- creationdate
+- creator
+- producer
+
+Additional metadata are specific to each parser.
+These pieces of information can be helpful (to categorize your PDFs for example).
+
+## Splitting mode & custom pages delimiter
+
+When loading the PDF file you can split it in two different ways:
+- By page
+- As a single text flow
+
+By default PDFMinerLoader will split the PDF by page.
+
+### Extract the PDF by page. Each page is extracted as a langchain Document object:
+
+
+```python
+loader = PDFMinerLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+)
+docs = loader.load()
+print(len(docs))
+pprint.pp(docs[0].metadata)
+```
+```output
+16
+{'author': '',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'creator': 'LaTeX with hyperref',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'ptex.fullbanner': 'This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live '
+                    '2020) kpathsea version 6.3.2',
+ 'producer': 'pdfTeX-1.40.21',
+ 'subject': '',
+ 'title': '',
+ 'trapped': 'False',
+ 'total_pages': 16,
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'page': 0}
+```
+In this mode the pdf is split by pages and the resulting Documents metadata contains the page number. But in some cases we could want to process the pdf as a single text flow (so we don't cut some paragraphs in half). In this case you can use the *single* mode :
+
+### Extract the whole PDF as a single langchain Document object:
+
+
+```python
+loader = PDFMinerLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="single",
+)
+docs = loader.load()
+print(len(docs))
+pprint.pp(docs[0].metadata)
+```
+```output
+1
+{'author': '',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'creator': 'LaTeX with hyperref',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'ptex.fullbanner': 'This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live '
+                    '2020) kpathsea version 6.3.2',
+ 'producer': 'pdfTeX-1.40.21',
+ 'subject': '',
+ 'title': '',
+ 'trapped': 'False',
+ 'total_pages': 16,
+ 'source': './example_data/layout-parser-paper.pdf'}
+```
+Logically, in this mode, the ‘page_number’ metadata disappears. Here's how to clearly identify where pages end in the text flow :
+
+### Add a custom *pages_delimiter* to identify where are ends of pages in *single* mode:
+
+
+```python
+loader = PDFMinerLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="single",
+    pages_delimiter="\n-------THIS IS A CUSTOM END OF PAGE-------\n",
+)
+docs = loader.load()
+print(docs[0].page_content[:5780])
+```
+```output
+1
+2
+0
+2
+
+n
+u
+J
+
+1
+2
+
+]
+
+V
+C
+.
+s
+c
+[
+
+2
+v
+8
+4
+3
+5
+1
+.
+3
+0
+1
+2
+:
+v
+i
+X
+r
+a
+
+LayoutParser: A Uniﬁed Toolkit for Deep
+Learning Based Document Image Analysis
+
+Zejiang Shen1 ((cid:0)), Ruochen Zhang2, Melissa Dell3, Benjamin Charles Germain
+Lee4, Jacob Carlson3, and Weining Li5
+
+1 Allen Institute for AI
+shannons@allenai.org
+2 Brown University
+ruochen zhang@brown.edu
+3 Harvard University
+{melissadell,jacob carlson}@fas.harvard.edu
+4 University of Washington
+bcgl@cs.washington.edu
+5 University of Waterloo
+w422li@uwaterloo.ca
+
+Abstract. Recent advances in document image analysis (DIA) have been
+primarily driven by the application of neural networks. Ideally, research
+outcomes could be easily deployed in production and extended for further
+investigation. However, various factors like loosely organized codebases
+and sophisticated model conﬁgurations complicate the easy reuse of im-
+portant innovations by a wide audience. Though there have been on-going
+eﬀorts to improve reusability and simplify deep learning (DL) model
+development in disciplines like natural language processing and computer
+vision, none of them are optimized for challenges in the domain of DIA.
+This represents a major gap in the existing toolkit, as DIA is central to
+academic research across a wide range of disciplines in the social sciences
+and humanities. This paper introduces LayoutParser, an open-source
+library for streamlining the usage of DL in DIA research and applica-
+tions. The core LayoutParser library comes with a set of simple and
+intuitive interfaces for applying and customizing DL models for layout de-
+tection, character recognition, and many other document processing tasks.
+To promote extensibility, LayoutParser also incorporates a community
+platform for sharing both pre-trained models and full document digiti-
+zation pipelines. We demonstrate that LayoutParser is helpful for both
+lightweight and large-scale digitization pipelines in real-word use cases.
+The library is publicly available at https://layout-parser.github.io.
+
+Keywords: Document Image Analysis · Deep Learning · Layout Analysis
+· Character Recognition · Open Source library · Toolkit.
+
+1
+
+Introduction
+
+Deep Learning(DL)-based approaches are the state-of-the-art for a wide range of
+document image analysis (DIA) tasks including document image classiﬁcation [11,
+-------THIS IS A CUSTOM END OF PAGE-------
+2
+
+Z. Shen et al.
+
+37], layout detection [38, 22], table detection [26], and scene text detection [4].
+A generalized learning-based framework dramatically reduces the need for the
+manual speciﬁcation of complicated rules, which is the status quo with traditional
+methods. DL has the potential to transform DIA pipelines and beneﬁt a broad
+spectrum of large-scale document digitization projects.
+
+However, there are several practical diﬃculties for taking advantages of re-
+cent advances in DL-based methods: 1) DL models are notoriously convoluted
+for reuse and extension. Existing models are developed using distinct frame-
+works like TensorFlow [1] or PyTorch [24], and the high-level parameters can
+be obfuscated by implementation details [8]. It can be a time-consuming and
+frustrating experience to debug, reproduce, and adapt existing models for DIA,
+and many researchers who would beneﬁt the most from using these methods lack
+the technical background to implement them from scratch. 2) Document images
+contain diverse and disparate patterns across domains, and customized training
+is often required to achieve a desirable detection accuracy. Currently there is no
+full-ﬂedged infrastructure for easily curating the target document image datasets
+and ﬁne-tuning or re-training the models. 3) DIA usually requires a sequence of
+models and other processing to obtain the ﬁnal outputs. Often research teams use
+DL models and then perform further document analyses in separate processes,
+and these pipelines are not documented in any central location (and often not
+documented at all). This makes it diﬃcult for research teams to learn about how
+full pipelines are implemented and leads them to invest signiﬁcant resources in
+reinventing the DIA wheel.
+
+LayoutParser provides a uniﬁed toolkit to support DL-based document image
+analysis and processing. To address the aforementioned challenges, LayoutParser
+is built with the following components:
+
+1. An oﬀ-the-shelf toolkit for applying DL models for layout detection, character
+
+recognition, and other DIA tasks (Section 3)
+
+2. A rich repository of pre-trained neural network models (Model Zoo) that
+
+underlies the oﬀ-the-shelf usage
+
+3. Comprehensive tools for eﬃcient document image data annotation and model
+
+tuning to support diﬀerent levels of customization
+
+4. A DL model hub and community platform for the easy sharing, distribu-
+tion, and discussion of DIA models and pipelines, to promote reusability,
+reproducibility, and extensibility (Section 4)
+
+The library implements simple and intuitive Python APIs without sacriﬁcing
+generalizability and versatility, and can be easily installed via pip. Its convenient
+functions for handling document image data can be seamlessly integrated with
+existing DIA pipelines. With detailed documentations and carefully curated
+tutorials, we hope this tool will beneﬁt a variety of end-users, and will lead to
+advances in applications in both industry and academic research.
+
+LayoutParser is well aligned with recent eﬀorts for improving DL model
+reusability in other disciplines like natural language processing [8, 34] and com-
+puter vision [35], but with a focus on unique challenges in DIA. We show
+LayoutParser can be applied in sophisticated and large-scale digitization projects
+-------THIS IS A CUSTOM END OF PAGE-------
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+3
+
+that require precision,
+```
+This could simply be \n, or \f to clearly indicate a page change, or \<!-- PAGE BREAK --> for seamless injection in a Markdown viewer without a visual effect.
+
+# Extract images from the PDF
+
+You can extract images from your PDFs with a choice of three different solutions:
+- rapidOCR (lightweight Optical Character Recognition tool)
+- Tesseract (OCR tool with high precision)
+- Multimodal language model
+
+You can tune these functions to choose the output format of the extracted images among *html*, *markdown* or *text*
+
+The result is inserted between the last and the second-to-last paragraphs of text of the page.
+
+### Extract images from the PDF with rapidOCR:
+
+
+```python
+%pip install -qU rapidocr-onnxruntime
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+from langchain_community.document_loaders.parsers import RapidOCRBlobParser
+
+loader = PDFMinerLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    images_inner_format="markdown-img",
+    images_parser=RapidOCRBlobParser(),
+)
+docs = loader.load()
+
+print(docs[5].page_content)
+```
+```output
+6
+
+Z. Shen et al.
+
+Fig. 2: The relationship between the three types of layout data structures.
+Coordinate supports three kinds of variation; TextBlock consists of the co-
+ordinate information and extra features like block text, types, and reading orders;
+a Layout object is a list of all possible layout elements, including other Layout
+objects. They all support the same set of transformation and operation APIs for
+maximum ﬂexibility.
+
+Shown in Table 1, LayoutParser currently hosts 9 pre-trained models trained
+on 5 diﬀerent datasets. Description of the training dataset is provided alongside
+with the trained models such that users can quickly identify the most suitable
+models for their tasks. Additionally, when such a model is not readily available,
+LayoutParser also supports training customized layout models and community
+sharing of the models (detailed in Section 3.5).
+
+3.2 Layout Data Structures
+
+A critical feature of LayoutParser is the implementation of a series of data
+structures and operations that can be used to eﬃciently process and manipulate
+the layout elements. In document image analysis pipelines, various post-processing
+on the layout analysis model outputs is usually required to obtain the ﬁnal
+outputs. Traditionally, this requires exporting DL model outputs and then loading
+the results into other pipelines. All model outputs from LayoutParser will be
+stored in carefully engineered data types optimized for further processing, which
+makes it possible to build an end-to-end document digitization pipeline within
+LayoutParser. There are three key components in the data structure, namely
+the Coordinate system, the TextBlock, and the Layout. They provide diﬀerent
+levels of abstraction for the layout data, and a set of APIs are supported for
+transformations or operations on these classes.
+
+
+
+Coordinate
+(x1, y1)
+(X1, y1)
+(x2,y2)
+APIS
+x-interval
+tart
+end
+Quadrilateral
+operation
+Rectangle
+y-interval
+ena
+(x2, y2)
+(x4, y4)
+(x3, y3)
+and
+textblock
+Coordinate
+transformation
++
+Block
+Block
+Reading
+Extra features
+Text
+Type
+Order
+coordinatel
+textblockl
+layout
+ same
+textblock2
+layoutl
+The
+A list of the layout elements
+```
+Be careful, RapidOCR is designed to work with Chinese and English, not other languages.
+
+### Extract images from the PDF with Tesseract:
+
+
+```python
+%pip install -qU pytesseract
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+from langchain_community.document_loaders.parsers import TesseractBlobParser
+
+loader = PDFMinerLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    images_inner_format="html-img",
+    images_parser=TesseractBlobParser(),
+)
+docs = loader.load()
+print(docs[5].page_content)
+```
+```output
+6
+
+Z. Shen et al.
+
+Fig. 2: The relationship between the three types of layout data structures.
+Coordinate supports three kinds of variation; TextBlock consists of the co-
+ordinate information and extra features like block text, types, and reading orders;
+a Layout object is a list of all possible layout elements, including other Layout
+objects. They all support the same set of transformation and operation APIs for
+maximum ﬂexibility.
+
+Shown in Table 1, LayoutParser currently hosts 9 pre-trained models trained
+on 5 diﬀerent datasets. Description of the training dataset is provided alongside
+with the trained models such that users can quickly identify the most suitable
+models for their tasks. Additionally, when such a model is not readily available,
+LayoutParser also supports training customized layout models and community
+sharing of the models (detailed in Section 3.5).
+
+3.2 Layout Data Structures
+
+A critical feature of LayoutParser is the implementation of a series of data
+structures and operations that can be used to eﬃciently process and manipulate
+the layout elements. In document image analysis pipelines, various post-processing
+on the layout analysis model outputs is usually required to obtain the ﬁnal
+outputs. Traditionally, this requires exporting DL model outputs and then loading
+the results into other pipelines. All model outputs from LayoutParser will be
+stored in carefully engineered data types optimized for further processing, which
+makes it possible to build an end-to-end document digitization pipeline within
+LayoutParser. There are three key components in the data structure, namely
+the Coordinate system, the TextBlock, and the Layout. They provide diﬀerent
+levels of abstraction for the layout data, and a set of APIs are supported for
+transformations or operations on these classes.
+
+
+
+M4 ,
+py x-interval
+©
+S
+Bat Rectangle Quadrilateral
+4 <
+fo} Eo
+° 3
+o a
+3 Coordinate
+4
+9 +
+* -
+oO Block Block Reading
+4s Extra features Text Type Order
+[ coordinatel textblock1
+o ' Pees
+8
+> textblock2 r layout1 ]
+a
+
+A list of the layout elements
+
+The same transformation and operation APIs
+```
+### Extract images from the PDF with multimodal model:
+
+
+```python
+%pip install -qU langchain-openai
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+```
+
+
+
+```output
+True
+```
+
+
+
+```python
+from getpass import getpass
+
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass("OpenAI API key =")
+```
+
+
+```python
+from langchain_community.document_loaders.parsers import LLMImageBlobParser
+from langchain_openai import ChatOpenAI
+
+loader = PDFMinerLoader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    images_inner_format="markdown-img",
+    images_parser=LLMImageBlobParser(model=ChatOpenAI(model="gpt-4o", max_tokens=1024)),
+)
+docs = loader.load()
+print(docs[5].page_content)
+```
+```output
+6
+
+Z. Shen et al.
+
+Fig. 2: The relationship between the three types of layout data structures.
+Coordinate supports three kinds of variation; TextBlock consists of the co-
+ordinate information and extra features like block text, types, and reading orders;
+a Layout object is a list of all possible layout elements, including other Layout
+objects. They all support the same set of transformation and operation APIs for
+maximum ﬂexibility.
+
+Shown in Table 1, LayoutParser currently hosts 9 pre-trained models trained
+on 5 diﬀerent datasets. Description of the training dataset is provided alongside
+with the trained models such that users can quickly identify the most suitable
+models for their tasks. Additionally, when such a model is not readily available,
+LayoutParser also supports training customized layout models and community
+sharing of the models (detailed in Section 3.5).
+
+3.2 Layout Data Structures
+
+A critical feature of LayoutParser is the implementation of a series of data
+structures and operations that can be used to eﬃciently process and manipulate
+the layout elements. In document image analysis pipelines, various post-processing
+on the layout analysis model outputs is usually required to obtain the ﬁnal
+outputs. Traditionally, this requires exporting DL model outputs and then loading
+the results into other pipelines. All model outputs from LayoutParser will be
+stored in carefully engineered data types optimized for further processing, which
+makes it possible to build an end-to-end document digitization pipeline within
+LayoutParser. There are three key components in the data structure, namely
+the Coordinate system, the TextBlock, and the Layout. They provide diﬀerent
+levels of abstraction for the layout data, and a set of APIs are supported for
+transformations or operations on these classes.
+
+
+
+**Image Summary for Retrieval:**
+
+Diagram illustrating the structure of layout elements with coordinates, text blocks, and extra features. It includes sections for "Coordinate," "textblock," and "layout," describing intervals, rectangles, quadrilaterals, and their transformation through APIs. Text blocks include features like block text, type, and reading order.
+
+**Extracted Text:**
+
+Coordinate
+
+Coordinate 
+
+start
+x-interval
+
+start end
+y-interval
+
+end
+
+Rectangle
+
+(x1, y1)
+(x1, y1)
+
+(x2, y2)
+
+(x2, y2)
+
+Quadrilateral 
+
+(x4, y4)
+
+(x4, y4)
+
+(x3, y3)
+
+(x3, y3)
+
+The same transformation and operation APIs
+
+textblock
+
+Coordinate
+
++
+
+Extra features
+
+Block Text Block Type Reading Order  
+... 
+
+layout
+
+[ coordinate1 , textblock1 , ...
+
+..., textblock2 , layout1 ]
+
+A list of the layout elements
+```
+## Working with Files
+
+Many document loaders involve parsing files. The difference between such loaders usually stems from how the file is parsed, rather than how the file is loaded. For example, you can use `open` to read the binary content of either a PDF or a markdown file, but you need different parsing logic to convert that binary data into text.
+
+As a result, it can be helpful to decouple the parsing logic from the loading logic, which makes it easier to re-use a given parser regardless of how the data was loaded.
+You can use this strategy to analyze different files, with the same parsing parameters.
+
+It is possible to work with files from cloud storage.
+
+
+```python
+from langchain_community.document_loaders import CloudBlobLoader
+from langchain_community.document_loaders.generic import GenericLoader
+
+loader = GenericLoader(
+    blob_loader=CloudBlobLoader(
+        url="s3://mybucket",  # Supports s3://, az://, gs://, file:// schemes.
+        glob="*.pdf",
+    ),
+    blob_parser=PDFMinerParser(),
+)
+docs = loader.load()
+print(docs[0].page_content)
+pprint.pp(docs[0].metadata)
+```
+
+## Using PDFMiner to generate HTML text
+
+This can be helpful for chunking texts semantically into sections as the output html content can be parsed via `BeautifulSoup` to get more structured and rich information about font size, page numbers, PDF headers/footers, etc.
+
+
+```python
+from langchain_community.document_loaders import PDFMinerPDFasHTMLLoader
+
+file_path = "./example_data/layout-parser-paper.pdf"
+loader = PDFMinerPDFasHTMLLoader(file_path)
+docs = loader.load()
+docs[0]
+```
+
+
+```python
+from bs4 import BeautifulSoup
+
+soup = BeautifulSoup(docs[0].page_content, "html.parser")
+content = soup.find_all("div")
+```
+
+
+```python
+import re
+
+cur_fs = None
+cur_text = ""
+snippets = []  # first collect all snippets that have the same font size
+for c in content:
+    sp = c.find("span")
+    if not sp:
+        continue
+    st = sp.get("style")
+    if not st:
+        continue
+    fs = re.findall(r"font-size:(\d+)px", st)
+    if not fs:
+        continue
+    fs = int(fs[0])
+    if not cur_fs:
+        cur_fs = fs
+    if fs == cur_fs:
+        cur_text += c.text
+    else:
+        snippets.append((cur_text, cur_fs))
+        cur_fs = fs
+        cur_text = c.text
+snippets.append((cur_text, cur_fs))
+# Note: The above logic is very straightforward. One can also add more strategies such as removing duplicate snippets (as
+# headers/footers in a PDF appear on multiple pages so if we find duplicates it's safe to assume that it is redundant info)
+```
+
+
+```python
+from langchain_core.documents import Document
+
+cur_idx = -1
+semantic_snippets = []
+# Assumption: headings have higher font size than their respective content
+for s in snippets:
+    # if current snippet's font size > previous section's heading => it is a new heading
+    if (
+        not semantic_snippets
+        or s[1] > semantic_snippets[cur_idx].metadata["heading_font"]
+    ):
+        metadata = {"heading": s[0], "content_font": 0, "heading_font": s[1]}
+        metadata.update(docs[0].metadata)
+        semantic_snippets.append(Document(page_content="", metadata=metadata))
+        cur_idx += 1
+        continue
+
+    # if current snippet's font size <= previous section's content => content belongs to the same section (one can also create
+    # a tree like structure for sub sections if needed but that may require some more thinking and may be data specific)
+    if (
+        not semantic_snippets[cur_idx].metadata["content_font"]
+        or s[1] <= semantic_snippets[cur_idx].metadata["content_font"]
+    ):
+        semantic_snippets[cur_idx].page_content += s[0]
+        semantic_snippets[cur_idx].metadata["content_font"] = max(
+            s[1], semantic_snippets[cur_idx].metadata["content_font"]
+        )
+        continue
+
+    # if current snippet's font size > previous section's content but less than previous section's heading than also make a new
+    # section (e.g. title of a PDF will have the highest font size but we don't want it to subsume all sections)
+    metadata = {"heading": s[0], "content_font": 0, "heading_font": s[1]}
+    metadata.update(docs[0].metadata)
+    semantic_snippets.append(Document(page_content="", metadata=metadata))
+    cur_idx += 1
+
+print(semantic_snippets[4])
+```
+
+## API reference
+
+For detailed documentation of all `PDFMinerLoader` features and configurations head to the API reference: https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PDFMinerLoader.html
+
+
+```python
+from langchain_community.document_loaders import FileSystemBlobLoader
+from langchain_community.document_loaders.generic import GenericLoader
+from langchain_community.document_loaders.parsers import PDFMinerParser
+
+loader = GenericLoader(
+    blob_loader=FileSystemBlobLoader(
+        path="./example_data/",
+        glob="*.pdf",
+    ),
+    blob_parser=PDFMinerParser(),
+)
+docs = loader.load()
+print(docs[0].page_content)
+pprint.pp(docs[0].metadata)
+```
+```output
+1
+2
+0
+2
+
+n
+u
+J
+
+1
+2
+
+]
+
+V
+C
+.
+s
+c
+[
+
+2
+v
+8
+4
+3
+5
+1
+.
+3
+0
+1
+2
+:
+v
+i
+X
+r
+a
+
+LayoutParser: A Uniﬁed Toolkit for Deep
+Learning Based Document Image Analysis
+
+Zejiang Shen1 ((cid:0)), Ruochen Zhang2, Melissa Dell3, Benjamin Charles Germain
+Lee4, Jacob Carlson3, and Weining Li5
+
+1 Allen Institute for AI
+shannons@allenai.org
+2 Brown University
+ruochen zhang@brown.edu
+3 Harvard University
+{melissadell,jacob carlson}@fas.harvard.edu
+4 University of Washington
+bcgl@cs.washington.edu
+5 University of Waterloo
+w422li@uwaterloo.ca
+
+Abstract. Recent advances in document image analysis (DIA) have been
+primarily driven by the application of neural networks. Ideally, research
+outcomes could be easily deployed in production and extended for further
+investigation. However, various factors like loosely organized codebases
+and sophisticated model conﬁgurations complicate the easy reuse of im-
+portant innovations by a wide audience. Though there have been on-going
+eﬀorts to improve reusability and simplify deep learning (DL) model
+development in disciplines like natural language processing and computer
+vision, none of them are optimized for challenges in the domain of DIA.
+This represents a major gap in the existing toolkit, as DIA is central to
+academic research across a wide range of disciplines in the social sciences
+and humanities. This paper introduces LayoutParser, an open-source
+library for streamlining the usage of DL in DIA research and applica-
+tions. The core LayoutParser library comes with a set of simple and
+intuitive interfaces for applying and customizing DL models for layout de-
+tection, character recognition, and many other document processing tasks.
+To promote extensibility, LayoutParser also incorporates a community
+platform for sharing both pre-trained models and full document digiti-
+zation pipelines. We demonstrate that LayoutParser is helpful for both
+lightweight and large-scale digitization pipelines in real-word use cases.
+The library is publicly available at https://layout-parser.github.io.
+
+Keywords: Document Image Analysis · Deep Learning · Layout Analysis
+· Character Recognition · Open Source library · Toolkit.
+
+1
+
+Introduction
+
+Deep Learning(DL)-based approaches are the state-of-the-art for a wide range of
+document image analysis (DIA) tasks including document image classiﬁcation [11,
+2
+
+Z. Shen et al.
+
+37], layout detection [38, 22], table detection [26], and scene text detection [4].
+A generalized learning-based framework dramatically reduces the need for the
+manual speciﬁcation of complicated rules, which is the status quo with traditional
+methods. DL has the potential to transform DIA pipelines and beneﬁt a broad
+spectrum of large-scale document digitization projects.
+
+However, there are several practical diﬃculties for taking advantages of re-
+cent advances in DL-based methods: 1) DL models are notoriously convoluted
+for reuse and extension. Existing models are developed using distinct frame-
+works like TensorFlow [1] or PyTorch [24], and the high-level parameters can
+be obfuscated by implementation details [8]. It can be a time-consuming and
+frustrating experience to debug, reproduce, and adapt existing models for DIA,
+and many researchers who would beneﬁt the most from using these methods lack
+the technical background to implement them from scratch. 2) Document images
+contain diverse and disparate patterns across domains, and customized training
+is often required to achieve a desirable detection accuracy. Currently there is no
+full-ﬂedged infrastructure for easily curating the target document image datasets
+and ﬁne-tuning or re-training the models. 3) DIA usually requires a sequence of
+models and other processing to obtain the ﬁnal outputs. Often research teams use
+DL models and then perform further document analyses in separate processes,
+and these pipelines are not documented in any central location (and often not
+documented at all). This makes it diﬃcult for research teams to learn about how
+full pipelines are implemented and leads them to invest signiﬁcant resources in
+reinventing the DIA wheel.
+
+LayoutParser provides a uniﬁed toolkit to support DL-based document image
+analysis and processing. To address the aforementioned challenges, LayoutParser
+is built with the following components:
+
+1. An oﬀ-the-shelf toolkit for applying DL models for layout detection, character
+
+recognition, and other DIA tasks (Section 3)
+
+2. A rich repository of pre-trained neural network models (Model Zoo) that
+
+underlies the oﬀ-the-shelf usage
+
+3. Comprehensive tools for eﬃcient document image data annotation and model
+
+tuning to support diﬀerent levels of customization
+
+4. A DL model hub and community platform for the easy sharing, distribu-
+tion, and discussion of DIA models and pipelines, to promote reusability,
+reproducibility, and extensibility (Section 4)
+
+The library implements simple and intuitive Python APIs without sacriﬁcing
+generalizability and versatility, and can be easily installed via pip. Its convenient
+functions for handling document image data can be seamlessly integrated with
+existing DIA pipelines. With detailed documentations and carefully curated
+tutorials, we hope this tool will beneﬁt a variety of end-users, and will lead to
+advances in applications in both industry and academic research.
+
+LayoutParser is well aligned with recent eﬀorts for improving DL model
+reusability in other disciplines like natural language processing [8, 34] and com-
+puter vision [35], but with a focus on unique challenges in DIA. We show
+LayoutParser can be applied in sophisticated and large-scale digitization projects
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+3
+
+that require precision, eﬃciency, and robustness, as well as simple and light-
+weight document processing tasks focusing on eﬃcacy and ﬂexibility (Section 5).
+LayoutParser is being actively maintained, and support for more deep learning
+models and novel methods in text-based layout analysis methods [37, 34] is
+planned.
+
+The rest of the paper is organized as follows. Section 2 provides an overview
+of related work. The core LayoutParser library, DL Model Zoo, and customized
+model training are described in Section 3, and the DL model hub and commu-
+nity platform are detailed in Section 4. Section 5 shows two examples of how
+LayoutParser can be used in practical DIA projects, and Section 6 concludes.
+
+2 Related Work
+
+Recently, various DL models and datasets have been developed for layout analysis
+tasks. The dhSegment [22] utilizes fully convolutional networks [20] for segmen-
+tation tasks on historical documents. Object detection-based methods like Faster
+R-CNN [28] and Mask R-CNN [12] are used for identifying document elements [38]
+and detecting tables [30, 26]. Most recently, Graph Neural Networks [29] have also
+been used in table detection [27]. However, these models are usually implemented
+individually and there is no uniﬁed framework to load and use such models.
+
+There has been a surge of interest in creating open-source tools for document
+image processing: a search of document image analysis in Github leads to 5M
+relevant code pieces 6; yet most of them rely on traditional rule-based methods
+or provide limited functionalities. The closest prior research to our work is the
+OCR-D project7, which also tries to build a complete toolkit for DIA. However,
+similar to the platform developed by Neudecker et al. [21], it is designed for
+analyzing historical documents, and provides no supports for recent DL models.
+The DocumentLayoutAnalysis project8 focuses on processing born-digital PDF
+documents via analyzing the stored PDF data. Repositories like DeepLayout9
+and Detectron2-PubLayNet10 are individual deep learning models trained on
+layout analysis datasets without support for the full DIA pipeline. The Document
+Analysis and Exploitation (DAE) platform [15] and the DeepDIVA project [2]
+aim to improve the reproducibility of DIA methods (or DL models), yet they
+are not actively maintained. OCR engines like Tesseract [14], easyOCR11 and
+paddleOCR12 usually do not come with comprehensive functionalities for other
+DIA tasks like layout analysis.
+
+Recent years have also seen numerous eﬀorts to create libraries for promoting
+reproducibility and reusability in the ﬁeld of DL. Libraries like Dectectron2 [35],
+
+6 The number shown is obtained by specifying the search type as ‘code’.
+7 https://ocr-d.de/en/about
+8 https://github.com/BobLd/DocumentLayoutAnalysis
+9 https://github.com/leonlulu/DeepLayout
+10 https://github.com/hpanwar08/detectron2
+11 https://github.com/JaidedAI/EasyOCR
+12 https://github.com/PaddlePaddle/PaddleOCR
+4
+
+Z. Shen et al.
+
+Fig. 1: The overall architecture of LayoutParser. For an input document image,
+the core LayoutParser library provides a set of oﬀ-the-shelf tools for layout
+detection, OCR, visualization, and storage, backed by a carefully designed layout
+data structure. LayoutParser also supports high level customization via eﬃcient
+layout annotation and model training functions. These improve model accuracy
+on the target samples. The community platform enables the easy sharing of DIA
+models and whole digitization pipelines to promote reusability and reproducibility.
+A collection of detailed documentation, tutorials and exemplar projects make
+LayoutParser easy to learn and use.
+
+AllenNLP [8] and transformers [34] have provided the community with complete
+DL-based support for developing and deploying models for general computer
+vision and natural language processing problems. LayoutParser, on the other
+hand, specializes speciﬁcally in DIA tasks. LayoutParser is also equipped with a
+community platform inspired by established model hubs such as Torch Hub [23]
+and TensorFlow Hub [1]. It enables the sharing of pretrained models as well as
+full document processing pipelines that are unique to DIA tasks.
+
+There have been a variety of document data collections to facilitate the
+development of DL models. Some examples include PRImA [3](magazine layouts),
+PubLayNet [38](academic paper layouts), Table Bank [18](tables in academic
+papers), Newspaper Navigator Dataset [16, 17](newspaper ﬁgure layouts) and
+HJDataset [31](historical Japanese document layouts). A spectrum of models
+trained on these datasets are currently available in the LayoutParser model zoo
+to support diﬀerent use cases.
+
+3 The Core LayoutParser Library
+
+At the core of LayoutParser is an oﬀ-the-shelf toolkit that streamlines DL-
+based document image analysis. Five components support a simple interface
+with comprehensive functionalities: 1) The layout detection models enable using
+pre-trained or self-trained DL models for layout detection with just four lines
+of code. 2) The detected layout information is stored in carefully engineered
+
+Efficient Data AnnotationCustomized Model TrainingModel CustomizationDIA Model HubDIA Pipeline SharingCommunity PlatformLayout Detection ModelsDocument Images The Core LayoutParser LibraryOCR ModuleStorage & VisualizationLayout Data Structure
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+5
+
+Table 1: Current layout detection models in the LayoutParser model zoo
+
+Dataset
+
+Base Model1 Large Model Notes
+
+PubLayNet [38]
+PRImA [3]
+Newspaper [17]
+TableBank [18]
+HJDataset [31]
+
+F / M
+M
+F
+F
+F / M
+
+M
+-
+-
+F
+-
+
+Layouts of modern scientiﬁc documents
+Layouts of scanned modern magazines and scientiﬁc reports
+Layouts of scanned US newspapers from the 20th century
+Table region on modern scientiﬁc and business document
+Layouts of history Japanese documents
+
+1 For each dataset, we train several models of diﬀerent sizes for diﬀerent needs (the trade-oﬀ between accuracy
+vs. computational cost). For “base model” and “large model”, we refer to using the ResNet 50 or ResNet 101
+backbones [13], respectively. One can train models of diﬀerent architectures, like Faster R-CNN [28] (F) and Mask
+R-CNN [12] (M). For example, an F in the Large Model column indicates it has a Faster R-CNN model trained
+using the ResNet 101 backbone. The platform is maintained and a number of additions will be made to the model
+zoo in coming months.
+
+layout data structures, which are optimized for eﬃciency and versatility. 3) When
+necessary, users can employ existing or customized OCR models via the uniﬁed
+API provided in the OCR module. 4) LayoutParser comes with a set of utility
+functions for the visualization and storage of the layout data. 5) LayoutParser
+is also highly customizable, via its integration with functions for layout data
+annotation and model training. We now provide detailed descriptions for each
+component.
+
+3.1 Layout Detection Models
+
+In LayoutParser, a layout model takes a document image as an input and
+generates a list of rectangular boxes for the target content regions. Diﬀerent
+from traditional methods, it relies on deep convolutional neural networks rather
+than manually curated rules to identify content regions. It is formulated as an
+object detection problem and state-of-the-art models like Faster R-CNN [28] and
+Mask R-CNN [12] are used. This yields prediction results of high accuracy and
+makes it possible to build a concise, generalized interface for layout detection.
+LayoutParser, built upon Detectron2 [35], provides a minimal API that can
+perform layout detection with only four lines of code in Python:
+
+1 import layoutparser as lp
+2 image = cv2 . imread ( " image_file " ) # load images
+3 model = lp . De t e c tro n2 Lay outM odel (
+
+" lp :// PubLayNet / f as t er _ r c nn _ R _ 50 _ F P N_ 3 x / config " )
+
+4
+5 layout = model . detect ( image )
+
+LayoutParser provides a wealth of pre-trained model weights using various
+datasets covering diﬀerent languages, time periods, and document types. Due to
+domain shift [7], the prediction performance can notably drop when models are ap-
+plied to target samples that are signiﬁcantly diﬀerent from the training dataset. As
+document structures and layouts vary greatly in diﬀerent domains, it is important
+to select models trained on a dataset similar to the test samples. A semantic syntax
+is used for initializing the model weights in LayoutParser, using both the dataset
+name and model name lp://<dataset-name>/<model-architecture-name>.
+6
+
+Z. Shen et al.
+
+Fig. 2: The relationship between the three types of layout data structures.
+Coordinate supports three kinds of variation; TextBlock consists of the co-
+ordinate information and extra features like block text, types, and reading orders;
+a Layout object is a list of all possible layout elements, including other Layout
+objects. They all support the same set of transformation and operation APIs for
+maximum ﬂexibility.
+
+Shown in Table 1, LayoutParser currently hosts 9 pre-trained models trained
+on 5 diﬀerent datasets. Description of the training dataset is provided alongside
+with the trained models such that users can quickly identify the most suitable
+models for their tasks. Additionally, when such a model is not readily available,
+LayoutParser also supports training customized layout models and community
+sharing of the models (detailed in Section 3.5).
+
+3.2 Layout Data Structures
+
+A critical feature of LayoutParser is the implementation of a series of data
+structures and operations that can be used to eﬃciently process and manipulate
+the layout elements. In document image analysis pipelines, various post-processing
+on the layout analysis model outputs is usually required to obtain the ﬁnal
+outputs. Traditionally, this requires exporting DL model outputs and then loading
+the results into other pipelines. All model outputs from LayoutParser will be
+stored in carefully engineered data types optimized for further processing, which
+makes it possible to build an end-to-end document digitization pipeline within
+LayoutParser. There are three key components in the data structure, namely
+the Coordinate system, the TextBlock, and the Layout. They provide diﬀerent
+levels of abstraction for the layout data, and a set of APIs are supported for
+transformations or operations on these classes.
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+7
+
+Coordinates are the cornerstones for storing layout information. Currently,
+three types of Coordinate data structures are provided in LayoutParser, shown
+in Figure 2. Interval and Rectangle are the most common data types and
+support specifying 1D or 2D regions within a document. They are parameterized
+with 2 and 4 parameters. A Quadrilateral class is also implemented to support
+a more generalized representation of rectangular regions when the document
+is skewed or distorted, where the 4 corner points can be speciﬁed and a total
+of 8 degrees of freedom are supported. A wide collection of transformations
+like shift, pad, and scale, and operations like intersect, union, and is_in,
+are supported for these classes. Notably, it is common to separate a segment
+of the image and analyze it individually. LayoutParser provides full support
+for this scenario via image cropping operations crop_image and coordinate
+transformations like relative_to and condition_on that transform coordinates
+to and from their relative representations. We refer readers to Table 2 for a more
+detailed description of these operations13.
+
+Based on Coordinates, we implement the TextBlock class that stores both
+the positional and extra features of individual layout elements. It also supports
+specifying the reading orders via setting the parent ﬁeld to the index of the parent
+object. A Layout class is built that takes in a list of TextBlocks and supports
+processing the elements in batch. Layout can also be nested to support hierarchical
+layout structures. They support the same operations and transformations as the
+Coordinate classes, minimizing both learning and deployment eﬀort.
+
+3.3 OCR
+
+LayoutParser provides a uniﬁed interface for existing OCR tools. Though there
+are many OCR tools available, they are usually conﬁgured diﬀerently with distinct
+APIs or protocols for using them. It can be ineﬃcient to add new OCR tools into
+an existing pipeline, and diﬃcult to make direct comparisons among the available
+tools to ﬁnd the best option for a particular project. To this end, LayoutParser
+builds a series of wrappers among existing OCR engines, and provides nearly
+the same syntax for using them. It supports a plug-and-play style of using OCR
+engines, making it eﬀortless to switch, evaluate, and compare diﬀerent OCR
+modules:
+
+1 ocr_agent = lp . TesseractAgent ()
+2 # Can be easily switched to other OCR software
+3 tokens = ocr_agent . detect ( image )
+
+The OCR outputs will also be stored in the aforementioned layout data
+structures and can be seamlessly incorporated into the digitization pipeline.
+Currently LayoutParser supports the Tesseract and Google Cloud Vision OCR
+engines.
+
+LayoutParser also comes with a DL-based CNN-RNN OCR model [6] trained
+with the Connectionist Temporal Classiﬁcation (CTC) loss [10]. It can be used
+like the other OCR modules, and can be easily trained on customized datasets.
+
+13 This is also available in the LayoutParser documentation pages.
+8
+
+Z. Shen et al.
+
+Table 2: All operations supported by the layout elements. The same APIs are
+supported across diﬀerent layout element classes including Coordinate types,
+TextBlock and Layout.
+
+Operation Name
+
+Description
+
+block.pad(top, bottom, right, left) Enlarge the current block according to the input
+
+block.scale(fx, fy)
+
+block.shift(dx, dy)
+
+Scale the current block given the ratio
+in x and y direction
+
+Move the current block with the shift
+distances in x and y direction
+
+block1.is in(block2)
+
+Whether block1 is inside of block2
+
+block1.intersect(block2)
+
+block1.union(block2)
+
+block1.relative to(block2)
+
+block1.condition on(block2)
+
+Return the intersection region of block1 and block2.
+Coordinate type to be determined based on the inputs.
+
+Return the union region of block1 and block2.
+Coordinate type to be determined based on the inputs.
+
+Convert the absolute coordinates of block1 to
+relative coordinates to block2
+
+Calculate the absolute coordinates of block1 given
+the canvas block2’s absolute coordinates
+
+block.crop image(image)
+
+Obtain the image segments in the block region
+
+3.4 Storage and visualization
+
+The end goal of DIA is to transform the image-based document data into a
+structured database. LayoutParser supports exporting layout data into diﬀerent
+formats like JSON, csv, and will add the support for the METS/ALTO XML
+format 14 . It can also load datasets from layout analysis-speciﬁc formats like
+COCO [38] and the Page Format [25] for training layout models (Section 3.5).
+Visualization of the layout detection results is critical for both presentation
+and debugging. LayoutParser is built with an integrated API for displaying the
+layout information along with the original document image. Shown in Figure 3, it
+enables presenting layout data with rich meta information and features in diﬀerent
+modes. More detailed information can be found in the online LayoutParser
+documentation page.
+
+3.5 Customized Model Training
+
+Besides the oﬀ-the-shelf library, LayoutParser is also highly customizable with
+supports for highly unique and challenging document analysis tasks. Target
+document images can be vastly diﬀerent from the existing datasets for train-
+ing layout models, which leads to low layout detection accuracy. Training data
+
+14 https://altoxml.github.io
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+9
+
+Fig. 3: Layout detection and OCR results visualization generated by the
+LayoutParser APIs. Mode I directly overlays the layout region bounding boxes
+and categories over the original image. Mode II recreates the original document
+via drawing the OCR’d texts at their corresponding positions on the image
+canvas. In this ﬁgure, tokens in textual regions are ﬁltered using the API and
+then displayed.
+
+can also be highly sensitive and not sharable publicly. To overcome these chal-
+lenges, LayoutParser is built with rich features for eﬃcient data annotation and
+customized model training.
+
+LayoutParser incorporates a toolkit optimized for annotating document lay-
+outs using object-level active learning [32]. With the help from a layout detection
+model trained along with labeling, only the most important layout objects within
+each image, rather than the whole image, are required for labeling. The rest of
+the regions are automatically annotated with high conﬁdence predictions from
+the layout detection model. This allows a layout dataset to be created more
+eﬃciently with only around 60% of the labeling budget.
+
+After the training dataset is curated, LayoutParser supports diﬀerent modes
+for training the layout models. Fine-tuning can be used for training models on a
+small newly-labeled dataset by initializing the model with existing pre-trained
+weights. Training from scratch can be helpful when the source dataset and
+target are signiﬁcantly diﬀerent and a large training set is available. However, as
+suggested in Studer et al.’s work[33], loading pre-trained weights on large-scale
+datasets like ImageNet [5], even from totally diﬀerent domains, can still boost
+model performance. Through the integrated API provided by LayoutParser,
+users can easily compare model performances on the benchmark datasets.
+10
+
+Z. Shen et al.
+
+Fig. 4: Illustration of (a) the original historical Japanese document with layout
+detection results and (b) a recreated version of the document image that achieves
+much better character recognition recall. The reorganization algorithm rearranges
+the tokens based on the their detected bounding boxes given a maximum allowed
+height.
+
+4 LayoutParser Community Platform
+
+Another focus of LayoutParser is promoting the reusability of layout detection
+models and full digitization pipelines. Similar to many existing deep learning
+libraries, LayoutParser comes with a community model hub for distributing
+layout models. End-users can upload their self-trained models to the model hub,
+and these models can be loaded into a similar interface as the currently available
+LayoutParser pre-trained models. For example, the model trained on the News
+Navigator dataset [17] has been incorporated in the model hub.
+
+Beyond DL models, LayoutParser also promotes the sharing of entire doc-
+ument digitization pipelines. For example, sometimes the pipeline requires the
+combination of multiple DL models to achieve better accuracy. Currently, pipelines
+are mainly described in academic papers and implementations are often not pub-
+licly available. To this end, the LayoutParser community platform also enables
+the sharing of layout pipelines to promote the discussion and reuse of techniques.
+For each shared pipeline, it has a dedicated project page, with links to the source
+code, documentation, and an outline of the approaches. A discussion panel is
+provided for exchanging ideas. Combined with the core LayoutParser library,
+users can easily build reusable components based on the shared pipelines and
+apply them to solve their unique problems.
+
+5 Use Cases
+
+The core objective of LayoutParser is to make it easier to create both large-scale
+and light-weight document digitization pipelines. Large-scale document processing
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+11
+
+focuses on precision, eﬃciency, and robustness. The target documents may have
+complicated structures, and may require training multiple layout detection models
+to achieve the optimal accuracy. Light-weight pipelines are built for relatively
+simple documents, with an emphasis on development ease, speed and ﬂexibility.
+Ideally one only needs to use existing resources, and model training should be
+avoided. Through two exemplar projects, we show how practitioners in both
+academia and industry can easily build such pipelines using LayoutParser and
+extract high-quality structured document data for their downstream tasks. The
+source code for these projects will be publicly available in the LayoutParser
+community hub.
+
+5.1 A Comprehensive Historical Document Digitization Pipeline
+
+The digitization of historical documents can unlock valuable data that can shed
+light on many important social, economic, and historical questions. Yet due to
+scan noises, page wearing, and the prevalence of complicated layout structures, ob-
+taining a structured representation of historical document scans is often extremely
+complicated.
+In this example, LayoutParser was
+used to develop a comprehensive
+pipeline, shown in Figure 5, to gener-
+ate high-quality structured data from
+historical Japanese ﬁrm ﬁnancial ta-
+bles with complicated layouts. The
+pipeline applies two layout models to
+identify diﬀerent levels of document
+structures and two customized OCR
+engines for optimized character recog-
+nition accuracy.
+
+As shown in Figure 4 (a), the
+document contains columns of text
+written vertically 15, a common style
+in Japanese. Due to scanning noise
+and archaic printing technology, the
+columns can be skewed or have vari-
+able widths, and hence cannot be eas-
+ily identiﬁed via rule-based methods.
+Within each column, words are sepa-
+rated by white spaces of variable size,
+and the vertical positions of objects
+can be an indicator of their layout
+type.
+
+Fig. 5: Illustration of how LayoutParser
+helps with the historical document digi-
+tization pipeline.
+
+15 A document page consists of eight rows like this. For simplicity we skip the row
+
+segmentation discussion and refer readers to the source code when available.
+12
+
+Z. Shen et al.
+
+To decipher the complicated layout
+
+structure, two object detection models have been trained to recognize individual
+columns and tokens, respectively. A small training set (400 images with approxi-
+mately 100 annotations each) is curated via the active learning based annotation
+tool [32] in LayoutParser. The models learn to identify both the categories and
+regions for each token or column via their distinct visual features. The layout
+data structure enables easy grouping of the tokens within each column, and
+rearranging columns to achieve the correct reading orders based on the horizontal
+position. Errors are identiﬁed and rectiﬁed via checking the consistency of the
+model predictions. Therefore, though trained on a small dataset, the pipeline
+achieves a high level of layout detection accuracy: it achieves a 96.97 AP [19]
+score across 5 categories for the column detection model, and a 89.23 AP across
+4 categories for the token detection model.
+
+A combination of character recognition methods is developed to tackle the
+unique challenges in this document. In our experiments, we found that irregular
+spacing between the tokens led to a low character recognition recall rate, whereas
+existing OCR models tend to perform better on densely-arranged texts. To
+overcome this challenge, we create a document reorganization algorithm that
+rearranges the text based on the token bounding boxes detected in the layout
+analysis step. Figure 4 (b) illustrates the generated image of dense text, which is
+sent to the OCR APIs as a whole to reduce the transaction costs. The ﬂexible
+coordinate system in LayoutParser is used to transform the OCR results relative
+to their original positions on the page.
+
+Additionally, it is common for historical documents to use unique fonts
+with diﬀerent glyphs, which signiﬁcantly degrades the accuracy of OCR models
+trained on modern texts. In this document, a special ﬂat font is used for printing
+numbers and could not be detected by oﬀ-the-shelf OCR engines. Using the highly
+ﬂexible functionalities from LayoutParser, a pipeline approach is constructed
+that achieves a high recognition accuracy with minimal eﬀort. As the characters
+have unique visual structures and are usually clustered together, we train the
+layout model to identify number regions with a dedicated category. Subsequently,
+LayoutParser crops images within these regions, and identiﬁes characters within
+them using a self-trained OCR model based on a CNN-RNN [6]. The model
+detects a total of 15 possible categories, and achieves a 0.98 Jaccard score16 and
+a 0.17 average Levinstein distances17 for token prediction on the test set.
+
+Overall, it is possible to create an intricate and highly accurate digitization
+pipeline for large-scale digitization using LayoutParser. The pipeline avoids
+specifying the complicated rules used in traditional methods, is straightforward
+to develop, and is robust to outliers. The DL models also generate ﬁne-grained
+results that enable creative approaches like page reorganization for OCR.
+
+16 This measures the overlap between the detected and ground-truth characters, and
+
+the maximum is 1.
+
+17 This measures the number of edits from the ground-truth text to the predicted text,
+
+and lower is better.
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+13
+
+Fig. 6: This lightweight table detector can identify tables (outlined in red) and
+cells (shaded in blue) in diﬀerent locations on a page. In very few cases (d), it
+might generate minor error predictions, e.g, failing to capture the top text line of
+a table.
+
+5.2 A light-weight Visual Table Extractor
+
+Detecting tables and parsing their structures (table extraction) are of central im-
+portance for many document digitization tasks. Many previous works [26, 30, 27]
+and tools 18 have been developed to identify and parse table structures. Yet they
+might require training complicated models from scratch, or are only applicable
+for born-digital PDF documents. In this section, we show how LayoutParser can
+help build a light-weight accurate visual table extractor for legal docket tables
+using the existing resources with minimal eﬀort.
+
+The extractor uses a pre-trained layout detection model for identifying the
+table regions and some simple rules for pairing the rows and the columns in the
+PDF image. Mask R-CNN [12] trained on the PubLayNet dataset [38] from the
+LayoutParser Model Zoo can be used for detecting table regions. By ﬁltering
+out model predictions of low conﬁdence and removing overlapping predictions,
+LayoutParser can identify the tabular regions on each page, which signiﬁcantly
+simpliﬁes the subsequent steps. By applying the line detection functions within
+the tabular segments, provided in the utility module from LayoutParser, the
+pipeline can identify the three distinct columns in the tables. A row clustering
+method is then applied via analyzing the y coordinates of token bounding boxes in
+the left-most column, which are obtained from the OCR engines. A non-maximal
+suppression algorithm is used to remove duplicated rows with extremely small
+gaps. Shown in Figure 6, the built pipeline can detect tables at diﬀerent positions
+on a page accurately. Continued tables from diﬀerent pages are concatenated,
+and a structured table representation has been easily created.
+
+18 https://github.com/atlanhq/camelot, https://github.com/tabulapdf/tabula
+14
+
+Z. Shen et al.
+
+6 Conclusion
+
+LayoutParser provides a comprehensive toolkit for deep learning-based document
+image analysis. The oﬀ-the-shelf library is easy to install, and can be used to
+build ﬂexible and accurate pipelines for processing documents with complicated
+structures. It also supports high-level customization and enables easy labeling and
+training of DL models on unique document image datasets. The LayoutParser
+community platform facilitates sharing DL models and DIA pipelines, inviting
+discussion and promoting code reproducibility and reusability. The LayoutParser
+team is committed to keeping the library updated continuously and bringing
+the most recent advances in DL-based DIA, such as multi-modal document
+modeling [37, 36, 9] (an upcoming priority), to a diverse audience of end-users.
+
+Acknowledgements We thank the anonymous reviewers for their comments
+and suggestions. This project is supported in part by NSF Grant OIA-2033558
+and funding from the Harvard Data Science Initiative and Harvard Catalyst.
+Zejiang Shen thanks Doug Downey for suggestions.
+
+References
+
+[1] Abadi, M., Agarwal, A., Barham, P., Brevdo, E., Chen, Z., Citro, C., Corrado,
+G.S., Davis, A., Dean, J., Devin, M., Ghemawat, S., Goodfellow, I., Harp, A.,
+Irving, G., Isard, M., Jia, Y., Jozefowicz, R., Kaiser, L., Kudlur, M., Levenberg,
+J., Man´e, D., Monga, R., Moore, S., Murray, D., Olah, C., Schuster, M., Shlens, J.,
+Steiner, B., Sutskever, I., Talwar, K., Tucker, P., Vanhoucke, V., Vasudevan, V.,
+Vi´egas, F., Vinyals, O., Warden, P., Wattenberg, M., Wicke, M., Yu, Y., Zheng,
+X.: TensorFlow: Large-scale machine learning on heterogeneous systems (2015),
+https://www.tensorflow.org/, software available from tensorﬂow.org
+
+[2] Alberti, M., Pondenkandath, V., W¨ursch, M., Ingold, R., Liwicki, M.: Deepdiva: a
+highly-functional python framework for reproducible experiments. In: 2018 16th
+International Conference on Frontiers in Handwriting Recognition (ICFHR). pp.
+423–428. IEEE (2018)
+
+[3] Antonacopoulos, A., Bridson, D., Papadopoulos, C., Pletschacher, S.: A realistic
+dataset for performance evaluation of document layout analysis. In: 2009 10th
+International Conference on Document Analysis and Recognition. pp. 296–300.
+IEEE (2009)
+
+[4] Baek, Y., Lee, B., Han, D., Yun, S., Lee, H.: Character region awareness for text
+detection. In: Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition. pp. 9365–9374 (2019)
+
+[5] Deng, J., Dong, W., Socher, R., Li, L.J., Li, K., Fei-Fei, L.: ImageNet: A Large-Scale
+
+Hierarchical Image Database. In: CVPR09 (2009)
+
+[6] Deng, Y., Kanervisto, A., Ling, J., Rush, A.M.: Image-to-markup generation with
+coarse-to-ﬁne attention. In: International Conference on Machine Learning. pp.
+980–989. PMLR (2017)
+
+[7] Ganin, Y., Lempitsky, V.: Unsupervised domain adaptation by backpropagation.
+In: International conference on machine learning. pp. 1180–1189. PMLR (2015)
+LayoutParser: A Uniﬁed Toolkit for DL-Based DIA
+
+15
+
+[8] Gardner, M., Grus, J., Neumann, M., Tafjord, O., Dasigi, P., Liu, N., Peters,
+M., Schmitz, M., Zettlemoyer, L.: Allennlp: A deep semantic natural language
+processing platform. arXiv preprint arXiv:1803.07640 (2018)
+(cid:32)Lukasz Garncarek, Powalski, R., Stanis(cid:32)lawek, T., Topolski, B., Halama, P.,
+Grali´nski, F.: Lambert: Layout-aware (language) modeling using bert for in-
+formation extraction (2020)
+
+[9]
+
+[10] Graves, A., Fern´andez, S., Gomez, F., Schmidhuber, J.: Connectionist temporal
+classiﬁcation: labelling unsegmented sequence data with recurrent neural networks.
+In: Proceedings of the 23rd international conference on Machine learning. pp.
+369–376 (2006)
+
+[11] Harley, A.W., Ufkes, A., Derpanis, K.G.: Evaluation of deep convolutional nets for
+document image classiﬁcation and retrieval. In: 2015 13th International Conference
+on Document Analysis and Recognition (ICDAR). pp. 991–995. IEEE (2015)
+[12] He, K., Gkioxari, G., Doll´ar, P., Girshick, R.: Mask r-cnn. In: Proceedings of the
+
+IEEE international conference on computer vision. pp. 2961–2969 (2017)
+
+[13] He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition.
+In: Proceedings of the IEEE conference on computer vision and pattern recognition.
+pp. 770–778 (2016)
+
+[14] Kay, A.: Tesseract: An open-source optical character recognition engine. Linux J.
+
+2007(159), 2 (Jul 2007)
+
+[15] Lamiroy, B., Lopresti, D.: An open architecture for end-to-end document analysis
+benchmarking. In: 2011 International Conference on Document Analysis and
+Recognition. pp. 42–47. IEEE (2011)
+
+[16] Lee, B.C., Weld, D.S.: Newspaper navigator: Open faceted search for 1.5
+million images. In: Adjunct Publication of the 33rd Annual ACM Sym-
+posium on User
+Interface Software and Technology. p. 120–122. UIST
+’20 Adjunct, Association for Computing Machinery, New York, NY, USA
+(2020). https://doi.org/10.1145/3379350.3416143, https://doi-org.offcampus.
+lib.washington.edu/10.1145/3379350.3416143
+
+[17] Lee, B.C.G., Mears, J., Jakeway, E., Ferriter, M., Adams, C., Yarasavage, N.,
+Thomas, D., Zwaard, K., Weld, D.S.: The Newspaper Navigator Dataset: Extracting
+Headlines and Visual Content from 16 Million Historic Newspaper Pages in
+Chronicling America, p. 3055–3062. Association for Computing Machinery, New
+York, NY, USA (2020), https://doi.org/10.1145/3340531.3412767
+
+[18] Li, M., Cui, L., Huang, S., Wei, F., Zhou, M., Li, Z.: Tablebank: Table benchmark
+for image-based table detection and recognition. arXiv preprint arXiv:1903.01949
+(2019)
+
+[19] Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Doll´ar, P.,
+Zitnick, C.L.: Microsoft coco: Common objects in context. In: European conference
+on computer vision. pp. 740–755. Springer (2014)
+
+[20] Long, J., Shelhamer, E., Darrell, T.: Fully convolutional networks for semantic
+segmentation. In: Proceedings of the IEEE conference on computer vision and
+pattern recognition. pp. 3431–3440 (2015)
+
+[21] Neudecker, C., Schlarb, S., Dogan, Z.M., Missier, P., Suﬁ, S., Williams, A., Wolsten-
+croft, K.: An experimental workﬂow development platform for historical document
+digitisation and analysis. In: Proceedings of the 2011 workshop on historical
+document imaging and processing. pp. 161–168 (2011)
+
+[22] Oliveira, S.A., Seguin, B., Kaplan, F.: dhsegment: A generic deep-learning approach
+for document segmentation. In: 2018 16th International Conference on Frontiers
+in Handwriting Recognition (ICFHR). pp. 7–12. IEEE (2018)
+16
+
+Z. Shen et al.
+
+[23] Paszke, A., Gross, S., Chintala, S., Chanan, G., Yang, E., DeVito, Z., Lin, Z.,
+Desmaison, A., Antiga, L., Lerer, A.: Automatic diﬀerentiation in pytorch (2017)
+[24] Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen,
+T., Lin, Z., Gimelshein, N., Antiga, L., et al.: Pytorch: An imperative style,
+high-performance deep learning library. arXiv preprint arXiv:1912.01703 (2019)
+[25] Pletschacher, S., Antonacopoulos, A.: The page (page analysis and ground-truth
+elements) format framework. In: 2010 20th International Conference on Pattern
+Recognition. pp. 257–260. IEEE (2010)
+
+[26] Prasad, D., Gadpal, A., Kapadni, K., Visave, M., Sultanpure, K.: Cascadetabnet:
+An approach for end to end table detection and structure recognition from image-
+based documents. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition Workshops. pp. 572–573 (2020)
+
+[27] Qasim, S.R., Mahmood, H., Shafait, F.: Rethinking table recognition using graph
+neural networks. In: 2019 International Conference on Document Analysis and
+Recognition (ICDAR). pp. 142–147. IEEE (2019)
+
+[28] Ren, S., He, K., Girshick, R., Sun, J.: Faster r-cnn: Towards real-time object
+detection with region proposal networks. In: Advances in neural information
+processing systems. pp. 91–99 (2015)
+
+[29] Scarselli, F., Gori, M., Tsoi, A.C., Hagenbuchner, M., Monfardini, G.: The graph
+neural network model. IEEE transactions on neural networks 20(1), 61–80 (2008)
+[30] Schreiber, S., Agne, S., Wolf, I., Dengel, A., Ahmed, S.: Deepdesrt: Deep learning
+for detection and structure recognition of tables in document images. In: 2017 14th
+IAPR international conference on document analysis and recognition (ICDAR).
+vol. 1, pp. 1162–1167. IEEE (2017)
+
+[31] Shen, Z., Zhang, K., Dell, M.: A large dataset of historical japanese documents
+with complex layouts. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition Workshops. pp. 548–549 (2020)
+
+[32] Shen, Z., Zhao, J., Dell, M., Yu, Y., Li, W.: Olala: Object-level active learning
+
+based layout annotation. arXiv preprint arXiv:2010.01762 (2020)
+
+[33] Studer, L., Alberti, M., Pondenkandath, V., Goktepe, P., Kolonko, T., Fischer,
+A., Liwicki, M., Ingold, R.: A comprehensive study of imagenet pre-training for
+historical document image analysis. In: 2019 International Conference on Document
+Analysis and Recognition (ICDAR). pp. 720–725. IEEE (2019)
+
+[34] Wolf, T., Debut, L., Sanh, V., Chaumond, J., Delangue, C., Moi, A., Cistac, P.,
+Rault, T., Louf, R., Funtowicz, M., et al.: Huggingface’s transformers: State-of-
+the-art natural language processing. arXiv preprint arXiv:1910.03771 (2019)
+[35] Wu, Y., Kirillov, A., Massa, F., Lo, W.Y., Girshick, R.: Detectron2. https://
+
+github.com/facebookresearch/detectron2 (2019)
+
+[36] Xu, Y., Xu, Y., Lv, T., Cui, L., Wei, F., Wang, G., Lu, Y., Florencio, D., Zhang, C.,
+Che, W., et al.: Layoutlmv2: Multi-modal pre-training for visually-rich document
+understanding. arXiv preprint arXiv:2012.14740 (2020)
+
+[37] Xu, Y., Li, M., Cui, L., Huang, S., Wei, F., Zhou, M.: Layoutlm: Pre-training of
+
+text and layout for document image understanding (2019)
+
+[38] Zhong, X., Tang, J., Yepes, A.J.: Publaynet:
+
+layout analysis.
+
+ument
+Analysis and Recognition (ICDAR). pp. 1015–1022.
+https://doi.org/10.1109/ICDAR.2019.00166
+
+largest dataset ever for doc-
+In: 2019 International Conference on Document
+IEEE (Sep 2019).
+{'author': '',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'creator': 'LaTeX with hyperref',
+ 'keywords': '',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'ptex.fullbanner': 'This is pdfTeX, Version 3.14159265-2.6-1.40.21 (TeX Live '
+                    '2020) kpathsea version 6.3.2',
+ 'producer': 'pdfTeX-1.40.21',
+ 'subject': '',
+ 'title': '',
+ 'trapped': 'False',
+ 'total_pages': 16,
+ 'source': 'example_data/layout-parser-paper.pdf'}
+```

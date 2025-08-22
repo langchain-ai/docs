@@ -1,0 +1,145 @@
+---
+title: VectorStoreToolkit
+---
+
+This will help you getting started with the [VectorStoreToolkit](/oss/javascript/concepts/tools/#toolkits). For detailed documentation of all VectorStoreToolkit features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain.agents.VectorStoreToolkit.html).
+
+The `VectorStoreToolkit` is a toolkit which takes in a vector store, and converts it to a tool which can then be invoked, passed to LLMs, agents and more.
+
+## Setup
+
+If you want to get automated tracing from runs of individual tools, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```typescript
+process.env.LANGSMITH_TRACING="true"
+process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+This toolkit lives in the `langchain` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  langchain @langchain/core
+</Npm2Yarn>
+```
+## Instantiation
+
+Now we can instantiate our toolkit. First, we need to define the LLM we'll use in the toolkit.
+
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+```typescript
+// @lc-docs-hide-cell
+
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+})
+```
+
+
+```typescript
+import { VectorStoreToolkit, VectorStoreInfo } from "langchain/agents/toolkits"
+import { OpenAIEmbeddings } from "@langchain/openai"
+import { MemoryVectorStore } from "langchain/vectorstores/memory"
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import fs from "fs";
+
+// Load a text file to use as our data source.
+const text = fs.readFileSync("../../../../../examples/state_of_the_union.txt", "utf8");
+
+// Split the text into chunks before inserting to our store
+const textSplitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000 });
+const docs = await textSplitter.createDocuments([text]);
+
+const vectorStore = await MemoryVectorStore.fromDocuments(docs, new OpenAIEmbeddings());
+
+const vectorStoreInfo: VectorStoreInfo = {
+  name: "state_of_union_address",
+  description: "the most recent state of the Union address",
+  vectorStore,
+};
+
+const toolkit = new VectorStoreToolkit(vectorStoreInfo, llm);
+```
+
+## Tools
+
+Here, we can see it converts our vector store into a tool:
+
+
+```typescript
+const tools = toolkit.getTools();
+
+console.log(tools.map((tool) => ({
+  name: tool.name,
+  description: tool.description,
+})))
+```
+```output
+[
+  {
+    name: 'state_of_union_address',
+    description: 'Useful for when you need to answer questions about state_of_union_address. Whenever you need information about the most recent state of the Union address you should ALWAYS use this. Input should be a fully formed question.'
+  }
+]
+```
+## Use within an agent
+
+First, ensure you have LangGraph installed:
+
+```{=mdx}
+<Npm2Yarn>
+  @langchain/langgraph
+</Npm2Yarn>
+```
+Then, instantiate the agent:
+
+
+```typescript
+import { createReactAgent } from "@langchain/langgraph/prebuilt"
+
+const agentExecutor = createReactAgent({ llm, tools });
+```
+```typescript
+const exampleQuery = "What did biden say about Ketanji Brown Jackson is the state of the union address?"
+
+const events = await agentExecutor.stream(
+  { messages: [["user", exampleQuery]]},
+  { streamMode: "values", }
+)
+
+for await (const event of events) {
+  const lastMsg = event.messages[event.messages.length - 1];
+  if (lastMsg.tool_calls?.length) {
+    console.dir(lastMsg.tool_calls, { depth: null });
+  } else if (lastMsg.content) {
+    console.log(lastMsg.content);
+  }
+}
+```
+```output
+[
+  {
+    name: 'state_of_union_address',
+    args: {
+      input: 'What did Biden say about Ketanji Brown Jackson in the State of the Union address?'
+    },
+    type: 'tool_call',
+    id: 'call_glJSWLNrftKHa92A6j8x4jhd'
+  }
+]
+In the State of the Union address, Biden mentioned that he nominated Circuit Court of Appeals Judge Ketanji Brown Jackson, describing her as one of the nation’s top legal minds who will continue Justice Breyer’s legacy of excellence. He highlighted her background as a former top litigator in private practice, a former federal public defender, and noted that she comes from a family of public school educators and police officers. He also pointed out that she has received a broad range of support since her nomination.
+In the State of the Union address, President Biden spoke about Ketanji Brown Jackson, stating that he nominated her as one of the nation’s top legal minds who will continue Justice Breyer’s legacy of excellence. He highlighted her experience as a former top litigator in private practice and a federal public defender, as well as her background coming from a family of public school educators and police officers. Biden also noted that she has received a broad range of support since her nomination.
+```
+## API reference
+
+For detailed documentation of all VectorStoreToolkit features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain.agents.VectorStoreToolkit.html).

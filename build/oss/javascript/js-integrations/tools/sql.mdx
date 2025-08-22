@@ -1,0 +1,203 @@
+---
+title: SqlToolkit
+---
+
+This will help you getting started with the [SqlToolkit](/oss/javascript/concepts/tools/#toolkits). For detailed documentation of all SqlToolkit features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain.agents_toolkits_sql.SqlToolkit.html). You can also find the documentation for the Python equivalent [here](https://python.langchain.com/docs/integrations/toolkits/sql_database/).
+
+This toolkit contains a the following tools:
+
+| Name              | Description                                                                                                                                                                                                                               |
+|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `query-sql`       | Input to this tool is a detailed and correct SQL query, output is a result from the database. If the query is not correct, an error message will be returned. If an error is returned, rewrite the query, check the query, and try again. |
+| `info-sql`        | Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables. Be sure that the tables actually exist by calling list-tables-sql first! Example Input: "table1, table2, table3".          |
+| `list-tables-sql` | Input is an empty string, output is a comma-separated list of tables in the database.                                                                                                                                                     |
+| `query-checker`   | Use this tool to double check if your query is correct before executing it. Always use this tool before executing a query with query-sql!                                                                                                 |
+
+This toolkit is useful for asking questions, performing queries, validating queries and more on a SQL database.
+
+## Setup
+
+This example uses Chinook database, which is a sample database available for SQL Server, Oracle, MySQL, etc. To set it up, follow [these instructions](https://database.guide/2-sample-databases-sqlite/), placing the `.db` file in the directory where your code lives.
+
+If you want to get automated tracing from runs of individual tools, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```typescript
+process.env.LANGSMITH_TRACING="true"
+process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+This toolkit lives in the `langchain` package. You'll also need to install the `typeorm` peer dependency.
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  langchain @langchain/core typeorm
+</Npm2Yarn>
+```
+## Instantiation
+
+First, we need to define our LLM to be used in the toolkit.
+
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+```typescript
+// @lc-docs-hide-cell
+
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+})
+```
+
+
+```typescript
+import { SqlToolkit } from "langchain/agents/toolkits/sql"
+import { DataSource } from "typeorm";
+import { SqlDatabase } from "langchain/sql_db";
+
+const datasource = new DataSource({
+  type: "sqlite",
+  database: "../../../../../../Chinook.db", // Replace with the link to your database
+});
+const db = await SqlDatabase.fromDataSourceParams({
+  appDataSource: datasource,
+});
+
+const toolkit = new SqlToolkit(db, llm);
+```
+
+## Tools
+
+View available tools:
+
+
+```typescript
+const tools = toolkit.getTools();
+
+console.log(tools.map((tool) => ({
+  name: tool.name,
+  description: tool.description,
+})))
+```
+```output
+[
+  {
+    name: 'query-sql',
+    description: 'Input to this tool is a detailed and correct SQL query, output is a result from the database.\n' +
+      '  If the query is not correct, an error message will be returned.\n' +
+      '  If an error is returned, rewrite the query, check the query, and try again.'
+  },
+  {
+    name: 'info-sql',
+    description: 'Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables.\n' +
+      '    Be sure that the tables actually exist by calling list-tables-sql first!\n' +
+      '\n' +
+      '    Example Input: "table1, table2, table3.'
+  },
+  {
+    name: 'list-tables-sql',
+    description: 'Input is an empty string, output is a comma-separated list of tables in the database.'
+  },
+  {
+    name: 'query-checker',
+    description: 'Use this tool to double check if your query is correct before executing it.\n' +
+      '    Always use this tool before executing a query with query-sql!'
+  }
+]
+```
+## Use within an agent
+
+First, ensure you have LangGraph installed:
+
+```{=mdx}
+<Npm2Yarn>
+  @langchain/langgraph
+</Npm2Yarn>
+```
+```typescript
+import { createReactAgent } from "@langchain/langgraph/prebuilt"
+
+const agentExecutor = createReactAgent({ llm, tools });
+```
+
+
+```typescript
+const exampleQuery = "Can you list 10 artists from my database?"
+
+const events = await agentExecutor.stream(
+  { messages: [["user", exampleQuery]]},
+  { streamMode: "values", }
+)
+
+for await (const event of events) {
+  const lastMsg = event.messages[event.messages.length - 1];
+  if (lastMsg.tool_calls?.length) {
+    console.dir(lastMsg.tool_calls, { depth: null });
+  } else if (lastMsg.content) {
+    console.log(lastMsg.content);
+  }
+}
+```
+```output
+[
+  {
+    name: 'list-tables-sql',
+    args: {},
+    type: 'tool_call',
+    id: 'call_LqsRA86SsKmzhRfSRekIQtff'
+  }
+]
+Album, Artist, Customer, Employee, Genre, Invoice, InvoiceLine, MediaType, Playlist, PlaylistTrack, Track
+[
+  {
+    name: 'query-checker',
+    args: { input: 'SELECT * FROM Artist LIMIT 10;' },
+    type: 'tool_call',
+    id: 'call_MKBCjt4gKhl5UpnjsMHmDrBH'
+  }
+]
+The SQL query you provided is:
+
+\`\`\`sql
+SELECT * FROM Artist LIMIT 10;
+\`\`\`
+
+This query is straightforward and does not contain any of the common mistakes listed. It simply selects all columns from the `Artist` table and limits the result to 10 rows. 
+
+Therefore, there are no mistakes to correct, and the original query can be reproduced as is:
+
+\`\`\`sql
+SELECT * FROM Artist LIMIT 10;
+\`\`\`
+[
+  {
+    name: 'query-sql',
+    args: { input: 'SELECT * FROM Artist LIMIT 10;' },
+    type: 'tool_call',
+    id: 'call_a8MPiqXPMaN6yjN9i7rJctJo'
+  }
+]
+[{"ArtistId":1,"Name":"AC/DC"},{"ArtistId":2,"Name":"Accept"},{"ArtistId":3,"Name":"Aerosmith"},{"ArtistId":4,"Name":"Alanis Morissette"},{"ArtistId":5,"Name":"Alice In Chains"},{"ArtistId":6,"Name":"Antônio Carlos Jobim"},{"ArtistId":7,"Name":"Apocalyptica"},{"ArtistId":8,"Name":"Audioslave"},{"ArtistId":9,"Name":"BackBeat"},{"ArtistId":10,"Name":"Billy Cobham"}]
+Here are 10 artists from your database:
+
+1. AC/DC
+2. Accept
+3. Aerosmith
+4. Alanis Morissette
+5. Alice In Chains
+6. Antônio Carlos Jobim
+7. Apocalyptica
+8. Audioslave
+9. BackBeat
+10. Billy Cobham
+```
+## API reference
+
+For detailed documentation of all SqlToolkit features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain.agents_toolkits_sql.SqlToolkit.html).

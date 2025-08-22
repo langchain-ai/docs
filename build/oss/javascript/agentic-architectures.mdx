@@ -1,0 +1,936 @@
+---
+title: Common architectures
+sidebarTitle: Overview
+---
+
+
+
+
+This guide reviews common patterns for agentic systems. In describing these systems, it can be useful to make a distinction between **workflows** and **agents**: 
+
+- A **workflow** is a predefined sequence of steps or processes that execute in a structured, often linear fashion.
+- An **agent** is a system that uses an LLM to dynamically perceive its environment, make decisions, and take actions to achieve goals.
+
+![Agent Workflow](/oss/images/agent_workflow.png)
+
+When building agents and workflows, LangGraph offers a number of benefits including persistence, streaming, and support for debugging as well as deployment.
+
+Many LLM applications implement a particular control flow of steps before and/or after LLM calls. However, instead of hard-coding a fixed control flow, it is sometimes beneficial to have LLM systems pick their own control flow to solve more complex problems. There are many ways that an LLM can control an application:
+
+* An LLM can route between two potential paths.
+* An LLM can decide which of many tools to call.
+* An LLM can decide whether the generated answer is sufficient or more work is needed.
+
+As a result, there are many different types of [agent architectures](https://blog.langchain.dev/what-is-a-cognitive-architecture/), which give an LLM varying levels of control.
+
+![Agent Types](/oss/images/agent_types.png)
+
+## Augmented LLM
+
+LLMs have augmentations that support building workflows and agents. These include structured outputs and tool calling, as shown in this image from the Anthropic blog on `Building Effective Agents`:
+
+![augmented_llm.png](/oss/images/augmented_llm.png)
+
+
+
+```typescript
+import { z } from "zod";
+import { tool } from "@langchain/core/tools";
+
+// Schema for structured output
+const SearchQuery = z.object({
+  search_query: z.string().describe("Query that is optimized web search."),
+  justification: z
+    .string()
+    .describe("Why this query is relevant to the user's request."),
+});
+
+// Augment the LLM with schema for structured output
+const structuredLlm = llm.withStructuredOutput(SearchQuery);
+
+// Invoke the augmented LLM
+const output = await structuredLlm.invoke(
+  "How does Calcium CT score relate to high cholesterol?"
+);
+
+// Define a tool
+const multiply = tool(
+  async ({ a, b }: { a: number; b: number }) => {
+    return a * b;
+  },
+  {
+    name: "multiply",
+    description: "Multiply two numbers",
+    schema: z.object({
+      a: z.number(),
+      b: z.number(),
+    }),
+  }
+);
+
+// Augment the LLM with tools
+const llmWithTools = llm.bindTools([multiply]);
+
+// Invoke the LLM with input that triggers the tool call
+const msg = await llmWithTools.invoke("What is 2 times 3?");
+
+// Get the tool call
+console.log(msg.tool_calls);
+```
+
+
+
+## Router
+
+A router allows an LLM to select a single step from a specified set of options. This is an agent architecture that exhibits a relatively limited level of control because the LLM usually focuses on making a single decision and produces a specific output from a limited set of pre-defined options. Routing works well for complex tasks where there are distinct categories that are better handled separately, and where classification can be handled accurately, either by an LLM or a more traditional classification model/algorithm.
+
+![routing.png](/oss/images/routing.png)
+
+<Tabs>
+  <Tab title="Graph API">
+
+    
+    ```typescript
+    import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+    
+    // Schema for structured output to use as routing logic
+    const Route = z.object({
+      step: z.enum(["poem", "story", "joke"]).describe("The next step in the routing process"),
+    });
+    
+    // Augment the LLM with schema for structured output
+    const router = llm.withStructuredOutput(Route);
+    
+    // State
+    const State = z.object({
+      input: z.string(),
+      decision: z.string().optional(),
+      output: z.string().optional(),
+    });
+    
+    // Nodes
+    const llmCall1 = async (state: z.infer<typeof State>) => {
+      // Write a story
+      const result = await llm.invoke(state.input);
+      return { output: result.content };
+    };
+    
+    const llmCall2 = async (state: z.infer<typeof State>) => {
+      // Write a joke
+      const result = await llm.invoke(state.input);
+      return { output: result.content };
+    };
+    
+    const llmCall3 = async (state: z.infer<typeof State>) => {
+      // Write a poem
+      const result = await llm.invoke(state.input);
+      return { output: result.content };
+    };
+    
+    const llmCallRouter = async (state: z.infer<typeof State>) => {
+      // Route the input to the appropriate node
+      const decision = await router.invoke([
+        new SystemMessage("Route the input to story, joke, or poem based on the user's request."),
+        new HumanMessage(state.input),
+      ]);
+    
+      return { decision: decision.step };
+    };
+    
+    // Conditional edge function to route to the appropriate node
+    const routeDecision = (state: z.infer<typeof State>) => {
+      // Return the node name you want to visit next
+      if (state.decision === "story") {
+        return "llm_call_1";
+      } else if (state.decision === "joke") {
+        return "llm_call_2";
+      } else if (state.decision === "poem") {
+        return "llm_call_3";
+      }
+    };
+    
+    // Build workflow
+    const routerBuilder = new StateGraph(State)
+      .addNode("llm_call_1", llmCall1)
+      .addNode("llm_call_2", llmCall2)
+      .addNode("llm_call_3", llmCall3)
+      .addNode("llm_call_router", llmCallRouter)
+      .addEdge(START, "llm_call_router")
+      .addConditionalEdges(
+        "llm_call_router",
+        routeDecision,
+        {
+          "llm_call_1": "llm_call_1",
+          "llm_call_2": "llm_call_2",
+          "llm_call_3": "llm_call_3",
+        }
+      )
+      .addEdge("llm_call_1", END)
+      .addEdge("llm_call_2", END)
+      .addEdge("llm_call_3", END);
+    
+    const routerWorkflow = routerBuilder.compile();
+    
+    // Invoke
+    const state = await routerWorkflow.invoke({ input: "Write me a joke about cats" });
+    console.log(state.output);
+    ```
+
+  </Tab>
+  <Tab title="Functional API">
+
+    
+    ```typescript
+    import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+    
+    // Schema for structured output to use as routing logic
+    const Route = z.object({
+      step: z.enum(["poem", "story", "joke"]).describe(
+        "The next step in the routing process"
+      ),
+    });
+    
+    // Augment the LLM with schema for structured output
+    const router = llm.withStructuredOutput(Route);
+    
+    const llmCall1 = task("llm_call_1", async (input: string) => {
+      // Write a story
+      const result = await llm.invoke(input);
+      return result.content;
+    });
+    
+    const llmCall2 = task("llm_call_2", async (input: string) => {
+      // Write a joke
+      const result = await llm.invoke(input);
+      return result.content;
+    });
+    
+    const llmCall3 = task("llm_call_3", async (input: string) => {
+      // Write a poem
+      const result = await llm.invoke(input);
+      return result.content;
+    });
+    
+    const llmCallRouter = async (input: string) => {
+      // Route the input to the appropriate node
+      const decision = await router.invoke([
+        new SystemMessage("Route the input to story, joke, or poem based on the user's request."),
+        new HumanMessage(input),
+      ]);
+      return decision.step;
+    };
+    
+    // Create workflow
+    const routerWorkflow = entrypoint("routerWorkflow", async (input: string) => {
+      const nextStep = await llmCallRouter(input);
+    
+      let llmCall: typeof llmCall1;
+      if (nextStep === "story") {
+        llmCall = llmCall1;
+      } else if (nextStep === "joke") {
+        llmCall = llmCall2;
+      } else if (nextStep === "poem") {
+        llmCall = llmCall3;
+      }
+    
+      return await llmCall(input);
+    });
+    
+    // Invoke
+    const stream = await routerWorkflow.stream("Write me a joke about cats", { streamMode: "updates" });
+    for await (const step of stream) {
+      console.log(step);
+      console.log("\n");
+    }
+    ```
+
+  </Tab>
+</Tabs>
+
+### Structured output
+
+Structured outputs with LLMs work by providing a specific format or schema that the LLM should follow in its response. This is similar to tool calling, but more general. While tool calling typically involves selecting and using predefined functions, structured outputs can be used for any type of formatted response. Common methods to achieve structured outputs include:
+
+1. Prompt engineering: Instructing the LLM to respond in a specific format via the system prompt.
+2. Output parsers: Using post-processing to extract structured data from LLM responses.
+3. Tool calling: Leveraging built-in tool calling capabilities of some LLMs to generate structured outputs.
+
+Structured outputs are crucial for routing as they ensure the LLM's decision can be reliably interpreted and acted upon by the system. Learn more about [structured outputs in this how-to guide](https://python.langchain.com/docs/how_to/structured_output/).
+
+## Tool-calling agent
+
+While a router allows an LLM to make a single decision, more complex agent architectures expand the LLM's control in two key ways:
+
+1. Multi-step decision making: The LLM can make a series of decisions, one after another, instead of just one.
+2. Tool access: The LLM can choose from and use a variety of tools to accomplish tasks.
+
+[ReAct](https://arxiv.org/abs/2210.03629) is a popular general purpose agent architecture that combines these expansions, integrating three core concepts.
+
+1. [Tool calling](#tool-calling): Allowing the LLM to select and use various tools as needed.
+2. [Memory](#memory): Enabling the agent to retain and use information from previous steps.
+3. [Planning](#planning): Empowering the LLM to create and follow multi-step plans to achieve goals.
+
+This architecture allows for more complex and flexible agent behaviors, going beyond simple routing to enable dynamic problem-solving with multiple steps. Unlike the original [paper](https://arxiv.org/abs/2210.03629), today's agents rely on LLMs' [tool calling](#tool-calling) capabilities and operate on a list of [messages](/oss/javascript/graph-api#why-use-messages).
+
+In LangGraph, you can use the prebuilt [agent](/oss/javascript/prebuilts#2-create-an-agent) to get started with tool-calling agents.
+
+### Tool calling
+
+Tools are useful whenever you want an agent to interact with external systems. External systems (e.g., APIs) often require a particular input schema or payload, rather than natural language. When we bind an API, for example, as a tool, we give the model awareness of the required input schema. The model will choose to call a tool based upon the natural language input from the user and it will return an output that adheres to the tool's required schema.
+
+[Many LLM providers support tool calling](https://python.langchain.com/docs/integrations/chat/) and [tool calling interface](https://blog.langchain.dev/improving-core-tool-interfaces-and-docs-in-langchain/) in LangChain is simple: you can simply pass any Python `function` into `ChatModel.bind_tools(function)`.
+
+![Tools](/oss/images/tool_call.png)
+
+### Memory
+
+[Memory](/oss/javascript/add-memory) is crucial for agents, enabling them to retain and utilize information across multiple steps of problem-solving. It operates on different scales:
+
+1. [Short-term memory](/oss/javascript/add-memory#add-short-term-memory): Allows the agent to access information acquired during earlier steps in a sequence.
+2. [Long-term memory](/oss/javascript/add-memory#add-long-term-memory): Enables the agent to recall information from previous interactions, such as past messages in a conversation.
+
+LangGraph provides full control over memory implementation:
+
+* [`State`](/oss/javascript/graph-api#state): User-defined schema specifying the exact structure of memory to retain.
+* [`Checkpointer`](/oss/javascript/persistence#checkpoints): Mechanism to store state at every step across different interactions within a session.
+* [`Store`](/oss/javascript/persistence#memory-store): Mechanism to store user-specific or application-level data across sessions.
+
+This flexible approach allows you to tailor the memory system to your specific agent architecture needs. Effective memory management enhances an agent's ability to maintain context, learn from past experiences, and make more informed decisions over time. For a practical guide on adding and managing memory, see [Memory](/oss/javascript/add-memory).
+
+### Planning
+
+In a tool-calling [agent](/oss/javascript/agentic-architectures#what-is-an-agent), an LLM is called repeatedly in a while-loop. At each step the agent decides which tools to call, and what the inputs to those tools should be. Those tools are then executed, and the outputs are fed back into the LLM as observations. The while-loop terminates when the agent decides it has enough information to solve the user request and it is not worth calling any more tools.
+
+
+## Prompt chaining
+
+In prompt chaining, each LLM call processes the output of the previous one.
+
+As noted in the Anthropic blog on `Building Effective Agents`:
+
+> Prompt chaining decomposes a task into a sequence of steps, where each LLM call processes the output of the previous one. You can add programmatic checks (see "gate" in the diagram below) on any intermediate steps to ensure that the process is still on track.
+
+> When to use this workflow: This workflow is ideal for situations where the task can be easily and cleanly decomposed into fixed subtasks. The main goal is to trade off latency for higher accuracy, by making each LLM call an easier task.
+
+![prompt_chain.png](/oss/images/prompt_chain.png)
+
+<Tabs>
+  <Tab title="Graph API">
+
+    
+    ```typescript
+    import { StateGraph, START, END } from "@langchain/langgraph";
+    import { z } from "zod";
+    
+    // Graph state
+    const State = z.object({
+      topic: z.string(),
+      joke: z.string().optional(),
+      improved_joke: z.string().optional(),
+      final_joke: z.string().optional(),
+    });
+    
+    // Nodes
+    const generateJoke = async (state: z.infer<typeof State>) => {
+      // First LLM call to generate initial joke
+      const msg = await llm.invoke(`Write a short joke about ${state.topic}`);
+      return { joke: msg.content };
+    };
+    
+    const checkPunchline = (state: z.infer<typeof State>) => {
+      // Gate function to check if the joke has a punchline
+      // Simple check - does the joke contain "?" or "!"
+      if (state.joke && (state.joke.includes("?") || state.joke.includes("!"))) {
+        return "Pass";
+      }
+      return "Fail";
+    };
+    
+    const improveJoke = async (state: z.infer<typeof State>) => {
+      // Second LLM call to improve the joke
+      const msg = await llm.invoke(`Make this joke funnier by adding wordplay: ${state.joke}`);
+      return { improved_joke: msg.content };
+    };
+    
+    const polishJoke = async (state: z.infer<typeof State>) => {
+      // Third LLM call for final polish
+      const msg = await llm.invoke(`Add a surprising twist to this joke: ${state.improved_joke}`);
+      return { final_joke: msg.content };
+    };
+    
+    // Build workflow
+    const workflow = new StateGraph(State)
+      .addNode("generate_joke", generateJoke)
+      .addNode("improve_joke", improveJoke)
+      .addNode("polish_joke", polishJoke)
+      .addEdge(START, "generate_joke")
+      .addConditionalEdges(
+        "generate_joke",
+        checkPunchline,
+        { "Fail": "improve_joke", "Pass": END }
+      )
+      .addEdge("improve_joke", "polish_joke")
+      .addEdge("polish_joke", END);
+    
+    // Compile
+    const chain = workflow.compile();
+    
+    // Show workflow
+    import * as fs from "node:fs/promises";
+    const drawableGraph = await chain.getGraphAsync();
+    const image = await drawableGraph.drawMermaidPng();
+    const imageBuffer = new Uint8Array(await image.arrayBuffer());
+    await fs.writeFile("workflow.png", imageBuffer);
+    
+    // Invoke
+    const state = await chain.invoke({ topic: "cats" });
+    console.log("Initial joke:");
+    console.log(state.joke);
+    console.log("\n--- --- ---\n");
+    if (state.improved_joke) {
+      console.log("Improved joke:");
+      console.log(state.improved_joke);
+      console.log("\n--- --- ---\n");
+    
+      console.log("Final joke:");
+      console.log(state.final_joke);
+    } else {
+      console.log("Joke failed quality gate - no punchline detected!");
+    }
+    ```
+
+  </Tab>
+  <Tab title="Functional API">
+
+    
+    ```typescript
+    import { entrypoint, task } from "@langchain/langgraph";
+    
+    // Tasks
+    const generateJoke = task("generate_joke", async (topic: string) => {
+      // First LLM call to generate initial joke
+      const msg = await llm.invoke(`Write a short joke about ${topic}`);
+      return msg.content;
+    });
+    
+    const checkPunchline = (joke: string) => {
+      // Gate function to check if the joke has a punchline
+      // Simple check - does the joke contain "?" or "!"
+      if (joke.includes("?") || joke.includes("!")) {
+        return "Pass";
+      }
+      return "Fail";
+    };
+    
+    const improveJoke = task("improve_joke", async (joke: string) => {
+      // Second LLM call to improve the joke
+      const msg = await llm.invoke(`Make this joke funnier by adding wordplay: ${joke}`);
+      return msg.content;
+    });
+    
+    const polishJoke = task("polish_joke", async (joke: string) => {
+      // Third LLM call for final polish
+      const msg = await llm.invoke(`Add a surprising twist to this joke: ${joke}`);
+      return msg.content;
+    });
+    
+    const promptChainingWorkflow = entrypoint("promptChainingWorkflow", async (topic: string) => {
+      const originalJoke = await generateJoke(topic);
+      if (checkPunchline(originalJoke) === "Pass") {
+        return originalJoke;
+      }
+    
+      const improvedJoke = await improveJoke(originalJoke);
+      return await polishJoke(improvedJoke);
+    });
+    
+    // Invoke
+    const stream = await promptChainingWorkflow.stream("cats", { streamMode: "updates" });
+    for await (const step of stream) {
+      console.log(step);
+      console.log("\n");
+    }
+    ```
+
+  </Tab>
+</Tabs>
+
+## Orchestrator-worker
+
+With orchestrator-worker, an orchestrator breaks down a task, delegates each sub-task to workers, and synthesizes their results.
+
+![worker.png](/oss/images/worker.png)
+
+<Tabs>
+  <Tab title="Graph API">
+
+    
+    ```typescript
+    import "@langchain/langgraph/zod";
+    
+    // Schema for structured output to use in planning
+    const Section = z.object({
+      name: z.string().describe("Name for this section of the report."),
+      description: z.string().describe("Brief overview of the main topics and concepts to be covered in this section."),
+    });
+    
+    const Sections = z.object({
+      sections: z.array(Section).describe("Sections of the report."),
+    });
+    
+    // Augment the LLM with schema for structured output
+    const planner = llm.withStructuredOutput(Sections);
+    ```
+    
+    **Creating Workers in LangGraph**
+    
+    Because orchestrator-worker workflows are common, LangGraph **has the `Send` API to support this**. It lets you dynamically create worker nodes and send each one a specific input. Each worker has its own state, and all worker outputs are written to a *shared state key* that is accessible to the orchestrator graph. This gives the orchestrator access to all worker output and allows it to synthesize them into a final output. As you can see below, we iterate over a list of sections and `Send` each to a worker node. See further documentation [here](/oss/javascript/graph-api#map-reduce-and-the-send-api) and [here](/oss/javascript/graph-api#send).
+    
+    ```typescript
+    import { withLangGraph } from "@langchain/langgraph/zod";
+    import { Send } from "@langchain/langgraph";
+    
+    // Graph state
+    const State = z.object({
+      topic: z.string(), // Report topic
+      sections: z.array(Section).optional(), // List of report sections
+      // All workers write to this key
+      completed_sections: withLangGraph(z.array(z.string()), {
+        reducer: {
+          fn: (x, y) => x.concat(y),
+        },
+        default: () => [],
+      }),
+      final_report: z.string().optional(), // Final report
+    });
+    
+    // Worker state
+    const WorkerState = z.object({
+      section: Section,
+      completed_sections: withLangGraph(z.array(z.string()), {
+        reducer: {
+          fn: (x, y) => x.concat(y),
+        },
+        default: () => [],
+      }),
+    });
+    
+    // Nodes
+    const orchestrator = async (state: z.infer<typeof State>) => {
+      // Orchestrator that generates a plan for the report
+      const reportSections = await planner.invoke([
+        new SystemMessage("Generate a plan for the report."),
+        new HumanMessage(`Here is the report topic: ${state.topic}`),
+      ]);
+    
+      return { sections: reportSections.sections };
+    };
+    
+    const llmCall = async (state: z.infer<typeof WorkerState>) => {
+      // Worker writes a section of the report
+      const section = await llm.invoke([
+        new SystemMessage(
+          "Write a report section following the provided name and description. Include no preamble for each section. Use markdown formatting."
+        ),
+        new HumanMessage(
+          `Here is the section name: ${state.section.name} and description: ${state.section.description}`
+        ),
+      ]);
+    
+      // Write the updated section to completed sections
+      return { completed_sections: [section.content] };
+    };
+    
+    const synthesizer = (state: z.infer<typeof State>) => {
+      // Synthesize full report from sections
+      const completedSections = state.completed_sections;
+      const completedReportSections = completedSections.join("\n\n---\n\n");
+      return { final_report: completedReportSections };
+    };
+    
+    // Conditional edge function to create llm_call workers
+    const assignWorkers = (state: z.infer<typeof State>) => {
+      // Assign a worker to each section in the plan
+      return state.sections!.map((s) => new Send("llm_call", { section: s }));
+    };
+    
+    // Build workflow
+    const orchestratorWorkerBuilder = new StateGraph(State)
+      .addNode("orchestrator", orchestrator)
+      .addNode("llm_call", llmCall)
+      .addNode("synthesizer", synthesizer)
+      .addEdge(START, "orchestrator")
+      .addConditionalEdges("orchestrator", assignWorkers, ["llm_call"])
+      .addEdge("llm_call", "synthesizer")
+      .addEdge("synthesizer", END);
+    
+    // Compile the workflow
+    const orchestratorWorker = orchestratorWorkerBuilder.compile();
+    
+    // Invoke
+    const state = await orchestratorWorker.invoke({ topic: "Create a report on LLM scaling laws" });
+    console.log(state.final_report);
+    ```
+
+  </Tab>
+  <Tab title="Functional API">
+
+    
+    ```typescript
+    // Schema for structured output to use in planning
+    const Section = z.object({
+      name: z.string().describe("Name for this section of the report."),
+      description: z.string().describe("Brief overview of the main topics and concepts to be covered in this section."),
+    });
+    
+    const Sections = z.object({
+      sections: z.array(Section).describe("Sections of the report."),
+    });
+    
+    // Augment the LLM with schema for structured output
+    const planner = llm.withStructuredOutput(Sections);
+    
+    const orchestrator = task("orchestrator", async (topic: string) => {
+      // Orchestrator that generates a plan for the report
+      const reportSections = await planner.invoke([
+        new SystemMessage("Generate a plan for the report."),
+        new HumanMessage(`Here is the report topic: ${topic}`),
+      ]);
+      return reportSections.sections;
+    });
+    
+    const llmCall = task("llm_call", async (section: z.infer<typeof Section>) => {
+      // Worker writes a section of the report
+      const result = await llm.invoke([
+        new SystemMessage("Write a report section."),
+        new HumanMessage(
+          `Here is the section name: ${section.name} and description: ${section.description}`
+        ),
+      ]);
+      return result.content;
+    });
+    
+    const synthesizer = task("synthesizer", (completedSections: string[]) => {
+      // Synthesize full report from sections
+      const finalReport = completedSections.join("\n\n---\n\n");
+      return finalReport;
+    });
+    
+    const orchestratorWorker = entrypoint("orchestratorWorker", async (topic: string) => {
+      const sections = await orchestrator(topic);
+      const sectionFutures = sections.map((section) => llmCall(section));
+      const finalReport = await synthesizer(
+        await Promise.all(sectionFutures)
+      );
+      return finalReport;
+    });
+    
+    // Invoke
+    const report = await orchestratorWorker.invoke("Create a report on LLM scaling laws");
+    console.log(report);
+    ```
+
+  </Tab>
+</Tabs>
+
+## Evaluator-optimizer
+
+In the evaluator-optimizer workflow, one LLM call generates a response while another provides evaluation and feedback in a loop:
+
+> When to use this workflow: This workflow is particularly effective when we have clear evaluation criteria, and when iterative refinement provides measurable value. The two signs of good fit are, first, that LLM responses can be demonstrably improved when a human articulates their feedback; and second, that the LLM can provide such feedback. This is analogous to the iterative writing process a human writer might go through when producing a polished document.
+
+![evaluator_optimizer.png](/oss/images/evaluator_optimizer.png)
+
+<Tabs>
+  <Tab title="Graph API">
+
+    
+    ```typescript
+    // Graph state
+    const State = z.object({
+      joke: z.string().optional(),
+      topic: z.string(),
+      feedback: z.string().optional(),
+      funny_or_not: z.string().optional(),
+    });
+    
+    // Schema for structured output to use in evaluation
+    const Feedback = z.object({
+      grade: z.enum(["funny", "not funny"]).describe("Decide if the joke is funny or not."),
+      feedback: z.string().describe("If the joke is not funny, provide feedback on how to improve it."),
+    });
+    
+    // Augment the LLM with schema for structured output
+    const evaluator = llm.withStructuredOutput(Feedback);
+    
+    // Nodes
+    const llmCallGenerator = async (state: z.infer<typeof State>) => {
+      // LLM generates a joke
+      let msg;
+      if (state.feedback) {
+        msg = await llm.invoke(
+          `Write a joke about ${state.topic} but take into account the feedback: ${state.feedback}`
+        );
+      } else {
+        msg = await llm.invoke(`Write a joke about ${state.topic}`);
+      }
+      return { joke: msg.content };
+    };
+    
+    const llmCallEvaluator = async (state: z.infer<typeof State>) => {
+      // LLM evaluates the joke
+      const grade = await evaluator.invoke(`Grade the joke ${state.joke}`);
+      return { funny_or_not: grade.grade, feedback: grade.feedback };
+    };
+    
+    // Conditional edge function to route back to joke generator or end
+    const routeJoke = (state: z.infer<typeof State>) => {
+      // Route back to joke generator or end based upon feedback from the evaluator
+      if (state.funny_or_not === "funny") {
+        return "Accepted";
+      } else if (state.funny_or_not === "not funny") {
+        return "Rejected + Feedback";
+      }
+    };
+    
+    // Build workflow
+    const optimizerBuilder = new StateGraph(State)
+      .addNode("llm_call_generator", llmCallGenerator)
+      .addNode("llm_call_evaluator", llmCallEvaluator)
+      .addEdge(START, "llm_call_generator")
+      .addEdge("llm_call_generator", "llm_call_evaluator")
+      .addConditionalEdges(
+        "llm_call_evaluator",
+        routeJoke,
+        {
+          "Accepted": END,
+          "Rejected + Feedback": "llm_call_generator",
+        }
+      );
+    
+    // Compile the workflow
+    const optimizerWorkflow = optimizerBuilder.compile();
+    
+    // Invoke
+    const state = await optimizerWorkflow.invoke({ topic: "Cats" });
+    console.log(state.joke);
+    ```
+
+  </Tab>
+  <Tab title="Functional API">
+
+    
+    ```typescript
+    // Schema for structured output to use in evaluation
+    const Feedback = z.object({
+      grade: z.enum(["funny", "not funny"]).describe("Decide if the joke is funny or not."),
+      feedback: z.string().describe("If the joke is not funny, provide feedback on how to improve it."),
+    });
+    
+    // Augment the LLM with schema for structured output
+    const evaluator = llm.withStructuredOutput(Feedback);
+    
+    // Nodes
+    const llmCallGenerator = task("llm_call_generator", async (topic: string, feedback?: string) => {
+      // LLM generates a joke
+      if (feedback) {
+        const msg = await llm.invoke(
+          `Write a joke about ${topic} but take into account the feedback: ${feedback}`
+        );
+        return msg.content;
+      } else {
+        const msg = await llm.invoke(`Write a joke about ${topic}`);
+        return msg.content;
+      }
+    });
+    
+    const llmCallEvaluator = task("llm_call_evaluator", async (joke: string) => {
+      // LLM evaluates the joke
+      const feedback = await evaluator.invoke(`Grade the joke ${joke}`);
+      return feedback;
+    });
+    
+    const optimizerWorkflow = entrypoint("optimizerWorkflow", async (topic: string) => {
+      let feedback;
+      while (true) {
+        const joke = await llmCallGenerator(topic, feedback?.feedback);
+        feedback = await llmCallEvaluator(joke);
+        if (feedback.grade === "funny") {
+          return joke;
+        }
+      }
+    });
+    
+    // Invoke
+    const stream = await optimizerWorkflow.stream("Cats", { streamMode: "updates" });
+    for await (const step of stream) {
+      console.log(step);
+      console.log("\n");
+    }
+    ```
+
+  </Tab>
+</Tabs>
+
+## Human-in-the-loop
+
+Human involvement can significantly enhance agent reliability, especially for sensitive tasks. This can involve:
+
+* Approving specific actions
+* Providing feedback to update the agent's state
+* Offering guidance in complex decision-making processes
+
+Human-in-the-loop patterns are crucial when full automation isn't feasible or desirable. Learn more in our [human-in-the-loop guide](/oss/javascript/human-in-the-loop).
+
+## Parallelization 
+
+With parallelization, LLMs work simultaneously and have their outputs aggregated programmatically. Parallel processing is vital for efficient multi-agent systems and complex tasks. LangGraph supports parallelization through its [Send](/oss/javascript/graph-api#send) API, enabling:
+
+* Concurrent processing of multiple states
+* Implementation of map-reduce-like operations
+* Efficient handling of independent subtasks
+
+![parallelization.png](/oss/images/parallelization.png)
+
+<Tabs>
+  <Tab title="Graph API">
+
+    
+    ```typescript
+    // Graph state
+    const State = z.object({
+      topic: z.string(),
+      joke: z.string().optional(),
+      story: z.string().optional(),
+      poem: z.string().optional(),
+      combined_output: z.string().optional(),
+    });
+    
+    // Nodes
+    const callLlm1 = async (state: z.infer<typeof State>) => {
+      // First LLM call to generate initial joke
+      const msg = await llm.invoke(`Write a joke about ${state.topic}`);
+      return { joke: msg.content };
+    };
+    
+    const callLlm2 = async (state: z.infer<typeof State>) => {
+      // Second LLM call to generate story
+      const msg = await llm.invoke(`Write a story about ${state.topic}`);
+      return { story: msg.content };
+    };
+    
+    const callLlm3 = async (state: z.infer<typeof State>) => {
+      // Third LLM call to generate poem
+      const msg = await llm.invoke(`Write a poem about ${state.topic}`);
+      return { poem: msg.content };
+    };
+    
+    const aggregator = (state: z.infer<typeof State>) => {
+      // Combine the joke and story into a single output
+      let combined = `Here's a story, joke, and poem about ${state.topic}!\n\n`;
+      combined += `STORY:\n${state.story}\n\n`;
+      combined += `JOKE:\n${state.joke}\n\n`;
+      combined += `POEM:\n${state.poem}`;
+      return { combined_output: combined };
+    };
+    
+    // Build workflow
+    const parallelBuilder = new StateGraph(State)
+      .addNode("call_llm_1", callLlm1)
+      .addNode("call_llm_2", callLlm2)
+      .addNode("call_llm_3", callLlm3)
+      .addNode("aggregator", aggregator)
+      .addEdge(START, "call_llm_1")
+      .addEdge(START, "call_llm_2")
+      .addEdge(START, "call_llm_3")
+      .addEdge("call_llm_1", "aggregator")
+      .addEdge("call_llm_2", "aggregator")
+      .addEdge("call_llm_3", "aggregator")
+      .addEdge("aggregator", END);
+    
+    const parallelWorkflow = parallelBuilder.compile();
+    
+    // Invoke
+    const state = await parallelWorkflow.invoke({ topic: "cats" });
+    console.log(state.combined_output);
+    ```
+
+  </Tab>
+  <Tab title="Functional API">
+
+    
+    ```typescript
+    const callLlm1 = task("call_llm_1", async (topic: string) => {
+      // First LLM call to generate initial joke
+      const msg = await llm.invoke(`Write a joke about ${topic}`);
+      return msg.content;
+    });
+    
+    const callLlm2 = task("call_llm_2", async (topic: string) => {
+      // Second LLM call to generate story
+      const msg = await llm.invoke(`Write a story about ${topic}`);
+      return msg.content;
+    });
+    
+    const callLlm3 = task("call_llm_3", async (topic: string) => {
+      // Third LLM call to generate poem
+      const msg = await llm.invoke(`Write a poem about ${topic}`);
+      return msg.content;
+    });
+    
+    const aggregator = task("aggregator", (topic: string, joke: string, story: string, poem: string) => {
+      // Combine the joke and story into a single output
+      let combined = `Here's a story, joke, and poem about ${topic}!\n\n`;
+      combined += `STORY:\n${story}\n\n`;
+      combined += `JOKE:\n${joke}\n\n`;
+      combined += `POEM:\n${poem}`;
+      return combined;
+    });
+    
+    // Build workflow
+    const parallelWorkflow = entrypoint("parallelWorkflow", async (topic: string) => {
+      const jokeFut = callLlm1(topic);
+      const storyFut = callLlm2(topic);
+      const poemFut = callLlm3(topic);
+    
+      return await aggregator(
+        topic,
+        await jokeFut,
+        await storyFut,
+        await poemFut
+      );
+    });
+    
+    // Invoke
+    const stream = await parallelWorkflow.stream("cats", { streamMode: "updates" });
+    for await (const step of stream) {
+      console.log(step);
+      console.log("\n");
+    }
+    ```
+
+  </Tab>
+</Tabs>
+
+
+## Subgraphs
+
+[Subgraphs](/oss/javascript/subgraphs) are essential for managing complex agent architectures, particularly in [multi-agent systems](/oss/javascript/multi-agent). They allow:
+
+* Isolated state management for individual agents
+* Hierarchical organization of agent teams
+* Controlled communication between agents and the main system
+
+Subgraphs communicate with the parent graph through overlapping keys in the state schema. This enables flexible, modular agent design. For implementation details, refer to our [subgraph how-to guide](/oss/javascript/subgraphs).
+
+## Reflection
+
+Reflection mechanisms can significantly improve agent reliability by:
+
+1. Evaluating task completion and correctness
+2. Providing feedback for iterative improvement
+3. Enabling self-correction and learning
+
+While often LLM-based, reflection can also use deterministic methods. For instance, in coding tasks, compilation errors can serve as feedback. This approach is demonstrated in [this video using LangGraph for self-corrective code generation](https://www.youtube.com/watch?v=MvNdgmM7uyc).
+
+By leveraging these features, LangGraph enables the creation of sophisticated, task-specific agent architectures that can handle complex workflows, collaborate effectively, and continuously improve their performance.

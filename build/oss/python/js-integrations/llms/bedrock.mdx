@@ -1,0 +1,180 @@
+---
+title: Bedrock
+---
+
+# Bedrock
+
+```{=mdx}
+
+<Warning>
+**You are currently on a page documenting the use of Amazon Bedrock models as [text completion models](/oss/python/concepts/text_llms). Many popular models available on Bedrock are [chat completion models](/oss/python/concepts/chat_models).**
+
+
+You may be looking for [this page instead](/oss/python/integrations/chat/bedrock/).
+</Warning>
+
+```
+> [Amazon Bedrock](https://aws.amazon.com/bedrock/) is a fully managed service that makes Foundation Models (FMs)
+> from leading AI startups and Amazon available via an API. You can choose from a wide range of FMs to find the model that is best suited for your use case.
+
+This will help you get started with Bedrock completion models (LLMs) using LangChain. For detailed documentation on `Bedrock` features and configuration options, please refer to the [API reference](https://api.js.langchain.com/classes/langchain_community_llms_bedrock.Bedrock.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/bedrock) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [Bedrock](https://api.js.langchain.com/classes/langchain_community_llms_bedrock.Bedrock.html) | [@langchain/community](https://api.js.langchain.com/modules/langchain_community_llms_bedrock.html) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+
+## Setup
+
+To access Bedrock models you'll need to create an AWS account, get an API key, and install the `@langchain/community` integration, along with a few peer dependencies.
+
+### Credentials
+
+Head to [aws.amazon.com](https://aws.amazon.com) to sign up to AWS Bedrock and generate an API key. Once you've done this set the environment variables:
+
+```bash
+export BEDROCK_AWS_REGION="your-region-url"
+export BEDROCK_AWS_ACCESS_KEY_ID="your-access-key-id"
+export BEDROCK_AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+```
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+### Installation
+
+The LangChain Bedrock integration lives in the `@langchain/community` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/core
+</Npm2Yarn>
+
+And install the peer dependencies:
+
+<Npm2Yarn>
+  @aws-crypto/sha256-js @aws-sdk/credential-provider-node @smithy/protocol-http @smithy/signature-v4 @smithy/eventstream-codec @smithy/util-utf8 @aws-sdk/types
+</Npm2Yarn>
+
+You can also use Bedrock in web environments such as Edge functions or Cloudflare Workers by omitting the `@aws-sdk/credential-provider-node` dependency
+and using the `web` entrypoint:
+
+<Npm2Yarn>
+  @aws-crypto/sha256-js @smithy/protocol-http @smithy/signature-v4 @smithy/eventstream-codec @smithy/util-utf8 @aws-sdk/types
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```typescript
+// @lc-docs-hide-cell
+// Deno requires these imports, and way of loading env vars.
+// we don't want to expose in the docs.
+// Below this cell we have a typescript markdown codeblock with
+// the node code.
+import "@aws-sdk/credential-provider-node";
+import "@smithy/protocol-http";
+import "@aws-crypto/sha256-js";
+import "@smithy/protocol-http";
+import "@smithy/signature-v4";
+import "@smithy/eventstream-codec";
+import "@smithy/util-utf8";
+import "@aws-sdk/types";
+import { Bedrock } from "@langchain/community/llms/bedrock"
+import { getEnvironmentVariable } from "@langchain/core/utils/env";
+
+const llm = new Bedrock({
+  model: "anthropic.claude-v2",
+  region: "us-east-1",
+  // endpointUrl: "custom.amazonaws.com",
+  credentials: {
+    accessKeyId: getEnvironmentVariable("BEDROCK_AWS_ACCESS_KEY_ID"),
+    secretAccessKey: getEnvironmentVariable("BEDROCK_AWS_SECRET_ACCESS_KEY"),
+  },
+  temperature: 0,
+  maxTokens: undefined,
+  maxRetries: 2,
+  // other params...
+})
+```
+```typescript
+import { Bedrock } from "@langchain/community/llms/bedrock"
+
+const llm = new Bedrock({
+  model: "anthropic.claude-v2",
+  region: process.env.BEDROCK_AWS_REGION ?? "us-east-1",
+  // endpointUrl: "custom.amazonaws.com",
+  credentials: {
+    accessKeyId: process.env.BEDROCK_AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.BEDROCK_AWS_SECRET_ACCESS_KEY,
+  },
+  temperature: 0,
+  maxTokens: undefined,
+  maxRetries: 2,
+  // other params...
+})
+```
+
+## Invocation
+
+Note that some models require specific prompting techniques. For example, Anthropic's Claude-v2 model will throw an error if
+the prompt does not start with `Human: `.
+
+
+```typescript
+const inputText = "Human: Bedrock is an AI company that\nAssistant: "
+
+const completion = await llm.invoke(inputText)
+completion
+```
+
+
+
+```output
+" Here are a few key points about Bedrock AI:\n" +
+  "\n" +
+  "- Bedrock was founded in 2021 and is based in San Fran"... 116 more characters
+```
+
+
+## Chaining
+
+We can [chain](/oss/python/how-to/sequence/) our completion model with a prompt template like so:
+
+
+```typescript
+import { PromptTemplate } from "@langchain/core/prompts"
+
+const prompt = PromptTemplate.fromTemplate("Human: How to say {input} in {output_language}:\nAssistant:")
+
+const chain = prompt.pipe(llm);
+await chain.invoke(
+  {
+    output_language: "German",
+    input: "I love programming.",
+  }
+)
+```
+
+
+
+```output
+' Here is how to say "I love programming" in German:\n' +
+  "\n" +
+  "Ich liebe das Programmieren."
+```
+
+
+## API reference
+
+For detailed documentation of all Bedrock features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_community_llms_bedrock.Bedrock.html
