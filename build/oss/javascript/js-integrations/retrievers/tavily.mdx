@@ -1,0 +1,156 @@
+---
+title: TavilySearchAPIRetriever
+----
+
+[Tavily's Search API](https://tavily.com) is a search engine built specifically for AI agents (LLMs), delivering real-time, accurate, and factual results at speed.
+
+## Overview
+
+This will help you getting started with the Tavily Search API [retriever](/oss/javascript/concepts/retrievers). For detailed documentation of all `TavilySearchAPIRetriever` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_retrievers_tavily_search_api.TavilySearchAPIRetriever.html).
+
+### Integration details
+
+| Retriever | Source | Package |
+| :--- | :--- | :---: |
+[`TavilySearchAPIRetriever`](https://api.js.langchain.com/classes/langchain_community_retrievers_tavily_search_api.TavilySearchAPIRetriever.html) | Information on the web. | [`@langchain/community`](https://npmjs.com/@langchain/community/) |
+
+## Setup
+
+You will need to populate a `TAVILY_API_KEY` environment variable with your Tavily API key or pass it into the constructor as `apiKey`. Obtain a key by signing up [on their website](https://tavily.com/).
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```typescript
+// process.env.LANGSMITH_API_KEY = "<YOUR API KEY HERE>";
+// process.env.LANGSMITH_TRACING = "true";
+```
+
+### Installation
+
+This retriever lives in the `@langchain/community` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/core
+</Npm2Yarn>
+```
+## Instantiation
+
+Now we can instantiate our retriever:
+
+
+```typescript
+import { TavilySearchAPIRetriever } from "@langchain/community/retrievers/tavily_search_api";
+
+const retriever = new TavilySearchAPIRetriever({
+  k: 3,
+});
+```
+For a full list of allowed arguments, see [the official documentation](https://docs.tavily.com/docs/tavily-api/rest_api#parameters). You can pass any param to the SDK via a `kwargs` object.
+
+## Usage
+
+
+```typescript
+const query = "what is the current weather in SF?";
+
+await retriever.invoke(query);
+```
+```output
+[
+  Document {
+    pageContent: "{'location': {'name': 'San Francisco', 'region': 'California', 'country': 'United States of America', 'lat': 37.78, 'lon': -122.42, 'tz_id': 'America/Los_Angeles', 'localtime_epoch': 1722900266, 'localtime': '2024-08-05 16:24'}, 'current': {'last_updated_epoch': 1722899700, 'last_updated': '2024-08-05 16:15', 'temp_c': 16.8, 'temp_f': 62.2, 'is_day': 1, 'condition': {'text': 'Partly Cloudy', 'icon': '//cdn.weatherapi.com/weather/64x64/day/116.png', 'code': 1003}, 'wind_mph': 13.2, 'wind_kph': 21.2, 'wind_degree': 261, 'wind_dir': 'W', 'pressure_mb': 1014.0, 'pressure_in': 29.94, 'precip_mm': 0.0, 'precip_in': 0.0, 'humidity': 74, 'cloud': 60, 'feelslike_c': 16.8, 'feelslike_f': 62.2, 'windchill_c': 16.8, 'windchill_f': 62.2, 'heatindex_c': 16.8, 'heatindex_f': 62.2, 'dewpoint_c': 12.3, 'dewpoint_f': 54.1, 'vis_km': 10.0, 'vis_miles': 6.0, 'uv': 5.0, 'gust_mph': 17.3, 'gust_kph': 27.8}}",
+    metadata: {
+      title: 'Weather in San Francisco',
+      source: 'https://www.weatherapi.com/',
+      score: 0.9947009,
+      images: []
+    },
+    id: undefined
+  },
+  Document {
+    pageContent: 'Current Weather for Popular Cities . San Francisco, CA 56 ° F Mostly Cloudy; Manhattan, NY warning 85 ° F Fair; Schiller Park, IL (60176) 71 ° F Mostly Cloudy; Boston, MA warning 84 ° F Partly ...',
+    metadata: {
+      title: 'San Francisco, CA Hourly Weather Forecast | Weather Underground',
+      source: 'https://www.wunderground.com/hourly/us/ca/san-francisco/date/2024-08-02',
+      score: 0.9859904,
+      images: []
+    },
+    id: undefined
+  },
+  Document {
+    pageContent: 'San Francisco CA 37.77°N 122.41°W (Elev. 131 ft) Last Update: 2:42 pm PDT Aug 4, 2024. Forecast Valid: 5pm PDT Aug 4, 2024-6pm PDT Aug 11, 2024 . Forecast Discussion . Additional Resources. Radar & Satellite Image. Hourly Weather Forecast. ... Severe Weather ; Current Outlook Maps ; Drought ; Fire Weather ; Fronts/Precipitation Maps ; Current ...',
+    metadata: {
+      title: 'National Weather Service',
+      source: 'https://forecast.weather.gov/zipcity.php?inputstring=San+Francisco,CA',
+      score: 0.98141783,
+      images: []
+    },
+    id: undefined
+  }
+]
+```
+## Use within a chain
+
+Like other retrievers, `TavilySearchAPIRetriever` can be incorporated into LLM applications via [chains](/oss/javascript/how-to/sequence/).
+
+We will need a LLM or chat model:
+
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+```typescript
+// @lc-docs-hide-cell
+
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+});
+```
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+
+import type { Document } from "@langchain/core/documents";
+
+const prompt = ChatPromptTemplate.fromTemplate(`
+Answer the question based only on the context provided.
+
+Context: {context}
+
+Question: {question}`);
+
+const formatDocs = (docs: Document[]) => {
+  return docs.map((doc) => doc.pageContent).join("\n\n");
+}
+
+// See https://js.langchain.com/docs/tutorials/rag
+const ragChain = RunnableSequence.from([
+  {
+    context: retriever.pipe(formatDocs),
+    question: new RunnablePassthrough(),
+  },
+  prompt,
+  llm,
+  new StringOutputParser(),
+]);
+```
+
+
+```typescript
+await ragChain.invoke(query);
+```
+```output
+The current weather in San Francisco is partly cloudy with a temperature of 16.8°C (62.2°F). The wind is coming from the west at 13.2 mph (21.2 kph), and the humidity is at 74%. There is no precipitation, and visibility is 10 km (6 miles).
+```
+## API reference
+
+For detailed documentation of all `TavilySearchAPIRetriever` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_retrievers_tavily_search_api.TavilySearchAPIRetriever.html).
