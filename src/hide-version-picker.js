@@ -19,6 +19,8 @@
             body.classList.add('hide-version-picker');
         } else if (currentPath.match(/\/labs(?:\/|$)/)) {
             body.classList.add('hide-version-picker');
+        } else if (currentPath.match(/\/langsmith(?:\/|$)/)) {
+            body.classList.add('hide-version-picker');
         }
         
         // Add classes to version picker buttons
