@@ -1,0 +1,133 @@
+---
+title: Enable TTL and data retention
+sidebarTitle: Enable TTL & data retention
+---
+
+LangSmith Self-Hosted allows enablement of automatic TTL and Data Retention of traces. This can be useful if you're complying with data privacy regulations, or if you want to have more efficient space usage and auto cleanup of your traces. Traces will also have their data retention period automatically extended based on certain actions or run rule applications.
+
+## Requirements
+
+You can configure retention through helm or environment variable settings. There are a few options that are configurable:
+
+- *Enabled:* Whether data retention is enabled or disabled. If enabled, via the UI you can your default organization and project TTL tiers to apply to traces (see [data retention guide](/langsmith/administration-overview#data-retention) for details).
+- *Retention Periods:* You can configure system-wide retention periods for shortlived and longlived traces. Once configured, you can manage the retention level at each project as well as set an organization-wide default for new projects.
+
+<CodeGroup>
+
+```yaml Helm
+config:  ttl:    enabled: true    ttl_period_seconds:      # -- TTL seconds - 400 day longlived and 14 day shortlived      longlived: "34560000"      shortlived: "1209600"
+```
+
+```bash Docker
+# In your .env fileFF_TRACE_TIERS_ENABLED=trueTRACE_TIER_TTL_DURATION_SEC_MAP='{"longlived": 34560000, "shortlived": 1209600}'
+```
+
+</CodeGroup>
+
+## ClickHouse TTL Cleanup Job
+
+As of version **0.11**, a cron job runs on weekends to assist in deleting expired data that may not have been cleaned up by ClickHouse's built-in TTL mechanism.
+
+<Warning>
+  This job uses potentially long running **mutations** (`ALTER TABLE DELETE`), which are expensive operations that can impact ClickHouse's performance. We recommend running these operations only during off-peak hours (nights and weekends). During testing with **1 concurrent active** mutation (default), we did not observe significant CPU, memory, or latency increases.
+</Warning>
+
+### Default Schedule
+
+By default, the cleanup job runs:
+
+- **Saturday**: 8pm and 10pm UTC
+- **Sunday**: 12am, 2am, and 4am UTC
+
+### Disabling the Job
+
+To disable the cleanup job entirely:
+
+```yaml
+queue:
+  deployment:
+    extraEnv:
+      - name: "ENABLE_CLICKHOUSE_TTL_CLEANUP_CRON"
+        value: "false"
+```
+### Configuring the Schedule
+You can customize when the cleanup job runs by modifying the cron expressions:
+```yaml
+queue:
+  deployment:
+    extraEnv:
+      # UTC: Sunday 12am/2am/4am
+      - name: "CLICKHOUSE_TTL_CLEANUP_CRON_WEEKEND_MORNING"
+        value: "0 0,2,4 * * 0"
+      # UTC: Saturday 8pm/10pm
+      - name: "CLICKHOUSE_TTL_CLEANUP_CRON_WEEKEND_EVENING"
+        value: "0 20,22 * * 6"
+```
+<Tip>
+  To run the job on a single cron schedule, set both `CLICKHOUSE_TTL_CLEANUP_CRON_WEEKEND_EVENING` and `CLICKHOUSE_TTL_CLEANUP_CRON_WEEKEND_MORNING` to the same value. Job locking prevents overlapping executions.
+</Tip>
+
+### Configuring Minimum Expired Rows Per Part
+
+The job goes table by table, scanning parts and deleting data from parts containing a minimum number of expired rows. This threshold balances efficiency and thoroughness:
+
+- **Too low**: Job scans entire parts to clear minimal data (inefficient)
+- **Too high**: Job misses parts with significant expired data
+
+```yaml
+queue:
+  deployment:
+    extraEnv:
+      - name: "CLICKHOUSE_TTL_CRON_MIN_EXPIRED_ROWS_PER_PART"
+        value: "100000" # 100k expired rows
+```
+
+#### Checking Expired Rows
+
+Use this query to analyze expired rows in your tables, and tweak your minimum value accordingly:
+
+```sql
+-- Query for Runs table. For other tables, replace 'ttl_seconds' with 'trace_ttl_seconds'
+SELECT
+    _part,
+    count() AS expired_rows
+FROM runs
+WHERE trace_first_received_at IS NOT NULL
+AND ttl_seconds IS NOT NULL
+AND toDateTime(assumeNotNull(trace_first_received_at) + toIntervalSecond(assumeNotNull(ttl_seconds))) < now()
+GROUP BY _part
+ORDER BY expired_rows DESC
+```
+
+### Configuring Maximum Active Mutations
+
+Delete operations can be time-consuming (~50 minutes for a 100GB part). You can increase concurrent mutations to speed up the process:
+
+```yaml
+queue:
+  deployment:
+    extraEnv:
+      - name: "CLICKHOUSE_TTL_CRON_MAX_ACTIVE_MUTATIONS"
+        value: "1"
+```
+
+<Warning>
+  Increasing concurrent DELETE operations can severely impact system performance. Monitor your system carefully and only increase this value if you can tolerate potentially slower insert and read latencies.
+</Warning>
+
+### Emergency: Stopping Running Mutations
+
+If you experience latency spikes and need to terminate a running mutation:
+
+1. **Find active mutations**:
+
+   ```sql
+   SELECT * FROM system.mutations WHERE is_done = 0;
+   ```
+
+   Look for the `mutation_id` where the `command` column contains a `DELETE` statement.
+
+2. **Kill the mutation**:
+   ```sql
+   KILL MUTATION WHERE mutation_id = '<mutation_id>';
+   ```

@@ -1,0 +1,250 @@
+---
+title: Hyperbrowser Browser Agent Tools
+---
+
+[Hyperbrowser](https://hyperbrowser.ai) is a platform for running, running browser agents, and scaling headless browsers. It lets you launch and manage browser sessions at scale and provides easy to use solutions for any webscraping needs, such as scraping a single page or crawling an entire site.
+
+Key Features:
+- Instant Scalability - Spin up hundreds of browser sessions in seconds without infrastructure headaches
+- Simple Integration - Works seamlessly with popular tools like Puppeteer and Playwright
+- Powerful APIs - Easy to use APIs for scraping/crawling any site, and much more
+- Bypass Anti-Bot Measures - Built-in stealth mode, ad blocking, automatic CAPTCHA solving, and rotating proxies
+
+This guide provides a quick overview for getting started with Hyperbrowser tools.
+
+For more information about Hyperbrowser, please visit the [Hyperbrowser website](https://hyperbrowser.ai) or if you want to check out the docs, you can visit the [Hyperbrowser docs](https://docs.hyperbrowser.ai).
+
+
+## Browser Agents
+
+Hyperbrowser provides powerful browser agent tools that enable AI models to interact with web browsers programmatically. These browser agents can navigate websites, fill forms, click buttons, extract data, and perform complex web automation tasks.
+
+Browser agents are particularly useful for:
+- Web scraping and data extraction from complex websites
+- Automating repetitive web tasks
+- Interacting with web applications that require authentication
+- Performing research across multiple websites
+- Testing web applications
+
+Hyperbrowser offers three types of browser agent tools:
+- **Browser Use Tool**: A general-purpose browser automation tool
+- **OpenAI CUA Tool**: Integration with OpenAI's Computer Use Agent
+- **Claude Computer Use Tool**: Integration with Anthropic's Claude for computer use
+
+
+## Overview
+
+### Integration details
+
+| Tool                      | Package                | Local | Serializable | JS support |
+| :-----------------------  | :--------------------- | :---: | :----------: | :--------: |
+| Browser Use Tool          | langchain-hyperbrowser |  ❌   |      ❌      |      ❌    |
+| OpenAI CUA Tool           | langchain-hyperbrowser |  ❌   |      ❌      |      ❌    |
+| Claude Computer Use Tool  | langchain-hyperbrowser |  ❌   |      ❌      |     ❌     |
+
+
+## Setup
+
+To access the Hyperbrowser tools you'll need to install the `langchain-hyperbrowser` integration package, and create a Hyperbrowser account and get an API key.
+
+### Credentials
+
+Head to [Hyperbrowser](https://app.hyperbrowser.ai/) to sign up and generate an API key. Once you've done this set the HYPERBROWSER_API_KEY environment variable:
+
+```bash
+export HYPERBROWSER_API_KEY=<your-api-key>
+```
+
+### Installation
+
+Install **langchain-hyperbrowser**.
+
+
+
+```python
+%pip install -qU langchain-hyperbrowser
+```
+
+## Instantiation
+
+### Browser Use Tool
+
+The `HyperbrowserBrowserUseTool` is a tool to perform web automation tasks using a browser agent, specifically the Browser-Use agent.
+
+```python
+from langchain_hyperbrowser import HyperbrowserBrowserUseTool
+tool = HyperbrowserBrowserUseTool()
+```
+
+### OpenAI CUA Tool
+
+The `HyperbrowserOpenAICUATool` is a specialized tool that leverages OpenAI's Computer Use Agent (CUA) capabilities through Hyperbrowser.
+
+```python
+from langchain_hyperbrowser import HyperbrowserOpenAICUATool
+tool = HyperbrowserOpenAICUATool()
+```
+
+### Claude Computer Use Tool
+
+The `HyperbrowserClaudeComputerUseTool` is a specialized tool that leverages Claude's computer use capabilities through Hyperbrowser.
+
+```python
+from langchain_hyperbrowser import HyperbrowserClaudeComputerUseTool
+tool = HyperbrowserClaudeComputerUseTool()
+```
+
+
+## Invocation
+
+### Basic Usage
+
+#### Browser Use Tool
+
+
+
+```python
+from langchain_hyperbrowser import HyperbrowserBrowserUseTool
+
+tool = HyperbrowserBrowserUseTool()
+result = tool.run({"task": "Go to Hacker News and summarize the top 5 posts right now"})
+print(result)
+```
+```output
+{'data': 'The top 5 posts on Hacker News right now are:\n1. Stop Syncing Everything - https://sqlsync.dev/posts/stop-syncing-everything/\n2. Move fast, break things: A review of Abundance by Ezra Klein and Derek Thompson - https://networked.substack.com/p/move-fast-and-break-things\n3. DEDA – Tracking Dots Extraction, Decoding and Anonymisation Toolkit - https://github.com/dfd-tud/deda\n4. Electron band structure in germanium, my ass (2001) - https://pages.cs.wisc.edu/~kovar/hall.html\n5. Show HN: I vibecoded a 35k LoC recipe app - https://www.recipeninja.ai', 'error': None}
+```
+#### OpenAI CUA Tool
+
+
+
+```python
+from langchain_hyperbrowser import HyperbrowserOpenAICUATool
+
+tool = HyperbrowserOpenAICUATool()
+result = tool.run(
+    {"task": "Go to Hacker News and get me the title of the top 5 posts right now"}
+)
+print(result)
+```
+```output
+{'data': 'Here are the titles of the top 5 posts on Hacker News right now:\n\n1. "DEDA – Tracking Dots Extraction, Decoding and Anonymisation Toolkit"\n2. "A man powers home for eight years using a thousand old laptop batteries"\n3. "Electron band structure in Germanium, my ass"\n4. "Bletchley code breaker Betty Webb dies aged 101"\n5. "Show HN: Zig Topological Sort Library for Parallel Processing"', 'error': None}
+```
+#### Claude Computer Use Tool
+
+
+
+```python
+from langchain_hyperbrowser import HyperbrowserClaudeComputerUseTool
+
+tool = HyperbrowserClaudeComputerUseTool()
+result = tool.run({"task": "Go to Hacker News and summarize the top 5 posts right now"})
+print(result)
+```
+```output
+{'data': "Now I'll summarize the top 5 posts on Hacker News as of April 1, 2025:\n\n### Top 5 Hacker News Posts Summary\n\n1. **A man powers home for eight years using a thousand old laptop batteries** (techoreon.com)\n   - 267 points, posted 5 hours ago\n   - An innovative DIY project where someone managed to power their home using recycled laptop batteries for an extended period.\n\n2. **Electron band structure in germanium, my ass** (wisc.edu)\n   - 611 points, posted 8 hours ago\n   - Academic or technical discussion about electron band structure in germanium, possibly with a controversial or humorous take given the title.\n\n3. **Bletchley code breaker Betty Webb dies aged 101** (bbc.com)\n   - 575 points, posted 8 hours ago\n   - Obituary for Betty Webb, who worked as a code breaker at Bletchley Park during WWII, passing away at the age of 101.\n\n4. **Show HN: Zig Topological Sort Library for Parallel Processing** (github.com/williamw520)\n   - 55 points, posted 3 hours ago\n   - A developer sharing a library written in Zig programming language for topological sorting that supports parallel processing.\n\n5. **The Myst Graph: A New Perspective on Myst** (githr.com)\n   - 107 points, posted 5 hours ago\n   - An article presenting a new analysis or visualization of the classic video game Myst, likely using graph theory.\n\nThese are the top 5 posts currently trending on Hacker News as of April 1, 2025.", 'error': None}
+```
+### With Custom Session Options
+
+All tools support custom session options:
+
+
+
+```python
+result = tool.run(
+    {
+        "task": "Go to npmjs.com, and tell me when react package was last updated.",
+        "session_options": {
+            "session_options": {"use_proxy": True, "accept_cookies": True}
+        },
+    }
+)
+print(result)
+```
+```output
+{'data': 'I have found that the react package was last published 11 hours ago. This is the most recently updated package I could find.', 'error': None}
+```
+### Async Usage
+
+All tools support async usage:
+
+
+
+```python
+async def browse_website():
+    tool = HyperbrowserBrowserUseTool()
+    result = await tool.arun(
+        {
+            "task": "Go to npmjs.com, click the first visible package, and tell me when it was updated"
+        }
+    )
+    return result
+
+
+result = await browse_website()
+```
+```output
+{'data': 'The page displays information about the "Example Domain," stating that it is used for illustrative purposes and can be utilized without permission. There\'s a link to "More information..." but no specific contact details are provided.', 'error': None}
+```
+## Use within an agent
+
+Here's how to use any of the Hyperbrowser tools within an agent:
+
+
+
+```python
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_hyperbrowser import browser_use_tool
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+llm = ChatOpenAI(temperature=0)
+
+# You can use any of the three tools here
+browser_use_tool = HyperbrowserBrowserUseTool()
+agent = create_react_agent(llm, [browser_use_tool])
+
+user_input = "Go to npmjs.com, and tell me when react package was last updated."
+for step in agent.stream(
+    {"messages": user_input},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+```output
+================================ Human Message =================================
+
+Go to npmjs.com, and tell me when react package was last updated.
+================================== Ai Message ==================================
+Tool Calls:
+  hyperbrowser_browser_use (call_pkAaDjn6kKH9yT3rHDb4hmET)
+ Call ID: call_pkAaDjn6kKH9yT3rHDb4hmET
+  Args:
+    task: Go to npmjs.com and find the last updated date of the React package.
+    session_options: None
+================================= Tool Message =================================
+Name: hyperbrowser_browser_use
+
+{"data": "The last updated date of the React package is a day ago.", "error": null}
+================================== Ai Message ==================================
+
+The React package was last updated a day ago.
+```
+## Configuration Options
+
+Claude Computer Use, OpenAI CUA, and Browser Use have the following params available:
+
+- `task`: The task to execute using the agent
+- `max_steps`: The maximum number of interaction steps the agent can take to complete the task
+- `session_options`: Browser session configuration
+
+For more details, see the respective API references:
+- [Browser Use API Reference](https://docs.hyperbrowser.ai/reference/api-reference/agents/browser-use)
+- [OpenAI CUA API Reference](https://docs.hyperbrowser.ai/reference/api-reference/agents/openai-cua)
+- [Claude Computer Use API Reference](https://docs.hyperbrowser.ai/reference/api-reference/agents/claude-computer-use)
+
+
+## API reference
+
+- [GitHub](https://github.com/hyperbrowserai/langchain-hyperbrowser/)
+- [PyPi](https://pypi.org/project/langchain-hyperbrowser/)
+- [Hyperbrowser Docs](https://docs.hyperbrowser.ai/)
