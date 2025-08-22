@@ -1,0 +1,765 @@
+---
+title: Trace with OpenTelemetry
+sidebarTitle: OpenTelemetry
+---
+
+LangSmith supports OpenTelemetry-based tracing, allowing you to send traces from any OpenTelemetry-compatible application. This guide covers both automatic instrumentation for LangChain applications and manual instrumentation for other frameworks.
+
+Learn how to trace your LLM applications using OpenTelemetry with LangSmith.
+
+<Note>
+  Update the LangSmith URL appropriately for self-hosted installations or organizations in the EU region in the requests below. For the EU region, use `eu.api.smith.langchain.com`.
+</Note>
+
+## Trace a LangChain application
+
+If you're using LangChain or LangGraph, use the built-in integration to trace your application:
+
+1. Install the LangSmith package with OpenTelemetry support:
+
+   <CodeGroup>
+
+   ```bash pip
+   pip install "langsmith[otel]"
+   pip install langchain
+   ```
+
+   </CodeGroup>
+
+   <Info>
+     Requires Python SDK version `langsmith>=0.3.18`.
+   </Info>
+
+2. In your LangChain/LangGraph App, enable the OpenTelemetry integration by setting the `LANGSMITH_OTEL_ENABLED` environment variable:
+
+   <CodeGroup>
+
+   ```bash Shell
+   LANGSMITH_OTEL_ENABLED=true
+   LANGSMITH_TRACING=true
+   LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+   LANGSMITH_API_KEY=<your_langsmith_api_key>
+   ```
+
+   </CodeGroup>
+
+3. Create a LangChain application with tracing. For example:
+
+   ```python
+   import os
+   from langchain_openai import ChatOpenAI
+   from langchain_core.prompts import ChatPromptTemplate
+
+   # Create a chain
+   prompt = ChatPromptTemplate.from_template("Tell me a joke about {topic}")
+   model = ChatOpenAI()
+   chain = prompt | model
+
+   # Run the chain
+   result = chain.invoke({"topic": "programming"})
+   print(result.content)
+   ```
+
+4. View the traces in your LangSmith dashboard ([example](https://smith.langchain.com/public/a762af6c-b67d-4f22-90a0-728df16baeba/r)) once your application runs.
+
+## Trace a non-LangChain application
+
+For non-LangChain applications or custom instrumentation, you can trace your application in LangSmith with a standard OpenTelemetry client:
+
+1. Install the OpenTelemetry SDK, OpenTelemetry exporter packages, as well as the OpenAI package:
+
+   <CodeGroup>
+
+   ```bash pip
+   pip install openai
+   pip install opentelemetry-sdk
+   pip install opentelemetry-exporter-otlp
+   ```
+
+   </CodeGroup>
+
+2. Setup environment variables for the endpoint, substitute your specific values:
+
+   <CodeGroup>
+
+   ```bash Shell
+   OTEL_EXPORTER_OTLP_ENDPOINT=https://api.smith.langchain.com/otel
+   OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<your langsmith api key>"
+   ```
+
+   </CodeGroup>
+
+   <Note>
+     Depending on how your otel exporter is configured, you may need to append `/v1/traces` to the endpoint if you are only sending traces.
+   </Note>
+
+   <Note>
+     If you're self-hosting LangSmith, replace the base endpoint with your LangSmith api endpoint and append `/api/v1`. For example: `OTEL_EXPORTER_OTLP_ENDPOINT=https://ai-company.com/api/v1/otel`
+   </Note>
+
+   Optional: Specify a custom project name other than "default":
+
+   <CodeGroup>
+
+   ```bash Shell
+   OTEL_EXPORTER_OTLP_ENDPOINT=https://api.smith.langchain.com/otel
+   OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<your langsmith api key>,Langsmith-Project=<project name>"
+   ```
+
+   </CodeGroup>
+
+3. Log a trace.
+
+   This code sets up an OTEL tracer and exporter that will send traces to LangSmith. It then calls OpenAI and sends the required OpenTelemetry attributes.
+
+   ```python
+   from openai import OpenAI
+   from opentelemetry import trace
+   from opentelemetry.sdk.trace import TracerProvider
+   from opentelemetry.sdk.trace.export import (
+       BatchSpanProcessor,
+   )
+   from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+   client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+   otlp_exporter = OTLPSpanExporter(
+       timeout=10,
+   )
+
+   trace.set_tracer_provider(TracerProvider())
+   trace.get_tracer_provider().add_span_processor(
+       BatchSpanProcessor(otlp_exporter)
+   )
+
+   tracer = trace.get_tracer(__name__)
+
+   def call_openai():
+       model = "gpt-4o-mini"
+       with tracer.start_as_current_span("call_open_ai") as span:
+           span.set_attribute("langsmith.span.kind", "LLM")
+           span.set_attribute("langsmith.metadata.user_id", "user_123")
+           span.set_attribute("gen_ai.system", "OpenAI")
+           span.set_attribute("gen_ai.request.model", model)
+           span.set_attribute("llm.request.type", "chat")
+
+           messages = [
+               {"role": "system", "content": "You are a helpful assistant."},
+               {
+                   "role": "user",
+                   "content": "Write a haiku about recursion in programming."
+               }
+           ]
+
+           for i, message in enumerate(messages):
+               span.set_attribute(f"gen_ai.prompt.{i}.content", str(message["content"]))
+               span.set_attribute(f"gen_ai.prompt.{i}.role", str(message["role"]))
+
+           completion = client.chat.completions.create(
+               model=model,
+               messages=messages
+           )
+
+           span.set_attribute("gen_ai.response.model", completion.model)
+           span.set_attribute("gen_ai.completion.0.content", str(completion.choices[0].message.content))
+           span.set_attribute("gen_ai.completion.0.role", "assistant")
+           span.set_attribute("gen_ai.usage.prompt_tokens", completion.usage.prompt_tokens)
+           span.set_attribute("gen_ai.usage.completion_tokens", completion.usage.completion_tokens)
+           span.set_attribute("gen_ai.usage.total_tokens", completion.usage.total_tokens)
+
+           return completion.choices[0].message
+
+   if __name__ == "__main__":
+       call_openai()
+   ```
+
+4. View the trace in your LangSmith dashboard ([example](https://smith.langchain.com/public/4f2890b1-f105-44aa-a6cf-c777dcc27a37/r)).
+
+## Send traces to an alternate provider
+
+While LangSmith is the default destination for OpenTelemetry traces, you can also configure OpenTelemetry to send traces to other observability platforms.
+
+<Info>
+  In langsmith Python SDK version ≥ 0.4.1, setting LANGSMITH\_OTEL\_ENABLED=true will by default send traces to both LangSmith and your instrumented OTEL endpoint. No extra code is needed for fan-out.
+</Info>
+
+### Use environment variables for global configuration
+
+By default, the LangSmith OpenTelemetry exporter will send data to the LangSmith API OTEL endpoint, but this can be customized by setting standard OTEL environment variables:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT: Override the endpoint URL
+OTEL_EXPORTER_OTLP_HEADERS: Add custom headers (LangSmith API keys and Project are added automatically)
+OTEL_SERVICE_NAME: Set a custom service name (defaults to "langsmith")
+```
+
+LangSmith uses the HTTP trace exporter by default. If you'd like to use your own tracing provider, you can either:
+
+1. Set the OTEL environment variables as shown above, or
+2. Set a global trace provider before initializing LangChain components, which LangSmith will detect and use instead of creating its own.
+
+### Configure alternate OTLP endpoints
+
+To send traces to a different provider, configure the OTLP exporter with your provider's endpoint:
+
+```python
+import os
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
+# Set environment variables for LangChain
+os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+os.environ["LANGSMITH_TRACING"] = "true"
+
+# Configure the OTLP exporter for your custom endpoint
+provider = TracerProvider()
+otlp_exporter = OTLPSpanExporter(
+    # Change to your provider's endpoint
+    endpoint="https://otel.your-provider.com/v1/traces",
+    # Add any required headers for authentication
+    headers={"api-key": "your-api-key"}
+)
+processor = BatchSpanProcessor(otlp_exporter)
+provider.add_span_processor(processor)
+trace.set_tracer_provider(provider)
+
+# Create and run a LangChain application
+prompt = ChatPromptTemplate.from_template("Tell me a joke about {topic}")
+model = ChatOpenAI()
+chain = prompt | model
+result = chain.invoke({"topic": "programming"})
+print(result.content)
+```
+
+<Info>
+  To disable hybrid tracing behavior after 0.4.1 and send traces only to your OTEL endpoint and exclude sending to LangSmith, add an additional env var:
+
+  LANGSMITH\_OTEL\_ONLY = "true"
+</Info>
+
+## Supported OpenTelemetry attribute and event mapping
+
+When sending traces to LangSmith via OpenTelemetry, the following attributes are mapped to LangSmith fields:
+
+### Core LangSmith attributes
+
+| OpenTelemetry attribute        | LangSmith field  | Notes                                                                        |
+| ------------------------------ | ---------------- | ---------------------------------------------------------------------------- |
+| `langsmith.trace.name`         | Run name         | Overrides the span name for the run                                          |
+| `langsmith.span.kind`          | Run type         | Values: `llm`, `chain`, `tool`, `retriever`, `embedding`, `prompt`, `parser` |
+| `langsmith.trace.session_id`   | Session ID       | Session identifier for related traces                                        |
+| `langsmith.trace.session_name` | Session name     | Name of the session                                                          |
+| `langsmith.span.tags`          | Tags             | Custom tags attached to the span (comma-separated)                           |
+| `langsmith.metadata.{key}`     | `metadata.{key}` | Custom metadata with langsmith prefix                                        |
+
+### GenAI standard attributes
+
+| OpenTelemetry attribute                 | LangSmith field               | Notes                                                         |
+| --------------------------------------- | ----------------------------- | ------------------------------------------------------------- |
+| `gen_ai.system`                         | `metadata.ls_provider`        | The GenAI system (e.g., "openai", "anthropic")                |
+| `gen_ai.operation.name`                 | Run type                      | Maps "chat"/"completion" to "llm", "embedding" to "embedding" |
+| `gen_ai.prompt`                         | `inputs`                      | The input prompt sent to the model                            |
+| `gen_ai.completion`                     | `outputs`                     | The output generated by the model                             |
+| `gen_ai.prompt.{n}.role`                | `inputs.messages[n].role`     | Role for the nth input message                                |
+| `gen_ai.prompt.{n}.content`             | `inputs.messages[n].content`  | Content for the nth input message                             |
+| `gen_ai.prompt.{n}.message.role`        | `inputs.messages[n].role`     | Alternative format for role                                   |
+| `gen_ai.prompt.{n}.message.content`     | `inputs.messages[n].content`  | Alternative format for content                                |
+| `gen_ai.completion.{n}.role`            | `outputs.messages[n].role`    | Role for the nth output message                               |
+| `gen_ai.completion.{n}.content`         | `outputs.messages[n].content` | Content for the nth output message                            |
+| `gen_ai.completion.{n}.message.role`    | `outputs.messages[n].role`    | Alternative format for role                                   |
+| `gen_ai.completion.{n}.message.content` | `outputs.messages[n].content` | Alternative format for content                                |
+| `gen_ai.tool.name`                      | `invocation_params.tool_name` | Tool name, also sets run type to "tool"                       |
+
+### GenAI request parameters
+
+| OpenTelemetry attribute            | LangSmith field                       | Notes                                   |
+| ---------------------------------- | ------------------------------------- | --------------------------------------- |
+| `gen_ai.request.model`             | `invocation_params.model`             | The model name used for the request     |
+| `gen_ai.response.model`            | `invocation_params.model`             | The model name returned in the response |
+| `gen_ai.request.temperature`       | `invocation_params.temperature`       | Temperature setting                     |
+| `gen_ai.request.top_p`             | `invocation_params.top_p`             | Top-p sampling setting                  |
+| `gen_ai.request.max_tokens`        | `invocation_params.max_tokens`        | Maximum tokens setting                  |
+| `gen_ai.request.frequency_penalty` | `invocation_params.frequency_penalty` | Frequency penalty setting               |
+| `gen_ai.request.presence_penalty`  | `invocation_params.presence_penalty`  | Presence penalty setting                |
+| `gen_ai.request.seed`              | `invocation_params.seed`              | Random seed used for generation         |
+| `gen_ai.request.stop_sequences`    | `invocation_params.stop`              | Sequences that stop generation          |
+| `gen_ai.request.top_k`             | `invocation_params.top_k`             | Top-k sampling parameter                |
+| `gen_ai.request.encoding_formats`  | `invocation_params.encoding_formats`  | Output encoding formats                 |
+
+### GenAI usage metrics
+
+| OpenTelemetry attribute          | LangSmith field                | Notes                                     |
+| -------------------------------- | ------------------------------ | ----------------------------------------- |
+| `gen_ai.usage.input_tokens`      | `usage_metadata.input_tokens`  | Number of input tokens used               |
+| `gen_ai.usage.output_tokens`     | `usage_metadata.output_tokens` | Number of output tokens used              |
+| `gen_ai.usage.total_tokens`      | `usage_metadata.total_tokens`  | Total number of tokens used               |
+| `gen_ai.usage.prompt_tokens`     | `usage_metadata.input_tokens`  | Number of input tokens used (deprecated)  |
+| `gen_ai.usage.completion_tokens` | `usage_metadata.output_tokens` | Number of output tokens used (deprecated) |
+
+### TraceLoop attributes
+
+| OpenTelemetry attribute                  | LangSmith field  | Notes                                            |
+| ---------------------------------------- | ---------------- | ------------------------------------------------ |
+| `traceloop.entity.input`                 | `inputs`         | Full input value from TraceLoop                  |
+| `traceloop.entity.output`                | `outputs`        | Full output value from TraceLoop                 |
+| `traceloop.entity.name`                  | Run name         | Entity name from TraceLoop                       |
+| `traceloop.span.kind`                    | Run type         | Maps to LangSmith run types                      |
+| `traceloop.llm.request.type`             | Run type         | "embedding" maps to "embedding", others to "llm" |
+| `traceloop.association.properties.{key}` | `metadata.{key}` | Custom metadata with traceloop prefix            |
+
+### OpenInference attributes
+
+| OpenTelemetry attribute   | LangSmith field          | Notes                                     |
+| ------------------------- | ------------------------ | ----------------------------------------- |
+| `input.value`             | `inputs`                 | Full input value, can be string or JSON   |
+| `output.value`            | `outputs`                | Full output value, can be string or JSON  |
+| `openinference.span.kind` | Run type                 | Maps various kinds to LangSmith run types |
+| `llm.system`              | `metadata.ls_provider`   | LLM system provider                       |
+| `llm.model_name`          | `metadata.ls_model_name` | Model name from OpenInference             |
+| `tool.name`               | Run name                 | Tool name when span kind is "TOOL"        |
+| `metadata`                | `metadata.*`             | JSON string of metadata to be merged      |
+
+### LLM attributes
+
+| OpenTelemetry attribute      | LangSmith field                       | Notes                                |
+| ---------------------------- | ------------------------------------- | ------------------------------------ |
+| `llm.input_messages`         | `inputs.messages`                     | Input messages                       |
+| `llm.output_messages`        | `outputs.messages`                    | Output messages                      |
+| `llm.token_count.prompt`     | `usage_metadata.input_tokens`         | Prompt token count                   |
+| `llm.token_count.completion` | `usage_metadata.output_tokens`        | Completion token count               |
+| `llm.token_count.total`      | `usage_metadata.total_tokens`         | Total token count                    |
+| `llm.usage.total_tokens`     | `usage_metadata.total_tokens`         | Alternative total token count        |
+| `llm.invocation_parameters`  | `invocation_params.*`                 | JSON string of invocation parameters |
+| `llm.presence_penalty`       | `invocation_params.presence_penalty`  | Presence penalty                     |
+| `llm.frequency_penalty`      | `invocation_params.frequency_penalty` | Frequency penalty                    |
+| `llm.request.functions`      | `invocation_params.functions`         | Function definitions                 |
+
+### Prompt template attributes
+
+| OpenTelemetry attribute         | LangSmith field | Notes                                            |
+| ------------------------------- | --------------- | ------------------------------------------------ |
+| `llm.prompt_template.variables` | Run type        | Sets run type to "prompt", used with input.value |
+
+### Retriever attributes
+
+| OpenTelemetry attribute                     | LangSmith field                     | Notes                                         |
+| ------------------------------------------- | ----------------------------------- | --------------------------------------------- |
+| `retrieval.documents.{n}.document.content`  | `outputs.documents[n].page_content` | Content of the nth retrieved document         |
+| `retrieval.documents.{n}.document.metadata` | `outputs.documents[n].metadata`     | Metadata of the nth retrieved document (JSON) |
+
+### Tool attributes
+
+| OpenTelemetry attribute | LangSmith field                    | Notes                                     |
+| ----------------------- | ---------------------------------- | ----------------------------------------- |
+| `tools`                 | `invocation_params.tools`          | Array of tool definitions                 |
+| `tool_arguments`        | `invocation_params.tool_arguments` | Tool arguments as JSON or key-value pairs |
+
+### Logfire attributes
+
+| OpenTelemetry attribute | LangSmith field    | Notes                                            |
+| ----------------------- | ------------------ | ------------------------------------------------ |
+| `prompt`                | `inputs`           | Logfire prompt input                             |
+| `all_messages_events`   | `outputs`          | Logfire message events output                    |
+| `events`                | `inputs`/`outputs` | Logfire events array, splits input/choice events |
+
+### OpenTelemetry event mapping
+
+| Event name                  | LangSmith field      | Notes                                                            |
+| --------------------------- | -------------------- | ---------------------------------------------------------------- |
+| `gen_ai.content.prompt`     | `inputs`             | Extracts prompt content from event attributes                    |
+| `gen_ai.content.completion` | `outputs`            | Extracts completion content from event attributes                |
+| `gen_ai.system.message`     | `inputs.messages[]`  | System message in conversation                                   |
+| `gen_ai.user.message`       | `inputs.messages[]`  | User message in conversation                                     |
+| `gen_ai.assistant.message`  | `outputs.messages[]` | Assistant message in conversation                                |
+| `gen_ai.tool.message`       | `outputs.messages[]` | Tool response message                                            |
+| `gen_ai.choice`             | `outputs`            | Model choice/response with finish reason                         |
+| `exception`                 | `status`, `error`    | Sets status to "error" and extracts exception message/stacktrace |
+
+#### Event attribute extraction
+
+For message events, the following attributes are extracted:
+
+* `content` → message content
+* `role` → message role
+* `id` → tool\_call\_id (for tool messages)
+* `gen_ai.event.content` → full message JSON
+
+For choice events:
+
+* `finish_reason` → choice finish reason
+* `message.content` → choice message content
+* `message.role` → choice message role
+* `tool_calls.{n}.id` → tool call ID
+* `tool_calls.{n}.function.name` → tool function name
+* `tool_calls.{n}.function.arguments` → tool function arguments
+* `tool_calls.{n}.type` → tool call type
+
+For exception events:
+
+* `exception.message` → error message
+* `exception.stacktrace` → error stacktrace (appended to message)
+
+## Implementation examples
+
+### Trace using the Traceloop SDK
+
+The Traceloop SDK is an OpenTelemetry compatible SDK that covers a range of models, vector databases and frameworks. If there are integrations that you are interested in instrumenting that are covered by this SDK, you can use this SDK with OpenTelemetry to log traces to LangSmith.
+
+To see what integrations are supported by the Traceloop SDK, see the [Traceloop SDK documentation](https://www.traceloop.com/docs/openllmetry/tracing/supported).
+
+To get started, follow these steps:
+
+1. Install the Traceloop SDK and OpenAI:
+
+   <CodeGroup>
+
+   ```bash pip
+   pip install traceloop-sdk
+   pip install openai
+   ```
+
+   </CodeGroup>
+
+2. Configure your environment:
+
+   <CodeGroup>
+
+   ```bash Shell
+   TRACELOOP_BASE_URL=https://api.smith.langchain.com/otel
+   TRACELOOP_HEADERS=x-api-key=<your_langsmith_api_key>
+   ```
+
+   </CodeGroup>
+
+   Optional: Specify a custom project name other than "default":
+
+   <CodeGroup>
+
+   ```bash Shell
+   TRACELOOP_HEADERS=x-api-key=<your_langsmith_api_key>,Langsmith-Project=<langsmith_project_name>
+   ```
+
+   </CodeGroup>
+
+3. To use the SDK, you need to initialize it before logging traces:
+
+   ```python
+   from traceloop.sdk import Traceloop
+   Traceloop.init()
+   ```
+
+4. Log a trace:
+
+   ```python
+   import os
+   from openai import OpenAI
+   from traceloop.sdk import Traceloop
+
+   client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+   Traceloop.init()
+
+   completion = client.chat.completions.create(
+       model="gpt-4o-mini",
+       messages=[
+           {"role": "system", "content": "You are a helpful assistant."},
+           {
+               "role": "user",
+               "content": "Write a haiku about recursion in programming."
+           }
+       ]
+   )
+
+   print(completion.choices[0].message)
+   ```
+
+5. View the trace in your LangSmith dashboard ([example](https://smith.langchain.com/public/106f5bed-edca-4357-91a5-80089252c9ed/r)).
+
+### Trace using the Arize SDK
+
+With the Arize SDK and OpenTelemetry, you can log traces from multiple other frameworks to LangSmith. Below is an example of tracing CrewAI to LangSmith, you can find a full list of supported frameworks [here](https://docs.arize.com/phoenix/tracing/integrations-tracing). To make this example work with other frameworks, you just need to change the instrumentor to match the framework.
+
+1. Install the required packages:
+
+   <CodeGroup>
+
+   ```bash pip
+   pip install -qU arize-phoenix-otel openinference-instrumentation-crewai crewai crewai-tools
+   ```
+
+   </CodeGroup>
+
+2. Set the following environment variables:
+
+   <CodeGroup>
+
+   ```bash Shell
+   OPENAI_API_KEY=<your_openai_api_key>
+   SERPER_API_KEY=<your_serper_api_key>
+   ```
+
+   </CodeGroup>
+
+3. Before running any application code, set up our instrumentor (you can replace this with any of the frameworks supported [here](https://docs.arize.com/phoenix/tracing/integrations-tracing)):
+
+   ```python
+   from opentelemetry.sdk.trace import TracerProvider
+   from opentelemetry.sdk.trace.export import BatchSpanProcessor
+   from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+   # Add LangSmith API Key for tracing
+   LANGSMITH_API_KEY = "YOUR_API_KEY"
+   # Set the endpoint for OTEL collection
+   ENDPOINT = "https://api.smith.langchain.com/otel/v1/traces"
+   # Select the project to trace to
+   LANGSMITH_PROJECT = "YOUR_PROJECT_NAME"
+
+   # Create the OTLP exporter
+   otlp_exporter = OTLPSpanExporter(
+       endpoint=ENDPOINT,
+       headers={"x-api-key": LANGSMITH_API_KEY, "Langsmith-Project": LANGSMITH_PROJECT}
+   )
+
+   # Set up the trace provider
+   provider = TracerProvider()
+   processor = BatchSpanProcessor(otlp_exporter)
+   provider.add_span_processor(processor)
+
+   # Now instrument CrewAI
+   from openinference.instrumentation.crewai import CrewAIInstrumentor
+   CrewAIInstrumentor().instrument(tracer_provider=provider)
+   ```
+
+4. Run a CrewAI workflow and the trace will automatically be logged to LangSmith:
+
+   ```python
+   from crewai import Agent, Task, Crew, Process
+   from crewai_tools import SerperDevTool
+
+   search_tool = SerperDevTool()
+
+   # Define your agents with roles and goals
+   researcher = Agent(
+       role='Senior Research Analyst',
+       goal='Uncover cutting-edge developments in AI and data science',
+       backstory="""You work at a leading tech think tank.
+       Your expertise lies in identifying emerging trends.
+       You have a knack for dissecting complex data and presenting actionable insights.""",
+       verbose=True,
+       allow_delegation=False,
+       # You can pass an optional llm attribute specifying what model you wanna use.
+       # llm=ChatOpenAI(model_name="gpt-3.5", temperature=0.7),
+       tools=[search_tool]
+   )
+
+   writer = Agent(
+       role='Tech Content Strategist',
+       goal='Craft compelling content on tech advancements',
+       backstory="""You are a renowned Content Strategist, known for your insightful and engaging articles.
+       You transform complex concepts into compelling narratives.""",
+       verbose=True,
+       allow_delegation=True
+   )
+
+   # Create tasks for your agents
+   task1 = Task(
+       description="""Conduct a comprehensive analysis of the latest advancements in AI in 2024.
+       Identify key trends, breakthrough technologies, and potential industry impacts.""",
+       expected_output="Full analysis report in bullet points",
+       agent=researcher
+   )
+
+   task2 = Task(
+       description="""Using the insights provided, develop an engaging blog
+       post that highlights the most significant AI advancements.
+       Your post should be informative yet accessible, catering to a tech-savvy audience.
+       Make it sound cool, avoid complex words so it doesn't sound like AI.""",
+       expected_output="Full blog post of at least 4 paragraphs",
+       agent=writer
+   )
+
+   # Instantiate your crew with a sequential process
+   crew = Crew(
+       agents=[researcher, writer],
+       tasks=[task1, task2],
+       verbose= False,
+       process = Process.sequential
+   )
+
+   # Get your crew to work!
+   result = crew.kickoff()
+   print("######################")
+   print(result)
+   ```
+
+5. View the trace in your LangSmith dashboard ([example](https://smith.langchain.com/public/106f5bed-edca-4357-91a5-80089252c9ed/r)).
+
+## Advanced configuration
+
+### Use OpenTelemetry Collector for fan-out
+
+For more advanced scenarios, you can use the OpenTelemetry Collector to fan out your telemetry data to multiple destinations. This is a more scalable approach than configuring multiple exporters in your application code.
+
+1. [Install the OpenTelemetry Collector](https://opentelemetry.io/docs/collector/getting-started/) for your environment.
+
+2. Create a configuration file (e.g., `otel-collector-config.yaml`) that exports to multiple destinations:
+
+   ```yaml
+   receivers:
+     otlp:
+       protocols:
+         grpc:
+           endpoint: 0.0.0.0:4317
+         http:
+           endpoint: 0.0.0.0:4318
+
+   processors:
+     batch:
+
+   exporters:
+     otlphttp/langsmith:
+       endpoint: https://api.smith.langchain.com/otel/v1/traces
+       headers:
+         x-api-key: ${env:LANGSMITH_API_KEY}
+         Langsmith-Project: my_project
+     otlphttp/other_provider:
+       endpoint: https://otel.your-provider.com/v1/traces
+       headers:
+         api-key: ${env:OTHER_PROVIDER_API_KEY}
+
+   service:
+     pipelines:
+       traces:
+         receivers: [otlp]
+         processors: [batch]
+         exporters: [otlphttp/langsmith, otlphttp/other_provider]
+   ```
+
+3. Configure your application to send to the collector:
+
+   ```python
+   import os
+   from opentelemetry import trace
+   from opentelemetry.sdk.trace import TracerProvider
+   from opentelemetry.sdk.trace.export import BatchSpanProcessor
+   from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+   from langchain_openai import ChatOpenAI
+   from langchain_core.prompts import ChatPromptTemplate
+
+   # Point to your local OpenTelemetry Collector
+   otlp_exporter = OTLPSpanExporter(
+       endpoint="http://localhost:4318/v1/traces"
+   )
+   provider = TracerProvider()
+   processor = BatchSpanProcessor(otlp_exporter)
+   provider.add_span_processor(processor)
+   trace.set_tracer_provider(provider)
+
+   # Set environment variables for LangChain
+   os.environ["LANGSMITH_OTEL_ENABLED"] = "true"
+   os.environ["LANGSMITH_TRACING"] = "true"
+
+   # Create and run a LangChain application
+   prompt = ChatPromptTemplate.from_template("Tell me a joke about {topic}")
+   model = ChatOpenAI()
+   chain = prompt | model
+   result = chain.invoke({"topic": "programming"})
+   print(result.content)
+   ```
+
+This approach offers several advantages:
+
+* Centralized configuration for all your telemetry destinations
+* Reduced overhead in your application code
+* Better scalability and resilience
+* Ability to add or remove destinations without changing application code
+
+### Distributed tracing with LangChain and OpenTelemetry
+
+Distributed tracing is essential when your LLM application spans multiple services or processes. OpenTelemetry's context propagation capabilities ensure that traces remain connected across service boundaries.
+
+#### Context propagation in distributed tracing
+
+In distributed systems, context propagation passes trace metadata between services so that related spans are linked to the same trace:
+
+* **Trace ID**: A unique identifier for the entire trace
+* **Span ID**: A unique identifier for the current span
+* **Sampling Decision**: Indicates whether this trace should be sampled
+
+#### Set up distributed tracing with LangChain
+
+To enable distributed tracing across multiple services:
+
+```python
+import os
+from opentelemetry import trace
+from opentelemetry.propagate import inject, extract
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+import requests
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
+# Set up OpenTelemetry trace provider
+provider = TracerProvider()
+otlp_exporter = OTLPSpanExporter(
+    endpoint="https://api.smith.langchain.com/otel/v1/traces",
+    headers={"x-api-key": os.getenv("LANGSMITH_API_KEY"), "Langsmith-Project": "my_project"}
+)
+processor = BatchSpanProcessor(otlp_exporter)
+provider.add_span_processor(processor)
+trace.set_tracer_provider(provider)
+tracer = trace.get_tracer(__name__)
+
+# Service A: Create a span and propagate context to Service B
+def service_a():
+    with tracer.start_as_current_span("service_a_operation") as span:
+        # Create a chain
+        prompt = ChatPromptTemplate.from_template("Summarize: {text}")
+        model = ChatOpenAI()
+        chain = prompt | model
+
+        # Run the chain
+        result = chain.invoke({"text": "OpenTelemetry is an observability framework"})
+
+        # Propagate context to Service B
+        headers = {}
+        inject(headers)  # Inject trace context into headers
+
+        # Call Service B with the trace context
+        response = requests.post(
+            "http://service-b.example.com/process",
+            headers=headers,
+            json={"summary": result.content}
+        )
+        return response.json()
+
+# Service B: Extract the context and continue the trace
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route("/process", methods=["POST"])
+def service_b_endpoint():
+    # Extract the trace context from the request headers
+    context = extract(request.headers)
+    with tracer.start_as_current_span("service_b_operation", context=context) as span:
+        data = request.json
+        summary = data.get("summary", "")
+
+        # Process the summary with another LLM chain
+        prompt = ChatPromptTemplate.from_template("Analyze the sentiment of: {text}")
+        model = ChatOpenAI()
+        chain = prompt | model
+        result = chain.invoke({"text": summary})
+
+        return jsonify({"analysis": result.content})
+
+if __name__ == "__main__":
+    app.run(port=5000)
+```
