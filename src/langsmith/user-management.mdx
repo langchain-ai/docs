@@ -12,7 +12,7 @@ This page covers user management features in LangSmith, including access control
 ## Set up access control
 
 <Note>
-RBAC (Role-Based Access Control) is a feature that is only available to Enterprise customers. If you are interested in this feature, contact the LangChain sales team at [sales@langchain.dev](mailto:sales@langchain.dev). Other plans default to using the [`Admin` role](/langsmith/administration-overview) for all users.
+RBAC (Role-Based Access Control) is a feature that is only available to Enterprise customers. If you are interested in this feature, contact the LangChain sales team at [contact our sales team](https://www.langchain.com/contact-sales). Other plans default to using the [`Admin` role](/langsmith/administration-overview) for all users.
 </Note>
 
 <Check>
@@ -135,6 +135,7 @@ These are instructions for setting up LangSmith SAML SSO with Entra ID (formerly
 
 For additional information, see Microsoft's [documentation](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/add-application-portal-setup-sso).
 
+<div id="create-application-entra-id"></div>
 **Step 1: Create a new Entra ID application integration**
 
 1. Log in to the [Azure portal](https://portal.azure.com/#home) with a privileged role (e.g., `Global Administrator`). On the left navigation pane, select the `Entra ID` service.
@@ -254,6 +255,30 @@ For additional information, see Okta's [documentation](https://help.okta.com/en-
 
 **Step 1: Create and configure the Okta SAML application**
 
+**Via Okta Integration Network (recommended)**
+
+1. Sign in to [Okta](https://login.okta.com/).
+1. In the upper-right corner, select Admin. The button is not visible from the Admin area.
+1. Select `Browse App Integration Catalog`.
+1. Find and select the LangSmith application.
+1. On the application overview page, select Add Integration.
+1. Fill in `ApiUrlBase`:
+   - US: `api.smith.langchain.com`
+   - EU: `eu.api.smith.langchain.com`
+1. Fill in `AuthHost`:
+   - US: `auth.langchain.com`
+   - EU: `eu.auth.langchain.com`
+1. Fill in `LangSmithUrl`: Same as `ApiUrlBase`
+1. Under Application Visibility, keep the box unchecked.
+1. Select Next.
+1. Select `SAML 2.0`.
+1. Fill in `Sign-On Options`:
+   - `Application username format`: `Email`
+   - `Update application username on`: `Create and update`
+   - `Allow users to securely see their password`: leave **unchecked**.
+
+**Via Custom App Integration**
+
 1. Log in to Okta as an administrator, and go to the **Okta Admin console**.
 
 2. Under **Applications** > **Applications** click **Create App Integration**.
@@ -266,7 +291,7 @@ For additional information, see Okta's [documentation](https://help.okta.com/en-
 
    1. `Single sign-on URL` (`ACS URL`): [https://auth.langchain.com/auth/v1/sso/saml/acs](https://auth.langchain.com/auth/v1/sso/saml/acs). Keep `Use this for Recipient URL and Destination URL` checked.
    2. `Audience URI (SP Entity ID)`: [https://auth.langchain.com/auth/v1/sso/saml/metadata](https://auth.langchain.com/auth/v1/sso/saml/metadata).
-   3. `Name ID format`: `EmailAddress`.
+   3. `Name ID format`: **Persistent**.
    4. `Application username`: `email`.
    5. Leave the rest of the fields empty or set to their default.
    6. Click **Next**.
@@ -289,7 +314,7 @@ Follow the instructions under [initial configuration](#initial-configuration) in
 
 Have a user with access sign in via the unique login URL from the `SSO Configuration` page, or have a user select the application from their Okta dashboard.
 
-## Set up SCIM for your organization (beta)
+## Set up SCIM for your organization
 
 System for Cross-domain Identity Management (SCIM) is an open standard that allows for the automation of user provisioning. Using SCIM, you can automatically provision and de-provision users in your LangSmith [organization and workspaces](/langsmith/administration-overview), keeping user access synchronized with your organization's identity provider.
 
@@ -298,7 +323,7 @@ SCIM is available for organizations on the [Enterprise plan](https://www.langcha
 
 SCIM is available on Helm chart versions 0.10.41 (application version 0.10.108) and later.
 
-While in Beta, SCIM support is API-only (see instructions below).
+SCIM support is API-only (see instructions below).
 </Note>
 
 SCIM eliminates the need for manual user management and ensures that user access is always up-to-date with your organization's identity system. This allows for:
@@ -310,7 +335,22 @@ SCIM eliminates the need for manual user management and ensures that user access
 - **Scaling team access control**: Efficiently manage large teams with many workspaces and custom roles.
 - **Role assignment**: Select specific [Organization Roles](/langsmith/observability-concepts#organization-roles) and [Workspace Roles](/langsmith/observability-concepts#workspace-roles) for groups of users.
 
-### Role Precedence
+### Requirements
+
+#### Prerequisites
+
+- Your organization must be on an Enterprise plan.
+- Your Identity Provider (IdP) must support SCIM 2.0.
+- Only [Organization Admins](/langsmith/administration-overview#organization-roles) can configure SCIM.
+- For cloud customers: [SAML SSO](#set-up-saml-sso-for-your-organization) must be configurable for your organization.
+- For self-hosted customers: [OAuth with Client Secret](/langsmith/self-host-sso#with-secret) authentication mode must be enabled.
+- For self-hosted customers, network traffic must be allowed from the identity provider to LangSmith:
+  - Microsoft Entra ID supports allowlisting IP ranges or an agent-based solution to provide connectivity.
+    ([details](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups#ip-ranges)).
+  - Okta supports allow-listing IPs or domains ([details](https://help.okta.com/en-us/content/topics/security/ip-address-allow-listing.htm))
+    or an agent-based solution ([details](https://help.okta.com/en-us/content/topics/provisioning/opp/opp-main.htm)) to provide connectivity.
+
+#### Role Precedence
 
 When a user belongs to multiple groups for the same workspace, the following precedence applies:
 
@@ -323,7 +363,15 @@ When a group is deleted or a user is removed from a group, their access is updat
 SCIM group membership will override manually assigned roles or roles assigned via Just-in-Time (JIT) provisioning. We recommend disabling JIT provisioning to avoid conflicts.
 </Note>
 
-### Group Naming Convention
+#### Email verification
+
+In cloud only, creating a new user with SCIM triggers an email to the user.
+They must verify their email address by clicking the link in this email.
+The link expires in 24 hours, and can be resent if needed by removing and re-adding the user via SCIM.
+
+### Attributes and Mapping
+
+#### Group Naming Convention
 
 Group membership maps to LangSmith workspace membership and workspace roles with a specific naming convention:
 
@@ -347,28 +395,47 @@ Examples:
 * `Groups-Organization User:Engineering:Developers`
 * `Organization User:Marketing:Viewers`
 
-### Email verification
+### Mapping
 
-In cloud only, creating a new user with SCIM triggers an email to the user. They must verify their email address by clicking the link in this email. The link expires in 24 hours, and can be resent if needed by removing and re-adding the user via SCIM.
+While specific instructions depending on the identity provider may vary, these mappings show what is supported by the LangSmith SCIM integration:
 
-### Prerequisites
+#### User Attributes
 
-- Your organization must be on an Enterprise plan.
-- Your Identity Provider (IdP) must support SCIM 2.0.
-- Only [`Organization Admins`](/langsmith/observability-concepts#organization-roles) can configure SCIM.
-- For cloud customers: [SAML SSO](/langsmith/user-management) must be configured for your organization.
-- For self-hosted customers: [OAuth with Client Secret](/langsmith/self-host-sso#with-secret) authentication mode must be enabled.
+| **LangSmith App Attribute**    | **Identity Provider Attribute**                       | **Matching Precedence** |
+| ------------------------------ | ----------------------------------------------------- | ----------------------- |
+| `userName`<sup>1</sup>         | email address                                         |                         |
+| `active`                       | `!deactivated`                                        |                         |
+| `emails[type eq "work"].value` | email address<sup>2</sup>                             |                         |
+| `name.formatted`               | `displayName` OR `givenName + familyName`<sup>3</sup> |                         |
+| `givenName`                    | `givenName`                                           |                         |
+| `familyName`                   | `familyName`                                          |                         |
+| `externalId`                   | `sub`<sup>4</sup>                                     | 1                       |
 
-<Note>
-Note the following:
+1. `userName` is not required by LangSmith
+1. Email address is required
+1. Use the computed expression if your `displayName` does not match the format of `Firstname Lastname`
+1. To avoid inconsistency, this should match the SAML `NameID` assertion (in cloud) and the `sub` OAuth2.0 claim (in self-hosted).
 
-- Support for Okta is not yet released. If you are interested in using Okta with SCIM, please let us know at [support@langchain.dev](mailto:support@langchain.dev).
-- Other identity providers have not been tested but may function depending on their SCIM implementation.
-</Note>
+#### Group Attributes
+
+| **LangSmith App Attribute** | **Identity Provider Attribute** | **Matching Precedence** |
+| --------------------------- | ------------------------------- | ----------------------- |
+| `displayName`               | `displayName`<sup>1</sup>       | 1                       |
+| `externalId`                | `objectId`                      |                         |
+| `members`                   | `members`                       |                         |
+
+1. Groups must follow the naming convention described in the [Group Naming Convention](#group-naming-convention) section.
+   If your company has a group naming policy, you should instead map from the `description` identity provider attribute and
+   set the description based on the [Group Naming Convention](#group-naming-convention) section.
 
 ### Step 1: Configure SAML SSO (Cloud only)
 
-If you're using LangSmith Cloud, ensure [SAML SSO](/langsmith/user-management) is configured for your organization.
+There are two scenarios for [SAML SSO](#set-up-saml-sso-for-your-organization) configuration:
+
+1. If SAML SSO is already configured for your organization, you should skip the steps to initially add the application ([Add application from Okta Integration Network](#add-application-okta-oin) or [Create a new Entra ID application integration](#create-application-entra-id)), as you already have an application configured and just need to enable provisioning.
+1. If you are configuring SAML SSO for the first time alongside SCIM, first follow the instructions to [set up SAML SSO](#set-up-saml-sso-for-your-organization), _then_ follow the instructions here to enable SCIM.
+
+#### NameID Format
 
 LangSmith uses the SAML NameID to identify users. The NameID is a required field in the SAML response and is case-insensitive.
 
@@ -395,6 +462,10 @@ curl -X PATCH $LANGCHAIN_ENDPOINT/orgs/current/info \
 
 ### Step 3: Generate SCIM bearer token
 
+<Note>
+In self-hosted environments, the full URL below may look like `https://langsmith.internal.corp.dev/api/v1/platform/orgs/current/scim/tokens` (without subdomain, note the `/api/v1` path prefix) or `https://langsmith.internal.corp.dev/subdomain/api/v1/platform/orgs/current/scim/tokens` (with subdomain) - see the [ingress docs](/langsmith/self-host-ingress) for more details.
+</Note>
+
 Generate a SCIM Bearer Token for your organization. This token will be used by your IdP to authenticate SCIM API requests. Ensure env vars are set appropriately, for example:
 
 ```bash
@@ -414,7 +485,9 @@ Note that the SCIM Bearer Token value is not available outside of the response t
 
 ### Step 4: Configure your Identity Provider
 
-Follow the IdP-specific instructions to configure SCIM integration.
+<Note>
+If you use Azure Entra ID (formerly Azure AD) or Okta, there are specific instructions below for identity provider setup ([Azure Entra ID](#azure-entra-id), [Okta](#okta)). The requirements and steps above are applicable for all identity providers.
+</Note>
 
 #### Azure Entra ID
 
@@ -469,11 +542,13 @@ Set **Target Object Actions** to `Create` and `Update` only (start with `Delete`
 
 | **LangSmith App Attribute** | **Microsoft Entra ID Attribute** | **Matching Precedence** |
 | :-------------------------: | :-------------------------------: | :----------------------: |
-| `displayName`               | `displayname`1                   | 1                       |
+| `displayName`               | `displayName`1                   | 1                       |
 | `externalId`                | `objectId`                       |                         |
 | `members`                   | `members`                        |                         |
 
-1. Groups must follow the naming convention described in the [Azure Group Naming Convention](#group-naming-convention) section.
+1. Groups must follow the naming convention described in the [Group Naming Convention](#group-naming-convention) section.
+   If your company has a group naming policy, you should instead map from the `description` Microsoft Entra ID Attribute and
+   set the description based on the [Group Naming Convention](#group-naming-convention) section.
 
 **Step 4: Assign Users and Groups**
 
@@ -488,3 +563,59 @@ Set **Target Object Actions** to `Create` and `Update` only (start with `Delete`
 3. Once verified, enable `Delete` actions for both User and Group mappings.
 
 For troubleshooting, refer to the [SAML SSO FAQs](/langsmith/faq#saml-sso-faqs). If you have issues setting up SCIM, reach out to the LangChain support team at [support@langchain.dev](mailto:support@langchain.dev).
+
+### Okta
+
+<Note>
+You must use the [Okta Lifecycle Management](https://www.okta.com/products/lifecycle-management/) product. This product tier is required to use SCIM on Okta.
+</Note>
+
+<div id="add-application-okta-oin">
+  <b>Step 1: Add application from Okta Integration Network</b>
+</div>
+
+:::note
+If you have already configured SSO login via SAML (cloud) or OAuth2.0 with OIDC (self-hosted), you may skip this step.
+:::
+
+See [SAML SSO setup](#okta) for cloud or [OAuth2.0 setup](/langsmith/self-host-sso#identity-provider-setup-okta) for self-hosted.
+
+**Step 2: Configure API Integration**
+
+1. In the Provisioning tab, select Configure API integration.
+1. Select Enable API integration.
+1. For Base URL (if present):
+
+- US: `https://api.smith.langchain.com/scim/v2`
+- EU: `https://eu.api.smith.langchain.com/scim/v2`
+- Self-hosted: `<langsmith_url>/scim/v2` (note there is no `/api/v1` path prefix) or if subdomain is configured `<langsmith_url>/subdomain/scim/v2`
+
+4. For API Token, paste the SCIM token you [generated above](#step-3-generate-scim-bearer-token)
+1. Keep `Import Groups` checked.
+1. To verify the configuration, select Test API Credentials.
+1. Select Save.
+1. After saving the API integration details, new settings tabs appear on the left. Select `To App`.
+1. Select Edit.
+1. Select the Enable checkbox for Create Users, Update Users, and Deactivate Users.
+1. Select Save.
+1. Assign users and/or groups in the Assignments tab. Assigned users are created and managed in your LangSmith group.
+
+**Step 3: Configure User Provisioning Settings**
+
+1. Configure provisioning: under `Provisioning > To App > Provisioning to App`, click `Edit` then
+   check `Create Users`, `Update User Attributes`, and `Deactivate Users`
+1. Under `<application_name> Attribute Mappings`, set the user attribute mappings as shown below, and delete the rest:
+
+![SCIM Okta User Attributes Mapping](/langsmith/images/scim_okta_user_attributes.png)
+
+**Step 4: Push Groups**
+
+<Note>
+Okta does not support group attributes besides the group name itself, so group name _must_ follow the naming convention described in the [Group Naming Convention](#group-naming-convention) section.
+</Note>
+
+Follow Okta's instructions [here](https://help.okta.com/en-us/content/topics/users-groups-profiles/usgp-enable-group-push.htm) to configure groups to push by name or by rule.
+
+### Other Identity Providers
+
+Other identity providers have not been tested but may function depending on their SCIM implementation.
