@@ -1,0 +1,375 @@
+---
+title: Trace with the Vercel AI SDK (Legacy)
+sidebarTitle: Trace with the Vercel AI SDK (Legacy)
+---
+
+<Warning>
+  This page documents an older method of tracing AI SDK runs. For a simpler and more general method that does not require OTEL setup, see [the new guide](/langsmith/trace-with-vercel-ai-sdk).
+</Warning>
+
+You can use LangSmith to trace runs from the Vercel AI SDK using OpenTelemetry (OTEL). This guide will walk through an example.
+
+<Note>
+Many popular [OpenTelemetry implementations](https://www.npmjs.com/package/@opentelemetry/sdk-node) in JavaScript are currently experimental,
+and may behave erratically in production, especially when instrumenting LangSmith alongside other providers. If you are on AI SDK 5,
+we strongly suggest using [the main approach for tracing AI SDK runs](/langsmith/trace-with-vercel-ai-sdk).
+</Note>
+
+## 0. Installation
+
+Install the Vercel AI SDK and required OTEL packages. We use their OpenAI integration for the code snippets below, but you can use any of their other options as well.
+
+<CodeGroup>
+
+```bash npm
+npm install ai @ai-sdk/openai zod
+```
+
+```bash yarn
+yarn add ai @ai-sdk/openai zod
+```
+
+
+```bash pnpm
+pnpm add ai @ai-sdk/openai zod
+```
+
+</CodeGroup>
+
+<CodeGroup>
+
+```bash npm
+npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/context-async-hooks
+```
+
+```bash yarn
+yarn add @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/context-async-hooks
+```
+
+```bash pnpm
+pnpm add @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/context-async-hooks
+```
+
+</CodeGroup>
+
+## 1. Configure your environment
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=<your-api-key>
+export LANGSMITH_OTEL_ENABLED=true
+
+# This example uses OpenAI, but you can use any LLM provider of choice
+export OPENAI_API_KEY=<your-openai-api-key>
+```
+## 2. Log a trace
+
+### Node.js
+
+To start tracing, you will need to import and call the `initializeOTEL` method at the start of your code:
+
+```typescript
+import { initializeOTEL } from "langsmith/experimental/otel/setup";
+
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
+```
+
+Afterwards, add the `experimental_telemetry` argument to your AI SDK calls that you want to trace.
+
+<Info>
+  Do not forget to call `await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();` before your application shuts down in order to flush any remaining traces to LangSmith.
+</Info>
+
+```typescript
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+let result;
+try {
+  result = await generateText({
+    model: openai("gpt-4.1-nano"),
+    prompt: "Write a vegetarian lasagna recipe for 4 people.",
+    experimental_telemetry: {
+      isEnabled: true,
+    },
+  });
+} finally {
+  await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
+}
+```
+
+You should see a trace in your LangSmith dashboard [like this one](https://smith.langchain.com/public/21d33490-d522-4928-a944-a09e988d539c/r).
+
+You can also trace runs with tool calls:
+
+```typescript
+import { generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+
+await generateText({
+  model: openai("gpt-4.1-nano"),
+  messages: [
+    {
+      role: "user",
+      content: "What are my orders and where are they? My user ID is 123",
+    },
+  ],
+  tools: {
+    listOrders: tool({
+      description: "list all orders",
+      parameters: z.object({ userId: z.string() }),
+      execute: async ({ userId }) =>
+        `User ${userId} has the following orders: 1`,
+    }),
+    viewTrackingInformation: tool({
+      description: "view tracking information for a specific order",
+      parameters: z.object({ orderId: z.string() }),
+      execute: async ({ orderId }) =>
+        `Here is the tracking information for ${orderId}`,
+    }),
+  },
+  experimental_telemetry: {
+    isEnabled: true,
+  },
+  maxSteps: 10,
+});
+```
+
+Which results in a trace like [this one](https://smith.langchain.com/public/e6122734-2762-4ae0-986b-0cbe4d68692f/r).
+
+### With `traceable`
+
+You can wrap `traceable` calls around or within AI SDK tool calls. If you do so, we recommend you initialize a LangSmith `client` instance that you pass into each `traceable`, then call `client.awaitPendingTraceBatches();` to ensure all traces flush. If you do this, you do not need to manually call `shutdown()` or `forceFlush()` on the `DEFAULT_LANGSMITH_SPAN_PROCESSOR`. Here's an example:
+
+```typescript
+import { initializeOTEL } from "langsmith/experimental/otel/setup";
+
+initializeOTEL();
+
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+import { generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+
+const client = new Client();
+
+const wrappedText = traceable(
+  async (content: string) => {
+    const { text } = await generateText({
+      model: openai("gpt-4.1-nano"),
+      messages: [{ role: "user", content }],
+      tools: {
+        listOrders: tool({
+          description: "list all orders",
+          parameters: z.object({ userId: z.string() }),
+          execute: async ({ userId }) => {
+            const getOrderNumber = traceable(
+              async () => {
+                return "1234";
+              },
+              { name: "getOrderNumber" }
+            );
+            const orderNumber = await getOrderNumber();
+            return `User ${userId} has the following order: ${orderNumber}`;
+          },
+        }),
+      },
+      experimental_telemetry: {
+        isEnabled: true,
+      },
+      maxSteps: 10,
+    });
+    return { text };
+  },
+  { name: "parentTraceable", client }
+);
+
+let result;
+try {
+  result = await wrappedText("What are my orders?");
+} finally {
+  await client.awaitPendingTraceBatches();
+}
+```
+
+The resulting trace will look [like this](https://smith.langchain.com/public/296a0134-f3d4-4e54-afc7-b18f2c190911/r).
+
+### Next.js
+
+First, install the [`@vercel/otel`](https://www.npmjs.com/package/@vercel/otel) package:
+
+<CodeGroup>
+
+```bash npm
+npm install @vercel/otel
+```
+
+```bash yarn
+yarn add @vercel/otel
+```
+
+```bash pnpm
+pnpm add @vercel/otel
+```
+
+</CodeGroup>
+
+Then, set up an [`instrumentation.ts`](https://nextjs.org/docs/app/guides/instrumentation) file in your root directory.
+Call `initializeOTEL` and pass the resulting `DEFAULT_LANGSMITH_SPAN_PROCESSOR` into the `spanProcessors` field into your `registerOTEL(...)` call.
+It should look something like this:
+
+```typescript
+import { registerOTel } from "@vercel/otel";
+import { initializeOTEL } from "langsmith/experimental/otel/setup";
+
+const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL({});
+
+export function register() {
+  registerOTel({
+    serviceName: "your-project-name",
+    spanProcessors: [DEFAULT_LANGSMITH_SPAN_PROCESSOR],
+  });
+}
+```
+
+And finally, in your API routes, call `initializeOTEL` as well and add an `experimental_telemetry` field to your AI SDK calls:
+
+```typescript
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+import { initializeOTEL } from "langsmith/experimental/otel/setup";
+
+initializeOTEL();
+
+export async function GET() {
+  const { text } = await generateText({
+    model: openai("gpt-4.1-nano"),
+    messages: [{ role: "user", content: "Why is the sky blue?" }],
+    experimental_telemetry: {
+      isEnabled: true,
+    },
+  });
+
+  return new Response(text);
+}
+```
+
+You can also wrap parts of your code in `traceables` for more granularity.
+
+### Sentry
+
+If you're using Sentry, you can attach the LangSmith trace exporter to Sentry's default OpenTelemetry instrumentation as show in the example below.
+
+<Warning>
+  At time of writing, Sentry only supports OTEL v1 packages. LangSmith supports both v1 and v2, but you MUST make sure you install OTEL v1 packages in order to make instrumentation work.
+
+  <CodeGroup>
+
+  ```bash npm
+  npm install @opentelemetry/sdk-trace-base@1.30.1 @opentelemetry/exporter-trace-otlp-proto@0.57.2 @opentelemetry/context-async-hooks@1.30.1
+  ```
+
+  ```bash yarn
+  yarn add @opentelemetry/sdk-trace-base@1.30.1 @opentelemetry/exporter-trace-otlp-proto@0.57.2 @opentelemetry/context-async-hooks@1.30.1
+  ```
+
+  ```bash pnpm
+  pnpm add @opentelemetry/sdk-trace-base@1.30.1 @opentelemetry/exporter-trace-otlp-proto@0.57.2 @opentelemetry/context-async-hooks@1.30.1
+  ```
+
+  </CodeGroup>
+</Warning>
+
+```typescript
+import { initializeOTEL } from "langsmith/experimental/otel/setup";
+import { LangSmithOTLPTraceExporter } from "langsmith/experimental/otel/exporter";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { traceable } from "langsmith/traceable";
+import { generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+import * as Sentry from "@sentry/node";
+import { Client } from "langsmith";
+
+const exporter = new LangSmithOTLPTraceExporter();
+const spanProcessor = new BatchSpanProcessor(exporter);
+
+const sentry = Sentry.init({
+  dsn: "...",
+  tracesSampleRate: 1.0,
+  openTelemetrySpanProcessors: [spanProcessor],
+});
+
+initializeOTEL({
+  globalTracerProvider: sentry?.traceProvider,
+});
+
+const wrappedText = traceable(
+  async (content: string) => {
+    const { text } = await generateText({
+      model: openai("gpt-4.1-nano"),
+      messages: [{ role: "user", content }],
+      experimental_telemetry: {
+        isEnabled: true,
+      },
+      maxSteps: 10,
+    });
+    return { text };
+  },
+  { name: "parentTraceable" }
+);
+
+let result;
+try {
+  result = await wrappedText("What color is the sky?");
+} finally {
+  await sentry?.traceProvider?.shutdown();
+}
+```
+
+
+## Add other metadata
+
+You can add other metadata to your traces to help organize and filter them in the LangSmith UI:
+
+```typescript {highlight={9}}
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+await generateText({
+  model: openai("gpt-4.1-nano"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people.",
+  experimental_telemetry: {
+    isEnabled: true,
+    metadata: { userId: "123", language: "english" },
+  },
+});
+```
+
+Metadata will be visible in your LangSmith dashboard and can be used to filter and search for specific traces.
+Note that AI SDK propagates metadata on internal child spans as well.
+
+## Customize run name
+
+You can customize the run name by passing a metadata key named `ls_run_name` into `experimental_telemetry`.
+
+```typescript
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+await generateText({
+  model: openai("gpt-4o-mini"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people.",
+  experimental_telemetry: {
+    isEnabled: true,
+    // highlight-start
+    metadata: {
+      ls_run_name: "my-custom-run-name",
+    },
+    // highlight-end
+  },
+});
+```
