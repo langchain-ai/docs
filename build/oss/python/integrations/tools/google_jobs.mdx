@@ -1,0 +1,235 @@
+---
+title: Google Jobs
+---
+
+This notebook goes over how to use the Google Jobs Tool to fetch current Job postings.
+
+First, you need to sign up for an `SerpApi key` key at: https://serpapi.com/users/sign_up and get your api key here: https://serpapi.com/manage-api-key.
+
+Then you must install `google-search-results` with the command:
+    `pip install google-search-results`
+
+Then you will need to set the environment variable `SERPAPI_API_KEY` to your `SerpApi key`
+
+
+If you are using conda environment, you can set up using the following commands in kernal:
+conda activate [your env name]
+conda env confiv vars SERPAPI_API_KEY='[your serp api key]'
+## Use the Tool
+
+
+```python
+%pip install --upgrade --quiet google-search-results langchain-community
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+import os
+
+os.environ["SERPAPI_API_KEY"] = ""
+```
+
+
+```python
+from langchain_community.tools.google_jobs import GoogleJobsQueryRun
+from langchain_community.utilities.google_jobs import GoogleJobsAPIWrapper
+
+tool = GoogleJobsQueryRun(api_wrapper=GoogleJobsAPIWrapper())
+```
+
+
+```python
+tool.run("Can I get an entry level job posting related to physics")
+```
+
+
+
+```output
+"\n_______________________________________________\nJob Title: Applied Physicist - Open Rank (Entry-Junior Level)-EOSL\nCompany Name: Georgia Tech Research Institute\nLocation: Atlanta, GA\nDescription: Overview:\n\nThe Georgia Tech Research Institute (GTRI) is the nonprofit, applied research division of the Georgia Institute of Technology (Georgia Tech).\u202fFounded in 1934 as the Engineering Experiment Station, GTRI has grown to more than 2,900 employees, supporting eight laboratories in over 20 locations around the country and performing more than $940 million of problem-solving research annually for government and industry.\u202fGTRI's renowned researchers combine science, engineering, economics, policy, and technical expertise to solve complex problems for the U.S. federal government, state, and industry.\n\nGeorgia Tech's Mission and Values\n\nGeorgia Tech's mission is to develop leaders who advance technology and improve the human condition. The Institute has nine key values that are foundational to everything we do:\n\n1. Students are our top priority.\n2. We strive for excellence.\n3. We thrive on diversity.\n4. We celebrate collaboration.\n5. We champion innovation.\n6. We safeguard freedom of inquiry and expression.\n7. We nurture the wellbeing of our community.\n8. We act ethically.\n9. We are responsible stewards.\n\nOver the next decade, Georgia Tech will become an example of inclusive innovation, a leading technological research university of unmatched scale, relentlessly committed to serving the public good; breaking new ground in addressing the biggest local, national, and global challenges and opportunities of our time; making technology broadly accessible; and developing exceptional, principled leaders from all backgrounds ready to produce novel ideas and create solutions with real human impact.\n\nProject/Unit Description\n\nThe Electro-Optical and Infrared Systems Division’s (EISD’s) research is performed in all areas of the imaging chain. From basic geometric/radiometric modeling and analysis, through design and fabrication, to test and evaluation in the field, our team provides subject matter expertise to our customers in order to solve their most challenging problems in undersea, ground, airborne, and space domains. EISD is a collection of multi-disciplinary engineers and scientists encompassing optical, physics, mechanical, electrical, computer, and software domains, among others. Our portfolio consists of research programs in and related to the following application areas: Intelligence, Surveillance, and Reconnaissance (ISR); Undersea Warfare; Atmospheric Optics; Tactical Imaging, e.g. Degraded Visual Environments (DVE); Automatic Target Recognition; Intelligence Processing, Exploitation, and Dissemination (PED); Free-space Optical Communications; Space Situational Awareness (SSA); Tagging, Tracking, and Locating (TTL); LIDAR; Remote Sensing; etc.\n\nJob Purpose\n\nAn applied physicist leverages knowledge and skills from the fields of physics, chemistry, material science, and mathematics to contribute to the research, analysis, design, and development of innovative systems, sensors, materials, and devices. They design and conduct experiments and/or simulations to ascertain physical properties and behaviors. Experiments conducted may involve the measurement, characterization, and testing of equipment and environmental phenomenology using specialized tools. Fundamental physical principles are used to inform the design of systems and sensors, to evaluate their theoretical performance, and to develop algorithms. Areas of application may include: optical systems, energy systems and storage, quantum systems, EO/IR & RF M&S and analysis, and photonics, and new materials. An applied physicist might also contribute to the development and application of new materials related to energy production, harvesting, and storage or to areas as diverse as healthcare, entertainment, or national security.\n\nKey Responsibilities\n• Perform basic tests, experiments, calculations, and/or simulations to determine physical parameters/properties and behaviors of materials and systems and conduct basic data analysis on the results of measurements and/or simulations\n• Perform literature surveys on research topics\n• Generate documentation of experiments and results\n\nRequired Minimum Qualifications\n• Foundational understanding in at least one of the following research areas: remote sensing, optics, atmospheric phenomenology, imaging, optical communications, optical detection theory, etc.\n• Experience developing algorithms and/or performing data analysis using one or more of the following programming languages: Python, MATLAB, IDL, etc.\n• Hands-on experience performing benchtop optical system tests and/or familiarity with imaging systems and radiometric calculations\n• Experience with generating documentation for detailing experiments and results\n• Ability to obtain and maintain a DoD Secret Security Clearance\n\nPreferred Qualifications\n• Active Secret Clearance\n• Experience with at least one modeling & simulation and/or optical design tools (e.g. MODTRAN, DIRSIG, Zemax, Code V, etc.)\n• Experience working with active and passive electro-optical systems including, but not limited to LIDARs, infrared imagers, hyperspectral imagers, polarimeters, lasers.\n• Software development experience in Python, MATLAB, C/C++\n• Experience specifying optical, opto-mechanical, laser, and/or sensor components to comply with system requirements\n• Experience with image and signal processing\n• Project management and task leadership experience\n\nTravel Requirements\n\n<10% travel\n\nEducation and Length of Experience\n\nThis position vacancy is an open-rank announcement. The final job offer will be dependent on candidate qualifications in alignment with Research Faculty Extension Professional ranks as outlined in section 3.2.1 of the Georgia Tech Faculty Handbook\n• 0-5 years of related experience with a Bachelor’s degree in Physics, Applied Physics, Engineering Physics, Optical Engineering, Optical Science, Imaging Science, Aerospace Engineering, Electrical Engineering, Electrical and Computer Engineering, Atmospheric Science, Chemistry, Applied Mathematics, or other related discipline\n• 0-3 years of related experience with a Masters’ degree in Physics, Applied Physics, Engineering Physics, Optical Engineering, Optical Science, Imaging Science, Aerospace Engineering, Electrical Engineering, Electrical and Computer Engineering, Atmospheric Science, Chemistry, Applied Mathematics, or other related discipline\n• 0 years of related experience with a Ph.D. in Physics, Applied Physics, Engineering Physics, Optical Engineering, Optical Science, Imaging Science, Aerospace Engineering, Electrical Engineering, Electrical and Computer Engineering, Atmospheric Science, Chemistry, Applied Mathematics, or other related discipline\n\nPlease refer to our Research Faculty Technical Level Guidelines for minimum requirements at the higher levels.\n\nU.S. Citizenship Requirements\n\nDue to our research contracts with the U.S. federal government, candidates for this position must be U.S. Citizens.\n\nClearance Type Required\n\nCandidates must be able to obtain and maintain an active security clearance.\n\nBenefits at GTRI\n\nComprehensive information on currently offered GTRI benefits, including Health & Welfare, Retirement Plans, Tuition Reimbursement, Time Off, and Professional Development, can be found through this link: https://benefits.hr.gatech.edu/.\n\nEqual Employment Opportunity\n\nThe Georgia Institute of Technology (Georgia Tech) is an Equal Employment Opportunity Employer. The University is committed to maintaining a fair and respectful environment for all. To that end, and in accordance with federal and state law, Board of Regents policy, and University policy, Georgia Tech provides equal opportunity to all faculty, staff, students, and all other members of the Georgia Tech community, including applicants for admission and/or employment, contractors, volunteers, and participants in institutional programs, activities, or services. Georgia Tech complies with all applicable laws and regulations governing equal opportunity in the workplace and in educational activities.\n\nGeorgia Tech prohibits discrimination, including discriminatory harassment, on the basis of race, ethnicity, ancestry, color, religion, sex (including pregnancy), sexual orientation, gender identity, gender expression, national origin, age, disability, genetics, or veteran status in its programs, activities, employment, and admissions. This prohibition applies to faculty, staff, students, and all other members of the Georgia Tech community, including affiliates, invitees, and guests. Further, Georgia Tech prohibits citizenship status, immigration status, and national origin discrimination in hiring, firing, and recruitment, except where such restrictions are required in order to comply with law, regulation, executive order, or Attorney General directive, or where they are required by Federal, State, or local government contract.\n\nUSG Core Values Statement\n\nThe University System of Georgia is comprised of our 26 institutions of higher education and learning as well as the System Office. Our USG Statement of Core Values are Integrity, Excellence, Accountability, and Respect. These values serve as the foundation for all that we do as an organization, and each USG community member is responsible for demonstrating and upholding these standards. More details on the USG Statement of Core Values and Code of Conduct are available in USG Board Policy 8.2.18.1.2 and can be found on-line at https://www.usg.edu/policymanual/section8/C224/#p8.2.18_personnel_conduct.\n\nAdditionally, USG supports Freedom of Expression as stated in Board Policy 6.5 Freedom of Expression and Academic Freedom found on-line at https://www.usg.edu/policymanual/section6/C2653.\n_______________________________________________\n\n"
+```
+
+
+# Use the tool within a ReAct agent
+
+In order to create an agent that uses the Google Jobs tool install Langgraph
+
+
+```python
+%pip install --upgrade --quiet langgraph langchain-openai
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+and use the `create_react_agent` functionality to initialize a ReAct agent. You will also need to set up your OPEN_API_KEY (visit https://platform.openai.com) in order to access OpenAI's chat models.
+
+
+```python
+import os
+
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["SERP_API_KEY"] = ""
+```
+
+
+```python
+from langchain_community.agent_toolkits.load_tools import load_tools
+
+tools = load_tools(["google-jobs"])
+```
+
+
+```python
+from langgraph.prebuilt import create_react_agent
+
+agent = create_react_agent("openai:gpt-4.1-mini", tools)
+```
+
+
+```python
+events = agent.stream(
+    {"messages": [("user", "Give me an entry level job posting related to physics?")]},
+    stream_mode="values",
+)
+for event in events:
+    event["messages"][-1].pretty_print()
+```
+```output
+================================ Human Message =================================
+
+Give me an entry level job posting related to physics?
+================================== Ai Message ==================================
+Tool Calls:
+  google_jobs (call_Yz3sJ4l4FsN9ENsQBkdJUoLh)
+ Call ID: call_Yz3sJ4l4FsN9ENsQBkdJUoLh
+  Args:
+    query: entry level jobs related to physics
+================================= Tool Message =================================
+Name: google_jobs
+
+
+_______________________________________________
+Job Title: Applied Physicist - Open Rank (Entry-Junior Level)-EOSL
+Company Name: Georgia Tech Research Institute
+Location: Atlanta, GA
+Description: Overview:
+
+The Georgia Tech Research Institute (GTRI) is the nonprofit, applied research division of the Georgia Institute of Technology (Georgia Tech). Founded in 1934 as the Engineering Experiment Station, GTRI has grown to more than 2,900 employees, supporting eight laboratories in over 20 locations around the country and performing more than $940 million of problem-solving research annually for government and industry. GTRI's renowned researchers combine science, engineering, economics, policy, and technical expertise to solve complex problems for the U.S. federal government, state, and industry.
+
+Georgia Tech's Mission and Values
+
+Georgia Tech's mission is to develop leaders who advance technology and improve the human condition. The Institute has nine key values that are foundational to everything we do:
+
+1. Students are our top priority.
+2. We strive for excellence.
+3. We thrive on diversity.
+4. We celebrate collaboration.
+5. We champion innovation.
+6. We safeguard freedom of inquiry and expression.
+7. We nurture the wellbeing of our community.
+8. We act ethically.
+9. We are responsible stewards.
+
+Over the next decade, Georgia Tech will become an example of inclusive innovation, a leading technological research university of unmatched scale, relentlessly committed to serving the public good; breaking new ground in addressing the biggest local, national, and global challenges and opportunities of our time; making technology broadly accessible; and developing exceptional, principled leaders from all backgrounds ready to produce novel ideas and create solutions with real human impact.
+
+Project/Unit Description
+
+The Electro-Optical and Infrared Systems Division’s (EISD’s) research is performed in all areas of the imaging chain. From basic geometric/radiometric modeling and analysis, through design and fabrication, to test and evaluation in the field, our team provides subject matter expertise to our customers in order to solve their most challenging problems in undersea, ground, airborne, and space domains. EISD is a collection of multi-disciplinary engineers and scientists encompassing optical, physics, mechanical, electrical, computer, and software domains, among others. Our portfolio consists of research programs in and related to the following application areas: Intelligence, Surveillance, and Reconnaissance (ISR); Undersea Warfare; Atmospheric Optics; Tactical Imaging, e.g. Degraded Visual Environments (DVE); Automatic Target Recognition; Intelligence Processing, Exploitation, and Dissemination (PED); Free-space Optical Communications; Space Situational Awareness (SSA); Tagging, Tracking, and Locating (TTL); LIDAR; Remote Sensing; etc.
+
+Job Purpose
+
+An applied physicist leverages knowledge and skills from the fields of physics, chemistry, material science, and mathematics to contribute to the research, analysis, design, and development of innovative systems, sensors, materials, and devices. They design and conduct experiments and/or simulations to ascertain physical properties and behaviors. Experiments conducted may involve the measurement, characterization, and testing of equipment and environmental phenomenology using specialized tools. Fundamental physical principles are used to inform the design of systems and sensors, to evaluate their theoretical performance, and to develop algorithms. Areas of application may include: optical systems, energy systems and storage, quantum systems, EO/IR & RF M&S and analysis, and photonics, and new materials. An applied physicist might also contribute to the development and application of new materials related to energy production, harvesting, and storage or to areas as diverse as healthcare, entertainment, or national security.
+
+Key Responsibilities
+• Perform basic tests, experiments, calculations, and/or simulations to determine physical parameters/properties and behaviors of materials and systems and conduct basic data analysis on the results of measurements and/or simulations
+• Perform literature surveys on research topics
+• Generate documentation of experiments and results
+
+Required Minimum Qualifications
+• Foundational understanding in at least one of the following research areas: remote sensing, optics, atmospheric phenomenology, imaging, optical communications, optical detection theory, etc.
+• Experience developing algorithms and/or performing data analysis using one or more of the following programming languages: Python, MATLAB, IDL, etc.
+• Hands-on experience performing benchtop optical system tests and/or familiarity with imaging systems and radiometric calculations
+• Experience with generating documentation for detailing experiments and results
+• Ability to obtain and maintain a DoD Secret Security Clearance
+
+Preferred Qualifications
+• Active Secret Clearance
+• Experience with at least one modeling & simulation and/or optical design tools (e.g. MODTRAN, DIRSIG, Zemax, Code V, etc.)
+• Experience working with active and passive electro-optical systems including, but not limited to LIDARs, infrared imagers, hyperspectral imagers, polarimeters, lasers.
+• Software development experience in Python, MATLAB, C/C++
+• Experience specifying optical, opto-mechanical, laser, and/or sensor components to comply with system requirements
+• Experience with image and signal processing
+• Project management and task leadership experience
+
+Travel Requirements
+
+<10% travel
+
+Education and Length of Experience
+
+This position vacancy is an open-rank announcement. The final job offer will be dependent on candidate qualifications in alignment with Research Faculty Extension Professional ranks as outlined in section 3.2.1 of the Georgia Tech Faculty Handbook
+• 0-5 years of related experience with a Bachelor’s degree in Physics, Applied Physics, Engineering Physics, Optical Engineering, Optical Science, Imaging Science, Aerospace Engineering, Electrical Engineering, Electrical and Computer Engineering, Atmospheric Science, Chemistry, Applied Mathematics, or other related discipline
+• 0-3 years of related experience with a Masters’ degree in Physics, Applied Physics, Engineering Physics, Optical Engineering, Optical Science, Imaging Science, Aerospace Engineering, Electrical Engineering, Electrical and Computer Engineering, Atmospheric Science, Chemistry, Applied Mathematics, or other related discipline
+• 0 years of related experience with a Ph.D. in Physics, Applied Physics, Engineering Physics, Optical Engineering, Optical Science, Imaging Science, Aerospace Engineering, Electrical Engineering, Electrical and Computer Engineering, Atmospheric Science, Chemistry, Applied Mathematics, or other related discipline
+
+Please refer to our Research Faculty Technical Level Guidelines for minimum requirements at the higher levels.
+
+U.S. Citizenship Requirements
+
+Due to our research contracts with the U.S. federal government, candidates for this position must be U.S. Citizens.
+
+Clearance Type Required
+
+Candidates must be able to obtain and maintain an active security clearance.
+
+Benefits at GTRI
+
+Comprehensive information on currently offered GTRI benefits, including Health & Welfare, Retirement Plans, Tuition Reimbursement, Time Off, and Professional Development, can be found through this link: https://benefits.hr.gatech.edu/.
+
+Equal Employment Opportunity
+
+The Georgia Institute of Technology (Georgia Tech) is an Equal Employment Opportunity Employer. The University is committed to maintaining a fair and respectful environment for all. To that end, and in accordance with federal and state law, Board of Regents policy, and University policy, Georgia Tech provides equal opportunity to all faculty, staff, students, and all other members of the Georgia Tech community, including applicants for admission and/or employment, contractors, volunteers, and participants in institutional programs, activities, or services. Georgia Tech complies with all applicable laws and regulations governing equal opportunity in the workplace and in educational activities.
+
+Georgia Tech prohibits discrimination, including discriminatory harassment, on the basis of race, ethnicity, ancestry, color, religion, sex (including pregnancy), sexual orientation, gender identity, gender expression, national origin, age, disability, genetics, or veteran status in its programs, activities, employment, and admissions. This prohibition applies to faculty, staff, students, and all other members of the Georgia Tech community, including affiliates, invitees, and guests. Further, Georgia Tech prohibits citizenship status, immigration status, and national origin discrimination in hiring, firing, and recruitment, except where such restrictions are required in order to comply with law, regulation, executive order, or Attorney General directive, or where they are required by Federal, State, or local government contract.
+
+USG Core Values Statement
+
+The University System of Georgia is comprised of our 26 institutions of higher education and learning as well as the System Office. Our USG Statement of Core Values are Integrity, Excellence, Accountability, and Respect. These values serve as the foundation for all that we do as an organization, and each USG community member is responsible for demonstrating and upholding these standards. More details on the USG Statement of Core Values and Code of Conduct are available in USG Board Policy 8.2.18.1.2 and can be found on-line at https://www.usg.edu/policymanual/section8/C224/#p8.2.18_personnel_conduct.
+
+Additionally, USG supports Freedom of Expression as stated in Board Policy 6.5 Freedom of Expression and Academic Freedom found on-line at https://www.usg.edu/policymanual/section6/C2653.
+_______________________________________________
+
+
+================================== Ai Message ==================================
+
+Here is an entry-level job posting related to physics:
+
+Job Title: Applied Physicist - Open Rank (Entry-Junior Level)
+Company: Georgia Tech Research Institute
+Location: Atlanta, GA
+
+Description:
+The Applied Physicist will contribute to research, analysis, design, and development of innovative systems, sensors, materials, and devices in areas such as optical systems, energy systems, quantum systems, EO/IR & RF modeling and analysis, photonics, and new materials. Responsibilities include performing tests, experiments, calculations, and/or simulations to determine physical parameters and behaviors, conducting data analysis, and generating documentation. The role requires foundational understanding in areas like remote sensing, optics, atmospheric phenomenology, imaging, and optical detection theory and experience with programming languages such as Python, MATLAB, and IDL.
+
+Minimum Qualifications:
+- Bachelor’s degree with 0-5 years experience or Master’s with 0-3 years or Ph.D. in Physics or related discipline.
+- Hands-on experience with optical system tests or imaging systems and radiometric calculations.
+- Ability to obtain and maintain a DoD Secret Security Clearance.
+
+Preferred Qualifications:
+- Active Secret Clearance.
+- Experience with modeling & simulation or optical design tools.
+- Experience with electro-optical systems, software development, image and signal processing.
+
+Travel: Less than 10%
+U.S. Citizenship required.
+
+Benefits include health & welfare, retirement plans, tuition reimbursement, time off, and professional development.
+
+For detailed information and to apply, refer to Georgia Tech Research Institute career page.
+```
+
+```python
+
+```

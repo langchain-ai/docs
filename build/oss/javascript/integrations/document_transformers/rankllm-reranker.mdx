@@ -1,0 +1,638 @@
+---
+title: RankLLM Reranker
+---
+
+**[RankLLM](https://github.com/castorini/rank_llm)** is a **flexible reranking framework** supporting **listwise, pairwise, and pointwise ranking models**. It includes **RankVicuna, RankZephyr, MonoT5, DuoT5, LiT5, and FirstMistral**, with integration for **FastChat, vLLM, SGLang, and TensorRT-LLM** for efficient inference. RankLLM is optimized for **retrieval and ranking tasks**, leveraging both **open-source LLMs** and proprietary rerankers like **RankGPT and RankGemini**. It supports **batched inference, first-token reranking, and retrieval via BM25 and SPLADE**.
+
+> **Note:** If using the built-in retriever, RankLLM requires **Pyserini, JDK 21, PyTorch, and Faiss** for retrieval functionality.
+
+
+```python
+%pip install --upgrade --quiet rank_llm
+```
+
+
+```python
+%pip install --upgrade --quiet langchain_openai
+```
+
+
+```python
+%pip install --upgrade --quiet faiss-cpu
+```
+
+
+```python
+import getpass
+import os
+
+if "OPENAI_API_KEY" not in os.environ:
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API Key:")
+```
+
+
+```python
+# Helper function for printing docs
+def pretty_print_docs(docs):
+    print(
+        f"\n{'-' * 100}\n".join(
+            [f"Document {i + 1}:\n\n" + d.page_content for i, d in enumerate(docs)]
+        )
+    )
+```
+
+## Set up the base vector store retriever
+Let's start by initializing a simple vector store retriever and storing the 2023 State of the Union speech (in chunks). We can set up the retriever to retrieve a high number (20) of docs.
+
+
+```python
+from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+documents = TextLoader("../document_loaders/example_data/state_of_the_union.txt").load()
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+texts = text_splitter.split_documents(documents)
+for idx, text in enumerate(texts):
+    text.metadata["id"] = idx
+
+embedding = OpenAIEmbeddings(model="text-embedding-3-large")
+retriever = FAISS.from_documents(texts, embedding).as_retriever(search_kwargs={"k": 20})
+```
+```output
+2025-02-22 15:28:58,344 - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+```
+# Retrieval + RankLLM Reranking (RankZephyr)
+
+Retrieval without reranking
+
+
+```python
+query = "What was done to Russia?"
+docs = retriever.invoke(query)
+pretty_print_docs(docs)
+```
+```output
+2025-02-22 15:29:00,892 - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+``````output
+Document 1:
+
+Together with our allies –we are right now enforcing powerful economic sanctions. 
+
+We are cutting off Russia’s largest banks from the international financial system.  
+
+Preventing Russia’s central bank from defending the Russian Ruble making Putin’s $630 Billion “war fund” worthless.   
+
+We are choking off Russia’s access to technology that will sap its economic strength and weaken its military for years to come.
+----------------------------------------------------------------------------------------------------
+Document 2:
+
+And tonight I am announcing that we will join our allies in closing off American air space to all Russian flights – further isolating Russia – and adding an additional squeeze –on their economy. The Ruble has lost 30% of its value. 
+
+The Russian stock market has lost 40% of its value and trading remains suspended. Russia’s economy is reeling and Putin alone is to blame.
+----------------------------------------------------------------------------------------------------
+Document 3:
+
+And now that he has acted the free world is holding him accountable. 
+
+Along with twenty-seven members of the European Union including France, Germany, Italy, as well as countries like the United Kingdom, Canada, Japan, Korea, Australia, New Zealand, and many others, even Switzerland. 
+
+We are inflicting pain on Russia and supporting the people of Ukraine. Putin is now isolated from the world more than ever. 
+
+Together with our allies –we are right now enforcing powerful economic sanctions.
+----------------------------------------------------------------------------------------------------
+Document 4:
+
+I spent countless hours unifying our European allies. We shared with the world in advance what we knew Putin was planning and precisely how he would try to falsely justify his aggression.  
+
+We countered Russia’s lies with truth.   
+
+And now that he has acted the free world is holding him accountable.
+----------------------------------------------------------------------------------------------------
+Document 5:
+
+He rejected repeated efforts at diplomacy. 
+
+He thought the West and NATO wouldn’t respond. And he thought he could divide us at home. Putin was wrong. We were ready.  Here is what we did.   
+
+We prepared extensively and carefully. 
+
+We spent months building a coalition of other freedom-loving nations from Europe and the Americas to Asia and Africa to confront Putin.
+----------------------------------------------------------------------------------------------------
+Document 6:
+
+To all Americans, I will be honest with you, as I’ve always promised. A Russian dictator, invading a foreign country, has costs around the world. 
+
+And I’m taking robust action to make sure the pain of our sanctions  is targeted at Russia’s economy. And I will use every tool at our disposal to protect American businesses and consumers. 
+
+Tonight, I can announce that the United States has worked with 30 other countries to release 60 Million barrels of oil from reserves around the world.
+----------------------------------------------------------------------------------------------------
+Document 7:
+
+And with an unwavering resolve that freedom will always triumph over tyranny. 
+
+Six days ago, Russia’s Vladimir Putin sought to shake the foundations of the free world thinking he could make it bend to his menacing ways. But he badly miscalculated. 
+
+He thought he could roll into Ukraine and the world would roll over. Instead he met a wall of strength he never imagined. 
+
+He met the Ukrainian people.
+----------------------------------------------------------------------------------------------------
+Document 8:
+
+They keep moving.   
+
+And the costs and the threats to America and the world keep rising.   
+
+That’s why the NATO Alliance was created to secure peace and stability in Europe after World War 2. 
+
+The United States is a member along with 29 other nations. 
+
+It matters. American diplomacy matters. American resolve matters. 
+
+Putin’s latest attack on Ukraine was premeditated and unprovoked. 
+
+He rejected repeated efforts at diplomacy.
+----------------------------------------------------------------------------------------------------
+Document 9:
+
+While it shouldn’t have taken something so terrible for people around the world to see what’s at stake now everyone sees it clearly. 
+
+We see the unity among leaders of nations and a more unified Europe a more unified West. And we see unity among the people who are gathering in cities in large crowds around the world even in Russia to demonstrate their support for Ukraine.
+----------------------------------------------------------------------------------------------------
+Document 10:
+
+America will lead that effort, releasing 30 Million barrels from our own Strategic Petroleum Reserve. And we stand ready to do more if necessary, unified with our allies.  
+
+These steps will help blunt gas prices here at home. And I know the news about what’s happening can seem alarming. 
+
+But I want you to know that we are going to be okay. 
+
+When the history of this era is written Putin’s war on Ukraine will have left Russia weaker and the rest of the world stronger.
+----------------------------------------------------------------------------------------------------
+Document 11:
+
+Tonight I say to the Russian oligarchs and corrupt leaders who have bilked billions of dollars off this violent regime no more. 
+
+The U.S. Department of Justice is assembling a dedicated task force to go after the crimes of Russian oligarchs.  
+
+We are joining with our European allies to find and seize your yachts your luxury apartments your private jets. We are coming for your ill-begotten gains.
+----------------------------------------------------------------------------------------------------
+Document 12:
+
+And we remain clear-eyed. The Ukrainians are fighting back with pure courage. But the next few days weeks, months, will be hard on them.  
+
+Putin has unleashed violence and chaos.  But while he may make gains on the battlefield – he will pay a continuing high price over the long run. 
+
+And a proud Ukrainian people, who have known 30 years  of independence, have repeatedly shown that they will not tolerate anyone who tries to take their country backwards.
+----------------------------------------------------------------------------------------------------
+Document 13:
+
+Let each of us here tonight in this Chamber send an unmistakable signal to Ukraine and to the world. 
+
+Please rise if you are able and show that, Yes, we the United States of America stand with the Ukrainian people. 
+
+Throughout our history we’ve learned this lesson when dictators do not pay a price for their aggression they cause more chaos.   
+
+They keep moving.   
+
+And the costs and the threats to America and the world keep rising.
+----------------------------------------------------------------------------------------------------
+Document 14:
+
+Together with our allies we are providing support to the Ukrainians in their fight for freedom. Military assistance. Economic assistance. Humanitarian assistance. 
+
+We are giving more than $1 Billion in direct assistance to Ukraine. 
+
+And we will continue to aid the Ukrainian people as they defend their country and to help ease their suffering.  
+
+Let me be clear, our forces are not engaged and will not engage in conflict with Russian forces in Ukraine.
+----------------------------------------------------------------------------------------------------
+Document 15:
+
+It fueled our efforts to vaccinate the nation and combat COVID-19. It delivered immediate economic relief for tens of millions of Americans.  
+
+Helped put food on their table, keep a roof over their heads, and cut the cost of health insurance. 
+
+And as my Dad used to say, it gave people a little breathing room.
+----------------------------------------------------------------------------------------------------
+Document 16:
+
+In the battle between democracy and autocracy, democracies are rising to the moment, and the world is clearly choosing the side of peace and security. 
+
+This is a real test. It’s going to take time. So let us continue to draw inspiration from the iron will of the Ukrainian people. 
+
+To our fellow Ukrainian Americans who forge a deep bond that connects our two nations we stand with you. 
+
+Putin may circle Kyiv with tanks, but he will never gain the hearts and souls of the Ukrainian people.
+----------------------------------------------------------------------------------------------------
+Document 17:
+
+He met the Ukrainian people. 
+
+From President Zelenskyy to every Ukrainian, their fearlessness, their courage, their determination, inspires the world. 
+
+Groups of citizens blocking tanks with their bodies. Everyone from students to retirees teachers turned soldiers defending their homeland. 
+
+In this struggle as President Zelenskyy said in his speech to the European Parliament “Light will win over darkness.” The Ukrainian Ambassador to the United States is here tonight.
+----------------------------------------------------------------------------------------------------
+Document 18:
+
+Our forces are not going to Europe to fight in Ukraine, but to defend our NATO Allies – in the event that Putin decides to keep moving west.  
+
+For that purpose we’ve mobilized American ground forces, air squadrons, and ship deployments to protect NATO countries including Poland, Romania, Latvia, Lithuania, and Estonia. 
+
+As I have made crystal clear the United States and our Allies will defend every inch of territory of NATO countries with the full force of our collective power.
+----------------------------------------------------------------------------------------------------
+Document 19:
+
+I understand. 
+
+I remember when my Dad had to leave our home in Scranton, Pennsylvania to find work. I grew up in a family where if the price of food went up, you felt it. 
+
+That’s why one of the first things I did as President was fight to pass the American Rescue Plan.  
+
+Because people were hurting. We needed to act, and we did. 
+
+Few pieces of legislation have done more in a critical moment in our history to lift us out of crisis.
+----------------------------------------------------------------------------------------------------
+Document 20:
+
+And as my Dad used to say, it gave people a little breathing room. 
+
+And unlike the $2 Trillion tax cut passed in the previous administration that benefitted the top 1% of Americans, the American Rescue Plan helped working people—and left no one behind. 
+
+And it worked. It created jobs. Lots of jobs. 
+
+In fact—our economy created over 6.5 Million new jobs just last year, more jobs created in one year  
+than ever before in the history of America.
+```
+RankZephyr performs listwise reranking for improved retrieval quality but requires at least 24GB of VRAM to run efficiently.
+
+
+```python
+import torch
+from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_community.document_compressors.rankllm_rerank import RankLLMRerank
+
+torch.cuda.empty_cache()
+
+compressor = RankLLMRerank(top_n=3, model="rank_zephyr")
+compression_retriever = ContextualCompressionRetriever(
+    base_compressor=compressor, base_retriever=retriever
+)
+
+del compressor
+```
+```output
+Downloading shards: 100%|██████████| 3/3 [00:00<00:00, 2674.37it/s]
+Loading checkpoint shards: 100%|██████████| 3/3 [01:49<00:00, 36.39s/it]
+```
+
+```python
+compressed_docs = compression_retriever.invoke(query)
+pretty_print_docs(compressed_docs)
+```
+```output
+Document 1:
+
+Together with our allies –we are right now enforcing powerful economic sanctions. 
+
+We are cutting off Russia’s largest banks from the international financial system.  
+
+Preventing Russia’s central bank from defending the Russian Ruble making Putin’s $630 Billion “war fund” worthless.   
+
+We are choking off Russia’s access to technology that will sap its economic strength and weaken its military for years to come.
+----------------------------------------------------------------------------------------------------
+Document 2:
+
+And tonight I am announcing that we will join our allies in closing off American air space to all Russian flights – further isolating Russia – and adding an additional squeeze –on their economy. The Ruble has lost 30% of its value. 
+
+The Russian stock market has lost 40% of its value and trading remains suspended. Russia’s economy is reeling and Putin alone is to blame.
+----------------------------------------------------------------------------------------------------
+Document 3:
+
+And now that he has acted the free world is holding him accountable. 
+
+Along with twenty-seven members of the European Union including France, Germany, Italy, as well as countries like the United Kingdom, Canada, Japan, Korea, Australia, New Zealand, and many others, even Switzerland. 
+
+We are inflicting pain on Russia and supporting the people of Ukraine. Putin is now isolated from the world more than ever. 
+
+Together with our allies –we are right now enforcing powerful economic sanctions.
+```
+Can be used within a QA pipeline
+
+
+```python
+from langchain.chains import RetrievalQA
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(temperature=0)
+
+chain = RetrievalQA.from_chain_type(
+    llm=ChatOpenAI(temperature=0), retriever=compression_retriever
+)
+
+chain.invoke({"query": query})
+```
+
+
+
+```output
+{'query': 'What was done to Russia?',
+ 'result': 'Russia has been subjected to powerful economic sanctions, including cutting off its largest banks from the international financial system, preventing its central bank from defending the Russian Ruble, and choking off its access to technology. Additionally, American airspace has been closed to all Russian flights, further isolating Russia and adding pressure on its economy. These actions have led to a significant devaluation of the Ruble, a sharp decline in the Russian stock market, and overall economic turmoil in Russia.'}
+```
+
+
+# Retrieval + RankLLM Reranking (RankGPT)
+
+Retrieval without reranking
+
+
+```python
+query = "What did the president say about Ketanji Brown Jackson"
+docs = retriever.invoke(query)
+pretty_print_docs(docs)
+```
+```output
+2025-02-22 15:01:29,469 - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+``````output
+Document 1:
+
+One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court. 
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+----------------------------------------------------------------------------------------------------
+Document 2:
+
+A former top litigator in private practice. A former federal public defender. And from a family of public school educators and police officers. A consensus builder. Since she’s been nominated, she’s received a broad range of support—from the Fraternal Order of Police to former judges appointed by Democrats and Republicans. 
+
+And if we are to advance liberty and justice, we need to secure the Border and fix the immigration system.
+----------------------------------------------------------------------------------------------------
+Document 3:
+
+We cannot let this happen. 
+
+Tonight. I call on the Senate to: Pass the Freedom to Vote Act. Pass the John Lewis Voting Rights Act. And while you’re at it, pass the Disclose Act so Americans can know who is funding our elections. 
+
+Tonight, I’d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer—an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service.
+----------------------------------------------------------------------------------------------------
+Document 4:
+
+As I said last year, especially to our younger transgender Americans, I will always have your back as your President, so you can be yourself and reach your God-given potential. 
+
+While it often appears that we never agree, that isn’t true. I signed 80 bipartisan bills into law last year. From preventing government shutdowns to protecting Asian-Americans from still-too-common hate crimes to reforming military justice.
+----------------------------------------------------------------------------------------------------
+Document 5:
+
+Madam Speaker, Madam Vice President, our First Lady and Second Gentleman. Members of Congress and the Cabinet. Justices of the Supreme Court. My fellow Americans.  
+
+Last year COVID-19 kept us apart. This year we are finally together again. 
+
+Tonight, we meet as Democrats Republicans and Independents. But most importantly as Americans. 
+
+With a duty to one another to the American people to the Constitution. 
+
+And with an unwavering resolve that freedom will always triumph over tyranny.
+----------------------------------------------------------------------------------------------------
+Document 6:
+
+And tonight, I’m announcing that the Justice Department will name a chief prosecutor for pandemic fraud. 
+
+By the end of this year, the deficit will be down to less than half what it was before I took office.  
+
+The only president ever to cut the deficit by more than one trillion dollars in a single year. 
+
+Lowering your costs also means demanding more competition. 
+
+I’m a capitalist, but capitalism without competition isn’t capitalism. 
+
+It’s exploitation—and it drives up prices.
+----------------------------------------------------------------------------------------------------
+Document 7:
+
+So that’s my plan. It will grow the economy and lower costs for families. 
+
+So what are we waiting for? Let’s get this done. And while you’re at it, confirm my nominees to the Federal Reserve, which plays a critical role in fighting inflation.  
+
+My plan will not only lower costs to give families a fair shot, it will lower the deficit.
+----------------------------------------------------------------------------------------------------
+Document 8:
+
+I spoke with their families and told them that we are forever in debt for their sacrifice, and we will carry on their mission to restore the trust and safety every community deserves. 
+
+I’ve worked on these issues a long time. 
+
+I know what works: Investing in crime prevention and community police officers who’ll walk the beat, who’ll know the neighborhood, and who can restore trust and safety. 
+
+So let’s not abandon our streets. Or choose between safety and equal justice.
+----------------------------------------------------------------------------------------------------
+Document 9:
+
+So let’s not abandon our streets. Or choose between safety and equal justice. 
+
+Let’s come together to protect our communities, restore trust, and hold law enforcement accountable. 
+
+That’s why the Justice Department required body cameras, banned chokeholds, and restricted no-knock warrants for its officers.
+----------------------------------------------------------------------------------------------------
+Document 10:
+
+As I’ve told Xi Jinping, it is never a good bet to bet against the American people. 
+
+We’ll create good jobs for millions of Americans, modernizing roads, airports, ports, and waterways all across America. 
+
+And we’ll do it all to withstand the devastating effects of the climate crisis and promote environmental justice.
+----------------------------------------------------------------------------------------------------
+Document 11:
+
+Let’s pass the Paycheck Fairness Act and paid leave.  
+
+Raise the minimum wage to $15 an hour and extend the Child Tax Credit, so no one has to raise a family in poverty. 
+
+Let’s increase Pell Grants and increase our historic support of HBCUs, and invest in what Jill—our First Lady who teaches full-time—calls America’s best-kept secret: community colleges. 
+
+And let’s pass the PRO Act when a majority of workers want to form a union—they shouldn’t be stopped.
+----------------------------------------------------------------------------------------------------
+Document 12:
+
+He will never extinguish their love of freedom. He will never weaken the resolve of the free world. 
+
+We meet tonight in an America that has lived through two of the hardest years this nation has ever faced. 
+
+The pandemic has been punishing. 
+
+And so many families are living paycheck to paycheck, struggling to keep up with the rising cost of food, gas, housing, and so much more. 
+
+I understand.
+----------------------------------------------------------------------------------------------------
+Document 13:
+
+Well I know this nation.  
+
+We will meet the test. 
+
+To protect freedom and liberty, to expand fairness and opportunity. 
+
+We will save democracy. 
+
+As hard as these times have been, I am more optimistic about America today than I have been my whole life. 
+
+Because I see the future that is within our grasp. 
+
+Because I know there is simply nothing beyond our capacity. 
+
+We are the only nation on Earth that has always turned every crisis we have faced into an opportunity.
+----------------------------------------------------------------------------------------------------
+Document 14:
+
+If we want to go forward—not backward—we must protect access to health care. Preserve a woman’s right to choose. And let’s continue to advance maternal health care in America. 
+
+And for our LGBTQ+ Americans, let’s finally get the bipartisan Equality Act to my desk. The onslaught of state laws targeting transgender Americans and their families is wrong.
+----------------------------------------------------------------------------------------------------
+Document 15:
+
+He met the Ukrainian people. 
+
+From President Zelenskyy to every Ukrainian, their fearlessness, their courage, their determination, inspires the world. 
+
+Groups of citizens blocking tanks with their bodies. Everyone from students to retirees teachers turned soldiers defending their homeland. 
+
+In this struggle as President Zelenskyy said in his speech to the European Parliament “Light will win over darkness.” The Ukrainian Ambassador to the United States is here tonight.
+----------------------------------------------------------------------------------------------------
+Document 16:
+
+Tonight I say to the Russian oligarchs and corrupt leaders who have bilked billions of dollars off this violent regime no more. 
+
+The U.S. Department of Justice is assembling a dedicated task force to go after the crimes of Russian oligarchs.  
+
+We are joining with our European allies to find and seize your yachts your luxury apartments your private jets. We are coming for your ill-begotten gains.
+----------------------------------------------------------------------------------------------------
+Document 17:
+
+It’s not only the right thing to do—it’s the economically smart thing to do. 
+
+That’s why immigration reform is supported by everyone from labor unions to religious leaders to the U.S. Chamber of Commerce. 
+
+Let’s get it done once and for all. 
+
+Advancing liberty and justice also requires protecting the rights of women. 
+
+The constitutional right affirmed in Roe v. Wade—standing precedent for half a century—is under attack as never before.
+----------------------------------------------------------------------------------------------------
+Document 18:
+
+Smartphones. The Internet. Technology we have yet to invent. 
+
+But that’s just the beginning. 
+
+Intel’s CEO, Pat Gelsinger, who is here tonight, told me they are ready to increase their investment from  
+$20 billion to $100 billion. 
+
+That would be one of the biggest investments in manufacturing in American history. 
+
+And all they’re waiting for is for you to pass this bill. 
+
+So let’s not wait any longer. Send it to my desk. I’ll sign it.  
+
+And we will really take off.
+----------------------------------------------------------------------------------------------------
+Document 19:
+
+And as my Dad used to say, it gave people a little breathing room. 
+
+And unlike the $2 Trillion tax cut passed in the previous administration that benefitted the top 1% of Americans, the American Rescue Plan helped working people—and left no one behind. 
+
+And it worked. It created jobs. Lots of jobs. 
+
+In fact—our economy created over 6.5 Million new jobs just last year, more jobs created in one year  
+than ever before in the history of America.
+----------------------------------------------------------------------------------------------------
+Document 20:
+
+The only nation that can be defined by a single word: possibilities. 
+
+So on this night, in our 245th year as a nation, I have come to report on the State of the Union. 
+
+And my report is this: the State of the Union is strong—because you, the American people, are strong. 
+
+We are stronger today than we were a year ago. 
+
+And we will be stronger a year from now than we are today. 
+
+Now is our moment to meet and overcome the challenges of our time. 
+
+And we will, as one people. 
+
+One America.
+```
+Retrieval + Reranking with RankGPT
+
+
+```python
+from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_community.document_compressors.rankllm_rerank import RankLLMRerank
+
+compressor = RankLLMRerank(top_n=3, model="gpt", gpt_model="gpt-4o-mini")
+compression_retriever = ContextualCompressionRetriever(
+    base_compressor=compressor, base_retriever=retriever
+)
+```
+
+
+```python
+compressed_docs = compression_retriever.invoke(query)
+pretty_print_docs(compressed_docs)
+```
+```output
+2025-02-22 15:01:38,554 - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+  0%|          | 0/1 [00:00<?, ?it/s]2025-02-22 15:01:43,704 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+100%|██████████| 1/1 [00:05<00:00,  5.15s/it]
+``````output
+Document 1:
+
+One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court. 
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+----------------------------------------------------------------------------------------------------
+Document 2:
+
+A former top litigator in private practice. A former federal public defender. And from a family of public school educators and police officers. A consensus builder. Since she’s been nominated, she’s received a broad range of support—from the Fraternal Order of Police to former judges appointed by Democrats and Republicans. 
+
+And if we are to advance liberty and justice, we need to secure the Border and fix the immigration system.
+----------------------------------------------------------------------------------------------------
+Document 3:
+
+We cannot let this happen. 
+
+Tonight. I call on the Senate to: Pass the Freedom to Vote Act. Pass the John Lewis Voting Rights Act. And while you’re at it, pass the Disclose Act so Americans can know who is funding our elections. 
+
+Tonight, I’d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer—an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service.
+```
+You can use this retriever within a QA pipeline
+
+
+```python
+from langchain.chains import RetrievalQA
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(temperature=0)
+
+chain = RetrievalQA.from_chain_type(
+    llm=ChatOpenAI(temperature=0), retriever=compression_retriever
+)
+
+chain.invoke({"query": query})
+```
+```output
+  chain.invoke({"query": query})
+2025-02-17 04:30:00,016 - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+  0%|          | 0/1 [00:00<?, ?it/s]2025-02-17 04:30:01,649 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+100%|██████████| 1/1 [00:01<00:00,  1.63s/it]
+2025-02-17 04:30:02,415 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+```
+
+
+```output
+{'query': 'What did the president say about Ketanji Brown Jackson',
+ 'result': "The President mentioned that Ketanji Brown Jackson is one of the nation's top legal minds, a former top litigator in private practice, a former federal public defender, and comes from a family of public school educators and police officers. He also highlighted her as a consensus builder and noted the broad range of support she has received since being nominated."}
+```
