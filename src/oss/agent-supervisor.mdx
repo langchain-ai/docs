@@ -2,6 +2,9 @@
 title: Build a multi-agent supervisor
 sidebarTitle: Multi-agent supervisor
 ---
+
+
+
 [**Supervisor**](/oss/multi-agent#supervisor) is a multi-agent architecture where **specialized** agents are coordinated by a central **supervisor agent**. The supervisor agent controls all communication flow and task delegation, making decisions about which agent to invoke based on the current context and task requirements.
 
 In this tutorial, you will build a supervisor system with two agents — a research and a math expert. By the end of the tutorial you will:
@@ -388,7 +391,7 @@ We will need to define a way for the supervisor agent to communicate with the wo
 
 We will implement handoffs via **handoff tools** and give these tools to the supervisor agent: when the supervisor calls these tools, it will hand off control to a worker agent, passing the full message history to that agent.
 
-```python
+```python {highlight={23,24,25,26}}
 from typing import Annotated
 from langchain_core.tools import tool, InjectedToolCallId
 from langgraph.prebuilt import InjectedState
@@ -411,13 +414,9 @@ def create_handoff_tool(*, agent_name: str, description: str | None = None):
             "name": name,
             "tool_call_id": tool_call_id,
         }
-        # highlight-next-line
         return Command(
-            # highlight-next-line
             goto=agent_name,  # (1)!
-            # highlight-next-line
             update={**state, "messages": state["messages"] + [tool_message]},  # (2)!
-            # highlight-next-line
             graph=Command.PARENT,  # (3)!
         )
 
@@ -622,12 +621,11 @@ Name: tavily_search
   
   * **how inputs are passed to agents**: you can use LangGraph @[`Send()`][Send] primitive to directly send data to the worker agents during the handoff. See the [task delegation](#4-create-delegation-tasks) example below
   * **how agent outputs are added**: you can control how much of the agent's internal message history is added to the overall supervisor message history by wrapping the agent in a separate node function:
-    ```python
+    ```python {highlight={5}}
     def call_research_agent(state):
         # return agent's final response,
         # excluding inner monologue
         response = research_agent.invoke(state)
-        # highlight-next-line
         return {"messages": response["messages"][-1]}
     ```
 </Warning>
@@ -636,7 +634,7 @@ Name: tavily_search
 
 So far the individual agents relied on **interpreting full message history** to determine their tasks. An alternative approach is to ask the supervisor to **formulate a task explicitly**. We can do so by adding a `task_description` parameter to the `handoff_tool` function.
 
-```python
+```python {highlight={23}}
 from langgraph.types import Send
 
 
@@ -659,7 +657,6 @@ def create_task_description_handoff_tool(
         task_description_message = {"role": "user", "content": task_description}
         agent_input = {**state, "messages": [task_description_message]}
         return Command(
-            # highlight-next-line
             goto=[Send(agent_name, agent_input)],
             graph=Command.PARENT,
         )
