@@ -1,0 +1,75 @@
+---
+title: Valyu Deep Search
+---
+
+>[Valyu](https://www.valyu.network/) allows AI applications and agents to search the internet and proprietary data sources for relevant LLM ready information.
+
+This notebook goes over how to use Valyu in LangChain.
+
+First, get an Valyu API key and add it as an environment variable. Get $10 free credit  by [signing up here](https://platform.valyu.network/).
+
+## Setup
+
+The integration lives in the `langchain-valyu` package.
+
+
+```python
+%pip install -qU langchain-valyu
+```
+
+In order to use the package, you will also need to set the `VALYU_API_KEY` environment variable to your Valyu API key.
+
+## Context Retriever
+
+You can use the [`ValyuContextRetriever`](https://pypi.org/project/langchain-valyu/) in a standard retrieval pipeline.
+
+
+```python
+from langchain_valyu import ValyuRetriever
+
+valyu_api_key = "YOUR API KEY"
+
+# Create a new instance of the ValyuRetriever
+valyu_retriever = ValyuRetriever(
+    k=5,
+    search_type="all",
+    relevance_threshold=0.5,
+    max_price=20.0,
+    start_date="2024-01-01",
+    end_date="2024-12-31",
+    valyu_api_key=valyu_api_key,
+)
+
+# Search for a query and save the results
+docs = valyu_retriever.invoke("What are the benefits of renewable energy?")
+
+# Print the results
+for doc in docs:
+    print(doc.page_content)
+    print(doc.metadata)
+```
+
+## Context Search Tool
+
+You can use the `ValyuSearchTool` for advanced search queries.
+
+
+```python
+from langchain_valyu import ValyuSearchTool
+
+# Initialize the ValyuSearchTool
+search_tool = ValyuSearchTool(valyu_api_key="YOUR API KEY")
+
+# Perform a search query
+search_results = search_tool._run(
+    query="What are agentic search-enhanced large reasoning models?",
+    search_type="all",
+    max_num_results=5,
+    relevance_threshold=0.5,
+    max_price=20.0,
+    start_date="2024-01-01",
+    end_date="2024-12-31",
+)
+
+print("Search Results:", search_results)
+```

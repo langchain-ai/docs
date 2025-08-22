@@ -1,0 +1,122 @@
+---
+title: ValyuContext
+---
+
+>[Valyu](https://www.valyu.network/) allows AI applications and agents to search the internet and proprietary data sources for relevant LLM ready information.
+
+This notebook goes over how to use Valyu deep search tool in LangChain.
+
+First, get an Valyu API key and add it as an environment variable. Get $10 free credit  by [signing up here](https://platform.valyu.network/).
+
+## Setup
+
+The integration lives in the `langchain-valyu` package.
+
+
+```python
+%pip install -qU langchain-valyu
+```
+
+In order to use the package, you will also need to set the `VALYU_API_KEY` environment variable to your Valyu API key.
+
+
+```python
+import os
+
+valyu_api_key = os.environ["VALYU_API_KEY"]
+```
+
+## Instantiation
+
+Now we can instantiate our retriever:
+The `ValyuContextRetriever` can be configured with several parameters:
+
+- `k: int = 5`  
+  The number of top results to return for each query.
+
+- `search_type: str = "all"`  
+  The type of search to perform: 'all', 'proprietary', or 'web'. Defaults to 'all'.
+
+- `relevance_threshold: float = 0.5`  
+  The minimum relevance score (between 0 and 1) required for a document to be considered relevant. Defaults to 0.5.
+  
+- `max_price: float = 20.0`
+  The maximum price (in USD) you are willing to spend per query. Defaults to 20.0.
+
+- `start_date: Optional[str] = None`
+  Start date for time filtering in YYYY-MM-DD format (optional).
+
+- `end_date: Optional[str] = None`
+  End date for time filtering in YYYY-MM-DD format (optional).
+
+- `client: Optional[Valyu] = None`  
+  An optional custom Valyu client instance. If not provided, a new client will be created internally.
+  
+- `valyu_api_key: Optional[str] = None`  
+  Your Valyu API key. If not provided, the retriever will look for the `VALYU_API_KEY` environment variable.
+
+
+```python
+from langchain_valyu import ValyuRetriever
+
+retriever = ValyuRetriever(
+    k=5,
+    search_type="all",
+    relevance_threshold=0.5,
+    max_price=20.0,
+    start_date="2024-01-01",
+    end_date="2024-12-31",
+    client=None,
+    valyu_api_key=os.environ["VALYU_API_KEY"],
+)
+```
+
+## Usage
+
+
+```python
+query = "What are the benefits of renewable energy?"
+docs = retriever.invoke(query)
+
+for doc in docs:
+    print(doc.page_content)
+    print(doc.metadata)
+```
+
+## Use within a chain
+
+We can easily combine this retriever in to a chain.
+
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+prompt = ChatPromptTemplate.from_template(
+    """Answer the question based only on the context provided.
+
+Context: {context}
+
+Question: {question}"""
+)
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+```
+
+## API reference
+
+For detailed documentation of all Valyu Context API features and configurations head to the API reference: https://docs.valyu.network/overview

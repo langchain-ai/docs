@@ -1,0 +1,116 @@
+---
+title: Hugging Face
+---
+
+Let's load the Hugging Face Embedding class.
+
+
+```python
+%pip install --upgrade --quiet  langchain langchain-huggingface sentence_transformers
+```
+
+
+```python
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
+```
+
+
+```python
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+```
+
+
+```python
+text = "This is a test document."
+```
+
+
+```python
+query_result = embeddings.embed_query(text)
+```
+
+
+```python
+query_result[:3]
+```
+
+
+
+```output
+[-0.04895168915390968, -0.03986193612217903, -0.021562768146395683]
+```
+
+
+
+```python
+doc_result = embeddings.embed_documents([text])
+```
+
+## Hugging Face Inference Providers
+
+We can also access embedding models via the [Inference Providers](https://huggingface.co/docs/inference-providers), which let's us use open source models on scalable serverless infrastructure.
+
+First, we need to get a read-only API key from [Hugging Face](https://huggingface.co/settings/tokens).
+
+
+
+```python
+from getpass import getpass
+
+huggingfacehub_api_token = getpass()
+```
+
+Now we can use the `HuggingFaceInferenceAPIEmbeddings` class to run open source embedding models via [Inference Providers](https://huggingface.co/docs/inference-providers).
+
+
+```python
+from langchain_huggingface import HuggingFaceInferenceAPIEmbeddings
+
+embeddings = HuggingFaceInferenceAPIEmbeddings(
+    api_key=huggingfacehub_api_token,
+    model_name="sentence-transformers/all-MiniLM-l6-v2",
+)
+
+query_result = embeddings.embed_query(text)
+query_result[:3]
+```
+
+
+
+```output
+[-0.038338541984558105, 0.1234646737575531, -0.028642963618040085]
+```
+
+
+## Hugging Face Hub
+We can also generate embeddings locally via the Hugging Face Hub package, which requires us to install ``huggingface_hub ``
+
+
+```python
+!pip install huggingface_hub
+```
+
+
+```python
+from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
+```
+
+
+```python
+embeddings = HuggingFaceEndpointEmbeddings()
+```
+
+
+```python
+text = "This is a test document."
+```
+
+
+```python
+query_result = embeddings.embed_query(text)
+```
+
+
+```python
+query_result[:3]
+```

@@ -1,0 +1,741 @@
+---
+title: PyPDFium2Loader
+---
+
+This guide provides a quick overview for getting started with `PyPDF` [document loader](https://python.langchain.com/docs/concepts/document_loaders). For detailed documentation of all DocumentLoader features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PyPDFium2Loader.html).
+
+  
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | JS support|
+| :--- | :--- | :---: | :---: |  :---: |
+| [PyPDFLoader](https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PyPDFLoader.html) | [langchain-community](https://python.langchain.com/api_reference/community/index.html) | ✅ | ❌ | ❌ |   
+   
+---------   
+
+### Loader features
+
+|   Source    | Document Lazy Loading | Native Async Support | Extract Images | Extract Tables |
+|:-----------:| :---: | :---: | :---: |:---: |
+| PyPDFLoader | ✅ | ❌ | ✅ | ❌  |
+
+  
+
+## Setup
+
+### Credentials
+
+No credentials are required to use `PyPDFLoader`.
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+Install **langchain-community** and **pypdf**.
+
+
+```python
+%pip install -qU langchain-community pypdfium2
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Initialization
+
+Now we can instantiate our model object and load documents:
+
+
+```python
+from langchain_community.document_loaders import PyPDFium2Loader
+
+file_path = "./example_data/layout-parser-paper.pdf"
+loader = PyPDFium2Loader(file_path)
+```
+
+## Load
+
+
+```python
+docs = loader.load()
+docs[0]
+```
+
+
+
+```output
+Document(metadata={'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': 'LaTeX with hyperref', 'producer': 'pdfTeX-1.40.21', 'creationdate': '2021-06-22T01:27:10+00:00', 'moddate': '2021-06-22T01:27:10+00:00', 'source': './example_data/layout-parser-paper.pdf', 'total_pages': 16, 'page': 0}, page_content='LayoutParser: A Unified Toolkit for Deep\nLearning Based Document Image Analysis\nZejiang Shen\n1\n(), Ruochen Zhang\n2\n, Melissa Dell\n3\n, Benjamin Charles Germain\nLee\n4\n, Jacob Carlson\n3\n, and Weining Li\n5\n1 Allen Institute for AI\nshannons@allenai.org 2 Brown University\nruochen zhang@brown.edu 3 Harvard University\n{melissadell,jacob carlson\n}@fas.harvard.edu\n4 University of Washington\nbcgl@cs.washington.edu 5 University of Waterloo\nw422li@uwaterloo.ca\nAbstract. Recent advances in document image analysis (DIA) have been\nprimarily driven by the application of neural networks. Ideally, research\noutcomes could be easily deployed in production and extended for further\ninvestigation. However, various factors like loosely organized codebases\nand sophisticated model configurations complicate the easy reuse of im\x02portant innovations by a wide audience. Though there have been on-going\nefforts to improve reusability and simplify deep learning (DL) model\ndevelopment in disciplines like natural language processing and computer\nvision, none of them are optimized for challenges in the domain of DIA.\nThis represents a major gap in the existing toolkit, as DIA is central to\nacademic research across a wide range of disciplines in the social sciences\nand humanities. This paper introduces LayoutParser, an open-source\nlibrary for streamlining the usage of DL in DIA research and applica\x02tions. The core LayoutParser library comes with a set of simple and\nintuitive interfaces for applying and customizing DL models for layout de\x02tection, character recognition, and many other document processing tasks.\nTo promote extensibility, LayoutParser also incorporates a community\nplatform for sharing both pre-trained models and full document digiti\x02zation pipelines. We demonstrate that LayoutParser is helpful for both\nlightweight and large-scale digitization pipelines in real-word use cases.\nThe library is publicly available at https://layout-parser.github.io.\nKeywords: Document Image Analysis· Deep Learning· Layout Analysis\n· Character Recognition· Open Source library· Toolkit.\n1 Introduction\nDeep Learning(DL)-based approaches are the state-of-the-art for a wide range of\ndocument image analysis (DIA) tasks including document image classification [11,\narXiv:2103.15348v2 [cs.CV] 21 Jun 2021\n')
+```
+
+
+
+```python
+import pprint
+
+pprint.pp(docs[0].metadata)
+```
+```output
+{'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'creator': 'LaTeX with hyperref',
+ 'producer': 'pdfTeX-1.40.21',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'page': 0}
+```
+## Lazy Load
+
+
+
+```python
+pages = []
+for doc in loader.lazy_load():
+    pages.append(doc)
+    if len(pages) >= 10:
+        # do some paged operation, e.g.
+        # index.upsert(page)
+
+        pages = []
+len(pages)
+```
+
+
+
+```output
+6
+```
+
+
+
+```python
+print(pages[0].page_content[:100])
+pprint.pp(pages[0].metadata)
+```
+```output
+LayoutParser: A Unified Toolkit for DL-Based DIA 11
+focuses on precision, efficiency, and robustness
+{'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'creator': 'LaTeX with hyperref',
+ 'producer': 'pdfTeX-1.40.21',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'page': 10}
+```
+The metadata attribute contains at least the following keys:
+- source
+- page (if in mode *page*)
+- total_page
+- creationdate
+- creator
+- producer
+
+Additional metadata are specific to each parser.
+These pieces of information can be helpful (to categorize your PDFs for example).
+
+## Splitting mode & custom pages delimiter
+
+When loading the PDF file you can split it in two different ways:
+- By page
+- As a single text flow
+
+By default PyPDFLoader will split the PDF as a single text flow.
+
+### Extract the PDF by page. Each page is extracted as a langchain Document object:
+
+
+```python
+loader = PyPDFium2Loader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+)
+docs = loader.load()
+print(len(docs))
+pprint.pp(docs[0].metadata)
+```
+```output
+16
+{'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'creator': 'LaTeX with hyperref',
+ 'producer': 'pdfTeX-1.40.21',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'page': 0}
+```
+In this mode the pdf is split by pages and the resulting Documents metadata contains the page number. But in some cases we could want to process the pdf as a single text flow (so we don't cut some paragraphs in half). In this case you can use the *single* mode :
+
+### Extract the whole PDF as a single langchain Document object:
+
+
+```python
+loader = PyPDFium2Loader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="single",
+)
+docs = loader.load()
+print(len(docs))
+pprint.pp(docs[0].metadata)
+```
+```output
+1
+{'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'creator': 'LaTeX with hyperref',
+ 'producer': 'pdfTeX-1.40.21',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'source': './example_data/layout-parser-paper.pdf',
+ 'total_pages': 16}
+```
+Logically, in this mode, the ‘page_number’ metadata disappears. Here's how to clearly identify where pages end in the text flow :
+
+### Add a custom *pages_delimiter* to identify where are ends of pages in *single* mode:
+
+
+```python
+loader = PyPDFium2Loader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="single",
+    pages_delimiter="\n-------THIS IS A CUSTOM END OF PAGE-------\n",
+)
+docs = loader.load()
+print(docs[0].page_content[:5780])
+```
+```output
+LayoutParser: A Unified Toolkit for Deep
+Learning Based Document Image Analysis
+Zejiang Shen
+1
+(), Ruochen Zhang
+2
+, Melissa Dell
+3
+, Benjamin Charles Germain
+Lee
+4
+, Jacob Carlson
+3
+, and Weining Li
+5
+1 Allen Institute for AI
+shannons@allenai.org 2 Brown University
+ruochen zhang@brown.edu 3 Harvard University
+{melissadell,jacob carlson
+}@fas.harvard.edu
+4 University of Washington
+bcgl@cs.washington.edu 5 University of Waterloo
+w422li@uwaterloo.ca
+Abstract. Recent advances in document image analysis (DIA) have been
+primarily driven by the application of neural networks. Ideally, research
+outcomes could be easily deployed in production and extended for further
+investigation. However, various factors like loosely organized codebases
+and sophisticated model configurations complicate the easy reuse of important innovations by a wide audience. Though there have been on-going
+efforts to improve reusability and simplify deep learning (DL) model
+development in disciplines like natural language processing and computer
+vision, none of them are optimized for challenges in the domain of DIA.
+This represents a major gap in the existing toolkit, as DIA is central to
+academic research across a wide range of disciplines in the social sciences
+and humanities. This paper introduces LayoutParser, an open-source
+library for streamlining the usage of DL in DIA research and applications. The core LayoutParser library comes with a set of simple and
+intuitive interfaces for applying and customizing DL models for layout detection, character recognition, and many other document processing tasks.
+To promote extensibility, LayoutParser also incorporates a community
+platform for sharing both pre-trained models and full document digitization pipelines. We demonstrate that LayoutParser is helpful for both
+lightweight and large-scale digitization pipelines in real-word use cases.
+The library is publicly available at https://layout-parser.github.io.
+Keywords: Document Image Analysis· Deep Learning· Layout Analysis
+· Character Recognition· Open Source library· Toolkit.
+1 Introduction
+Deep Learning(DL)-based approaches are the state-of-the-art for a wide range of
+document image analysis (DIA) tasks including document image classification [11,
+arXiv:2103.15348v2 [cs.CV] 21 Jun 2021
+-------THIS IS A CUSTOM END OF PAGE-------
+2 Z. Shen et al.
+37], layout detection [38, 22], table detection [26], and scene text detection [4].
+A generalized learning-based framework dramatically reduces the need for the
+manual specification of complicated rules, which is the status quo with traditional
+methods. DL has the potential to transform DIA pipelines and benefit a broad
+spectrum of large-scale document digitization projects.
+However, there are several practical difficulties for taking advantages of recent advances in DL-based methods: 1) DL models are notoriously convoluted
+for reuse and extension. Existing models are developed using distinct frameworks like TensorFlow [1] or PyTorch [24], and the high-level parameters can
+be obfuscated by implementation details [8]. It can be a time-consuming and
+frustrating experience to debug, reproduce, and adapt existing models for DIA,
+and many researchers who would benefit the most from using these methods lack
+the technical background to implement them from scratch. 2) Document images
+contain diverse and disparate patterns across domains, and customized training
+is often required to achieve a desirable detection accuracy. Currently there is no
+full-fledged infrastructure for easily curating the target document image datasets
+and fine-tuning or re-training the models. 3) DIA usually requires a sequence of
+models and other processing to obtain the final outputs. Often research teams use
+DL models and then perform further document analyses in separate processes,
+and these pipelines are not documented in any central location (and often not
+documented at all). This makes it difficult for research teams to learn about how
+full pipelines are implemented and leads them to invest significant resources in
+reinventing the DIA wheel.
+LayoutParser provides a unified toolkit to support DL-based document image
+analysis and processing. To address the aforementioned challenges, LayoutParser
+is built with the following components:
+1. An off-the-shelf toolkit for applying DL models for layout detection, character
+recognition, and other DIA tasks (Section 3)
+2. A rich repository of pre-trained neural network models (Model Zoo) that
+underlies the off-the-shelf usage
+3. Comprehensive tools for efficient document image data annotation and model
+tuning to support different levels of customization
+4. A DL model hub and community platform for the easy sharing, distribution, and discussion of DIA models and pipelines, to promote reusability,
+reproducibility, and extensibility (Section 4)
+The library implements simple and intuitive Python APIs without sacrificing
+generalizability and versatility, and can be easily installed via pip. Its convenient
+functions for handling document image data can be seamlessly integrated with
+existing DIA pipelines. With detailed documentations and carefully curated
+tutorials, we hope this tool will benefit a variety of end-users, and will lead to
+advances in applications in both industry and academic research.
+LayoutParser is well aligned with recent efforts for improving DL model
+reusability in other disciplines like natural language processing [8, 34] and computer vision [35], but with a focus on unique challenges in DIA. We show
+LayoutParser can be applied in sophisticated and large-scale digitization projects
+-------THIS IS A CUSTOM END OF PAGE-------
+LayoutParser: A Unified Toolkit for DL-Based DIA 3
+that require precision, efficiency, and robustness, as well as
+```
+This could simply be \n, or \f to clearly indicate a page change, or \<!-- PAGE BREAK --> for seamless injection in a Markdown viewer without a visual effect.
+
+# Extract images from the PDF
+
+You can extract images from your PDFs with a choice of three different solutions:
+- rapidOCR (lightweight Optical Character Recognition tool)
+- Tesseract (OCR tool with high precision)
+- Multimodal language model
+
+You can tune these functions to choose the output format of the extracted images among *html*, *markdown* or *text*
+
+The result is inserted between the last and the second-to-last paragraphs of text of the page.
+
+### Extract images from the PDF with rapidOCR:
+
+
+```python
+%pip install -qU rapidocr-onnxruntime
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+from langchain_community.document_loaders.parsers import RapidOCRBlobParser
+
+loader = PyPDFium2Loader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    images_inner_format="markdown-img",
+    images_parser=RapidOCRBlobParser(),
+)
+docs = loader.load()
+
+print(docs[5].page_content)
+```
+```output
+6 Z. Shen et al.
+Fig. 2: The relationship between the three types of layout data structures.
+Coordinate supports three kinds of variation; TextBlock consists of the coordinate information and extra features like block text, types, and reading orders;
+a Layout object is a list of all possible layout elements, including other Layout
+objects. They all support the same set of transformation and operation APIs for
+maximum flexibility.
+Shown in Table 1, LayoutParser currently hosts 9 pre-trained models trained
+on 5 different datasets. Description of the training dataset is provided alongside
+with the trained models such that users can quickly identify the most suitable
+models for their tasks. Additionally, when such a model is not readily available,
+LayoutParser also supports training customized layout models and community
+sharing of the models (detailed in Section 3.5).
+3.2 Layout Data Structures
+A critical feature of LayoutParser is the implementation of a series of data
+structures and operations that can be used to efficiently process and manipulate
+the layout elements. In document image analysis pipelines, various post-processing
+on the layout analysis model outputs is usually required to obtain the final
+outputs. Traditionally, this requires exporting DL model outputs and then loading
+the results into other pipelines. All model outputs from LayoutParser will be
+stored in carefully engineered data types optimized for further processing, which
+makes it possible to build an end-to-end document digitization pipeline within
+LayoutParser. There are three key components in the data structure, namely
+the Coordinate system, the TextBlock, and the Layout. They provide different
+levels of abstraction for the layout data, and a set of APIs are supported for
+transformations or operations on these classes.
+
+
+
+![Coordinate
+(x1, y1)
+(X1, y1)
+(x2,y2)
+APIS
+x-interval
+tart
+end
+Quadrilateral
+operation
+Rectangle
+y-interval
+ena
+(x2, y2)
+(x4, y4)
+(x3, y3)
+and
+textblock
+Coordinate
+transformation
++
+Block
+Block
+Reading
+Extra features
+Text
+Type
+Order
+coordinatel
+textblockl
+layout
+ same
+textblock2
+layoutl
+The
+A list of the layout elements](#)
+```
+Be careful, RapidOCR is designed to work with Chinese and English, not other languages.
+
+### Extract images from the PDF with Tesseract:
+
+
+```python
+%pip install -qU pytesseract
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+from langchain_community.document_loaders.parsers import TesseractBlobParser
+
+loader = PyPDFium2Loader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    images_inner_format="html-img",
+    images_parser=TesseractBlobParser(),
+)
+docs = loader.load()
+print(docs[5].page_content)
+```
+```output
+6 Z. Shen et al.
+Fig. 2: The relationship between the three types of layout data structures.
+Coordinate supports three kinds of variation; TextBlock consists of the coordinate information and extra features like block text, types, and reading orders;
+a Layout object is a list of all possible layout elements, including other Layout
+objects. They all support the same set of transformation and operation APIs for
+maximum flexibility.
+Shown in Table 1, LayoutParser currently hosts 9 pre-trained models trained
+on 5 different datasets. Description of the training dataset is provided alongside
+with the trained models such that users can quickly identify the most suitable
+models for their tasks. Additionally, when such a model is not readily available,
+LayoutParser also supports training customized layout models and community
+sharing of the models (detailed in Section 3.5).
+3.2 Layout Data Structures
+A critical feature of LayoutParser is the implementation of a series of data
+structures and operations that can be used to efficiently process and manipulate
+the layout elements. In document image analysis pipelines, various post-processing
+on the layout analysis model outputs is usually required to obtain the final
+outputs. Traditionally, this requires exporting DL model outputs and then loading
+the results into other pipelines. All model outputs from LayoutParser will be
+stored in carefully engineered data types optimized for further processing, which
+makes it possible to build an end-to-end document digitization pipeline within
+LayoutParser. There are three key components in the data structure, namely
+the Coordinate system, the TextBlock, and the Layout. They provide different
+levels of abstraction for the layout data, and a set of APIs are supported for
+transformations or operations on these classes.
+
+
+
+<img alt="Coordinate
+
+textblock
+
+x-interval
+
+JeAsaqul-A
+
+Coordinate
++
+
+Extra features
+
+Rectangle
+
+Quadrilateral
+
+Block
+Text
+
+Block
+Type
+
+Reading
+Order
+
+layout
+
+[ coordinatel1 textblock1 |
+&#x27;
+
+“y textblock2 , layout1 ]
+
+A list of the layout elements
+
+The same transformation and operation APIs src="#" />
+```
+### Extract images from the PDF with multimodal model:
+
+
+```python
+%pip install -qU langchain-openai
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+```
+
+
+
+```output
+True
+```
+
+
+
+```python
+from getpass import getpass
+
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass("OpenAI API key =")
+```
+
+
+```python
+from langchain_community.document_loaders.parsers import LLMImageBlobParser
+from langchain_openai import ChatOpenAI
+
+loader = PyPDFium2Loader(
+    "./example_data/layout-parser-paper.pdf",
+    mode="page",
+    images_inner_format="markdown-img",
+    images_parser=LLMImageBlobParser(model=ChatOpenAI(model="gpt-4o", max_tokens=1024)),
+)
+docs = loader.load()
+print(docs[5].page_content)
+```
+```output
+6 Z. Shen et al.
+Fig. 2: The relationship between the three types of layout data structures.
+Coordinate supports three kinds of variation; TextBlock consists of the coordinate information and extra features like block text, types, and reading orders;
+a Layout object is a list of all possible layout elements, including other Layout
+objects. They all support the same set of transformation and operation APIs for
+maximum flexibility.
+Shown in Table 1, LayoutParser currently hosts 9 pre-trained models trained
+on 5 different datasets. Description of the training dataset is provided alongside
+with the trained models such that users can quickly identify the most suitable
+models for their tasks. Additionally, when such a model is not readily available,
+LayoutParser also supports training customized layout models and community
+sharing of the models (detailed in Section 3.5).
+3.2 Layout Data Structures
+A critical feature of LayoutParser is the implementation of a series of data
+structures and operations that can be used to efficiently process and manipulate
+the layout elements. In document image analysis pipelines, various post-processing
+on the layout analysis model outputs is usually required to obtain the final
+outputs. Traditionally, this requires exporting DL model outputs and then loading
+the results into other pipelines. All model outputs from LayoutParser will be
+stored in carefully engineered data types optimized for further processing, which
+makes it possible to build an end-to-end document digitization pipeline within
+LayoutParser. There are three key components in the data structure, namely
+the Coordinate system, the TextBlock, and the Layout. They provide different
+levels of abstraction for the layout data, and a set of APIs are supported for
+transformations or operations on these classes.
+
+
+
+![**Image Summary**: Diagram showing a data structure for layout elements including coordinates (intervals, rectangles, quadrilaterals) and text blocks with extra features (block text, type, reading order). It illustrates a hierarchy from coordinates to text blocks and a list of layout elements.
+
+**Extracted Text**:
+\`\`\`
+Coordinate 
+Coordinate
+
+x-interval
+x1, y1
+(x1, y1)
+y-interval
+(x2, y2)
+(x2, y2)
+
+Rectangle
+Rectangle
+
+Quadrilateral
+
+textblock
+
+Coordinate
+Coordinate
+
++ +
+Extra features
+Extra features
+
+Block Block Reading ...
+Block Text
+Block Type
+Reading Order
+...
+
+layout
+
+[coordinate1, textblock1, textblock2, layout1\\]
+...
+
+[\\]
+A list of the layout elements
+A list of the layout elements
+
+The same transformation and operation APIs
+The same transformation
+and operation APIs
+\`\`\`](#)
+```
+## Working with Files
+
+Many document loaders involve parsing files. The difference between such loaders usually stems from how the file is parsed, rather than how the file is loaded. For example, you can use `open` to read the binary content of either a PDF or a markdown file, but you need different parsing logic to convert that binary data into text.
+
+As a result, it can be helpful to decouple the parsing logic from the loading logic, which makes it easier to re-use a given parser regardless of how the data was loaded.
+You can use this strategy to analyze different files, with the same parsing parameters.
+
+
+```python
+from langchain_community.document_loaders import FileSystemBlobLoader
+from langchain_community.document_loaders.generic import GenericLoader
+from langchain_community.document_loaders.parsers import PyPDFium2Parser
+
+loader = GenericLoader(
+    blob_loader=FileSystemBlobLoader(
+        path="./example_data/",
+        glob="*.pdf",
+    ),
+    blob_parser=PyPDFium2Parser(),
+)
+docs = loader.load()
+print(docs[0].page_content)
+pprint.pp(docs[0].metadata)
+```
+```output
+LayoutParser: A Unified Toolkit for Deep
+Learning Based Document Image Analysis
+Zejiang Shen
+1
+(), Ruochen Zhang
+2
+, Melissa Dell
+3
+, Benjamin Charles Germain
+Lee
+4
+, Jacob Carlson
+3
+, and Weining Li
+5
+1 Allen Institute for AI
+shannons@allenai.org 2 Brown University
+ruochen zhang@brown.edu 3 Harvard University
+{melissadell,jacob carlson
+}@fas.harvard.edu
+4 University of Washington
+bcgl@cs.washington.edu 5 University of Waterloo
+w422li@uwaterloo.ca
+Abstract. Recent advances in document image analysis (DIA) have been
+primarily driven by the application of neural networks. Ideally, research
+outcomes could be easily deployed in production and extended for further
+investigation. However, various factors like loosely organized codebases
+and sophisticated model configurations complicate the easy reuse of important innovations by a wide audience. Though there have been on-going
+efforts to improve reusability and simplify deep learning (DL) model
+development in disciplines like natural language processing and computer
+vision, none of them are optimized for challenges in the domain of DIA.
+This represents a major gap in the existing toolkit, as DIA is central to
+academic research across a wide range of disciplines in the social sciences
+and humanities. This paper introduces LayoutParser, an open-source
+library for streamlining the usage of DL in DIA research and applications. The core LayoutParser library comes with a set of simple and
+intuitive interfaces for applying and customizing DL models for layout detection, character recognition, and many other document processing tasks.
+To promote extensibility, LayoutParser also incorporates a community
+platform for sharing both pre-trained models and full document digitization pipelines. We demonstrate that LayoutParser is helpful for both
+lightweight and large-scale digitization pipelines in real-word use cases.
+The library is publicly available at https://layout-parser.github.io.
+Keywords: Document Image Analysis· Deep Learning· Layout Analysis
+· Character Recognition· Open Source library· Toolkit.
+1 Introduction
+Deep Learning(DL)-based approaches are the state-of-the-art for a wide range of
+document image analysis (DIA) tasks including document image classification [11,
+arXiv:2103.15348v2 [cs.CV] 21 Jun 2021
+
+{'title': '',
+ 'author': '',
+ 'subject': '',
+ 'keywords': '',
+ 'creator': 'LaTeX with hyperref',
+ 'producer': 'pdfTeX-1.40.21',
+ 'creationdate': '2021-06-22T01:27:10+00:00',
+ 'moddate': '2021-06-22T01:27:10+00:00',
+ 'source': 'example_data/layout-parser-paper.pdf',
+ 'total_pages': 16,
+ 'page': 0}
+```
+It is possible to work with files from cloud storage.
+
+
+```python
+from langchain_community.document_loaders import CloudBlobLoader
+from langchain_community.document_loaders.generic import GenericLoader
+
+loader = GenericLoader(
+    blob_loader=CloudBlobLoader(
+        url="s3://mybucket",  # Supports s3://, az://, gs://, file:// schemes.
+        glob="*.pdf",
+    ),
+    blob_parser=PyPDFium2Parser(),
+)
+docs = loader.load()
+print(docs[0].page_content)
+pprint.pp(docs[0].metadata)
+```
+
+## API reference
+
+For detailed documentation of all `PyPDFium2Loader` features and configurations head to the API reference: https://python.langchain.com/api_reference/community/document_loaders/langchain_community.document_loaders.pdf.PyPDFium2Loader.html

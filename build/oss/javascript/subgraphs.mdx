@@ -1,0 +1,82 @@
+---
+title: Subgraphs overview
+sidebarTitle: Overview
+---
+
+
+
+A subgraph is a [graph](/oss/javascript/graph-api#graphs) that is used as a [node](/oss/javascript/graph-api#nodes) in another graph — this is the concept of encapsulation applied to LangGraph. Subgraphs allow you to build complex systems with multiple components that are themselves graphs.
+
+
+
+Some reasons for using subgraphs are:
+
+* building [multi-agent systems](/oss/javascript/multi-agent)
+* when you want to reuse a set of nodes in multiple graphs
+* when you want different teams to work on different parts of the graph independently, you can define each part as a subgraph, and as long as the subgraph interface (the input and output schemas) is respected, the parent graph can be built without knowing any details of the subgraph
+
+The main question when adding subgraphs is how the parent graph and subgraph communicate, i.e. how they pass the [state](/oss/javascript/graph-api#state) between each other during the graph execution. There are two scenarios:
+
+* parent and subgraph have **shared state keys** in their state [schemas](/oss/javascript/graph-api#state). In this case, you can [include the subgraph as a node in the parent graph](/oss/javascript/use-subgraphs#shared-state-schemas)
+
+  ```javascript {highlight={13,18}}
+  import { StateGraph, MessagesZodState, START } from "@langchain/langgraph";
+  
+  // Subgraph
+  
+  const subgraphBuilder = new StateGraph(MessagesZodState).addNode(
+    "callModel",
+    async (state) => {
+      const response = await model.invoke(state.messages);
+      return { messages: response };
+    }
+  );
+  // ... other nodes and edges
+  const subgraph = subgraphBuilder.compile();
+  
+  // Parent graph
+  
+  const builder = new StateGraph(MessagesZodState)
+    .addNode("subgraphNode", subgraph)
+    .addEdge(START, "subgraphNode");
+  const graph = builder.compile();
+  // ...
+  await graph.invoke({ messages: [{ role: "user", content: "hi!" }] });
+```
+
+* parent graph and subgraph have **different schemas** (no shared state keys in their state [schemas](/oss/javascript/graph-api#state)). In this case, you have to [call the subgraph from inside a node in the parent graph](/oss/javascript/use-subgraphs#different-state-schemas): this is useful when the parent graph and the subgraph have different state schemas and you need to transform state before or after calling the subgraph
+
+  ```javascript {highlight={5,11,17,22}}
+  import { StateGraph, MessagesZodState, START } from "@langchain/langgraph";
+  import { z } from "zod";
+  
+  const SubgraphState = z.object({
+    subgraphMessages: MessagesZodState.shape.messages,
+  });
+  
+  // Subgraph
+  
+  const subgraphBuilder = new StateGraph(SubgraphState)
+    .addNode("callModelFromSubgraph", async (state) => {
+      const response = await model.invoke(state.subgraphMessages);
+      return { subgraphMessages: response };
+    })
+    .addEdge(START, "callModelFromSubgraph");
+  // ...
+  const subgraph = subgraphBuilder.compile();
+  
+  // Parent graph
+  
+  const builder = new StateGraph(MessagesZodState)
+    .addNode("subgraphNode", async (state) => {
+      const response = await subgraph.invoke({
+        subgraphMessages: state.messages,
+      });
+      return { messages: response.subgraphMessages };
+    })
+    .addEdge(START, "subgraphNode");
+  const graph = builder.compile();
+  // ...
+  await graph.invoke({ messages: [{ role: "user", content: "hi!" }] });
+```
+
