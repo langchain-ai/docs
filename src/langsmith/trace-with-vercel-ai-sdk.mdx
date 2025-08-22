@@ -3,15 +3,16 @@ title: Trace with the Vercel AI SDK (JS/TS only)
 sidebarTitle: Vercel AI SDK
 ---
 
-You can use LangSmith to trace runs from the Vercel AI SDK using OpenTelemetry (OTEL). This guide will walk through an example.
+You can use LangSmith to trace runs from the Vercel AI SDK. This guide will walk through an example.
+
+## Installation
 
 <Note>
-OpenTelemetry support is currently experimental.
+This wrapper requires AI SDK v5 and `langsmith>=0.3.63`. If you are using an older version of the AI SDK or `langsmith`, see the OpenTelemetry (OTEL)
+based approach [on this page](/langsmith/legacy-trace-with-vercel-ai-sdk).
 </Note>
 
-## 0. Installation
-
-Install the Vercel AI SDK and required OTEL packages. We use their OpenAI integration for the code snippets below, but you can use any of their other options as well.
+Install the Vercel AI SDK. We use Vercel's OpenAI integration for the code snippets below, but you can use any of their other options as well.
 
 <CodeGroup>
 
@@ -29,83 +30,57 @@ pnpm add ai @ai-sdk/openai zod
 
 </CodeGroup>
 
-<CodeGroup>
-
-```bash npm
-npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/context-async-hooks
-```
-
-```bash yarn
-yarn add @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/context-async-hooks
-```
-
-```bash pnpm
-pnpm add @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-proto @opentelemetry/context-async-hooks
-```
-
-</CodeGroup>
-
-## 1. Configure your environment
+## Environment configuration
 
 <CodeGroup>
 
 ```bash Shell
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=<your-api-key>
-export OTEL_ENABLED=true
-# This example uses OpenAI, but you can use any LLM provider of choice
+
+# The belowe examples use OpenAI, but you can use any LLM provider of choice
 export OPENAI_API_KEY=<your-openai-api-key>
 ```
 
 </CodeGroup>
 
-## 2. Log a trace
+## Basic setup
 
-### Node.js
-
-To start tracing, you will need to import and call the `initializeOTEL` method at the start of your code:
+Import and wrap AI SDK methods, then use them as you normally would:
 
 ```typescript
-import { initializeOTEL } from "langsmith/experimental/otel/setup";
-
-const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL();
-```
-
-Afterwards, add the `experimental_telemetry` argument to your AI SDK calls that you want to trace.
-
-<Info>
-  Do not forget to call `await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();` before your application shuts down in order to flush any remaining traces to LangSmith.
-</Info>
-
-```typescript
-import { generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
+import * as ai from "ai";
 
-let result;
-try {
-  result = await generateText({
-    model: openai("gpt-4.1-nano"),
-    prompt: "Write a vegetarian lasagna recipe for 4 people.",
-    experimental_telemetry: {
-      isEnabled: true,
-    },
-  });
-} finally {
-  await DEFAULT_LANGSMITH_SPAN_PROCESSOR.shutdown();
-}
+import { wrapAISDK } from "langsmith/experimental/vercel";
+
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai);
+
+await generateText({
+  model: openai("gpt-5-nano"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people.",
+});
 ```
 
-You should see a trace in your LangSmith dashboard [like this one](https://smith.langchain.com/public/21d33490-d522-4928-a944-a09e988d539c/r).
+You should see a trace in your LangSmith dashboard [like this one](https://smith.langchain.com/public/4f0e689e-c801-44d3-8857-93b47ab100cc/r).
+Note that there are 
 
 You can also trace runs with tool calls:
 
 ```typescript
-import { generateText, tool } from "ai";
+import * as ai from "ai";
+import { tool, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
+import { wrapAISDK } from "langsmith/experimental/vercel";
+
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai);
+
 await generateText({
-  model: openai("gpt-4.1-nano"),
+  model: openai("gpt-5-nano"),
   messages: [
     {
       role: "user",
@@ -115,258 +90,344 @@ await generateText({
   tools: {
     listOrders: tool({
       description: "list all orders",
-      parameters: z.object({ userId: z.string() }),
+      inputSchema: z.object({ userId: z.string() }),
       execute: async ({ userId }) =>
         `User ${userId} has the following orders: 1`,
     }),
     viewTrackingInformation: tool({
       description: "view tracking information for a specific order",
-      parameters: z.object({ orderId: z.string() }),
+      inputSchema: z.object({ orderId: z.string() }),
       execute: async ({ orderId }) =>
         `Here is the tracking information for ${orderId}`,
     }),
   },
-  experimental_telemetry: {
-    isEnabled: true,
-  },
-  maxSteps: 10,
+  stopWhen: stepCountIs(5),
 });
 ```
 
-Which results in a trace like [this one](https://smith.langchain.com/public/e6122734-2762-4ae0-986b-0cbe4d68692f/r).
+Which results in a trace like [this one](https://smith.langchain.com/public/6075fa2c-d255-4885-a66a-4fc798afaa9f/r).
+
+You can use other AI SDK methods exactly as you usually would.
 
 ### With `traceable`
 
-You can wrap `traceable` calls around or within AI SDK tool calls. If you do so, we recommend you initialize a LangSmith `client` instance that you pass into each `traceable`, then call `client.awaitPendingTraceBatches();` to ensure all traces flush. If you do this, you do not need to manually call `shutdown()` or `forceFlush()` on the `DEFAULT_LANGSMITH_SPAN_PROCESSOR`. Here's an example:
+You can wrap `traceable` calls around AI SDK calls or within AI SDK tool calls. This is useful if you
+want to group runs together in LangSmith:
 
 ```typescript
-import { initializeOTEL } from "langsmith/experimental/otel/setup";
-
-initializeOTEL();
-
-import { Client } from "langsmith";
-import { traceable } from "langsmith/traceable";
-import { generateText, tool } from "ai";
+import * as ai from "ai";
+import { tool, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
+import { traceable } from "langsmith/traceable";
+import { wrapAISDK } from "langsmith/experimental/vercel";
+
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai);
+
+const wrapper = traceable(async (input: string) => {
+  const { text } = await generateText({
+    model: openai("gpt-5-nano"),
+    messages: [
+      {
+        role: "user",
+        content: input,
+      },
+    ],
+    tools: {
+      listOrders: tool({
+        description: "list all orders",
+        inputSchema: z.object({ userId: z.string() }),
+        execute: async ({ userId }) =>
+          `User ${userId} has the following orders: 1`,
+      }),
+      viewTrackingInformation: tool({
+        description: "view tracking information for a specific order",
+        inputSchema: z.object({ orderId: z.string() }),
+        execute: async ({ orderId }) =>
+          `Here is the tracking information for ${orderId}`,
+      }),
+    },
+    stopWhen: stepCountIs(5),
+  });
+  return text;
+}, {
+  name: "wrapper",
+});
+
+await wrapper("What are my orders and where are they? My user ID is 123.");
+```
+
+The resulting trace will look [like this](https://smith.langchain.com/public/ff25bc26-9389-4798-8b91-2bdcc95d4a8e/r).
+
+## Tracing in serverless environments
+
+When tracing in serverless environments, you must wait for all runs to flush before your environment
+shuts down. To do this, you can pass a LangSmith [`Client`](https://docs.smith.langchain.com/reference/js/classes/client.Client) instance when wrapping the AI SDK method,
+then call `await client.awaitPendingTraceBatches()`.
+Make sure to also pass it into any `traceable` wrappers you create as well:
+
+```typescript
+import * as ai from "ai";
+import { tool, stepCountIs } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+import { wrapAISDK } from "langsmith/experimental/vercel";
+
 const client = new Client();
 
-const wrappedText = traceable(
-  async (content: string) => {
-    const { text } = await generateText({
-      model: openai("gpt-4.1-nano"),
-      messages: [{ role: "user", content }],
-      tools: {
-        listOrders: tool({
-          description: "list all orders",
-          parameters: z.object({ userId: z.string() }),
-          execute: async ({ userId }) => {
-            const getOrderNumber = traceable(
-              async () => {
-                return "1234";
-              },
-              { name: "getOrderNumber" }
-            );
-            const orderNumber = await getOrderNumber();
-            return `User ${userId} has the following order: ${orderNumber}`;
-          },
-        }),
-      },
-      experimental_telemetry: {
-        isEnabled: true,
-      },
-      maxSteps: 10,
-    });
-    return { text };
-  },
-  { name: "parentTraceable", client }
-);
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai, { client });
 
-let result;
+const wrapper = traceable(async (input: string) => {
+  const { text } = await generateText({
+    model: openai("gpt-5-nano"),
+    messages: [
+      {
+        role: "user",
+        content: input,
+      },
+    ],
+    tools: {
+      listOrders: tool({
+        description: "list all orders",
+        inputSchema: z.object({ userId: z.string() }),
+        execute: async ({ userId }) =>
+          `User ${userId} has the following orders: 1`,
+      }),
+      viewTrackingInformation: tool({
+        description: "view tracking information for a specific order",
+        inputSchema: z.object({ orderId: z.string() }),
+        execute: async ({ orderId }) =>
+          `Here is the tracking information for ${orderId}`,
+      }),
+    },
+    stopWhen: stepCountIs(5),
+  });
+  return text;
+}, {
+  name: "wrapper",
+  client,
+});
+
 try {
-  result = await wrappedText("What are my orders?");
+  await wrapper("What are my orders and where are they? My user ID is 123.");
 } finally {
   await client.awaitPendingTraceBatches();
 }
 ```
 
-The resulting trace will look [like this](https://smith.langchain.com/public/296a0134-f3d4-4e54-afc7-b18f2c190911/r).
-
-### Next.js
-
-First, install the [`@vercel/otel`](https://www.npmjs.com/package/@vercel/otel) package:
-
-<CodeGroup>
-
-```bash npm
-npm install @vercel/otel
-```
-
-```bash yarn
-yarn add @vercel/otel
-```
-
-```bash pnpm
-pnpm add @vercel/otel
-```
-
-</CodeGroup>
-
-Then, set up an [`instrumentation.ts`](https://nextjs.org/docs/app/guides/instrumentation) file in your root directory.
-Call `initializeOTEL` and pass the resulting `DEFAULT_LANGSMITH_SPAN_PROCESSOR` into the `spanProcessors` field into your `registerOTEL(...)` call.
-It should look something like this:
-
-```ts
-import { registerOTel } from "@vercel/otel";
-import { initializeOTEL } from "langsmith/experimental/otel/setup";
-
-const { DEFAULT_LANGSMITH_SPAN_PROCESSOR } = initializeOTEL({});
-
-export function register() {
-  registerOTel({
-    serviceName: "your-project-name",
-    spanProcessors: [DEFAULT_LANGSMITH_SPAN_PROCESSOR],
-  });
-}
-```
-
-And finally, in your API routes, call `initializeOTEL` as well and add an `experimental_telemetry` field to your AI SDK calls:
-
-```ts
-import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
-
-import { initializeOTEL } from "langsmith/experimental/otel/setup";
-
-initializeOTEL();
-
-export async function GET() {
-  const { text } = await generateText({
-    model: openai("gpt-4.1-nano"),
-    messages: [{ role: "user", content: "Why is the sky blue?" }],
-    experimental_telemetry: {
-      isEnabled: true,
-    },
-  });
-
-  return new Response(text);
-}
-```
-
-You can also wrap parts of your code in `traceables` for more granularity.
-
-### Sentry
-
-If you're using Sentry, you can attach the LangSmith trace exporter to Sentry's default OpenTelemetry instrumentation as show in the example below.
-
-<Warning>
-  At time of writing, Sentry only supports OTEL v1 packages. LangSmith supports both v1 and v2, but you MUST make sure you install OTEL v1 packages in order to make instrumentation work.
-
-  <CodeGroup>
-
-  ```bash npm
-  npm install @opentelemetry/sdk-trace-base@1.30.1 @opentelemetry/exporter-trace-otlp-proto@0.57.2 @opentelemetry/context-async-hooks@1.30.1
-  ```
-
-  ```bash yarn
-  yarn add @opentelemetry/sdk-trace-base@1.30.1 @opentelemetry/exporter-trace-otlp-proto@0.57.2 @opentelemetry/context-async-hooks@1.30.1
-  ```
-
-  ```bash pnpm
-  pnpm add @opentelemetry/sdk-trace-base@1.30.1 @opentelemetry/exporter-trace-otlp-proto@0.57.2 @opentelemetry/context-async-hooks@1.30.1
-  ```
-
-  </CodeGroup>
-</Warning>
+If you are using `Next.js`, there is a convenient [`after`](https://nextjs.org/docs/app/api-reference/functions/after) hook
+where you can put this logic:
 
 ```typescript
-import { initializeOTEL } from "langsmith/experimental/otel/setup";
-import { LangSmithOTLPTraceExporter } from "langsmith/experimental/otel/exporter";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
-import { traceable } from "langsmith/traceable";
-import { generateText, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
-import { z } from "zod";
-import * as Sentry from "@sentry/node";
+import { after } from "next/server"
 import { Client } from "langsmith";
 
-const exporter = new LangSmithOTLPTraceExporter();
-const spanProcessor = new BatchSpanProcessor(exporter);
 
-const sentry = Sentry.init({
-  dsn: "...",
-  tracesSampleRate: 1.0,
-  openTelemetrySpanProcessors: [spanProcessor],
-});
+export async function POST(request: Request) {
+  const client = new Client();
 
-initializeOTEL({
-  globalTracerProvider: sentry?.traceProvider,
-});
+  ...
+  
+  after(async () => {
+    await client.awaitPendingTraceBatches();
+  });
 
-const wrappedText = traceable(
-  async (content: string) => {
-    const { text } = await generateText({
-      model: openai("gpt-4.1-nano"),
-      messages: [{ role: "user", content }],
-      experimental_telemetry: {
-        isEnabled: true,
-      },
-      maxSteps: 10,
-    });
-    return { text };
-  },
-  { name: "parentTraceable" }
-);
-
-let result;
-try {
-  result = await wrappedText("What color is the sky?");
-} finally {
-  await sentry?.traceProvider?.shutdown();
-}
+  return new Response(JSON.stringify({ ... }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+};
 ```
 
+See [this page](/langsmith/serverless_environments) for more detail, including information
+around managing rate limits in serverless environments.
 
-## Add other metadata
+## Passing LangSmith config
 
-You can add other metadata to your traces to help organize and filter them in the LangSmith UI:
+You can pass LangSmith-specific config to your wrapper both when initially wrapping your
+AI SDK methods and while running them via `providerOptions.langsmith`.
+This includes metadata (which you can later use to filter runs in LangSmith), top-level run name,
+tags, custom client instances, and more.
 
-```typescript {highlight={9}}
-import { generateText } from "ai";
+Config passed while wrapping will apply to all future calls you make with the wrapped method:
+
+```typescript
 import { openai } from "@ai-sdk/openai";
+import * as ai from "ai";
 
-await generateText({
-  model: openai("gpt-4.1-nano"),
-  prompt: "Write a vegetarian lasagna recipe for 4 people.",
-  experimental_telemetry: {
-    isEnabled: true,
-    metadata: { userId: "123", language: "english" },
-  },
-});
-```
+import { wrapAISDK } from "langsmith/experimental/vercel";
 
-Metadata will be visible in your LangSmith dashboard and can be used to filter and search for specific traces.
-Note that AI SDK propagates metadata on internal child spans as well.
-
-## Customize run name
-
-You can customize the run name by passing a metadata key named `ls_run_name` into `experimental_telemetry`.
-
-```ts
-import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
-
-await generateText({
-  model: openai("gpt-4o-mini"),
-  prompt: "Write a vegetarian lasagna recipe for 4 people.",
-  experimental_telemetry: {
-    isEnabled: true,
-    // highlight-start
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai, {
     metadata: {
-      ls_run_name: "my-custom-run-name",
+      key_for_all_runs: "value",
     },
-    // highlight-end
+    tags: ["myrun"],
+  });
+
+await generateText({
+  model: openai("gpt-5-nano"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people.",
+});
+```
+
+While passing config at runtime via `providerOptions.langsmith` will apply only to that run.
+We suggest importing and wrapping your config in `createLangSmithProviderOptions` to ensure
+proper typing:
+
+```typescript
+import { openai } from "@ai-sdk/openai";
+import * as ai from "ai";
+
+import {
+  wrapAISDK,
+  createLangSmithProviderOptions,
+} from "langsmith/experimental/vercel";
+
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai);
+
+const lsConfig = createLangSmithProviderOptions({
+  metadata: {
+    individual_key: "value",
+  },
+  name: "my_individual_run",
+});
+
+await generateText({
+  model: openai("gpt-5-nano"),
+  prompt: "Write a vegetarian lasagna recipe for 4 people.",
+  providerOptions: {
+    langsmith: lsConfig,
   },
 });
 ```
+
+## Redacting data
+
+You can customize what inputs and outputs the AI SDK sends to LangSmith by specifying custom input/output
+processing functions. This is useful if you are dealing with sensitive data that you would like to
+avoid sending to LangSmith.
+
+Because output formats vary depending on which AI SDK method you are using, we suggest defining and passing config
+individually into wrapped methods. You will also need to provide separate functions for child LLM runs within
+AI SDK calls, since calling `generateText` at top level calls the LLM internally and can do so multiple times.
+
+We also suggest passing a generic parameter into `createLangSmithProviderOptions` to get proper types for inputs and outputs.
+Here's an example for `generateText`:
+
+```typescript
+import {
+  wrapAISDK,
+  createLangSmithProviderOptions,
+} from "langsmith/experimental/vercel";
+import * as ai from "ai";
+import { openai } from "@ai-sdk/openai";
+
+const { generateText } = wrapAISDK(ai);
+
+const lsConfig = createLangSmithProviderOptions<typeof generateText>({
+  processInputs: (inputs) => {
+    const { messages } = inputs;
+    return {
+      messages: messages?.map((message) => ({
+        providerMetadata: message.providerOptions,
+        role: "assistant",
+        content: "REDACTED",
+      })),
+      prompt: "REDACTED",
+    };
+  },
+  processOutputs: (outputs) => {
+    return {
+      providerMetadata: outputs.providerMetadata,
+      role: "assistant",
+      content: "REDACTED",
+    };
+  },
+  processChildLLMRunInputs: (inputs) => {
+    const { prompt } = inputs;
+    return {
+      messages: prompt.map((message) => ({
+        ...message,
+        content: "REDACTED CHILD INPUTS",
+      })),
+    };
+  },
+  processChildLLMRunOutputs: (outputs) => {
+    return {
+      providerMetadata: outputs.providerMetadata,
+      content: "REDACTED CHILD OUTPUTS",
+      role: "assistant",
+    };
+  },
+});
+
+const { text } = await generateText({
+  model: openai("gpt-5-nano"),
+  prompt: "What is the capital of France?",
+  providerOptions: {
+    langsmith: lsConfig,
+  },
+});
+
+console.log(text);
+```
+
+The actual return value will contain the original, non-redacted result but the trace in LangSmith
+will be redacted. [Here's an example](https://smith.langchain.com/public/b4c69c8e-285b-4c0c-8492-e571e2cf562f/r).
+
+For redacting tool input/output, wrap your `execute` method in a `traceable` like this:
+
+```typescript
+import * as ai from "ai";
+import { tool, stepCountIs } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+import { wrapAISDK } from "langsmith/experimental/vercel";
+
+const client = new Client();
+
+const { generateText, streamText, generateObject, streamObject } =
+  wrapAISDK(ai, { client });
+
+const { text } = await generateText({
+  model: openai("gpt-5-nano"),
+  messages: [
+    {
+      role: "user",
+      content: "What are my orders? My user ID is 123.",
+    },
+  ],
+  tools: {
+    listOrders: tool({
+      description: "list all orders",
+      inputSchema: z.object({ userId: z.string() }),
+      execute: traceable(
+        async ({ userId }) => {
+          return `User ${userId} has the following orders: 1`;
+        },
+        {
+          processInputs: (input) => ({ text: "REDACTED" }),
+          processOutputs: (outputs) => ({ text: "REDACTED" }),
+          run_type: "tool",
+          name: "listOrders",
+        }
+      ) as (input: { userId: string }) => Promise<string>,
+    }),
+  },
+  stopWhen: stepCountIs(5),
+});
+```
+
+The `traceable` return type is complex, which necessitates the cast. You can also omit the AI SDK `tool` wrapper function
+if you wish to avoid the cast.
