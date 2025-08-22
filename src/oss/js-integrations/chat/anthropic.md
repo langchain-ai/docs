@@ -1,0 +1,1072 @@
+---
+title: ChatAnthropic
+---
+
+[Anthropic](https://www.anthropic.com/) is an AI safety and research company. They are the creator of Claude.
+
+This will help you getting started with Anthropic [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatAnthropic` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_anthropic.ChatAnthropic.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/anthropic/) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [ChatAnthropic](https://api.js.langchain.com/classes/langchain_anthropic.ChatAnthropic.html) | [`@langchain/anthropic`](https://www.npmjs.com/package/@langchain/anthropic) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/anthropic?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/anthropic?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | 
+
+## Setup
+
+You'll need to sign up and obtain an [Anthropic API key](https://www.anthropic.com/), and install the `@langchain/anthropic` integration package.
+
+### Credentials
+
+Head to [Anthropic's website](https://www.anthropic.com/) to sign up to Anthropic and generate an API key. Once you've done this set the `ANTHROPIC_API_KEY` environment variable:
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain `ChatAnthropic` integration lives in the `@langchain/anthropic` package:
+
+```{=mdx}
+
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/anthropic @langchain/core
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic" 
+
+const llm = new ChatAnthropic({
+    model: "claude-3-haiku-20240307",
+    temperature: 0,
+    maxTokens: undefined,
+    maxRetries: 2,
+    // other params...
+});
+```
+## Invocation
+
+
+```typescript
+const aiMsg = await llm.invoke([
+    [
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ],
+    ["human", "I love programming."],
+])
+aiMsg
+```
+```output
+AIMessage {
+  "id": "msg_013WBXXiggy6gMbAUY6NpsuU",
+  "content": "Voici la traduction en français :\n\nJ'adore la programmation.",
+  "additional_kwargs": {
+    "id": "msg_013WBXXiggy6gMbAUY6NpsuU",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-haiku-20240307",
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 29,
+      "output_tokens": 20
+    }
+  },
+  "response_metadata": {
+    "id": "msg_013WBXXiggy6gMbAUY6NpsuU",
+    "model": "claude-3-haiku-20240307",
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 29,
+      "output_tokens": 20
+    },
+    "type": "message",
+    "role": "assistant"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 29,
+    "output_tokens": 20,
+    "total_tokens": 49
+  }
+}
+```
+
+```typescript
+console.log(aiMsg.content)
+```
+```output
+Voici la traduction en français :
+
+J'adore la programmation.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+
+const prompt = ChatPromptTemplate.fromMessages(
+    [
+        [
+            "system",
+            "You are a helpful assistant that translates {input_language} to {output_language}.",
+        ],
+        ["human", "{input}"],
+    ]
+)
+
+const chain = prompt.pipe(llm);
+await chain.invoke(
+    {
+        input_language: "English",
+        output_language: "German",
+        input: "I love programming.",
+    }
+)
+```
+```output
+AIMessage {
+  "id": "msg_01Ca52fpd1mcGRhH4spzAWr4",
+  "content": "Ich liebe das Programmieren.",
+  "additional_kwargs": {
+    "id": "msg_01Ca52fpd1mcGRhH4spzAWr4",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-haiku-20240307",
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 23,
+      "output_tokens": 11
+    }
+  },
+  "response_metadata": {
+    "id": "msg_01Ca52fpd1mcGRhH4spzAWr4",
+    "model": "claude-3-haiku-20240307",
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 23,
+      "output_tokens": 11
+    },
+    "type": "message",
+    "role": "assistant"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 23,
+    "output_tokens": 11,
+    "total_tokens": 34
+  }
+}
+```
+## Content blocks
+
+One key difference to note between Anthropic models and most others is that the contents of a single Anthropic AI message can either be a single string or a **list of content blocks**. For example when an Anthropic model [calls a tool](/oss/how-to/tool_calling), the tool invocation is part of the message content (as well as being exposed in the standardized `AIMessage.tool_calls` field):
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+
+const calculatorSchema = z.object({
+  operation: z
+    .enum(["add", "subtract", "multiply", "divide"])
+    .describe("The type of operation to execute."),
+  number1: z.number().describe("The first number to operate on."),
+  number2: z.number().describe("The second number to operate on."),
+});
+
+const calculatorTool = {
+  name: "calculator",
+  description: "A simple calculator tool",
+  input_schema: zodToJsonSchema(calculatorSchema),
+};
+
+const toolCallingLlm = new ChatAnthropic({
+  model: "claude-3-haiku-20240307",
+}).bindTools([calculatorTool]);
+
+const toolPrompt = ChatPromptTemplate.fromMessages([
+  [
+    "system",
+    "You are a helpful assistant who always needs to use a calculator.",
+  ],
+  ["human", "{input}"],
+]);
+
+// Chain your prompt and model together
+const toolCallChain = toolPrompt.pipe(toolCallingLlm);
+
+await toolCallChain.invoke({
+  input: "What is 2 + 2?",
+});
+```
+```output
+AIMessage {
+  "id": "msg_01DZGs9DyuashaYxJ4WWpWUP",
+  "content": [
+    {
+      "type": "text",
+      "text": "Here is the calculation for 2 + 2:"
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01SQXBamkBr6K6NdHE7GWwF8",
+      "name": "calculator",
+      "input": {
+        "number1": 2,
+        "number2": 2,
+        "operation": "add"
+      }
+    }
+  ],
+  "additional_kwargs": {
+    "id": "msg_01DZGs9DyuashaYxJ4WWpWUP",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-haiku-20240307",
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 449,
+      "output_tokens": 100
+    }
+  },
+  "response_metadata": {
+    "id": "msg_01DZGs9DyuashaYxJ4WWpWUP",
+    "model": "claude-3-haiku-20240307",
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 449,
+      "output_tokens": 100
+    },
+    "type": "message",
+    "role": "assistant"
+  },
+  "tool_calls": [
+    {
+      "name": "calculator",
+      "args": {
+        "number1": 2,
+        "number2": 2,
+        "operation": "add"
+      },
+      "id": "toolu_01SQXBamkBr6K6NdHE7GWwF8",
+      "type": "tool_call"
+    }
+  ],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 449,
+    "output_tokens": 100,
+    "total_tokens": 549
+  }
+}
+```
+## Custom headers
+
+You can pass custom headers in your requests like this:
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const llmWithCustomHeaders = new ChatAnthropic({
+  model: "claude-3-sonnet-20240229",
+  maxTokens: 1024,
+  clientOptions: {
+    defaultHeaders: {
+      "X-Api-Key": process.env.ANTHROPIC_API_KEY,
+    },
+  },
+});
+
+await llmWithCustomHeaders.invoke("Why is the sky blue?");
+```
+```output
+AIMessage {
+  "id": "msg_019z4nWpShzsrbSHTWXWQh6z",
+  "content": "The sky appears blue due to a phenomenon called Rayleigh scattering. Here's a brief explanation:\n\n1) Sunlight is made up of different wavelengths of visible light, including all the colors of the rainbow.\n\n2) As sunlight passes through the atmosphere, the gases (mostly nitrogen and oxygen) cause the shorter wavelengths of light, such as violet and blue, to be scattered more easily than the longer wavelengths like red and orange.\n\n3) This scattering of the shorter blue wavelengths occurs in all directions by the gas molecules in the atmosphere.\n\n4) Our eyes are more sensitive to the scattered blue light than the scattered violet light, so we perceive the sky as having a blue color.\n\n5) The scattering is more pronounced for light traveling over longer distances through the atmosphere. This is why the sky appears even darker blue when looking towards the horizon.\n\nSo in essence, the selective scattering of the shorter blue wavelengths of sunlight by the gases in the atmosphere is what causes the sky to appear blue to our eyes during the daytime.",
+  "additional_kwargs": {
+    "id": "msg_019z4nWpShzsrbSHTWXWQh6z",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-3-sonnet-20240229",
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 13,
+      "output_tokens": 236
+    }
+  },
+  "response_metadata": {
+    "id": "msg_019z4nWpShzsrbSHTWXWQh6z",
+    "model": "claude-3-sonnet-20240229",
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 13,
+      "output_tokens": 236
+    },
+    "type": "message",
+    "role": "assistant"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 13,
+    "output_tokens": 236,
+    "total_tokens": 249
+  }
+}
+```
+## Prompt caching
+
+```{=mdx}
+
+<Warning>
+**Compatibility**
+
+This feature is currently in beta.
+</Warning>
+
+```
+Anthropic supports [caching parts of your prompt](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) in order to reduce costs for use-cases that require long context. You can cache tools and both entire messages and individual blocks.
+
+The initial request containing one or more blocks or tool definitions with a `"cache_control": { "type": "ephemeral" }` field will automatically cache that part of the prompt. This initial caching step will cost extra, but subsequent requests will be billed at a reduced rate. The cache has a lifetime of 5 minutes, but this is refereshed each time the cache is hit.
+
+There is also currently a minimum cacheable prompt length, which varies according to model. You can see this information [here](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#structuring-your-prompt).
+
+This currently requires you to initialize your model with a beta header. Here's an example of caching part of a system message that contains the LangChain [conceptual docs](/oss/concepts/):
+
+
+```typescript
+let CACHED_TEXT = "...";
+```
+```typescript
+// @lc-docs-hide-cell
+
+CACHED_TEXT = `## Components
+
+LangChain provides standard, extendable interfaces and external integrations for various components useful for building with LLMs.
+Some components LangChain implements, some components we rely on third-party integrations for, and others are a mix.
+
+### Chat models
+
+<span data-heading-keywords="chat model,chat models"></span>
+
+Language models that use a sequence of messages as inputs and return chat messages as outputs (as opposed to using plain text).
+These are generally newer models (older models are generally \`LLMs\`, see below).
+Chat models support the assignment of distinct roles to conversation messages, helping to distinguish messages from the AI, users, and instructions such as system messages.
+
+Although the underlying models are messages in, message out, the LangChain wrappers also allow these models to take a string as input.
+This gives them the same interface as LLMs (and simpler to use).
+When a string is passed in as input, it will be converted to a \`HumanMessage\` under the hood before being passed to the underlying model.
+
+LangChain does not host any Chat Models, rather we rely on third party integrations.
+
+We have some standardized parameters when constructing ChatModels:
+
+- \`model\`: the name of the model
+
+Chat Models also accept other parameters that are specific to that integration.
+
+<Warning>
+**Some chat models have been fine-tuned for **tool calling** and provide a dedicated API for it.**
+
+Generally, such models are better at tool calling than non-fine-tuned models, and are recommended for use cases that require tool calling.
+Please see the [tool calling section](/oss/concepts/tool_calling) for more information.
+</Warning>
+
+For specifics on how to use chat models, see the [relevant how-to guides here](/oss/how-to/#chat-models).
+
+#### Multimodality
+
+Some chat models are multimodal, accepting images, audio and even video as inputs.
+These are still less common, meaning model providers haven't standardized on the "best" way to define the API.
+Multimodal outputs are even less common. As such, we've kept our multimodal abstractions fairly light weight
+and plan to further solidify the multimodal APIs and interaction patterns as the field matures.
+
+In LangChain, most chat models that support multimodal inputs also accept those values in OpenAI's content blocks format.
+So far this is restricted to image inputs. For models like Gemini which support video and other bytes input, the APIs also support the native, model-specific representations.
+
+For specifics on how to use multimodal models, see the [relevant how-to guides here](/oss/how-to/#multimodal).
+
+### LLMs
+
+<span data-heading-keywords="llm,llms"></span>
+
+<Warning>
+**Pure text-in/text-out LLMs tend to be older or lower-level. Many popular models are best used as [chat completion models](/oss/concepts/chat_models),**
+
+even for non-chat use cases.
+
+You are probably looking for [the section above instead](/oss/concepts/chat_models).
+</Warning>
+
+Language models that takes a string as input and returns a string.
+These are traditionally older models (newer models generally are [Chat Models](/oss/concepts/chat_models), see above).
+
+Although the underlying models are string in, string out, the LangChain wrappers also allow these models to take messages as input.
+This gives them the same interface as [Chat Models](/oss/concepts/chat_models).
+When messages are passed in as input, they will be formatted into a string under the hood before being passed to the underlying model.
+
+LangChain does not host any LLMs, rather we rely on third party integrations.
+
+For specifics on how to use LLMs, see the [relevant how-to guides here](/oss/how-to/#llms).
+
+### Message types
+
+Some language models take an array of messages as input and return a message.
+There are a few different types of messages.
+All messages have a \`role\`, \`content\`, and \`response_metadata\` property.
+
+The \`role\` describes WHO is saying the message.
+LangChain has different message classes for different roles.
+
+The \`content\` property describes the content of the message.
+This can be a few different things:
+
+- A string (most models deal this type of content)
+- A List of objects (this is used for multi-modal input, where the object contains information about that input type and that input location)
+
+#### HumanMessage
+
+This represents a message from the user.
+
+#### AIMessage
+
+This represents a message from the model. In addition to the \`content\` property, these messages also have:
+
+**\`response_metadata\`**
+
+The \`response_metadata\` property contains additional metadata about the response. The data here is often specific to each model provider.
+This is where information like log-probs and token usage may be stored.
+
+**\`tool_calls\`**
+
+These represent a decision from an language model to call a tool. They are included as part of an \`AIMessage\` output.
+They can be accessed from there with the \`.tool_calls\` property.
+
+This property returns a list of \`ToolCall\`s. A \`ToolCall\` is an object with the following arguments:
+
+- \`name\`: The name of the tool that should be called.
+- \`args\`: The arguments to that tool.
+- \`id\`: The id of that tool call.
+
+#### SystemMessage
+
+This represents a system message, which tells the model how to behave. Not every model provider supports this.
+
+#### ToolMessage
+
+This represents the result of a tool call. In addition to \`role\` and \`content\`, this message has:
+
+- a \`tool_call_id\` field which conveys the id of the call to the tool that was called to produce this result.
+- an \`artifact\` field which can be used to pass along arbitrary artifacts of the tool execution which are useful to track but which should not be sent to the model.
+
+#### (Legacy) FunctionMessage
+
+This is a legacy message type, corresponding to OpenAI's legacy function-calling API. \`ToolMessage\` should be used instead to correspond to the updated tool-calling API.
+
+This represents the result of a function call. In addition to \`role\` and \`content\`, this message has a \`name\` parameter which conveys the name of the function that was called to produce this result.
+
+### Prompt templates
+
+<span data-heading-keywords="prompt,prompttemplate,chatprompttemplate"></span>
+
+Prompt templates help to translate user input and parameters into instructions for a language model.
+This can be used to guide a model's response, helping it understand the context and generate relevant and coherent language-based output.
+
+Prompt Templates take as input an object, where each key represents a variable in the prompt template to fill in.
+
+Prompt Templates output a PromptValue. This PromptValue can be passed to an LLM or a ChatModel, and can also be cast to a string or an array of messages.
+The reason this PromptValue exists is to make it easy to switch between strings and messages.
+
+There are a few different types of prompt templates:
+
+#### String PromptTemplates
+
+These prompt templates are used to format a single string, and generally are used for simpler inputs.
+For example, a common way to construct and use a PromptTemplate is as follows:
+
+\`\`\`typescript
+import { PromptTemplate } from "@langchain/core/prompts";
+
+const promptTemplate = PromptTemplate.fromTemplate(
+  "Tell me a joke about {topic}"
+);
+
+await promptTemplate.invoke({ topic: "cats" });
+\`\`\`
+
+#### ChatPromptTemplates
+
+These prompt templates are used to format an array of messages. These "templates" consist of an array of templates themselves.
+For example, a common way to construct and use a ChatPromptTemplate is as follows:
+
+\`\`\`typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+
+const promptTemplate = ChatPromptTemplate.fromMessages([
+  ["system", "You are a helpful assistant"],
+  ["user", "Tell me a joke about {topic}"],
+]);
+
+await promptTemplate.invoke({ topic: "cats" });
+\`\`\`
+
+In the above example, this ChatPromptTemplate will construct two messages when called.
+The first is a system message, that has no variables to format.
+The second is a HumanMessage, and will be formatted by the \`topic\` variable the user passes in.
+
+#### MessagesPlaceholder
+
+<span data-heading-keywords="messagesplaceholder"></span>
+
+This prompt template is responsible for adding an array of messages in a particular place.
+In the above ChatPromptTemplate, we saw how we could format two messages, each one a string.
+But what if we wanted the user to pass in an array of messages that we would slot into a particular spot?
+This is how you use MessagesPlaceholder.
+
+\`\`\`typescript
+import {
+  ChatPromptTemplate,
+  MessagesPlaceholder,
+} from "@langchain/core/prompts";
+import { HumanMessage } from "@langchain/core/messages";
+
+const promptTemplate = ChatPromptTemplate.fromMessages([
+  ["system", "You are a helpful assistant"],
+  new MessagesPlaceholder("msgs"),
+]);
+
+promptTemplate.invoke({ msgs: [new HumanMessage({ content: "hi!" })] });
+\`\`\`
+
+This will produce an array of two messages, the first one being a system message, and the second one being the HumanMessage we passed in.
+If we had passed in 5 messages, then it would have produced 6 messages in total (the system message plus the 5 passed in).
+This is useful for letting an array of messages be slotted into a particular spot.
+
+An alternative way to accomplish the same thing without using the \`MessagesPlaceholder\` class explicitly is:
+
+\`\`\`typescript
+const promptTemplate = ChatPromptTemplate.fromMessages([
+  ["system", "You are a helpful assistant"],
+  ["placeholder", "{msgs}"], // <-- This is the changed part
+]);
+\`\`\`
+
+For specifics on how to use prompt templates, see the [relevant how-to guides here](/oss/how-to/#prompt-templates).
+
+### Example Selectors
+
+One common prompting technique for achieving better performance is to include examples as part of the prompt.
+This gives the language model concrete examples of how it should behave.
+Sometimes these examples are hardcoded into the prompt, but for more advanced situations it may be nice to dynamically select them.
+Example Selectors are classes responsible for selecting and then formatting examples into prompts.
+
+For specifics on how to use example selectors, see the [relevant how-to guides here](/oss/how-to/#example-selectors).
+
+### Output parsers
+
+<span data-heading-keywords="output parser"></span>
+
+<Note>
+**The information here refers to parsers that take a text output from a model try to parse it into a more structured representation.**
+
+More and more models are supporting function (or tool) calling, which handles this automatically.
+It is recommended to use function/tool calling rather than output parsing.
+See documentation for that [here](/oss/concepts/tool_calling).
+
+</Note>
+
+Responsible for taking the output of a model and transforming it to a more suitable format for downstream tasks.
+Useful when you are using LLMs to generate structured data, or to normalize output from chat models and LLMs.
+
+There are two main methods an output parser must implement:
+
+- "Get format instructions": A method which returns a string containing instructions for how the output of a language model should be formatted.
+- "Parse": A method which takes in a string (assumed to be the response from a language model) and parses it into some structure.
+
+And then one optional one:
+
+- "Parse with prompt": A method which takes in a string (assumed to be the response from a language model) and a prompt (assumed to be the prompt that generated such a response) and parses it into some structure. The prompt is largely provided in the event the OutputParser wants to retry or fix the output in some way, and needs information from the prompt to do so.
+
+Output parsers accept a string or \`BaseMessage\` as input and can return an arbitrary type.
+
+LangChain has many different types of output parsers. This is a list of output parsers LangChain supports. The table below has various pieces of information:
+
+**Name**: The name of the output parser
+
+**Supports Streaming**: Whether the output parser supports streaming.
+
+**Input Type**: Expected input type. Most output parsers work on both strings and messages, but some (like OpenAI Functions) need a message with specific arguments.
+
+**Output Type**: The output type of the object returned by the parser.
+
+**Description**: Our commentary on this output parser and when to use it.
+
+The current date is ${new Date().toISOString()}`;
+
+// Noop statement to hide output
+void 0;
+```
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const modelWithCaching = new ChatAnthropic({
+  model: "claude-3-haiku-20240307",
+  clientOptions: {
+    defaultHeaders: {
+      "anthropic-beta": "prompt-caching-2024-07-31",
+    },
+  },
+});
+
+const LONG_TEXT = `You are a pirate. Always respond in pirate dialect.
+
+Use the following as context when answering questions:
+
+${CACHED_TEXT}`;
+
+const messages = [
+  {
+    role: "system",
+    content: [
+      {
+        type: "text",
+        text: LONG_TEXT,
+        // Tell Anthropic to cache this block
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+  },
+  {
+    role: "user",
+    content: "What types of messages are supported in LangChain?",
+  },
+];
+
+const res = await modelWithCaching.invoke(messages);
+
+console.log("USAGE:", res.response_metadata.usage);
+```
+```output
+USAGE: {
+  input_tokens: 19,
+  cache_creation_input_tokens: 2921,
+  cache_read_input_tokens: 0,
+  output_tokens: 355
+}
+```
+We can see that there's a new field called `cache_creation_input_tokens` in the raw usage field returned from Anthropic.
+
+If we use the same messages again, we can see that the long text's input tokens are read from the cache:
+
+
+```typescript
+const res2 = await modelWithCaching.invoke(messages);
+
+console.log("USAGE:", res2.response_metadata.usage);
+```
+```output
+USAGE: {
+  input_tokens: 19,
+  cache_creation_input_tokens: 0,
+  cache_read_input_tokens: 2921,
+  output_tokens: 357
+}
+```
+### Tool caching
+
+You can also cache tools by setting the same `"cache_control": { "type": "ephemeral" }` within a tool definition. This currently requires you to bind a tool in [Anthropic's raw tool format](https://docs.anthropic.com/en/docs/build-with-claude/tool-use) Here's an example:
+
+
+```typescript
+const SOME_LONG_DESCRIPTION = "...";
+
+// Tool in Anthropic format
+const anthropicTools = [{
+  name: "get_weather",
+  description: SOME_LONG_DESCRIPTION,
+  input_schema: {
+    type: "object",
+    properties: {
+      location: {
+        type: "string",
+        description: "Location to get the weather for",
+      },
+      unit: {
+        type: "string",
+        description: "Temperature unit to return",
+      },
+    },
+    required: ["location"],
+  },
+  // Tell Anthropic to cache this tool
+  cache_control: { type: "ephemeral" },
+}]
+
+const modelWithCachedTools = modelWithCaching.bindTools(anthropicTools);
+
+await modelWithCachedTools.invoke("what is the weather in SF?");
+```
+
+
+
+For more on how prompt caching works, see [Anthropic's docs](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#how-prompt-caching-works).
+
+## Custom clients
+
+Anthropic models [may be hosted on cloud services such as Google Vertex](https://docs.anthropic.com/en/api/claude-on-vertex-ai) that rely on a different underlying client with the same interface as the primary Anthropic client. You can access these services by providing a `createClient` method that returns an initialized instance of an Anthropic client. Here's an example:
+
+
+```typescript
+import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
+
+const customClient = new AnthropicVertex();
+
+const modelWithCustomClient = new ChatAnthropic({
+  modelName: "claude-3-sonnet@20240229",
+  maxRetries: 0,
+  createClient: () => customClient,
+});
+
+await modelWithCustomClient.invoke([{ role: "user", content: "Hello!" }]);
+```
+
+## Citations
+
+Anthropic supports a [citations](https://docs.anthropic.com/en/docs/build-with-claude/citations) feature that lets Claude attach context to its answers based on source material supplied by the user. This source material can be provided either as [document content blocks](https://docs.anthropic.com/en/docs/build-with-claude/citations#document-types), which describe full documents, or as [search results](https://docs.anthropic.com/en/docs/build-with-claude/search-results), which describe relevant passages or snippets returned from a retrieval system. When `"citations": { "enabled": true }` is included in a query, Claude may generate direct citations to the provided material in its response.
+
+### Document example
+
+In this example we pass a [plain text document](https://docs.anthropic.com/en/docs/build-with-claude/citations#plain-text-documents). In the background, Claude [automatically chunks](https://docs.anthropic.com/en/docs/build-with-claude/citations#plain-text-documents) the input text into sentences, which are used when generating citations.
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const citationsModel = new ChatAnthropic({
+  model: "claude-3-5-haiku-latest",
+});
+
+const messagesWithCitations = [
+  {
+    role: "user",
+    content: [
+      {
+        type: "document",
+        source: {
+          type: "text",
+          media_type: "text/plain",
+          data: "The grass is green. The sky is blue.",
+        },
+        title: "My Document",
+        context: "This is a trustworthy document.",
+        citations: {
+          enabled: true,
+        },
+      },
+      {
+        type: "text",
+        text: "What color is the grass and sky?",
+      },
+    ],
+  }
+];
+
+const responseWithCitations = await citationsModel.invoke(messagesWithCitations);
+
+console.log(JSON.stringify(responseWithCitations.content, null, 2));
+```
+```output
+[
+  {
+    "type": "text",
+    "text": "Based on the document, I can tell you that:\n\n- "
+  },
+  {
+    "type": "text",
+    "text": "The grass is green",
+    "citations": [
+      {
+        "type": "char_location",
+        "cited_text": "The grass is green. ",
+        "document_index": 0,
+        "document_title": "My Document",
+        "start_char_index": 0,
+        "end_char_index": 20
+      }
+    ]
+  },
+  {
+    "type": "text",
+    "text": "\n- "
+  },
+  {
+    "type": "text",
+    "text": "The sky is blue",
+    "citations": [
+      {
+        "type": "char_location",
+        "cited_text": "The sky is blue.",
+        "document_index": 0,
+        "document_title": "My Document",
+        "start_char_index": 20,
+        "end_char_index": 36
+      }
+    ]
+  }
+]
+```
+### Search results example
+
+In this example, we pass in [search results](https://docs.anthropic.com/en/docs/build-with-claude/search-results) as part of our message content. This allows Claude to cite specific passages or snippets from your own retrieval system in its response.
+
+This approach is helpful when you want Claude to cite information from a specific set of knowledge, but you want to bring your own pre-fetched/cached content directly rather than having the model search or retrieve them automatically.
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const citationsModel = new ChatAnthropic({
+  model: "claude-3-5-haiku-latest",
+  clientOptions: {
+    defaultHeaders: {
+      "anthropic-beta": "search-results-2025-06-09",
+    },
+  },
+});
+
+const messagesWithCitations = [
+  {
+    type: "user",
+    content: [
+      {
+        type: "search_result",
+        title: "History of France",
+        source: "https://some-uri.com",
+        citations: { enabled: true },
+        content: [
+          {
+            type: "text",
+            text: "The capital of France is Paris.",
+          },
+          {
+            type: "text",
+            text: "The old capital of France was Lyon.",
+          },
+        ],
+      },
+      {
+        type: "text",
+        text: "What is the capital of France?",
+      },
+    ],
+  },
+];
+
+const responseWithCitations = await citationsModel.invoke(messagesWithCitations);
+
+console.log(JSON.stringify(responseWithCitations.content, null, 2));
+```
+
+#### Search results from a tool
+
+You can also use a tool to provide search results that the model can cite in its responses. This is well suited for RAG (or [Retrieval-Augmented Generation](https://en.wikipedia.org/wiki/Retrieval-augmented_generation)) workflows where Claude can decide when and where to retrieve information from. When returning this information as [search results](https://docs.anthropic.com/en/docs/build-with-claude/search-results), it gives Claude the ability to create citations from the material returned from the tool.
+
+Here's how you can create a tool that returns search results in the format expected by Anthropic's citations API:
+
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+import { tool } from "@langchain/core/tools";
+
+// Create a tool that returns search results
+const ragTool = tool(
+  () => [
+    {
+      type: "search_result",
+      title: "History of France",
+      source: "https://some-uri.com",
+      citations: { enabled: true },
+      content: [
+        {
+          type: "text",
+          text: "The capital of France is Paris.",
+        },
+        {
+          type: "text",
+          text: "The old capital of France was Lyon.",
+        },
+      ],
+    },
+    {
+      type: "search_result", 
+      title: "Geography of France",
+      source: "https://some-uri.com",
+      citations: { enabled: true },
+      content: [
+        {
+          type: "text",
+          text: "France is a country in Europe.",
+        },
+        {
+          type: "text",
+          text: "The capital of France is Paris.",
+        },
+      ],
+    },
+  ],
+  {
+    name: "my_rag_tool",
+    description: "Retrieval system that accesses my knowledge base.",
+    schema: z.object({
+      query: z.string().describe("query to search in the knowledge base"),
+    }),
+  }
+);
+
+// Create model with search results beta header
+const model = new ChatAnthropic({
+  model: "claude-3-5-haiku-latest",
+  clientOptions: {
+    defaultHeaders: {
+      "anthropic-beta": "search-results-2025-06-09",
+    },
+  },
+}).bindTools([ragTool]);
+
+const result = await model.invoke([
+  {
+    role: "user",
+    content: "What is the capital of France?",
+  },
+]);
+
+console.log(JSON.stringify(result.content, null, 2));
+
+```
+
+Learn more about how RAG works in LangChain [here](https://js.langchain.com/docs/concepts/rag/)
+
+Learn more about tool calling [here](https://js.langchain.com/docs/how_to/tool_calling/)
+
+### Using with text splitters
+
+Anthropic also lets you specify your own splits using [custom document](https://docs.anthropic.com/en/docs/build-with-claude/citations#custom-content-documents) types. LangChain [text splitters](/oss/concepts/text_splitters/) can be used to generate meaningful splits for this purpose. See the below example, where we split the LangChain.js README (a markdown document) and pass it to Claude as context:
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+import { MarkdownTextSplitter } from "langchain/text_splitter";
+
+function formatToAnthropicDocuments(documents: string[]) {
+  return {
+    type: "document",
+    source: {
+      type: "content",
+      content: documents.map((document) => ({ type: "text", text: document })),
+    },
+    citations: { enabled: true },
+  };
+}
+
+// Pull readme
+const readmeResponse = await fetch(
+  "https://raw.githubusercontent.com/langchain-ai/langchainjs/master/README.md"
+);
+
+const readme = await readmeResponse.text();
+
+// Split into chunks
+const splitter = new MarkdownTextSplitter({
+  chunkOverlap: 0,
+  chunkSize: 50,
+});
+const documents = await splitter.splitText(readme);
+
+// Construct message
+const messageWithSplitDocuments = {
+  role: "user",
+  content: [
+    formatToAnthropicDocuments(documents),
+    { type: "text", text: "Give me a link to LangChain's tutorials. Cite your sources" },
+  ],
+};
+
+// Query LLM
+const citationsModelWithSplits = new ChatAnthropic({
+  model: "claude-3-5-sonnet-latest",
+});
+const resWithSplits = await citationsModelWithSplits.invoke([messageWithSplitDocuments]);
+
+console.log(JSON.stringify(resWithSplits.content, null, 2));
+```
+```output
+[
+  {
+    "type": "text",
+    "text": "Based on the documentation, I can provide you with a link to LangChain's tutorials:\n\n"
+  },
+  {
+    "type": "text",
+    "text": "The tutorials can be found at: https://js.langchain.com/docs/tutorials/",
+    "citations": [
+      {
+        "type": "content_block_location",
+        "cited_text": "[Tutorial](https://js.langchain.com/docs/tutorials/)walkthroughs",
+        "document_index": 0,
+        "document_title": null,
+        "start_block_index": 191,
+        "end_block_index": 194
+      }
+    ]
+  }
+]
+```
+## API reference
+
+For detailed documentation of all ChatAnthropic features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_anthropic.ChatAnthropic.html

@@ -1,0 +1,141 @@
+---
+title: Cohere
+---
+
+<Warning>
+**Legacy**
+
+Cohere has marked their `generate` endpoint for LLMs as deprecated. Follow their [migration guide](https://docs.cohere.com/docs/migrating-from-cogenerate-to-cochat) to start using their Chat API via the [`ChatCohere`](/oss/integrations/chat/cohere) integration.
+</Warning>
+
+<Warning>
+**You are currently on a page documenting the use of Cohere models as [text completion models](/oss/concepts/text_llms). Many popular models available on Cohere are [chat completion models](/oss/concepts/chat_models).**
+
+
+You may be looking for [this page instead](/oss/integrations/chat/cohere/).
+</Warning>
+
+This will help you get started with Cohere completion models (LLMs) using LangChain. For detailed documentation on `Cohere` features and configuration options, please refer to the [API reference](https://api.js.langchain.com/classes/langchain_cohere.Cohere.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/cohere) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [Cohere](https://api.js.langchain.com/classes/langchain_cohere.Cohere.html) | [@langchain/cohere](https://api.js.langchain.com/modules/langchain_cohere.html) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cohere?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cohere?style=flat-square&label=%20&) |
+
+## Setup
+
+To access Cohere models you'll need to create a Cohere account, get an API key, and install the `@langchain/cohere` integration package.
+
+### Credentials
+
+Head to [cohere.com](https://cohere.com) to sign up to Cohere and generate an API key. Once you've done this set the `COHERE_API_KEY` environment variable:
+
+```bash
+export COHERE_API_KEY="your-api-key"
+```
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+### Installation
+
+The LangChain Cohere integration lives in the `@langchain/cohere` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/cohere @langchain/core
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```typescript
+import { Cohere } from "@langchain/cohere"
+
+const llm = new Cohere({
+  model: "command",
+  temperature: 0,
+  maxTokens: undefined,
+  maxRetries: 2,
+  // other params...
+})
+```
+### Custom client for Cohere on Azure, Cohere on AWS Bedrock, and Standalone Cohere Instance.
+
+We can instantiate a custom `CohereClient` and pass it to the ChatCohere constructor.
+
+**Note:** If a custom client is provided both `COHERE_API_KEY` environment variable and `apiKey` parameter in the constructor will be ignored.
+
+
+```typescript
+import { Cohere } from "@langchain/cohere";
+import { CohereClient } from "cohere-ai";
+
+const client = new CohereClient({
+  token: "<your-api-key>",
+  environment: "<your-cohere-deployment-url>", //optional
+  // other params
+});
+
+const llmWithCustomClient = new Cohere({
+  client,
+  // other params...
+});
+```
+## Invocation
+
+
+```typescript
+const inputText = "Cohere is an AI company that "
+
+const completion = await llm.invoke(inputText)
+completion
+```
+```output
+Cohere is a company that provides natural language processing models that help companies improve human-machine interactions. Cohere was founded in 2019 by Aidan Gomez, Ivan Zhang, and Nick Frosst.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our completion model with a prompt template like so:
+
+
+```typescript
+import { PromptTemplate } from "@langchain/core/prompts"
+
+const prompt = new PromptTemplate({
+  template: "How to say {input} in {output_language}:\n",
+  inputVariables: ["input", "output_language"],
+})
+
+const chain = prompt.pipe(llm);
+await chain.invoke(
+  {
+    output_language: "German",
+    input: "I love programming.",
+  }
+)
+```
+```output
+ Ich liebe Programming.
+
+But for day to day purposes Ich mag Programming. would be enough and perfectly understood.
+
+I love programming is "Ich liebe Programming" and I like programming is "Ich mag Programming" respectively.
+
+There are also other ways to express this feeling, such as "Ich habe Spaß mit Programming", which means "I enjoy programming". But "Ich mag" and "Ich liebe" are the most common expressions for this.
+
+Let me know if I can be of further help with something else!
+```
+## API reference
+
+For detailed documentation of all Cohere features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_cohere.Cohere.html

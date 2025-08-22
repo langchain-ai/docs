@@ -1,0 +1,145 @@
+---
+title: Knowledge Bases for Amazon Bedrock
+---
+
+## Overview
+
+This will help you getting started with the [AmazonKnowledgeBaseRetriever](/oss/concepts/retrievers). For detailed documentation of all AmazonKnowledgeBaseRetriever features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_aws.AmazonKnowledgeBaseRetriever.html).
+
+Knowledge Bases for Amazon Bedrock is a fully managed support for end-to-end RAG workflow provided by Amazon Web Services (AWS).
+It provides an entire ingestion workflow of converting your documents into embeddings (vector) and storing the embeddings in a specialized vector database.
+Knowledge Bases for Amazon Bedrock supports popular databases for vector storage, including vector engine for Amazon OpenSearch Serverless, Pinecone, Redis Enterprise Cloud, Amazon Aurora (coming soon), and MongoDB (coming soon).
+
+### Integration details
+
+| Retriever | Self-host | Cloud offering | Package | [Py support](https://python.langchain.com/docs/integrations/retrievers/bedrock/) |
+| :--- | :--- | :---: | :---: | :---: |
+[AmazonKnowledgeBaseRetriever](https://api.js.langchain.com/classes/langchain_aws.AmazonKnowledgeBaseRetriever.html) | 🟠 (see details below) | ✅ | @langchain/aws | ✅ |
+
+> AWS Knowledge Base Retriever can be 'self hosted' in the sense you can run it on your own AWS infrastructure. However it is not possible to run on another cloud provider or on-premises.
+
+## Setup
+
+In order to use the AmazonKnowledgeBaseRetriever, you need to have an AWS account, where you can manage your indexes and documents. Once you've setup your account, set the following environment variables:
+
+```bash
+process.env.AWS_KNOWLEDGE_BASE_ID=your-knowledge-base-id
+process.env.AWS_ACCESS_KEY_ID=your-access-key-id
+process.env.AWS_SECRET_ACCESS_KEY=your-secret-access-key
+```
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```typescript
+// process.env.LANGSMITH_API_KEY = "<YOUR API KEY HERE>";
+// process.env.LANGSMITH_TRACING = "true";
+```
+
+### Installation
+
+This retriever lives in the `@langchain/aws` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/aws @langchain/core
+</Npm2Yarn>
+```
+## Instantiation
+
+Now we can instantiate our retriever:
+
+
+```typescript
+import { AmazonKnowledgeBaseRetriever } from "@langchain/aws";
+
+const retriever = new AmazonKnowledgeBaseRetriever({
+  topK: 10,
+  knowledgeBaseId: process.env.AWS_KNOWLEDGE_BASE_ID,
+  region: "us-east-2",
+  clientOptions: {
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
+  },
+});
+```
+## Usage
+
+
+```typescript
+const query = "..."
+
+await retriever.invoke(query);
+```
+## Use within a chain
+
+Like other retrievers, AmazonKnowledgeBaseRetriever can be incorporated into LLM applications via [chains](/oss/how-to/sequence/).
+
+We will need a LLM or chat model:
+
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+```typescript
+// @lc-docs-hide-cell
+
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+});
+```
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+
+import type { Document } from "@langchain/core/documents";
+
+const prompt = ChatPromptTemplate.fromTemplate(`
+Answer the question based only on the context provided.
+
+Context: {context}
+
+Question: {question}`);
+
+const formatDocs = (docs: Document[]) => {
+  return docs.map((doc) => doc.pageContent).join("\n\n");
+}
+
+// See https://js.langchain.com/docs/tutorials/rag
+const ragChain = RunnableSequence.from([
+  {
+    context: retriever.pipe(formatDocs),
+    question: new RunnablePassthrough(),
+  },
+  prompt,
+  llm,
+  new StringOutputParser(),
+]);
+```
+
+```{=mdx}
+
+<Tip>
+**See [our RAG tutorial](docs/tutorials/rag) for more information and examples on `RunnableSequence`'s like the one above.**
+
+
+</Tip>
+
+```
+```typescript
+await ragChain.invoke("...")
+```
+
+## API reference
+
+For detailed documentation of all AmazonKnowledgeBaseRetriever features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_aws.AmazonKnowledgeBaseRetriever.html).

@@ -1,0 +1,211 @@
+---
+title: CohereEmbeddings
+---
+
+This will help you get started with CohereEmbeddings [embedding models](/oss/concepts/embedding_models) using LangChain. For detailed documentation on `CohereEmbeddings` features and configuration options, please refer to the [API reference](https://api.js.langchain.com/classes/langchain_cohere.CohereEmbeddings.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/cohere/) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: |
+| [CohereEmbeddings](https://api.js.langchain.com/classes/langchain_cohere.CohereEmbeddings.html) | [@langchain/cohere](https://api.js.langchain.com/modules/langchain_cohere.html) | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cohere?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cohere?style=flat-square&label=%20&) |
+
+## Setup
+
+To access Cohere embedding models you'll need to create a Cohere account, get an API key, and install the `@langchain/cohere` integration package.
+
+### Credentials
+
+Head to [cohere.com](https://cohere.com) to sign up to `Cohere` and generate an API key. Once you've done this set the `COHERE_API_KEY` environment variable:
+
+```bash
+export COHERE_API_KEY="your-api-key"
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain CohereEmbeddings integration lives in the `@langchain/cohere` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/cohere @langchain/core
+</Npm2Yarn>
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```typescript
+import { CohereEmbeddings } from "@langchain/cohere";
+
+const embeddings = new CohereEmbeddings({
+  apiKey: "YOUR-API-KEY", // In Node.js defaults to process.env.COHERE_API_KEY
+  batchSize: 48, // Default value if omitted is 48. Max value is 96
+  model: "embed-english-v3.0",
+});
+```
+### Custom client for Cohere on Azure, Cohere on AWS Bedrock, and Standalone Cohere Instance.
+
+We can instantiate a custom `CohereClient` and pass it to the ChatCohere constructor.
+
+**Note:** If a custom client is provided both `COHERE_API_KEY` environment variable and apiKey parameter in the constructor will be ignored
+
+
+```typescript
+import { CohereEmbeddings } from "@langchain/cohere";
+import { CohereClient } from "cohere-ai";
+
+const client = new CohereClient({
+  token: "<your-api-key>",
+  environment: "<your-cohere-deployment-url>", //optional
+  // other params
+});
+
+const embeddingsWithCustomClient = new CohereEmbeddings({
+  client,
+  // other params...
+});
+```
+## Indexing and Retrieval
+
+Embedding models are often used in retrieval-augmented generation (RAG) flows, both as part of indexing data as well as later retrieving it. For more detailed instructions, please see our RAG tutorials under the [working with external knowledge tutorials](/oss/tutorials/#working-with-external-knowledge).
+
+Below, see how to index and retrieve data using the `embeddings` object we initialized above. In this example, we will index and retrieve a sample document using the demo [`MemoryVectorStore`](/oss/integrations/vectorstores/memory).
+
+
+```typescript
+// Create a vector store with a sample text
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+
+const text = "LangChain is the framework for building context-aware reasoning applications";
+
+const vectorstore = await MemoryVectorStore.fromDocuments(
+  [{ pageContent: text, metadata: {} }],
+  embeddings,
+);
+
+// Use the vector store as a retriever that returns a single document
+const retriever = vectorstore.asRetriever(1);
+
+// Retrieve the most similar text
+const retrievedDocuments = await retriever.invoke("What is LangChain?");
+
+retrievedDocuments[0].pageContent;
+```
+```output
+LangChain is the framework for building context-aware reasoning applications
+```
+## Direct Usage
+
+Under the hood, the vectorstore and retriever implementations are calling `embeddings.embedDocument(...)` and `embeddings.embedQuery(...)` to create embeddings for the text(s) used in `fromDocuments` and the retriever's `invoke` operations, respectively.
+
+You can directly call these methods to get embeddings for your own use cases.
+
+### Embed single texts
+
+You can embed queries for search with `embedQuery`. This generates a vector representation specific to the query:
+
+
+```typescript
+const singleVector = await embeddings.embedQuery(text);
+
+console.log(singleVector.slice(0, 100));
+```
+```output
+[
+   -0.022979736,  -0.030212402,   -0.08886719,  -0.08569336,   0.007030487,
+  -0.0010671616,  -0.033813477,    0.08843994, 0.0119018555,   0.049926758,
+    -0.03616333,   0.007408142, 0.00034809113, -0.005744934,  -0.016021729,
+   -0.015296936, -0.0011606216,   -0.02458191, -0.044006348,    -0.0335083,
+    0.024658203,  -0.051086426,  0.0020427704,   0.06298828,   0.020507812,
+    0.037475586,    0.05117798,  0.0059814453,  0.025360107,  0.0060577393,
+     0.02255249,  -0.070129395,   0.024017334,  0.022766113,  -0.042755127,
+   -0.024673462,    -0.0236969, -0.0073623657,  0.002161026,   0.011329651,
+    0.038330078,   -0.03050232,  0.0022201538, -0.007911682, -0.0023536682,
+    0.029937744,  -0.027297974,  -0.064086914,  0.027267456,   0.016738892,
+   0.0028972626,   0.015510559,   -0.01725769,  0.011497498,  -0.012954712,
+    0.002380371,   -0.03366089,   -0.02746582,  0.014022827,    0.04196167,
+    0.007698059,  -0.027069092,   0.025405884, -0.029815674,   0.013298035,
+     0.01737976,    0.07269287,   0.017822266, 0.0012550354,  -0.009597778,
+    -0.02961731,  0.0049057007,    0.01965332, -0.009994507,  -0.019561768,
+   -0.004764557,   0.019317627, -0.0045433044,  0.031143188,  -0.018188477,
+  -0.0026893616,  0.0050964355,  -0.044189453,   0.02029419,  -0.019088745,
+     0.02166748,  -0.011657715,  -0.025405884, -0.028030396, -0.0051460266,
+   -0.010818481,  -0.000364542,  -0.028686523,  0.015029907,  0.0013790131,
+  -0.0069770813,  -0.030639648,  -0.051208496,  0.005279541, -0.0109939575
+]
+```
+### Embed multiple texts
+
+You can embed multiple texts for indexing with `embedDocuments`. The internals used for this method may (but do not have to) differ from embedding queries:
+
+
+```typescript
+const text2 = "LangGraph is a library for building stateful, multi-actor applications with LLMs";
+
+const vectors = await embeddings.embedDocuments([text, text2]);
+
+console.log(vectors[0].slice(0, 100));
+console.log(vectors[1].slice(0, 100));
+```
+```output
+[
+   -0.028869629,  -0.030410767,   -0.099121094,    -0.07116699,  -0.012748718,
+  -0.0059432983,   -0.04360962,     0.07965088,   -0.027114868,   0.057403564,
+   -0.013549805,   0.014480591,    0.021697998,   -0.026870728,  0.0071983337,
+  -0.0099105835, -0.0034332275,   -0.026031494,    -0.05206299,  -0.045288086,
+    0.027450562,  -0.060333252,   -0.019210815,    0.039794922,  0.0055351257,
+    0.046325684,   0.017837524,   -0.012619019,    0.023147583,  -0.008201599,
+    0.022155762,  -0.035888672,    0.016921997,    0.027679443,  -0.023605347,
+  -0.0022029877,  -0.025253296,    0.013076782,   0.0049705505, -0.0024280548,
+    0.021957397,  -0.008644104, -0.00004029274,   -0.003501892,  -0.012641907,
+     0.01600647,  -0.014312744,   -0.037841797,    0.011764526,  -0.019622803,
+    -0.01928711,  -0.017044067,   -0.017547607,    0.028533936,  -0.019073486,
+  -0.0061073303,  -0.024520874,     0.01638794,    0.017852783, -0.0013303757,
+   -0.023040771,   -0.01713562,    0.027786255,    -0.02583313,    0.03060913,
+  0.00013923645,    0.01977539,    0.025283813, -0.00068569183,   0.032806396,
+   -0.021392822,  -0.016174316,    0.016464233,    0.006023407, -0.0025043488,
+   -0.033813477,   0.023269653,    0.012329102,    0.030334473,   0.014419556,
+   -0.026245117,  -0.018356323,   -0.016433716,    0.022628784,  -0.024108887,
+     0.02897644,  -0.017105103,   -0.009208679,   -0.015541077,  -0.020004272,
+   -0.005153656,    0.03741455,   -0.050750732,    0.012176514,  -0.017501831,
+   -0.014503479,  0.0052223206,    -0.03250122,    0.008666992,  -0.015823364
+]
+[
+   -0.047332764, -0.049957275,   -0.07458496,  -0.034332275,   -0.057922363,
+  -0.0112838745,  -0.06994629,    0.06347656,   -0.03326416,    0.019897461,
+      0.0103302,   0.04660034,  -0.059753418,  -0.027511597,    0.012245178,
+    -0.03164673, -0.010215759,   -0.00687027,   -0.03314209,   -0.019866943,
+    0.008399963, -0.042144775,   -0.03781128,   0.025970459,    0.007335663,
+     0.04107666, -0.015991211,     0.0158844,  -0.008483887,   -0.008399963,
+     0.01777649,  -0.01109314,    0.01864624,   0.014328003,   -0.005264282,
+    0.077697754,  0.017684937,  0.0020427704,   0.032470703,  -0.0029354095,
+    0.003063202, 0.0008301735,   0.016281128,  -0.005897522,   -0.023254395,
+    0.004043579, -0.021987915,  -0.015419006,  0.0009803772,    0.044677734,
+  -0.0045814514, 0.0039901733,  -0.019058228,   0.063964844,   -0.012496948,
+   -0.027755737,   0.01574707,   -0.03781128,  0.0038909912, -0.00002193451,
+  0.00013685226,  0.027832031,   0.015182495,  -0.008590698,     0.03933716,
+  -0.0020141602, -0.050567627,    0.02017212,   0.020523071,     0.07287598,
+   0.0031375885,  -0.05227661,   -0.01838684, -0.0019626617,  -0.0039482117,
+     0.02494812, 0.0009508133,   0.008583069,    0.02923584,    0.028198242,
+   -0.030334473, -0.014076233,  -0.017990112,  0.0026245117,   -0.017150879,
+    0.004497528,  -0.00365448, -0.0012168884,   0.011741638,    0.012886047,
+  0.00084400177,  0.060638428,  -0.024002075,   0.022415161,   -0.015823364,
+  -0.0026760101,  0.028625488,   0.041015625,   0.006893158,    -0.01902771
+]
+```
+## API reference
+
+For detailed documentation of all CohereEmbeddings features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_cohere.CohereEmbeddings.html

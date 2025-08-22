@@ -1,0 +1,358 @@
+---
+title: RecursiveUrlLoader
+---
+
+```{=mdx}
+
+<Tip>
+**Compatibility**
+
+
+Only available on Node.js.
+
+</Tip>
+
+```
+This notebook provides a quick overview for getting started with [RecursiveUrlLoader](/oss/integrations/document_loaders/). For detailed documentation of all RecursiveUrlLoader features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_document_loaders_web_recursive_url.RecursiveUrlLoader.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | PY support |
+| :--- | :--- | :---: | :---: |  :---: |
+| [RecursiveUrlLoader](https://api.js.langchain.com/classes/langchain_community_document_loaders_web_recursive_url.RecursiveUrlLoader.html) | [@langchain/community](https://api.js.langchain.com/modules/langchain_community_document_loaders_web_recursive_url.html) | ✅ | beta | ❌ | 
+### Loader features
+| Source | Web Loader | Node Envs Only
+| :---: | :---: | :---: | 
+| RecursiveUrlLoader | ✅ | ✅ | 
+
+When loading content from a website, we may want to process load all URLs on a page.
+
+For example, let's look at the [LangChain.js introduction](/docs/introduction) docs.
+
+This has many interesting child pages that we may want to load, split, and later retrieve in bulk.
+
+The challenge is traversing the tree of child pages and assembling a list!
+
+We do this using the `RecursiveUrlLoader`.
+
+This also gives us the flexibility to exclude some children, customize the extractor, and more.
+
+## Setup
+
+To access `RecursiveUrlLoader` document loader you'll need to install the `@langchain/community` integration, and the [`jsdom`](https://www.npmjs.com/package/jsdom) package.
+
+### Credentials
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+### Installation
+
+The LangChain RecursiveUrlLoader integration lives in the `@langchain/community` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/core jsdom
+</Npm2Yarn>
+
+We also suggest adding a package like [`html-to-text`](https://www.npmjs.com/package/html-to-text) or
+[`@mozilla/readability`](https://www.npmjs.com/package/@mozilla/readability) for extracting the raw text from the page.
+
+<Npm2Yarn>
+  html-to-text
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and load documents:
+
+
+```typescript
+import { RecursiveUrlLoader } from "@langchain/community/document_loaders/web/recursive_url"
+import { compile } from "html-to-text";
+
+const compiledConvert = compile({ wordwrap: 130 }); // returns (text: string) => string;
+
+const loader = new RecursiveUrlLoader("https://langchain.com/",  {
+  extractor: compiledConvert,
+  maxDepth: 1,
+  excludeDirs: ["/docs/api/"],
+})
+```
+## Load
+
+
+```typescript
+const docs = await loader.load()
+docs[0]
+```
+```output
+{
+  pageContent: '\n' +
+    '/\n' +
+    'Products\n' +
+    '\n' +
+    'LangChain [/langchain]LangSmith [/langsmith]LangGraph [/langgraph]\n' +
+    'Methods\n' +
+    '\n' +
+    'Retrieval [/retrieval]Agents [/agents]Evaluation [/evaluation]\n' +
+    'Resources\n' +
+    '\n' +
+    'Blog [https://blog.langchain.dev/]Case Studies [/case-studies]Use Case Inspiration [/use-cases]Experts [/experts]Changelog\n' +
+    '[https://changelog.langchain.com/]\n' +
+    'Docs\n' +
+    '\n' +
+    'LangChain Docs [https://python.langchain.com/v0.2/docs/introduction/]LangSmith Docs [https://docs.smith.langchain.com/]\n' +
+    'Company\n' +
+    '\n' +
+    'About [/about]Careers [/careers]\n' +
+    'Pricing [/pricing]\n' +
+    'Get a demo [/contact-sales]\n' +
+    'Sign up [https://smith.langchain.com/]\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    'LangChain’s suite of products supports developers along each step of the LLM application lifecycle.\n' +
+    '\n' +
+    '\n' +
+    'APPLICATIONS THAT CAN REASON. POWERED BY LANGCHAIN.\n' +
+    '\n' +
+    'Get a demo [/contact-sales]Sign up for free [https://smith.langchain.com/]\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    'FROM STARTUPS TO GLOBAL ENTERPRISES,\n' +
+    'AMBITIOUS BUILDERS CHOOSE\n' +
+    'LANGCHAIN PRODUCTS.\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c22746faa78338532_logo_Ally.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c08e67bb7eefba4c2_logo_Rakuten.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c576fdde32d03c1a0_logo_Elastic.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c6d5592036dae24e5_logo_BCG.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/667f19528c3557c2c19c3086_the-home-depot-2%201.png][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7cbcf6473519b06d84_logo_IDEO.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7cb5f96dcc100ee3b7_logo_Zapier.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/6606183e52d49bc369acc76c_mdy_logo_rgb_moodysblue.png][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c8ad7db6ed6ec611e_logo_Adyen.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c737d50036a62768b_logo_Infor.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/667f59d98444a5f98aabe21c_acxiom-vector-logo-2022%201.png][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c09a158ffeaab0bd2_logo_Replit.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c9d2b23d292a0cab0_logo_Retool.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c44e67a3d0a996bf3_logo_Databricks.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/667f5a1299d6ba453c78a849_image%20(19).png][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ca3b7c63af578816bafcc3_logo_Instacart.svg][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/665dc1dabc940168384d9596_podium%20logo.svg]\n' +
+    '\n' +
+    'Build\n' +
+    '\n' +
+    'LangChain is a framework to build with LLMs by chaining interoperable components. LangGraph is the framework for building\n' +
+    'controllable agentic workflows.\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    'Run\n' +
+    '\n' +
+    'Deploy your LLM applications at scale with LangGraph Cloud, our infrastructure purpose-built for agents.\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    'Manage\n' +
+    '\n' +
+    "Debug, collaborate, test, and monitor your LLM app in LangSmith - whether it's built with a LangChain framework or not. \n" +
+    '\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    'BUILD YOUR APP WITH LANGCHAIN\n' +
+    '\n' +
+    'Build context-aware, reasoning applications with LangChain’s flexible framework that leverages your company’s data and APIs.\n' +
+    'Future-proof your application by making vendor optionality part of your LLM infrastructure design.\n' +
+    '\n' +
+    'Learn more about LangChain\n' +
+    '\n' +
+    '[/langchain]\n' +
+    '\n' +
+    '\n' +
+    'RUN AT SCALE WITH LANGGRAPH CLOUD\n' +
+    '\n' +
+    'Deploy your LangGraph app with LangGraph Cloud for fault-tolerant scalability - including support for async background jobs,\n' +
+    'built-in persistence, and distributed task queues.\n' +
+    '\n' +
+    'Learn more about LangGraph\n' +
+    '\n' +
+    '[/langgraph]\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/667c6d7284e58f4743a430e6_Langgraph%20UI-home-2.webp]\n' +
+    '\n' +
+    '\n' +
+    'MANAGE LLM PERFORMANCE WITH LANGSMITH\n' +
+    '\n' +
+    'Ship faster with LangSmith’s debug, test, deploy, and monitoring workflows. Don’t rely on “vibes” – add engineering rigor to your\n' +
+    'LLM-development workflow, whether you’re building with LangChain or not.\n' +
+    '\n' +
+    'Learn more about LangSmith\n' +
+    '\n' +
+    '[/langsmith]\n' +
+    '\n' +
+    '\n' +
+    'HEAR FROM OUR HAPPY CUSTOMERS\n' +
+    '\n' +
+    'LangChain, LangGraph, and LangSmith help teams of all sizes, across all industries - from ambitious startups to established\n' +
+    'enterprises.\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c5308aee06d9826765c897_Retool_logo%201.png]\n' +
+    '\n' +
+    '“LangSmith helped us improve the accuracy and performance of Retool’s fine-tuned models. Not only did we deliver a better product\n' +
+    'by iterating with LangSmith, but we’re shipping new AI features to our users in a fraction of the time it would have taken without\n' +
+    'it.”\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c5308abdd2dbbdde5a94a1_Jamie%20Cuffe.png]\n' +
+    'Jamie Cuffe\n' +
+    'Head of Self-Serve and New Products\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c5308a04d37cf7d3eb1341_Rakuten_Global_Brand_Logo.png]\n' +
+    '\n' +
+    '“By combining the benefits of LangSmith and standing on the shoulders of a gigantic open-source community, we’re able to identify\n' +
+    'the right approaches of using LLMs in an enterprise-setting faster.”\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c5308a8b6137d44c621cb4_Yusuke%20Kaji.png]\n' +
+    'Yusuke Kaji\n' +
+    'General Manager of AI\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c5308aea1371b447cc4af9_elastic-ar21.png]\n' +
+    '\n' +
+    '“Working with LangChain and LangSmith on the Elastic AI Assistant had a significant positive impact on the overall pace and\n' +
+    'quality of the development and shipping experience. We couldn’t have achieved  the product experience delivered to our customers\n' +
+    'without LangChain, and we couldn’t have done it at the same pace without LangSmith.”\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c5308a4095d5a871de7479_James%20Spiteri.png]\n' +
+    'James Spiteri\n' +
+    'Director of Security Products\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c530539f4824b828357352_Logo_de_Fintual%201.png]\n' +
+    '\n' +
+    '“As soon as we heard about LangSmith, we moved our entire development stack onto it. We could have built evaluation, testing and\n' +
+    'monitoring tools in house, but with LangSmith it took us 10x less time to get a 1000x better tool.”\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c53058acbff86f4c2dcee2_jose%20pena.png]\n' +
+    'Jose Peña\n' +
+    'Senior Manager\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    '\n' +
+    'THE REFERENCE ARCHITECTURE ENTERPRISES ADOPT FOR SUCCESS.\n' +
+    '\n' +
+    'LangChain’s suite of products can be used independently or stacked together for multiplicative impact – guiding you through\n' +
+    'building, running, and managing your LLM apps.\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/6695b116b0b60c78fd4ef462_15.07.24%20-Updated%20stack%20diagram%20-%20lightfor%20website-3.webp][https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/667d392696fc0bc3e17a6d04_New%20LC%20stack%20-%20light-2.webp]\n' +
+    '15M+\n' +
+    'Monthly Downloads\n' +
+    '100K+\n' +
+    'Apps Powered\n' +
+    '75K+\n' +
+    'GitHub Stars\n' +
+    '3K+\n' +
+    'Contributors\n' +
+    '\n' +
+    '\n' +
+    'THE BIGGEST DEVELOPER COMMUNITY IN GENAI\n' +
+    '\n' +
+    'Learn alongside the 1M+ developers who are pushing the industry forward.\n' +
+    '\n' +
+    'Explore LangChain\n' +
+    '\n' +
+    '[/langchain]\n' +
+    '\n' +
+    '\n' +
+    'GET STARTED WITH THE LANGSMITH PLATFORM TODAY\n' +
+    '\n' +
+    'Get a demo [/contact-sales]Sign up for free [https://smith.langchain.com/]\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65ccf12801bc39bf912a58f3_Home%20C.webp]\n' +
+    '\n' +
+    'Teams building with LangChain are driving operational efficiency, increasing discovery & personalization, and delivering premium\n' +
+    'products that generate revenue.\n' +
+    '\n' +
+    'Discover Use Cases\n' +
+    '\n' +
+    '[/use-cases]\n' +
+    '\n' +
+    '\n' +
+    'GET INSPIRED BY COMPANIES WHO HAVE DONE IT.\n' +
+    '\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65bcd7ee85507bdf350399c3_Ally_Financial%201.svg]\n' +
+    'Financial Services\n' +
+    '\n' +
+    '[https://blog.langchain.dev/ally-financial-collaborates-with-langchain-to-deliver-critical-coding-module-to-mask-personal-identifying-information-in-a-compliant-and-safe-manner/]\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65bcd8b3ae4dc901daa3037a_Adyen_Corporate_Logo%201.svg]\n' +
+    'FinTech\n' +
+    '\n' +
+    '[https://blog.langchain.dev/llms-accelerate-adyens-support-team-through-smart-ticket-routing-and-support-agent-copilot/]\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c534b3fa387379c0f4ebff_elastic-ar21%20(1).png]\n' +
+    'Technology\n' +
+    '\n' +
+    '[https://blog.langchain.dev/langchain-partners-with-elastic-to-launch-the-elastic-ai-assistant/]\n' +
+    '\n' +
+    '\n' +
+    'LANGSMITH IS THE ENTERPRISE DEVOPS PLATFORM BUILT FOR LLMS.\n' +
+    '\n' +
+    'Explore LangSmith\n' +
+    '\n' +
+    '[/langsmith]\n' +
+    'Gain visibility to make trade offs between cost, latency, and quality.\n' +
+    'Increase developer productivity.\n' +
+    'Eliminate manual, error-prone testing.\n' +
+    'Reduce hallucinations and improve reliability.\n' +
+    'Enterprise deployment options to keep data secure.\n' +
+    '\n' +
+    '\n' +
+    'READY TO START SHIPPING  RELIABLE GENAI APPS FASTER?\n' +
+    '\n' +
+    'Get started with LangChain, LangGraph, and LangSmith to enhance your LLM app development, from prototype to production.\n' +
+    '\n' +
+    'Get a demo [/contact-sales]Sign up for free [https://smith.langchain.com/]\n' +
+    'Products\n' +
+    'LangChain [/langchain]LangSmith [/langsmith]LangGraph [/langgraph]Agents [/agents]Evaluation [/evaluation]Retrieval [/retrieval]\n' +
+    'Resources\n' +
+    'Python Docs [https://python.langchain.com/]JS/TS Docs [https://js.langchain.com/docs/get_started/introduction/]GitHub\n' +
+    '[https://github.com/langchain-ai]Integrations [https://python.langchain.com/v0.2/docs/integrations/platforms/]Templates\n' +
+    '[https://templates.langchain.com/]Changelog [https://changelog.langchain.com/]LangSmith Trust Portal\n' +
+    '[https://trust.langchain.com/]\n' +
+    'Company\n' +
+    'About [/about]Blog [https://blog.langchain.dev/]Twitter [https://twitter.com/LangChainAI]LinkedIn\n' +
+    '[https://www.linkedin.com/company/langchain/]YouTube [https://www.youtube.com/@LangChain]Community [/join-community]Marketing\n' +
+    'Assets [https://drive.google.com/drive/folders/17xybjzmVBdsQA-VxouuGLxF6bDsHDe80?usp=sharing]\n' +
+    'Sign up for our newsletter to stay up to date\n' +
+    'Thank you! Your submission has been received!\n' +
+    'Oops! Something went wrong while submitting the form.\n' +
+    '[https://cdn.prod.website-files.com/65b8cd72835ceeacd4449a53/65c6a38f9c53ec71f5fc73de_langchain-word.svg]\n' +
+    'All systems operational\n' +
+    '[https://status.smith.langchain.com/]Privacy Policy [/'... 111 more characters,
+  metadata: {
+    source: 'https://langchain.com/',
+    title: 'LangChain',
+    description: 'LangChain’s suite of products supports developers along each step of their development journey.',
+    language: 'en'
+  }
+}
+```
+
+```typescript
+console.log(docs[0].metadata)
+```
+```output
+{
+  source: 'https://langchain.com/',
+  title: 'LangChain',
+  description: 'LangChain’s suite of products supports developers along each step of their development journey.',
+  language: 'en'
+}
+```
+## Options
+
+```typescript
+interface Options {
+  excludeDirs?: string[]; // webpage directories to exclude.
+  extractor?: (text: string) => string; // a function to extract the text of the document from the webpage, by default it returns the page as it is. It is recommended to use tools like html-to-text to extract the text. By default, it just returns the page as it is.
+  maxDepth?: number; // the maximum depth to crawl. By default, it is set to 2. If you need to crawl the whole website, set it to a number that is large enough would simply do the job.
+  timeout?: number; // the timeout for each request, in the unit of seconds. By default, it is set to 10000 (10 seconds).
+  preventOutside?: boolean; // whether to prevent crawling outside the root url. By default, it is set to true.
+  callerOptions?: AsyncCallerConstructorParams; // the options to call the AsyncCaller for example setting max concurrency (default is 64)
+}
+```
+
+However, since it's hard to perform a perfect filter, you may still see some irrelevant results in the results. You can perform a filter on the returned documents by yourself, if it's needed. Most of the time, the returned results are good enough.
+
+## API reference
+
+For detailed documentation of all RecursiveUrlLoader features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_community_document_loaders_web_recursive_url.RecursiveUrlLoader.html

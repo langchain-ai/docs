@@ -1,0 +1,126 @@
+---
+title: CloudflareWorkersAIEmbeddings
+---
+
+This will help you get started with Cloudflare Workers AI [embedding models](/oss/concepts/embedding_models) using LangChain. For detailed documentation on `CloudflareWorkersAIEmbeddings` features and configuration options, please refer to the [API reference](https://api.js.langchain.com/classes/langchain_cloudflare.CloudflareWorkersAIEmbeddings.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Py support | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: |
+| [`CloudflareWorkersAIEmbeddings`](https://api.js.langchain.com/classes/langchain_cloudflare.CloudflareWorkersAIEmbeddings.html) | [`@langchain/cloudflare`](https://npmjs.com/@langchain/cloudflare) | ❌ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cloudflare?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cloudflare?style=flat-square&label=%20&) |
+
+## Setup
+
+To access Cloudflare embedding models you'll need to create a Cloudflare account and install the `@langchain/cloudflare` integration package. This integration is made to run in a Cloudflare worker and accept a binding.
+
+Follow [the official docs](https://developers.cloudflare.com/workers-ai/get-started/workers-wrangler/) to set up your worker.
+
+Your `wrangler.toml` file should look similar to this:
+
+```toml
+name = "langchain-test"
+main = "worker.js"
+compatibility_date = "2024-01-10"
+
+[[vectorize]]
+binding = "VECTORIZE_INDEX"
+index_name = "langchain-test"
+
+[ai]
+binding = "AI"
+```
+
+### Credentials
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain CloudflareWorkersAIEmbeddings integration lives in the `@langchain/cloudflare` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/cloudflare @langchain/core
+</Npm2Yarn>
+```
+## Usage
+
+Below is an example worker that uses Workers AI embeddings with a [Cloudflare Vectorize vectorstore](/oss/integrations/vectorstores/cloudflare_vectorize/).
+
+
+```typescript
+// @ts-nocheck
+
+import type {
+  VectorizeIndex,
+  Fetcher,
+  Request,
+} from "@cloudflare/workers-types";
+
+import {
+  CloudflareVectorizeStore,
+  CloudflareWorkersAIEmbeddings,
+} from "@langchain/cloudflare";
+
+export interface Env {
+  VECTORIZE_INDEX: VectorizeIndex;
+  AI: Fetcher;
+}
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const { pathname } = new URL(request.url);
+    const embeddings = new CloudflareWorkersAIEmbeddings({
+      binding: env.AI,
+      model: "@cf/baai/bge-small-en-v1.5",
+    });
+    const store = new CloudflareVectorizeStore(embeddings, {
+      index: env.VECTORIZE_INDEX,
+    });
+    if (pathname === "/") {
+      const results = await store.similaritySearch("hello", 5);
+      return Response.json(results);
+    } else if (pathname === "/load") {
+      // Upsertion by id is supported
+      await store.addDocuments(
+        [
+          {
+            pageContent: "hello",
+            metadata: {},
+          },
+          {
+            pageContent: "world",
+            metadata: {},
+          },
+          {
+            pageContent: "hi",
+            metadata: {},
+          },
+        ],
+        { ids: ["id1", "id2", "id3"] }
+      );
+
+      return Response.json({ success: true });
+    } else if (pathname === "/clear") {
+      await store.delete({ ids: ["id1", "id2", "id3"] });
+      return Response.json({ success: true });
+    }
+
+    return Response.json({ error: "Not Found" }, { status: 404 });
+  },
+};
+```
+
+## API reference
+
+For detailed documentation of all `CloudflareWorkersAIEmbeddings` features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_cloudflare.CloudflareWorkersAIEmbeddings.html

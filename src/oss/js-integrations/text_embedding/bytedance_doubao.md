@@ -1,0 +1,188 @@
+---
+title: ByteDanceDoubaoEmbeddings
+---
+
+This will help you get started with ByteDanceDoubao [embedding models](/oss/concepts/embedding_models) using LangChain.  For detailed documentation on `ByteDanceDoubaoEmbeddings` features and configuration options, please refer to the [API reference](https://api.js.langchain.com/classes/_langchain_community.embeddings_bytedance_doubao.ByteDanceDoubaoEmbeddings.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Py support | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: |
+| [ByteDanceDoubaoEmbeddings](https://api.js.langchain.com/classes/_langchain_community.embeddings_bytedance_doubao.ByteDanceDoubaoEmbeddings.html) | [@langchain/community](https://api.js.langchain.com/modules/_langchain_community.html) | ❌ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+
+## Setup
+
+You'll need to sign up for an [ARK API key](https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey) and set it as an environment variable named `ARK_API_KEY`. Then you should [create a entrypoint](https://console.volcengine.com/ark/region:ark+cn-beijing/endpoint) for embedding models, and use the entrypoint's name as `model`.
+
+Then, you'll need to install the [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) package
+
+### Credentials
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGCHAIN_TRACING_V2="true"
+# export LANGCHAIN_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain ByteDanceDoubaoEmbeddings integration lives in the `@langchain/community` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community
+</Npm2Yarn>
+```
+## Instantiation
+
+Now we can instantiate our model object and embed text:
+
+
+```typescript
+import { ByteDanceDoubaoEmbeddings } from "@langchain/community/embeddings/bytedance_doubao";
+
+const embeddings = new ByteDanceDoubaoEmbeddings({
+  model: 'ep-xxx-xxx' // your entrypoint's name
+});
+```
+## Indexing and Retrieval
+
+Embedding models are often used in retrieval-augmented generation (RAG) flows, both as part of indexing data as well as later retrieving it. For more detailed instructions, please see our RAG tutorials under the [working with external knowledge tutorials](/oss/tutorials/#working-with-external-knowledge).
+
+Below, see how to index and retrieve data using the `embeddings` object we initialized above. In this example, we will index and retrieve a sample document using the demo [`MemoryVectorStore`](/oss/integrations/vectorstores/memory).
+
+
+```typescript
+// Create a vector store with a sample text
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+
+const text = "LangChain is the framework for building context-aware reasoning applications";
+
+const vectorstore = await MemoryVectorStore.fromDocuments(
+  [{ pageContent: text, metadata: {} }],
+  embeddings,
+);
+
+// Use the vector store as a retriever that returns a single document
+const retriever = vectorstore.asRetriever(1);
+
+// Retrieve the most similar text
+const retrievedDocuments = await retriever.invoke("What is LangChain?");
+
+retrievedDocuments[0].pageContent;
+```
+```output
+LangChain is the framework for building context-aware reasoning applications
+```
+## Direct Usage
+
+Under the hood, the vectorstore and retriever implementations are calling `embeddings.embedDocument(...)` and `embeddings.embedQuery(...)` to create embeddings for the text(s) used in `fromDocuments` and the retriever's `invoke` operations, respectively.
+
+You can directly call these methods to get embeddings for your own use cases.
+
+### Embed single texts
+
+You can embed queries for search with `embedQuery`. This generates a vector representation specific to the query:
+
+
+```typescript
+const singleVector = await embeddings.embedQuery(text);
+
+console.log(singleVector.slice(0, 100));
+```
+```output
+[
+   0.026051683,   0.029081265,  -0.040726297,  -0.015116953, -0.010691089,
+   0.030181013, -0.0065084146,   -0.02079503,   0.013575795,   0.03452527,
+   0.009578291,   0.007026421,  -0.030110886,   0.013489622,  -0.04294787,
+   0.011141899,  -0.043768786,   -0.00362867, -0.0081198225,  -0.03426076,
+   0.010075142,   0.027787417,   -0.09052663,   -0.06039698, -0.009462592,
+    0.06232288,   0.051121354,   0.011977532,   0.089046724,  0.059000008,
+   0.031860664,  -0.034242127,   0.020339863,   0.011483523,  -0.05429335,
+   -0.04963588,    0.03263794,   -0.05581542,   0.013908403, -0.012356067,
+  -0.007802118,  -0.010027855,    0.00281217,  -0.101886116, -0.079341754,
+   0.011269771,  0.0035983133,  -0.027667878,   0.032092705, -0.052843474,
+  -0.045283325,     0.0382421,     0.0193055,   0.011050924,  0.021132186,
+  -0.037696265,  0.0006107435,  0.0043520257,  -0.028798066,  0.049155913,
+    0.03590549, -0.0040995986,   0.019772101,  -0.076119535, 0.0031298609,
+    0.03368174,   0.039398745,  -0.011813277,  -0.019313531, -0.013108803,
+  -0.044905286,  -0.022326004,   -0.01656178,   -0.06658457,  0.016789088,
+   0.049952697,   0.006615693,   -0.01694402,  -0.018105473, 0.0049101883,
+  -0.004966945,   0.049762275,   -0.03556957,  -0.015986584,  -0.03190983,
+   -0.05336687, -0.0020468342, -0.0016106658,  -0.035291273, -0.029783724,
+  -0.010153295,   0.052100364,    0.05528949,    0.01379487, -0.024542747,
+   0.028773975,   0.010087022,   0.030448131,  -0.042391222,  0.016596776
+]
+```
+### Embed multiple texts
+
+You can embed multiple texts for indexing with `embedDocuments`. The internals used for this method may (but do not have to) differ from embedding queries:
+
+
+```typescript
+const text2 = "LangGraph is a library for building stateful, multi-actor applications with LLMs";
+
+const vectors = await embeddings.embedDocuments([text, text2]);
+
+console.log(vectors[0].slice(0, 100));
+console.log(vectors[1].slice(0, 100));
+```
+```output
+[
+   0.026051683,   0.029081265,  -0.040726297,  -0.015116953, -0.010691089,
+   0.030181013, -0.0065084146,   -0.02079503,   0.013575795,   0.03452527,
+   0.009578291,   0.007026421,  -0.030110886,   0.013489622,  -0.04294787,
+   0.011141899,  -0.043768786,   -0.00362867, -0.0081198225,  -0.03426076,
+   0.010075142,   0.027787417,   -0.09052663,   -0.06039698, -0.009462592,
+    0.06232288,   0.051121354,   0.011977532,   0.089046724,  0.059000008,
+   0.031860664,  -0.034242127,   0.020339863,   0.011483523,  -0.05429335,
+   -0.04963588,    0.03263794,   -0.05581542,   0.013908403, -0.012356067,
+  -0.007802118,  -0.010027855,    0.00281217,  -0.101886116, -0.079341754,
+   0.011269771,  0.0035983133,  -0.027667878,   0.032092705, -0.052843474,
+  -0.045283325,     0.0382421,     0.0193055,   0.011050924,  0.021132186,
+  -0.037696265,  0.0006107435,  0.0043520257,  -0.028798066,  0.049155913,
+    0.03590549, -0.0040995986,   0.019772101,  -0.076119535, 0.0031298609,
+    0.03368174,   0.039398745,  -0.011813277,  -0.019313531, -0.013108803,
+  -0.044905286,  -0.022326004,   -0.01656178,   -0.06658457,  0.016789088,
+   0.049952697,   0.006615693,   -0.01694402,  -0.018105473, 0.0049101883,
+  -0.004966945,   0.049762275,   -0.03556957,  -0.015986584,  -0.03190983,
+   -0.05336687, -0.0020468342, -0.0016106658,  -0.035291273, -0.029783724,
+  -0.010153295,   0.052100364,    0.05528949,    0.01379487, -0.024542747,
+   0.028773975,   0.010087022,   0.030448131,  -0.042391222,  0.016596776
+]
+[
+      0.0558515,   0.028698817,  -0.037476595,  0.0048659276,  -0.019229038,
+    -0.04713716,  -0.020947812,  -0.017550547,    0.01205507,   0.027693441,
+   -0.011791304,   0.009862203,   0.019662278,  -0.037511427,  -0.022662448,
+    0.036224432,  -0.051760387,  -0.030165697,  -0.008899774,  -0.024518963,
+    0.010077767,   0.032209765,    -0.0854303,  -0.038666975,  -0.036021013,
+    0.060899545,   0.045867186,   0.003365381,    0.09387081,   0.038216405,
+    0.011449426,  -0.016495887,   0.020602569,   -0.02368503,  -0.014733645,
+   -0.065408126, -0.0065152845,  -0.027103946, 0.00038956117,   -0.08648814,
+    0.029316466,  -0.054449145,   0.034129277,  -0.055225655,  -0.043182302,
+   0.0011148591,   0.044116337,  -0.046552557,   0.032423045,   -0.03269365,
+    -0.05062933,   0.021473562,  -0.011019348,  -0.019621233, -0.0003149565,
+  -0.0046085776,  0.0052610254, -0.0029293327,  -0.035793293,   0.034469575,
+    0.037724957,   0.009572597,   0.014198464,    -0.0878237,  0.0056973165,
+    0.023563445,   0.030928325,   0.025520306,    0.01836824,  -0.016456697,
+   -0.061934732,   0.009764942,  -0.035812028,   -0.04429064,   0.031323086,
+    0.056027107, -0.0019782048,  -0.015204176,  -0.008684945, -0.0010460864,
+    0.054642987,   0.044149086,  -0.032964867,  -0.012044753,  -0.019075096,
+   -0.027932597,   0.018542245,   -0.02602878,   -0.04645578,  -0.020976603,
+    0.018999187,   0.050663687,   0.016725155,  0.0076955976,   0.011448177,
+    0.053931057,   -0.03234989,   0.024429373,  -0.023123834,    0.02197912
+]
+```
+## Related
+
+- Embedding model [conceptual guide](/oss/concepts/embedding_models)
+- Embedding model [how-to guides](/oss/how-to/#embedding-models)
+
+## API reference
+
+For detailed documentation of all ByteDanceDoubaoEmbeddings features and configurations head to the API reference: https://api.js.langchain.com/classes/_langchain_community.embeddings_bytedance_doubao.ByteDanceDoubaoEmbeddings.html

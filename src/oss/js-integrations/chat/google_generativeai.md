@@ -1,0 +1,688 @@
+---
+title: ChatGoogleGenerativeAI
+---
+
+[Google AI](https://ai.google.dev/) offers a number of different chat models, including the powerful Gemini series. For information on the latest models, their features, context windows, etc. head to the [Google AI docs](https://ai.google.dev/gemini-api/docs/models/gemini).
+
+This will help you getting started with `ChatGoogleGenerativeAI` [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatGoogleGenerativeAI` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_google_genai.ChatGoogleGenerativeAI.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/google_generative_ai) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [ChatGoogleGenerativeAI](https://api.js.langchain.com/classes/langchain_google_genai.ChatGoogleGenerativeAI.html) | [@langchain/google-genai](https://api.js.langchain.com/modules/langchain_google_genai.html) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/google-genai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/google-genai?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 
+
+## Setup
+
+You can access Google's `gemini` and `gemini-vision` models, as well as other
+generative models in LangChain through `ChatGoogleGenerativeAI` class in the
+`@langchain/google-genai` integration package.
+
+```{=mdx}
+
+<Tip>
+**You can also access Google's `gemini` family of models via the LangChain VertexAI and VertexAI-web integrations.**
+
+
+Click [here](/oss/integrations/chat/google_vertex_ai) to read the docs.
+</Tip>
+
+```
+### Credentials
+
+Get an API key here: [https://ai.google.dev/tutorials/setup](https://ai.google.dev/tutorials/setup)
+
+Then set the `GOOGLE_API_KEY` environment variable:
+
+```bash
+export GOOGLE_API_KEY="your-api-key"
+```
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+### Installation
+
+The LangChain `ChatGoogleGenerativeAI` integration lives in the `@langchain/google-genai` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/google-genai @langchain/core
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```typescript
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai"
+
+const llm = new ChatGoogleGenerativeAI({
+    model: "gemini-1.5-pro",
+    temperature: 0,
+    maxRetries: 2,
+    // other params...
+})
+```
+## Invocation
+
+
+```typescript
+const aiMsg = await llm.invoke([
+    [
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ],
+    ["human", "I love programming."],
+])
+aiMsg
+```
+```output
+AIMessage {
+  "content": "J'adore programmer. \n",
+  "additional_kwargs": {
+    "finishReason": "STOP",
+    "index": 0,
+    "safetyRatings": [
+      {
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HATE_SPEECH",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HARASSMENT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        "probability": "NEGLIGIBLE"
+      }
+    ]
+  },
+  "response_metadata": {
+    "finishReason": "STOP",
+    "index": 0,
+    "safetyRatings": [
+      {
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HATE_SPEECH",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HARASSMENT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        "probability": "NEGLIGIBLE"
+      }
+    ]
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 21,
+    "output_tokens": 5,
+    "total_tokens": 26
+  }
+}
+```
+
+```typescript
+console.log(aiMsg.content)
+```
+```output
+J'adore programmer.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+
+const prompt = ChatPromptTemplate.fromMessages(
+    [
+        [
+            "system",
+            "You are a helpful assistant that translates {input_language} to {output_language}.",
+        ],
+        ["human", "{input}"],
+    ]
+)
+
+const chain = prompt.pipe(llm);
+await chain.invoke(
+    {
+        input_language: "English",
+        output_language: "German",
+        input: "I love programming.",
+    }
+)
+```
+```output
+AIMessage {
+  "content": "Ich liebe das Programmieren. \n",
+  "additional_kwargs": {
+    "finishReason": "STOP",
+    "index": 0,
+    "safetyRatings": [
+      {
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HATE_SPEECH",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HARASSMENT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        "probability": "NEGLIGIBLE"
+      }
+    ]
+  },
+  "response_metadata": {
+    "finishReason": "STOP",
+    "index": 0,
+    "safetyRatings": [
+      {
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HATE_SPEECH",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_HARASSMENT",
+        "probability": "NEGLIGIBLE"
+      },
+      {
+        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        "probability": "NEGLIGIBLE"
+      }
+    ]
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 16,
+    "output_tokens": 7,
+    "total_tokens": 23
+  }
+}
+```
+## Safety Settings
+
+Gemini models have default safety settings that can be overridden. If you are receiving lots of "Safety Warnings" from your models, you can try tweaking the safety_settings attribute of the model. For example, to turn off safety blocking for dangerous content, you can import enums from the `@google/generative-ai` package, then construct your LLM as follows:
+
+
+```typescript
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
+
+const llmWithSafetySettings = new ChatGoogleGenerativeAI({
+  model: "gemini-1.5-pro",
+  temperature: 0,
+  safetySettings: [
+    {
+      category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+      threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    },
+  ],
+  // other params...
+});
+```
+
+## Tool calling
+
+Tool calling with Google AI is mostly the same [as tool calling with other models](/oss/how-to/tool_calling), but has a few restrictions on schema.
+
+The Google AI API does not allow tool schemas to contain an object with unknown properties. For example, the following Zod schemas will throw an error:
+
+`const invalidSchema = z.object({ properties: z.record(z.unknown()) });`
+
+and
+
+`const invalidSchema2 = z.record(z.unknown());`
+
+Instead, you should explicitly define the properties of the object field. Here's an example:
+
+
+```typescript
+import { tool } from "@langchain/core/tools";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { z } from "zod";
+
+// Define your tool
+const fakeBrowserTool = tool((_) => {
+  return "The search result is xyz..."
+}, {
+  name: "browser_tool",
+  description: "Useful for when you need to find something on the web or summarize a webpage.",
+  schema: z.object({
+    url: z.string().describe("The URL of the webpage to search."),
+    query: z.string().optional().describe("An optional search query to use."),
+  }),
+})
+
+const llmWithTool = new ChatGoogleGenerativeAI({
+  model: "gemini-pro",
+}).bindTools([fakeBrowserTool]) // Bind your tools to the model
+
+const toolRes = await llmWithTool.invoke([
+  [
+    "human",
+    "Search the web and tell me what the weather will be like tonight in new york. use a popular weather website",
+  ],
+]);
+
+console.log(toolRes.tool_calls);
+```
+```output
+[
+  {
+    name: 'browser_tool',
+    args: {
+      url: 'https://www.weather.com',
+      query: 'weather tonight in new york'
+    },
+    type: 'tool_call'
+  }
+]
+```
+### Built in Google Search Retrieval
+
+Google also offers a built in search tool which you can use to ground content generation in real-world information. Here's an example of how to use it:
+
+
+```typescript
+import { DynamicRetrievalMode, GoogleSearchRetrievalTool } from "@google/generative-ai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+
+const searchRetrievalTool: GoogleSearchRetrievalTool = {
+  googleSearchRetrieval: {
+    dynamicRetrievalConfig: {
+      mode: DynamicRetrievalMode.MODE_DYNAMIC,
+      dynamicThreshold: 0.7, // default is 0.7
+    }
+  }
+};
+const searchRetrievalModel = new ChatGoogleGenerativeAI({
+  model: "gemini-1.5-pro",
+  temperature: 0,
+  maxRetries: 0,
+}).bindTools([searchRetrievalTool]);
+
+const searchRetrievalResult = await searchRetrievalModel.invoke("Who won the 2024 MLB World Series?");
+
+console.log(searchRetrievalResult.content);
+```
+```output
+The Los Angeles Dodgers won the 2024 World Series, defeating the New York Yankees in Game 5 on October 30, 2024, by a score of 7-6. This victory marks the Dodgers' eighth World Series title and their first in a full season since 1988.  They achieved this win by overcoming a 5-0 deficit, making them the first team in World Series history to win a clinching game after being behind by such a margin.  The Dodgers also became the first team in MLB postseason history to overcome a five-run deficit, fall behind again, and still win.  Walker Buehler earned the save in the final game, securing the championship for the Dodgers.
+```
+The response also includes metadata about the search result:
+
+
+```typescript
+console.dir(searchRetrievalResult.response_metadata?.groundingMetadata, { depth: null });
+```
+```output
+{
+  searchEntryPoint: {
+    renderedContent: '<style>\n' +
+      '.container {\n' +
+      '  align-items: center;\n' +
+      '  border-radius: 8px;\n' +
+      '  display: flex;\n' +
+      '  font-family: Google Sans, Roboto, sans-serif;\n' +
+      '  font-size: 14px;\n' +
+      '  line-height: 20px;\n' +
+      '  padding: 8px 12px;\n' +
+      '}\n' +
+      '.chip {\n' +
+      '  display: inline-block;\n' +
+      '  border: solid 1px;\n' +
+      '  border-radius: 16px;\n' +
+      '  min-width: 14px;\n' +
+      '  padding: 5px 16px;\n' +
+      '  text-align: center;\n' +
+      '  user-select: none;\n' +
+      '  margin: 0 8px;\n' +
+      '  -webkit-tap-highlight-color: transparent;\n' +
+      '}\n' +
+      '.carousel {\n' +
+      '  overflow: auto;\n' +
+      '  scrollbar-width: none;\n' +
+      '  white-space: nowrap;\n' +
+      '  margin-right: -12px;\n' +
+      '}\n' +
+      '.headline {\n' +
+      '  display: flex;\n' +
+      '  margin-right: 4px;\n' +
+      '}\n' +
+      '.gradient-container {\n' +
+      '  position: relative;\n' +
+      '}\n' +
+      '.gradient {\n' +
+      '  position: absolute;\n' +
+      '  transform: translate(3px, -9px);\n' +
+      '  height: 36px;\n' +
+      '  width: 9px;\n' +
+      '}\n' +
+      '@media (prefers-color-scheme: light) {\n' +
+      '  .container {\n' +
+      '    background-color: #fafafa;\n' +
+      '    box-shadow: 0 0 0 1px #0000000f;\n' +
+      '  }\n' +
+      '  .headline-label {\n' +
+      '    color: #1f1f1f;\n' +
+      '  }\n' +
+      '  .chip {\n' +
+      '    background-color: #ffffff;\n' +
+      '    border-color: #d2d2d2;\n' +
+      '    color: #5e5e5e;\n' +
+      '    text-decoration: none;\n' +
+      '  }\n' +
+      '  .chip:hover {\n' +
+      '    background-color: #f2f2f2;\n' +
+      '  }\n' +
+      '  .chip:focus {\n' +
+      '    background-color: #f2f2f2;\n' +
+      '  }\n' +
+      '  .chip:active {\n' +
+      '    background-color: #d8d8d8;\n' +
+      '    border-color: #b6b6b6;\n' +
+      '  }\n' +
+      '  .logo-dark {\n' +
+      '    display: none;\n' +
+      '  }\n' +
+      '  .gradient {\n' +
+      '    background: linear-gradient(90deg, #fafafa 15%, #fafafa00 100%);\n' +
+      '  }\n' +
+      '}\n' +
+      '@media (prefers-color-scheme: dark) {\n' +
+      '  .container {\n' +
+      '    background-color: #1f1f1f;\n' +
+      '    box-shadow: 0 0 0 1px #ffffff26;\n' +
+      '  }\n' +
+      '  .headline-label {\n' +
+      '    color: #fff;\n' +
+      '  }\n' +
+      '  .chip {\n' +
+      '    background-color: #2c2c2c;\n' +
+      '    border-color: #3c4043;\n' +
+      '    color: #fff;\n' +
+      '    text-decoration: none;\n' +
+      '  }\n' +
+      '  .chip:hover {\n' +
+      '    background-color: #353536;\n' +
+      '  }\n' +
+      '  .chip:focus {\n' +
+      '    background-color: #353536;\n' +
+      '  }\n' +
+      '  .chip:active {\n' +
+      '    background-color: #464849;\n' +
+      '    border-color: #53575b;\n' +
+      '  }\n' +
+      '  .logo-light {\n' +
+      '    display: none;\n' +
+      '  }\n' +
+      '  .gradient {\n' +
+      '    background: linear-gradient(90deg, #1f1f1f 15%, #1f1f1f00 100%);\n' +
+      '  }\n' +
+      '}\n' +
+      '</style>\n' +
+      '<div class="container">\n' +
+      '  <div class="headline">\n' +
+      '    <svg class="logo-light" width="18" height="18" viewBox="9 9 35 35" fill="none" xmlns="http://www.w3.org/2000/svg">\n' +
+      '      <path fill-rule="evenodd" clip-rule="evenodd" d="M42.8622 27.0064C42.8622 25.7839 42.7525 24.6084 42.5487 23.4799H26.3109V30.1568H35.5897C35.1821 32.3041 33.9596 34.1222 32.1258 35.3448V39.6864H37.7213C40.9814 36.677 42.8622 32.2571 42.8622 27.0064V27.0064Z" fill="#4285F4"/>\n' +
+      '      <path fill-rule="evenodd" clip-rule="evenodd" d="M26.3109 43.8555C30.9659 43.8555 34.8687 42.3195 37.7213 39.6863L32.1258 35.3447C30.5898 36.3792 28.6306 37.0061 26.3109 37.0061C21.8282 37.0061 18.0195 33.9811 16.6559 29.906H10.9194V34.3573C13.7563 39.9841 19.5712 43.8555 26.3109 43.8555V43.8555Z" fill="#34A853"/>\n' +
+      '      <path fill-rule="evenodd" clip-rule="evenodd" d="M16.6559 29.8904C16.3111 28.8559 16.1074 27.7588 16.1074 26.6146C16.1074 25.4704 16.3111 24.3733 16.6559 23.3388V18.8875H10.9194C9.74388 21.2072 9.06992 23.8247 9.06992 26.6146C9.06992 29.4045 9.74388 32.022 10.9194 34.3417L15.3864 30.8621L16.6559 29.8904V29.8904Z" fill="#FBBC05"/>\n' +
+      '      <path fill-rule="evenodd" clip-rule="evenodd" d="M26.3109 16.2386C28.85 16.2386 31.107 17.1164 32.9095 18.8091L37.8466 13.8719C34.853 11.082 30.9659 9.3736 26.3109 9.3736C19.5712 9.3736 13.7563 13.245 10.9194 18.8875L16.6559 23.3388C18.0195 19.2636 21.8282 16.2386 26.3109 16.2386V16.2386Z" fill="#EA4335"/>\n' +
+      '    </svg>\n' +
+      '    <svg class="logo-dark" width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">\n' +
+      '      <circle cx="24" cy="23" fill="#FFF" r="22"/>\n' +
+      '      <path d="M33.76 34.26c2.75-2.56 4.49-6.37 4.49-11.26 0-.89-.08-1.84-.29-3H24.01v5.99h8.03c-.4 2.02-1.5 3.56-3.07 4.56v.75l3.91 2.97h.88z" fill="#4285F4"/>\n' +
+      '      <path d="M15.58 25.77A8.845 8.845 0 0 0 24 31.86c1.92 0 3.62-.46 4.97-1.31l4.79 3.71C31.14 36.7 27.65 38 24 38c-5.93 0-11.01-3.4-13.45-8.36l.17-1.01 4.06-2.85h.8z" fill="#34A853"/>\n' +
+      '      <path d="M15.59 20.21a8.864 8.864 0 0 0 0 5.58l-5.03 3.86c-.98-2-1.53-4.25-1.53-6.64 0-2.39.55-4.64 1.53-6.64l1-.22 3.81 2.98.22 1.08z" fill="#FBBC05"/>\n' +
+      '      <path d="M24 14.14c2.11 0 4.02.75 5.52 1.98l4.36-4.36C31.22 9.43 27.81 8 24 8c-5.93 0-11.01 3.4-13.45 8.36l5.03 3.85A8.86 8.86 0 0 1 24 14.14z" fill="#EA4335"/>\n' +
+      '    </svg>\n' +
+      '    <div class="gradient-container"><div class="gradient"></div></div>\n' +
+      '  </div>\n' +
+      '  <div class="carousel">\n' +
+      '    <a class="chip" href="https://vertexaisearch.cloud.google.com/grounding-api-redirect/AZnLMfyXqJN3K4FKueRIZDY2Owjs5Rw4dqgDOc6ZjYKsFo4GgENxLktR2sPHtNUuEBIUeqmUYc3jz9pLRq2cgSpc-4EoGBwQSTTpKk71CX7revnXUa54r9LxcxKgYxrUNBm5HpEm6JDNeJykc6NacPYv43M2wgkrhHCHCzHRyjEP2YR0Pxq4JQMUuOrLeTAYWB9oUb87FE5ksfuB6gimqO5-6uS3psR6">who won the 2024 mlb world series</a>\n' +
+      '  </div>\n' +
+      '</div>\n'
+  },
+  groundingChunks: [
+    {
+      web: {
+        uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/AZnLMfwvs0gpiM4BbIcNXZnnp4d4ED_rLnIYz2ZwM-lwFnoUxXNlKzy7ZSbbs_E27yhARG6Gx2AuW7DsoqkWPfDFMqPdXfvG3n0qFOQxQ4MBQ9Ox9mTk3KH5KPRJ79m8V118RQRyhi6oK5qg5-fLQunXUVn_a42K7eMk7Kjb8VpZ4onl8Glv1lQQsAK7YWyYkQ7WkTHDHVGB-vrL2U2yRQ==',
+        title: 'foxsports.com'
+      }
+    },
+    {
+      web: {
+        uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/AZnLMfwxwBq8VYgKAhf3UC8U6U5D-i0lK4TwP-2Jf8ClqB-sI0iptm9GxgeaH1iHFbSi-j_C3UqYj8Ok0YDTyvg87S7JamU48pndrd467ZQbI2sI0yWxsCCZ_dosXHwemBHFL5TW2hbAqasq93CfJ09cp1jU',
+        title: 'mlb.com'
+      }
+    }
+  ],
+  groundingSupports: [
+    {
+      segment: {
+        endIndex: 131,
+        text: 'The Los Angeles Dodgers won the 2024 World Series, defeating the New York Yankees in Game 5 on October 30, 2024, by a score of 7-6.'
+      },
+      groundingChunkIndices: [ 0, 1 ],
+      confidenceScores: [ 0.7652759, 0.7652759 ]
+    },
+    {
+      segment: {
+        startIndex: 401,
+        endIndex: 531,
+        text: 'The Dodgers also became the first team in MLB postseason history to overcome a five-run deficit, fall behind again, and still win.'
+      },
+      groundingChunkIndices: [ 1 ],
+      confidenceScores: [ 0.8487609 ]
+    }
+  ],
+  retrievalMetadata: { googleSearchDynamicRetrievalScore: 0.93359375 },
+  webSearchQueries: [ 'who won the 2024 mlb world series' ]
+}
+```
+### Code Execution
+
+Google Generative AI also supports code execution. Using the built in `CodeExecutionTool`, you can make the model generate code, execute it, and use the results in a final completion:
+
+
+```typescript
+import { CodeExecutionTool } from "@google/generative-ai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+
+const codeExecutionTool: CodeExecutionTool = {
+  codeExecution: {}, // Simply pass an empty object to enable it.
+};
+const codeExecutionModel = new ChatGoogleGenerativeAI({
+  model: "gemini-1.5-pro",
+  temperature: 0,
+  maxRetries: 0,
+}).bindTools([codeExecutionTool]);
+
+const codeExecutionResult = await codeExecutionModel.invoke("Use code execution to find the sum of the first and last 3 numbers in the following list: [1, 2, 3, 72638, 8, 727, 4, 5, 6]");
+
+console.dir(codeExecutionResult.content, { depth: null });
+```
+```output
+[
+  {
+    type: 'text',
+    text: "Here's how to find the sum of the first and last three numbers in the given list using Python:\n" +
+      '\n'
+  },
+  {
+    type: 'executableCode',
+    executableCode: {
+      language: 'PYTHON',
+      code: '\n' +
+        'my_list = [1, 2, 3, 72638, 8, 727, 4, 5, 6]\n' +
+        '\n' +
+        'first_three_sum = sum(my_list[:3])\n' +
+        'last_three_sum = sum(my_list[-3:])\n' +
+        'total_sum = first_three_sum + last_three_sum\n' +
+        '\n' +
+        'print(f"{first_three_sum=}")\n' +
+        'print(f"{last_three_sum=}")\n' +
+        'print(f"{total_sum=}")\n' +
+        '\n'
+    }
+  },
+  {
+    type: 'codeExecutionResult',
+    codeExecutionResult: {
+      outcome: 'OUTCOME_OK',
+      output: 'first_three_sum=6\nlast_three_sum=15\ntotal_sum=21\n'
+    }
+  },
+  {
+    type: 'text',
+    text: 'Therefore, the sum of the first three numbers (1, 2, 3) is 6, the sum of the last three numbers (4, 5, 6) is 15, and their total sum is 21.\n'
+  }
+]
+```
+You can also pass this generation back to the model as chat history:
+
+
+```typescript
+const codeExecutionExplanation = await codeExecutionModel.invoke([
+  codeExecutionResult,
+  {
+    role: "user",
+    content: "Please explain the question I asked, the code you wrote, and the answer you got.",
+  }
+])
+
+console.log(codeExecutionExplanation.content);
+```
+```output
+You asked for the sum of the first three and the last three numbers in the list `[1, 2, 3, 72638, 8, 727, 4, 5, 6]`.
+
+Here's a breakdown of the code:
+
+1. **`my_list = [1, 2, 3, 72638, 8, 727, 4, 5, 6]`**: This line defines the list of numbers you provided.
+
+2. **`first_three_sum = sum(my_list[:3])`**: This calculates the sum of the first three numbers.  `my_list[:3]` is a slice of the list that takes elements from the beginning up to (but not including) the index 3.  So, it takes elements at indices 0, 1, and 2, which are 1, 2, and 3. The `sum()` function then adds these numbers together.
+
+3. **`last_three_sum = sum(my_list[-3:])`**: This calculates the sum of the last three numbers. `my_list[-3:]` is a slice that takes elements starting from the third element from the end and goes to the end of the list. So it takes elements at indices -3, -2, and -1 which correspond to 4, 5, and 6. The `sum()` function adds these numbers.
+
+4. **`total_sum = first_three_sum + last_three_sum`**: This adds the sum of the first three numbers and the sum of the last three numbers to get the final result.
+
+5. **`print(f"{first_three_sum=}")`**, **`print(f"{last_three_sum=}")`**, and **`print(f"{total_sum=}")`**: These lines print the calculated sums in a clear and readable format.
+
+
+The output of the code was:
+
+* `first_three_sum=6`
+* `last_three_sum=15`
+* `total_sum=21`
+
+Therefore, the answer to your question is 21.
+```
+## Context Caching
+
+Context caching allows you to pass some content to the model once, cache the input tokens, and then refer to the cached tokens for subsequent requests to reduce cost. You can create a `CachedContent` object using `GoogleAICacheManager` class and then pass the `CachedContent` object to your `ChatGoogleGenerativeAIModel` with `enableCachedContent()` method.
+
+
+```typescript
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import {
+  GoogleAICacheManager,
+  GoogleAIFileManager,
+} from "@google/generative-ai/server";
+
+const fileManager = new GoogleAIFileManager(process.env.GOOGLE_API_KEY);
+const cacheManager = new GoogleAICacheManager(process.env.GOOGLE_API_KEY);
+
+// uploads file for caching
+const pathToVideoFile = "/path/to/video/file";
+const displayName = "example-video";
+const fileResult = await fileManager.uploadFile(pathToVideoFile, {
+    displayName,
+    mimeType: "video/mp4",
+});
+
+// creates cached content AFTER uploading is finished
+const cachedContent = await cacheManager.create({
+    model: "models/gemini-1.5-flash-001",
+    displayName: displayName,
+    systemInstruction: "You are an expert video analyzer, and your job is to answer " +
+      "the user's query based on the video file you have access to.",
+    contents: [
+        {
+            role: "user",
+            parts: [
+                {
+                    fileData: {
+                        mimeType: fileResult.file.mimeType,
+                        fileUri: fileResult.file.uri,
+                    },
+                },
+            ],
+        },
+    ],
+    ttlSeconds: 300,
+});
+
+// passes cached video to model
+const model = new ChatGoogleGenerativeAI({});
+model.useCachedContent(cachedContent);
+
+// invokes model with cached video
+await model.invoke("Summarize the video");
+```
+
+**Note**
+- Context caching supports both Gemini 1.5 Pro and Gemini 1.5 Flash. Context caching is only available for stable models with fixed versions (for example, gemini-1.5-pro-001). You must include the version postfix (for example, the -001 in gemini-1.5-pro-001).
+- The minimum input token count for context caching is 32,768, and the maximum is the same as the maximum for the given model.
+
+## Gemini Prompting FAQs
+
+As of the time this doc was written (2023/12/12), Gemini has some restrictions on the types and structure of prompts it accepts. Specifically:
+
+1. When providing multimodal (image) inputs, you are restricted to at most 1 message of "human" (user) type. You cannot pass multiple messages (though the single human message may have multiple content entries)
+2. System messages are not natively supported, and will be merged with the first human message if present.
+3. For regular chat conversations, messages must follow the human/ai/human/ai alternating pattern. You may not provide 2 AI or human messages in sequence.
+4. Message may be blocked if they violate the safety checks of the LLM. In this case, the model will return an empty response.
+
+
+## API reference
+
+For detailed documentation of all ChatGoogleGenerativeAI features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_google_genai.ChatGoogleGenerativeAI.html

@@ -1,0 +1,269 @@
+---
+title: IBM watsonx.ai
+---
+
+## Overview
+
+This will help you getting started with the [Watsonx document compressor](/oss/concepts/#document_compressors). For detailed documentation of all Watsonx document compressor features and configurations head to the [API reference](https://api.js.langchain.com/modules/_langchain_community.document_compressors_ibm.html).
+
+### Integration details
+
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/retrievers/ibm_watsonx_ranker/) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| [`WatsonxRerank`](https://api.js.langchain.com/classes/_langchain_community.document_compressors_ibm.WatsonxRerank.html) | [@langchain/community](https://www.npmjs.com/package/@langchain/community) |  ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+
+## Setup
+
+To access IBM WatsonxAI models you'll need to create an IBM watsonx.ai account, get an API key or any other type of credentials, and install the `@langchain/community` integration package.
+
+### Credentials
+
+Head to [IBM Cloud](https://cloud.ibm.com/login) to sign up to IBM watsonx.ai and generate an API key or provide any other authentication form as presented below.
+
+#### IAM authentication
+
+```bash
+export WATSONX_AI_AUTH_TYPE=iam
+export WATSONX_AI_APIKEY=<YOUR-APIKEY>
+```
+
+#### Bearer token authentication
+
+```bash
+export WATSONX_AI_AUTH_TYPE=bearertoken
+export WATSONX_AI_BEARER_TOKEN=<YOUR-BEARER-TOKEN>
+```
+
+#### IBM watsonx.ai software authentication
+
+```bash
+export WATSONX_AI_AUTH_TYPE=cp4d
+export WATSONX_AI_USERNAME=<YOUR_USERNAME>
+export WATSONX_AI_PASSWORD=<YOUR_PASSWORD>
+export WATSONX_AI_URL=<URL>
+```
+
+Once these are placed in your environment variables and object is initialized authentication will proceed automatically.
+
+Authentication can also be accomplished by passing these values as parameters to a new instance.
+
+## IAM authentication
+
+```typescript
+import { WatsonxLLM } from "@langchain/community/llms/ibm";
+
+const props = {
+  version: "YYYY-MM-DD",
+  serviceUrl: "<SERVICE_URL>",
+  projectId: "<PROJECT_ID>",
+  watsonxAIAuthType: "iam",
+  watsonxAIApikey: "<YOUR-APIKEY>",
+};
+const instance = new WatsonxLLM(props);
+```
+
+## Bearer token authentication
+
+```typescript
+import { WatsonxLLM } from "@langchain/community/llms/ibm";
+
+const props = {
+  version: "YYYY-MM-DD",
+  serviceUrl: "<SERVICE_URL>",
+  projectId: "<PROJECT_ID>",
+  watsonxAIAuthType: "bearertoken",
+  watsonxAIBearerToken: "<YOUR-BEARERTOKEN>",
+};
+const instance = new WatsonxLLM(props);
+```
+
+### IBM watsonx.ai software authentication
+
+```typescript
+import { WatsonxLLM } from "@langchain/community/llms/ibm";
+
+const props = {
+  version: "YYYY-MM-DD",
+  serviceUrl: "<SERVICE_URL>",
+  projectId: "<PROJECT_ID>",
+  watsonxAIAuthType: "cp4d",
+  watsonxAIUsername: "<YOUR-USERNAME>",
+  watsonxAIPassword: "<YOUR-PASSWORD>",
+  watsonxAIUrl: "<url>",
+};
+const instance = new WatsonxLLM(props);
+```
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```typescript
+// process.env.LANGSMITH_API_KEY = "<YOUR API KEY HERE>";
+// process.env.LANGSMITH_TRACING = "true";
+```
+
+### Installation
+
+This document compressor lives in the `@langchain/community` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/core
+</Npm2Yarn>
+```
+## Instantiation
+
+Now we can instantiate our compressor:
+
+
+```javascript
+import { WatsonxRerank } from "@langchain/community/document_compressors/ibm";
+
+const watsonxRerank = new WatsonxRerank({
+  version: "2024-05-31",
+  serviceUrl: process.env.WATSONX_AI_SERVICE_URL,
+  projectId: process.env.WATSONX_AI_PROJECT_ID,
+  model: "cross-encoder/ms-marco-minilm-l-12-v2",
+});
+```
+## Usage
+
+First, set up a basic RAG ingest pipeline with embeddings, a text splitter and a vector store. We'll use this to and rerank some documents regarding the selected query:
+
+
+```javascript
+import { readFileSync } from "node:fs";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import { WatsonxEmbeddings } from "@langchain/community/embeddings/ibm";
+import { CharacterTextSplitter } from "@langchain/textsplitters";
+
+const embeddings = new WatsonxEmbeddings({
+ version: "YYYY-MM-DD",
+ serviceUrl: process.env.API_URL,
+ projectId: "<PROJECT_ID>",
+ spaceId: "<SPACE_ID>",
+ model: "ibm/slate-125m-english-rtrvr",
+});
+
+const textSplitter = new CharacterTextSplitter({
+  chunkSize: 400,
+  chunkOverlap: 0,
+});
+  
+const query = "What did the president say about Ketanji Brown Jackson";
+const text = readFileSync("state_of_the_union.txt", "utf8");
+
+const docs = await textSplitter.createDocuments([text]);
+const vectorStore = await MemoryVectorStore.fromDocuments(docs, embeddings);
+const vectorStoreRetriever = vectorStore.asRetriever();
+
+const result = await vectorStoreRetriever.invoke(query);
+console.log(result);
+```
+```output
+[
+  Document {
+    pageContent: 'And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.',
+    metadata: { loc: [Object] },
+    id: undefined
+  },
+  Document {
+    pageContent: 'I spoke with their families and told them that we are forever in debt for their sacrifice, and we will carry on their mission to restore the trust and safety every community deserves. \n' +
+      '\n' +
+      'I’ve worked on these issues a long time. \n' +
+      '\n' +
+      'I know what works: Investing in crime preventionand community police officers who’ll walk the beat, who’ll know the neighborhood, and who can restore trust and safety.',
+    metadata: { loc: [Object] },
+    id: undefined
+  },
+  Document {
+    pageContent: 'We are the only nation on Earth that has always turned every crisis we have faced into an opportunity. \n' +
+      '\n' +
+      'The only nation that can be defined by a single word: possibilities. \n' +
+      '\n' +
+      'So on this night, in our 245th year as a nation, I have come to report on the State of the Union. \n' +
+      '\n' +
+      'And my report is this: the State of the Union is strong—because you, the American people, are strong.',
+    metadata: { loc: [Object] },
+    id: undefined
+  },
+  Document {
+    pageContent: 'And I’m taking robust action to make sure the pain of our sanctions  is targeted at Russia’s economy. And I will use every tool at our disposal to protect American businesses and consumers. \n' +
+      '\n' +
+      'Tonight, I can announce that the United States has worked with 30 other countries to release 60 Million barrels of oil from reserves around the world.',
+    metadata: { loc: [Object] },
+    id: undefined
+  }
+]
+```
+Pass selected documents to rerank and recive specific score for each
+
+
+```javascript
+import { WatsonxRerank } from "@langchain/community/document_compressors/ibm";
+
+const reranker = new WatsonxRerank({
+  version: "2024-05-31",
+  serviceUrl: process.env.WATSONX_AI_SERVICE_URL,
+  projectId: process.env.WATSONX_AI_PROJECT_ID,
+  model: "cross-encoder/ms-marco-minilm-l-12-v2",
+});
+const compressed = await reranker.rerank(result, query);
+console.log(compressed);
+```
+```output
+[
+  { index: 0, relevanceScore: 0.726995587348938 },
+  { index: 1, relevanceScore: 0.5758284330368042 },
+  { index: 2, relevanceScore: 0.5479092597961426 },
+  { index: 3, relevanceScore: 0.5468723773956299 }
+]
+```
+Or else you could have the documents returned with the result, for that use .compressDocuments() method as below.
+
+
+```javascript
+const compressedWithResults = await reranker.compressDocuments(result, query);
+console.log(compressedWithResults);
+```
+```output
+[
+  Document {
+    pageContent: 'And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.',
+    metadata: { loc: [Object], relevanceScore: 0.726995587348938 },
+    id: undefined
+  },
+  Document {
+    pageContent: 'I spoke with their families and told them that we are forever in debt for their sacrifice, and we will carry on their mission to restore the trust and safety every community deserves. \n' +
+      '\n' +
+      'I’ve worked on these issues a long time. \n' +
+      '\n' +
+      'I know what works: Investing in crime preventionand community police officers who’ll walk the beat, who’ll know the neighborhood, and who can restore trust and safety.',
+    metadata: { loc: [Object], relevanceScore: 0.5758284330368042 },
+    id: undefined
+  },
+  Document {
+    pageContent: 'We are the only nation on Earth that has always turned every crisis we have faced into an opportunity. \n' +
+      '\n' +
+      'The only nation that can be defined by a single word: possibilities. \n' +
+      '\n' +
+      'So on this night, in our 245th year as a nation, I have come to report on the State of the Union. \n' +
+      '\n' +
+      'And my report is this: the State of the Union is strong—because you, the American people, are strong.',
+    metadata: { loc: [Object], relevanceScore: 0.5479092597961426 },
+    id: undefined
+  },
+  Document {
+    pageContent: 'And I’m taking robust action to make sure the pain of our sanctions  is targeted at Russia’s economy. And I will use every tool at our disposal to protect American businesses and consumers. \n' +
+      '\n' +
+      'Tonight, I can announce that the United States has worked with 30 other countries to release 60 Million barrels of oil from reserves around the world.',
+    metadata: { loc: [Object], relevanceScore: 0.5468723773956299 },
+    id: undefined
+  }
+]
+```
+## API reference
+
+For detailed documentation of all Watsonx document compressor features and configurations head to the [API reference](https://api.js.langchain.com/modules/_langchain_community.document_compressors_ibm.html).

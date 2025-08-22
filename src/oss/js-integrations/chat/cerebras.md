@@ -1,0 +1,211 @@
+---
+title: ChatCerebras
+---
+
+[Cerebras](https://cerebras.ai/) is a model provider that serves open source models with an emphasis on speed. The Cerebras CS-3 system, powered by the the Wafer-Scale Engine-3 (WSE-3), represents a new class of AI supercomputer that sets the standard for generative AI training and inference with unparalleled performance and scalability.
+
+With Cerebras as your inference provider, you can:
+
+- Achieve unprecedented speed for AI inference workloads
+- Build commercially with high throughput
+- Effortlessly scale your AI workloads with our seamless clustering technology
+
+Our CS-3 systems can be quickly and easily clustered to create the largest AI supercomputers in the world, making it simple to place and run the largest models. Leading corporations, research institutions, and governments are already using Cerebras solutions to develop proprietary models and train popular open-source models.
+
+This will help you getting started with ChatCerebras [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatCerebras features and configurations head to the [API reference](https://api.js.langchain.com/classes/_langchain_cerebras.ChatCerebras.html).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/cerebras) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [ChatCerebras](https://api.js.langchain.com/classes/langchain_cerebras.ChatCerebras.html) | [`@langchain/cerebras`](https://www.npmjs.com/package/@langchain/cerebras) | ❌ | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cerebras?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cerebras?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | 
+
+## Setup
+
+To access ChatCerebras models you'll need to create a Cerebras account, get an API key, and install the `@langchain/cerebras` integration package.
+
+### Credentials
+
+Get an API Key from [cloud.cerebras.ai](https://cloud.cerebras.ai) and add it to your environment variables:
+
+```bash
+export CEREBRAS_API_KEY="your-api-key"
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain ChatCerebras integration lives in the `@langchain/cerebras` package:
+
+```{=mdx}
+
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/cerebras @langchain/core
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```typescript
+import { ChatCerebras } from "@langchain/cerebras" 
+
+const llm = new ChatCerebras({
+    model: "llama-3.3-70b",
+    temperature: 0,
+    maxTokens: undefined,
+    maxRetries: 2,
+    // other params...
+})
+```
+## Invocation
+
+
+```typescript
+const aiMsg = await llm.invoke([
+    {
+      role: "system",
+      content: "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    },
+    { role: "user", content: "I love programming." },
+])
+aiMsg
+```
+```output
+AIMessage {
+  "id": "run-17c7d62d-67ac-4677-b33a-18298fc85e35",
+  "content": "J'adore la programmation.",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "id": "chatcmpl-2d1e2de5-4239-46fb-af2a-6200d89d7dde",
+    "created": 1735785598,
+    "model": "llama-3.3-70b",
+    "system_fingerprint": "fp_2e2a2a083c",
+    "object": "chat.completion",
+    "time_info": {
+      "queue_time": 0.00009063,
+      "prompt_time": 0.002163031,
+      "completion_time": 0.012339628,
+      "total_time": 0.01640915870666504,
+      "created": 1735785598
+    }
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 55,
+    "output_tokens": 9,
+    "total_tokens": 64
+  }
+}
+```
+
+```typescript
+console.log(aiMsg.content)
+```
+```output
+J'adore la programmation.
+```
+## Json invocation
+
+
+```typescript
+const messages = [
+  {
+    role: "system",
+    content: "You are a math tutor that handles math exercises and makes output in json in format { result: number }.",
+  },
+  { role: "user",  content: "2 + 2" },
+];
+
+const aiInvokeMsg = await llm.invoke(messages, { response_format: { type: "json_object" } });
+
+// if you want not to pass response_format in every invoke, you can bind it to the instance
+const llmWithResponseFormat = llm.bind({ response_format: { type: "json_object" } });
+const aiBindMsg = await llmWithResponseFormat.invoke(messages);
+
+// they are the same
+console.log({ aiInvokeMsgContent: aiInvokeMsg.content, aiBindMsg: aiBindMsg.content });
+```
+```output
+{ aiInvokeMsgContent: '{"result":4}', aiBindMsg: '{"result":4}' }
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+
+const prompt = ChatPromptTemplate.fromMessages(
+    [
+        [
+            "system",
+            "You are a helpful assistant that translates {input_language} to {output_language}.",
+        ],
+        ["human", "{input}"],
+    ]
+)
+
+const chain = prompt.pipe(llm);
+await chain.invoke(
+    {
+        input_language: "English",
+        output_language: "German",
+        input: "I love programming.",
+    }
+)
+```
+```output
+AIMessage {
+  "id": "run-5c8a9f25-0f57-499b-9c2b-87bd07135feb",
+  "content": "Ich liebe das Programmieren.",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "id": "chatcmpl-abd1e9eb-b873-492e-9e30-0d13dfc3a145",
+    "created": 1735785607,
+    "model": "llama-3.3-70b",
+    "system_fingerprint": "fp_2e2a2a083c",
+    "object": "chat.completion",
+    "time_info": {
+      "queue_time": 0.00009499,
+      "prompt_time": 0.002095266,
+      "completion_time": 0.008807576,
+      "total_time": 0.012718439102172852,
+      "created": 1735785607
+    }
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 50,
+    "output_tokens": 7,
+    "total_tokens": 57
+  }
+}
+```
+## API reference
+
+For detailed documentation of all ChatCerebras features and configurations head to the API reference: https://api.js.langchain.com/classes/_langchain_cerebras.ChatCerebras.html

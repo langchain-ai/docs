@@ -1,0 +1,216 @@
+---
+title: WebPDFLoader
+---
+
+
+This notebook provides a quick overview for getting started with [WebPDFLoader](/oss/integrations/document_loaders/). For detailed documentation of all WebPDFLoader features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_document_loaders_web_pdf.WebPDFLoader.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | PY support |
+| :--- | :--- | :---: | :---: |  :---: |
+| [WebPDFLoader](https://api.js.langchain.com/classes/langchain_community_document_loaders_web_pdf.WebPDFLoader.html) | [@langchain/community](https://api.js.langchain.com/modules/langchain_community_document_loaders_web_pdf.html) | ✅ | beta | ❌ | 
+### Loader features
+| Source | Web Loader | Node Envs Only
+| :---: | :---: | :---: | 
+| WebPDFLoader | ✅ | ❌ | 
+
+You can use this version of the popular PDFLoader in web environments.
+By default, one document will be created for each page in the PDF file, you can change this behavior by setting the `splitPages` option to `false`.
+
+## Setup
+
+To access `WebPDFLoader` document loader you'll need to install the `@langchain/community` integration, along with the `pdf-parse` package:
+
+### Credentials
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain WebPDFLoader integration lives in the `@langchain/community` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/core pdf-parse
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and load documents:
+
+
+```typescript
+import fs from "fs/promises";
+import { WebPDFLoader } from "@langchain/community/document_loaders/web/pdf"
+
+const nike10kPDFPath = "../../../../data/nke-10k-2023.pdf";
+
+// Read the file as a buffer
+const buffer = await fs.readFile(nike10kPDFPath);
+
+// Create a Blob from the buffer
+const nike10kPDFBlob = new Blob([buffer], { type: 'application/pdf' });
+
+const loader = new WebPDFLoader(nike10kPDFBlob, {
+  // required params = ...
+  // optional params = ...
+})
+```
+## Load
+
+
+```typescript
+const docs = await loader.load()
+docs[0]
+```
+```output
+Document {
+  pageContent: 'Table of Contents\n' +
+    'UNITED STATES\n' +
+    'SECURITIES AND EXCHANGE COMMISSION\n' +
+    'Washington, D.C. 20549\n' +
+    'FORM 10-K\n' +
+    '(Mark One)\n' +
+    '☑ ANNUAL REPORT PURSUANT TO SECTION 13 OR 15(D) OF THE SECURITIES EXCHANGE ACT OF 1934\n' +
+    'FOR THE FISCAL YEAR ENDED MAY 31, 2023\n' +
+    'OR\n' +
+    '☐ TRANSITION REPORT PURSUANT TO SECTION 13 OR 15(D) OF THE SECURITIES EXCHANGE ACT OF 1934\n' +
+    'FOR THE TRANSITION PERIOD FROM                         TO                         .\n' +
+    'Commission File No. 1-10635\n' +
+    'NIKE, Inc.\n' +
+    '(Exact name of Registrant as specified in its charter)\n' +
+    'Oregon93-0584541\n' +
+    '(State or other jurisdiction of incorporation)(IRS Employer Identification No.)\n' +
+    'One Bowerman Drive, Beaverton, Oregon 97005-6453\n' +
+    '(Address of principal executive offices and zip code)\n' +
+    '(503) 671-6453\n' +
+    "(Registrant's telephone number, including area code)\n" +
+    'SECURITIES REGISTERED PURSUANT TO SECTION 12(B) OF THE ACT:\n' +
+    'Class B Common StockNKENew York Stock Exchange\n' +
+    '(Title of each class)(Trading symbol)(Name of each exchange on which registered)\n' +
+    'SECURITIES REGISTERED PURSUANT TO SECTION 12(G) OF THE ACT:\n' +
+    'NONE\n' +
+    'Indicate by check mark:YESNO\n' +
+    '•if the registrant is a well-known seasoned issuer, as defined in Rule 405 of the Securities Act.þ ̈\n' +
+    '•if the registrant is not required to file reports pursuant to Section 13 or Section 15(d) of the Act. ̈þ\n' +
+    '•whether the registrant (1) has filed all reports required to be filed by Section 13 or 15(d) of the Securities Exchange Act of 1934 during the preceding\n' +
+    '12 months (or for such shorter period that the registrant was required to file such reports), and (2) has been subject to such filing requirements for the\n' +
+    'past 90 days.\n' +
+    'þ ̈\n' +
+    '•whether the registrant has submitted electronically every Interactive Data File required to be submitted pursuant to Rule 405 of Regulation S-T\n' +
+    '(§232.405 of this chapter) during the preceding 12 months (or for such shorter period that the registrant was required to submit such files).\n' +
+    'þ ̈\n' +
+    '•whether the registrant is a large accelerated filer, an accelerated filer, a non-accelerated filer, a smaller reporting company or an emerging growth company. See the definitions of “large accelerated filer,”\n' +
+    '“accelerated filer,” “smaller reporting company,” and “emerging growth company” in Rule 12b-2 of the Exchange Act.\n' +
+    'Large accelerated filerþAccelerated filer☐Non-accelerated filer☐Smaller reporting company☐Emerging growth company☐\n' +
+    '•if an emerging growth company, if the registrant has elected not to use the extended transition period for complying with any new or revised financial\n' +
+    'accounting standards provided pursuant to Section 13(a) of the Exchange Act.\n' +
+    ' ̈\n' +
+    "•whether the registrant has filed a report on and attestation to its management's assessment of the effectiveness of its internal control over financial\n" +
+    'reporting under Section 404(b) of the Sarbanes-Oxley Act (15 U.S.C. 7262(b)) by the registered public accounting firm that prepared or issued its audit\n' +
+    'report.\n' +
+    'þ\n' +
+    '•if securities are registered pursuant to Section 12(b) of the Act, whether the financial statements of the registrant included in the filing reflect the\n' +
+    'correction of an error to previously issued financial statements.\n' +
+    ' ̈\n' +
+    '•whether any of those error corrections are restatements that required a recovery analysis of incentive-based compensation received by any of the\n' +
+    "registrant's executive officers during the relevant recovery period pursuant to § 240.10D-1(b).\n" +
+    ' ̈\n' +
+    '•\n' +
+    'whether the registrant is a shell company (as defined in Rule 12b-2 of the Act).☐þ\n' +
+    "As of November 30, 2022, the aggregate market values of the Registrant's Common Stock held by non-affiliates were:\n" +
+    'Class A$7,831,564,572 \n' +
+    'Class B136,467,702,472 \n' +
+    '$144,299,267,044 ',
+  metadata: {
+    pdf: {
+      version: '1.10.100',
+      info: [Object],
+      metadata: null,
+      totalPages: 107
+    },
+    loc: { pageNumber: 1 }
+  },
+  id: undefined
+}
+```
+
+```typescript
+console.log(docs[0].metadata)
+```
+```output
+{
+  pdf: {
+    version: '1.10.100',
+    info: {
+      PDFFormatVersion: '1.4',
+      IsAcroFormPresent: false,
+      IsXFAPresent: false,
+      Title: '0000320187-23-000039',
+      Author: 'EDGAR Online, a division of Donnelley Financial Solutions',
+      Subject: 'Form 10-K filed on 2023-07-20 for the period ending 2023-05-31',
+      Keywords: '0000320187-23-000039; ; 10-K',
+      Creator: 'EDGAR Filing HTML Converter',
+      Producer: 'EDGRpdf Service w/ EO.Pdf 22.0.40.0',
+      CreationDate: "D:20230720162200-04'00'",
+      ModDate: "D:20230720162208-04'00'"
+    },
+    metadata: null,
+    totalPages: 107
+  },
+  loc: { pageNumber: 1 }
+}
+```
+## Usage, custom `pdfjs` build
+
+By default we use the `pdfjs` build bundled with `pdf-parse`, which is compatible with most environments, including Node.js and modern browsers. If you want to use a more recent version of `pdfjs-dist` or if you want to use a custom build of `pdfjs-dist`, you can do so by providing a custom `pdfjs` function that returns a promise that resolves to the `PDFJS` object.
+
+In the following example we use the "legacy" (see [pdfjs docs](https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions#which-browsersenvironments-are-supported)) build of `pdfjs-dist`, which includes several polyfills not included in the default build.
+
+```{=mdx}
+<Npm2Yarn>
+  pdfjs-dist
+</Npm2Yarn>
+
+```
+```typescript
+import { WebPDFLoader } from "@langchain/community/document_loaders/web/pdf";
+
+const blob = new Blob(); // e.g. from a file input
+
+const customBuildLoader = new WebPDFLoader(blob, {
+  // you may need to add `.then(m => m.default)` to the end of the import
+  // @lc-ts-ignore
+  pdfjs: () => import("pdfjs-dist/legacy/build/pdf.js"),
+});
+```
+
+## Eliminating extra spaces
+
+PDFs come in many varieties, which makes reading them a challenge. The loader parses individual text elements and joins them together with a space by default, but
+if you are seeing excessive spaces, this may not be the desired behavior. In that case, you can override the separator with an empty string like this:
+
+
+```typescript
+import { WebPDFLoader } from "@langchain/community/document_loaders/web/pdf";
+
+// new Blob(); e.g. from a file input
+const eliminatingExtraSpacesLoader = new WebPDFLoader(new Blob(), {
+  parsedItemSeparator: "",
+});
+```
+
+## API reference
+
+For detailed documentation of all WebPDFLoader features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_community_document_loaders_web_pdf.WebPDFLoader.html

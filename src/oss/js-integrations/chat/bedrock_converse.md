@@ -1,0 +1,186 @@
+---
+title: ChatBedrockConverse
+---
+
+[Amazon Bedrock Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html) is a fully managed service that makes Foundation Models (FMs) from leading AI startups and Amazon available via an API. You can choose from a wide range of FMs to find the model that is best suited for your use case. It provides a unified conversational interface for Bedrock models, but does not yet have feature parity for all functionality within the older [Bedrock model service](/oss/integrations/chat/bedrock).
+
+This will help you getting started with Amazon Bedrock Converse [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatBedrockConverse` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_aws.ChatBedrockConverse.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/bedrock/#beta-bedrock-converse-api) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [`ChatBedrockConverse`](https://api.js.langchain.com/classes/langchain_aws.ChatBedrockConverse.html) | [`@langchain/aws`](https://npmjs.com/@langchain/aws) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/aws?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/aws?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | 
+
+## Setup
+
+To access Bedrock models you'll need to create an AWS account, set up the Bedrock API service, get an access key ID and secret key, and install the `@langchain/community` integration package.
+
+### Credentials
+
+Head to the [AWS docs](https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html) to sign up for AWS and setup your credentials. You'll also need to turn on model access for your account, which you can do by [following these instructions](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain `ChatBedrockConverse` integration lives in the `@langchain/aws` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/aws @langchain/core
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions.
+
+There are a few different ways to authenticate with AWS - the below examples rely on an access key, secret access key and region set in your environment variables:
+
+
+```typescript
+import { ChatBedrockConverse } from "@langchain/aws";
+
+const llm = new ChatBedrockConverse({
+  model: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  region: process.env.BEDROCK_AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.BEDROCK_AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.BEDROCK_AWS_SECRET_ACCESS_KEY!,
+  },
+});
+```
+## Invocation
+
+
+```typescript
+const aiMsg = await llm.invoke([
+  [
+    "system",
+    "You are a helpful assistant that translates English to French. Translate the user sentence.",
+  ],
+  ["human", "I love programming."],
+])
+aiMsg
+```
+```output
+AIMessage {
+  "id": "f5dc5791-224e-4fe5-ba2e-4cc51d9e7795",
+  "content": "J'adore la programmation.",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "$metadata": {
+      "httpStatusCode": 200,
+      "requestId": "f5dc5791-224e-4fe5-ba2e-4cc51d9e7795",
+      "attempts": 1,
+      "totalRetryDelay": 0
+    },
+    "metrics": {
+      "latencyMs": 584
+    },
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 29,
+      "outputTokens": 11,
+      "totalTokens": 40
+    }
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 29,
+    "output_tokens": 11,
+    "total_tokens": 40
+  }
+}
+```
+
+```typescript
+console.log(aiMsg.content)
+```
+```output
+J'adore la programmation.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+
+const prompt = ChatPromptTemplate.fromMessages(
+  [
+    [
+      "system",
+      "You are a helpful assistant that translates {input_language} to {output_language}.",
+    ],
+    ["human", "{input}"],
+  ]
+)
+
+const chain = prompt.pipe(llm);
+await chain.invoke(
+  {
+    input_language: "English",
+    output_language: "German",
+    input: "I love programming.",
+  }
+)
+```
+```output
+AIMessage {
+  "id": "c6401e11-8f85-4a71-8e15-4856d55aef78",
+  "content": "Here's the German translation:\n\nIch liebe Programmieren.",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "$metadata": {
+      "httpStatusCode": 200,
+      "requestId": "c6401e11-8f85-4a71-8e15-4856d55aef78",
+      "attempts": 1,
+      "totalRetryDelay": 0
+    },
+    "metrics": {
+      "latencyMs": 760
+    },
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 23,
+      "outputTokens": 18,
+      "totalTokens": 41
+    }
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 23,
+    "output_tokens": 18,
+    "total_tokens": 41
+  }
+}
+```
+## Tool calling
+
+Tool calling with Bedrock models works in a similar way to [other models](/oss/how-to/tool_calling), but note that not all Bedrock models support tool calling. Please refer to the [AWS model documentation](https://docs.aws.amazon.com/bedrock/latest/APIReference/welcome.html) for more information.
+
+## API reference
+
+For detailed documentation of all `ChatBedrockConverse` features and configurations head to the API reference: https://api.js.langchain.com/classes/langchain_aws.ChatBedrockConverse.html

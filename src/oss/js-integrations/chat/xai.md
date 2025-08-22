@@ -1,0 +1,184 @@
+---
+title: ChatXAI
+---
+
+[xAI](https://x.ai/) is an artificial intelligence company that develops large language models (LLMs). Their flagship model, Grok, is trained on real-time X (formerly Twitter) data and aims to provide witty, personality-rich responses while maintaining high capability on technical tasks.
+
+This guide will help you getting started with `ChatXAI` [chat models](/oss/concepts/chat_models). For detailed documentation of all `ChatXAI` features and configurations head to the [API reference](https://api.js.langchain.com/classes/_langchain_xai.ChatXAI.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | PY support | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [ChatXAI](https://api.js.langchain.com/classes/_langchain_xai.ChatXAI.html) | [`@langchain/xai`](https://www.npmjs.com/package/@langchain/xai) | ❌ | ✅ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/xai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/xai?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | 
+
+## Setup
+
+To access `ChatXAI` models you'll need to create an xAI account, [get an API key](https://console.x.ai/), and install the `@langchain/xai` integration package.
+
+### Credentials
+
+Head to [the xAI website](https://x.ai) to sign up to xAI and generate an API key. Once you've done this set the `XAI_API_KEY` environment variable:
+
+```bash
+export XAI_API_KEY="your-api-key"
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain `ChatXAI` integration lives in the `@langchain/xai` package:
+
+```{=mdx}
+
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/xai @langchain/core
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```typescript
+import { ChatXAI } from "@langchain/xai" 
+
+const llm = new ChatXAI({
+    model: "grok-beta", // default
+    temperature: 0,
+    maxTokens: undefined,
+    maxRetries: 2,
+    // other params...
+})
+```
+## Invocation
+
+
+```typescript
+const aiMsg = await llm.invoke([
+    [
+      "system",
+      "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ],
+    ["human", "I love programming."],
+])
+console.log(aiMsg)
+```
+```output
+AIMessage {
+  "id": "71d7e3d8-30dd-472c-8038-b6b283dcee63",
+  "content": "J'adore programmer.",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "tokenUsage": {
+      "promptTokens": 30,
+      "completionTokens": 6,
+      "totalTokens": 36
+    },
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 30,
+      "completion_tokens": 6,
+      "total_tokens": 36
+    },
+    "system_fingerprint": "fp_3e3898d4ce"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "output_tokens": 6,
+    "input_tokens": 30,
+    "total_tokens": 36,
+    "input_token_details": {},
+    "output_token_details": {}
+  }
+}
+```
+
+```typescript
+console.log(aiMsg.content)
+```
+```output
+J'adore programmer.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts"
+
+const prompt = ChatPromptTemplate.fromMessages(
+  [
+    [
+      "system",
+      "You are a helpful assistant that translates {input_language} to {output_language}.",
+    ],
+    ["human", "{input}"],
+  ]
+)
+
+const chain = prompt.pipe(llm);
+await chain.invoke(
+  {
+    input_language: "English",
+    output_language: "German",
+    input: "I love programming.",
+  }
+)
+```
+```output
+AIMessage {
+  "id": "b2738008-8247-40e1-81dc-d9bf437a1a0c",
+  "content": "Ich liebe das Programmieren.",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "tokenUsage": {
+      "promptTokens": 25,
+      "completionTokens": 7,
+      "totalTokens": 32
+    },
+    "finish_reason": "stop",
+    "usage": {
+      "prompt_tokens": 25,
+      "completion_tokens": 7,
+      "total_tokens": 32
+    },
+    "system_fingerprint": "fp_3e3898d4ce"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "output_tokens": 7,
+    "input_tokens": 25,
+    "total_tokens": 32,
+    "input_token_details": {},
+    "output_token_details": {}
+  }
+}
+```
+Behind the scenes, xAI uses the OpenAI SDK and OpenAI compatible API.
+
+## API reference
+
+For detailed documentation of all ChatXAI features and configurations head to the API reference: https://api.js.langchain.com/classes/_langchain_xai.ChatXAI.html

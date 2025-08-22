@@ -1,0 +1,358 @@
+---
+title: IBM watsonx.ai
+---
+
+This will help you getting started with IBM watsonx.ai [chat models](/oss/concepts/chat_models). For detailed documentation of all `IBM watsonx.ai` features and configurations head to the [IBM watsonx.ai](https://api.js.langchain.com/modules/_langchain_community.chat_models_ibm.html).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ibm_watsonx/) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [`ChatWatsonx`](https://api.js.langchain.com/classes/_langchain_community.chat_models_ibm.ChatWatsonx.html) | [@langchain/community](https://www.npmjs.com/package/@langchain/community) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+
+### Model features
+
+
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅  | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | 
+
+## Setup
+
+To access IBM watsonx.ai models you'll need to create a/an IBM watsonx.ai account, get an API key, and install the `@langchain/community` integration package.
+
+### Credentials
+
+
+Head to [IBM Cloud](https://cloud.ibm.com/login) to sign up to IBM watsonx.ai and generate an API key or provide any other authentication form as presented below.
+
+#### IAM authentication
+
+```bash
+export WATSONX_AI_AUTH_TYPE=iam
+export WATSONX_AI_APIKEY=<YOUR-APIKEY>
+```
+
+#### Bearer token authentication
+
+```bash
+export WATSONX_AI_AUTH_TYPE=bearertoken
+export WATSONX_AI_BEARER_TOKEN=<YOUR-BEARER-TOKEN>
+```
+
+#### IBM watsonx.ai software authentication
+
+```bash
+export WATSONX_AI_AUTH_TYPE=cp4d
+export WATSONX_AI_USERNAME=<YOUR_USERNAME>
+export WATSONX_AI_PASSWORD=<YOUR_PASSWORD>
+export WATSONX_AI_URL=<URL>
+```
+
+Once these are places in your enviromental variables and object is initialized authentication will proceed automatically.
+
+Authentication can also be accomplished by passing these values as parameters to a new instance.
+
+## IAM authentication
+
+```typescript
+import { WatsonxLLM } from "@langchain/community/llms/ibm";
+
+const props = {
+  version: "YYYY-MM-DD",
+  serviceUrl: "<SERVICE_URL>",
+  projectId: "<PROJECT_ID>",
+  watsonxAIAuthType: "iam",
+  watsonxAIApikey: "<YOUR-APIKEY>",
+};
+const instance = new WatsonxLLM(props);
+```
+
+## Bearer token authentication
+
+```typescript
+import { WatsonxLLM } from "@langchain/community/llms/ibm";
+
+const props = {
+  version: "YYYY-MM-DD",
+  serviceUrl: "<SERVICE_URL>",
+  projectId: "<PROJECT_ID>",
+  watsonxAIAuthType: "bearertoken",
+  watsonxAIBearerToken: "<YOUR-BEARERTOKEN>",
+};
+const instance = new WatsonxLLM(props);
+```
+
+### IBM watsonx.ai software authentication
+
+```typescript
+import { WatsonxLLM } from "@langchain/community/llms/ibm";
+
+const props = {
+  version: "YYYY-MM-DD",
+  serviceUrl: "<SERVICE_URL>",
+  projectId: "<PROJECT_ID>",
+  watsonxAIAuthType: "cp4d",
+  watsonxAIUsername: "<YOUR-USERNAME>",
+  watsonxAIPassword: "<YOUR-PASSWORD>",
+  watsonxAIUrl: "<url>",
+};
+const instance = new WatsonxLLM(props);
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain IBM watsonx.ai integration lives in the `@langchain/community` package:
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/core
+</Npm2Yarn>
+
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+
+```javascript
+import { ChatWatsonx } from "@langchain/community/chat_models/ibm";
+const props = {
+  maxTokens: 200,
+  temperature: 0.5
+};
+
+const instance = new ChatWatsonx({
+  version: "YYYY-MM-DD",
+  serviceUrl: process.env.API_URL,
+  projectId: "<PROJECT_ID>",
+  // spaceId: "<SPACE_ID>",
+  // idOrName: "<DEPLOYMENT_ID>",
+  model: "<MODEL_ID>",
+  ...props
+});
+```
+Note:
+
+- You must provide `spaceId`, `projectId` or `idOrName`(deployment id) unless you use lighweight engine which works without specifying either (refer to [watsonx.ai docs](https://www.ibm.com/docs/en/cloud-paks/cp-data/5.0.x?topic=install-choosing-installation-mode))
+- Depending on the region of your provisioned service instance, use correct serviceUrl.
+
+## Invocation
+
+
+```javascript
+const aiMsg = await instance.invoke([{
+  role: "system",
+  content: "You are a helpful assistant that translates English to French. Translate the user sentence.",
+},
+{
+  role: "user",
+  content: "I love programming."
+}]);
+console.log(aiMsg)
+```
+```output
+AIMessage {
+  "id": "chat-c5341b2062dc42f091e5ae2558e905e3",
+  "content": " J'adore la programmation.",
+  "additional_kwargs": {
+    "tool_calls": []
+  },
+  "response_metadata": {
+    "tokenUsage": {
+      "completion_tokens": 10,
+      "prompt_tokens": 28,
+      "total_tokens": 38
+    },
+    "finish_reason": "stop"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 28,
+    "output_tokens": 10,
+    "total_tokens": 38
+  }
+}
+```
+
+```javascript
+console.log(aiMsg.content)
+```
+```output
+ J'adore la programmation.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```javascript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+
+const prompt = ChatPromptTemplate.fromMessages(
+  [
+    [
+      "system",
+      "You are a helpful assistant that translates {input_language} to {output_language}.",
+    ],
+    ["human", "{input}"],
+  ]
+)
+const chain = prompt.pipe(instance);
+await chain.invoke(
+    {
+      input_language: "English",
+      output_language: "German",
+      input: "I love programming.",
+    }
+  )
+```
+```output
+AIMessage {
+  "id": "chat-c5c2c08d3c984254acc48225c39c6a08",
+  "content": " Ich liebe Programmieren.",
+  "additional_kwargs": {
+    "tool_calls": []
+  },
+  "response_metadata": {
+    "tokenUsage": {
+      "completion_tokens": 8,
+      "prompt_tokens": 22,
+      "total_tokens": 30
+    },
+    "finish_reason": "stop"
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 22,
+    "output_tokens": 8,
+    "total_tokens": 30
+  }
+}
+```
+## Streaming the Model output
+
+
+```javascript
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+
+const messages = [
+    new SystemMessage('You are a helpful assistant which telling short-info about provided topic.'),
+    new HumanMessage("moon")
+]
+const stream = await instance.stream(messages);
+for await(const chunk of stream){
+    console.log(chunk)
+}
+```
+```output
+ The
+ Moon
+ is
+ Earth
+'
+s
+ only
+ natural
+ satellite
+ and
+```
+## Tool calling
+
+
+```javascript
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const calculatorSchema = z.object({
+    operation: z
+      .enum(["add", "subtract", "multiply", "divide"])
+      .describe("The type of operation to execute."),
+    number1: z.number().describe("The first number to operate on."),
+    number2: z.number().describe("The second number to operate on."),
+  });
+  
+const calculatorTool = tool(
+async ({ operation, number1, number2 }) => {
+    if (operation === "add") {
+    return `${number1 + number2}`;
+    } else if (operation === "subtract") {
+    return `${number1 - number2}`;
+    } else if (operation === "multiply") {
+    return `${number1 * number2}`;
+    } else if (operation === "divide") {
+    return `${number1 / number2}`;
+    } else {
+    throw new Error("Invalid operation.");
+    }
+},
+{
+    name: "calculator",
+    description: "Can perform mathematical operations.",
+    schema: calculatorSchema,
+}
+);
+
+const instanceWithTools = instance.bindTools([calculatorTool]);
+
+const res = await instanceWithTools.invoke("What is 3 * 12");
+console.log(res)
+```
+```output
+AIMessage {
+  "id": "chat-d2214d0bdb794483a213b3211cf0d819",
+  "content": "",
+  "additional_kwargs": {
+    "tool_calls": [
+      {
+        "id": "chatcmpl-tool-257f3d39532141b89178c2120f81f0cb",
+        "type": "function",
+        "function": "[Object]"
+      }
+    ]
+  },
+  "response_metadata": {
+    "tokenUsage": {
+      "completion_tokens": 38,
+      "prompt_tokens": 177,
+      "total_tokens": 215
+    },
+    "finish_reason": "tool_calls"
+  },
+  "tool_calls": [
+    {
+      "name": "calculator",
+      "args": {
+        "number1": 3,
+        "number2": 12,
+        "operation": "multiply"
+      },
+      "type": "tool_call",
+      "id": "chatcmpl-tool-257f3d39532141b89178c2120f81f0cb"
+    }
+  ],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 177,
+    "output_tokens": 38,
+    "total_tokens": 215
+  }
+}
+```
+## API reference
+
+For detailed documentation of all `IBM watsonx.ai` features and configurations head to the API reference: [API docs](https://api.js.langchain.com/modules/_langchain_community.embeddings_ibm.html)
