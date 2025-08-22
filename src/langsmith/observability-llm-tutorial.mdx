@@ -5,65 +5,64 @@ sidebarTitle: Tutorial - Trace a RAG application
 
 In this tutorial, we'll build a simple RAG application using the OpenAI SDK. We'll add observability to the application at each stage of development, from prototyping to production.
 
-<Tabs>
-  <Tab title="Python">
-    ```python
-    from openai import OpenAI
-    openai_client = OpenAI()
+<CodeGroup>
+
+```python Python
+from openai import OpenAI
+openai_client = OpenAI()
+
+# This is the retriever we will use in RAG
+# This is mocked out, but it could be anything we want
+def retriever(query: str):
+    results = ["Harrison worked at Kensho"]
+    return results
+
+# This is the end-to-end RAG chain.
+# It does a retrieval step then calls OpenAI
+def rag(question):
+    docs = retriever(question)
+    system_message = """Answer the users question using only the provided information below:
+        {docs}""".format(docs="\n".join(docs))
     
-    # This is the retriever we will use in RAG
-    # This is mocked out, but it could be anything we want
-    def retriever(query: str):
-        results = ["Harrison worked at Kensho"]
-        return results
-    
-    # This is the end-to-end RAG chain.
-    # It does a retrieval step then calls OpenAI
-    def rag(question):
-        docs = retriever(question)
-        system_message = """Answer the users question using only the provided information below:
-            {docs}""".format(docs="\n".join(docs))
-        
-        return openai_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": question},
-            ],
-            model="gpt-4o-mini",
-        )
-    ```
-  </Tab>
-  <Tab title="TypeScript">
-    ```typescript
-    import { OpenAI } from "openai";
-    const openAIClient = new OpenAI();
-    
-    // This is the retriever we will use in RAG
-    // This is mocked out, but it could be anything we want
-    async function retriever(query: string) {
-      return ["This is a document"];
-    }
-    
-    // This is the end-to-end RAG chain.
-    // It does a retrieval step then calls OpenAI
-    async function rag(question: string) {
-      const docs = await retriever(question);
-      
-      const systemMessage =
-        "Answer the users question using only the provided information below:\n\n" +
-        docs.join("\n");
-      
-      return await openAIClient.chat.completions.create({
-        messages: [
-          { role: "system", content: systemMessage },
-          { role: "user", content: question },
+    return openai_client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": question},
         ],
-        model: "gpt-4o-mini",
-      });
-    }
-    ```
-  </Tab>
-</Tabs>
+        model="gpt-4o-mini",
+    )
+```
+
+```typescript TypeScript
+import { OpenAI } from "openai";
+const openAIClient = new OpenAI();
+
+// This is the retriever we will use in RAG
+// This is mocked out, but it could be anything we want
+async function retriever(query: string) {
+  return ["This is a document"];
+}
+
+// This is the end-to-end RAG chain.
+// It does a retrieval step then calls OpenAI
+async function rag(question: string) {
+  const docs = await retriever(question);
+  
+  const systemMessage =
+    "Answer the users question using only the provided information below:\n\n" +
+    docs.join("\n");
+  
+  return await openAIClient.chat.completions.create({
+    messages: [
+      { role: "system", content: systemMessage },
+      { role: "user", content: question },
+    ],
+    model: "gpt-4o-mini",
+  });
+}
+```
+
+</CodeGroup>
 
 ## Prototyping
 
@@ -75,18 +74,17 @@ First, create an API key by navigating to the [settings page](https://smith.lang
 
 Next, install the LangSmith SDK:
 
-<Tabs>
-  <Tab title="Python SDK">
-    ```bash
-    pip install langsmith
-    ```
-  </Tab>
-  <Tab title="TypeScript SDK">
-    ```bash
-    npm install langsmith
-    ```
-  </Tab>
-</Tabs>
+<CodeGroup>
+
+```bash Python SDK
+pip install langsmith
+```
+
+```bash TypeScript SDK
+npm install langsmith
+```
+
+</CodeGroup>
 
 Finally, set up the appropriate environment variables. This will log traces to the `default` project (though you can easily change that).
 
@@ -106,67 +104,66 @@ export LANGSMITH_PROJECT=default
 
 The first thing you might want to trace is all your OpenAI calls. After all, this is where the LLM is actually being called, so it is the most important part! We've tried to make this as easy as possible with LangSmith by introducing a dead-simple OpenAI wrapper. All you have to do is modify your code to look something like:
 
-<Tabs>
-  <Tab title="Python">
-    ```python
-    from openai import OpenAI
-    from langsmith.wrappers import wrap_openai
-    openai_client = wrap_openai(OpenAI())
+<CodeGroup>
+
+```python Python
+from openai import OpenAI
+from langsmith.wrappers import wrap_openai
+openai_client = wrap_openai(OpenAI())
+
+# This is the retriever we will use in RAG
+# This is mocked out, but it could be anything we want
+def retriever(query: str):
+    results = ["Harrison worked at Kensho"]
+    return results
+
+# This is the end-to-end RAG chain.
+# It does a retrieval step then calls OpenAI
+def rag(question):
+    docs = retriever(question)
+    system_message = """Answer the users question using only the provided information below:
+        {docs}""".format(docs="\n".join(docs))
     
-    # This is the retriever we will use in RAG
-    # This is mocked out, but it could be anything we want
-    def retriever(query: str):
-        results = ["Harrison worked at Kensho"]
-        return results
-    
-    # This is the end-to-end RAG chain.
-    # It does a retrieval step then calls OpenAI
-    def rag(question):
-        docs = retriever(question)
-        system_message = """Answer the users question using only the provided information below:
-            {docs}""".format(docs="\n".join(docs))
-        
-        return openai_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": question},
-            ],
-            model="gpt-4o-mini",
-        )
-    ```
-  </Tab>
-  <Tab title="TypeScript">
-    ```typescript
-    import { OpenAI } from "openai";
-    import { wrapOpenAI } from "langsmith/wrappers";
-    const openAIClient = wrapOpenAI(new OpenAI());
-    
-    // This is the retriever we will use in RAG
-    // This is mocked out, but it could be anything we want
-    async function retriever(query: string) {
-      return ["This is a document"];
-    }
-    
-    // This is the end-to-end RAG chain.
-    // It does a retrieval step then calls OpenAI
-    async function rag(question: string) {
-      const docs = await retriever(question);
-      
-      const systemMessage =
-        "Answer the users question using only the provided information below:\n\n" +
-        docs.join("\n");
-      
-      return await openAIClient.chat.completions.create({
-        messages: [
-          { role: "system", content: systemMessage },
-          { role: "user", content: question },
+    return openai_client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": question},
         ],
-        model: "gpt-4o-mini",
-      });
-    }
-    ```
-  </Tab>
-</Tabs>
+        model="gpt-4o-mini",
+    )
+```
+
+```typescript TypeScript
+import { OpenAI } from "openai";
+import { wrapOpenAI } from "langsmith/wrappers";
+const openAIClient = wrapOpenAI(new OpenAI());
+
+// This is the retriever we will use in RAG
+// This is mocked out, but it could be anything we want
+async function retriever(query: string) {
+  return ["This is a document"];
+}
+
+// This is the end-to-end RAG chain.
+// It does a retrieval step then calls OpenAI
+async function rag(question: string) {
+  const docs = await retriever(question);
+  
+  const systemMessage =
+    "Answer the users question using only the provided information below:\n\n" +
+    docs.join("\n");
+  
+  return await openAIClient.chat.completions.create({
+    messages: [
+      { role: "system", content: systemMessage },
+      { role: "user", content: question },
+    ],
+    model: "gpt-4o-mini",
+  });
+}
+```
+
+</CodeGroup>
 
 Notice how we import `from langsmith.wrappers import wrap_openai` and use it to wrap the OpenAI client (`openai_client = wrap_openai(OpenAI())`).
 
@@ -184,62 +181,61 @@ This will produce a trace of just the OpenAI call - it should look something lik
 
 Great - we've traced the LLM call. But it's often very informative to trace more than that. LangSmith is **built** for tracing the entire LLM pipeline - so let's do that! We can do this by modifying the code to now look something like this:
 
-<Tabs>
-  <Tab title="Python">
-    ```python
-    from openai import OpenAI
-    from langsmith import traceable
-    from langsmith.wrappers import wrap_openai
-    openai_client = wrap_openai(OpenAI())
+<CodeGroup>
+
+```python Python
+from openai import OpenAI
+from langsmith import traceable
+from langsmith.wrappers import wrap_openai
+openai_client = wrap_openai(OpenAI())
+
+def retriever(query: str):
+    results = ["Harrison worked at Kensho"]
+    return results
+
+@traceable
+def rag(question):
+    docs = retriever(question)
+    system_message = """Answer the users question using only the provided information below:
+        {docs}""".format(docs="\n".join(docs))
     
-    def retriever(query: str):
-        results = ["Harrison worked at Kensho"]
-        return results
-    
-    @traceable
-    def rag(question):
-        docs = retriever(question)
-        system_message = """Answer the users question using only the provided information below:
-            {docs}""".format(docs="\n".join(docs))
-        
-        return openai_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": question},
-            ],
-            model="gpt-4o-mini",
-        )
-    ```
-  </Tab>
-  <Tab title="TypeScript">
-    ```typescript
-    import { OpenAI } from "openai";
-    import { traceable } from "langsmith/traceable";
-    import { wrapOpenAI } from "langsmith/wrappers";
-    const openAIClient = wrapOpenAI(new OpenAI());
-    
-    async function retriever(query: string) {
-      return ["This is a document"];
-    }
-    
-    const rag = traceable(async function rag(question: string) {
-      const docs = await retriever(question);
-      
-      const systemMessage =
-        "Answer the users question using only the provided information below:\n\n" +
-        docs.join("\n");
-      
-      return await openAIClient.chat.completions.create({
-        messages: [
-          { role: "system", content: systemMessage },
-          { role: "user", content: question },
+    return openai_client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": question},
         ],
-        model: "gpt-4o-mini",
-      });
-    });
-    ```
-  </Tab>
-</Tabs>
+        model="gpt-4o-mini",
+    )
+```
+
+```typescript TypeScript
+import { OpenAI } from "openai";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
+const openAIClient = wrapOpenAI(new OpenAI());
+
+async function retriever(query: string) {
+  return ["This is a document"];
+}
+
+const rag = traceable(async function rag(question: string) {
+  const docs = await retriever(question);
+  
+  const systemMessage =
+    "Answer the users question using only the provided information below:\n\n" +
+    docs.join("\n");
+  
+  return await openAIClient.chat.completions.create({
+    messages: [
+      { role: "system", content: systemMessage },
+      { role: "user", content: question },
+    ],
+    model: "gpt-4o-mini",
+  });
+});
+```
+
+</CodeGroup>
 
 Notice how we import `from langsmith import traceable` and use it decorate the overall function (`@traceable`).
 
