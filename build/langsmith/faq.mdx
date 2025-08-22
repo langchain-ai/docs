@@ -1,0 +1,90 @@
+---
+title: Frequently asked questions
+sidebarTitle: FAQs
+---
+
+## *I can't create API keys or manage users in the UI, what's wrong?*
+
+* You have likely deployed LangSmith without setting up SSO. LangSmith requires SSO to manage users and API keys. You can find more information on setting up SSO in the [configuration section.](/langsmith/self-host-sso)
+
+## *How does load balancing/ingress work*?
+
+* You will need to expose the frontend container/service to your applications/users. This will handle routing to all downstream services.
+* You will need to terminate SSL at the ingress level. We recommend using a managed service like AWS ALB, GCP Load Balancer, or Nginx.
+
+## *How can we authenticate to the application?*
+
+* Currently, our self-hosted solution supports SSO with OAuth2.0 and OIDC as an authn solution. Note, we do offer a no-auth solution but highly recommend setting up oauth before moving into production.
+
+You can find more information on setting up SSO in the [configuration section.](/langsmith/self-host-sso)
+
+## *Can I use external storage services?*
+
+* You can configure LangSmith to use external versions of all storage services. In a production setting, we strongly recommend using external storage services. Check out the [configuration section](/langsmith/architectural-overview) for more information.
+
+## *Does my application need egress to function properly?*
+
+Our deployment only needs egress for a few things (most of which can reside within your VPC):
+
+* Fetching images (If mirroring your images, this may not be needed)
+
+* Talking to any LLM endpoints
+
+* Talking to any external storage services you may have configured
+
+* Fetching OAuth information
+
+* Subscription Metrics and Operational Metadata (if not running in offline mode)
+
+  * Requires egress to `https://beacon.langchain.com`
+  * See [Egress](/langsmith/self-host-egress) for more information
+
+Your VPC can set up rules to limit any other access. Note: We require the `X-Organization-Id` and `X-Tenant-Id` headers to be allowed to be passed through to the backend service. These are used to determine which organization and workspace (previously called "tenant") the request is for.
+
+## *Resource requirements for the application?*
+
+* In kubernetes, we recommend a minimum helm configuration which can be found in [here](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/examples/medium_size.yaml). For docker, we recommend a minimum of 16GB of RAM and 4 CPUs.
+* For Postgres, we recommend a minimum of 8GB of RAM and 2 CPUs.
+* For Redis, we recommend 4GB of RAM and 2 CPUs.
+* For Clickhouse, we recommend 32GB of RAM and 8 CPUs.
+
+## SAML SSO FAQs
+
+### *How do I change a SAML SSO user's email address?*
+
+Some identity providers retain the original `User ID` through an email change while others do not, so we recommend that you follow these steps to avoid duplicate users in LangSmith:
+
+1. Remove the user from the organization (see [here](/langsmith/set-up-a-workspace#manage-users))
+2. Change their email address in the IdP
+3. Have them login to LangSmith again via SAML SSO - this will trigger the usual [JIT provisioning](#just-in-time-jit-provisioning) flow with their new email address
+
+### *How do I fix "405 method not allowed"?*
+
+Ensure you're using the correct ACS URL: [https://auth.langchain.com/auth/v1/sso/saml/acs](https://auth.langchain.com/auth/v1/sso/saml/acs)
+
+## SCIM FAQs
+
+### *Can I use SCIM without SAML SSO?*
+
+* **Cloud**: No, SAML SSO is required for SCIM in cloud deployments
+* **Self-hosted**: Yes, SCIM works with OAuth with Client Secret authentication mode
+
+### *What happens if I have both JIT provisioning and SCIM enabled?*
+
+JIT provisioning and SCIM can conflict with each other. We recommend disabling JIT provisioning before enabling SCIM to ensure consistent user provisioning behavior.
+
+### *How do I change a user's role or workspace access?*
+
+Update the user's group membership in your IdP. The changes will be synchronized to LangSmith according to the [role precedence rules](#role-precedence).
+
+### *What happens when a user is removed from all groups?*
+
+The user will be deprovisioned from your LangSmith organization according to your IdP's deprovisioning settings.
+
+### *Can I use custom group names?*
+
+Yes. If your identity provider supports syncing alternate fields to the `displayName` group attribute, you may use an alternate attribute (like `description`) as the `displayName` in LangSmith and retain full customizability of the identity provider group name. Otherwise, groups must follow the specific naming convention described in the [Group Naming Convention](#group-naming-convention) section to properly map to LangSmith roles and workspaces.
+
+#### _Why is my Okta integration not working?_
+
+See Okta's troubleshooting guide here: https://help.okta.com/en-us/content/topics/users-groups-profiles/usgp-group-push-troubleshoot.htm.
