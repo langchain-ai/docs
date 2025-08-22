@@ -23,10 +23,9 @@ In this guide we'll go over how to evaluate an application using the [evaluate()
 
 First we need an application to evaluate. Let's create a simple toxicity classifier for this example.
 
-<Tabs>
-  <Tab title="Python">
+<CodeGroup>
 
-```python
+```python Python
 from langsmith import traceable, wrappers
 from openai import OpenAI
 
@@ -51,10 +50,7 @@ def toxicity_classifier(inputs: dict) -> dict:
     return {"class": result.choices[0].message.content}
 ```
 
-  </Tab>
-  <Tab title="TypeScript">
-
-```typescript
+```typescript TypeScript
 import { OpenAI } from "openai";
 import { wrapOpenAI } from "langsmith/wrappers";
 import { traceable } from "langsmith/traceable";
@@ -83,8 +79,7 @@ const toxicityClassifier = traceable(
 );
 ```
 
-  </Tab>
-</Tabs>
+</CodeGroup>
 
 We've optionally enabled tracing to capture the inputs and outputs of each step in the pipeline. To understand how to annotate your code for tracing, please refer to [this guide](/langsmith/annotate-code).
 
@@ -92,12 +87,12 @@ We've optionally enabled tracing to capture the inputs and outputs of each step 
 
 We need a [Dataset](/langsmith/evaluation-concepts#datasets) to evaluate our application on. Our dataset will contain labeled [examples](/langsmith/evaluation-concepts#examples) of toxic and non-toxic text.
 
-<Tabs>
-  <Tab title="Python">
 
 Requires `langsmith>=0.3.13`
 
-```python
+<CodeGroup>
+
+```python Python
 from langsmith import Client
 ls_client = Client()
 
@@ -135,10 +130,7 @@ ls_client.create_examples(
 )
 ```
 
-  </Tab>
-  <Tab title="TypeScript">
-
-```typescript
+```typescript TypeScript
 import { Client } from "langsmith";
 
 const langsmith = new Client();
@@ -168,8 +160,7 @@ const toxicDataset = await langsmith.createDataset(datasetName);
 await langsmith.createExamples({ inputs, outputs, datasetId: toxicDataset.id });
 ```
 
-  </Tab>
-</Tabs>
+</CodeGroup>
 
 See [here](/langsmith/#dataset-management) for more on dataset management.
 
@@ -181,22 +172,17 @@ See [here](/langsmith/#dataset-management) for more on dataset management.
 
 [Evaluators](/langsmith/evaluation-concepts#evaluators) are functions for scoring your application's outputs. They take in the example inputs, actual outputs, and, when present, the reference outputs. Since we have labels for this task, our evaluator can directly check if the actual outputs match the reference outputs.
 
-<Tabs>
-  <Tab title="Python">
+- Python: Requires `langsmith>=0.3.13`
+- TypeScript: Requires `langsmith>=0.2.9`
 
-Requires `langsmith>=0.3.13`
+<CodeGroup>
 
-```python
+```python Python
 def correct(inputs: dict, outputs: dict, reference_outputs: dict) -> bool:
     return outputs["class"] == reference_outputs["label"]
 ```
 
-  </Tab>
-  <Tab title="TypeScript">
-
-Requires `langsmith>=0.2.9`
-
-```typescript
+```typescript TypeScript
 import type { EvaluationResult } from "langsmith/evaluation";
 
 function correct({
@@ -211,8 +197,7 @@ function correct({
 }
 ```
 
-  </Tab>
-</Tabs>
+</CodeGroup>
 
 See [here](/langsmith/#define-an-evaluator) for more on how to define evaluators.
 
@@ -226,12 +211,12 @@ The key arguments are:
 * `data` - the name OR UUID of the LangSmith dataset to evaluate on, or an iterator of examples
 * `evaluators` - a list of evaluators to score the outputs of the function
 
-<Tabs>
-  <Tab title="Python">
 
-Requires `langsmith>=0.3.13`
+Python: Requires `langsmith>=0.3.13`
 
-```python
+<CodeGroup>
+
+```python Python
 # Can equivalently use the 'evaluate' function directly:
 # from langsmith import evaluate; evaluate(...)
 results = ls_client.evaluate(
@@ -244,10 +229,7 @@ results = ls_client.evaluate(
 )
 ```
 
-  </Tab>
-  <Tab title="TypeScript">
-
-```typescript
+```typescript TypeScript
 import { evaluate } from "langsmith/evaluation";
 
 await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
@@ -258,8 +240,7 @@ await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
 });
 ```
 
-  </Tab>
-</Tabs>
+</CodeGroup>
 
 ## Explore the results[​](#explore-the-results "Direct link to Explore the results")
 
@@ -272,163 +253,156 @@ Each invocation of `evaluate()` creates an [Experiment](/langsmith/evaluation-co
 ## Reference code[​](#reference-code "Direct link to Reference code")
 
 <Accordion title="Click to see a consolidated code snippet">
-  <Tabs>
-    <Tab title="Python">
+  <CodeGroup>
 
-  Requires `langsmith>=0.3.13`
+```python Python
+from langsmith import Client, traceable, wrappers
+from openai import OpenAI
 
-  ```python
-  from langsmith import Client, traceable, wrappers
-  from openai import OpenAI
+# Step 1. Define an application
+oai_client = wrappers.wrap_openai(OpenAI())
 
-  # Step 1. Define an application
-  oai_client = wrappers.wrap_openai(OpenAI())
+@traceable
+def toxicity_classifier(inputs: dict) -> str:
+    system = (
+      "Please review the user query below and determine if it contains any form of toxic behavior, "
+      "such as insults, threats, or highly negative comments. Respond with 'Toxic' if it does "
+      "and 'Not toxic' if it doesn't."
+    )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": inputs["text"]},
+    ]
+    result = oai_client.chat.completions.create(
+        messages=messages, model="gpt-4o-mini", temperature=0
+    )
+    return result.choices[0].message.content
 
-  @traceable
-  def toxicity_classifier(inputs: dict) -> str:
-      system = (
-        "Please review the user query below and determine if it contains any form of toxic behavior, "
-        "such as insults, threats, or highly negative comments. Respond with 'Toxic' if it does "
-        "and 'Not toxic' if it doesn't."
-      )
-      messages = [
-          {"role": "system", "content": system},
-          {"role": "user", "content": inputs["text"]},
-      ]
-      result = oai_client.chat.completions.create(
-          messages=messages, model="gpt-4o-mini", temperature=0
-      )
-      return result.choices[0].message.content
+# Step 2. Create a dataset
+ls_client = Client()
+dataset = ls_client.create_dataset(dataset_name="Toxic Queries")
+examples = [
+  {
+    "inputs": {"text": "Shut up, idiot"}, 
+    "outputs": {"label": "Toxic"},
+  },
+  {
+    "inputs": {"text": "You're a wonderful person"},
+    "outputs": {"label": "Not toxic"},
+  },
+  {
+    "inputs": {"text": "This is the worst thing ever"}, 
+    "outputs": {"label": "Toxic"},
+  },
+  {
+    "inputs": {"text": "I had a great day today"}, 
+    "outputs": {"label": "Not toxic"},
+  },
+  {
+    "inputs": {"text": "Nobody likes you"}, 
+    "outputs": {"label": "Toxic"},
+  },
+  {
+    "inputs": {"text": "This is unacceptable. I want to speak to the manager."},
+    "outputs": {"label": "Not toxic"},
+  },
+]
+ls_client.create_examples(
+  dataset_id=dataset.id,
+  examples=examples,
+)
 
-  # Step 2. Create a dataset
-  ls_client = Client()
-  dataset = ls_client.create_dataset(dataset_name="Toxic Queries")
-  examples = [
-    {
-      "inputs": {"text": "Shut up, idiot"}, 
-      "outputs": {"label": "Toxic"},
-    },
-    {
-      "inputs": {"text": "You're a wonderful person"},
-      "outputs": {"label": "Not toxic"},
-    },
-    {
-      "inputs": {"text": "This is the worst thing ever"}, 
-      "outputs": {"label": "Toxic"},
-    },
-    {
-      "inputs": {"text": "I had a great day today"}, 
-      "outputs": {"label": "Not toxic"},
-    },
-    {
-      "inputs": {"text": "Nobody likes you"}, 
-      "outputs": {"label": "Toxic"},
-    },
-    {
-      "inputs": {"text": "This is unacceptable. I want to speak to the manager."},
-      "outputs": {"label": "Not toxic"},
-    },
-  ]
-  ls_client.create_examples(
-    dataset_id=dataset.id,
-    examples=examples,
-  )
+# Step 3. Define an evaluator
+def correct(inputs: dict, outputs: dict, reference_outputs: dict) -> bool:
+    return outputs["output"] == reference_outputs["label"]
 
-  # Step 3. Define an evaluator
-  def correct(inputs: dict, outputs: dict, reference_outputs: dict) -> bool:
-      return outputs["output"] == reference_outputs["label"]
+# Step 4. Run the evaluation
+# Client.evaluate() and evaluate() behave the same.
+results = ls_client.evaluate(
+    toxicity_classifier,
+    data=dataset.name,
+    evaluators=[correct],
+    experiment_prefix="gpt-4o-mini, simple",  # optional, experiment name prefix
+    description="Testing the baseline system.",  # optional, experiment description
+    max_concurrency=4,  # optional, add concurrency
+)
+```
 
-  # Step 4. Run the evaluation
-  # Client.evaluate() and evaluate() behave the same.
-  results = ls_client.evaluate(
-      toxicity_classifier,
-      data=dataset.name,
-      evaluators=[correct],
-      experiment_prefix="gpt-4o-mini, simple",  # optional, experiment name prefix
-      description="Testing the baseline system.",  # optional, experiment description
-      max_concurrency=4,  # optional, add concurrency
-  )
-  ```
+```typescript TypeScript
+import { OpenAI } from "openai";
+import { Client } from "langsmith";
+import { evaluate, EvaluationResult } from "langsmith/evaluation";
+import type { Run, Example } from "langsmith/schemas";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
 
-    </Tab>
-    <Tab title="TypeScript">
+const oaiClient = wrapOpenAI(new OpenAI());
 
-  ```typescript
-  import { OpenAI } from "openai";
-  import { Client } from "langsmith";
-  import { evaluate, EvaluationResult } from "langsmith/evaluation";
-  import type { Run, Example } from "langsmith/schemas";
-  import { traceable } from "langsmith/traceable";
-  import { wrapOpenAI } from "langsmith/wrappers";
+const toxicityClassifier = traceable(
+  async (text: string) => {
+    const result = await oaiClient.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content: "Please review the user query below and determine if it contains any form of toxic behavior, such as insults, threats, or highly negative comments. Respond with 'Toxic' if it does, and 'Not toxic' if it doesn't.",
+        },
+        { role: "user", content: text },
+      ],
+      model: "gpt-4o-mini",
+      temperature: 0,
+    });
+    return result.choices[0].message.content;
+  },
+  { name: "toxicityClassifier" }
+);
 
-  const oaiClient = wrapOpenAI(new OpenAI());
+const langsmith = new Client();
 
-  const toxicityClassifier = traceable(
-    async (text: string) => {
-      const result = await oaiClient.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: "Please review the user query below and determine if it contains any form of toxic behavior, such as insults, threats, or highly negative comments. Respond with 'Toxic' if it does, and 'Not toxic' if it doesn't.",
-          },
-          { role: "user", content: text },
-        ],
-        model: "gpt-4o-mini",
-        temperature: 0,
-      });
-      return result.choices[0].message.content;
-    },
-    { name: "toxicityClassifier" }
-  );
+// create a dataset
+const labeledTexts = [
+  ["Shut up, idiot", "Toxic"],
+  ["You're a wonderful person", "Not toxic"],
+  ["This is the worst thing ever", "Toxic"],
+  ["I had a great day today", "Not toxic"],
+  ["Nobody likes you", "Toxic"],
+  ["This is unacceptable. I want to speak to the manager.", "Not toxic"],
+];
 
-  const langsmith = new Client();
+const [inputs, outputs] = labeledTexts.reduce<
+  [Array<{ input: string }>, Array<{ outputs: string }>]
+>(
+  ([inputs, outputs], item) => [
+    [...inputs, { input: item[0] }],
+    [...outputs, { outputs: item[1] }],
+  ],
+  [[], []]
+);
 
-  // create a dataset
-  const labeledTexts = [
-    ["Shut up, idiot", "Toxic"],
-    ["You're a wonderful person", "Not toxic"],
-    ["This is the worst thing ever", "Toxic"],
-    ["I had a great day today", "Not toxic"],
-    ["Nobody likes you", "Toxic"],
-    ["This is unacceptable. I want to speak to the manager.", "Not toxic"],
-  ];
+const datasetName = "Toxic Queries";
+const toxicDataset = await langsmith.createDataset(datasetName);
+await langsmith.createExamples({ inputs, outputs, datasetId: toxicDataset.id });
 
-  const [inputs, outputs] = labeledTexts.reduce<
-    [Array<{ input: string }>, Array<{ outputs: string }>]
-  >(
-    ([inputs, outputs], item) => [
-      [...inputs, { input: item[0] }],
-      [...outputs, { outputs: item[1] }],
-    ],
-    [[], []]
-  );
+// Row-level evaluator
+function correct({
+  outputs,
+  referenceOutputs,
+}: {
+  outputs: Record<string, any>;
+  referenceOutputs?: Record<string, any>;
+}): EvaluationResult {
+  const score = outputs.output === referenceOutputs?.outputs;
+  return { key: "correct", score };
+}
 
-  const datasetName = "Toxic Queries";
-  const toxicDataset = await langsmith.createDataset(datasetName);
-  await langsmith.createExamples({ inputs, outputs, datasetId: toxicDataset.id });
+await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
+  data: datasetName,
+  evaluators: [correct],
+  experimentPrefix: "gpt-4o-mini, simple",  // optional, experiment name prefix
+  maxConcurrency: 4, // optional, add concurrency
+});
+```
 
-  // Row-level evaluator
-  function correct({
-    outputs,
-    referenceOutputs,
-  }: {
-    outputs: Record<string, any>;
-    referenceOutputs?: Record<string, any>;
-  }): EvaluationResult {
-    const score = outputs.output === referenceOutputs?.outputs;
-    return { key: "correct", score };
-  }
-
-  await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
-    data: datasetName,
-    evaluators: [correct],
-    experimentPrefix: "gpt-4o-mini, simple",  // optional, experiment name prefix
-    maxConcurrency: 4, // optional, add concurrency
-  });
-  ```
-
-    </Tab>
-  </Tabs>
+</CodeGroup>
 </Accordion>
 
 ## Related[​](#related "Direct link to Related")
