@@ -1,0 +1,193 @@
+# How to handle multiple queries
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following:
+
+- [Query analysis](/oss/tutorials/rag#query-analysis)
+
+</Info>
+
+Sometimes, a query analysis technique may allow for multiple queries to be generated. In these cases, we need to remember to run all queries and then to combine the results. We will show a simple example (using mock data) of how to do that.
+
+## Setup
+
+### Install dependencies
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/community @langchain/openai @langchain/core zod chromadb
+</Npm2Yarn>
+```
+### Set environment variables
+
+```
+OPENAI_API_KEY=your-api-key
+
+# Optional, use LangSmith for best-in-class observability
+LANGSMITH_API_KEY=your-api-key
+LANGSMITH_TRACING=true
+
+# Reduce tracing latency if you are not in a serverless environment
+# LANGCHAIN_CALLBACKS_BACKGROUND=true
+```
+### Create Index
+
+We will create a vectorstore over fake information.
+
+
+```typescript
+import { Chroma } from "@langchain/community/vectorstores/chroma"
+import { OpenAIEmbeddings } from "@langchain/openai"
+import "chromadb";
+
+const texts = ["Harrison worked at Kensho", "Ankush worked at Facebook"]
+const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" })
+const vectorstore = await Chroma.fromTexts(
+    texts,
+    {},
+    embeddings,
+    {
+        collectionName: "multi_query"
+    }
+)
+const retriever = vectorstore.asRetriever(1);
+```
+## Query analysis
+
+We will use function calling to structure the output. We will let it return multiple queries.
+
+
+```typescript
+import { z } from "zod";
+
+const searchSchema = z.object({
+    queries: z.array(z.string()).describe("Distinct queries to search for")
+}).describe("Search over a database of job records.");
+```
+```{=mdx}
+<ChatModelTabs customVarName="llm" />
+```
+
+
+```typescript
+// @lc-docs-hide-cell
+import { ChatOpenAI } from '@langchain/openai';
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o",
+  temperature: 0,
+})
+```
+
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
+
+const system = `You have the ability to issue search queries to get information to help answer user information.
+
+If you need to look up two distinct pieces of information, you are allowed to do that!`;
+
+const prompt = ChatPromptTemplate.fromMessages([
+    ["system", system],
+    ["human", "{question}"],
+])
+const llmWithTools = llm.withStructuredOutput(searchSchema, {
+  name: "Search"
+});
+const queryAnalyzer = RunnableSequence.from([
+  {
+      question: new RunnablePassthrough(),
+  },
+  prompt,
+  llmWithTools
+]);
+```
+
+We can see that this allows for creating multiple queries
+
+
+```typescript
+await queryAnalyzer.invoke("where did Harrison Work")
+```
+
+
+
+```output
+{ queries: [ "Harrison" ] }
+```
+
+
+
+```typescript
+await queryAnalyzer.invoke("where did Harrison and ankush Work")
+```
+
+
+
+```output
+{ queries: [ "Harrison work", "Ankush work" ] }
+```
+
+
+## Retrieval with query analysis
+
+So how would we include this in a chain? One thing that will make this a lot easier is if we call our retriever asyncronously - this will let us loop over the queries and not get blocked on the response time.
+
+
+```typescript
+import { RunnableConfig, RunnableLambda } from "@langchain/core/runnables";
+
+const chain = async (question: string, config?: RunnableConfig) => {
+    const response = await queryAnalyzer.invoke(question, config);
+    const docs = [];
+    for (const query of response.queries) {
+        const newDocs = await retriever.invoke(query, config);
+        docs.push(...newDocs);
+    }
+    // You probably want to think about reranking or deduplicating documents here
+    // But that is a separate topic
+    return docs;
+}
+
+const customChain = new RunnableLambda({ func: chain });
+```
+
+
+```typescript
+await customChain.invoke("where did Harrison Work")
+```
+
+
+
+```output
+[ Document { pageContent: "Harrison worked at Kensho", metadata: {} } ]
+```
+
+
+
+```typescript
+await customChain.invoke("where did Harrison and ankush Work")
+```
+
+
+
+```output
+[
+  Document { pageContent: "Harrison worked at Kensho", metadata: {} },
+  Document { pageContent: "Ankush worked at Facebook", metadata: {} }
+]
+```
+
+
+## Next steps
+
+You've now learned some techniques for handling multiple queries in a query analysis system.
+
+Next, check out some of the other query analysis guides in this section, like [how to deal with cases where no query is generated](/oss/how-to/query_no_queries).

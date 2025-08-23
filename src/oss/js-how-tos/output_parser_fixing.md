@@ -1,0 +1,84 @@
+# How to try to fix errors in output parsing
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following concepts:
+- [Chat models](/oss/concepts/chat_models)
+- [Output parsers](/oss/concepts/output_parsers)
+- [Prompt templates](/oss/concepts/prompt_templates)
+- [Chaining runnables together](/oss/how-to/sequence/)
+
+</Info>
+
+LLMs aren't perfect, and sometimes fail to produce output that perfectly matches a the desired format. To help handle errors, we can use the [`OutputFixingParser`](https://api.js.langchain.com/classes/langchain.output_parsers.OutputFixingParser.html) This output parser wraps another output parser, and in the event that the first one fails, it calls out to another LLM in an attempt to fix any errors.
+
+Specifically, we can pass the misformatted output, along with the formatted instructions, to the model and ask it to fix it.
+
+For this example, we'll use the [`StructuredOutputParser`](https://api.js.langchain.com/classes/langchain_core.output_parsers.StructuredOutputParser.html), which can validate output according to a Zod schema. Here's what happens if we pass it a result that does not comply with the schema:
+
+
+```typescript
+import { z } from "zod";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { StructuredOutputParser } from "@langchain/core/output_parsers";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+
+const zodSchema = z.object({
+  name: z.string().describe("name of an actor"),
+  film_names: z.array(z.string()).describe("list of names of films they starred in"),
+});
+
+const parser = StructuredOutputParser.fromZodSchema(zodSchema);
+
+const misformatted = "{'name': 'Tom Hanks', 'film_names': ['Forrest Gump']}";
+
+await parser.parse(misformatted);
+```
+
+```output
+Stack trace:
+``````output
+Error: Failed to parse. Text: "{'name': 'Tom Hanks', 'film_names': ['Forrest Gump']}". Error: SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+``````output
+    at StructuredOutputParser.parse (file:///Users/jacoblee/Library/Caches/deno/npm/registry.npmjs.org/@langchain/core/0.1.63/dist/output_parsers/structured.js:86:19)
+``````output
+    at <anonymous>:11:14
+```
+
+Now we can construct and use a `OutputFixingParser`. This output parser takes as an argument another output parser but also an LLM with which to try to correct any formatting mistakes.
+
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+
+import { OutputFixingParser } from "langchain/output_parsers";
+
+const model = new ChatAnthropic({
+  model: "claude-3-sonnet-20240229",
+  maxTokens: 512,
+  temperature: 0.1,
+});
+
+const parserWithFix = OutputFixingParser.fromLLM(model, parser);
+
+await parserWithFix.parse(misformatted);
+```
+
+
+
+```output
+{
+  name: "Tom Hanks",
+  film_names: [
+    "Forrest Gump",
+    "Saving Private Ryan",
+    "Cast Away",
+    "Catch Me If You Can"
+  ]
+}
+```
+
+
+For more about different parameters and options, check out our [API reference docs](https://api.js.langchain.com/classes/langchain.output_parsers.OutputFixingParser.html).

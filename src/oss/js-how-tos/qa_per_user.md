@@ -1,0 +1,258 @@
+---
+sidebar_position: 4
+---
+
+# How to do per-user retrieval
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following:
+
+- [Retrieval-augmented generation](/oss/tutorials/rag/)
+
+</Info>
+
+When building a retrieval app, you often have to build it with multiple users in
+mind. This means that you may be storing data not just for one user, but for
+many different users, and they should not be able to see each other's data. This
+means that you need to be able to configure your retrieval chain to only
+retrieve certain information. This generally involves two steps.
+
+**Step 1: Make sure the retriever you are using supports multiple users**
+
+At the moment, there is no unified flag or filter for this in LangChain. Rather,
+each vectorstore and retriever may have their own, and may be called different
+things (namespaces, multi-tenancy, etc). For vectorstores, this is generally
+exposed as a keyword argument that is passed in during `similaritySearch`. By
+reading the documentation or source code, figure out whether the retriever you
+are using supports multiple users, and, if so, how to use it.
+
+**Step 2: Add that parameter as a configurable field for the chain**
+
+The LangChain `config` object is passed through to every Runnable. Here you can
+add any fields you'd like to the `configurable` object. Later, inside the chain
+we can extract these fields.
+
+**Step 3: Call the chain with that configurable field**
+
+Now, at runtime you can call this chain with configurable field.
+
+## Code Example
+
+Let's see a concrete example of what this looks like in code. We will use
+Pinecone for this example.
+
+## Setup
+
+### Install dependencies
+
+```{=mdx}
+import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
+<IntegrationInstallTooltip></IntegrationInstallTooltip>
+
+<Npm2Yarn>
+  @langchain/pinecone @langchain/openai @langchain/core @pinecone-database/pinecone
+</Npm2Yarn>
+```
+### Set environment variables
+
+We'll use OpenAI and Pinecone in this example:
+
+```env
+OPENAI_API_KEY=your-api-key
+
+PINECONE_API_KEY=your-api-key
+PINECONE_INDEX=your-index-name
+
+# Optional, use LangSmith for best-in-class observability
+LANGSMITH_API_KEY=your-api-key
+LANGSMITH_TRACING=true
+
+# Reduce tracing latency if you are not in a serverless environment
+# LANGCHAIN_CALLBACKS_BACKGROUND=true
+```
+```typescript
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { PineconeStore } from "@langchain/pinecone";
+import { Pinecone } from "@pinecone-database/pinecone";
+import { Document } from "@langchain/core/documents";
+
+const embeddings = new OpenAIEmbeddings();
+
+const pinecone = new Pinecone();
+
+const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX);
+
+/**
+ * Pinecone allows you to partition the records in an index into namespaces. 
+ * Queries and other operations are then limited to one namespace, 
+ * so different requests can search different subsets of your index.
+ * Read more about namespaces here: https://docs.pinecone.io/guides/indexes/use-namespaces
+ * 
+ * NOTE: If you have namespace enabled in your Pinecone index, you must provide the namespace when creating the PineconeStore.
+ */
+const namespace = "pinecone";
+
+const vectorStore = await PineconeStore.fromExistingIndex(
+  new OpenAIEmbeddings(),
+  { pineconeIndex, namespace },
+);
+
+await vectorStore.addDocuments(
+  [new Document({ pageContent: "i worked at kensho" })],
+  { namespace: "harrison" },
+);
+
+await vectorStore.addDocuments(
+  [new Document({ pageContent: "i worked at facebook" })],
+  { namespace: "ankush" },
+);
+```
+
+
+
+```output
+[ "77b8f174-9d89-4c6c-b2ab-607fe3913b2d" ]
+```
+
+
+The pinecone kwarg for `namespace` can be used to separate documents
+
+
+```typescript
+// This will only get documents for Ankush
+const ankushRetriever = vectorStore.asRetriever({
+  filter: {
+    namespace: "ankush",
+  },
+});
+
+await ankushRetriever.invoke(
+  "where did i work?",
+);
+```
+
+
+
+```output
+[ Document { pageContent: "i worked at facebook", metadata: {} } ]
+```
+
+
+
+```typescript
+// This will only get documents for Harrison
+const harrisonRetriever = vectorStore.asRetriever({
+  filter: {
+    namespace: "harrison",
+  },
+});
+
+await harrisonRetriever.invoke(
+  "where did i work?",
+);
+```
+
+
+
+```output
+[ Document { pageContent: "i worked at kensho", metadata: {} } ]
+```
+
+
+We can now create the chain that we will use to perform question-answering.
+
+
+```typescript
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import {
+  RunnableBinding,
+  RunnableLambda,
+  RunnablePassthrough,
+} from "@langchain/core/runnables";
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
+
+const template = `Answer the question based only on the following context:
+{context}
+Question: {question}`;
+
+const prompt = ChatPromptTemplate.fromTemplate(template);
+
+const model = new ChatOpenAI({
+  model: "gpt-3.5-turbo-0125",
+  temperature: 0,
+});
+```
+
+We can now create the chain using our configurable retriever. It is configurable
+because we can define any object which will be passed to the chain. From there,
+we extract the configurable object and pass it to the vectorstore.
+
+
+```typescript
+import { RunnablePassthrough, RunnableSequence } from "@langchain/core/runnables";
+
+const chain = RunnableSequence.from([
+  RunnablePassthrough.assign({
+    context: async (input: { question: string }, config) => {
+      if (!config || !("configurable" in config)) {
+        throw new Error("No config");
+      }
+      const { configurable } = config;
+      const documents = await vectorStore.asRetriever(configurable).invoke(
+        input.question,
+        config,
+      );
+      return documents.map((doc) => doc.pageContent).join("\n\n");
+    },
+  }),
+  prompt,
+  model,
+  new StringOutputParser(),
+]);
+```
+
+We can now invoke the chain with configurable options. `search_kwargs` is the id
+of the configurable field. The value is the search kwargs to use for Pinecone
+
+
+```typescript
+await chain.invoke(
+  { question: "where did the user work?"},
+  { configurable: { filter: { namespace: "harrison" } } },
+);
+```
+
+
+
+```output
+"The user worked at Kensho."
+```
+
+
+
+```typescript
+await chain.invoke(
+  { question: "where did the user work?"},
+  { configurable: { filter: { namespace: "ankush" } } },
+);
+```
+
+
+
+```output
+"The user worked at Facebook."
+```
+
+
+For more vector store implementations that can support multiple users, please refer to specific
+pages, such as [Milvus](/oss/integrations/vectorstores/milvus).
+
+## Next steps
+
+You've now seen one approach for supporting retrieval with data from multiple users.
+
+Next, check out some of the other how-to guides on RAG, such as [returning sources](/oss/how-to/qa_sources).

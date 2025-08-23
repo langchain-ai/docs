@@ -1,0 +1,205 @@
+# How to load Markdown
+
+[Markdown](https://en.wikipedia.org/wiki/Markdown) is a lightweight markup language for creating formatted text using a plain-text editor.
+
+Here we cover how to load `Markdown` documents into LangChain [Document](https://api.js.langchain.com/classes/langchain_core.documents.Document.html) objects that we can use downstream.
+
+We will cover:
+
+- Basic usage;
+- Parsing of Markdown into elements such as titles, list items, and text.
+
+LangChain implements an [UnstructuredLoader](https://api.js.langchain.com/classes/langchain.document_loaders_fs_unstructured.UnstructuredLoader.html) class.
+
+<Info>
+**Prerequisites**
+
+
+This guide assumes familiarity with the following concepts:
+
+- [Documents](https://api.js.langchain.com/classes/_langchain_core.documents.Document.html)
+- [Document Loaders](/oss/concepts/document_loaders)
+
+</Info>
+
+## Installation
+
+```{=mdx}
+import Npm2Yarn from "@theme/Npm2Yarn"
+
+<Npm2Yarn>
+  @langchain/community @langchain/core
+</Npm2Yarn>
+```
+## Setup
+
+Although Unstructured has an open source offering, you're still required to provide an API key to access the service. To get everything up and running, follow these two steps:
+
+1. Download & start the Docker container:
+  
+```bash
+docker run -p 8000:8000 -d --rm --name unstructured-api downloads.unstructured.io/unstructured-io/unstructured-api:latest --port 8000 --host 0.0.0.0
+```
+2. Get a free API key & API URL [here](https://unstructured.io/api-key), and set it in your environment (as per the Unstructured website, it may take up to an hour to allocate your API key & URL.):
+
+```bash
+export UNSTRUCTURED_API_KEY="..."
+# Replace with your `Full URL` from the email
+export UNSTRUCTURED_API_URL="https://<ORG_NAME>-<SECRET>.api.unstructuredapp.io/general/v0/general" 
+```
+Basic usage will ingest a Markdown file to a single document. Here we demonstrate on LangChain's readme:
+
+
+```typescript
+import { UnstructuredLoader } from "@langchain/community/document_loaders/fs/unstructured";
+
+const markdownPath = "../../../../README.md";
+
+const loader = new UnstructuredLoader(markdownPath, {
+  apiKey: process.env.UNSTRUCTURED_API_KEY,
+  apiUrl: process.env.UNSTRUCTURED_API_URL,
+});
+
+const data = await loader.load()
+console.log(data.slice(0, 5));
+```
+```output
+[
+  Document {
+    pageContent: '🦜️🔗 LangChain.js',
+    metadata: {
+      languages: [Array],
+      filename: 'README.md',
+      filetype: 'text/markdown',
+      category: 'Title'
+    }
+  },
+  Document {
+    pageContent: '⚡ Building applications with LLMs through composability ⚡',
+    metadata: {
+      languages: [Array],
+      filename: 'README.md',
+      filetype: 'text/markdown',
+      category: 'Title'
+    }
+  },
+  Document {
+    pageContent: 'Looking for the Python version? Check out LangChain.',
+    metadata: {
+      languages: [Array],
+      parent_id: '7ea17bcb17b10f303cbb93b4cb95de93',
+      filename: 'README.md',
+      filetype: 'text/markdown',
+      category: 'NarrativeText'
+    }
+  },
+  Document {
+    pageContent: 'To help you ship LangChain apps to production faster, check out LangSmith.\n' +
+      'LangSmith is a unified developer platform for building, testing, and monitoring LLM applications.\n' +
+      'Fill out this form to get on the waitlist or speak with our sales team.',
+    metadata: {
+      languages: [Array],
+      parent_id: '7ea17bcb17b10f303cbb93b4cb95de93',
+      filename: 'README.md',
+      filetype: 'text/markdown',
+      category: 'NarrativeText'
+    }
+  },
+  Document {
+    pageContent: '⚡️ Quick Install',
+    metadata: {
+      languages: [Array],
+      filename: 'README.md',
+      filetype: 'text/markdown',
+      category: 'Title'
+    }
+  }
+]
+```
+## Retain Elements
+
+Under the hood, Unstructured creates different "elements" for different chunks of text. By default we combine those together, but you can easily keep that separation by specifying `chunkingStrategy: "by_title"`.
+
+
+```typescript
+const loaderByTitle = new UnstructuredLoader(markdownPath, {
+  chunkingStrategy: "by_title"
+});
+
+
+const loadedDocs = await loaderByTitle.load()
+
+console.log(`Number of documents: ${loadedDocs.length}\n`)
+
+for (const doc of loadedDocs.slice(0, 2)) {
+    console.log(doc);
+    console.log("\n");
+}
+```
+```output
+Number of documents: 13
+
+Document {
+  pageContent: '🦜️🔗 LangChain.js\n' +
+    '\n' +
+    '⚡ Building applications with LLMs through composability ⚡\n' +
+    '\n' +
+    'Looking for the Python version? Check out LangChain.\n' +
+    '\n' +
+    'To help you ship LangChain apps to production faster, check out LangSmith.\n' +
+    'LangSmith is a unified developer platform for building, testing, and monitoring LLM applications.\n' +
+    'Fill out this form to get on the waitlist or speak with our sales team.',
+  metadata: {
+    filename: 'README.md',
+    filetype: 'text/markdown',
+    languages: [ 'eng' ],
+    orig_elements: 'eJzNUtuO0zAQ/ZVRnquSS3PjBcGyPHURgr5tV2hijxNTJ45ip0u14t8Zp1y6CCF4ACFLlufuc+bcPkRkqKfBv9cyegpREWNZosxS0RRVzmeTCiFlnmRUFZmQ0QqinjxK9Mj5D5HShgbsKRS/vX7+8uZ63S9ZIeBP4xLw9NE/6XxvQsDg0M7YkuPIbURDG919Wp1zQu5+llVGfMta7GdFsVo8MniSErZcfdWhHtYfXOj2dcROe0MRN/oRUUmYlI1o+EpilcWZaJo6azaiqXNJdfYvEKUFJvBi1kbqoQUcR6MFem0HB/fad7Dd3jjw3WTntgNh+9E6bLTR/gTn4t9CmhHFTc1w80oKSUlTpFWaFKWsVR5nFf0dpOwdcfoDvi+p2Vp7CJQoOzF+gjcn39kBjjQ5ZucZXHUkDmBnf7H3Sy5e4zQxkUfahYY/4UQqVcZJpSpspKqSMslVllWJzDdMC6XVf8jJzkJHZoSTncF1evwOPSiHdWJhnKycRRAQKHSephWIR0y961lW6/3w7Q3aAcI8aKVJgqQjGTvSBKNBz+T3ywaaLwpdgSfnlwcOEno7aG+nsCcW6iP58ohX2phlru94xtKLf9iSB/5d2Ok9smC1Y3sCNxIezpq3M5toiAER9r/a6t1n6BJ/zg==',
+    category: 'CompositeElement'
+  }
+}
+
+
+Document {
+  pageContent: '⚡️ Quick Install\n' +
+    '\n' +
+    'You can use npm, yarn, or pnpm to install LangChain.js\n' +
+    '\n' +
+    'npm install -S langchain or yarn add langchain or pnpm add langchain\n' +
+    '\n' +
+    'typescript\n' +
+    'import { ChatOpenAI } from "langchain/chat_models/openai";\n' +
+    '\n' +
+    '🌐 Supported Environments\n' +
+    '\n' +
+    'LangChain is written in TypeScript and can be used in:\n' +
+    '\n' +
+    'Node.js (ESM and CommonJS) - 18.x, 19.x, 20.x\n' +
+    '\n' +
+    'Cloudflare Workers\n' +
+    '\n' +
+    'Vercel / Next.js (Browser, Serverless and Edge functions)\n' +
+    '\n' +
+    'Supabase Edge Functions\n' +
+    '\n' +
+    'Browser\n' +
+    '\n' +
+    'Deno',
+  metadata: {
+    filename: 'README.md',
+    filetype: 'text/markdown',
+    languages: [ 'eng' ],
+    orig_elements: 'eJzNlm1v2zYQx7/KQa9WwE1Iik/qXnWpB2RoM2wOOgx1URzJY6pVogyJTlME/e6j3KZIhgBzULjIG0Li3VH+/e/BfHNdUUc9pfyuDdUzqGzUjUUda1ZbL7R1UQetnNdMK9swVy2g6iljwIzF/7qKbUcJe5qD/1w+f/FqedSH2Ws25E+bnSHTVT5+n/tuNnSYLrZ4QVOxvKkoXVRvPy+++My+663QyNfbSCzCH9vWf4DTNGXsdsE3J563uaOqxP0XIDSxCdobSZIYd9w7JpQlLU3TaKf4YQDK7gbHB8h4m/jvYQseE2wngrTpF/AJx7SAYYRNeYU8QPtFAHhZvnzyHtt09M90W40zHEfM7SWdz0fep0otuUISLBqMjfNFjMYzI6SWFFWQj1CVGf2G++kK5uP9jD7rMgsEGMLd3Z1ad3YfpJHWsubSchGQeNRItUGPElF7wck2hy/9OWbyY7vJ69T2m2HMcA0l3/n3DaXnp/AZ4jj0sK6+AR6XNb/rh0DddDwUL2zX1c97NUpjVAEOxkh0tbOaN1qU1vG8VtYGe6CSuNvpwda+rJEzWG03MzAFWKbLdhzS/FOnvUhcdChlNC6iKBWuJVrCGMhxIaKMP6i4/1fP2+jfGhnaCT6Obc5UHhOcl4+vdhUAmMJuKjiaB0Mo1mcPKmdBvlFWK6ZMaXfNI2ojIvNORMsUHWiSf5cqZ6WOy2SDn5arVzv+k6Hvh/Tb6gk8BW6PrhbAm3kV7Ojqthgv2ymfZurvrQ4hvRLCSaUEj8YG77TzQTNriYv6B/0hPEiHk24oTdGVePhrGD/QOO0LyxRHKZivAxldS41akzXcxELPm/oxJv01jZ46OIazsrHL/i/j8HGicQErGi9p7GiadtWwDBcEcZt8boc0PdlXE9KlAoSkZh4PtUBZ5oRjTAbiSgd3oLn+XZqUYYgOy3Vgh/zrDfK+xA0rqY6GaQrGo5JM1azcgawzjeOa2CMk/przvXMayvXQEA8meEmCsxiDrkO54/iAVvtHSPiC0nA/3tt/AY+igwk=',
+    category: 'CompositeElement'
+  }
+}
+```
+Note that in this case we recover just one distinct element type:
+
+
+```typescript
+const categories = new Set(data.map((document) => document.metadata.category));
+console.log(categories);
+```
+```output
+Set(1) { 'CompositeElement' }
+```
