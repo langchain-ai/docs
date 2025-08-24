@@ -1,0 +1,273 @@
+---
+title: YDB
+---
+
+> [YDB](https://ydb.tech/) is a versatile open source Distributed SQL Database that combines high availability and scalability with strong consistency and ACID transactions. It accommodates transactional (OLTP), analytical (OLAP), and streaming workloads simultaneously.
+
+This notebook shows how to use functionality related to the `YDB` vector store.
+
+## Setup
+
+First, set up a local YDB with Docker:
+
+
+```python
+! docker run -d -p 2136:2136 --name ydb-langchain -e YDB_USE_IN_MEMORY_PDISKS=true -h localhost ydbplatform/local-ydb:trunk
+```
+
+You'll need to install `langchain-ydb` to use this integration
+
+
+```python
+! pip install -qU langchain-ydb
+```
+
+### Credentials
+
+There are no credentials for this notebook, just make sure you have installed the packages as shown above.
+
+If you want to get best in-class automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Initialization
+
+<EmbeddingTabs/>
+
+
+
+```python
+# | output: false
+# | echo: false
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+```
+```output
+/Users/ovcharuk/opensource/langchain/.venv/lib/python3.13/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
+  from .autonotebook import tqdm as notebook_tqdm
+```
+
+```python
+from langchain_ydb.vectorstores import YDB, YDBSearchStrategy, YDBSettings
+
+settings = YDBSettings(
+    table="ydb_example",
+    strategy=YDBSearchStrategy.COSINE_SIMILARITY,
+)
+vector_store = YDB(embeddings, config=settings)
+```
+
+## Manage vector store
+
+Once you have created your vector store, you can interact with it by adding and deleting different items.
+
+### Add items to vector store
+
+Prepare documents to work with:
+
+
+```python
+from uuid import uuid4
+
+from langchain_core.documents import Document
+
+document_1 = Document(
+    page_content="I had chocolate chip pancakes and scrambled eggs for breakfast this morning.",
+    metadata={"source": "tweet"},
+)
+
+document_2 = Document(
+    page_content="The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees.",
+    metadata={"source": "news"},
+)
+
+document_3 = Document(
+    page_content="Building an exciting new project with LangChain - come check it out!",
+    metadata={"source": "tweet"},
+)
+
+document_4 = Document(
+    page_content="Robbers broke into the city bank and stole $1 million in cash.",
+    metadata={"source": "news"},
+)
+
+document_5 = Document(
+    page_content="Wow! That was an amazing movie. I can't wait to see it again.",
+    metadata={"source": "tweet"},
+)
+
+document_6 = Document(
+    page_content="Is the new iPhone worth the price? Read this review to find out.",
+    metadata={"source": "website"},
+)
+
+document_7 = Document(
+    page_content="The top 10 soccer players in the world right now.",
+    metadata={"source": "website"},
+)
+
+document_8 = Document(
+    page_content="LangGraph is the best framework for building stateful, agentic applications!",
+    metadata={"source": "tweet"},
+)
+
+document_9 = Document(
+    page_content="The stock market is down 500 points today due to fears of a recession.",
+    metadata={"source": "news"},
+)
+
+document_10 = Document(
+    page_content="I have a bad feeling I am going to get deleted :(",
+    metadata={"source": "tweet"},
+)
+
+documents = [
+    document_1,
+    document_2,
+    document_3,
+    document_4,
+    document_5,
+    document_6,
+    document_7,
+    document_8,
+    document_9,
+    document_10,
+]
+uuids = [str(uuid4()) for _ in range(len(documents))]
+```
+
+You can add items to your vector store by using the `add_documents` function.
+
+
+```python
+vector_store.add_documents(documents=documents, ids=uuids)
+```
+```output
+Inserting data...: 100%|██████████| 10/10 [00:00<00:00, 14.67it/s]
+```
+
+
+```output
+['947be6aa-d489-44c5-910e-62e4d58d2ffb',
+ '7a62904d-9db3-412b-83b6-f01b34dd7de3',
+ 'e5a49c64-c985-4ed7-ac58-5ffa31ade699',
+ '99cf4104-36ab-4bd5-b0da-e210d260e512',
+ '5810bcd0-b46e-443e-a663-e888c9e028d1',
+ '190c193d-844e-4dbb-9a4b-b8f5f16cfae6',
+ 'f8912944-f80a-4178-954e-4595bf59e341',
+ '34fc7b09-6000-42c9-95f7-7d49f430b904',
+ '0f6b6783-f300-4a4d-bb04-8025c4dfd409',
+ '46c37ba9-7cf2-4ac8-9bd1-d84e2cb1155c']
+```
+
+
+### Delete items from vector store
+
+You can delete items from your vector store by ID using the `delete` function.
+
+
+```python
+vector_store.delete(ids=[uuids[-1]])
+```
+
+
+
+```output
+True
+```
+
+
+## Query vector store
+
+Once your vector store has been created and relevant documents have been added, you will likely want to query it during the execution of your chain or agent.
+
+### Query directly
+
+#### Similarity search
+
+A simple similarity search can be performed as follows:
+
+
+```python
+results = vector_store.similarity_search(
+    "LangChain provides abstractions to make working with LLMs easy", k=2
+)
+for res in results:
+    print(f"* {res.page_content} [{res.metadata}]")
+```
+```output
+* Building an exciting new project with LangChain - come check it out! [{'source': 'tweet'}]
+* LangGraph is the best framework for building stateful, agentic applications! [{'source': 'tweet'}]
+```
+#### Similarity search with score
+
+You can also perform a search with a score:
+
+
+```python
+results = vector_store.similarity_search_with_score("Will it be hot tomorrow?", k=3)
+for res, score in results:
+    print(f"* [SIM={score:.3f}] {res.page_content} [{res.metadata}]")
+```
+```output
+* [SIM=0.595] The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees. [{'source': 'news'}]
+* [SIM=0.212] I had chocolate chip pancakes and scrambled eggs for breakfast this morning. [{'source': 'tweet'}]
+* [SIM=0.118] Wow! That was an amazing movie. I can't wait to see it again. [{'source': 'tweet'}]
+```
+### Filtering
+
+You can search with filters as described below:
+
+
+```python
+results = vector_store.similarity_search_with_score(
+    "What did I eat for breakfast?",
+    k=4,
+    filter={"source": "tweet"},
+)
+for res, _ in results:
+    print(f"* {res.page_content} [{res.metadata}]")
+```
+```output
+* I had chocolate chip pancakes and scrambled eggs for breakfast this morning. [{'source': 'tweet'}]
+* Wow! That was an amazing movie. I can't wait to see it again. [{'source': 'tweet'}]
+* Building an exciting new project with LangChain - come check it out! [{'source': 'tweet'}]
+* LangGraph is the best framework for building stateful, agentic applications! [{'source': 'tweet'}]
+```
+### Query by turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+Here's how to transform your vector store into a retriever and then invoke the retriever with a simple query and filter.
+
+
+```python
+retriever = vector_store.as_retriever(
+    search_kwargs={"k": 2},
+)
+results = retriever.invoke(
+    "Stealing from the bank is a crime", filter={"source": "news"}
+)
+for res in results:
+    print(f"* {res.page_content} [{res.metadata}]")
+```
+```output
+* Robbers broke into the city bank and stole $1 million in cash. [{'source': 'news'}]
+* The stock market is down 500 points today due to fears of a recession. [{'source': 'news'}]
+```
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Tutorials](/oss/tutorials/)
+- [How-to: Question and answer with RAG](https://python.langchain.com/docs/how_to/#qa-with-rag)
+- [Retrieval conceptual docs](https://python.langchain.com/docs/concepts/retrieval)
+
+## API reference
+
+For detailed documentation of all `YDB` features and configurations head to the API reference:https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.ydb.YDB.html

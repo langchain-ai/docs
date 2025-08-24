@@ -1,0 +1,156 @@
+---
+title: ChatNetmind
+---
+
+This will help you get started with Netmind [chat models](https://www.netmind.ai/). For detailed documentation of all ChatNetmind features and configurations head to the [API reference](https://github.com/protagolabs/langchain-netmind).
+
+-  See https://www.netmind.ai/ for an example.
+
+## Overview
+### Integration details
+
+| Class                                                                                        | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/) | Package downloads | Package latest |
+|:---------------------------------------------------------------------------------------------| :--- |:-----:|:------------:|:--------------------------------------------------------------:| :---: | :---: |
+| [ChatNetmind](https://python.langchain.com/api_reference/) | [langchain-netmind](https://python.langchain.com/api_reference/) |   ✅   |      ❌       |                               ❌                                | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-netmind?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-netmind?style=flat-square&label=%20) |
+
+### Model features
+| [Tool calling](../../how_to/tool_calling.ipynb) | [Structured output](../../how_to/structured_output.ipynb) | JSON mode | [Image input](../../how_to/multimodal_inputs.ipynb) | Audio input | Video input | [Token-level streaming](../../how_to/chat_streaming.ipynb) | Native async | [Token usage](../../how_to/chat_token_usage_tracking.ipynb) | [Logprobs](../../how_to/logprobs.ipynb) |
+|:-----------------------------------------------:|:---------------------------------------------------------:|:---------:|:---------------------------------------------------:|:-----------:|:-----------:|:----------------------------------------------------------:|:------------:|:-----------------------------------------------------------:|:---------------------------------------:|
+|                        ✅                        |                             ✅                             |     ✅     |                          ❌                          |      ❌      |      ❌      |                             ✅                              |      ✅       |                              ✅                              |                    ✅                    | 
+
+## Setup
+
+To access Netmind models you'll need to create a/an Netmind account, get an API key, and install the `langchain-netmind` integration package.
+
+### Credentials
+
+Head to https://www.netmind.ai/ to sign up to Netmind and generate an API key. Once you've done this set the NETMIND_API_KEY environment variable:
+
+
+```python
+import getpass
+import os
+
+if not os.getenv("NETMIND_API_KEY"):
+    os.environ["NETMIND_API_KEY"] = getpass.getpass("Enter your Netmind API key: ")
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGCHAIN_TRACING_V2"] = "true"
+# os.environ["LANGCHAIN_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain Netmind integration lives in the `langchain-netmind` package:
+
+
+```python
+%pip install -qU langchain-netmind
+```
+```output
+[notice] A new release of pip is available: 24.0 -> 25.0.1
+[notice] To update, run: pip install --upgrade pip
+Note: you may need to restart the kernel to use updated packages.
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+
+```python
+from langchain_netmind import ChatNetmind
+
+llm = ChatNetmind(
+    model="deepseek-ai/DeepSeek-V3",
+    temperature=0,
+    max_tokens=None,
+    timeout=None,
+    max_retries=2,
+    # other params...
+)
+```
+
+## Invocation
+
+
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+ai_msg
+```
+
+
+
+```output
+AIMessage(content="J'adore programmer.", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 13, 'prompt_tokens': 31, 'total_tokens': 44, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'deepseek-ai/DeepSeek-V3', 'system_fingerprint': None, 'finish_reason': 'stop', 'logprobs': None}, id='run-ca6c2010-844d-4bf6-baac-6e248491b000-0', usage_metadata={'input_tokens': 31, 'output_tokens': 13, 'total_tokens': 44, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+
+```python
+print(ai_msg.content)
+```
+```output
+J'adore programmer.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate(
+    [
+        (
+            "system",
+            "You are a helpful assistant that translates {input_language} to {output_language}.",
+        ),
+        ("human", "{input}"),
+    ]
+)
+
+chain = prompt | llm
+chain.invoke(
+    {
+        "input_language": "English",
+        "output_language": "German",
+        "input": "I love programming.",
+    }
+)
+```
+
+
+
+```output
+AIMessage(content='Ich liebe es zu programmieren.', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 14, 'prompt_tokens': 26, 'total_tokens': 40, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'deepseek-ai/DeepSeek-V3', 'system_fingerprint': None, 'finish_reason': 'stop', 'logprobs': None}, id='run-d63adcc6-53ba-4caa-9a79-78d640b39274-0', usage_metadata={'input_tokens': 26, 'output_tokens': 14, 'total_tokens': 40, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+
+
+## API reference
+
+For detailed documentation of all ChatNetmind features and configurations head to the API reference:  
+* [API reference](https://python.langchain.com/api_reference/)  
+* [langchain-netmind](https://github.com/protagolabs/langchain-netmind)  
+* [pypi](https://pypi.org/project/langchain-netmind/)
+
+
+```python
+
+```

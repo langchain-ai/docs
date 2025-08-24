@@ -85,6 +85,10 @@ class DocumentationBuilder:
             shutil.rmtree(self.build_dir)
         self.build_dir.mkdir(parents=True, exist_ok=True)
 
+        # Build LangChain versioned content (oss/ -> oss/python/ and oss/javascript/)
+        logger.info("Building LangChain Python version...")
+        self._build_langchain_version("langchain/python", "python")
+
         # Build LangGraph versioned content (oss/ -> oss/python/ and oss/javascript/)
         logger.info("Building LangGraph Python version...")
         self._build_langgraph_version("oss/python", "python")
@@ -405,6 +409,66 @@ class DocumentationBuilder:
                 # Calculate relative path from oss/ directory
                 relative_path = file_path.relative_to(oss_dir)
                 # Build to output_dir/ (not output_dir/oss/)
+                output_path = self.build_dir / output_dir / relative_path
+
+                result = self._build_single_file(
+                    file_path,
+                    output_path,
+                    target_language,
+                    pbar,
+                    f"{output_dir}/{relative_path}",
+                )
+                if result:
+                    copied_count += 1
+                else:
+                    skipped_count += 1
+                pbar.update(1)
+
+        logger.info(
+            "✅ %s complete: %d files copied, %d files skipped",
+            output_dir,
+            copied_count,
+            skipped_count,
+        )
+
+    def _build_langchain_version(self, output_dir: str, target_language: str) -> None:
+        """Build LangChain (oss/) content for a specific version.
+
+        Args:
+            output_dir: Output directory (e.g., "langgraph/python", "langgraph/javascript").
+            target_language: Target language for conditional blocks ("python" or "js").
+        """
+        # Only process files in the langchain/ directory
+        oss_dir = self.src_dir / "langchain"
+        if not oss_dir.exists():
+            logger.warning("langchain/ directory not found, skipping LangGraph build")
+            return
+
+        all_files = [
+            file_path
+            for file_path in oss_dir.rglob("*")
+            if file_path.is_file() and not self._is_shared_file(file_path)
+        ]
+
+        if not all_files:
+            logger.info("No files found in langchain/ directory for %s", output_dir)
+            return
+
+        # Process files with progress bar
+        copied_count: int = 0
+        skipped_count: int = 0
+
+        with tqdm(
+            total=len(all_files),
+            desc=f"Building {output_dir} files",
+            unit="file",
+            ncols=80,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        ) as pbar:
+            for file_path in all_files:
+                # Calculate relative path from langchain/ directory
+                relative_path = file_path.relative_to(oss_dir)
+                # Build to output_dir/ (not output_dir/langchain/)
                 output_path = self.build_dir / output_dir / relative_path
 
                 result = self._build_single_file(

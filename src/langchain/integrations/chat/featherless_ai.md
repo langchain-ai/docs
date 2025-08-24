@@ -1,0 +1,157 @@
+---
+title: ChatFeatherlessAi
+---
+
+This will help you get started with FeatherlessAi [chat models](/oss/concepts/chat_models). For detailed documentation of all ChatFeatherlessAi features and configurations head to the [API reference](https://python.langchain.com/api_reference/__package_name_short_snake__/chat_models/__module_name__.chat_models.ChatFeatherlessAi.html).
+
+- See https://featherless.ai/ for an example.
+
+## Overview
+### Integration details
+
+
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/__package_name_short_snake__) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [ChatFeatherlessAi](https://python.langchain.com/api_reference/__package_name_short_snake__/chat_models/__module_name__.chat_models.ChatFeatherlessAi.html) | [langchain-featherless-ai](https://python.langchain.com/api_reference/__package_name_short_snake__/) | ✅ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-featherless-ai?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-featherless-ai?style=flat-square&label=%20) |
+
+### Model features
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | Native async | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ❌ | ❌ | ✅| ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | 
+
+## Setup
+
+
+To access Featherless AI models you'll need to create a/an Featherless AI account, get an API key, and install the `langchain-featherless-ai` integration package.
+
+### Credentials
+
+
+Head to https://featherless.ai/ to sign up to FeatherlessAI and generate an API key. Once you've done this set the FEATHERLESSAI_API_KEY environment variable:
+
+
+```python
+import getpass
+import os
+
+if not os.getenv("FEATHERLESSAI_API_KEY"):
+    os.environ["FEATHERLESSAI_API_KEY"] = getpass.getpass(
+        "Enter your FeatherlessAI API key: "
+    )
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain FeatherlessAi integration lives in the `langchain-featherless-ai` package:
+
+
+```python
+%pip install -qU langchain-featherless-ai
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+
+```python
+from langchain_featherless_ai import ChatFeatherlessAi
+
+llm = ChatFeatherlessAi(
+    model="featherless-ai/Qwerky-72B",
+    temperature=0.9,
+    max_tokens=None,
+    timeout=None,
+)
+```
+
+## Invocation
+
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+ai_msg
+```
+```output
+c:\Python311\Lib\site-packages\pydantic\main.py:463: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [input_value=1747322408.706, input_type=float])
+  return self.__pydantic_serializer__.to_python(
+```
+
+
+```output
+AIMessage(content="J'aime programmer.", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 5, 'prompt_tokens': 27, 'total_tokens': 32, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'featherless-ai/Qwerky-72B', 'system_fingerprint': '', 'id': 'G1sgui', 'service_tier': None, 'finish_reason': 'stop', 'logprobs': None}, id='run--6ecbe184-c94e-4d03-bf75-9bd85b04ba5b-0', usage_metadata={'input_tokens': 27, 'output_tokens': 5, 'total_tokens': 32, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+
+```python
+print(ai_msg.content)
+```
+```output
+J'aime programmer.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```python
+```
+
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate(
+    [
+        (
+            "system",
+            "You are a helpful assistant that translates {input_language} to {output_language}.",
+        ),
+        ("human", "{input}"),
+    ]
+)
+
+chain = prompt | llm
+chain.invoke(
+    {
+        "input_language": "English",
+        "output_language": "German",
+        "input": "I love programming.",
+    }
+)
+```
+```output
+c:\Python311\Lib\site-packages\pydantic\main.py:463: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [input_value=1747322423.487, input_type=float])
+  return self.__pydantic_serializer__.to_python(
+```
+
+
+```output
+AIMessage(content='Ich liebe Programmieren.', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 5, 'prompt_tokens': 22, 'total_tokens': 27, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'featherless-ai/Qwerky-72B', 'system_fingerprint': '', 'id': 'BoBqht', 'service_tier': None, 'finish_reason': 'stop', 'logprobs': None}, id='run--67464357-83d1-4591-9a62-303ed74b8148-0', usage_metadata={'input_tokens': 22, 'output_tokens': 5, 'total_tokens': 27, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+## API reference
+
+For detailed documentation of all ChatFeatherlessAi features and configurations head to the [API reference](https://python.langchain.com/api_reference/__package_name_short_snake__/chat_models/.chat_models.ChatFeatherlessAi.html)

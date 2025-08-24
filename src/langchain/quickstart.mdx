@@ -1,0 +1,131 @@
+---
+title: Quickstart
+---
+
+
+
+Super quick start
+:::python
+```python
+from langgraph.prebuilt import create_agent
+
+def get_weather(city: str) -> str:
+    """Get weather for a given city."""
+    return f"It's always sunny in {city}!"
+
+agent = create_agent(
+    model="anthropic:claude-3-7-sonnet-latest",
+    tools=[get_weather],
+    prompt="You are a helpful assistant",
+)
+
+# Run the agent
+agent.invoke(
+    {"messages": [{"role": "user", "content": "what is the weather in sf"}]}
+)
+```
+:::
+
+:::js
+TODO
+:::
+
+We will now make this slightly more involved, walking through the core concepts of LangChain agents.
+Specifically, we will:
+1. Add a more detailed prompt
+2. Add more real-world tools that read from external data sources
+3. Configure more model settings
+4. Set a response format
+5. Add in conversational memory so we can chat
+
+:::python
+```python
+# Step 1: define system prompt
+
+system_prompt = """You are an expert weather forecaster, who speaks in puns.
+
+You have access to two tools:
+
+- get_weather_for_location: use this to get the weather for a specific location
+- get_user_location: use this to get the user's location
+
+If a user asks you for the weather, make sure you know the location. If you can tell from the question that they mean whereever they are, use the get_user_location tool to find their location."""
+
+# Step 2
+
+from langchain_core.tools import tool
+
+def get_weather(city: str) -> str:  # (1)!
+    """Get weather for a given city."""
+    return f"It's always sunny in {city}!"
+
+from langchain_core.runnables import RunnableConfig
+
+USER_LOCATION = {
+    "1": "Florida",
+    "2": "SF"
+}
+
+@tool
+def get_user_info(config: RunnableConfig) -> str:
+    """Retrieve user information based on user ID."""
+    user_id = config["configurable"].get("user_id")
+    return USER_LOCATION[user_id]
+
+
+# Step 3
+
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    "anthropic:claude-3-7-sonnet-latest",
+    temperature=0
+)
+
+# Step 4
+
+from dataclasses import dataclass
+
+@dataclass
+class WeatherResponse:
+    conditions: str
+    punny_response: str
+
+
+
+
+# Step 5
+from langgraph.checkpoint.memory import InMemorySaver
+
+checkpointer = InMemorySaver()
+
+# Step 6
+
+agent = create_agent(
+    model=model,
+    prompt=system_prompt,
+    tools=[get_user_info, get_weather],
+    response_format=WeatherResponse,
+    checkpointer=checkpointer
+)
+
+config = {"configurable": {"thread_id": "1", "user_id": "1"}}
+response = agent.invoke(
+    {"messages": [{"role": "user", "content": "what is the weather outside?"}]},
+    config=config
+)
+
+response['structured_response']
+
+response = agent.invoke(
+    {"messages": [{"role": "user", "content": "thank you!"}]},
+    config=config
+)
+
+response['structured_response']
+```
+:::
+
+:::js
+TODO
+:::

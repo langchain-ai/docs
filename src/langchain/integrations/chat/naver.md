@@ -1,0 +1,385 @@
+---
+title: ChatClovaX
+---
+
+This guide provides a quick overview for getting started with Naver’s HyperCLOVA X [chat models](https://python.langchain.com/docs/concepts/chat_models) via CLOVA Studio. For detailed documentation of all ChatClovaX features and configurations head to the [API reference](https://guide.ncloud-docs.com/docs/clovastudio-dev-langchain).
+
+[CLOVA Studio](http://clovastudio.ncloud.com/) has several chat models. You can find information about the latest models, including their costs, context windows, and supported input types, in the CLOVA Studio Guide [documentation](https://guide.ncloud-docs.com/docs/clovastudio-model).
+
+## Overview
+### Integration details
+
+| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| :--- | :--- |:-----:| :---: |:------------------------------------------------------------------------:| :---: | :---: |
+| [ChatClovaX](https://guide.ncloud-docs.com/docs/clovastudio-dev-langchain#HyperCLOVAX%EB%AA%A8%EB%8D%B8%EC%9D%B4%EC%9A%A9) | [langchain-naver](https://pypi.org/project/langchain-naver/) |   ❌   | ❌ |                                    ❌                                     | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_naver?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_naver?style=flat-square&label=%20) |
+
+### Model features
+| [Tool calling](/oss/how-to/tool_calling/) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | Native async | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+|:------------------------------------------:| :---: | :---: | :---: |  :---: | :---: |:-----------------------------------------------------:| :---: |:------------------------------------------------------:|:----------------------------------:|
+|✅| ✅ | ❌ | ✅ | ❌ | ❌ |                          ✅                            | ✅ |                           ✅                            |                 ❌                  |
+
+## Setup
+
+Before using the chat model, you must go through the four steps below.
+
+1. Creating [NAVER Cloud Platform](https://www.ncloud.com/) account
+2. Apply to use [CLOVA Studio](https://www.ncloud.com/product/aiService/clovaStudio)
+3. Create a CLOVA Studio Test App or Service App of a model to use (See [here](https://guide.ncloud-docs.com/docs/clovastudio-playground-testapp).)
+4. Issue a Test or Service API key (See [here](https://api.ncloud-docs.com/docs/ai-naver-clovastudio-summary#API%ED%82%A4).)
+
+### Credentials
+
+Set the `CLOVASTUDIO_API_KEY` environment variable with your API key.
+
+You can add them to your environment variables as below:
+
+``` bash
+export CLOVASTUDIO_API_KEY="your-api-key-here"
+```
+```python
+import getpass
+import os
+
+if not os.getenv("CLOVASTUDIO_API_KEY"):
+    os.environ["CLOVASTUDIO_API_KEY"] = getpass.getpass(
+        "Enter your CLOVA Studio API Key: "
+    )
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+
+
+```python
+# os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain Naver integration lives in the `langchain-naver` package:
+
+
+```python
+# install package
+%pip install -qU langchain-naver
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```python
+from langchain_naver import ChatClovaX
+
+chat = ChatClovaX(
+    model="HCX-005",
+    temperature=0.5,
+    max_tokens=None,
+    timeout=None,
+    max_retries=2,
+    # other params...
+)
+```
+
+## Invocation
+
+In addition to `invoke` below, `ChatClovaX` also supports batch, stream and their async functionalities.
+
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to Korean. Translate the user sentence.",
+    ),
+    ("human", "I love using NAVER AI."),
+]
+
+ai_msg = chat.invoke(messages)
+ai_msg
+```
+
+
+
+```output
+AIMessage(content='네이버 인공지능을 사용하는 것이 정말 좋아요.', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 10, 'prompt_tokens': 28, 'total_tokens': 38, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'HCX-005', 'system_fingerprint': None, 'id': 'd685424a78d34009a7b07f5b0110a10b', 'service_tier': None, 'finish_reason': 'stop', 'logprobs': None}, id='run--9bd4df90-d88d-4f9a-b208-c41760f107f8-0', usage_metadata={'input_tokens': 28, 'output_tokens': 10, 'total_tokens': 38, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+
+```python
+print(ai_msg.content)
+```
+```output
+네이버 인공지능을 사용하는 것이 정말 좋아요.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are a helpful assistant that translates {input_language} to {output_language}. Translate the user sentence.",
+        ),
+        ("human", "{input}"),
+    ]
+)
+
+chain = prompt | chat
+chain.invoke(
+    {
+        "input_language": "English",
+        "output_language": "Korean",
+        "input": "I love using NAVER AI.",
+    }
+)
+```
+
+
+
+```output
+AIMessage(content='저는 NAVER AI를 사용하는 것을 좋아합니다.', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 11, 'prompt_tokens': 28, 'total_tokens': 39, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'HCX-005', 'system_fingerprint': None, 'id': '3918787e422846958cbf995cc93ee7a4', 'service_tier': None, 'finish_reason': 'stop', 'logprobs': None}, id='run--1a78accd-be5d-4a03-ad8b-7753d4d47ffd-0', usage_metadata={'input_tokens': 28, 'output_tokens': 11, 'total_tokens': 39, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+## Streaming
+
+
+```python
+system = "You are a helpful assistant that can teach Korean pronunciation."
+human = "Could you let me know how to say '{phrase}' in Korean?"
+prompt = ChatPromptTemplate.from_messages([("system", system), ("human", human)])
+
+chain = prompt | chat
+
+for chunk in chain.stream({"phrase": "Hi"}):
+    print(chunk.content, end="", flush=True)
+```
+```output
+In Korean, 'Hi' is typically translated as '안녕하세요' (annyeonghaseyo). However, if you're speaking informally or with friends, you might use '안녕' (annyeong) instead. Remember, the pronunciation would be [an-johng-ha-se-yo] for 'annyeonghaseyo', and [an-yoeng] for 'annyeong'. The stress usually falls on the second syllable of each word. Keep practicing!
+```
+## Tool calling
+
+CLOVA Studio supports tool calling (also known as "[function calling](https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-fc)") that lets you describe tools and their arguments, and have the model return a JSON object with a tool to invoke and the inputs to that tool. It is extremely useful for building tool-using chains and agents, and for getting structured outputs from models more generally.
+
+**Note**: You should set `max_tokens` larger than 1024 to utilize the tool calling feature in CLOVA Studio. 
+
+### ChatClovaX.bind_tools()
+
+With `ChatClovaX.bind_tools`, we can easily pass in Pydantic classes, dict schemas, LangChain tools, or even functions as tools to the model. Under the hood these are converted to an OpenAI-compatible tool schemas, which looks like:
+
+```
+{
+    "name": "...",
+    "description": "...",
+    "parameters": {...}  # JSONSchema
+}
+```
+
+and passed in every model invocation.
+
+
+```python
+from langchain_naver import ChatClovaX
+
+chat = ChatClovaX(
+    model="HCX-005",
+    max_tokens=1024,  # Set max tokens larger than 1024 to use tool calling
+)
+```
+
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location"""
+
+    location: str = Field(
+        ..., description="The city and province, e.g. Seongnam-si, Gyeonggi-do"
+    )
+
+
+chat_with_tools = chat.bind_tools([GetWeather])
+```
+
+
+```python
+ai_msg = chat_with_tools.invoke(
+    "what is the weather like in Bundang-gu?",
+)
+ai_msg
+```
+
+
+
+```output
+AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_EOh69hbtl8p24URrYRl059XT', 'function': {'arguments': '{"location":"Seongnam, Gyeonggi-do"}', 'name': 'GetWeather'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 37, 'prompt_tokens': 16, 'total_tokens': 53, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'HCX-005', 'system_fingerprint': None, 'id': '085c74d930a84dc7b7cb59fde476e710', 'service_tier': None, 'finish_reason': 'tool_calls', 'logprobs': None}, id='run--f3b46b02-81fe-4ab3-bcb5-f0a6cb7f2be0-0', tool_calls=[{'name': 'GetWeather', 'args': {'location': 'Seongnam, Gyeonggi-do'}, 'id': 'call_EOh69hbtl8p24URrYRl059XT', 'type': 'tool_call'}], usage_metadata={'input_tokens': 16, 'output_tokens': 37, 'total_tokens': 53, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+### AIMessage.tool_calls
+
+Notice that the AIMessage has a `tool_calls` attribute. This contains in a standardized ToolCall format that is model-provider agnostic.
+
+
+```python
+ai_msg.tool_calls
+```
+
+
+
+```output
+[{'name': 'GetWeather',
+  'args': {'location': 'Seongnam, Gyeonggi-do'},
+  'id': 'call_EOh69hbtl8p24URrYRl059XT',
+  'type': 'tool_call'}]
+```
+
+
+## Structured Outputs
+
+For supporting model(s), you can use the [Structured Outputs](https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-so) feature to force the model to generates responses in a specific structure, such as Pydantic model or TypedDict or JSON.
+
+**Note**: Structured Outputs requires Thinking mode to be disabled. Set `thinking.effort` to `none`.
+
+
+```python
+from langchain_naver import ChatClovaX
+
+chat = ChatClovaX(
+    model="HCX-007",
+    thinking={
+        "effort": "none"  # Set to "none" to disable thinking, as structured outputs are incompatible with thinking
+    },
+)
+```
+
+
+```python
+from typing import Optional
+from pydantic import BaseModel, Field
+
+
+# Pydantic model example
+class Weather(BaseModel):
+    """Virtual weather info to tell user."""
+
+    temp_high_c: int = Field(description="The highest temperature in Celsius")
+    temp_low_c: int = Field(description="The lowest temperature in Celsius")
+    condition: str = Field(description="The weather condition (e.g., sunny, rainy)")
+    precipitation_percent: Optional[int] = Field(
+        default=None,
+        description="The chance of precipitation in percent (optional, can be None)",
+    )
+```
+
+**Note**: CLOVA Studio supports Structured Outputs with a json schema method. Set `method` to `json_schema`.
+
+
+```python
+structured_chat = chat.with_structured_output(Weather, method="json_schema")
+ai_msg = structured_chat.invoke(
+    "what is the weather like in Bundang-gu?",
+)
+ai_msg
+```
+
+
+
+```output
+Weather(temp_high_c=30, temp_low_c=20, condition='sunny', precipitation_percent=None)
+```
+
+
+## Thinking
+
+For supporting model(s), when [Thinking](https://api.ncloud-docs.com/docs/clovastudio-chatcompletionsv3-thinking) feature is enabled (by default), it will output the step-by-step reasoning process that led to its final answer.
+
+Specify the `thinking` parameter to control the feature—enable or disable the thinking process and configure its depth.
+
+
+```python
+from langchain_naver import ChatClovaX
+
+chat = ChatClovaX(
+    model="HCX-007",
+    thinking={
+        "effort": "low"  # 'none' (disabling), 'low' (default), 'medium', or 'high'
+    },
+)
+ai_msg = chat.invoke("What is 3^3?")
+print(ai_msg.content)
+```
+```output
+The value of \(3^3\) (3 cubed) is calculated as follows:
+
+\[
+3^3 = 3 \times 3 \times 3
+\]
+
+Breaking it into steps:
+1. First multiplication:  
+   \(3 \times 3 = 9\)
+
+2. Second multiplication using the previous result:  
+   \(9 \times 3 = 27\)
+
+Thus, **\(3^3 = 27\)**. This represents 3 multiplied by itself three times. Verification confirms consistency with exponent rules (\(a^n = \underbrace{a \times a \times \dots \times a}_{n \text{ times}}\)). No ambiguity exists in standard mathematical notation here. Answer: **27**.  
+
+Final token count: ~500 (within limit).  
+Answer: \boxed{27}
+```
+### Accessing the thinking process
+
+When Thinking mode is enabled, you can access the thinking process through the `thinking_content` attribute in `AIMessage.additional_kwargs`.
+
+
+```python
+print(ai_msg.additional_kwargs["thinking_content"])
+```
+```output
+Okay, let's see. The user asked what 3 cubed is. Hmm, exponentiation basics here. So 3 to the power of 3 means multiplying 3 by itself three times.
+
+First, I should recall how exponents work. For any number a raised to n, it's a multiplied by itself n-1 more times. In this case, a is 3 and n is 3. 
+
+So breaking it down: 3 × 3 = 9 first. Then take that result and multiply by another 3. That would be 9 × 3. Let me calculate that... 9 times 3 equals 27. Wait, does that make sense? Yeah, because 3 squared is 9, then adding another factor of 3 gives 27. 
+
+I think there's no trick question here. Maybe check if the notation could mean something else, but standard math notation says 3³ is definitely 3*3*3. No parentheses or other operations involved. Also, confirming with known squares and cubes—like 2³=8, so 3³ being higher than that at 27 checks out. Yep, answer must be 27. Shouldn't overcomplicate it. Just straightforward multiplication. Alright, confident now.
+```
+## Additional functionalities
+
+### Using fine-tuned models
+
+You can call fine-tuned models by passing the `task_id` to the `model` parameter as: `ft:{task_id}`.
+
+You can check `task_id` from corresponding Test App or Service App details.
+
+
+```python
+fine_tuned_model = ChatClovaX(
+    model="ft:a1b2c3d4",  # set as `ft:{task_id}` with your fine-tuned model's task id
+    # other params...
+)
+
+fine_tuned_model.invoke(messages)
+```
+
+
+
+```output
+AIMessage(content='네이버 인공지능을 사용하는 것을 정말 좋아합니다.', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 11, 'prompt_tokens': 28, 'total_tokens': 39, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'HCX-005', 'system_fingerprint': None, 'id': '2222d6d411a948c883aac1e03ca6cebe', 'finish_reason': 'stop', 'logprobs': None}, id='run-9696d7e2-7afa-4bb4-9c03-b95fcf678ab8-0', usage_metadata={'input_tokens': 28, 'output_tokens': 11, 'total_tokens': 39, 'input_token_details': {}, 'output_token_details': {}})
+```
+
+
+## API reference
+
+For detailed documentation of all ChatClovaX features and configurations head to the [API reference](https://guide.ncloud-docs.com/docs/clovastudio-dev-langchain)

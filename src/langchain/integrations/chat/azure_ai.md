@@ -1,0 +1,148 @@
+---
+title: AzureAIChatCompletionsModel
+---
+
+This will help you get started with AzureAIChatCompletionsModel [chat models](/oss/concepts/chat_models). For detailed documentation of all AzureAIChatCompletionsModel features and configurations, head to the [API reference](https://python.langchain.com/api_reference/azure_ai/chat_models/langchain_azure_ai.chat_models.AzureAIChatCompletionsModel.html)
+
+The AzureAIChatCompletionsModel class uses the Azure AI Foundry SDK. AI Foundry has several chat models, including AzureOpenAI, Cohere, Llama, Phi-3/4, and DeepSeek-R1, among others. You can find information about their latest models and their costs, context windows, and supported input types in the [Azure docs](https://learn.microsoft.com/azure/ai-studio/how-to/model-catalog-overview).
+
+
+## Overview
+### Integration details
+
+
+| Class | Package | Local | Serializable | [JS support](https://v03.api.js.langchain.com/classes/_langchain_openai.AzureChatOpenAI.html) | Package downloads | Package latest |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [AzureAIChatCompletionsModel](https://python.langchain.com/api_reference/azure_ai/chat_models/langchain_azure_ai.chat_models.AzureAIChatCompletionsModel.html) | [langchain-azure-ai](https://python.langchain.com/api_reference/langchain_azure_ai/index.html) | ❌ | ✅ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-azure-ai?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-azure-ai?style=flat-square&label=%20) |
+
+### Model features
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/how-to/structured_output/) | JSON mode | [Image input](/oss/how-to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | Native async | [Token usage](/oss/how-to/chat_token_usage_tracking/) | [Logprobs](/oss/how-to/logprobs/) |
+| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅| 
+
+## Setup
+
+To access AzureAIChatCompletionsModel models, you'll need to create an [Azure account](https://azure.microsoft.com/pricing/purchase-options/azure-account), get an API key, and install the `langchain-azure-ai` integration package.
+
+### Credentials
+
+
+Head to the [Azure docs](https://learn.microsoft.com/en-us/azure/ai-studio/how-to/develop/sdk-overview?tabs=sync&pivots=programming-language-python) to see how to create your deployment and generate an API key. Once your model is deployed, you click the 'get endpoint' button in AI Foundry. This will show you your endpoint and api key. Once you've done this, set the AZURE_INFERENCE_CREDENTIAL and AZURE_INFERENCE_ENDPOINT environment variables:
+
+
+```python
+import getpass
+import os
+
+if not os.getenv("AZURE_INFERENCE_CREDENTIAL"):
+    os.environ["AZURE_INFERENCE_CREDENTIAL"] = getpass.getpass(
+        "Enter your AzureAIChatCompletionsModel API key: "
+    )
+
+if not os.getenv("AZURE_INFERENCE_ENDPOINT"):
+    os.environ["AZURE_INFERENCE_ENDPOINT"] = getpass.getpass(
+        "Enter your model endpoint: "
+    )
+```
+
+If you want to get automated tracing of your model calls, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain AzureAIChatCompletionsModel integration lives in the `langchain-azure-ai` package:
+
+
+```python
+%pip install -qU langchain-azure-ai
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+
+```python
+from langchain_azure_ai.chat_models import AzureAIChatCompletionsModel
+
+llm = AzureAIChatCompletionsModel(
+    model_name="gpt-4",
+    temperature=0,
+    max_tokens=None,
+    timeout=None,
+    max_retries=2,
+)
+```
+
+## Invocation
+
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+ai_msg
+```
+
+
+
+```output
+AIMessage(content="J'adore programmer.", additional_kwargs={}, response_metadata={'model': 'gpt-4o-2024-05-13', 'token_usage': {'input_tokens': 31, 'output_tokens': 4, 'total_tokens': 35}, 'finish_reason': 'stop'}, id='run-c082dffd-b1de-4b3f-943f-863836663ddb-0', usage_metadata={'input_tokens': 31, 'output_tokens': 4, 'total_tokens': 35})
+```
+
+
+
+```python
+print(ai_msg.content)
+```
+```output
+J'adore programmer.
+```
+## Chaining
+
+We can [chain](/oss/how-to/sequence/) our model with a prompt template like so:
+
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate(
+    [
+        (
+            "system",
+            "You are a helpful assistant that translates {input_language} to {output_language}.",
+        ),
+        ("human", "{input}"),
+    ]
+)
+
+chain = prompt | llm
+chain.invoke(
+    {
+        "input_language": "English",
+        "output_language": "German",
+        "input": "I love programming.",
+    }
+)
+```
+
+
+
+```output
+AIMessage(content='Ich liebe Programmieren.', additional_kwargs={}, response_metadata={'model': 'gpt-4o-2024-05-13', 'token_usage': {'input_tokens': 26, 'output_tokens': 5, 'total_tokens': 31}, 'finish_reason': 'stop'}, id='run-01ba6587-6ff4-4554-8039-13204a7d95db-0', usage_metadata={'input_tokens': 26, 'output_tokens': 5, 'total_tokens': 31})
+```
+
+
+## API reference
+
+For detailed documentation of all AzureAIChatCompletionsModel features and configurations, head to the API reference: https://python.langchain.com/api_reference/azure_ai/chat_models/langchain_azure_ai.chat_models.AzureAIChatCompletionsModel.html
