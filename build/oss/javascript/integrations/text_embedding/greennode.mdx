@@ -1,0 +1,206 @@
+---
+title: GreenNodeEmbeddings
+---
+
+>[GreenNode](https://greennode.ai/) is a global AI solutions provider and a **NVIDIA Preferred Partner**, delivering full-stack AI capabilities—from infrastructure to application—for enterprises across the US, MENA, and APAC regions. Operating on **world-class infrastructure** (LEED Gold, TIA‑942, Uptime Tier III), GreenNode empowers enterprises, startups, and researchers with a comprehensive suite of AI services
+
+This guide provides a guide to getting started with `GreenNodeEmbeddings`. It enables you to perform semantic document search using various built-in connectors or your own custom data sources by generating high-quality vector representations of text.
+
+## Overview
+### Integration details
+
+| Provider | Package |
+|:--------:|:-------:|
+| [GreenNode](/oss/javascript/integrations/providers/greennode/) | [langchain-greennode](https://python.langchain.com/v0.2/api_reference/langchain_greennode/embeddings/langchain_greennode.embeddingsGreenNodeEmbeddings.html) |
+
+## Setup
+
+To access GreenNode embedding models you'll need to create a GreenNode account, get an API key, and install the `langchain-greennode` integration package.
+
+### Credentials
+
+GreenNode requires an API key for authentication, which can be provided either as the `api_key` parameter during initialization or set as the environment variable `GREENNODE_API_KEY`. You can obtain an API key by registering for an account on [GreenNode Serverless AI](https://aiplatform.console.greennode.ai/playground).
+
+
+```python
+import getpass
+import os
+
+if not os.getenv("GREENNODE_API_KEY"):
+    os.environ["GREENNODE_API_KEY"] = getpass.getpass("Enter your GreenNode API key: ")
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain GreenNode integration lives in the `langchain-greennode` package:
+
+
+```python
+%pip install -qU langchain-greennode
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Instantiation
+
+The `GreenNodeEmbeddings` class can be instantiated with optional parameters for the API key and model name:
+
+
+```python
+from langchain_greennode import GreenNodeEmbeddings
+
+# Initialize the embeddings model
+embeddings = GreenNodeEmbeddings(
+    # api_key="YOUR_API_KEY",  # You can pass the API key directly
+    model="BAAI/bge-m3"  # The default embedding model
+)
+```
+
+## Indexing and Retrieval
+
+Embedding models play a key role in retrieval-augmented generation (RAG) workflows by enabling both the indexing of content and its efficient retrieval. 
+Below, see how to index and retrieve data using the `embeddings` object we initialized above. In this example, we will index and retrieve a sample document in the `InMemoryVectorStore`.
+
+
+```python
+# Create a vector store with a sample text
+from langchain_core.vectorstores import InMemoryVectorStore
+
+text = "LangChain is the framework for building context-aware reasoning applications"
+
+vectorstore = InMemoryVectorStore.from_texts(
+    [text],
+    embedding=embeddings,
+)
+
+# Use the vectorstore as a retriever
+retriever = vectorstore.as_retriever()
+
+# Retrieve the most similar text
+retrieved_documents = retriever.invoke("What is LangChain?")
+
+# show the retrieved document's content
+retrieved_documents[0].page_content
+```
+
+
+
+```output
+'LangChain is the framework for building context-aware reasoning applications'
+```
+
+
+## Direct Usage
+
+The `GreenNodeEmbeddings` class can be used independently to generate text embeddings without the need for a vector store. This is useful for tasks such as similarity scoring, clustering, or custom processing pipelines.
+
+### Embed single texts
+
+You can embed single texts or documents with `embed_query`:
+
+
+```python
+single_vector = embeddings.embed_query(text)
+print(str(single_vector)[:100])  # Show the first 100 characters of the vector
+```
+```output
+[-0.01104736328125, -0.0281982421875, 0.0035858154296875, -0.0311279296875, -0.0106201171875, -0.039
+```
+### Embed multiple texts
+
+You can embed multiple texts with `embed_documents`:
+
+
+```python
+text2 = (
+    "LangGraph is a library for building stateful, multi-actor applications with LLMs"
+)
+two_vectors = embeddings.embed_documents([text, text2])
+for vector in two_vectors:
+    print(str(vector)[:100])  # Show the first 100 characters of the vector
+```
+```output
+[-0.01104736328125, -0.0281982421875, 0.0035858154296875, -0.0311279296875, -0.0106201171875, -0.039
+[-0.07177734375, -0.00017452239990234375, -0.002044677734375, -0.0299072265625, -0.0184326171875, -0
+```
+### Async Support
+
+GreenNodeEmbeddings supports async operations:
+
+
+```python
+import asyncio
+
+
+async def generate_embeddings_async():
+    # Embed a single query
+    query_result = await embeddings.aembed_query("What is the capital of France?")
+    print(f"Async query embedding dimension: {len(query_result)}")
+
+    # Embed multiple documents
+    docs = [
+        "Paris is the capital of France",
+        "Berlin is the capital of Germany",
+        "Rome is the capital of Italy",
+    ]
+    docs_result = await embeddings.aembed_documents(docs)
+    print(f"Async document embeddings count: {len(docs_result)}")
+
+
+await generate_embeddings_async()
+```
+```output
+Async query embedding dimension: 1024
+Async document embeddings count: 3
+```
+### Document Similarity Example
+
+
+```python
+import numpy as np
+from scipy.spatial.distance import cosine
+
+# Create some documents
+documents = [
+    "Machine learning algorithms build mathematical models based on sample data",
+    "Deep learning uses neural networks with many layers",
+    "Climate change is a major global environmental challenge",
+    "Neural networks are inspired by the human brain's structure",
+]
+
+# Embed the documents
+embeddings_list = embeddings.embed_documents(documents)
+
+
+# Function to calculate similarity
+def calculate_similarity(embedding1, embedding2):
+    return 1 - cosine(embedding1, embedding2)
+
+
+# Print similarity matrix
+print("Document Similarity Matrix:")
+for i, emb_i in enumerate(embeddings_list):
+    similarities = []
+    for j, emb_j in enumerate(embeddings_list):
+        similarity = calculate_similarity(emb_i, emb_j)
+        similarities.append(f"{similarity:.4f}")
+    print(f"Document {i + 1}: {similarities}")
+```
+```output
+Document Similarity Matrix:
+Document 1: ['1.0000', '0.6005', '0.3542', '0.5788']
+Document 2: ['0.6005', '1.0000', '0.4154', '0.6170']
+Document 3: ['0.3542', '0.4154', '1.0000', '0.3528']
+Document 4: ['0.5788', '0.6170', '0.3528', '1.0000']
+```
+## API Reference
+
+For more details about the GreenNode Serverless AI API, visit the [GreenNode Serverless AI Documentation](https://aiplatform.console.greennode.ai/api-docs/maas).

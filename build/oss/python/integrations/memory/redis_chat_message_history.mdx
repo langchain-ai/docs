@@ -1,0 +1,197 @@
+---
+title: Redis Chat Message History
+---
+
+>[Redis (Remote Dictionary Server)](https://en.wikipedia.org/wiki/Redis) is an open-source in-memory storage, used as a distributed, in-memory key–value database, cache and message broker, with optional durability. `Redis` offers low-latency reads and writes. Redis is the most popular NoSQL database, and one of the most popular databases overall.
+
+This notebook demonstrates how to use the `RedisChatMessageHistory` class from the langchain-redis package to store and manage chat message history using Redis.
+
+## Setup
+
+First, we need to install the required dependencies and ensure we have a Redis instance running.
+
+
+```python
+%pip install -qU langchain-redis langchain-openai redis
+```
+
+Make sure you have a Redis server running. You can start one using Docker with the following command:
+
+```
+docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
+```
+
+Or install and run Redis locally according to the instructions for your operating system.
+
+
+```python
+import os
+
+# Use the environment variable if set, otherwise default to localhost
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+print(f"Connecting to Redis at: {REDIS_URL}")
+```
+```output
+Connecting to Redis at: redis://redis:6379
+```
+## Importing Required Libraries
+
+
+```python
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_openai import ChatOpenAI
+from langchain_redis import RedisChatMessageHistory
+```
+
+## Basic Usage of RedisChatMessageHistory
+
+
+```python
+# Initialize RedisChatMessageHistory
+history = RedisChatMessageHistory(session_id="user_123", redis_url=REDIS_URL)
+
+# Add messages to the history
+history.add_user_message("Hello, AI assistant!")
+history.add_ai_message("Hello! How can I assist you today?")
+
+# Retrieve messages
+print("Chat History:")
+for message in history.messages:
+    print(f"{type(message).__name__}: {message.content}")
+```
+```output
+Chat History:
+HumanMessage: Hello, AI assistant!
+AIMessage: Hello! How can I assist you today?
+```
+## Using RedisChatMessageHistory with Language Models
+
+### Set OpenAI API key
+
+
+```python
+from getpass import getpass
+
+# Check if OPENAI_API_KEY is already set in the environment
+openai_api_key = os.getenv("OPENAI_API_KEY")
+
+if not openai_api_key:
+    print("OpenAI API key not found in environment variables.")
+    openai_api_key = getpass("Please enter your OpenAI API key: ")
+
+    # Set the API key for the current session
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+    print("OpenAI API key has been set for this session.")
+else:
+    print("OpenAI API key found in environment variables.")
+```
+```output
+OpenAI API key not found in environment variables.
+``````output
+Please enter your OpenAI API key:  ········
+``````output
+OpenAI API key has been set for this session.
+```
+
+```python
+# Create a prompt template
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You are a helpful AI assistant."),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{input}"),
+    ]
+)
+
+# Initialize the language model
+llm = ChatOpenAI()
+
+# Create the conversational chain
+chain = prompt | llm
+
+
+# Function to get or create a RedisChatMessageHistory instance
+def get_redis_history(session_id: str) -> BaseChatMessageHistory:
+    return RedisChatMessageHistory(session_id, redis_url=REDIS_URL)
+
+
+# Create a runnable with message history
+chain_with_history = RunnableWithMessageHistory(
+    chain, get_redis_history, input_messages_key="input", history_messages_key="history"
+)
+
+# Use the chain in a conversation
+response1 = chain_with_history.invoke(
+    {"input": "Hi, my name is Alice."},
+    config={"configurable": {"session_id": "alice_123"}},
+)
+print("AI Response 1:", response1.content)
+
+response2 = chain_with_history.invoke(
+    {"input": "What's my name?"}, config={"configurable": {"session_id": "alice_123"}}
+)
+print("AI Response 2:", response2.content)
+```
+```output
+AI Response 1: Hello Alice! How can I assist you today?
+AI Response 2: Your name is Alice.
+```
+## Advanced Features
+
+### Custom Redis Configuration
+
+
+```python
+# Initialize with custom Redis configuration
+custom_history = RedisChatMessageHistory(
+    "user_456",
+    redis_url=REDIS_URL,
+    key_prefix="custom_prefix:",
+    ttl=3600,  # Set TTL to 1 hour
+    index_name="custom_index",
+)
+
+custom_history.add_user_message("This is a message with custom configuration.")
+print("Custom History:", custom_history.messages)
+```
+```output
+Custom History: [HumanMessage(content='This is a message with custom configuration.')]
+```
+### Searching Messages
+
+
+```python
+# Add more messages
+history.add_user_message("Tell me about artificial intelligence.")
+history.add_ai_message(
+    "Artificial Intelligence (AI) is a branch of computer science..."
+)
+
+# Search for messages containing a specific term
+search_results = history.search_messages("artificial intelligence")
+print("Search Results:")
+for result in search_results:
+    print(f"{result['type']}: {result['content'][:50]}...")
+```
+```output
+Search Results:
+human: Tell me about artificial intelligence....
+ai: Artificial Intelligence (AI) is a branch of comput...
+```
+### Clearing History
+
+
+```python
+# Clear the chat history
+history.clear()
+print("Messages after clearing:", history.messages)
+```
+```output
+Messages after clearing: []
+```
+## Conclusion
+
+This notebook demonstrated the key features of `RedisChatMessageHistory` from the langchain-redis package. It showed how to initialize and use the chat history, integrate it with language models, and utilize advanced features like custom configurations and message searching. Redis provides a fast and scalable solution for managing chat history in AI applications.
