@@ -1,0 +1,351 @@
+---
+title: BoxRetriever
+---
+
+This will help you get started with the Box [retriever](/oss/python/concepts/retrievers). For detailed documentation of all BoxRetriever features and configurations head to the [API reference](https://python.langchain.com/api_reference/box/retrievers/langchain_box.retrievers.box.BoxRetriever.html).
+
+# Overview
+
+The `BoxRetriever` class helps you get your unstructured content from Box in Langchain's `Document` format. You can do this by searching for files based on a full-text search or using Box AI to retrieve a `Document` containing the result of an AI query against files. This requires including a `List[str]` containing Box file ids, i.e. `["12345","67890"]` 
+
+<Info>
+Box AI requires an Enterprise Plus license
+</Info>
+
+Files without a text representation will be skipped.
+
+### Integration details
+
+1: Bring-your-own data (i.e., index and search a custom corpus of documents):
+
+| Retriever | Self-host | Cloud offering | Package |
+| :--- | :--- | :---: | :---: |
+[BoxRetriever](https://python.langchain.com/api_reference/box/retrievers/langchain_box.retrievers.box.BoxRetriever.html) | ❌ | ✅ | langchain-box |
+
+## Setup
+
+In order to use the Box package, you will need a few things:
+
+* A Box account — If you are not a current Box customer or want to test outside of your production Box instance, you can use a [free developer account](https://account.box.com/signup/n/developer#ty9l3).
+* [A Box app](https://developer.box.com/guides/getting-started/first-application/) — This is configured in the [developer console](https://account.box.com/developers/console), and for Box AI, must have the `Manage AI` scope enabled. Here you will also select your authentication method
+* The app must be [enabled by the administrator](https://developer.box.com/guides/authorization/custom-app-approval/#manual-approval). For free developer accounts, this is whomever signed up for the account.
+
+### Credentials
+
+For these examples, we will use [token authentication](https://developer.box.com/guides/authentication/tokens/developer-tokens). This can be used with any [authentication method](https://developer.box.com/guides/authentication/). Just get the token with whatever methodology. If you want to learn more about how to use other authentication types with `langchain-box`, visit the [Box provider](/oss/python/integrations/providers/box) document.
+
+
+```python
+import getpass
+import os
+
+box_developer_token = getpass.getpass("Enter your Box Developer Token: ")
+```
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+This retriever lives in the `langchain-box` package:
+
+
+```python
+%pip install -qU langchain-box
+```
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+## Instantiation
+
+Now we can instantiate our retriever:
+
+## Search
+
+
+```python
+from langchain_box import BoxRetriever
+
+retriever = BoxRetriever(box_developer_token=box_developer_token)
+```
+
+For more granular search, we offer a series of options to help you filter down the results. This uses the `langchain_box.utilities.SearchOptions` in conjunction with the `langchain_box.utilities.SearchTypeFilter` and `langchain_box.utilities.DocumentFiles` enums to filter on things like created date, which part of the file to search, and even to limit the search scope to a specific folder. 
+
+For more information, check out the [API reference](https://python.langchain.com/v0.2/api_reference/box/utilities/langchain_box.utilities.box.SearchOptions.html).
+
+
+```python
+from langchain_box.utilities import BoxSearchOptions, DocumentFiles, SearchTypeFilter
+
+box_folder_id = "260931903795"
+
+box_search_options = BoxSearchOptions(
+    ancestor_folder_ids=[box_folder_id],
+    search_type_filter=[SearchTypeFilter.FILE_CONTENT],
+    created_date_range=["2023-01-01T00:00:00-07:00", "2024-08-01T00:00:00-07:00,"],
+    k=200,
+    size_range=[1, 1000000],
+    updated_data_range=None,
+)
+
+retriever = BoxRetriever(
+    box_developer_token=box_developer_token, box_search_options=box_search_options
+)
+
+retriever.invoke("AstroTech Solutions")
+```
+
+
+
+```output
+[Document(metadata={'source': 'https://dl.boxcloud.com/api/2.0/internal_files/1514555423624/versions/1663171610024/representations/extracted_text/content/', 'title': 'Invoice-A5555_txt'}, page_content='Vendor: AstroTech Solutions\nInvoice Number: A5555\n\nLine Items:\n    - Gravitational Wave Detector Kit: $800\n    - Exoplanet Terrarium: $120\nTotal: $920')]
+```
+
+
+## Box AI
+
+
+```python
+from langchain_box import BoxRetriever
+
+box_file_ids = ["1514555423624", "1514553902288"]
+
+retriever = BoxRetriever(
+    box_developer_token=box_developer_token, box_file_ids=box_file_ids
+)
+```
+
+## Usage
+
+
+```python
+query = "What was the most expensive item purchased"
+
+retriever.invoke(query)
+```
+
+
+
+```output
+[Document(metadata={'source': 'Box AI', 'title': 'Box AI What was the most expensive item purchased'}, page_content='The most expensive item purchased is the **Gravitational Wave Detector Kit** from AstroTech Solutions, which costs **$800**.')]
+```
+
+
+## Citations
+
+With Box AI and the `BoxRetriever`, you can return the answer to your prompt, return the citations used by Box to get that answer, or both. No matter how you choose to use Box AI, the retriever returns a `List[Document]` object. We offer this flexibility with two `bool` arguments, `answer` and `citations`. Answer defaults to `True` and citations defaults to `False`, do you can omit both if you just want the answer. If you want both, you can just include `citations=True` and if you only want citations, you would include `answer=False` and `citations=True`
+
+### Get both
+
+
+```python
+retriever = BoxRetriever(
+    box_developer_token=box_developer_token, box_file_ids=box_file_ids, citations=True
+)
+
+retriever.invoke(query)
+```
+
+
+
+```output
+[Document(metadata={'source': 'Box AI', 'title': 'Box AI What was the most expensive item purchased'}, page_content='The most expensive item purchased is the **Gravitational Wave Detector Kit** from AstroTech Solutions, which costs **$800**.'),
+ Document(metadata={'source': 'Box AI What was the most expensive item purchased', 'file_name': 'Invoice-A5555.txt', 'file_id': '1514555423624', 'file_type': 'file'}, page_content='Vendor: AstroTech Solutions\nInvoice Number: A5555\n\nLine Items:\n    - Gravitational Wave Detector Kit: $800\n    - Exoplanet Terrarium: $120\nTotal: $920')]
+```
+
+
+### Citations only
+
+
+```python
+retriever = BoxRetriever(
+    box_developer_token=box_developer_token,
+    box_file_ids=box_file_ids,
+    answer=False,
+    citations=True,
+)
+
+retriever.invoke(query)
+```
+
+
+
+```output
+[Document(metadata={'source': 'Box AI What was the most expensive item purchased', 'file_name': 'Invoice-A5555.txt', 'file_id': '1514555423624', 'file_type': 'file'}, page_content='Vendor: AstroTech Solutions\nInvoice Number: A5555\n\nLine Items:\n    - Gravitational Wave Detector Kit: $800\n    - Exoplanet Terrarium: $120\nTotal: $920')]
+```
+
+
+## Use within a chain
+
+Like other retrievers, BoxRetriever can be incorporated into LLM applications via [chains](/oss/python/how-to/sequence/).
+
+We will need a LLM or chat model:
+
+<ChatModelTabs customVarName="llm" />
+
+
+
+```python
+openai_key = getpass.getpass("Enter your OpenAI key: ")
+```
+```output
+Enter your OpenAI key:  ········
+```
+
+```python
+# | output: false
+# | echo: false
+
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, openai_api_key=openai_key)
+```
+
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+
+box_search_options = BoxSearchOptions(
+    ancestor_folder_ids=[box_folder_id],
+    search_type_filter=[SearchTypeFilter.FILE_CONTENT],
+    created_date_range=["2023-01-01T00:00:00-07:00", "2024-08-01T00:00:00-07:00,"],
+    k=200,
+    size_range=[1, 1000000],
+    updated_data_range=None,
+)
+
+retriever = BoxRetriever(
+    box_developer_token=box_developer_token, box_search_options=box_search_options
+)
+
+context = "You are a finance professional that handles invoices and purchase orders."
+question = "Show me all the items purchased from AstroTech Solutions"
+
+prompt = ChatPromptTemplate.from_template(
+    """Answer the question based only on the context provided.
+
+    Context: {context}
+
+    Question: {question}"""
+)
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+```
+
+
+```python
+chain.invoke(question)
+```
+
+
+
+```output
+'- Gravitational Wave Detector Kit: $800\n- Exoplanet Terrarium: $120'
+```
+
+
+## Use as an agent tool
+
+Like other retrievers, BoxRetriever can be also be added to a LangGraph agent as a tool.
+
+
+```python
+pip install -U langsmith
+```
+
+
+```python
+from langchain import hub
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.tools.retriever import create_retriever_tool
+```
+
+
+```python
+box_search_options = BoxSearchOptions(
+    ancestor_folder_ids=[box_folder_id],
+    search_type_filter=[SearchTypeFilter.FILE_CONTENT],
+    created_date_range=["2023-01-01T00:00:00-07:00", "2024-08-01T00:00:00-07:00,"],
+    k=200,
+    size_range=[1, 1000000],
+    updated_data_range=None,
+)
+
+retriever = BoxRetriever(
+    box_developer_token=box_developer_token, box_search_options=box_search_options
+)
+
+box_search_tool = create_retriever_tool(
+    retriever,
+    "box_search_tool",
+    "This tool is used to search Box and retrieve documents that match the search criteria",
+)
+tools = [box_search_tool]
+```
+
+
+```python
+prompt = hub.pull("hwchase17/openai-tools-agent")
+prompt.messages
+
+llm = ChatOpenAI(temperature=0, openai_api_key=openai_key)
+
+agent = create_openai_tools_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools)
+```
+```output
+/Users/shurrey/local/langchain/.venv/lib/python3.11/site-packages/langsmith/client.py:312: LangSmithMissingAPIKeyWarning: API key must be provided when using hosted LangSmith API
+  warnings.warn(
+```
+
+```python
+result = agent_executor.invoke(
+    {
+        "input": "list the items I purchased from AstroTech Solutions from most expensive to least expensive"
+    }
+)
+```
+
+
+```python
+print(f"result {result['output']}")
+```
+```output
+result The items you purchased from AstroTech Solutions from most expensive to least expensive are:
+
+1. Gravitational Wave Detector Kit: $800
+2. Exoplanet Terrarium: $120
+
+Total: $920
+```
+## Extra fields
+
+All Box connectors offer the ability to select additional fields from the Box `FileFull` object to return as custom LangChain metadata. Each object accepts an optional `List[str]` called `extra_fields` containing the json key from the return object, like `extra_fields=["shared_link"]`. 
+
+The connector will add this field to the list of fields the integration needs to function and then add the results to the metadata returned in the `Document` or `Blob`, like `"metadata" : { "source" : "source, "shared_link" : "shared_link" }`. If the field is unavailable for that file, it will be returned as an empty string, like `"shared_link" : ""`.
+
+## API reference
+
+For detailed documentation of all BoxRetriever features and configurations head to the [API reference](https://python.langchain.com/api_reference/box/retrievers/langchain_box.retrievers.box.BoxRetriever.html).
+
+
+## Help
+
+If you have questions, you can check out our [developer documentation](https://developer.box.com) or reach out to use in our [developer community](https://community.box.com).
