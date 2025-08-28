@@ -69,17 +69,22 @@ Now we can instantiate our model object and generate chat completions:
 from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(
-    model="gpt-4o",
-    temperature=0,
-    max_tokens=None,
-    timeout=None,
-    max_retries=2,
+    model="gpt-5-nano",
+    # stream_usage=True,
+    # temperature=None,
+    # max_tokens=None,
+    # timeout=None,
+    # reasoning_effort="low",
+    # max_retries=2,
     # api_key="...",  # if you prefer to pass api key in directly instaed of using env vars
     # base_url="...",
     # organization="...",
     # other params...
 )
 ```
+
+See [API Reference](https://python.langchain.com/api_reference/openai/chat_models/langchain_openai.chat_models.base.ChatOpenAI.html)
+for the full set of available parameters.
 
 ## Invocation
 
@@ -105,7 +110,7 @@ AIMessage(content="J'adore la programmation.", additional_kwargs={'refusal': Non
 
 
 ```python
-print(ai_msg.content)
+print(ai_msg.text)
 ```
 ```output
 J'adore la programmation.
@@ -186,7 +191,7 @@ ai_msg
 
 
 ```output
-AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_o9udf3EVOWiV4Iupktpbpofk', 'function': {'arguments': '{"location":"San Francisco, CA"}', 'name': 'GetWeather'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 17, 'prompt_tokens': 68, 'total_tokens': 85}, 'model_name': 'gpt-4o-2024-05-13', 'system_fingerprint': 'fp_3aa7262c27', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-1617c9b2-dda5-4120-996b-0333ed5992e2-0', tool_calls=[{'name': 'GetWeather', 'args': {'location': 'San Francisco, CA'}, 'id': 'call_o9udf3EVOWiV4Iupktpbpofk', 'type': 'tool_call'}], usage_metadata={'input_tokens': 68, 'output_tokens': 17, 'total_tokens': 85})
+AIMessage(content='', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 17, 'prompt_tokens': 68, 'total_tokens': 85}, 'model_name': 'gpt-4o-2024-05-13', 'system_fingerprint': 'fp_3aa7262c27', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-1617c9b2-dda5-4120-996b-0333ed5992e2-0', tool_calls=[{'name': 'GetWeather', 'args': {'location': 'San Francisco, CA'}, 'id': 'call_o9udf3EVOWiV4Iupktpbpofk', 'type': 'tool_call'}], usage_metadata={'input_tokens': 68, 'output_tokens': 17, 'total_tokens': 85})
 ```
 
 
@@ -286,7 +291,7 @@ structured_response = structured_llm.invoke(
 
 ```python
 from langchain_openai import ChatOpenAI, custom_tool
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_react_agent
 
 
 @custom_tool
@@ -295,7 +300,7 @@ def execute_code(code: str) -> str:
     return "27"
 
 
-llm = ChatOpenAI(model="gpt-5", output_version="responses/v1")
+llm = ChatOpenAI(model="gpt-5", use_responses_api=True, output_version="v1")
 
 agent = create_react_agent(llm, [execute_code])
 
@@ -312,10 +317,10 @@ for step in agent.stream(
 Use the tool to calculate 3^3.
 ================================== Ai Message ==================================
 
-[{'id': 'rs_6894ff5747c0819d9b02fc5645b0be9c000169fd9fb68d99', 'summary': [], 'type': 'reasoning'}, {'call_id': 'call_7SYwMSQPbbEqFcKlKOpXeEux', 'input': 'print(3**3)', 'name': 'execute_code', 'type': 'custom_tool_call', 'id': 'ctc_6894ff5b9f54819d8155a63638d34103000169fd9fb68d99', 'status': 'completed'}]
+[{'id': 'rs_68af67a342f881a08980957bcf6d9ec208ee034b81b03765', 'type': 'reasoning'}, {'type': 'non_standard', 'value': {'call_id': 'call_lxgZev0vahouTtOd4YGQgIau', 'input': 'print(3**3)', 'name': 'execute_code', 'type': 'custom_tool_call', 'id': 'ctc_68af67a7648c81a0b8c7795439668b7e08ee034b81b03765', 'status': 'completed'}}]
 Tool Calls:
-  execute_code (call_7SYwMSQPbbEqFcKlKOpXeEux)
- Call ID: call_7SYwMSQPbbEqFcKlKOpXeEux
+  execute_code (call_lxgZev0vahouTtOd4YGQgIau)
+ Call ID: call_lxgZev0vahouTtOd4YGQgIau
   Args:
     __arg1: print(3**3)
 ================================= Tool Message =================================
@@ -324,15 +329,14 @@ Name: execute_code
 [{'type': 'custom_tool_call_output', 'output': '27'}]
 ================================== Ai Message ==================================
 
-[{'type': 'text', 'text': '27', 'annotations': [], 'id': 'msg_6894ff5db3b8819d9159b3a370a25843000169fd9fb68d99'}]
+[{'type': 'text', 'text': '27', 'annotations': [], 'id': 'msg_68af67a82d8081a0a73c901b865e358e08ee034b81b03765'}]
 ```
-<details>
-<summary>Context-free grammars</summary>
+<Accordion title="Context-free grammars">
 
 OpenAI supports the specification of a [context-free grammar](https://platform.openai.com/docs/guides/function-calling#context-free-grammars) for custom tool inputs in `lark` or `regex` format. See [OpenAI docs](https://platform.openai.com/docs/guides/function-calling#context-free-grammars) for details. The `format` parameter can be passed into `@custom_tool` as shown below:
 
 
-```python
+```python highlight={20}
 from langchain_openai import ChatOpenAI, custom_tool
 from langgraph.prebuilt import create_react_agent
 
@@ -352,14 +356,13 @@ MUL: "*"
 format_ = {"type": "grammar", "syntax": "lark", "definition": grammar}
 
 
-# highlight-next-line
 @custom_tool(format=format_)
 def do_math(input_string: str) -> str:
     """Do a mathematical operation."""
     return "27"
 
 
-llm = ChatOpenAI(model="gpt-5", output_version="responses/v1")
+llm = ChatOpenAI(model="gpt-5", output_version="v1")
 
 agent = create_react_agent(llm, [do_math])
 
@@ -376,10 +379,10 @@ for step in agent.stream(
 Use the tool to calculate 3^3.
 ================================== Ai Message ==================================
 
-[{'id': 'rs_689500828a8481a297ff0f98e328689c0681550c89797f43', 'summary': [], 'type': 'reasoning'}, {'call_id': 'call_jzH01RVhu6EFz7yUrOFXX55s', 'input': '3 * 3 * 3', 'name': 'do_math', 'type': 'custom_tool_call', 'id': 'ctc_6895008d57bc81a2b84d0993517a66b90681550c89797f43', 'status': 'completed'}]
+[{'id': 'rs_68b04e3492a08191bd087e2e754c849b08f1d4c187735236', 'type': 'reasoning'}, {'type': 'non_standard', 'value': {'call_id': 'call_aRTi7Ho65kf5xMWFHrl3rnLd', 'input': '3 * 3 * 3', 'name': 'do_math', 'type': 'custom_tool_call', 'id': 'ctc_68b04e39308c8191ba595c4e3c65194208f1d4c187735236', 'status': 'completed'}}]
 Tool Calls:
-  do_math (call_jzH01RVhu6EFz7yUrOFXX55s)
- Call ID: call_jzH01RVhu6EFz7yUrOFXX55s
+  do_math (call_aRTi7Ho65kf5xMWFHrl3rnLd)
+ Call ID: call_aRTi7Ho65kf5xMWFHrl3rnLd
   Args:
     __arg1: 3 * 3 * 3
 ================================= Tool Message =================================
@@ -388,9 +391,9 @@ Name: do_math
 [{'type': 'custom_tool_call_output', 'output': '27'}]
 ================================== Ai Message ==================================
 
-[{'type': 'text', 'text': '27', 'annotations': [], 'id': 'msg_6895009776b881a2a25f0be8507d08f20681550c89797f43'}]
+[{'type': 'text', 'text': '27', 'annotations': [], 'id': 'msg_68b04e3aecb48191b81218124ef21ebc08f1d4c187735236'}]
 ```
-</details>
+</Accordion>
 
 ## Responses API
 
@@ -430,7 +433,7 @@ llm.invoke("...", tools=[{"type": "web_search_preview"}])
 ```python
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI(model="gpt-4.1-mini", output_version="responses/v1")
+llm = ChatOpenAI(model="gpt-4.1-mini", output_version="v1")
 
 tool = {"type": "web_search_preview"}
 llm_with_tools = llm.bind_tools([tool])
@@ -442,39 +445,42 @@ Note that the response includes structured [content blocks](/oss/concepts/messag
 
 
 ```python
-response.content
+response.content_blocks
 ```
 
 
 
 ```output
-[{'id': 'ws_685d997c1838819e8a2cbf66059ddd5c0f6f330a19127ac1',
+[{'type': 'web_search_call',
+  'id': 'ws_68af6ac605848195b7ce59c3293b59100cd6678a2b812fed',
+  'query': 'positive news stories today',
   'action': {'query': 'positive news stories today', 'type': 'search'},
-  'status': 'completed',
-  'type': 'web_search_call'},
+  'status': 'completed'},
+ {'type': 'web_search_result',
+  'id': 'ws_68af6ac605848195b7ce59c3293b59100cd6678a2b812fed'},
  {'type': 'text',
-  'text': "On June 25, 2025, the James Webb Space Telescope made a groundbreaking discovery by directly imaging a previously unknown exoplanet. This young gas giant, approximately the size of Saturn, orbits a star smaller than our Sun, located about 110 light-years away in the constellation Antlia. This achievement marks the first time Webb has identified an exoplanet not previously known, expanding our understanding of distant worlds. ([straitstimes.com](https://www.straitstimes.com/world/while-you-were-sleeping-5-stories-you-might-have-missed-june-26-2025?utm_source=openai))\n\nAdditionally, in the realm of conservation, a significant milestone was achieved with the successful translocation of seventy southern white rhinos from South Africa to Rwanda's Akagera National Park. This initiative represents the first international translocation from Platinum Rhino, a major captive breeding operation, and is seen as a substantial opportunity to safeguard the future of the white rhino species. ([conservationoptimism.org](https://conservationoptimism.org/7-stories-of-optimism-this-week-17-06-25-23-06-25/?utm_source=openai))\n\nThese developments highlight positive strides in both scientific exploration and wildlife conservation efforts. ",
-  'annotations': [{'end_index': 572,
-    'start_index': 429,
-    'title': 'While You Were Sleeping: 5 stories you might have missed, June 26, 2025 | The Straits Times',
-    'type': 'url_citation',
-    'url': 'https://www.straitstimes.com/world/while-you-were-sleeping-5-stories-you-might-have-missed-june-26-2025?utm_source=openai'},
-   {'end_index': 1121,
-    'start_index': 990,
-    'title': '7 stories of optimism this week (17.06.25-23.06.25) - Conservation Optimism',
-    'type': 'url_citation',
-    'url': 'https://conservationoptimism.org/7-stories-of-optimism-this-week-17-06-25-23-06-25/?utm_source=openai'}],
-  'id': 'msg_685d997f6b94819e8d981a2b441470420f6f330a19127ac1'}]
+  'text': 'Here are some positive news stories from today...',
+  'annotations': [{'end_index': 587,
+    'start_index': 484,
+    'title': 'Positive News Highlights | AI, PFAS Breakthroughs & More — August 2025 — Podego',
+    'type': 'citation',
+    'url': 'https://www.podego.com/insights/august-2025-good-news-ai-pfas-stories?utm_source=openai'},
+   {'end_index': 3335,
+    'start_index': 3155,
+    'title': '7 stories of optimism this week (19.08.25-25.08.25) - Conservation Optimism',
+    'type': 'citation',
+    'url': 'https://conservationoptimism.org/7-stories-of-optimism-this-week-19-08-25-25-08-25/?utm_source=openai'}],
+  'id': 'msg_68af6ac75aa881958de4d8758b251c860cd6678a2b812fed'}]
 ```
 
 
 <Tip>
-**You can recover just the text content of the response as a string by using `response.text()`. For example, to stream response text:**
+**You can recover just the text content of the response as a string by using `response.text`. For example, to stream response text:**
 
 
 ```python
 for token in llm_with_tools.stream("..."):
-    print(token.text(), end="|")
+    print(token.text, end="|")
 ```
 
 See the [streaming guide](/oss/how-to/chat_streaming/) for more detail.
@@ -502,7 +508,7 @@ llm.invoke("...", tools=[{"type": "image_generation"}])
 ```python
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI(model="gpt-4.1-mini", output_version="responses/v1")
+llm = ChatOpenAI(model="gpt-4.1-mini", output_version="v1")
 
 tool = {"type": "image_generation", "quality": "low"}
 
@@ -520,9 +526,9 @@ import base64
 from IPython.display import Image
 
 image = next(
-    item for item in ai_message.content if item["type"] == "image_generation_call"
+    item for item in ai_message.content_blocks if item["type"] == "image"
 )
-Image(base64.b64decode(image["result"]), width=200)
+Image(base64.b64decode(image["base64"]), width=200)
 ```
 
 
@@ -540,7 +546,7 @@ To trigger a file search, pass a [file search tool](https://platform.openai.com/
 ```python
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI(model="gpt-4.1-mini", output_version="responses/v1")
+llm = ChatOpenAI(model="gpt-4.1-mini", output_version="v1")
 
 openai_vector_store_ids = [
     "vs_...",  # your IDs here
@@ -553,46 +559,33 @@ tool = {
 llm_with_tools = llm.bind_tools([tool])
 
 response = llm_with_tools.invoke("What is deep research by OpenAI?")
-print(response.text())
+print(response.text)
 ```
 ```output
-Deep Research by OpenAI is a newly launched agentic capability within ChatGPT designed to conduct complex, multi-step research tasks on the internet autonomously. It synthesizes large amounts of online information into comprehensive, research analyst-level reports, accomplishing in tens of minutes what would typically take a human many hours. This capability is powered by an upcoming OpenAI o3 model that is optimized for web browsing and data analysis, allowing it to search, interpret, and analyze massive amounts of text, images, and PDFs from the internet, while dynamically adjusting its approach based on the information it finds.
-
-Key features of Deep Research include:
-- Independent discovery, reasoning, and consolidation of insights from across the web.
-- Ability to use browser and Python programming tools for data analysis and graph plotting.
-- Full documentation of outputs with clear citations and a summary of its reasoning process, making it easy to verify and reference.
-- Designed to provide thorough, precise, and reliable research especially useful for knowledge-intensive domains such as finance, science, policy, and engineering. It is also valuable for individuals seeking personalized and detailed product research.
-
-It uses reinforcement learning techniques to plan and execute multi-step information-gathering tasks, reacting to real-time information by backtracking or pivoting its search when necessary. Deep Research can browse the open web and user-uploaded files, integrates visual data such as images and graphs into its reports, and cites specific source passages to support its conclusions.
-
-The goal behind Deep Research is to enhance knowledge synthesis, which is essential for creating new knowledge, marking a significant step toward the development of Artificial General Intelligence (AGI) capable of producing novel scientific research.
-
-Users can access Deep Research via ChatGPT by selecting the "deep research" option in the message composer, entering their query, and optionally attaching files or spreadsheets. The research process can take from 5 to 30 minutes, during which users can continue with other tasks. The final output is delivered as a richly detailed and well-documented report within the chat interface.
-
-Currently, Deep Research is available to Pro users with plans to expand access further to Plus, Team, and Enterprise users. It currently supports research using open web sources and uploaded files, with future plans to connect to specialized subscription or internal data sources for even more robust research outputs.
-
-Though powerful, Deep Research has limitations such as occasional hallucinations, difficulty distinguishing authoritative information from rumors, and some formatting or citation issues at launch, which are expected to improve with usage and time.
-
-In summary, Deep Research is a highly advanced AI research assistant capable of automating extensive, in-depth knowledge work by synthesizing vast amounts of online data into comprehensive, credible reports, designed to save users significant time and effort on complex research tasks.
+Deep Research by OpenAI is...
 ```
 As with [web search](#web-search), the response will include content blocks with citations:
 
 
 ```python
-[block["type"] for block in response.content]
+for block in response.content_blocks:
+    if block["type"] == "non_standard":
+        print(block["value"].get("type"))
+    else:
+        print(block["type"])
 ```
 
 
 
 ```output
-['file_search_call', 'text']
+file_search_call
+text
 ```
 
 
 
 ```python
-text_block = next(block for block in response.content if block["type"] == "text")
+text_block = next(block for block in response.content_blocks if block["type"] == "text")
 
 text_block["annotations"][:2]
 ```
@@ -600,14 +593,12 @@ text_block["annotations"][:2]
 
 
 ```output
-[{'file_id': 'file-3UzgX7jcC8Dt9ZAFzywg5k',
-  'filename': 'deep_research_blog.pdf',
-  'index': 3121,
-  'type': 'file_citation'},
- {'file_id': 'file-3UzgX7jcC8Dt9ZAFzywg5k',
-  'filename': 'deep_research_blog.pdf',
-  'index': 3121,
-  'type': 'file_citation'}]
+[{'type': 'citation',
+  'title': 'deep_research_blog.pdf',
+  'extras': {'file_id': 'file-3UzgX7jcC8Dt9ZAFzywg5k', 'index': 2712}},
+ {'type': 'citation',
+  'title': 'deep_research_blog.pdf',
+  'extras': {'file_id': 'file-3UzgX7jcC8Dt9ZAFzywg5k', 'index': 2712}}]
 ```
 
 
@@ -772,7 +763,7 @@ response_2 = llm_with_tools.invoke(
 
 
 ```python
-response_2.text()
+response_2.text
 ```
 
 
@@ -799,7 +790,7 @@ response_2 = llm_with_tools.invoke(
 
 
 ```python
-response_2.text()
+response_2.text
 ```
 
 
@@ -819,7 +810,7 @@ Example use:
 ```python
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI(model="o4-mini", output_version="responses/v1")
+llm = ChatOpenAI(model="o4-mini", output_version="v1")
 
 llm_with_tools = llm.bind_tools(
     [
@@ -838,20 +829,18 @@ response = llm_with_tools.invoke(
 Note that the above command created a new container. We can also specify an existing container ID:
 
 
-```python
+```python highlight={5,12}
 code_interpreter_calls = [
     item for item in response.content if item["type"] == "code_interpreter_call"
 ]
 assert len(code_interpreter_calls) == 1
-# highlight-next-line
-container_id = code_interpreter_calls[0]["container_id"]
+container_id = code_interpreter_calls[0]["extras"]["container_id"]
 
 llm_with_tools = llm.bind_tools(
     [
         {
             "type": "code_interpreter",
             # Use an existing container
-            # highlight-next-line
             "container": container_id,
         }
     ]
@@ -886,8 +875,8 @@ response = llm_with_tools.invoke(
 )
 ```
 
-<details>
-<summary>MCP Approvals</summary>
+
+<Accordion title="MCP Approvals">
 
 OpenAI will at times request approval before sharing data with a remote MCP server.
 
@@ -939,7 +928,7 @@ next_response = llm_with_tools.invoke(
 )
 ```
 
-</details>
+</Accordion>
 
 ### Managing conversation state
 
@@ -955,24 +944,18 @@ from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(model="gpt-4.1-mini", output_version="responses/v1")
 
-tool = {"type": "web_search_preview"}
-llm_with_tools = llm.bind_tools([tool])
-
-first_query = "What was a positive news story from today?"
+first_query = "Hi, I'm Bob."
 messages = [{"role": "user", "content": first_query}]
 
-response = llm_with_tools.invoke(messages)
-response_text = response.text()
-print(f"{response_text[:100]}... {response_text[-100:]}")
+response = llm.invoke(messages)
+print(response.text)
 ```
 ```output
-On June 25, 2025, the James Webb Space Telescope made a groundbreaking discovery by directly imaging... exploration and environmental conservation, reflecting positive developments in science and nature.
+Hi Bob! Nice to meet you. How can I assist you today?
 ```
 
 ```python
-second_query = (
-    "Repeat my question back to me, as well as the last sentence of your answer."
-)
+second_query = "What is my name?"
 
 messages.extend(
     [
@@ -980,13 +963,11 @@ messages.extend(
         {"role": "user", "content": second_query},
     ]
 )
-second_response = llm_with_tools.invoke(messages)
-print(second_response.text())
+second_response = llm.invoke(messages)
+print(second_response.text)
 ```
 ```output
-Your question was: "What was a positive news story from today?"
-
-The last sentence of my answer was: "These stories highlight significant advancements in both space exploration and environmental conservation, reflecting positive developments in science and nature."
+You mentioned that your name is Bob. How can I assist you further, Bob?
 ```
 <Tip>
 **You can use [LangGraph](https://langchain-ai.github.io/langgraph/) to manage conversational threads for you in a variety of backends, including in-memory and Postgres. See [this tutorial](/oss/tutorials/chatbot/) to get started.**
@@ -1000,40 +981,26 @@ The last sentence of my answer was: "These stories highlight significant advance
 When using the Responses API, LangChain messages will include an `"id"` field in its metadata. Passing this ID to subsequent invocations will continue the conversation. Note that this is [equivalent](https://platform.openai.com/docs/guides/conversation-state?api-mode=responses#openai-apis-for-conversation-state) to manually passing in messages from a billing perspective.
 
 
-```python
-from langchain_openai import ChatOpenAI
-
-llm = ChatOpenAI(
-    model="gpt-4.1-mini",
-    output_version="responses/v1",
-)
-response = llm.invoke("Hi, I'm Bob.")
-print(response.text())
-```
-```output
-Hi Bob! How can I assist you today?
-```
-
-```python
+```python highlight={3}
 second_response = llm.invoke(
     "What is my name?",
-    previous_response_id=response.response_metadata["id"],
+    previous_response_id=response.id,
 )
-print(second_response.text())
+print(second_response.text)
 ```
 ```output
-You mentioned that your name is Bob. How can I help you today, Bob?
+Your name is Bob. How can I help you today, Bob?
 ```
+
 ChatOpenAI can also automatically specify `previous_response_id` using the last response in a message sequence:
 
 
-```python
+```python highlight={6}
 from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(
     model="gpt-4.1-mini",
     output_version="responses/v1",
-    # highlight-next-line
     use_previous_response_id=True,
 )
 ```
@@ -1045,7 +1012,7 @@ That is,
 llm.invoke(
     [
         HumanMessage("Hello"),
-        AIMessage("Hi there!", response_metadata={"id": "resp_123"}),
+        AIMessage("Hi there!", id="resp_123"),
         HumanMessage("How are you?"),
     ]
 )
@@ -1070,11 +1037,11 @@ reasoning = {
     "summary": "auto",  # 'detailed', 'auto', or None
 }
 
-llm = ChatOpenAI(model="o4-mini", reasoning=reasoning, output_version="responses/v1")
+llm = ChatOpenAI(model="gpt-5-nano", reasoning=reasoning, output_version="v1")
 response = llm.invoke("What is 3^3?")
 
 # Output
-response.text()
+response.text
 ```
 
 
@@ -1087,10 +1054,9 @@ response.text()
 
 ```python
 # Reasoning
-for block in response.content:
+for block in response.content_blocks:
     if block["type"] == "reasoning":
-        for summary in block["summary"]:
-            print(summary["text"])
+        print(block["reasoning"])
 ```
 ```output
 **Calculating the power of three**
@@ -1128,7 +1094,7 @@ You can see the list of models that support different modalities in [OpenAI's do
 For all modalities, LangChain supports both its [cross-provider standard](/oss/concepts/multimodality/#multimodality-in-chat-models) as well as OpenAI's native content-block format.
 
 To pass multimodal data into `ChatOpenAI`, create a [content block](/oss/concepts/messages/) containing the data and incorporate it into a message, e.g., as below:
-```python
+```python highlight={9}
 message = {
     "role": "user",
     "content": [
@@ -1137,15 +1103,13 @@ message = {
             # Update prompt as desired
             "text": "Describe the (image / PDF / audio...)",
         },
-        # highlight-next-line
         content_block,
     ],
 }
 ```
 See below for examples of content blocks.
 
-<details>
-<summary>Images</summary>
+<Accordion title="Images">
 
 Refer to examples in the how-to guide [here](/oss/how-to/multimodal_inputs/#images).
 
@@ -1154,7 +1118,6 @@ URLs:
 # LangChain format
 content_block = {
     "type": "image",
-    "source_type": "url",
     "url": url_string,
 }
 
@@ -1170,8 +1133,7 @@ In-line base64 data:
 # LangChain format
 content_block = {
     "type": "image",
-    "source_type": "base64",
-    "data": base64_string,
+    "base64": base64_string,
     "mime_type": "image/jpeg",
 }
 
@@ -1184,11 +1146,9 @@ content_block = {
 }
 ```
 
-</details>
+</Accordion>
 
-
-<details>
-<summary>PDFs</summary>
+<Accordion title="PDFs">
 
 Note: OpenAI requires file-names be specified for PDF inputs. When using LangChain's format, include the `filename` key.
 
@@ -1197,14 +1157,12 @@ Read more [here](/oss/how-to/multimodal_inputs/#example-openai-file-names).
 Refer to examples in the how-to guide [here](/oss/how-to/multimodal_inputs/#documents-pdf).
 
 In-line base64 data:
-```python
+```python highlight={7}
 # LangChain format
 content_block = {
     "type": "file",
-    "source_type": "base64",
-    "data": base64_string,
+    "base64": base64_string,
     "mime_type": "application/pdf",
-    # highlight-next-line
     "filename": "my-file.pdf",
 }
 
@@ -1218,11 +1176,10 @@ content_block = {
 }
 ```
 
-</details>
+</Accordion>
 
 
-<details>
-<summary>Audio</summary>
+<Accordion title="Audio">
 
 See [supported models](https://platform.openai.com/docs/models), e.g., `"gpt-4o-audio-preview"`.
 
@@ -1233,9 +1190,8 @@ In-line base64 data:
 # LangChain format
 content_block = {
     "type": "audio",
-    "source_type": "base64",
     "mime_type": "audio/wav",  # or appropriate mime-type
-    "data": base64_string,
+    "base64": base64_string,
 }
 
 # OpenAI Chat Completions format
@@ -1245,7 +1201,7 @@ content_block = {
 }
 ```
 
-</details>
+</Accordion>
 
 ## Predicted output
 
