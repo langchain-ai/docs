@@ -68,8 +68,8 @@ const checkpointer = new MemorySaver();
 
 const agent = createReactAgent({
   model: "anthropic:claude-3-7-sonnet-latest",
-  tools: [getWeather],
-  checkpointer: checkpointer,
+  tools: [],
+  checkpointer,
 });
 
 await agent.invoke(
@@ -115,7 +115,7 @@ Users can subclass `AgentState` to add additional fields to the state.
 This custom state can then be accessed via tools and dynamic prompt / model functions.
 
 :::python
-```python {highlight={3,10}}
+```python highlight={3-5,10}
 from langchain.agents import create_react_agent, AgentState
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -131,7 +131,23 @@ agent = create_react_agent(
 ```
 :::
 :::js
-TODO
+```typescript highlight={4-7,13}
+import { z } from "zod";
+import { createReactAgent } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
+
+const stateSchema = z.object({
+  messages: z.array(z.any()),
+});
+
+const checkpointer = new MemorySaver();
+const agent = createReactAgent({
+  model: "openai:gpt-5",
+  tools: [],
+  stateSchema,
+  checkpointer,
+});
+```
 :::
 
 ## Common Patterns
@@ -207,25 +223,32 @@ If you’d like me to call you a nickname or use a different name, just say the 
 To trim message history in an agent, use `stateModifier` with the [`trimMessages`](https://js.langchain.com/docs/how_to/trim_messages/) function:
 
 ```typescript
-import { trimMessages } from "@langchain/core/messages";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import {
+  createReactAgent,
+  trimMessages,
+  MemorySaver,
+  type AgentState,
+} from "langchain";
 
 // This function will be called every time before the node that calls LLM
-const stateModifier = async (state) => {
-    return trimMessages(state.messages, {
-    strategy: "last",
-    maxTokens: 384,
-    startOn: "human",
-    endOn: ["human", "tool"],
-    });
+const stateModifier = async (state: AgentState) => {
+  return {
+    messages: await trimMessages(state.messages, {
+      strategy: "last",
+      maxTokens: 384,
+      startOn: "human",
+      endOn: ["human", "tool"],
+      tokenCounter: (msgs) => msgs.length,
+    }),
+  };
 };
 
 const checkpointer = new MemorySaver();
 const agent = createReactAgent({
-    llm: model,
-    tools,
-    stateModifier,
-    checkpointer,
+  model: "openai:gpt-5",
+  tools: [],
+  preModelHook: stateModifier,
+  checkpointer,
 });
 ```
 :::
@@ -344,49 +367,56 @@ for event in agent.stream(
 :::js
 ```typescript
 import { RemoveMessage } from "@langchain/core/messages";
-import { ChatAnthropic } from "@langchain/anthropic";
-import { StateGraph, START, MessagesZodState, MemorySaver } from "@langchain/langgraph";
-import { z } from "zod";
+import { MemorySaver } from "@langchain/langgraph";
+import { AgentState, createReactAgent } from "langchain";
 
-const model = new ChatAnthropic({ model: "claude-3-5-sonnet-20241022" });
-
-const deleteMessages = (state: z.infer<typeof MessagesZodState>) => {
-const messages = state.messages;
-if (messages.length > 2) {
+const deleteMessages = (state: AgentState) => {
+  const messages = state.messages;
+  if (messages.length > 2) {
     // remove the earliest two messages
-    return { messages: messages.slice(0, 2).map(m => new RemoveMessage({ id: m.id })) };
-}
-return {};
+    return {
+      messages: messages
+        .slice(0, 2)
+        .map((m) => new RemoveMessage({ id: m.id! })),
+    };
+  }
+  return {};
 };
 
-const callModel = async (state: z.infer<typeof MessagesZodState>) => {
-const response = await model.invoke(state.messages);
-return { messages: [response] };
-};
-
-const builder = new StateGraph(MessagesZodState)
-.addNode("call_model", callModel)
-.addNode("delete_messages", deleteMessages)
-.addEdge(START, "call_model")
-.addEdge("call_model", "delete_messages");
-
-const checkpointer = new MemorySaver();
-const app = builder.compile({ checkpointer });
+const agent = createReactAgent({
+  model: "openai:gpt-5-nano",
+  tools: [],
+  prompt: "Please be concise and to the point.",
+  postModelHook: deleteMessages,
+  checkpointer: new MemorySaver(),
+});
 
 const config = { configurable: { thread_id: "1" } };
 
-for await (const event of await app.stream(
-{ messages: [{ role: "user", content: "hi! I'm bob" }] },
-{ ...config, streamMode: "values" }
-)) {
-console.log(event.messages.map(message => [message.getType(), message.content]));
+const streamA = await agent.stream(
+  { messages: [{ role: "user", content: "hi! I'm bob" }] },
+  { ...config, streamMode: "values" }
+);
+for await (const event of streamA) {
+  const messageDetails = event.messages.map((message) => [
+    message.getType(),
+    message.content,
+  ]);
+  console.log(messageDetails);
 }
 
-for await (const event of await app.stream(
-{ messages: [{ role: "user", content: "what's my name?" }] },
-{ ...config, streamMode: "values" }
-)) {
-console.log(event.messages.map(message => [message.getType(), message.content]));
+const streamB = await agent.stream(
+  {
+    messages: [{ role: "user", content: "what's my name?" }],
+  },
+  { ...config, streamMode: "values" }
+);
+for await (const event of streamB) {
+  const messageDetails = event.messages.map((message) => [
+    message.getType(),
+    message.content,
+  ]);
+  console.log(messageDetails);
 }
 ```
 
@@ -507,7 +537,46 @@ print(result["messages"][-1].content)
 ```
 :::
 :::js
-TODO
+```typescript
+import { z } from "zod";
+import { createReactAgent, tool } from "langchain";
+
+const stateSchema = z.object({
+  userId: z.string(),
+});
+
+const getUserInfo = tool(
+  async (_, config) => {
+    const userId = config.context?.userId;
+    return { userId };
+  },
+  {
+    name: "get_user_info",
+    description: "Get user info",
+    schema: z.object({}),
+  }
+);
+
+const agent = createReactAgent({
+  model: "openai:gpt-5-nano",
+  tools: [getUserInfo],
+  stateSchema,
+});
+
+const result = await agent.invoke(
+  {
+    messages: [{ role: "user", content: "what's my name?" }],
+  },
+  {
+    context: {
+      userId: "user_123",
+    },
+  }
+);
+
+console.log(result.messages.at(-1)?.content);
+// outputs: "User is John Smith."
+```
 :::
 
 #### Write short-term memory from tools
@@ -574,14 +643,9 @@ agent.invoke(
 
 :::js
 ```typescript
-import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import {
-  MessagesZodState,
-  LangGraphRunnableConfig,
-  Command,
-} from "@langchain/langgraph";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { tool, createReactAgent } from "langchain";
+import { MessagesZodState, Command } from "@langchain/langgraph";
 
 const CustomState = z.object({
   messages: MessagesZodState.shape.messages,
@@ -589,8 +653,8 @@ const CustomState = z.object({
 });
 
 const updateUserInfo = tool(
-  async (_, config: LangGraphRunnableConfig) => {
-    const userId = config.configurable?.userId;
+  async (_, config) => {
+    const userId = config.context?.userId;
     const name = userId === "user_123" ? "John Smith" : "Unknown user";
     return new Command({
       update: {
@@ -614,8 +678,8 @@ const updateUserInfo = tool(
 );
 
 const greet = tool(
-  async (_, config: LangGraphRunnableConfig) => {
-    const userName = config.configurable?.userName;
+  async (_, config) => {
+    const userName = config.context?.userName;
     return `Hello ${userName}!`;
   },
   {
@@ -633,7 +697,7 @@ const agent = createReactAgent({
 
 await agent.invoke(
   { messages: [{ role: "user", content: "greet the user" }] },
-  { configurable: { userId: "user_123" } }
+  { context: { userId: "user_123" } }
 );
 ```
 :::
@@ -700,7 +764,85 @@ Hi John Smith, the weather in San Francisco is always sunny!
 ```
 :::
 :::js
-TODO
+```typescript
+import { z } from "zod";
+import { createReactAgent, tool, SystemMessage } from "langchain";
+
+const contextSchema = z.object({
+  userName: z.string(),
+});
+
+const getWeather = tool(
+  async ({ city }, config) => {
+    return `The weather in ${city} is always sunny!`;
+  },
+  {
+    name: "get_weather",
+    description: "Get user info",
+    schema: z.object({
+      city: z.string(),
+    }),
+  }
+);
+
+const agent = createReactAgent({
+  model: "openai:gpt-5-nano",
+  tools: [getWeather],
+  contextSchema,
+  prompt: (state, config) => {
+    return [
+      new SystemMessage(
+        `You are a helpful assistant. Address the user as ${config.context?.userName}.`
+      ),
+      ...state.messages,
+    ];
+  },
+});
+
+const result = await agent.invoke(
+  {
+    messages: [{ role: "user", content: "What is the weather in SF?" }],
+  },
+  {
+    context: {
+      userName: "John Smith",
+    },
+  }
+);
+
+for (const message of result.messages) {
+  console.log(message);
+}
+/**
+ * HumanMessage {
+ *   "content": "What is the weather in SF?",
+ *   // ...
+ * }
+ * AIMessage {
+ *   // ...
+ *   "tool_calls": [
+ *     {
+ *       "name": "get_weather",
+ *       "args": {
+ *         "city": "San Francisco"
+ *       },
+ *       "type": "tool_call",
+ *       "id": "call_tCidbv0apTpQpEWb3O2zQ4Yx"
+ *     }
+ *   ],
+ *   // ...
+ * }
+ * ToolMessage {
+ *   "content": "The weather in San Francisco is always sunny!",
+ *   "tool_call_id": "call_tCidbv0apTpQpEWb3O2zQ4Yx"
+ *   // ...
+ * }
+ * AIMessage {
+ *   "content": "John Smith, here’s the latest: The weather in San Francisco is always sunny!\n\nIf you’d like more details (temperature, wind, humidity) or a forecast for the next few days, I can pull that up. What would you like?",
+ *   // ...
+ * }
+ */
+```
 :::
 
 ### Pre Model Hook
@@ -741,7 +883,42 @@ print(result["messages"][-1].content)
 ```
 :::
 :::js
-TODO
+```typescript
+import {
+  createReactAgent,
+  type AgentState,
+  trimMessages,
+  type BaseMessage,
+} from "langchain";
+
+const preModelHook = async (state: AgentState) => {
+  return {
+    messages: await trimMessages(state.messages, {
+      maxTokens: 384,
+      strategy: "last",
+      startOn: "human",
+      endOn: ["human", "tool"],
+      tokenCounter: (msgs: BaseMessage[]) => msgs.length,
+    }),
+  };
+};
+
+const agent = createReactAgent({
+  model: "openai:gpt-5-nano",
+  tools: [],
+  preModelHook,
+});
+
+const result = await agent.invoke(
+  {
+    messages: [{ role: "user", content: "hi, my name is bob" }],
+  },
+  {
+    context: { thread_id: "1" },
+  }
+);
+console.log(result.messages.at(-1)?.content);
+```
 :::
 
 ### Post Model Hook
@@ -770,5 +947,27 @@ agent = create_react_agent(
 ```
 :::
 :::js
-TODO
+```typescript
+import { RemoveMessage } from "@langchain/core/messages";
+import { createReactAgent, type AgentState } from "langchain";
+
+function validateResponse(state: AgentState) {
+  const lastMessage = state.messages.at(-1)?.content;
+  if (
+    typeof lastMessage === "string" &&
+    lastMessage.toLowerCase().includes("confidential")
+  ) {
+    return {
+      messages: [new RemoveMessage({ id: "all" }), ...state.messages],
+    };
+  }
+  return {};
+}
+
+const agent = createReactAgent({
+  model: "openai:gpt-5",
+  tools: [],
+  postModelHook: validateResponse,
+});
+```
 :::

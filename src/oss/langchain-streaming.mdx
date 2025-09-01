@@ -76,8 +76,24 @@ content: [{'type': 'text', 'text': 'It’s always sunny in San Francisco!'}]
 
 :::js
 ```typescript
+import z from "zod";
+import { createReactAgent, tool } from "langchain";
+
+const getWeather = tool(
+  async ({ city }) => {
+    return `The weather in ${city} is always sunny!`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather for a given city.",
+    schema: z.object({
+      city: z.string(),
+    }),
+  }
+);
+
 const agent = createReactAgent({
-  llm: model,
+  model: "openai:gpt-5-nano",
   tools: [getWeather],
 });
 
@@ -85,9 +101,56 @@ for await (const chunk of await agent.stream(
   { messages: [{ role: "user", content: "what is the weather in sf" }] },
   { streamMode: "updates" }
 )) {
-  console.log(chunk);
-  console.log("\n");
+  const [step, content] = Object.entries(chunk)[0];
+  console.log(`step: ${step}`);
+  console.log(`content: ${JSON.stringify(content, null, 2)}`);
 }
+/**
+ * step: agent
+ * content: {
+ *   "messages": [
+ *     {
+ *       "kwargs": {
+ *         // ...
+ *         "tool_calls": [
+ *           {
+ *             "name": "get_weather",
+ *             "args": {
+ *               "city": "San Francisco"
+ *             },
+ *             "type": "tool_call",
+ *             "id": "call_0qLS2Jp3MCmaKJ5MAYtr4jJd"
+ *           }
+ *         ],
+ *         // ...
+ *       }
+ *     }
+ *   ]
+ * }
+ * step: tools
+ * content: {
+ *   "messages": [
+ *     {
+ *       "kwargs": {
+ *         "content": "The weather in San Francisco is always sunny!",
+ *         "name": "get_weather",
+ *         // ...
+ *       }
+ *     }
+ *   ]
+ * }
+ * step: agent
+ * content: {
+ *   "messages": [
+ *     {
+ *       "kwargs": {
+ *         "content": "The latest update says: The weather in San Francisco is always sunny!\n\nIf you’d like real-time details (current temperature, humidity, wind, and today’s forecast), I can pull the latest data for you. Want me to fetch that?",
+ *         // ...
+ *       }
+ *     }
+ *   ]
+ * }
+ */
 ```
 :::
 
@@ -221,8 +284,24 @@ content: [{'type': 'text', 'text': '!”\n\n'}]
 To stream tokens as they are produced by the LLM, use `streamMode: "messages"`:
 
 ```typescript
+import z from "zod";
+import { createReactAgent, tool } from "langchain";
+
+const getWeather = tool(
+  async ({ city }) => {
+    return `The weather in ${city} is always sunny!`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather for a given city.",
+    schema: z.object({
+      city: z.string(),
+    }),
+  }
+);
+
 const agent = createReactAgent({
-  llm: model,
+  model: "openai:gpt-4o-mini",
   tools: [getWeather],
 });
 
@@ -230,9 +309,8 @@ for await (const [token, metadata] of await agent.stream(
   { messages: [{ role: "user", content: "what is the weather in sf" }] },
   { streamMode: "messages" }
 )) {
-  console.log("Token", token);
-  console.log("Metadata", metadata);
-  console.log("\n");
+  console.log(`node: ${metadata.langgraph_node}`);
+  console.log(`content: ${JSON.stringify(token.contentBlocks, null, 2)}`);
 }
 ```
 :::
@@ -280,12 +358,16 @@ Acquired data for city: San Francisco
 To stream updates from tools as they are executed, you can use the `writer` parameter from the configuration.
 
 ```typescript
+import z from "zod";
+import { tool, createReactAgent } from "langchain";
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 
 const getWeather = tool(
   async (input, config: LangGraphRunnableConfig) => {
     // Stream any arbitrary data
-    config.writer?.("Looking up data for city: " + input.city);
+    config.writer?.(`Looking up data for city: ${input.city}`);
+    // ... fetch city data
+    config.writer?.(`Acquired data for city: ${input.city}`);
     return `It's always sunny in ${input.city}!`;
   },
   {
@@ -298,7 +380,7 @@ const getWeather = tool(
 );
 
 const agent = createReactAgent({
-  llm: model,
+  model: "openai:gpt-4o-mini",
   tools: [getWeather],
 });
 
@@ -307,8 +389,12 @@ for await (const chunk of await agent.stream(
   { streamMode: "custom" }
 )) {
   console.log(chunk);
-  console.log("\n");
 }
+```
+
+```shell title="Output"
+Looking up data for city: San Francisco
+Acquired data for city: San Francisco
 ```
 
 <Note>
@@ -372,17 +458,37 @@ content: {'agent': {'messages': [AIMessage(content='San Francisco weather: It’
 You can specify multiple streaming modes by passing streamMode as an array: `streamMode: ["updates", "messages", "custom"]`:
 
 ```typescript
+import z from "zod";
+import { tool, createReactAgent } from "langchain";
+import { LangGraphRunnableConfig } from "@langchain/langgraph";
+
+const getWeather = tool(
+  async (input, config: LangGraphRunnableConfig) => {
+    // Stream any arbitrary data
+    config.writer?.(`Looking up data for city: ${input.city}`);
+    // ... fetch city data
+    config.writer?.(`Acquired data for city: ${input.city}`);
+    return `It's always sunny in ${input.city}!`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather for a given city.",
+    schema: z.object({
+      city: z.string().describe("The city to get weather for."),
+    }),
+  }
+);
+
 const agent = createReactAgent({
-  llm: model,
+  model: "openai:gpt-4o-mini",
   tools: [getWeather],
 });
 
-for await (const chunk of await agent.stream(
+for await (const [streamMode, chunk] of await agent.stream(
   { messages: [{ role: "user", content: "what is the weather in sf" }] },
   { streamMode: ["updates", "messages", "custom"] }
 )) {
-  console.log(chunk);
-  console.log("\n");
+  console.log(`${streamMode}: ${JSON.stringify(chunk, null, 2)}`);
 }
 ```
 :::

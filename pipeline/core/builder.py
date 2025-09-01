@@ -485,6 +485,24 @@ class DocumentationBuilder:
             for file_path in all_files:
                 # Calculate relative path from oss/ directory
                 relative_path = file_path.relative_to(oss_dir)
+
+                if relative_path.parts:
+                    first_part = relative_path.parts[0]
+                    if first_part in ("python", "javascript"):
+                        # Map target_language to expected directory name
+                        expected_dir = (
+                            "python" if target_language == "python" else "javascript"
+                        )
+                        # Skip files that are for a different language
+                        # (i.e. if we're building for python and we encounter
+                        #  `oss/javascript/...`, skip it)
+                        if first_part != expected_dir:
+                            pbar.update(1)
+                            continue
+                        # Remove the language-specific directory from the path
+                        # e.g., "python/concepts/low_level.md" > "concepts/low_level.md"
+                        relative_path = Path(*relative_path.parts[1:])
+
                 # Build to output_dir/ (not output_dir/oss/)
                 output_path = self.build_dir / output_dir / relative_path
 

@@ -216,4 +216,4 @@ For more, check out a complete RAG template using Astra DB [here](https://github
 
 ## API reference
 
-For detailed documentation of all `Clickhouse` features and configurations head to the API reference:<https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.clickhouse.Clickhouse.html>
+For detailed documentation of all `Clickhouse` features and configurations head to the [API reference](https://python.langchain.com/api_reference/community/vectorstores/langchain_community.vectorstores.clickhouse.Clickhouse.html).

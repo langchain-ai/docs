@@ -61,7 +61,7 @@ graph TD
 
 
 <Info>
-Under the hood, `create_react_agent()` builds a **graph**-based agent runtime. A graph consists of nodes (steps) and edges (connections) that define how your agent processes information. The agent moves through this graph, executing nodes like the model node (which calls the model), the tools node (which executes tools), or pre/post model hook nodes. Learn more about the [graph API](./langgraph-graph-api).
+Under the hood, `create_react_agent()` builds a **graph**-based agent runtime using [LangGraph](./langgraph/overview). A graph consists of nodes (steps) and edges (connections) that define how your agent processes information. The agent moves through this graph, executing nodes like the model node (which calls the model), the tools node (which executes tools), or pre/post model hook nodes. Learn more about the [graph API](./langgraph/graph-api).
 </Info>
 
 ## Core components
@@ -72,9 +72,7 @@ The [model](./langchain-models) is the reasoning engine of your agent. It can be
 
 #### Static model
 
-Static models are configured once when creating the agent and remain unchanged throughout execution. This is the most common and straightforward approach.
-
-To initialize a static model from a model identifier string:
+Static models are configured once when creating the agent and remain unchanged throughout execution. This is the most common and straightforward approach. To initialize a static model from a model identifier string:
 
 :::python
 ```python wrap
@@ -91,17 +89,15 @@ agent = create_react_agent(
 import { createReactAgent } from "langchain";
 
 const agent = createReactAgent({
-    model: "openai:gpt-5",
-    tools: []
+  model: "openai:gpt-5",
+  tools: []
 });
 ```
 :::
 
-Model identifier strings use the format `provider:model` (e.g. `"openai:gpt-5"`) and support automatic inference (e.g. `"gpt-5"` will be inferred as `"openai:gpt-5"`).
-
-The user may want more control over the model configuration, in which case they can initialize a model instance directly:
-
 :::python
+Model identifier strings use the format `provider:model` (e.g. `"openai:gpt-5"`) and support automatic inference (e.g. `"gpt-5"` will be inferred as `"openai:gpt-5"`). You may want more control over the model configuration, in which case you can initialize a model instance directly using the [provider package](./integrations/providers):
+
 ```python wrap
 from langchain.agents import create_react_agent
 from langchain_openai import ChatOpenAI
@@ -114,28 +110,35 @@ model = ChatOpenAI(
 )
 agent = create_react_agent(model, tools=tools)
 ```
+
+Model instances give you complete control over configuration. Use them when you need to set specific parameters like temperature, max tokens, timeouts, or configure API keys, base URLs, and other provider-specific settings. Refer to the [API reference](./integrations/providers) to see available params and methods on your model.
 :::
 :::js
+Model identifier strings use the format `provider:model` (e.g. `"openai:gpt-5"`). You may want more control over the model configuration, in which case you can initialize a model instance directly using the [provider package](./integrations/providers):
+
 ```ts wrap
 import { createReactAgent } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 
+const model = new ChatOpenAI({
+  model: "gpt-4o",
+  temperature: 0.1,
+  maxTokens: 1000,
+  timeout: 30
+});
+
 const agent = createReactAgent({
-    model: new ChatOpenAI({
-        model: "gpt-4o",
-        temperature: 0.1,
-        maxTokens: 1000,
-        timeout: 30
-    }),
-    tools: []
+  model,
+  tools: []
 });
 ```
-:::
 
-Model instances give you complete control over configuration. Use them when you need to set specific parameters like temperature, max tokens, timeouts, or configure API keys, base URLs, and other provider-specific settings. Refer to the [API reference](https://python.langchain.com/api_reference/) to see available params and methods on your model.
+Model instances give you complete control over configuration. Use them when you need to set specific parameters like temperature, max tokens, timeouts, or configure API keys, base URLs, and other provider-specific settings. Refer to the [API reference](./integrations/providers) to see available params and methods on your model.
+:::
 
 #### Dynamic model
 
+:::python
 <Info>
 **`runtime`**: The execution environment of your agent, containing immutable configuration and contextual data that persists throughout the agent's execution (e.g., user IDs, session details, or application-specific configuration).
 </Info>
@@ -148,7 +151,6 @@ Dynamic models are selected at runtime based on the current state and context. T
 
 To use a dynamic model, you need to provide a function that receives the graph state and runtime and returns an instance of `BaseChatModel` with the tools bound to it using `.bind_tools(tools)`, where `tools` is a subset of the `tools` parameter.
 
-:::python
 ```python
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_react_agent, AgentState
@@ -168,26 +170,30 @@ agent = create_react_agent(select_model, tools=tools)
 ```
 :::
 :::js
+<Info>
+**`state`**: The data that flows through your agent's execution, including messages, custom fields, and any information that needs to be tracked and potentially modified during processing (e.g. user preferences or tool usage stats).
+</Info>
+
+Dynamic models are selected at runtime based on the current state and context. This enables sophisticated routing logic and cost optimization.
+
+To use a dynamic model, you need to provide a function that receives the graph state and runtime and returns an instance of `BaseChatModel` with the tools bound to it using `.bindTools(tools)`, where `tools` is a subset of the `tools` parameter.
+
 ```ts wrap
 import { createReactAgent, AgentState } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 
 const selectModel = (state: AgentState) => {
-    const messageCount = state.messages.length;
-    
-    if (messageCount > 10) {
-        return new ChatOpenAI({
-            model: "gpt-4.1",
-        });
-    }
-    return new ChatOpenAI({
-        model: "gpt-4o",
-    });
+  const messageCount = state.messages.length;
+  
+  if (messageCount > 10) {
+    return new ChatOpenAI({ model: "gpt-4.1" }).bindTools(tools);
+  }
+  return new ChatOpenAI({ model: "gpt-4o" }).bindTools(tools);
 };
 
 const agent = createReactAgent({
-    llm: selectModel,
-    tools: []
+  llm: selectModel,
+  tools,
 });
 ```
 :::
@@ -212,7 +218,7 @@ Tools can be provided to the agent as either:
 2. A configured `ToolNode`
 :::
 :::js
-1. A list of tools (created with `tool` function) 
+1. A list of tools (created with `tool` function, or object that represents a builtin provider tool) 
 2. A configured `ToolNode`
 :::
 
@@ -290,7 +296,7 @@ console.log(result);
 
 If an empty tool list is provided, the agent will consist of a single LLM node without tool calling.
 
-#### Passing a configured `ToolNode`
+#### Passing a configured ToolNode
 
 Alternatively, you can create a `ToolNode` directly and pass it to the agent. This allows you to customize the tool node's behavior, such as handling tool errors:
 
@@ -321,19 +327,19 @@ If an error occurs within `ToolNode`, the agent will return a `ToolMessage` to t
 import { ToolNode, ToolMessage } from "langchain";
 
 const toolNode = new ToolNode({
-    tools: [search, calculate],
-    handleToolErrors: (error, toolCall) => {
-        return new ToolMessage(
-            content="Please check your input and try again.",
-            tool_call_id=toolCall.id
-        );
-    }
+  tools: [search, calculate],
+  handleToolErrors: (error, toolCall) => {
+    return new ToolMessage(
+      content="Please check your input and try again.",
+      tool_call_id=toolCall.id
+    );
+  }
 });
 ```
 :::
 
 <Tip>
-To learn more about error handling in`ToolNode`, see [ToolNode](./langchain-tools#toolnode).
+To learn more about error handling in `ToolNode`, see [ToolNode](./langchain-tools#toolnode).
 </Tip>
 
 ### Tool use in the ReAct loop
@@ -441,9 +447,9 @@ agent = create_react_agent(
 ```ts wrap
 import { SystemMessage } from "langchain";
 const agent = createReactAgent({
-    model,
-    tools,
-    prompt: new SystemMessage("You are a research assistant. Cite your sources.")
+  model,
+  tools,
+  prompt: new SystemMessage("You are a research assistant. Cite your sources.")
 });
 ```
 :::
@@ -468,19 +474,19 @@ agent = create_react_agent(model, tools, prompt=dynamic_prompt)
 import { createReactAgent } from "langchain";
 
 const agent = createReactAgent({
-    model,
-    tools,
-    prompt: (state) => {
-        const userType = state.userType || "standard";
-        return [
-            new SystemMessage(
-                userType === "expert"
-                    ? "Provide detailed technical responses."
-                    : "Provide simple, clear explanations."
-            ),
-            ...state.messages
-        ];
-    }
+  model,
+  tools,
+  prompt: (state) => {
+    const userType = state.userType || "standard";
+    return [
+      new SystemMessage(
+        userType === "expert"
+            ? "Provide detailed technical responses."
+            : "Provide simple, clear explanations."
+      ),
+      ...state.messages
+    ];
+  }
 });
 ```
 :::
@@ -598,9 +604,11 @@ result = agent.invoke({
 :::js
 ```ts wrap
 import { z } from "zod";
+import { MessagesZodState } from "@langchain/langgraph";
 import { createReactAgent, type BaseMessage } from "langchain";
 
 const customAgentState = z.object({
+  messages: MessagesZodState.shape.messages,
   userPreferences: z.record(z.string(), z.string()),
 });
 
@@ -716,19 +724,19 @@ agent = create_react_agent(
 import { createReactAgent, type AgentState } from "langchain";
 
 const trimMessages = (state: AgentState) => {
-    const messages = state.messages;
+  const messages = state.messages;
 
-    if (messages.length <= 3) {
-        return { messages };
-    }
+  if (messages.length <= 3) {
+    return { messages };
+  }
 
-    const firstMsg = messages[0];
-    const recentMessages = messages.length % 2 === 0
-        ? messages.slice(-3)
-        : messages.slice(-4);
+  const firstMsg = messages[0];
+  const recentMessages = messages.length % 2 === 0
+    ? messages.slice(-3)
+    : messages.slice(-4);
 
-    const newMessages = [firstMsg, ...recentMessages];
-    return { messages: newMessages };
+  const newMessages = [firstMsg, ...recentMessages];
+  return { messages: newMessages };
 };
 
 const agent = createReactAgent({
@@ -756,17 +764,20 @@ If you are returning `messages` in the pre-model hook, you should OVERWRITE the 
 :::
 :::js
 ```ts wrap
+import { RemoveMessage } from "@langchain/core/messages";
+import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
+
 const agent = createReactAgent({
+  // ...
+  preModelHook: (state) => {
     // ...
-    preModelHook: (state) => {
-        // ...
-        return {
-            messages: [
-                RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
-                ...state.messages
-            ],
-        };
+    return {
+      messages: [
+        RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
+        ...state.messages
+      ],
     };
+  };
 });
 ```
 :::
@@ -844,13 +855,15 @@ agent = create_react_agent(
 :::
 :::js
 ```ts wrap
-import { createReactAgent, type AgentState, AIMessage } from "langchain";
+import { createReactAgent, type AgentState, AIMessage, RemoveMessage } from "langchain";
+import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
 
 const validateResponse = (state: AgentState) => {
   const lastMessage = state.messages.at(-1)?.content as string;
   if (lastMessage.toLowerCase().includes("confidential")) {
     return {
       messages: [
+        new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
         ...state.messages.slice(0, -1),
         new AIMessage("I cannot share confidential information."),
       ],
@@ -886,18 +899,21 @@ for chunk in agent.stream({
 :::
 :::js
 ```ts wrap
-const stream = await agent.stream({
+const stream = await agent.stream(
+  {
     messages: [new HumanMessage("What's the weather in NYC?")],
-}, { streamMode: "values" });
+  },
+  { streamMode: "values" }
+);
 
 for await (const chunk of stream) {
-    // Each chunk contains the full state at that point
-    const latestMessage = chunk.messages.at(-1);
-    if (latestMessage?.content) {
-        console.log(`Agent: ${latestMessage.content}`);
-    } else if (latestMessage?.tool_calls) {
-        console.log(`Calling tools: ${latestMessage.tool_calls.map((tc: ToolCall) => tc.name).join(", ")}`);
-    }
+  // Each chunk contains the full state at that point
+  const latestMessage = chunk.messages.at(-1);
+  if (latestMessage?.content) {
+    console.log(`Agent: ${latestMessage.content}`);
+  } else if (latestMessage?.tool_calls) {
+    console.log(`Calling tools: ${latestMessage.tool_calls.map((tc: ToolCall) => tc.name).join(", ")}`);
+  }
 }
 ```
 :::

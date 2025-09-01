@@ -91,16 +91,16 @@ graph.invoke({"foo": ""}, config)
 :::js
 ```typescript
 import { StateGraph, START, END, MemoryServer } from "@langchain/langgraph";
-import { withLangGraph } from "@langchain/langgraph/zod";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   foo: z.string(),
-  bar: withLangGraph(z.array(z.string()), {
+  bar: z.array(z.string()).register(registry, {
     reducer: {
       fn: (x, y) => x.concat(y),
     },
-    default: () => [],
+    default: () => [] as string[],
   }),
 });
 
@@ -126,16 +126,16 @@ await graph.invoke({ foo: "" }, config);
 :::js
 ```typescript
 import { StateGraph, START, END, MemoryServer } from "@langchain/langgraph";
-import { withLangGraph } from "@langchain/langgraph/zod";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   foo: z.string(),
-  bar: withLangGraph(z.array(z.string()), {
+  bar: z.array(z.string()).register(registry, {
     reducer: {
       fn: (x, y) => x.concat(y),
-    },
-    default: () => [],
+    },  
+    default: () => [] as string[],
   }),
 });
 
@@ -521,16 +521,16 @@ class State(TypedDict):
 
 :::js
 ```typescript
-import { withLangGraph } from "@langchain/langgraph/zod";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   foo: z.number(),
-  bar: withLangGraph(z.array(z.string()), {
+  bar: z.array(z.string()).register(registry, {
     reducer: {
       fn: (x, y) => x.concat(y),
     },
-    default: () => [],
+    default: () => [] as string[],
   }),
 });
 ```
@@ -909,20 +909,24 @@ def update_memory(state: MessagesState, config: RunnableConfig, *, store: BaseSt
 We can access the `memoryStore` and the `user_id` in _any node_ by accessing `config` and `store` as node arguments. Here's how we might use semantic search in a node to find relevant memories:
 
 ```typescript
-import {
-  LangGraphRunnableConfig,
-  BaseStore,
-  MessagesZodState,
-} from "@langchain/langgraph";
-import { z } from "zod";
+import { MessagesZodMeta, Runtime } from "@langchain/langgraph";
+import { BaseMessage } from "@langchain/core/messages";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
+
+const MessagesZodState = z.object({
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
+});
 
 const updateMemory = async (
   state: z.infer<typeof MessagesZodState>,
-  config: LangGraphRunnableConfig,
-  store: BaseStore
+  runtime: Runtime<{ user_id: string }>,
 ) => {
   // Get the user id from the config
-  const userId = config.configurable?.user_id;
+  const userId = runtime.context?.user_id;
+  if (!userId) throw new Error("User ID is required");
 
   // Namespace the memory
   const namespace = [userId, "memories"];
@@ -933,7 +937,7 @@ const updateMemory = async (
   const memoryId = uuidv4();
 
   // We create a new memory
-  await store.put(namespace, memoryId, { memory });
+  await runtime.store?.put(namespace, memoryId, { memory });
 };
 ```
 :::

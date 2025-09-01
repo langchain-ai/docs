@@ -272,20 +272,21 @@ In this example, we've used the `Annotated` type to specify a reducer function (
 :::js
 
 ```typescript
-import { z } from "zod";
-import { withLangGraph } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
+import { registry } from "@langchain/langgraph/zod";
 
 const State = z.object({
   foo: z.number(),
-  bar: withLangGraph(z.array(z.string()), {
+  bar: z.array(z.string()).register(registry, {
     reducer: {
       fn: (x, y) => x.concat(y),
     },
+    default: () => [] as string[],
   }),
 });
 ```
 
-In this example, we've used the `withLangGraph` function to specify a reducer function for the second key (`bar`). Note that the first key remains unchanged. Let's assume the input to the graph is `{ foo: 1, bar: ["hi"] }`. Let's then assume the first `Node` returns `{ foo: 2 }`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{ foo: 2, bar: ["hi"] }`. If the second node returns `{ bar: ["bye"] }` then the `State` would then be `{ foo: 2, bar: ["hi", "bye"] }`. Notice here that the `bar` key is updated by adding the two arrays together.
+In this example, we've used [Zod 4 registries](https://zod.dev/metadata) to specify a reducer function for the second key (`bar`). Note that the first key remains unchanged. Let's assume the input to the graph is `{ foo: 1, bar: ["hi"] }`. Let's then assume the first `Node` returns `{ foo: 2 }`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{ foo: 2, bar: ["hi"] }`. If the second node returns `{ bar: ["bye"] }` then the `State` would then be `{ foo: 2, bar: ["hi", "bye"] }`. Notice here that the `bar` key is updated by adding the two arrays together.
 :::
 
 ### Working with Messages in Graph State
@@ -311,7 +312,7 @@ However, you might also want to manually update messages in your graph state (e.
 :::js
 In many cases, it is helpful to store prior conversation history as a list of messages in your graph state. To do so, we can add a key (channel) to the graph state that stores a list of `Message` objects and annotate it with a reducer function (see `messages` key in the example below). The reducer function is vital to telling the graph how to update the list of `Message` objects in the state with each state update (for example, when a node sends an update). If you don't specify a reducer, every state update will overwrite the list of messages with the most recently provided value. If you wanted to simply append messages to the existing list, you could use a function that concatenates arrays as a reducer.
 
-However, you might also want to manually update messages in your graph state (e.g. human-in-the-loop). If you were to use a simple concatenation function, the manual state updates you send to the graph would be appended to the existing list of messages, instead of updating existing messages. To avoid that, you need a reducer that can keep track of message IDs and overwrite existing messages, if updated. To achieve this, you can use the prebuilt `MessagesZodState` schema. For brand new messages, it will simply append to existing list, but it will also handle the updates for existing messages correctly.
+However, you might also want to manually update messages in your graph state (e.g. human-in-the-loop). If you were to use a simple concatenation function, the manual state updates you send to the graph would be appended to the existing list of messages, instead of updating existing messages. To avoid that, you need a reducer that can keep track of message IDs and overwrite existing messages, if updated. To achieve this, you can use the prebuilt `messagesStateReducer` function or `MessagesZodMeta` when state schema is defined with Zod. For brand new messages, it will simply append to existing list, but it will also handle the updates for existing messages correctly.
 :::
 
 #### Serialization
@@ -342,7 +343,7 @@ class GraphState(TypedDict):
 :::
 
 :::js
-In addition to keeping track of message IDs, `MessagesZodState` will also try to deserialize messages into LangChain `Message` objects whenever a state update is received on the `messages` channel. This allows sending graph inputs / state updates in the following format:
+In addition to keeping track of message IDs, `MessagesZodMeta` will also try to deserialize messages into LangChain `Message` objects whenever a state update is received on the `messages` channel. This allows sending graph inputs / state updates in the following format:
 
 ```typescript
 // this is supported
@@ -356,10 +357,18 @@ In addition to keeping track of message IDs, `MessagesZodState` will also try to
 }
 ```
 
-Since the state updates are always deserialized into LangChain `Messages` when using `MessagesZodState`, you should use dot notation to access message attributes, like `state.messages[state.messages.length - 1].content`. Below is an example of a graph that uses `MessagesZodState`:
+Since the state updates are always deserialized into LangChain `Messages` when using `MessagesZodMeta`, you should use dot notation to access message attributes, like `state.messages[state.messages.length - 1].content`. Below is an example of a graph that uses `MessagesZodMeta`:
 
 ```typescript
-import { StateGraph, MessagesZodState } from "@langchain/langgraph";
+import { StateGraph, MessagesZodMeta } from "@langchain/langgraph";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
+
+const MessagesZodState = z.object({
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
+});
 
 const graph = new StateGraph(MessagesZodState)
   ...
@@ -369,7 +378,9 @@ const graph = new StateGraph(MessagesZodState)
 
 ```typescript
 const State = z.object({
-  messages: MessagesZodState.shape.messages,
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
   documents: z.array(z.string()),
 });
 ```
@@ -453,7 +464,7 @@ You can add nodes to a graph using the `addNode` method.
 ```typescript
 import { StateGraph } from "@langchain/langgraph";
 import { RunnableConfig } from "@langchain/core/runnables";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   input: z.string(),
@@ -602,8 +613,16 @@ LangGraph supports caching of tasks/nodes based on the input to the node. To use
   - `ttl`, the time to live for the cache in seconds. If not specified, the cache will never expire.
 
 ```typescript
-import { StateGraph, MessagesZodState } from "@langchain/langgraph";
+import { StateGraph, MessagesZodMeta } from "@langchain/langgraph";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 import { InMemoryCache } from "@langchain/langgraph-checkpoint";
+
+const MessagesZodState = z.object({
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
+});
 
 const graph = new StateGraph(MessagesZodState)
   .addNode(
@@ -1006,13 +1025,13 @@ When creating a graph, you can also mark that certain parts of the graph are con
 You can optionally specify a config schema when creating a graph.
 
 ```typescript
-import { z } from "zod";
+import { z } from "zod/v4";
 
-const ConfigSchema = z.object({
-  llm: z.string(),
+const ContextSchema = z.object({
+  llm: z.union([z.literal("openai"), z.literal("anthropic")]),
 });
 
-const graph = new StateGraph(State, ConfigSchema);
+const graph = new StateGraph(State, ContextSchema);
 ```
 
 :::
@@ -1027,10 +1046,10 @@ graph.invoke(inputs, context={"llm_provider": "anthropic"})
 :::
 
 :::js
-You can then pass this configuration into the graph using the `configurable` config field.
+You can then pass this configuration into the graph using the `context` property.
 
 ```typescript
-const config = { configurable: { llm: "anthropic" } };
+const config = { context: { llm: "anthropic" } };
 
 await graph.invoke(inputs, config);
 ```
@@ -1039,23 +1058,27 @@ await graph.invoke(inputs, config);
 
 You can then access and use this context inside a node or conditional edge:
 
-```python
-from langgraph.runtime import Runtime
+```typescript
+import { Runtime } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-def node_a(state: State, runtime: Runtime[ContextSchema]):
-    llm = get_llm(runtime.context.llm_provider)
-    ...
+const nodeA = (
+  state: z.infer<typeof State>,
+  runtime: Runtime<z.infer<typeof ContextSchema>>,
+) => {
+  const llm = getLLM(runtime.context?.llm);
+  // ...
+};
 ```
 
 See [this guide](/oss/langgraph/use-graph-api#add-runtime-configuration) for a full breakdown on configuration.
-:::
 
 :::js
 
 ```typescript
-graph.addNode("myNode", (state, config) => {
-  const llmType = config?.configurable?.llm || "openai";
-  const llm = getLlm(llmType);
+graph.addNode("myNode", (state, runtime) => {
+  const llmType = runtime.context?.llm || "openai";
+  const llm = getLLM(llmType);
   return { results: `Hello, ${state.input}!` };
 });
 ```
@@ -1080,7 +1103,7 @@ The recursion limit sets the maximum number of [super-steps](#graphs) the graph 
 ```typescript
 await graph.invoke(inputs, {
   recursionLimit: 5,
-  configurable: { llm: "anthropic" },
+  context: { llm: "anthropic" },
 });
 ```
 

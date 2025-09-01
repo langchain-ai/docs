@@ -149,31 +149,31 @@ agent.invoke(
 :::
 
 :::js
-```typescript title="A tool the agent can use to look up user information"
-import { tool } from "@langchain/core/tools";
+```typescript title="A tool the agent can use to look up user information" highlight={5,9-17,24,38}
 import { z } from "zod";
+import { createReactAgent, tool } from "langchain";
 import { LangGraphRunnableConfig, InMemoryStore } from "@langchain/langgraph";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
-const store = new InMemoryStore(); // (1)!
+const store = new InMemoryStore();
+const contextSchema = z.object({
+  userId: z.string(),
+});
 
 await store.put(
-  // (2)!
-  ["users"], // (3)!
-  "user_123", // (4)!
+  ["users"],
+  "user_123",
   {
     name: "John Smith",
     language: "English",
-  } // (5)!
+  }
 );
 
 const getUserInfo = tool(
+  // Look up user info.
   async (_, config: LangGraphRunnableConfig) => {
-    /**Look up user info.*/
     // Same as that provided to `createReactAgent`
-    const store = config.store; // (6)!
-    const userId = config.configurable?.userId;
-    const userInfo = await store?.get(["users"], userId); // (7)!
+    const userId = config.context?.userId;
+    const userInfo = await config.store?.get(["users"], userId);
     return userInfo?.value ? JSON.stringify(userInfo.value) : "Unknown user";
   },
   {
@@ -184,16 +184,25 @@ const getUserInfo = tool(
 );
 
 const agent = createReactAgent({
-  llm: model,
+  model: "openai:gpt-4o-mini",
   tools: [getUserInfo],
-  store, // (8)!
+  contextSchema,
+  store,
 });
 
 // Run the agent
-await agent.invoke(
+const result = await agent.invoke(
   { messages: [{ role: "user", content: "look up user information" }] },
-  { configurable: { userId: "user_123" } }
+  { context: { userId: "user_123" } }
 );
+
+console.log(result.messages.at(-1)?.content);
+/**
+ * Outputs:
+ * User Information:
+ * - Name: John Smith
+ * - Language: English
+ */
 ```
 
 1. The `InMemoryStore` is a store that stores data in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [store documentation](https://langchain-ai.github.io/langgraph/reference/store/) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.
@@ -256,30 +265,26 @@ store.get(("users",), "user_123").value
 :::
 
 :::js
-```typescript title="Example of a tool that updates user information"
-import { tool } from "@langchain/core/tools";
+```typescript title="Example of a tool that updates user information" highlight={5,11-14,19,39}
 import { z } from "zod";
+import { tool, createReactAgent } from "langchain";
 import { LangGraphRunnableConfig, InMemoryStore } from "@langchain/langgraph";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
-const store = new InMemoryStore(); // (1)!
+const store = new InMemoryStore();
+
+const contextSchema = z.object({
+  userId: z.string(),
+});
 
 const UserInfo = z.object({
-  // (2)!
   name: z.string(),
 });
 
 const saveUserInfo = tool(
-  async (
-    userInfo: z.infer<typeof UserInfo>,
-    config: LangGraphRunnableConfig
-  ) => {
-    // (3)!
-    /**Save user info.*/
+  async (userInfo, config: LangGraphRunnableConfig) => {
+    const userId = config.context?.userId;
     // Same as that provided to `createReactAgent`
-    const store = config.store; // (4)!
-    const userId = config.configurable?.userId;
-    await store?.put(["users"], userId, userInfo); // (5)!
+    await config.store?.put(["users"], userId, userInfo);
     return "Successfully saved user info.";
   },
   {
@@ -290,20 +295,21 @@ const saveUserInfo = tool(
 );
 
 const agent = createReactAgent({
-  llm: model,
+  model: "openai:gpt-4o-mini",
   tools: [saveUserInfo],
+  contextSchema,
   store,
 });
 
 // Run the agent
 await agent.invoke(
   { messages: [{ role: "user", content: "My name is John Smith" }] },
-  { configurable: { userId: "user_123" } } // (6)!
+  { context: { userId: "user_123" } }
 );
 
 // You can access the store directly to get the value
 const result = await store.get(["users"], "user_123");
-console.log(result?.value);
+console.log(result?.value); // Output: { name: "John Smith" }
 ```
 
 1. The `InMemoryStore` is a store that stores data in memory. In a production setting, you would typically use a database or other persistent storage. Please review the [store documentation](https://langchain-ai.github.io/langgraph/reference/store/) for more options. If you're deploying with **LangGraph Platform**, the platform will provide a production-ready store for you.

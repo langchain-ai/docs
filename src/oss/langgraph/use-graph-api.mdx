@@ -70,10 +70,12 @@ This state tracks a list of [message](https://python.langchain.com/docs/concepts
 :::js
 ```typescript
 import { BaseMessage } from "@langchain/core/messages";
-import { z } from "zod";
+import { MessagesZodMeta } from "@langchain/langgraph";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
-  messages: z.array(z.custom<BaseMessage>()),
+  messages: z.array(z.custom<BaseMessage>()).register(registry, MessagesZodMeta),
   extraField: z.number(),
 });
 ```
@@ -385,13 +387,17 @@ class State(MessagesState):
 :::
 
 :::js
-LangGraph includes a built-in `MessagesZodState` that handles these considerations:
+LangGraph includes a built-in `MessagesZodMeta` that handles these considerations:
 
 ```typescript {highlight={4}}
-import { MessagesZodState } from "@langchain/langgraph";
+import { MessagesZodMeta } from "@langchain/langgraph";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
-  messages: MessagesZodState.shape.messages,
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
   extraField: z.number(),
 });
 
@@ -419,12 +425,17 @@ human: Hi
 ai: Hello!
 ```
 
-This is a versatile representation of state for applications involving [chat models](https://js.langchain.com/docs/concepts/chat_models/). LangGraph includes this pre-built `MessagesZodState` for convenience, so that we can have:
+This is a versatile representation of state for applications involving [chat models](https://js.langchain.com/docs/concepts/chat_models/). LangGraph includes this pre-built `MessagesZodMeta` for convenience, so that we can have:
 
 ```typescript
-import { MessagesZodState } from "@langchain/langgraph";
+import { MessagesZodMeta } from "@langchain/langgraph";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
-const State = MessagesZodState.extend({
+const State = z.object({
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
   extraField: z.number(),
 });
 ```
@@ -479,7 +490,7 @@ print(graph.invoke({"question": "hi"}))
 :::js
 ```typescript
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Define the schema for the input
 const InputState = z.object({
@@ -595,7 +606,7 @@ Output of graph invocation: {'a': 'set by node_3'}
 :::js
 ```typescript
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // The overall state of the graph (this is the public state shared across nodes)
 const OverallState = z.object({
@@ -934,26 +945,25 @@ print(graph.invoke({}, context={"my_runtime_value": "b"}))
 :::
 
 :::js
-```typescript {highlight={17,19,30,31}}
+```typescript {highlight={16,16,18,29,30}}
 import { StateGraph, END, START } from "@langchain/langgraph";
-import { RunnableConfig } from "@langchain/core/runnables";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // 1. Specify config schema
-const ConfigurableSchema = z.object({
+const ContextSchema = z.object({
   myRuntimeValue: z.string(),
 });
 
 // 2. Define a graph that accesses the config in a node
-const State = z.object({
+const StateSchema = z.object({
   myStateValue: z.number(),
 });
 
-const graph = new StateGraph(State)
-  .addNode("node", (state, config) => {
-    if (config?.configurable?.myRuntimeValue === "a") {
+const graph = new StateGraph(StateSchema, ContextSchema)
+  .addNode("node", (state, runtime) => {
+    if (runtime?.context?.myRuntimeValue === "a") {
       return { myStateValue: 1 };
-    } else if (config?.configurable?.myRuntimeValue === "b") {
+    } else if (runtime?.context?.myRuntimeValue === "b") {
       return { myStateValue: 2 };
     } else {
       throw new Error("Unknown values.");
@@ -964,8 +974,8 @@ const graph = new StateGraph(State)
   .compile();
 
 // 3. Pass in configuration at runtime:
-console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "a" } }));
-console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
+console.log(await graph.invoke({}, { context: { myRuntimeValue: "a" } }));
+console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));
 ```
 
 ```
@@ -1030,20 +1040,28 @@ console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
   ```typescript
   import { ChatOpenAI } from "@langchain/openai";
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { MessagesZodState, StateGraph, START, END } from "@langchain/langgraph";
+  import { BaseMessage } from "@langchain/core/messages";
+  import { MessagesZodMeta, StateGraph, START, END } from "@langchain/langgraph";
+  import { registry } from "@langchain/langgraph/zod";
   import { RunnableConfig } from "@langchain/core/runnables";
-  import { z } from "zod";
-  
+  import { z } from "zod/v4";
+
   const ConfigSchema = z.object({
     modelProvider: z.string().default("anthropic"),
   });
-  
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
+  });
+
   const MODELS = {
     anthropic: new ChatAnthropic({ model: "claude-3-5-haiku-latest" }),
     openai: new ChatOpenAI({ model: "gpt-4o-mini" }),
   };
-  
-  const graph = new StateGraph(MessagesZodState)
+
+  const graph = new StateGraph(MessagesZodState, ConfigSchema)
     .addNode("model", async (state, config) => {
       const modelProvider = config?.configurable?.modelProvider || "anthropic";
       const model = MODELS[modelProvider as keyof typeof MODELS];
@@ -1053,7 +1071,7 @@ console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
     .addEdge(START, "model")
     .addEdge("model", END)
     .compile();
-  
+
   // Usage
   const inputMessage = { role: "user", content: "hi" };
   // With no configuration, uses default (Anthropic)
@@ -1061,9 +1079,9 @@ console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
   // Or, can set OpenAI
   const response2 = await graph.invoke(
     { messages: [inputMessage] },
-    { configurable: { modelProvider: "openai" } }
+    { configurable: { modelProvider: "openai" } },
   );
-  
+
   console.log(response1.messages.at(-1)?.response_metadata?.model);
   console.log(response2.messages.at(-1)?.response_metadata?.model);
   ```
@@ -1136,13 +1154,20 @@ console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
   ```typescript
   import { ChatOpenAI } from "@langchain/openai";
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { SystemMessage } from "@langchain/core/messages";
-  import { MessagesZodState, StateGraph, START, END } from "@langchain/langgraph";
-  import { z } from "zod";
+  import { SystemMessage, BaseMessage } from "@langchain/core/messages";
+  import { MessagesZodMeta, StateGraph, START, END } from "@langchain/langgraph";
+  import { registry } from "@langchain/langgraph/zod";
+  import { z } from "zod/v4";
   
   const ConfigSchema = z.object({
     modelProvider: z.string().default("anthropic"),
     systemMessage: z.string().optional(),
+  });
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
   });
   
   const MODELS = {
@@ -1150,7 +1175,7 @@ console.log(await graph.invoke({}, { configurable: { myRuntimeValue: "b" } }));
     openai: new ChatOpenAI({ model: "gpt-4o-mini" }),
   };
   
-  const graph = new StateGraph(MessagesZodState)
+  const graph = new StateGraph(MessagesZodState, ConfigSchema)
     .addNode("model", async (state, config) => {
       const modelProvider = config?.configurable?.modelProvider || "anthropic";
       const systemMessage = config?.configurable?.systemMessage;
@@ -1291,9 +1316,16 @@ By default, the retry policy retries on any exception except for the following:
   ```typescript
   import Database from "better-sqlite3";
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, START, END, MessagesZodState } from "@langchain/langgraph";
-  import { AIMessage } from "@langchain/core/messages";
-  import { z } from "zod";
+  import { StateGraph, START, END, MessagesZodMeta } from "@langchain/langgraph";
+  import { registry } from "@langchain/langgraph/zod";
+  import { AIMessage, BaseMessage } from "@langchain/core/messages";
+  import { z } from "zod/v4";
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
+  });
   
   // Create an in-memory database
   const db: typeof Database.prototype = new Database(":memory:");
@@ -1452,7 +1484,7 @@ class State(TypedDict):
 
 :::js
 ```typescript
-import { z } from "zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   value1: z.string(),
@@ -1709,13 +1741,18 @@ graph = builder.compile()
 
 :::js
 ```typescript
-import "@langchain/langgraph/zod";
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   // The reducer makes this append-only
-  aggregate: z.array(z.string()).langgraph.reducer((x, y) => x.concat(y)),
+  aggregate: z.array(z.string()).register(registry, {
+    reducer: {
+      fn: (x, y) => x.concat(y),
+    },
+    default: () => [] as string[],
+  }),
 });
 
 const nodeA = (state: z.infer<typeof State>) => {
@@ -1995,15 +2032,24 @@ Adding "C" to ['A']
 If your fan-out should vary at runtime based on the state, you can use [addConditionalEdges](https://langchain-ai.github.io/langgraphjs/reference/classes/langgraph.StateGraph.html#addConditionalEdges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
 
 ```typescript {highlight={14,33}}
-import "@langchain/langgraph/zod";
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
-  aggregate: z.array(z.string()).langgraph.reducer((x, y) => x.concat(y)),
+  aggregate: z.array(z.string()).register(registry, {
+    reducer: {
+      fn: (x, y) => x.concat(y),
+    },
+    default: () => [] as string[],
+  }),
   // Add a key to the state. We will set this key to determine
   // how we branch.
-  which: z.string().langgraph.reducer((x, y) => y ?? x),
+  which: z.string().register(registry, {
+    reducer: {
+      fn: (x, y) => y ?? x,
+    },
+  }),
 });
 
 const nodeA = (state: z.infer<typeof State>) => {
@@ -2155,14 +2201,18 @@ for step in graph.stream({"topic": "animals"}):
 
 :::js
 ```typescript
-import "@langchain/langgraph/zod";
 import { StateGraph, START, END, Send } from "@langchain/langgraph";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const OverallState = z.object({
   topic: z.string(),
   subjects: z.array(z.string()),
-  jokes: z.array(z.string()).langgraph.reducer((x, y) => x.concat(y)),
+  jokes: z.array(z.string()).register(registry, {
+    reducer: {
+      fn: (x, y) => x.concat(y),
+    },
+  }),
   bestSelectedJoke: z.string(),
 });
 
@@ -2354,13 +2404,18 @@ display(Image(graph.get_graph().draw_mermaid_png()))
 
 :::js
 ```typescript
-import "@langchain/langgraph/zod";
 import { StateGraph, START, END } from "@langchain/langgraph";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   // The reducer makes this append-only
-  aggregate: z.array(z.string()).langgraph.reducer((x, y) => x.concat(y)),
+  aggregate: z.array(z.string()).register(registry, {
+    reducer: {
+      fn: (x, y) => x.concat(y),
+    },
+    default: () => [] as string[],
+  }),
 });
 
 const nodeA = (state: z.infer<typeof State>) => {
@@ -2808,7 +2863,7 @@ Called C
 :::js
 ```typescript
 import { StateGraph, START, Command } from "@langchain/langgraph";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Define graph state
 const State = z.object({
@@ -2979,13 +3034,17 @@ Called C
 
 :::js
 ```typescript {highlight={7,20,34,39}}
-import "@langchain/langgraph/zod";
 import { StateGraph, START, Command } from "@langchain/langgraph";
-import { z } from "zod";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
 const State = z.object({
   // NOTE: we define a reducer here
-  foo: z.string().langgraph.reducer((x, y) => x + y),
+  foo: z.string().register(registry, {
+    reducer: {
+      fn: (x, y) => x + y,
+    },
+  }),
 });
 
 const nodeA = (state: z.infer<typeof State>) => {
@@ -3065,11 +3124,10 @@ def lookup_user_info(tool_call_id: Annotated[str, InjectedToolCallId], config: R
 ```typescript
 import { tool } from "@langchain/core/tools";
 import { Command } from "@langchain/langgraph";
-import { RunnableConfig } from "@langchain/core/runnables";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 const lookupUserInfo = tool(
-  async (input, config: RunnableConfig) => {
+  async (input, config) => {
     const userId = config.configurable?.userId;
     const userInfo = getUserInfo(userId);
     return new Command({
@@ -3168,12 +3226,20 @@ app = build_fractal_graph(3)
 Let's create a simple example graph to demonstrate visualization.
 
 ```typescript
-import { StateGraph, START, END } from "@langchain/langgraph";
-import { MessagesZodState } from "@langchain/langgraph";
-import { z } from "zod";
+import { StateGraph, START, END, MessagesZodMeta } from "@langchain/langgraph";
+import { BaseMessage } from "@langchain/core/messages";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
-const State = MessagesZodState.extend({
-  value: z.number(),
+const State = z.object({
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
+  value: z.number().register(registry, {
+    reducer: {
+      fn: (x, y) => x + y,
+    },
+  }),
 });
 
 const app = new StateGraph(State)

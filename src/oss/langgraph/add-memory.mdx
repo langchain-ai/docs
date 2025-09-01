@@ -186,8 +186,17 @@ const graph = builder.compile({ checkpointer });
   
   ```typescript
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, MessagesZodState, START } from "@langchain/langgraph";
+  import { StateGraph, MessagesZodMeta, START } from "@langchain/langgraph";
+  import { BaseMessage } from "@langchain/core/messages";
+  import { registry } from "@langchain/langgraph/zod";
+  import { z } from "zod/v4";
   import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
+  });
   
   const model = new ChatAnthropic({ model: "claude-3-5-haiku-20241022" });
   
@@ -463,7 +472,7 @@ graph = builder.compile(checkpointer=checkpointer)
 :::js
 ```typescript
 import { StateGraph, START, MemorySaver } from "@langchain/langgraph";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 const State = z.object({ foo: z.string() });
 
@@ -493,7 +502,7 @@ subgraph = subgraph_builder.compile(checkpointer=True)
 :::
 
 :::js
-```javascript {highlight={2}}
+```typescript {highlight={2}}
 const subgraphBuilder = new StateGraph(...);
 const subgraph = subgraphBuilder.compile({ checkpointer: true });
 ```
@@ -738,10 +747,18 @@ const graph = builder.compile({ store });
   
   ```typescript
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, MessagesZodState, START, LangGraphRunnableConfig } from "@langchain/langgraph";
+  import { StateGraph, MessagesZodMeta, START, LangGraphRunnableConfig } from "@langchain/langgraph";
   import { PostgresSaver, PostgresStore } from "@langchain/langgraph-checkpoint-postgres";
-  import { z } from "zod";
+  import { BaseMessage } from "@langchain/core/messages";
+  import { registry } from "@langchain/langgraph/zod";
+  import { z } from "zod/v4";
   import { v4 as uuidv4 } from "uuid";
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
+  });
   
   const model = new ChatAnthropic({ model: "claude-3-5-haiku-20241022" });
   
@@ -1099,8 +1116,16 @@ const items = await store.search(["user_123", "memories"], {
   :::js
   ```typescript
   import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
-  import { StateGraph, START, MessagesZodState, InMemoryStore } from "@langchain/langgraph";
-  import { z } from "zod";
+  import { StateGraph, START, MessagesZodMeta, InMemoryStore } from "@langchain/langgraph";
+  import { BaseMessage } from "@langchain/core/messages";
+  import { registry } from "@langchain/langgraph/zod";
+  import { z } from "zod/v4";
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
+  });
   
   const llm = new ChatOpenAI({ model: "gpt-4o-mini" });
   
@@ -1265,10 +1290,17 @@ const builder = new StateGraph(MessagesZodState)
   
   :::js
   ```typescript
-  import { trimMessages } from "@langchain/core/messages";
+  import { trimMessages, BaseMessage } from "@langchain/core/messages";
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, START, MessagesZodState, MemorySaver } from "@langchain/langgraph";
-  import { z } from "zod";
+  import { StateGraph, START, MessagesZodMeta, MemorySaver } from "@langchain/langgraph";
+  import { registry } from "@langchain/langgraph/zod";
+  import { z } from "zod/v4";
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
+  });
   
   const model = new ChatAnthropic({ model: "claude-3-5-sonnet-20241022" });
   
@@ -1278,6 +1310,7 @@ const builder = new StateGraph(MessagesZodState)
       maxTokens: 128,
       startOn: "human",
       endOn: ["human", "tool"],
+      tokenCounter: model,
     });
     const response = await model.invoke(messages);
     return { messages: [response] };
@@ -1410,10 +1443,17 @@ const deleteMessages = (state) => {
   
   :::js
   ```typescript
-  import { RemoveMessage } from "@langchain/core/messages";
+  import { RemoveMessage, BaseMessage } from "@langchain/core/messages";
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, START, MessagesZodState, MemorySaver } from "@langchain/langgraph";
-  import { z } from "zod";
+  import { StateGraph, START, MemorySaver, MessagesZodMeta } from "@langchain/langgraph";
+  import { z } from "zod/v4";
+  import { registry } from "@langchain/langgraph/zod";
+
+  const MessagesZodState = z.object({
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
+  });
   
   const model = new ChatAnthropic({ model: "claude-3-5-sonnet-20241022" });
   
@@ -1514,15 +1554,20 @@ def summarize_conversation(state: State):
 :::
 
 :::js
-Prompting and orchestration logic can be used to summarize the message history. For example, in LangGraph you can extend the [`MessagesZodState`](/oss/graph-api#working-with-messages-in-graph-state) to include a `summary` key:
+Prompting and orchestration logic can be used to summarize the message history. For example, in LangGraph you can include a `summary` key in the state alongside the `messages` key:
 
 ```typescript
-import { MessagesZodState } from "@langchain/langgraph";
-import { z } from "zod";
+import { BaseMessage } from "@langchain/core/messages";
+import { MessagesZodMeta } from "@langchain/langgraph";
+import { registry } from "@langchain/langgraph/zod";
+import { z } from "zod/v4";
 
-const State = MessagesZodState.merge(z.object({
+const State = z.object({
+  messages: z
+    .array(z.custom<BaseMessage>())
+    .register(registry, MessagesZodMeta),
   summary: z.string().optional(),
-}));
+});
 ```
 
 Then, you can generate a summary of the chat history, using any existing summary as context for the next summary. This `summarizeConversation` node can be called after some number of messages have accumulated in the `messages` state key.
@@ -1647,13 +1692,15 @@ const summarizeConversation = async (state: z.infer<typeof State>) => {
     type BaseMessage
   } from "@langchain/core/messages";
   import {
-    MessagesZodState,
+    MessagesZodMeta,
     StateGraph,
     START,
     END,
     MemorySaver,
   } from "@langchain/langgraph";
-  import { z } from "zod";
+  import { BaseMessage } from "@langchain/core/messages";
+  import { registry } from "@langchain/langgraph/zod";
+  import { z } from "zod/v4";
   import { v4 as uuidv4 } from "uuid";
   
   const memory = new MemorySaver();
@@ -1661,7 +1708,9 @@ const summarizeConversation = async (state: z.infer<typeof State>) => {
   // We will add a `summary` attribute (in addition to `messages` key,
   // which MessagesZodState already has)
   const GraphState = z.object({
-    messages: MessagesZodState.shape.messages,
+    messages: z
+      .array(z.custom<BaseMessage>())
+      .register(registry, MessagesZodMeta),
     summary: z.string().default(""),
   });
   
