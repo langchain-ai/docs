@@ -731,6 +731,15 @@ Note that the agent:
 We can see the full sequence of steps, along with latency and other metadata, in the
 [LangSmith trace](https://smith.langchain.com/public/7b42d478-33d2-4631-90a4-7cb731681e88/r).
 
+<Tip>
+
+You can add a deeper level of control and customization using the [LangGraph](/oss/langgraph/overview)
+framework directly— for example, you can add steps to grade document relevance and rewrite
+search queries. Check out LangGraph's [Agentic RAG tutorial](/oss/langgraph/langgraph-agentic-rag)
+for more advanced formulations.
+
+</Tip>
+
 
 ### RAG chains
 
