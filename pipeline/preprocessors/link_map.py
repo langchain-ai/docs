@@ -142,6 +142,7 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.bind_tools": "core/language_models/langchain_core.language_models.chat_models.BaseChatModel.html#langchain_core.language_models.chat_models.BaseChatModel.bind_tools",
             "init_chat_model": "langchain/chat_models/langchain.chat_models.base.init_chat_model.html",
             "RunnableConfig": "core/runnables/langchain_core.runnables.config.RunnableConfig.html",
+            "Embeddings": "core/embeddings/langchain_core.embeddings.embeddings.Embeddings.html",
         },
     },
     {
@@ -158,6 +159,7 @@ LINK_MAPS: list[LinkMap] = [
             "initChatModel": "functions/langchain.chat_models_universal.initChatModel.html",
             "RunnableConfig": "interfaces/_langchain_core.runnables.RunnableConfig.html",
             "Reference": "index.html",
+            "Embeddings": "classes/_langchain_core.embeddings.Embeddings.html",
         },
     },
 ]

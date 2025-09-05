@@ -2,7 +2,7 @@
 title: "Text splitters"
 ---
 
-This guide provides a quick overview for getting started with Writer's [text splitter](/oss/concepts/text_splitters/).
+This guide provides a quick overview for getting started with Writer's [text splitter](/oss/integrations/splitters/).
 
 Writer's [context-aware splitting endpoint](https://dev.writer.com/api-guides/tools#context-aware-text-splitting) provides intelligent text splitting capabilities for long documents (up to 4000 words). Unlike simple character-based splitting, it preserves the semantic meaning and context between chunks, making it ideal for processing long-form content while maintaining coherence. In `langchain-writer`, we provide usage of Writer's context-aware splitting endpoint as a LangChain text splitter.
 
@@ -10,9 +10,9 @@ Writer's [context-aware splitting endpoint](https://dev.writer.com/api-guides/to
 
 ### Integration details
 
-| Class                                                                                                                                    | Package          | Local | Serializable | JS support |                                        Package downloads                                         |                                        Package latest                                         |
-|:-----------------------------------------------------------------------------------------------------------------------------------------|:-----------------| :---: | :---: |:----------:|:------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------:|
-| [WriterTextSplitter](https://github.com/writer/langchain-writer/blob/main/langchain_writer/text_splitter.py#L11) | [langchain-writer](https://pypi.org/project/langchain-writer/) |      ❌       |                                       ❌                                       | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-writer?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-writer?style=flat-square&label=%20) |
+| Class                                                                                                            | Package                                                        | Local | Serializable | JS support |                                        Package downloads                                         |                                        Package latest                                         |
+|:-----------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------|:-----:|:------------:|:----------:|:------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------:|
+| [WriterTextSplitter](https://github.com/writer/langchain-writer/blob/main/langchain_writer/text_splitter.py#L11) | [langchain-writer](https://pypi.org/project/langchain-writer/) |   ❌   |      ❌       |     ❌      | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-writer?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-writer?style=flat-square&label=%20) |
 
 ## Setup
 
