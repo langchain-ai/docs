@@ -8,7 +8,7 @@ This will help you get started with ByteDanceDoubao [embedding models](/oss/conc
 
 ### Integration details
 
-| Class | Package | Local | Py support | Package downloads | Package latest |
+| Class | Package | Local | Py support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [ByteDanceDoubaoEmbeddings](https://api.js.langchain.com/classes/_langchain_community.embeddings_bytedance_doubao.ByteDanceDoubaoEmbeddings.html) | [@langchain/community](https://api.js.langchain.com/modules/_langchain_community.html) | ❌ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

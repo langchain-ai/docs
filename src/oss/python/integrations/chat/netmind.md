@@ -10,7 +10,7 @@ This will help you get started with Netmind [chat models](https://www.netmind.ai
 
 ### Integration details
 
-| Class                                                                                        | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/) | Package downloads | Package latest |
+| Class                                                                                        | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/) | Downloads | Version |
 |:---------------------------------------------------------------------------------------------| :--- |:-----:|:------------:|:--------------------------------------------------------------:| :---: | :---: |
 | [ChatNetmind](https://python.langchain.com/api_reference/) | [langchain-netmind](https://python.langchain.com/api_reference/) |   ✅   |      ❌       |                               ❌                                | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-netmind?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-netmind?style=flat-square&label=%20) |
 

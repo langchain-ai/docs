@@ -10,7 +10,7 @@ This example shows how to communicate with `watsonx.ai` models using `LangChain`
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/llms/ibm/) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/llms/ibm/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [WatsonxLLM](https://python.langchain.com/api_reference/ibm/llms/langchain_ibm.llms.WatsonxLLM.html) | [langchain-ibm](https://python.langchain.com/api_reference/ibm/index.html) | ❌ | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-ibm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-ibm?style=flat-square&label=%20) |
 

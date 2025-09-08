@@ -10,7 +10,7 @@ The `RedisStore` is an implementation of `ByteStore` that stores everything in y
 
 ### Integration details
 
-| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/ioredis_storage) | Package downloads | Package latest |
+| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/ioredis_storage) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [RedisStore](https://python.langchain.com/api_reference/community/storage/langchain_community.storage.redis.RedisStore.html) | [langchain-community](https://python.langchain.com/api_reference/community/index.html) | ✅ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_community?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_community?style=flat-square&label=%20) |
 

@@ -10,7 +10,7 @@ This will help you getting started with Cloudflare Workers AI [chat models](/oss
 
 ### Integration details
 
-| Class | Package | Local | Serializable | PY support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | PY support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [`ChatCloudflareWorkersAI`](https://api.js.langchain.com/classes/langchain_cloudflare.ChatCloudflareWorkersAI.html) | [`@langchain/cloudflare`](https://npmjs.com/@langchain/cloudflare) | ❌ | ✅ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cloudflare?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cloudflare?style=flat-square&label=%20&) |
 

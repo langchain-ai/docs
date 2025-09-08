@@ -12,7 +12,7 @@ This page will help you get started with GreenNode Serverless AI [chat models](.
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatGreenNode](https://python.langchain.com/api_reference/greennode/chat_models/langchain_greennode.chat_models.ChatGreenNode.html) | [langchain-greennode](https://python.langchain.com/api_reference/greennode/index.html) | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-greennode?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-greennode?style=flat-square&label=%20) |
 

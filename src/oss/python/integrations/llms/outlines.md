@@ -10,7 +10,7 @@ This will help you get started with Outlines LLM. For detailed documentation of 
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [Outlines](https://python.langchain.com/api_reference/community/llms/langchain_community.llms.outlines.Outlines.html) | [langchain-community](https://python.langchain.com/api_reference/community/index.html) | ✅ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-community?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-community?style=flat-square&label=%20) |
 

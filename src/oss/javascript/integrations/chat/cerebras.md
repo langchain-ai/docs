@@ -18,7 +18,7 @@ This will help you getting started with ChatCerebras [chat models](/oss/concepts
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/cerebras) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/cerebras) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatCerebras](https://api.js.langchain.com/classes/langchain_cerebras.ChatCerebras.html) | [`@langchain/cerebras`](https://www.npmjs.com/package/@langchain/cerebras) | ❌ | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cerebras?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cerebras?style=flat-square&label=%20&) |
 

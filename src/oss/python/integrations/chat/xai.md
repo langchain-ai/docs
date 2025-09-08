@@ -11,7 +11,7 @@ This page will help you get started with xAI [chat models](../../concepts/chat_m
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/xai) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/xai) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatXAI](https://python.langchain.com/api_reference/xai/chat_models/langchain_xai.chat_models.ChatXAI.html) | [langchain-xai](https://python.langchain.com/api_reference/xai/index.html) | ❌ | beta | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-xai?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-xai?style=flat-square&label=%20) |
 

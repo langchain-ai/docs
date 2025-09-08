@@ -8,7 +8,7 @@ This will help you get started with Pipeshift [chat models](/oss/concepts/chat_m
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatPipeshift](https://dashboard.pipeshift.com/docs) | [langchain-pipeshift](https://pypi.org/project/langchain-pipeshift/) | ❌ | -| ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-pipeshift?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-pipeshift?style=flat-square&label=%20) |
 

@@ -10,7 +10,7 @@ You can read more about `StripeAgentToolkit` in [Stripe's launch blog](https://s
 
 ### Integration details
 
-| Class | Package | Serializable | [JS Support](https://github.com/stripe/agent-toolkit?tab=readme-ov-file#typescript) |  Package latest |
+| Class | Package | Serializable | [JS Support](https://github.com/stripe/agent-toolkit?tab=readme-ov-file#typescript) |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | StripeAgentToolkit | [stripe-agent-toolkit](https://pypi.org/project/stripe-agent-toolkit) | ❌ | ✅ |  ![PyPI - Version](https://img.shields.io/pypi/v/stripe-agent-toolkit?style=flat-square&label=%20) |
 

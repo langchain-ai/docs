@@ -10,7 +10,7 @@ This will help you getting started with Cohere [chat models](/oss/concepts/chat_
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/cohere) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/cohere) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatCohere](https://api.js.langchain.com/classes/langchain_cohere.ChatCohere.html) | [`@langchain/cohere`](https://www.npmjs.com/package/@langchain/cohere) | ❌ | beta | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cohere?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cohere?style=flat-square&label=%20&) |
 

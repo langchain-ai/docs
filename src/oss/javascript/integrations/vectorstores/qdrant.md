@@ -18,7 +18,7 @@ This guide provides a quick overview for getting started with Qdrant [vector sto
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/qdrant/) |  Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/qdrant/) |  Version |
 | :--- | :--- | :---: | :---: |
 | [`QdrantVectorStore`](https://api.js.langchain.com/classes/langchain_qdrant.QdrantVectorStore.html) | [`@langchain/qdrant`](https://npmjs.com/@langchain/qdrant) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/qdrant?style=flat-square&label=%20&) |
 

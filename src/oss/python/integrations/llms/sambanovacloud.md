@@ -14,7 +14,7 @@ You may be looking for [SambaNovaCloud Chat Models](/oss/integrations/chat/samba
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [SambaNovaCloud](https://python.langchain.com/api_reference/community/llms/langchain_community.llms.sambanova.SambaNovaCloud.html) | [langchain_community](https://python.langchain.com/api_reference/community/index.html) | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_community?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_community?style=flat-square&label=%20) |
 

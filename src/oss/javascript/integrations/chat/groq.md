@@ -10,7 +10,7 @@ This will help you getting started with ChatGroq [chat models](/oss/concepts/cha
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/groq) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/groq) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatGroq](https://api.js.langchain.com/classes/langchain_groq.ChatGroq.html) | [`@langchain/groq`](https://www.npmjs.com/package/@langchain/groq) | ❌ | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/groq?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/groq?style=flat-square&label=%20&) |
 

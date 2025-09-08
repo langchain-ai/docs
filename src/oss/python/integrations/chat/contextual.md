@@ -14,7 +14,7 @@ This integration invokes Contextual AI's Grounded Language Model.
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatContextual](https://github.com/ContextualAI//langchain-contextual) | [langchain-contextual](https://pypi.org/project/langchain-contextual/) | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-contextual?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-contextual?style=flat-square&label=%20) |
 

@@ -8,7 +8,7 @@ This will help you get started with Cloudflare Workers AI [text completion model
 
 ### Integration details
 
-| Class | Package | Local | Serializable | PY support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | PY support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [`CloudflareWorkersAI`](https://api.js.langchain.com/classes/langchain_cloudflare.CloudflareWorkersAI.html) | [`@langchain/cloudflare`](https://npmjs.com/@langchain/cloudflare) | ❌ | ✅ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cloudflare?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cloudflare?style=flat-square&label=%20&) |
 

@@ -8,7 +8,7 @@ This guide provides a quick overview for getting started with Taiga tooling in [
 
 ### Integration details
 
-| Class                                                                                                | Package                                                                    | Serializable | JS support |                                        Package latest                                        |
+| Class                                                                                                | Package                                                                    | Serializable | JS support |                                        Version                                        |
 |:-----------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------------| :---:        |:------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------:|
 | `create_entity_tool`, `search_entities_tool`, `get_entity_by_ref_tool`, `update_entity_by_ref_tool` , `add_comment_by_ref_tool`, `add_attachment_by_ref_tool` | [langchain-taiga](https://github.com/Shikenso-Analytics/langchain-taiga)   | N/A          |                                      TBD                                       | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-taiga?style=flat-square&label=%20) |
 

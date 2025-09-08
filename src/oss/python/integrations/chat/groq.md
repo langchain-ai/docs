@@ -8,7 +8,7 @@ This will help you get started with Groq [chat models](../../concepts/chat_model
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/groq) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/groq) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatGroq](https://python.langchain.com/api_reference/groq/chat_models/langchain_groq.chat_models.ChatGroq.html) | [langchain-groq](https://python.langchain.com/api_reference/groq/index.html) | ❌ | beta | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-groq?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-groq?style=flat-square&label=%20) |
 

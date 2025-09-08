@@ -16,7 +16,7 @@ This example goes over how to use LangChain to interact with `Fireworks` models.
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/v0.1/docs/integrations/llms/fireworks/) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/v0.1/docs/integrations/llms/fireworks/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [Fireworks](https://python.langchain.com/api_reference/fireworks/llms/langchain_fireworks.llms.Fireworks.html#langchain_fireworks.llms.Fireworks) | [langchain-fireworks](https://python.langchain.com/api_reference/fireworks/index.html) | ❌ | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_fireworks?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_fireworks?style=flat-square&label=%20) |
 

@@ -19,7 +19,7 @@ Chroma Cloud powers serverless vector and full-text search. It's extremely fast,
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/chroma/) | Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/chroma/) | Version |
 | :--- | :--- | :---: | :---: |
 | [`Chroma`](https://api.js.langchain.com/classes/langchain_community_vectorstores_chroma.Chroma.html) | [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

@@ -10,7 +10,7 @@ This example shows how to use `watsonx.ai` Toolkit using `LangChain`.
 
 ### Integration details
 
-| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/toolkits/ibm/) | Package downloads | Package latest |
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/toolkits/ibm/) | Downloads | Version |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | [WatsonxToolkit](https://python.langchain.com/api_reference/ibm/toolkit/langchain_ibm.toolkit.WatsonxToolkit.html) | [langchain-ibm](https://python.langchain.com/api_reference/ibm/index.html) | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-ibm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-ibm?style=flat-square&label=%20) |
 

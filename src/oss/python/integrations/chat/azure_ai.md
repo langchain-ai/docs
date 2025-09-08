@@ -10,7 +10,7 @@ The AzureAIChatCompletionsModel class uses the Azure AI Foundry SDK. AI Foundry 
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://v03.api.js.langchain.com/classes/_langchain_openai.AzureChatOpenAI.html) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://v03.api.js.langchain.com/classes/_langchain_openai.AzureChatOpenAI.html) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [AzureAIChatCompletionsModel](https://python.langchain.com/api_reference/azure_ai/chat_models/langchain_azure_ai.chat_models.AzureAIChatCompletionsModel.html) | [langchain-azure-ai](https://python.langchain.com/api_reference/langchain_azure_ai/index.html) | ❌ | ✅ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-azure-ai?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-azure-ai?style=flat-square&label=%20) |
 

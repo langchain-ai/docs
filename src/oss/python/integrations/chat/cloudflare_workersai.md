@@ -8,7 +8,7 @@ This will help you get started with CloudflareWorkersAI [chat models](/oss/conce
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/cloudflare) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/cloudflare) | Downloads | Version |
 | :--- | :--- |:-----:|:------------:|:------------------------------------------------------------------------:| :---: | :---: |
 | [ChatCloudflareWorkersAI](https://python.langchain.com/docs/integrations/chat/cloudflare_workersai/) | [langchain-cloudflare](https://pypi.org/project/langchain-cloudflare/) |   ✅   |      ❌       |                                     ❌                                     | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-cloudflare?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-cloudflare?style=flat-square&label=%20) |
 

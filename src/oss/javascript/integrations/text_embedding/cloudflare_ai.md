@@ -8,7 +8,7 @@ This will help you get started with Cloudflare Workers AI [embedding models](/os
 
 ### Integration details
 
-| Class | Package | Local | Py support | Package downloads | Package latest |
+| Class | Package | Local | Py support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [`CloudflareWorkersAIEmbeddings`](https://api.js.langchain.com/classes/langchain_cloudflare.CloudflareWorkersAIEmbeddings.html) | [`@langchain/cloudflare`](https://npmjs.com/@langchain/cloudflare) | ❌ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cloudflare?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cloudflare?style=flat-square&label=%20&) |
 

@@ -14,7 +14,7 @@ Interact with various DeFi protocols. Non-custodial.Tools return *unsigned trans
 
 ### Integration details
 
-| Class                    | Package             | Serializable | JS support |                                         Package latest                                         |
+| Class                    | Package             | Serializable | JS support |                                         Version                                         |
 |:-------------------------|:--------------------| :---: | :---: |:----------------------------------------------------------------------------------------------:|
 | LangchainCompassToolkit  | `langchain-compass` | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-compass?style=flat-square&label=%20) |
 

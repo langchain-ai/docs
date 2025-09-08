@@ -10,7 +10,7 @@ This will help you getting started with ChatMistralAI [chat models](/oss/concept
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/mistralai) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/mistralai) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatMistralAI](https://api.js.langchain.com/classes/langchain_mistralai.ChatMistralAI.html) | [`@langchain/mistralai`](https://www.npmjs.com/package/@langchain/mistralai) | ❌ | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/mistralai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/mistralai?style=flat-square&label=%20&) |
 

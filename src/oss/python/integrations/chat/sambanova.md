@@ -10,7 +10,7 @@ This will help you get started with SambaNovaCloud [chat models](/oss/concepts/c
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatSambaNovaCloud](https://docs.sambanova.ai/cloud/docs/get-started/overview) | [langchain-sambanova](https://python.langchain.com/docs/integrations/providers/sambanova/) | ❌ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_sambanova?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_sambanova?style=flat-square&label=%20) |
 

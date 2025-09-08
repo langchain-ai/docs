@@ -10,7 +10,7 @@ This will help you getting started with Amazon Bedrock Converse [chat models](/o
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/bedrock/#beta-bedrock-converse-api) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/bedrock/#beta-bedrock-converse-api) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [`ChatBedrockConverse`](https://api.js.langchain.com/classes/langchain_aws.ChatBedrockConverse.html) | [`@langchain/aws`](https://npmjs.com/@langchain/aws) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/aws?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/aws?style=flat-square&label=%20&) |
 

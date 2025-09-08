@@ -9,7 +9,7 @@ For a more complex example you can checkout our [customer insights chatbot examp
 
 ### Integration details
 
-| Class | Package | Serializable | JS support |  Package latest |
+| Class | Package | Serializable | JS support |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | TiloresTools | [tilores-langchain](https://pypi.org/project/tilores-langchain/) | ❌ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/tilores-langchain?style=flat-square&label=%20) |
 

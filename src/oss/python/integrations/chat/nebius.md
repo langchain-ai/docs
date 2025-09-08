@@ -10,7 +10,7 @@ This page will help you get started with Nebius AI Studio [chat models](../../co
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatNebius](https://python.langchain.com/api_reference/nebius/chat_models/langchain_nebius.chat_models.ChatNebius.html) | [langchain-nebius](https://python.langchain.com/api_reference/nebius/index.html) | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-nebius?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-nebius?style=flat-square&label=%20) |
 

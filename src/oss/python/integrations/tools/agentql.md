@@ -18,7 +18,7 @@ The following two tools are also bundled as `AgentQLBrowserToolkit` and must be 
 
 ### Integration details
 
-| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/langchain_agentql) |  Package latest |
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/langchain_agentql) |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | AgentQL | langchain-agentql | ❌ | ❌ |  1.0.0 |
 

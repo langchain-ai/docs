@@ -8,7 +8,7 @@ This guide provides a quick overview for getting started with Jina [tool](/oss/i
 
 ### Integration details
 
-| Class | Package | Serializable | JS support |  Package latest |
+| Class | Package | Serializable | JS support |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | [JinaSearch](https://python.langchain.com/api_reference/community/tools/langchain_community.tools.jina_search.tool.JinaSearch.html) | [langchain-community](https://python.langchain.com/api_reference/community/) | ❌ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-community?style=flat-square&label=%20) |
 

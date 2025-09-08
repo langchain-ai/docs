@@ -8,7 +8,7 @@ The `CDP Agentkit` toolkit contains tools that enable an LLM agent to interact w
 
 ### Integration details
 
-| Class | Package | Serializable | JS support |  Package latest |
+| Class | Package | Serializable | JS support |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | CdpToolkit | `cdp-langchain` | ❌ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/cdp-langchain?style=flat-square&label=%20) |
 

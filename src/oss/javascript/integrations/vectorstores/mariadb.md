@@ -18,7 +18,7 @@ This guide provides a quick overview for getting started with mariadb [vector st
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/mariadb/) | Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/mariadb/) | Version |
 | :--- | :--- | :---: | :---: |
 | [`MariaDBStore`](https://api.js.langchain.com/classes/langchain_community_vectorstores_mariadb.MariaDBStore.html) | [`@langchain/community`](https://npmjs.com/@langchain/community) | ✅ | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

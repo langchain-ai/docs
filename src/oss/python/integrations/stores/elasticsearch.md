@@ -10,7 +10,7 @@ The `ElasticsearchEmbeddingsCache` is a `ByteStore` implementation that uses you
 
 ### Integration details
 
-| Class | Package | Local | JS support | Package downloads | Package latest |
+| Class | Package | Local | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [ElasticsearchEmbeddingsCache](https://python.langchain.com/api_reference/elasticsearch/cache/langchain_elasticsearch.cache.ElasticsearchEmbeddingsCache.html) | [langchain-elasticsearch](https://python.langchain.com/api_reference/elasticsearch/index.html) | ✅ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_elasticsearch?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_elasticsearch?style=flat-square&label=%20) |
 

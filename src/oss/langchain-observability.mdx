@@ -2,31 +2,230 @@
 title: Observability
 ---
 
-import AlphaCallout from '/snippets/alpha-lg-callout.mdx';
+import AlphaCallout from '/snippets/alpha-lc-callout.mdx';
 
 <AlphaCallout />
 
-Traces are a series of steps that your application takes to go from input to output. Each of these individual steps is represented by a run. You can use [LangSmith](https://smith.langchain.com/) to visualize these execution steps. To use it, [enable tracing for your application](/oss/langgraph/trace-agent). This enables you to do the following:
+Observability is crucial for understanding how your agents behave in production. With LangChain's `create_agent()`, you get built-in observability through [LangSmith](https://smith.langchain.com/) - a powerful platform for tracing, debugging, evaluating, and monitoring your LLM applications.
 
-* [Debug a locally running application](/langgraph-platform/clone-traces-studio).
-* [Evaluate the application performance](/oss/langgraph/evals).
-* [Monitor the application](https://docs.smith.langchain.com/observability/how_to_guides/dashboards).
+Traces capture every step your agent takes, from the initial user input to the final response, including all tool calls, model interactions, and decision points. This enables you to debug your agents, evaluate performance, and monitor usage.
 
-To get started, sign up for a free account at [LangSmith](https://smith.langchain.com/).
+## Prerequisites
+
+Before you begin, ensure you have the following:
+* A [LangSmith account](https://smith.langchain.com/) (free to sign up)
 
 ## Enable tracing
 
-To enable tracing for your application, set the following environment variables:
+All LangChain agents automatically support LangSmith tracing. To enable it, set the following environment variables:
 
-```python
+```bash
 export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=<your-api-key>
 ```
 
-For more information, see [Trace with LangGraph](https://docs.smith.langchain.com/observability/how_to_guides/trace_with_langgraph).
+<Info>
+You can get your API key from your [LangSmith settings](https://smith.langchain.com/settings).
+</Info>
 
-## Learn more
+## Quick start
 
-* [LangSmith Observability quickstart](https://docs.smith.langchain.com/observability)
-* [Trace with LangGraph](https://docs.smith.langchain.com/observability/how_to_guides/trace_with_langgraph)
-* [Tracing conceptual guide](https://docs.smith.langchain.com/observability/concepts#traces)
+No extra code is needed to log a trace to LangSmith. Just run your agent code as you normally would:
+
+:::python
+```python
+from langchain.agents import create_agent
+
+def send_email(to: str, subject: str, body: str):
+    """Send an email to a recipient."""
+    # ... email sending logic
+    return f"Email sent to {to}"
+
+def search_web(query: str):
+    """Search the web for information."""
+    # ... web search logic
+    return f"Search results for: {query}"
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[send_email, search_web],
+    prompt="You are a helpful assistant that can send emails and search the web."
+)
+
+# Run the agent - all steps will be traced automatically
+response = agent.invoke({
+    "messages": [{"role": "user", "content": "Search for the latest AI news and email a summary to john@example.com"}]
+})
+```
+:::
+
+:::js
+```ts
+import { createAgent } from "@langchain/agents";
+
+function sendEmail(to: string, subject: string, body: string): string {
+    // ... email sending logic
+    return `Email sent to ${to}`;
+}
+
+function searchWeb(query: string): string {
+    // ... web search logic
+    return `Search results for: ${query}`;
+}
+
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [sendEmail, searchWeb],
+    prompt: "You are a helpful assistant that can send emails and search the web."
+});
+
+// Run the agent - all steps will be traced automatically
+const response = await agent.invoke({
+    messages: [{ role: "user", content: "Search for the latest AI news and email a summary to john@example.com" }]
+});
+```
+:::
+
+By default, the trace will be logged to the project with the name `default`. To configure a custom project name, see [Log to a project](#log-to-a-specific-project).
+
+## Trace selectively
+
+You may opt to trace specific invocations or parts of your application using LangSmith's `tracing_context` context manager:
+
+:::python
+```python
+import langsmith as ls
+
+# This WILL be traced
+with ls.tracing_context(enabled=True):
+    agent.invoke({"messages": [{"role": "user", "content": "Send a test email to alice@example.com"}]})
+
+# This will NOT be traced (if LANGSMITH_TRACING is not set)
+agent.invoke({"messages": [{"role": "user", "content": "Send another email"}]})
+```
+:::
+
+:::js
+```ts
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+
+// This WILL be traced
+const tracer = new LangChainTracer();
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send a test email to alice@example.com"}]
+  },
+  { callbacks: [tracer] }
+);
+
+// This will NOT be traced (if LANGSMITH_TRACING is not set)
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send another email"}]
+  }
+);
+```
+:::
+
+## Log to a project
+
+<Accordion title="Statically">
+
+You can set a custom project name for your entire application by setting the `LANGSMITH_PROJECT` environment variable:
+
+```bash
+export LANGSMITH_PROJECT=my-agent-project
+```
+</Accordion>
+
+<Accordion title="Dynamically">
+
+You can set the project name programmatically for specific operations:
+
+:::python
+```python
+import langsmith as ls
+
+with ls.tracing_context(project_name="email-agent-test", enabled=True):
+    response = agent.invoke({
+        "messages": [{"role": "user", "content": "Send a welcome email"}]
+    })
+```
+:::
+
+:::js
+```ts
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+
+const tracer = new LangChainTracer({ projectName: "email-agent-test" });
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send a test email to alice@example.com"}]
+  },
+  { callbacks: [tracer] }
+);
+```
+:::
+</Accordion>
+
+## Add metadata to traces
+
+You can annotate your traces with custom metadata and tags:
+
+:::python
+```python
+response = agent.invoke(
+    {"messages": [{"role": "user", "content": "Send a welcome email"}]},
+    config={
+        "tags": ["production", "email-assistant", "v1.0"],
+        "metadata": {
+            "user_id": "user_123",
+            "session_id": "session_456",
+            "environment": "production"
+        }
+    }
+)
+```
+
+`tracing_context` also accepts tags and metadata for fine-grained control:
+
+```python
+with ls.tracing_context(
+    project_name="email-agent-test", 
+    enabled=True, 
+    tags=["production", "email-assistant", "v1.0"], 
+    metadata={"user_id": "user_123", "session_id": "session_456", "environment": "production"}):
+    response = agent.invoke(
+        {"messages": [{"role": "user", "content": "Send a welcome email"}]}
+    )
+```
+:::
+
+:::js
+```ts
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+
+const tracer = new LangChainTracer({ projectName: "email-agent-test" });
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send a test email to alice@example.com"}]
+  },
+  config: {
+    tags: ["production", "email-assistant", "v1.0"],
+    metadata: {
+      userId: "user123",
+      sessionId: "session456",
+      environment: "production"
+    }
+  },
+);
+
+```
+:::
+
+This custom metadata and tags will be attached to the trace in LangSmith.
+
+
+<Tip>
+To learn more about how to use traces to debug, evaluate, and monitor your agents, see the [LangSmith documentation](/langsmith/home).
+</Tip>

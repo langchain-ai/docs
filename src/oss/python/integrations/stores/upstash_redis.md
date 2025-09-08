@@ -12,7 +12,7 @@ To use the base `RedisStore` instead, see [this guide](/oss/integrations/stores/
 
 ### Integration details
 
-| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/upstash_redis_storage) | Package downloads | Package latest |
+| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/upstash_redis_storage) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [UpstashRedisByteStore](https://python.langchain.com/api_reference/community/storage/langchain_community.storage.upstash_redis.UpstashRedisByteStore.html) | [langchain-community](https://python.langchain.com/api_reference/community/index.html) | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_community?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_community?style=flat-square&label=%20) |
 

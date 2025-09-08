@@ -10,7 +10,7 @@ This guide will help you getting started with ChatOpenAI [chat models](/oss/conc
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/openai) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/openai) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatOpenAI](https://api.js.langchain.com/classes/langchain_openai.ChatOpenAI.html) | [`@langchain/openai`](https://www.npmjs.com/package/@langchain/openai) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/openai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/openai?style=flat-square&label=%20&) |
 

@@ -26,7 +26,7 @@ Ollama bundles model weights, configuration, and data into a single package, def
 This example goes over how to use LangChain to interact with an Ollama-run Llama 2 7b instance.
 For a complete list of supported models and model variants, see the [Ollama model library](https://github.com/jmorganca/ollama#model-library).
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/ollama/) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/ollama/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [`Ollama`](https://api.js.langchain.com/classes/langchain_ollama.Ollama.html) | [`@langchain/ollama`](https://npmjs.com/@langchain/ollama) | ✅ | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/ollama?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/ollama?style=flat-square&label=%20&) |
 

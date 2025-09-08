@@ -32,7 +32,7 @@ title: Scrapeless Scraping API
 
 ### Integration details
 
-| Class | Package | Serializable | JS support |  Package latest |
+| Class | Package | Serializable | JS support |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | [ScrapelessDeepSerpGoogleSearchTool](https://pypi.org/project/langchain-scrapeless/) | [langchain-scrapeless](https://pypi.org/project/langchain-scrapeless/) | ✅ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-scrapeless?style=flat-square&label=%20) |
 | [ScrapelessDeepSerpGoogleTrendsTool](https://pypi.org/project/langchain-scrapeless/) | [langchain-scrapeless](https://pypi.org/project/langchain-scrapeless/) | ✅ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-scrapeless?style=flat-square&label=%20) |

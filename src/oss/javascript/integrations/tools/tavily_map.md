@@ -10,7 +10,7 @@ This guide provides a quick overview for getting started with the Tavily [tool](
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/tools/tavily_search/) | Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/tools/tavily_search/) | Version |
 | :--- | :--- | :---: | :---: |
 | [TavilyMap](https://api.js.langchain.com/classes/_langchain_tavily.TavilyMap.html) | [`@langchain/tavily`](https://www.npmjs.com/package/@langchain/tavily) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/tavily?style=flat-square&label=%20&) |
 

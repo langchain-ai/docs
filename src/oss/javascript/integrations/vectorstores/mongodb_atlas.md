@@ -22,7 +22,7 @@ This guide provides a quick overview for getting started with MongoDB Atlas [vec
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/mongodb_atlas/) |  Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/mongodb_atlas/) |  Version |
 | :--- | :--- | :---: | :---: |
 | [`MongoDBAtlasVectorSearch`](https://api.js.langchain.com/classes/langchain_mongodb.MongoDBAtlasVectorSearch.html) | [`@langchain/mongodb`](https://www.npmjs.com/package/@langchain/mongodb) | ✅ | ![NPM - Version](https://img.shields.io/npm/v/@langchain/mongodb?style=flat-square&label=%20&) |
 

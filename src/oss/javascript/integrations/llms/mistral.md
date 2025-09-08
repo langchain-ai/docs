@@ -25,7 +25,7 @@ This will help you get started with MistralAI completion models (LLMs) using Lan
 
 ### Integration details
 
-| Class | Package | Local | Serializable | PY support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | PY support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [MistralAI](https://api.js.langchain.com/classes/langchain_mistralai.MistralAI.html) | [`@langchain/mistralai`](https://www.npmjs.com/package/@langchain/mistralai) | ❌ | ✅ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/mistralai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/mistralai?style=flat-square&label=%20&) |
 

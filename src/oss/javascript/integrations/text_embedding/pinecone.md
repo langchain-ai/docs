@@ -8,7 +8,7 @@ This will help you get started with PineconeEmbeddings [embedding models](/oss/c
 
 ### Integration details
 
-| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/pinecone/) | Package downloads | Package latest |
+| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/pinecone/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [PineconeEmbeddings](https://api.js.langchain.com/classes/_langchain_pinecone.PineconeEmbeddings.html) | [@langchain/pinecone](https://api.js.langchain.com/classes/_langchain_pinecone.PineconeEmbeddings.html) | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/pinecone?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/pinecone?style=flat-square&label=%20&) |
 

@@ -8,7 +8,7 @@ This will help you get started with Goodfire [chat models](/oss/concepts/chat_mo
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatGoodfire](https://python.langchain.com/api_reference/goodfire/chat_models/langchain_goodfire.chat_models.ChatGoodfire.html) | [langchain-goodfire](https://python.langchain.com/api_reference/goodfire/) | ❌ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-goodfire?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-goodfire?style=flat-square&label=%20) |
 

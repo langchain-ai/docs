@@ -10,7 +10,7 @@ This guide provides a quick overview for getting started with LinkupSearchTool [
 
 ### Integration details
 
-| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/linkup_search) |  Package latest |
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/linkup_search) |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | [LinkupSearchTool](https://python.langchain.com/api_reference/linkup/tools/linkup_langchain.search_tool.LinkupSearchTool.html) | [langchain-linkup](https://python.langchain.com/api_reference/linkup/index.html) | ❌ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-linkup?style=flat-square&label=%20) |
 

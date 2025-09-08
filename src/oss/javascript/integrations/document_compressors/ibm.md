@@ -8,7 +8,7 @@ This will help you getting started with the [Watsonx document compressor](/oss/c
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/retrievers/ibm_watsonx_ranker/) | Package downloads | Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/retrievers/ibm_watsonx_ranker/) | Downloads | Version |
 | :--- | :--- | :---: | :---: | :---: |
 | [`WatsonxRerank`](https://api.js.langchain.com/classes/_langchain_community.document_compressors_ibm.WatsonxRerank.html) | [@langchain/community](https://www.npmjs.com/package/@langchain/community) |  ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

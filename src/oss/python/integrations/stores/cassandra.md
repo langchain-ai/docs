@@ -10,7 +10,7 @@ This will help you get started with Cassandra [key-value stores](/oss/concepts/k
 
 ### Integration details
 
-| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/cassandra_storage) | Package downloads | Package latest |
+| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/cassandra_storage) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [CassandraByteStore](https://python.langchain.com/api_reference/community/storage/langchain_community.storage.cassandra.CassandraByteStore.html) | [langchain-community](https://python.langchain.com/api_reference/community/index.html) | ✅ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_community?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_community?style=flat-square&label=%20) |
 

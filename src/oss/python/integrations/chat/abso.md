@@ -10,7 +10,7 @@ This will help you get started with ChatAbso [chat models](https://python.langch
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/abso) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/abso) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatAbso](https://python.langchain.com/api_reference/en/latest/chat_models/langchain_abso.chat_models.ChatAbso.html) | [langchain-abso](https://python.langchain.com/api_reference/en/latest/abso_api_reference.html) | ❌ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-abso?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-abso?style=flat-square&label=%20) |
 

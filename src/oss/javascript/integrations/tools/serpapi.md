@@ -10,7 +10,7 @@ This guide provides a quick overview for getting started with the SerpAPI [tool]
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/tools/serpapi/) | Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/tools/serpapi/) | Version |
 | :--- | :--- | :---: | :---: |
 | [SerpAPI](https://api.js.langchain.com/classes/_langchain_community.tools_serpapi.SerpAPI.html) | [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

@@ -12,7 +12,7 @@ First, get an Valyu API key and add it as an environment variable. Get $10 free 
 
 ### Integration details
 
-| Class                                                         | Package                                                        | Serializable | JS support |  Package latest |
+| Class                                                         | Package                                                        | Serializable | JS support |  Version |
 |:--------------------------------------------------------------|:---------------------------------------------------------------| :---: | :---: | :---: |
 | [Valyu Search](https://github.com/valyu-network/langchain-valyu) | [langchain-valyu](https://pypi.org/project/langchain-valyu/) | ✅ | ❌  |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-valyu?style=flat-square&label=%20) |
 

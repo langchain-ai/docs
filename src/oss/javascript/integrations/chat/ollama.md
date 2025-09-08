@@ -16,7 +16,7 @@ Ollama allows you to use a wide range of models with different capabilities. Som
 
 For a complete list of supported models and model variants, see the [Ollama model library](https://ollama.com/search) and search by tag.
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ollama) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ollama) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatOllama](https://api.js.langchain.com/classes/langchain_ollama.ChatOllama.html) | [`@langchain/ollama`](https://www.npmjs.com/package/@langchain/ollama) | ✅ | beta | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/ollama?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/ollama?style=flat-square&label=%20&) |
 

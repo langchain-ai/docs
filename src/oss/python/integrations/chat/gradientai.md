@@ -8,7 +8,7 @@ This will help you getting started with DigitalOcean Gradient Chat Models.
 
 ### Integration details
 
-| Class | Package | Package downloads | Package latest |
+| Class | Package | Downloads | Version |
 | :--- | :--- | :---: | :---: |
 | [DigitalOcean Gradient](https://python.langchain.com/docs/api_reference/llms/langchain_gradient.llms.LangchainGradient/) | [langchain-gradient](https://python.langchain.com/docs/api_reference/langchain-gradient_api_reference/) | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-gradient?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-gradient?style=flat-square&label=%20) |
 

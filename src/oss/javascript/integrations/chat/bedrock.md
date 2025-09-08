@@ -16,7 +16,7 @@ The newer [`ChatBedrockConverse` chat model is now available via the dedicated `
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/bedrock/) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/bedrock/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [`BedrockChat`](https://api.js.langchain.com/classes/langchain_community_chat_models_bedrock.BedrockChat.html) | [`@langchain/community`](https://npmjs.com/@langchain/community) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

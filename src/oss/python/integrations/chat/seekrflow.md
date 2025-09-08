@@ -12,7 +12,7 @@ This guide provides a quick overview for getting started with Seekr [chat models
 
 ### Integration Details
 
-| Class | Package | Local | Serializable | Package downloads | Package latest |
+| Class | Package | Local | Serializable | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [ChatSeekrFlow](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.seekrflow.ChatSeekrFlow.html) | [seekrai](https://python.langchain.com/docs/integrations/providers/seekr/) | ❌ | beta | ![PyPI - Downloads](https://img.shields.io/pypi/dm/seekrai?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/seekrai?style=flat-square&label=%20) |
 

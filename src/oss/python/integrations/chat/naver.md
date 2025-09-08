@@ -10,7 +10,7 @@ This guide provides a quick overview for getting started with Naver’s HyperCLO
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
 | :--- | :--- |:-----:| :---: |:------------------------------------------------------------------------:| :---: | :---: |
 | [ChatClovaX](https://guide.ncloud-docs.com/docs/clovastudio-dev-langchain#HyperCLOVAX%EB%AA%A8%EB%8D%B8%EC%9D%B4%EC%9A%A9) | [langchain-naver](https://pypi.org/project/langchain-naver/) |   ❌   | ❌ |                                    ❌                                     | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_naver?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_naver?style=flat-square&label=%20) |
 

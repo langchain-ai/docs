@@ -23,7 +23,7 @@ These can be wrapped as **LangChain Tools** for an LLM-based agent to call them 
 
 ### Integration details
 
-| Class | Package | Serializable | JS support | Package latest |
+| Class | Package | Serializable | JS support | Version |
 | :--- | :--- | :---: | :---: | :--- |
 | PaymanAI | `langchain_community` | ❌ | ❌ | [PyPI Version] |
 

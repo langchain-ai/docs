@@ -10,7 +10,7 @@ This notebook shows how to use [watsonx's rerank endpoint](https://cloud.ibm.com
 
 ### Integration details
 
-| Class | Package | [JS support](https://js.langchain.com/docs/integrations/document_compressors/ibm/) | Package downloads | Package latest |
+| Class | Package | [JS support](https://js.langchain.com/docs/integrations/document_compressors/ibm/) | Downloads | Version |
 | :--- | :--- | :---: | :---: | :---: |
 | [WatsonxRerank](https://python.langchain.com/api_reference/ibm/rerank/langchain_ibm.rerank.WatsonxRerank.html) | [langchain-ibm](https://python.langchain.com/api_reference/ibm/index.html) | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-ibm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-ibm?style=flat-square&label=%20) |
 

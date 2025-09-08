@@ -8,7 +8,7 @@ title: Tavily Search
 
 ### Integration details
 
-| Class                                                         | Package                                                        | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/tavily_search) |  Package latest |
+| Class                                                         | Package                                                        | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/tavily_search) |  Version |
 |:--------------------------------------------------------------|:---------------------------------------------------------------| :---: | :---: | :---: |
 | [TavilySearch](https://github.com/tavily-ai/langchain-tavily) | [langchain-tavily](https://pypi.org/project/langchain-tavily/) | ✅ | ✅  |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-tavily?style=flat-square&label=%20) |
 

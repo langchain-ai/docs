@@ -12,7 +12,7 @@ This will help you get started with Astra DB [key-value stores](/oss/concepts/ke
 
 ### Integration details
 
-| Class | Package | Local | JS support | Package downloads | Package latest |
+| Class | Package | Local | JS support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [AstraDBByteStore](https://python.langchain.com/api_reference/astradb/storage/langchain_astradb.storage.AstraDBByteStore.html) | [langchain-astradb](https://python.langchain.com/api_reference/astradb/index.html) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_astradb?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_astradb?style=flat-square&label=%20) |
 

@@ -8,7 +8,7 @@ This will help you get started with Google Generative AI [embedding models](/oss
 
 ### Integration details
 
-| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/google_generative_ai/) | Package downloads | Package latest |
+| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/google_generative_ai/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [`GoogleGenerativeAIEmbeddings`](https://api.js.langchain.com/classes/langchain_google_genai.GoogleGenerativeAIEmbeddings.html) | [`@langchain/google-genai`](https://npmjs.com/@langchain/google-genai) | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/google-genai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/google-genai?style=flat-square&label=%20&) |
 

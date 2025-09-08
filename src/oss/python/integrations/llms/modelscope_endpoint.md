@@ -9,7 +9,7 @@ ModelScope ([Home](https://www.modelscope.cn/) | [GitHub](https://github.com/mod
 
 ### Integration details
 
-| Provider  | Class | Package | Local | Serializable | Package downloads | Package latest |
+| Provider  | Class | Package | Local | Serializable | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ModelScope](/oss/integrations/providers/modelscope/) | ModelScopeEndpoint | [langchain-modelscope-integration](https://pypi.org/project/langchain-modelscope-integration/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-modelscope-integration?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-modelscope-integration?style=flat-square&label=%20) |
 

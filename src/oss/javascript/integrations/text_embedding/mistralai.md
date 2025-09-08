@@ -8,7 +8,7 @@ This will help you get started with MistralAIEmbeddings [embedding models](/oss/
 
 ### Integration details
 
-| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/mistralai/) | Package downloads | Package latest |
+| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/mistralai/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [MistralAIEmbeddings](https://api.js.langchain.com/classes/langchain_mistralai.MistralAIEmbeddings.html) | [@langchain/mistralai](https://api.js.langchain.com/modules/langchain_mistralai.html) | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/mistralai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/mistralai?style=flat-square&label=%20&) |
 

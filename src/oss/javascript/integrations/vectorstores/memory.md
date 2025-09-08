@@ -12,7 +12,7 @@ This guide provides a quick overview for getting started with in-memory [`vector
 
 ### Integration details
 
-| Class | Package | PY support |  Package latest |
+| Class | Package | PY support |  Version |
 | :--- | :--- | :---: | :---: |
 | [`MemoryVectorStore`](https://api.js.langchain.com/classes/langchain.vectorstores_memory.MemoryVectorStore.html) | [`langchain`](https://www.npmjs.com/package/langchain) | ❌ |  ![NPM - Version](https://img.shields.io/npm/v/langchain?style=flat-square&label=%20&) |
 

@@ -12,7 +12,7 @@ This page goes over how to use `ExaSearchResults` with LangChain.
 
 ### Integration details
 
-| Class | Package | Serializable | [PY support](https://python.langchain.com/docs/integrations/tools/exa_search/) |  Package latest |
+| Class | Package | Serializable | [PY support](https://python.langchain.com/docs/integrations/tools/exa_search/) |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | [ExaSearchResults](https://api.js.langchain.com/classes/langchain_exa.ExaSearchResults.html) | [@langchain/exa](https://npmjs.com/package/@langchain/exa) | ❌ | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/exa?style=flat-square&label=%20&) |
 

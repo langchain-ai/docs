@@ -13,7 +13,7 @@ This will help you get started with DeepSeek's hosted [chat models](/oss/concept
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/deepseek) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/deepseek) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatDeepSeek](https://python.langchain.com/api_reference/deepseek/chat_models/langchain_deepseek.chat_models.ChatDeepSeek.html) | [langchain-deepseek](https://python.langchain.com/api_reference/deepseek/) | ❌ | beta | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-deepseek?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-deepseek?style=flat-square&label=%20) |
 

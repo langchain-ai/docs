@@ -10,7 +10,7 @@ This will help you get started with FeatherlessAi [chat models](/oss/concepts/ch
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/__package_name_short_snake__) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/__package_name_short_snake__) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatFeatherlessAi](https://python.langchain.com/api_reference/__package_name_short_snake__/chat_models/__module_name__.chat_models.ChatFeatherlessAi.html) | [langchain-featherless-ai](https://python.langchain.com/api_reference/__package_name_short_snake__/) | ✅ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-featherless-ai?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-featherless-ai?style=flat-square&label=%20) |
 

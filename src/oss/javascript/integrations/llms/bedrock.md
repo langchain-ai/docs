@@ -24,7 +24,7 @@ This will help you get started with Bedrock completion models (LLMs) using LangC
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/bedrock) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/bedrock) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [Bedrock](https://api.js.langchain.com/classes/langchain_community_llms_bedrock.Bedrock.html) | [@langchain/community](https://api.js.langchain.com/modules/langchain_community_llms_bedrock.html) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

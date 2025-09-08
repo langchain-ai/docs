@@ -8,7 +8,7 @@ This will help you get started with IBM watsonx.ai [embedding models](/oss/conce
 
 ### Integration details
 
-| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/ibm_watsonx/) | Package downloads | Package latest |
+| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/ibm_watsonx/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [`WatsonxEmbeddings`](https://api.js.langchain.com/classes/_langchain_community.embeddings_ibm.WatsonxEmbeddings.html) | [@langchain/community](https://www.npmjs.com/package/@langchain/community)| ❌ | ✅  | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

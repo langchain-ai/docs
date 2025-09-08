@@ -30,7 +30,7 @@ This integration contains two main classes:
 
 ### Integration details
 
-| Class | Package | Local | Serializable | JS support| Package downloads | Package latest |
+| Class | Package | Local | Serializable | JS support| Downloads | Version |
 | :---  | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatLiteLLM](https://python.langchain.com/docs/integrations/chat/litellm/#chatlitellm) | [langchain-litellm](https://pypi.org/project/langchain-litellm/)| ❌ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-litellm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-litellm?style=flat-square&label=%20) |
 | [ChatLiteLLMRouter](https://python.langchain.com/docs/integrations/chat/litellm/#chatlitellmrouter) | [langchain-litellm](https://pypi.org/project/langchain-litellm/)| ❌ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-litellm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-litellm?style=flat-square&label=%20) |

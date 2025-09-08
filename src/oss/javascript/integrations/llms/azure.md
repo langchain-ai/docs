@@ -29,7 +29,7 @@ This will help you get started with AzureOpenAI completion models (LLMs) using L
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/azure_openai) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/llms/azure_openai) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [AzureOpenAI](https://api.js.langchain.com/classes/langchain_openai.AzureOpenAI.html) | [@langchain/openai](https://api.js.langchain.com/modules/langchain_openai.html) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/openai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/openai?style=flat-square&label=%20&) |
 

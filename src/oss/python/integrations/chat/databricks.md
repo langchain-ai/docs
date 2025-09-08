@@ -12,7 +12,7 @@ This guide provides a quick overview for getting started with Databricks [chat m
 
 ### Integration details
 
-| Class | Package | Local | Serializable | Package downloads | Package latest |
+| Class | Package | Local | Serializable | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [ChatDatabricks](https://python.langchain.com/api_reference/community/chat_models/langchain_community.chat_models.databricks.ChatDatabricks.html) | [databricks-langchain](https://python.langchain.com/docs/integrations/providers/databricks/) | ❌ | beta | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-databricks?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-databricks?style=flat-square&label=%20) |
 

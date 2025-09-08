@@ -12,7 +12,7 @@ The Arcjet Redact object is not an LLM itself, instead it wraps an LLM. It redac
 
 ### Integration details
 
-| Class | Package | Local | Serializable | PY Support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | PY Support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | Arcjet | @langchain/community | ❌ | ✅ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

@@ -22,7 +22,7 @@ For more information about Cerebras Cloud, visit [cloud.cerebras.ai](https://clo
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/cerebras) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/cerebras) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatCerebras](https://python.langchain.com/api_reference/cerebras/chat_models/langchain_cerebras.chat_models.ChatCerebras.html#) | [langchain-cerebras](https://python.langchain.com/api_reference/cerebras/index.html) | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-cerebras?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-cerebras?style=flat-square&label=%20) |
 

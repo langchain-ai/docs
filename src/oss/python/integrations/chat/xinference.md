@@ -9,7 +9,7 @@ speech recognition models, and multimodal models, even on your laptop. It suppor
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support] | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support] | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | ChatXinference| langchain-xinference | ✅ | ❌ | ✅ | ✅ | ✅ |
 

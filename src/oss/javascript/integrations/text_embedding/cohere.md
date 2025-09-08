@@ -8,7 +8,7 @@ This will help you get started with CohereEmbeddings [embedding models](/oss/con
 
 ### Integration details
 
-| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/cohere/) | Package downloads | Package latest |
+| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/cohere/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [CohereEmbeddings](https://api.js.langchain.com/classes/langchain_cohere.CohereEmbeddings.html) | [@langchain/cohere](https://api.js.langchain.com/modules/langchain_cohere.html) | ❌ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/cohere?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/cohere?style=flat-square&label=%20&) |
 

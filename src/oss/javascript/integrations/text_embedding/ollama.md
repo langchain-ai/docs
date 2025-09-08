@@ -8,7 +8,7 @@ This will help you get started with Ollama [embedding models](/oss/concepts/embe
 
 ### Integration details
 
-| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/ollama/) | Package downloads | Package latest |
+| Class | Package | Local | [Py support](https://python.langchain.com/docs/integrations/text_embedding/ollama/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [`OllamaEmbeddings`](https://api.js.langchain.com/classes/langchain_ollama.OllamaEmbeddings.html) | [`@langchain/ollama`](https://npmjs.com/@langchain/ollama) | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/ollama?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/ollama?style=flat-square&label=%20&) |
 

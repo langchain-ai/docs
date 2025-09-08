@@ -13,7 +13,7 @@ For more information about ScrapeGraph AI:
 
 ### Integration details
 
-| Class | Package | Serializable | JS support | Package latest |
+| Class | Package | Serializable | JS support | Version |
 | :--- | :--- | :---: | :---: | :---: |
 | [SmartScraperTool](https://python.langchain.com/docs/integrations/tools/scrapegraph) | langchain-scrapegraph | ✅ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-scrapegraph?style=flat-square&label=%20) |
 | [SmartCrawlerTool](https://python.langchain.com/docs/integrations/tools/scrapegraph) | langchain-scrapegraph | ✅ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-scrapegraph?style=flat-square&label=%20) |

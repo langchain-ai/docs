@@ -10,7 +10,7 @@ DuckDuckGoSearch offers a privacy-focused search API designed for LLM Agents. It
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/tools/ddg/) | Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/tools/ddg/) | Version |
 | :--- | :--- | :---: | :---: |
 | [DuckDuckGoSearch](https://api.js.langchain.com/classes/langchain_community_tools_duckduckgo_search.DuckDuckGoSearch.html) | [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

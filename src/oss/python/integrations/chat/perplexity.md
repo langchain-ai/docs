@@ -9,7 +9,7 @@ This page will help you get started with Perplexity [chat models](../../concepts
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/xai) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/xai) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatPerplexity](https://python.langchain.com/api_reference/perplexity/chat_models/langchain_perplexity.chat_models.ChatPerplexity.html) | [langchain-perplexity](https://python.langchain.com/api_reference/perplexity/perplexity.html) | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-perplexity?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-perplexity?style=flat-square&label=%20) |
 

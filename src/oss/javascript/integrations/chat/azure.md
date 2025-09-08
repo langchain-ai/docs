@@ -10,7 +10,7 @@ This will help you getting started with AzureChatOpenAI [chat models](/oss/conce
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/azure_chat_openai) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/azure_chat_openai) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [AzureChatOpenAI](https://api.js.langchain.com/classes/langchain_openai.AzureChatOpenAI.html) | [`@langchain/openai`](https://www.npmjs.com/package/@langchain/openai) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/openai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/openai?style=flat-square&label=%20&) |
 

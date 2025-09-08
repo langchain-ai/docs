@@ -10,7 +10,7 @@ The `InMemoryByteStore` is a non-persistent implementation of a `ByteStore` that
 
 ### Integration details
 
-| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/in_memory/) | Package downloads | Package latest |
+| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/in_memory/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [InMemoryByteStore](https://python.langchain.com/api_reference/core/stores/langchain_core.stores.InMemoryByteStore.html) | [langchain-core](https://python.langchain.com/api_reference/core/index.html) | ✅ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_core?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_core?style=flat-square&label=%20) |
 

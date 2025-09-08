@@ -8,7 +8,7 @@ This guide provides a quick overview for getting started with Writer [tools](htt
 
 ### Integration details
 
-| Class                                                                                                      | Package          | Local | Serializable | JS support |                                        Package downloads                                         |                                        Package latest                                         |
+| Class                                                                                                      | Package          | Local | Serializable | JS support |                                        Downloads                                         |                                        Version                                         |
 |:-----------------------------------------------------------------------------------------------------------|:-----------------| :---: | :---: |:----------:|:------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------:|
 | [GraphTool](https://github.com/writer/langchain-writer/blob/main/langchain_writer/tools.py#L9) | [langchain-writer](https://pypi.org/project/langchain-writer/) |      ❌       |                                       ❌                                       | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-writer?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-writer?style=flat-square&label=%20) |
 

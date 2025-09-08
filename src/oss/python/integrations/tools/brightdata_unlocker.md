@@ -8,7 +8,7 @@ title: BrightDataUnlocker
 
 ### Integration details
 
-|Class|Package|Serializable|JS support|Package latest|
+|Class|Package|Serializable|JS support|Version|
 |:--|:--|:-:|:-:|:-:|
 |[BrightDataUnlocker](https://pypi.org/project/langchain-brightdata/)|[langchain-brightdata](https://pypi.org/project/langchain-brightdata/)|✅|❌|![PyPI - Version](https://img.shields.io/pypi/v/langchain-brightdata?style=flat-square&label=%20)|
 

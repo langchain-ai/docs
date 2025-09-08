@@ -10,7 +10,7 @@ This guide will help you getting started with `ChatTogetherAI` [chat models](/os
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/togetherai) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/togetherai) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatTogetherAI](https://api.js.langchain.com/classes/langchain_community_chat_models_togetherai.ChatTogetherAI.html) | [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

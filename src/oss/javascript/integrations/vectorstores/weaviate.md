@@ -10,7 +10,7 @@ This guide provides a quick overview for getting started with Weaviate [vector s
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/weaviate/) |  Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/weaviate/) |  Version |
 | :--- | :--- | :---: | :---: |
 | [`WeaviateStore`](https://api.js.langchain.com/classes/langchain_weaviate.WeaviateStore.html) | [`@langchain/weaviate`](https://npmjs.com/@langchain/weaviate) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/weaviate?style=flat-square&label=%20&) |
 

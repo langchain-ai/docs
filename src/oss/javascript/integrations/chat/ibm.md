@@ -8,7 +8,7 @@ This will help you getting started with IBM watsonx.ai [chat models](/oss/concep
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ibm_watsonx/) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ibm_watsonx/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [`ChatWatsonx`](https://api.js.langchain.com/classes/_langchain_community.chat_models_ibm.ChatWatsonx.html) | [@langchain/community](https://www.npmjs.com/package/@langchain/community) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 

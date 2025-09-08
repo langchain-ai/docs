@@ -41,7 +41,7 @@ Make sure that the path you specify when initializing the store is free of other
 
 ### Integration details
 
-| Class | Package | Local | [PY support](https://python.langchain.com/docs/integrations/stores/file_system/) | Package downloads | Package latest |
+| Class | Package | Local | [PY support](https://python.langchain.com/docs/integrations/stores/file_system/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [LocalFileStore](https://api.js.langchain.com/classes/langchain.storage_file_system.LocalFileStore.html) | [langchain](https://api.js.langchain.com/modules/langchain.storage_file_system.html) | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/langchain?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/langchain?style=flat-square&label=%20&) |
 

@@ -10,7 +10,7 @@ The `LocalFileStore` is a persistent implementation of `ByteStore` that stores e
 
 ### Integration details
 
-| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/file_system) | Package downloads | Package latest |
+| Class | Package | Local | [JS support](https://js.langchain.com/docs/integrations/stores/file_system) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: |
 | [LocalFileStore](https://python.langchain.com/api_reference/langchain/storage/langchain.storage.file_system.LocalFileStore.html) | [langchain](https://python.langchain.com/api_reference/langchain/index.html) | ✅ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain?style=flat-square&label=%20) |
 

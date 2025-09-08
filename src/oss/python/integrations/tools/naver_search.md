@@ -6,7 +6,7 @@ The Naver Search Tool provides a simple interface to search Naver and get result
 
 ### Integration details
 
-| Class | Package | Serializable | JS support |  Package latest |
+| Class | Package | Serializable | JS support |  Version |
 | :--- | :--- | :---: | :---: | :---: |
 | NaverSearchResults | [langchain-naver-community](https://pypi.org/project/langchain-naver-community/) | ❌ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-naver-community?style=flat-square&label=%20) |
 

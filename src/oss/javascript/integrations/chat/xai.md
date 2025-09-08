@@ -10,7 +10,7 @@ This guide will help you getting started with `ChatXAI` [chat models](/oss/conce
 
 ### Integration details
 
-| Class | Package | Local | Serializable | PY support | Package downloads | Package latest |
+| Class | Package | Local | Serializable | PY support | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatXAI](https://api.js.langchain.com/classes/_langchain_xai.ChatXAI.html) | [`@langchain/xai`](https://www.npmjs.com/package/@langchain/xai) | ❌ | ✅ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/xai?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/xai?style=flat-square&label=%20&) |
 

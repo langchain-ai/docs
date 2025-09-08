@@ -10,7 +10,7 @@ This will help you getting started with Anthropic [chat models](/oss/concepts/ch
 
 ### Integration details
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/anthropic/) | Package downloads | Package latest |
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/anthropic/) | Downloads | Version |
 | :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
 | [ChatAnthropic](https://api.js.langchain.com/classes/langchain_anthropic.ChatAnthropic.html) | [`@langchain/anthropic`](https://www.npmjs.com/package/@langchain/anthropic) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/anthropic?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/anthropic?style=flat-square&label=%20&) |
 

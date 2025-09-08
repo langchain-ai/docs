@@ -1,0 +1,876 @@
+---
+title: Middleware
+---
+
+
+Middleware provides a way to more tightly control what happens inside the agent.
+
+The core agent loop involves calling a `model`, letting it choose `tools` to execute, and then finishing when it calls no more tools.
+
+
+<Card>
+```mermaid
+%%{
+  init: {
+    "fontFamily": "monospace",
+    "flowchart": {
+      "curve": "curve"
+    },
+    "themeVariables": {"edgeLabelBackground": "transparent"}
+  }
+}%%
+graph TD
+  %% Outside the agent
+  QUERY([input])
+  LLM{model}
+  TOOL(tools)
+  ANSWER([output])
+
+  %% Main flows (no inline labels)
+  QUERY --> LLM
+  LLM --"action"--> TOOL
+  TOOL --"observation"--> LLM
+  LLM --"finish"--> ANSWER
+
+  classDef blueHighlight fill:#0a1c25,stroke:#0a455f,color:#bae6fd;
+  classDef greenHighlight fill:#0b1e1a,stroke:#0c4c39,color:#9ce4c4;
+  class QUERY blueHighlight;
+  class ANSWER blueHighlight;
+```
+</Card>
+
+Middleware provides control over what happens before and after those steps.
+Each middleware can add in three different types of modifiers:
+
+:::python
+- `Middleware.before_model`: runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+- `Middleware.modify_model_request`: runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
+- `Middleware.after_model`: runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `END`)
+:::
+:::js
+- `Middleware.beforeModel`: runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+- `Middleware.modifyModelRequest`: runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
+- `Middleware.afterModel`: runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+:::
+
+:::python
+An agent can contain `before_model`, `modify_model_request`, or `after_model` middleware. All three do not need to be implemented.
+:::
+:::js
+An agent can contain multiple middleware. Each middleware does not need to implement all three of `beforeModel`, `modifyModelRequest`, `afterModel`.
+:::
+
+<Card>
+```mermaid
+%%{
+  init: {
+    "fontFamily": "monospace",
+    "flowchart": {
+      "curve": "curve"
+    },
+    "themeVariables": {"edgeLabelBackground": "transparent"}
+  }
+}%%
+graph TD
+  %% Outside the agent
+  QUERY([input])
+  BEFORE_MODEL(Middleware.before_model)
+  MODIFY_MODEL_REQUEST(Middleware.modify_model_request)
+  LLM{model}
+  AFTER_MODEL(Middleware.after_model)
+  TOOL(tools)
+  ANSWER([output])
+
+  %% Main flows (no inline labels)
+  QUERY --> BEFORE_MODEL
+  BEFORE_MODEL --> MODIFY_MODEL_REQUEST
+  MODIFY_MODEL_REQUEST --> LLM
+  LLM --> AFTER_MODEL
+  AFTER_MODEL --"action"--> TOOL
+  TOOL --"observation"--> LLM
+  LLM --"finish"--> ANSWER
+
+  classDef blueHighlight fill:#0a1c25,stroke:#0a455f,color:#bae6fd;
+  classDef greenHighlight fill:#0b1e1a,stroke:#0c4c39,color:#9ce4c4;
+  class QUERY blueHighlight;
+  class ANSWER blueHighlight;
+```
+</Card>
+
+## Using in an agent
+
+:::python
+You can use middleware in an agent by passing it `create_agent`:
+```python
+from langchain.agents import create_agent
+from langchain.middleware import SummarizationMiddleware, HumanInTheLoopMiddleware
+
+agent = create_agent(
+    ...,
+    middleware=[SummarizationMiddleware(), HumanInTheLoopMiddleware()],
+    ...
+)
+```
+:::
+:::js
+```typescript
+import { createAgent } from "langchain";
+import { summarizationMiddleware, humanInTheLoopMiddleware } from "langchain/middleware";
+
+const agent = createAgent({
+    // ...
+    middleware: [summarizationMiddleware, humanInTheLoopMiddleware],
+    // ...
+});
+```
+:::
+
+Middleware is highly flexible and replaces some other functionality in the agent.
+As such, when middleware are used, there are some restrictions on the arguments used to create the agent:
+:::python
+- `model` must be either a string or a `BaseChatModel`. Will error if a function is passed. If you want to dynamically control the model, use `AgentMiddleware.modify_model_request`
+- `prompt` must be either a string or None. Will error if a function is passed. If you want to dynamically control the prompt, use `AgentMiddleware.modify_model_request`
+- `pre_model_hook` must not be provided. Use `AgentMiddleware.before_model` instead.
+- `post_model_hook` must not be provided. Use `AgentMiddleware.after_model` instead.
+:::
+:::js
+- `model` must be either a string or a BaseChatModel. Will error if a function is passed. If you want to dynamically control the model, use `AgentMiddleware.modifyModelRequest`
+- `prompt` must be either a string or None. Will error if a function is passed. If you want to dynamically control the prompt, use `AgentMiddleware.modifyModelRequest`
+- `preModelHook` must not be provided. Use `AgentMiddleware.beforeModel` instead.
+- `postModelHook` must not be provided. Use `AgentMiddleware.afterModel` instead.
+:::
+
+## Built-in middleware
+
+LangChain provides several built in middleware to use off-the-shelf
+
+- [Summarization](#summarization)
+- [Human-in-the-loop](#human-in-the-loop)
+- [Anthropic prompt caching](#anthropic-prompt-caching)
+
+### Summarization
+
+The `summarizationMiddleware` automatically manages conversation history by summarizing older messages when token limits are approached. This middleware monitors the total token count of messages and creates concise summaries to preserve context while staying within model limits.
+
+**Key keatures:**
+
+- Automatic token counting and threshold monitoring
+- Intelligent message partitioning that preserves AI/Tool message pairs
+- Customizable summary prompts and token limits
+
+**Use Cases:**
+
+- Long-running conversations that exceed token limits
+- Multi-turn dialogues with extensive context
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.middleware import SummarizationMiddleware
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[weather_tool, calculator_tool],
+    middleware=[
+        SummarizationMiddleware(
+            model="openai:gpt-4o-mini",
+            max_tokens_before_summary=4000,  # Trigger summarization at 4000 tokens
+            messages_to_keep=20,  # Keep last 20 messages after summary
+            summary_prompt="Custom prompt for summarization...",  # Optional
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent } from "langchain";
+import { summarizationMiddleware } from "langchain/middleware";
+import { ChatOpenAI } from "@langchain/openai";
+
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [weatherTool, calculatorTool],
+    middleware: [
+        summarizationMiddleware({
+            model: new ChatOpenAI({ model: "gpt-4o-mini" }),
+            maxTokensBeforeSummary: 4000, // Trigger summarization at 4000 tokens
+            messagesToKeep: 20, // Keep last 20 messages after summary
+            summaryPrompt: "Custom prompt for summarization...", // Optional
+        }),
+    ],
+});
+```
+:::
+
+**Configuration options:**
+
+- `model`: Language model to use for generating summaries (required)
+- `maxTokensBeforeSummary`: Token threshold that triggers summarization
+- `messagesToKeep`: Number of recent messages to preserve (default: 20)
+- `tokenCounter`: Custom function for counting tokens (defaults to character-based approximation)
+- `summaryPrompt`: Custom prompt template for summary generation
+- `summaryPrefix`: Prefix added to system messages containing summaries (default: "## Previous conversation summary:")
+
+The middleware ensures tool call integrity by:
+
+1. Never splitting AI messages from their corresponding tool responses
+2. Preserving the most recent messages for continuity
+3. Including previous summaries in new summarization cycles
+
+### Human-in-the-loop
+
+The `humanInTheLoopMiddleware` enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
+
+**Key features:**
+
+- Selective tool approval based on configuration
+- Multiple response types (accept, edit, ignore, response)
+- Asynchronous approval workflow using LangGraph interrupts
+- Custom approval messages with contextual information
+
+**Use cases:**
+
+- High-stakes operations requiring human approval (database writes, file system changes)
+- Quality control and safety checks for AI actions
+- Compliance scenarios requiring audit trails
+- Development and testing of agent behaviors
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.middleware import HumanInTheLoopMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[write_file_tool, execute_sql_tool, read_data_tool],
+    middleware=[
+        HumanInTheLoopMiddleware(
+            tool_configs={
+                "write_file": {
+                    "require_approval": True,
+                    "description": "⚠️ File write operation requires approval",
+                },
+                "execute_sql": {
+                    "require_approval": True,
+                    "description": "🚨 SQL execution requires DBA approval",
+                },
+                "read_data": {
+                    "require_approval": False,  # Safe operation, no approval needed
+                },
+            },
+            message_prefix="Tool execution pending approval",
+        ),
+    ],
+    checkpointer=InMemorySaver(),  # Required for interrupts
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent } from "langchain";
+import { humanInTheLoopMiddleware } from "langchain/middleware";
+import { Command } from "@langchain/langgraph";
+
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [writeFileTool, executeSQLTool, readDataTool],
+    middleware: [
+        humanInTheLoopMiddleware({
+            toolConfigs: {
+                write_file: {
+                    requireApproval: true,
+                    description: "⚠️ File write operation requires approval",
+                },
+                execute_sql: {
+                    requireApproval: true,
+                    description: "🚨 SQL execution requires DBA approval",
+                },
+                read_data: {
+                    requireApproval: false, // Safe operation, no approval needed
+                },
+            },
+            messagePrefix: "Tool execution pending approval",
+        }),
+    ],
+    checkpointer: new MemorySaver(), // Required for interrupts
+});
+```
+:::
+
+**Handling approval requests:**
+
+When a tool requires approval, the agent execution pauses and waits for human input:
+
+:::python
+```python
+from langchain_core.messages import HumanMessage
+from langgraph import Command
+
+# Initial invocation
+result = agent.invoke(
+    {
+        "messages": [HumanMessage("Delete old records from the database")],
+    },
+    config
+)
+
+# Check if paused for approval
+state = agent.graph.get_state(config)
+if state.next:
+    requests = state.tasks[0].interrupts[0].value
+
+    # Display tool details to human
+    print("Tool:", requests[0].action)
+    print("Arguments:", requests[0].args)
+
+    # Resume with approval decision
+    agent.invoke(
+        Command(
+            resume=[{"type": "accept"}]  # or "edit", "ignore", "response"
+        ),
+        config
+    )
+```
+:::
+
+:::js
+```typescript
+// Initial invocation
+const result = await agent.invoke(
+    {
+        messages: [new HumanMessage("Delete old records from the database")],
+    },
+    config
+);
+
+// Check if paused for approval
+const state = await agent.graph.getState(config);
+if (state.next?.length > 0) {
+    const requests = state.tasks?.[0]?.interrupts?.[0]?.value;
+
+    // Display tool details to human
+    console.log("Tool:", requests[0].action);
+    console.log("Arguments:", requests[0].args);
+
+    // Resume with approval decision
+    await agent.invoke(
+        new Command({
+            resume: [{ type: "accept" }], // or "edit", "ignore", "response"
+        }),
+        config
+    );
+}
+```
+:::
+
+**Response types:**
+
+- `accept`: Execute the tool with original arguments
+- `edit`: Modify arguments before execution - `{ type: "edit", args: { action: "tool_name", args: { modified: "args" } } }`
+- `ignore`: Skip tool execution and terminate agent
+- `response`: Provide manual response instead of executing tool - `{ type: "response", args: "Manual response text" }`
+
+**Configuration:**
+
+- `toolConfigs`: Map of tool names to their approval settings
+    - `requireApproval`: Whether the tool needs human approval
+    - `description`: Custom message shown during approval request
+- `messagePrefix`: Default prefix for approval messages
+
+The middleware processes tool calls in order, bundling multiple approval requests into a single interrupt for efficiency. Tools not requiring approval execute immediately without interruption.
+
+### Anthropic prompt caching
+
+`AnthropicPromptCachingMiddleware` is a middleware that enables you to enable Anthropic's native prompt caching.
+
+Prompt caching enables optimal API usage by allowing resuming from specific prefixes in your prompts.
+This is particularly useful for tasks with repetitive prompts or prompts with redundant information.
+
+<Info>
+Learn more about Anthropic Prompt Caching (strategies, limitations, etc.) [here](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#cache-limitations).
+</Info>
+
+When using prompt caching, you'll likely want to use a checkpointer to store conversation
+history across invocations.
+
+:::python
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain.agents.middleware.prompt_caching import AnthropicPromptCachingMiddleware
+from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
+
+LONG_PROMPT = """
+Please be a helpful assistant.
+
+<Lots more context ...>
+"""
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-latest"),
+    prompt=LONG_PROMPT,
+    middleware=[AnthropicPromptCachingMiddleware(ttl="5m")],
+    checkpointer=InMemorySaver(),
+)
+
+common_config = {"configurable": {"thread_id": "1"}}
+
+# cache store
+agent.invoke({"messages": [HumanMessage("Hi, my name is Bob")]}, common_config)
+
+# cache hit
+agent.invoke({"messages": [HumanMessage("What's my name?")]}, common_config)
+```
+:::
+:::js
+```typescript
+import { createAgent, HumanMessage, MemorySaver } from "langchain";
+import { anthropicPromptCachingMiddleware } from "langchain/middleware";
+
+const LONG_PROMPT = `
+Please be a helpful assistant.
+
+<Lots more context ...>
+`;
+
+const checkpointer = new MemorySaver();
+const agent = createAgent({
+    model: "anthropic:claude-sonnet-4-latest",
+    prompt: LONG_PROMPT,
+    middleware: [anthropicPromptCachingMiddleware({ ttl: "5m" })],
+    checkpointer,
+});
+const config = { configurable: { thread_id: "1" } };
+
+const result = await agent.invoke({ messages: [HumanMessage("Hi, my name is Bob")] }, config);
+
+const result = await agent.invoke({ messages: [HumanMessage("What's my name?")] }, config);
+```
+:::
+
+## Custom Middleware
+
+Middleware for agents are subclasses of `AgentMiddleware`, which implement one or more of its hooks.
+
+`AgentMiddleware` currently provides three different ways to modify the core agent loop:
+
+- `before_model`: runs before the model is run. Can update state or exit early with a jump.
+- `modify_model_request`: runs before the model is run. Cannot update state or exit early with a jump.
+- `after_model`: runs after the model is run. Can update state or exit early with a jump.
+
+In order to **exit early**, you can add a `jump_to` key to the state update with one of the following values:
+
+- `"model"`: Jump to the model node
+- `"tools"`: Jump to the tools node
+- `"__end__"`: Jump to the end node
+
+If this is specified, all subsequent middleware will not run.
+
+Learn more about exiting early in the [agent jumps](#agent-jumps) section.
+
+### `before_model`
+
+Runs before the model is run. Can modify state by returning a new state object or state update.
+
+Signature:
+:::python
+```python
+from langchain.agents.middleware import AgentMiddleware, AgentState
+from langchain_core.messages import AIMessage
+
+class MyMiddleware(AgentMiddleware):
+    def before_model(self, state: AgentState) -> dict[str, Any] | None:
+        # terminate early if the conversation is too long
+        if len(state["messages"]) > 50:
+            return {
+                "messages": [AIMessage("I'm sorry, the conversation has been terminated.")],
+                "jump_to": "__end__"
+            }
+        return state
+```
+:::
+:::js
+```typescript
+import type { AgentState, AgentJump } from "langchain";
+
+function beforeModel(state: AgentState): AgentState | AgentJump | undefined {
+    // ...
+}
+```
+:::
+
+### `modify_model_request`
+
+Runs before the model has run, but after all the `before_model` calls.
+These functions **cannot** modify permanent state or exit early.
+Rather, they are intended to modify calls to the model in a **stateless\* way.
+If you want to modify calls to the model in a **stateful\*\* way, you will need to use `before_model`
+
+Modifies the model request. The model request has several key properties:
+- `model` (`BaseChatModel`): the model to use. Note: this needs to the base chat model, not a string.
+- `system_prompt` (`str`): the system prompt to use. Will get prepended to `messages`
+- `messages` (list of messages): the message list. Should not include system prompt.
+:::python
+- `tool_choice` (Any): the tool choice to use
+:::
+:::js
+- `tool_choice` (Any): the tool choice to use
+:::
+- `tools` (list of `BaseTool`): the tools to use for this model call
+:::python
+- `response_format` (`ResponseFormat`): the response format to use for structured output
+:::
+:::js
+- `responseFormat` (`ResponseFormat`): the response format to use for structured output
+:::
+
+Signature:
+:::python
+```python
+from langchain.agents.middleware import AgentState, ModelRequest, AgentMiddleware
+
+class MyMiddleware(AgentMiddleware):
+    def modify_model_request(self, request: ModelRequest, state: AgentState) -> ModelRequest:
+        if len(state["messages"]) > 10:
+            request.model = "gpt-5"
+        else:
+            request.model = "gpt-5-nano"
+        return request
+```
+:::
+:::js
+```typescript
+function modifyModelRequest (request: ModelRequest, state: AgentState): ModelRequest {
+    return request;
+}
+```
+:::
+
+### `after_model`
+
+Runs after the model is run. Can modify state by returning a new state object or state update.
+
+Signature:
+:::python
+```python
+from langchain.agents.middleware import AgentState, AgentUpdate, AgentMiddleware
+
+class MyMiddleware(AgentMiddleware):
+    def after_model(self, state: AgentState) -> dict[str, Any] | None:
+        ...
+```
+:::
+:::js
+```typescript
+import type { AgentState, AgentUpdate, AgentJump } from "langchain";
+
+function afterModel (state: AgentState): AgentUpdate | AgentJump | undefined {
+    // ...
+}
+```
+:::
+
+## New state keys
+
+Middleware can extend the agent's state with custom properties, enabling rich data flow between middleware components and ensuring type safety throughout the agent execution.
+
+### State extension
+
+Middleware can define additional state properties that persist throughout the agent's execution. These properties become part of the agent's state and are available to all hooks for said middleware.
+
+:::python
+```python
+from langchain.agents.middleware import AgentState, AgentMiddleware
+
+class MyState(AgentState):
+    model_call_count: int
+
+class MyMiddleware(AgentMiddleware[MyState]):
+    state_schema: MyState
+
+    def before_model(self, state: AgentState) -> dict[str, Any] | None:
+        # terminate early if the model has been called too many times
+        if state["model_call_count"] > 10:
+            return {"jump_to": "__end__"}
+        return state
+
+    def after_model(self, state: AgentState) -> dict[str, Any] | None:
+        return {"model_call_count": state["model_call_count"] + 1}
+```
+:::
+
+:::js
+When a middleware defines required state properties through its `stateSchema`, these properties must be provided when invoking the agent:
+
+```typescript
+import { createMiddleware, createAgent } from "langchain";
+import { z } from "zod";
+
+// Middleware with custom state requirements
+const authMiddleware = createMiddleware({
+    name: "AuthMiddleware",
+    stateSchema: z.object({
+        userId: z.string(), // Required
+        userRole: z.string().default("user"), // Optional with default
+    }),
+    beforeModel: (state) => {
+        // Access custom state properties
+        console.log(`User ${state.userId} with role ${state.userRole}`);
+        return;
+    },
+});
+
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [],
+    middlewares: [authMiddleware] as const,
+});
+
+// TypeScript enforces required state properties
+const result = await agent.invoke({
+    messages: [new HumanMessage("Hello")],
+    userId: "user-123", // Required by middleware
+    // userRole is optional due to default value
+});
+```
+:::
+
+### Context extension
+
+<Note>
+This is currently only available in JavaScript.
+</Note>
+
+Context properties are configuration values passed through the runnable config. Unlike state, context is read-only and typically used for configuration that doesn't change during execution.
+
+:::js
+Middleware can define context requirements that must be satisfied through the agent's configuration:
+
+```typescript
+const rateLimitMiddleware = createMiddleware({
+    name: "RateLimitMiddleware",
+    contextSchema: z.object({
+        maxRequestsPerMinute: z.number(),
+        apiKey: z.string(),
+    }),
+    beforeModel: async (state, runtime) => {
+        // Access context through runtime
+        const { maxRequestsPerMinute, apiKey } = runtime.context;
+
+        // Implement rate limiting logic
+        const allowed = await checkRateLimit(apiKey, maxRequestsPerMinute);
+        if (!allowed) {
+            return { jump_to: "END" };
+        }
+    },
+});
+
+// Context is provided through config
+await agent.invoke(
+    { messages: [new HumanMessage("Process data")] },
+    {
+        context: {
+            maxRequestsPerMinute: 60,
+            apiKey: "api-key-123",
+        },
+    }
+);
+```
+:::
+
+### Combining multiple middleware
+
+When using multiple middleware, their state and context schemas are merged. All required properties from all middleware must be satisfied:
+
+:::python
+```python
+from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import HumanMessage
+from typing import Any, Dict
+
+class Middleware1State(AgentState):
+    prop_1: str
+    shared_prop: int
+
+class Middleware2State(AgentState):
+    prop_2: bool
+    shared_prop: int
+
+class Middleware1(AgentMiddleware):
+    def before_model(self, state: Dict[str, Any]) -> Dict[str, Any] | None:
+        # Access prop1 and sharedProp from state
+        print(f"Middleware1: prop1={state.get('prop_1')}, sharedProp={state.get('shared_prop')}")
+        return None
+
+class Middleware2(AgentMiddleware):
+    def before_model(self, state: Dict[str, Any]) -> Dict[str, Any] | None:
+        # Access prop2 and sharedProp from state
+        print(f"Middleware2: prop2={state.get('prop_2')}, sharedProp={state.get('shared_prop')}")
+        return None
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[],
+    middleware=[Middleware1(), Middleware2()],
+)
+```
+:::
+
+:::js
+
+```typescript
+const middleware1 = createMiddleware({
+    name: "Middleware1",
+    stateSchema: z.object({
+        prop1: z.string(),
+        sharedProp: z.number(),
+    }),
+});
+
+const middleware2 = createMiddleware({
+    name: "Middleware2",
+    stateSchema: z.object({
+        prop2: z.boolean(),
+        sharedProp: z.number(), // Same property name must have compatible types
+    }),
+});
+
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [],
+    middlewares: [middleware1, middleware2] as const,
+});
+
+// Must provide all required properties
+const result = await agent.invoke({
+    messages: [new HumanMessage("Hello")],
+    prop1: "value1", // Required by middleware1
+    prop2: true, // Required by middleware2
+    sharedProp: 42, // Required by both
+});
+```
+:::
+
+### Agent-level context schema
+
+Agents can also define their own context requirements that combine with middleware requirements:
+
+:::python
+```python
+# ...
+```
+:::
+:::js
+```typescript
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [],
+    contextSchema: z.object({
+        environment: z.enum(["development", "production"]),
+    }),
+    middlewares: [rateLimitMiddleware] as const,
+});
+
+// Must satisfy both agent and middleware context requirements
+await agent.invoke(
+    { messages: [new HumanMessage("Deploy application")] },
+    {
+        context: {
+            environment: "production", // Required by agent
+            maxRequestsPerMinute: 60, // Required by middleware
+            apiKey: "api-key-123", // Required by middleware
+        },
+    }
+);
+```
+:::
+
+### Best practices
+
+1. **Use State for Dynamic Data**: Properties that change during execution (user session, accumulated data)
+2. **Use Context for Configuration**: Static configuration values (API keys, feature flags, limits)
+3. **Provide Defaults When Possible**: Use `.default()` in Zod schemas to make properties optional
+4. **Document Requirements**: Clearly document what state and context properties your middleware requires
+:::js
+5. **Type Safety**: Leverage TypeScript's type checking to catch missing properties at compile time
+
+The type system ensures all required properties are provided, preventing runtime errors:
+
+```typescript
+// TypeScript error: Property 'userId' is missing
+await agent.invoke({
+    messages: [new HumanMessage("Hello")],
+    // userId is required but not provided
+});
+
+// TypeScript error: Type 'number' is not assignable to type 'string'
+await agent.invoke({
+    messages: [new HumanMessage("Hello")],
+    userId: 123, // Wrong type
+});
+```
+:::
+
+## Middleware execution order
+
+You can provide multiple middlewares. They are executed in the following logic:
+
+:::python
+**`before_model`**: Are run in the order they are passed in. If an earlier middleware exits early, then following middleware are not run
+**`modify_model_request`**: Are run in the order they are passed in.
+**`after_model`**: Are run in the _reverse_ order that they are passed in. If an earlier middleware exits early, then following middleware are not run
+:::
+:::js
+**`beforeModel`**: Are run in the order they are passed in. If an earlier middleware exits early, then following middleware are not run
+**`modifyModelRequest`**: Are run in the order they are passed in.
+**`afterModel`**: Are run in the _reverse_ order that they are passed in. If an earlier middleware exits early, then following middleware are not run
+:::
+
+## Agent jumps
+
+In order to **exit early**, you can add a `jump_to` key to the state update with one of the following values:
+
+- `"model"`: Jump to the model node
+- `"tools"`: Jump to the tools node
+- `"__end__"`: Jump to the end node
+
+If this is specified, all subsequent middleware will not run.
+
+:::python
+If you jump to `model` node, all `before_model` middleware will run. It's forbidden to jump to `model` from an existing `before_model` middleware.
+:::
+
+:::js
+If you jump to `model` node, all `beforeModel` middleware will run. It's forbidden to jump to `model` from an existing `beforeModel` middleware.
+:::
+
+Example usage:
+:::python
+```python
+from langchain.agents.types import AgentState, AgentUpdate, AgentJump
+from langchain.middleware import AgentMiddleware
+
+class MyMiddleware(AgentMiddleware):
+    def after_model(self, state: AgentState) -> AgentUpdate | AgentJump | None:
+        return {
+        "messages": ...,
+        "jump_to": "model"
+    }
+```
+:::
+:::js
+```typescript
+import type { AgentState, AgentJump } from "langchain";
+
+afterModel (state: AgentState): AgentState | AgentJump | undefined {
+    return {
+        messages: ...,
+        jump_to: "model"
+    }
+}
+```
+:::

@@ -10,7 +10,7 @@ This guide provides a quick overview for getting started with Pinecone [vector s
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/pinecone/) | Package latest |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/pinecone/) | Version |
 | :--- | :--- | :---: | :---: |
 | [`PineconeStore`](https://api.js.langchain.com/classes/langchain_pinecone.PineconeStore.html) | [`@langchain/pinecone`](https://npmjs.com/@langchain/pinecone) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/pinecone?style=flat-square&label=%20&) |
 

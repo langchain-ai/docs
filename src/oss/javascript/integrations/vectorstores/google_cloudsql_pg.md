@@ -10,7 +10,7 @@ This guide provides a quick overview of how to use Cloud SQL for PostgreSQL to s
 
 ### Integration details
 
-| Class               | Package                                    | [PY support](https://python.langchain.com/docs/integrations/vectorstores/google_cloud_sql_pg/) | Package latest |
+| Class               | Package                                    | [PY support](https://python.langchain.com/docs/integrations/vectorstores/google_cloud_sql_pg/) | Version |
 | :------------------ | :----------------------------------------- | :--------------------------------------------------------------------------------------------: | :------------: |
 | PostgresVectorStore | [`@langchain/google-cloud-sql-pg`](https://www.npmjs.com/package/@langchain/google-cloud-sql-pg) |                                               ✅                                               |     0.0.1      |
 
