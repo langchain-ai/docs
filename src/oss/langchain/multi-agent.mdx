@@ -1,13 +1,224 @@
 ---
-title: Multi-agent - Coming soon
+title: Multi-agent
 ---
 
 import AlphaCallout from '/snippets/alpha-lc-callout.mdx';
 
 <AlphaCallout />
 
-## Overview
 
-## Calling inside tools
+**Multi-agent systems** break a complex application into multiple specialized agents that work together to solve problems.  
+Instead of relying on a single agent to handle every step, **multi-agent architectures** allow you to compose smaller, focused agents into a coordinated workflow.
 
-## Streaming
+Multi-agent systems are useful when:
+
+* A single agent has too many tools and makes poor decisions about which to use.
+* Context or memory grows too large for one agent to track effectively.
+* Tasks require **specialization** (e.g., a planner, researcher, math expert).
+
+Benefits include:
+
+| Benefit            | Description                                                       |
+|--------------------|-------------------------------------------------------------------|
+| **Modularity**     | Easier to develop, test, and maintain smaller, focused agents.    |
+| **Specialization** | Each agent can be optimized for a particular domain or task type. |
+| **Control**        | Explicitly define communication and control flow between agents.  |
+
+## Two common patterns
+
+| Pattern          | How it Works                                                                                                                                                     | Control Flow                                                | Example Use Case                                 |
+|------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|--------------------------------------------------|
+| **Tool Calling** | A central agent calls other agents as *tools*. The “tool” agents don’t talk to the user directly — they just run their task and return results.                  | Centralized — all routing passes through the calling agent. | Task orchestration, structured workflows.        |
+| **Handoffs**     | The current agent decides to **transfer control** to another agent. The active agent changes, and the user may continue interacting directly with the new agent. | Decentralized — agents can change who is active.            | Multi-domain conversations, specialist takeover. |
+
+### Tool calling
+
+In **tool calling**, one agent (the “**controller**”) treats other agents as *tools* to be invoked when needed.  
+
+Flow:
+
+1. The **controller** receives input and decides which tool (subagent) to call.
+2. The **tool agent** runs its task based on the controller’s instructions.
+3. The **tool agent** returns results to the controller.
+4. The **controller** decides the next step or finishes.
+
+✅ Predictable, centralized routing.  
+⚠️ Tool agents won’t initiate new questions to the user — their role is fully defined by the controller.
+
+```mermaid
+graph LR
+    A[User] --> B[Controller Agent]
+    B --> C[Tool Agent 1]
+    B --> D[Tool Agent 2]
+    C --> B
+    D --> B
+    B --> E[User Response]
+````
+
+### Handoffs
+
+In **handoffs**, agents can directly pass control to each other. The “active” agent changes, and the user interacts with whichever agent currently has control.
+
+Flow:
+
+1. The **current agent** decides it needs help from another agent.
+2. It passes control (and state) to the **next agent**.
+3. The **new agent** interacts directly with the user until it decides to hand off again or finish.
+
+✅ Flexible, more natural conversational flow between specialists.
+⚠️ Less centralized — harder to guarantee predictable behavior.
+
+```mermaid
+graph LR
+    A[User] --> B[Agent A]
+    B --> C[Agent B]
+    C --> A
+```
+
+## Choosing between tool calling and handoffs
+
+| Question                                              | Tool Calling | Handoffs |
+|-------------------------------------------------------|--------------|----------|
+| Need centralized control over workflow?               | ✅ Yes        | ❌ No     |
+| Want agents to interact directly with the user?       | ❌ No         | ✅ Yes    |
+| Complex, human-like conversation between specialists? | ❌ Limited    | ✅ Strong |
+
+<Tip>
+You can also combine these patterns — e.g., use a top-level **tool-calling controller** for high-level routing, but allow **handoffs** within a team of related agents for smoother conversation.
+</Tip>
+
+## Context engineering
+
+Whether you’re implementing handoffs or tool calling, the quality of your system depends heavily on **how you pass context** to agents and subagents.
+
+LangChain gives you fine-grained control over this process, allowing you to:
+
+* Decide **which parts of the conversation history** or state are passed to each agent.
+* Provide **specialized prompts** for different subagents.
+* Include or exclude **intermediate reasoning steps** from the shared state.
+* Tailor inputs so that each agent gets exactly the information it needs to work effectively.
+
+This **context engineering** capability lets you fine-tune every aspect of agent behavior, ensuring that each agent receives the right data, at the right time, in the right format — whether it’s acting as a tool or taking over as the active agent via a handoff.
+
+## Using tool calling to call sub agents
+
+The most common (and simple) way to call sub agents is call them as tools.
+The base case for this looks like:
+
+:::python
+```python
+from langchain.tools import tool
+from langchain.agents import create_agent
+
+subagent1 = create_agent(..)
+
+@tool(
+    name="subagent1_name",
+    description="subagent1_description"
+)
+def call_subagent1(query: str):
+    result = subagent1.invoke({
+        "messages": [{"role": "user", "content": query}]
+    })
+    return result["messages"].text
+    
+agent = create_agent(..., tools=[call_subagent1])
+```
+:::
+:::js
+TODO
+:::
+
+Note that there are several places where we do context engineering that you make way to change:
+1. Name of subagent (`"subagent1_name"`): This is what the main agent sees when calling the sub agent, and should be treated as part of the prompt.
+2. Description of subagent (`"subagent1_description"`): This is what the main agent sees when calling the sub agent, and should be treated as part of the prompt.
+3. Input to subagent: Here we are passing the `query` generated by the agent. This is context engineering for the sub agent. You can control (in a few ways) the input to the sub agent.
+4. Output of the subagent: Here we are passing the `.text` property of the final message. This is context engineering for the main agent (since this gets passed back to the main agent as a tool call. You can control (in a few ways) the output of the sub agent.
+
+### Input to the sub agent
+
+If you want to control the input to the sub agent, there are two primary ways to do this.
+
+**Modify via prompting**
+If the main agent is generating some query to the sub agent, but you are finding it is incomplete or not good enough, the main way to fix this is via prompting.
+You should modify the main agent prompt or the sub agent description to include a better description of what to pass to the sub agent.
+
+**Modify manually**
+Sometimes, you will want to pass more context to the sub agent that just does not make sense to include in the query that the main agent generates.
+A common example of this is passing the full conversation to date to the sub agent.
+This can be done by modifying the logic inside the tool call to access the state of the agent at that point, and then pass that to the sub agent.
+
+:::python
+```python
+from typing import Annotated
+from langchain.agents import AgentState
+from langchain.agents.tool_node import InjectedState
+
+@tool(
+    name="subagent1_name",
+    description="subagent1_description"
+)
+# Often when passing in the full conversation, you do NOT want the main agent to generate any query
+def call_subagent1(state: Annotated[CustomState, InjectedState]):
+    result = subagent1.invoke({
+        "messages": state["messages"]
+    })
+    return result["messages"][-1].text
+```
+:::
+:::js
+TODO
+:::
+
+### Output of the sub agent
+
+If you want to control the output of the sub agent, there are two primary ways.
+
+**Modify via prompting**
+If the sub agent is generating some output, but you are finding it is incomplete or not good enough, the main way to fix this is via prompting.
+You should modify the sub agent prompt to include a better description of what to return.
+
+A common failure mode here is that the sub agent will make a bunch of tool calls, or intermediate thoughts, and then NOT respond with information about those in it's final message.
+It's often necessary to remind the sub agent that the user will not see any of it's work, and that it should include anything it wants the sub agent to see in it's final response.
+
+**Modify manually**
+Sometimes, you will want to pass more context to the main agent that just does not make sense to have the subagent return in it's message.
+A common example of this is passing some specific state keys back to the main agent.
+This can be done by modifying the logic inside the tool call to return that state as well.
+
+:::python
+```python
+from typing import Annotated
+from langchain.agents import AgentState
+from langchain_core.tools import InjectedToolCallId
+from langgraph.types import Command
+
+
+@tool(
+    name="subagent1_name",
+    description="subagent1_description"
+)
+# We need to pass the `tool_call_id` to the sub agent so it can use it to respond with the tool call result
+def call_subagent1(
+    query: str, 
+    tool_call_id: Annotated[str, InjectedToolCallId],
+# You need to return a `Command` object to include more than just a final tool call
+) -> Command:
+    result = subagent1.invoke({
+        "messages": [{"role": "user", "content": query}]
+    })
+    return Command(update={
+        # This is the example state key we are passing back
+        "example_state_key": result["example_state_key"],
+        "messages": [
+            ToolMessage(
+                # We need to include the tool call id so it matches up with the right tool call
+                result["messages"][-1].text, tool_call_id=tool_call_id
+            )
+        ]
+    })
+```
+:::
+:::js
+TODO
+:::
