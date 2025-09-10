@@ -73,7 +73,8 @@ Makefile              # Build automation
 
 - `make dev` - Start development mode with file watching and live rebuild
 - `make build` - Build documentation to `./build` directory
-- `make mint-broken-links` - Check for broken links in built documentation
+- `make mint-broken-links` - Check for broken links in built documentation (excludes integrations)
+- `make mint-broken-links-all` - Check for broken links in built documentation (includes all directories)
 - `make install` - Install all dependencies
 - `make clean` - Remove build artifacts
 - `make test` - Run the test suite
@@ -207,7 +208,7 @@ Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licen
 
 1. **Use the safe Make commands** (recommended):
    ```bash
-   make mint-broken-links  # Instead of 'mint broken-links'
+   make mint-broken-links  # Builds docs first, then checks links (excludes integrations)
    ```
 
 2. **Run Mintlify commands from the build directory**:
