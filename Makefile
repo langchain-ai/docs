@@ -1,4 +1,4 @@
-.PHONY: dev build format lint test install clean format_diff lint_diff unsafe_format lint_md lint_md_fix mint-broken-links
+.PHONY: dev build format lint test install clean format_diff lint_diff unsafe_format lint_md lint_md_fix mint-broken-links mint-broken-links-all
 
 dev:
 	@echo "Starting development mode..."
@@ -62,15 +62,23 @@ clean:
 	@find . -name "__pycache__" -type d -exec rm -rf {} +
 
 # Mintlify commands (run from build directory where final docs are generated)
-mint-broken-links:
-	@echo "Checking for broken links..."
-	@cd build && mint broken-links
+# Note: mint must be installed globally via npm
+mint-broken-links: build
+	@echo "Checking for broken links (excluding integrations directories)..."
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.1.0'"; exit 1; }
+	@cd build && mint broken-links 2>&1 | python3 ../scripts/filter_broken_links.py --exclude-integrations
+
+mint-broken-links-all: build
+	@echo "Checking for broken links (including all directories)..."
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.1.0'"; exit 1; }
+	@cd build && mint broken-links 2>&1 | python3 ../scripts/filter_broken_links.py
 
 help:
 	@echo "Available commands:"
 	@echo "  make dev             - Start development mode with file watching and mint dev"
 	@echo "  make build           - Build documentation to ./build directory"
-	@echo "  make mint-broken-links - Check for broken links in built documentation"
+	@echo "  make mint-broken-links - Check for broken links in built documentation (excludes integrations)"
+	@echo "  make mint-broken-links-all - Check for broken links in built documentation (includes all directories)"
 	@echo "  make format          - Format code"
 	@echo "  make lint            - Lint code"
 	@echo "  make lint_md         - Lint markdown files"
