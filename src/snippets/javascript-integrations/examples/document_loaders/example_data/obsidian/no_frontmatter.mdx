@@ -1,6 +1,6 @@
 ### Description
 
-# recipes #dessert #cookies
+#recipes #dessert #cookies
 
 A document with HR elements that might trip up a front matter parser:
 

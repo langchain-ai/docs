@@ -34,7 +34,6 @@ To use `interrupt` in your graph, you need to:
 4. **Resume execution** using `invoke`/`stream` (see [**The `Command` primitive**](#resume-using-the-command-primitive)).
 
 :::python
-
 ```python {highlight={1,4,28}}
 from langgraph.types import interrupt, Command
 
@@ -74,11 +73,9 @@ print(graph.invoke(Command(resume="Edited text"), config=config)) # (7)!
 5. The graph is invoked with some initial state.
 6. When the graph hits the interrupt, it returns an `Interrupt` object with the payload and metadata.
 7. The graph is resumed with a `Command(resume=...)`, injecting the human's input and continuing execution.
-
 :::
 
 :::js
-
 ```typescript {highlight={1,5,31}}
 import { interrupt, Command } from "@langchain/langgraph";
 
@@ -121,7 +118,6 @@ console.log(await graph.invoke(new Command({ resume: "Edited text" }), config));
 5. The graph is invoked with some initial state.
 6. When the graph hits the interrupt, it returns an object with `__interrupt__` containing the payload and metadata.
 7. The graph is resumed with a `Command({ resume: ... })`, injecting the human's input and continuing execution.
-
 :::
 
 <Accordion title="Extended example: using `interrupt`">
@@ -135,8 +131,10 @@ console.log(await graph.invoke(new Command({ resume: "Edited text" }), config));
 
   from langgraph.types import interrupt, Command
 
+
   class State(TypedDict):
       some_text: str
+
 
   def human_node(state: State):
       value = interrupt(  # (1)!
@@ -148,46 +146,31 @@ console.log(await graph.invoke(new Command({ resume: "Edited text" }), config));
           "some_text": value  # (3)!
       }
 
-# Build the graph
 
+  # Build the graph
   graph_builder = StateGraph(State)
   graph_builder.add_node("human_node", human_node)
   graph_builder.add_edge(START, "human_node")
   checkpointer = InMemorySaver()  # (4)!
   graph = graph_builder.compile(checkpointer=checkpointer)
-
-# Pass a thread ID to the graph to run it
-
+  # Pass a thread ID to the graph to run it.
   config = {"configurable": {"thread_id": uuid.uuid4()}}
-
-# Run the graph until the interrupt is hit
-
+  # Run the graph until the interrupt is hit.
   result = graph.invoke({"some_text": "original text"}, config=config)  # (5)!
 
-  print(result['**interrupt**']) # (6)!
-
-# > [
-
-# >    Interrupt(
-
-# >       value={'text_to_revise': 'original text'}
-
-# >       resumable=True
-
-# >       ns=['human_node:6ce9e64f-edef-fe5d-f7dc-511fa9526960']
-
-# >    )
-
-# > ]
-
-  print(result["**interrupt**"])  # (6)!
-
-# > [Interrupt(value={'text_to_revise': 'original text'}, id='6d7c4048049254c83195429a3659661d')]
+  print(result['__interrupt__']) # (6)!
+  # > [
+  # >    Interrupt(
+  # >       value={'text_to_revise': 'original text'},
+  # >       resumable=True,
+  # >       ns=['human_node:6ce9e64f-edef-fe5d-f7dc-511fa9526960']
+  # >    )
+  # > ]
+  print(result["__interrupt__"])  # (6)!
+  # > [Interrupt(value={'text_to_revise': 'original text'}, id='6d7c4048049254c83195429a3659661d')]
 
   print(graph.invoke(Command(resume="Edited text"), config=config)) # (7)!
-
-# > {'some_text': 'Edited text'}
-
+  # > {'some_text': 'Edited text'}
 ```
 
   1. `interrupt(...)` pauses execution at `human_node`, surfacing the given payload to a human.
@@ -295,7 +278,6 @@ To resume execution, use the @[`Command`][Command] primitive, which can be suppl
 # Resume graph execution by providing the user's input.
 graph.invoke(Command(resume={"age": "25"}), thread_config)
 ```
-
 :::
 
 :::js
@@ -305,7 +287,6 @@ To resume execution, use the @[`Command`][Command] primitive, which can be suppl
 // Resume graph execution by providing the user's input.
 await graph.invoke(new Command({ resume: { age: "25" } }), threadConfig);
 ```
-
 :::
 
 ### Resume multiple interrupts with one invocation
@@ -368,11 +349,9 @@ resume_map = {
 print(graph.invoke(Command(resume=resume_map), config=config))
 # > {'text_1': 'edited text for original text 1', 'text_2': 'edited text for original text 2'}
 ```
-
 :::
 
 :::js
-
 ```typescript
 const state = await parentGraph.getState(threadConfig);
 const resumeMap = Object.fromEntries(
@@ -384,7 +363,6 @@ const resumeMap = Object.fromEntries(
 
 await parentGraph.invoke(new Command({ resume: resumeMap }), threadConfig);
 ```
-
 :::
 
 ## Common patterns
@@ -398,7 +376,6 @@ Below we show different design patterns that can be implemented using `interrupt
 Pause the graph before a critical step, such as an API call, to review and approve the action. If the action is rejected, you can prevent the graph from executing the step, and potentially take an alternative action.
 
 :::python
-
 ```python
 from typing import Literal
 from langgraph.types import interrupt, Command
@@ -428,11 +405,9 @@ graph = graph_builder.compile(checkpointer=checkpointer)
 thread_config = {"configurable": {"thread_id": "some_id"}}
 graph.invoke(Command(resume=True), config=thread_config)
 ```
-
 :::
 
 :::js
-
 ```typescript
 import { interrupt, Command } from "@langchain/langgraph";
 
@@ -459,7 +434,6 @@ const graph = graphBuilder.compile({ checkpointer });
 const threadConfig = { configurable: { thread_id: "some_id" } };
 await graph.invoke(new Command({ resume: true }), threadConfig);
 ```
-
 :::
 
 <Accordion title="Extended example: approve or reject with interrupt">
@@ -473,19 +447,16 @@ await graph.invoke(new Command({ resume: true }), threadConfig);
   from langgraph.types import interrupt, Command
   from langgraph.checkpoint.memory import InMemorySaver
 
-# Define the shared graph state
-
+  # Define the shared graph state
   class State(TypedDict):
       llm_output: str
       decision: str
 
-# Simulate an LLM output node
-
+  # Simulate an LLM output node
   def generate_llm_output(state: State) -> State:
       return {"llm_output": "This is the generated output."}
 
-# Human approval node
-
+  # Human approval node
   def human_approval(state: State) -> Command[Literal["approved_path", "rejected_path"]]:
       decision = interrupt({
           "question": "Do you approve the following output?",
@@ -497,20 +468,17 @@ await graph.invoke(new Command({ resume: true }), threadConfig);
       else:
           return Command(goto="rejected_path", update={"decision": "rejected"})
 
-# Next steps after approval
-
+  # Next steps after approval
   def approved_node(state: State) -> State:
       print("✅ Approved path taken.")
       return state
 
-# Alternative path after rejection
-
+  # Alternative path after rejection
   def rejected_node(state: State) -> State:
       print("❌ Rejected path taken.")
       return state
 
-# Build the graph
-
+  # Build the graph
   builder = StateGraph(State)
   builder.add_node("generate_llm_output", generate_llm_output)
   builder.add_node("human_approval", human_approval)
@@ -525,23 +493,17 @@ await graph.invoke(new Command({ resume: true }), threadConfig);
   checkpointer = InMemorySaver()
   graph = builder.compile(checkpointer=checkpointer)
 
-# Run until interrupt
-
+  # Run until interrupt
   config = {"configurable": {"thread_id": uuid.uuid4()}}
   result = graph.invoke({}, config=config)
-  print(result["**interrupt**"])
+  print(result["__interrupt__"])
+  # Output:
+  # Interrupt(value={'question': 'Do you approve the following output?', 'llm_output': 'This is the generated output.'}, ...)
 
-# Output
-
-# Interrupt(value={'question': 'Do you approve the following output?', 'llm_output': 'This is the generated output.'}, ...)
-
-# Simulate resuming with human input
-
-# To test rejection, replace resume="approve" with resume="reject"
-
+  # Simulate resuming with human input
+  # To test rejection, replace resume="approve" with resume="reject"
   final_result = graph.invoke(Command(resume="approve"), config=config)
   print(final_result)
-
   ```
   :::
 
@@ -638,7 +600,6 @@ await graph.invoke(new Command({ resume: true }), threadConfig);
   );
   console.log(finalResult);
   ```
-
   :::
 </Accordion>
 
@@ -647,7 +608,6 @@ await graph.invoke(new Command({ resume: true }), threadConfig);
 ![A human can review and edit the state of the graph. This is useful for correcting mistakes or updating the state with additional information](/oss/images/edit-graph-state-simple.png)
 
 :::python
-
 ```python
 from langgraph.types import interrupt
 
@@ -682,11 +642,9 @@ graph.invoke(
     config=thread_config
 )
 ```
-
 :::
 
 :::js
-
 ```typescript
 import { interrupt } from "@langchain/langgraph";
 
@@ -717,7 +675,6 @@ await graph.invoke(
   threadConfig
 );
 ```
-
 :::
 
 <Accordion title="Extended example: edit state with interrupt">
@@ -731,20 +688,17 @@ await graph.invoke(
   from langgraph.types import interrupt, Command
   from langgraph.checkpoint.memory import InMemorySaver
 
-# Define the graph state
-
+  # Define the graph state
   class State(TypedDict):
       summary: str
 
-# Simulate an LLM summary generation
-
+  # Simulate an LLM summary generation
   def generate_summary(state: State) -> State:
       return {
           "summary": "The cat sat on the mat and looked at the stars."
       }
 
-# Human editing node
-
+  # Human editing node
   def human_review_edit(state: State) -> State:
       result = interrupt({
           "task": "Please review and edit the generated summary if necessary.",
@@ -754,14 +708,12 @@ await graph.invoke(
           "summary": result["edited_summary"]
       }
 
-# Simulate downstream use of the edited summary
-
+  # Simulate downstream use of the edited summary
   def downstream_use(state: State) -> State:
       print(f"✅ Using edited summary: {state['summary']}")
       return state
 
-# Build the graph
-
+  # Build the graph
   builder = StateGraph(State)
   builder.add_node("generate_summary", generate_summary)
   builder.add_node("human_review_edit", human_review_edit)
@@ -772,49 +724,34 @@ await graph.invoke(
   builder.add_edge("human_review_edit", "downstream_use")
   builder.add_edge("downstream_use", END)
 
-# Set up in-memory checkpointing for interrupt support
-
+  # Set up in-memory checkpointing for interrupt support
   checkpointer = InMemorySaver()
   graph = builder.compile(checkpointer=checkpointer)
 
-# Invoke the graph until it hits the interrupt
-
+  # Invoke the graph until it hits the interrupt
   config = {"configurable": {"thread_id": uuid.uuid4()}}
   result = graph.invoke({}, config=config)
 
-# Output interrupt payload
+  # Output interrupt payload
+  print(result["__interrupt__"])
+  # Example output:
+  # > [
+  # >     Interrupt(
+  # >         value={
+  # >             'task': 'Please review and edit the generated summary if necessary.',
+  # >             'generated_summary': 'The cat sat on the mat and looked at the stars.'
+  # >         },
+  # >         id='...'
+  # >     )
+  # > ]
 
-  print(result["**interrupt**"])
-
-# Example output
-
-# > [
-
-# >     Interrupt(
-
-# >         value={
-
-# >             'task': 'Please review and edit the generated summary if necessary.'
-
-# >             'generated_summary': 'The cat sat on the mat and looked at the stars.'
-
-# >         }
-
-# >         id='...'
-
-# >     )
-
-# > ]
-
-# Resume the graph with human-edited input
-
+  # Resume the graph with human-edited input
   edited_summary = "The cat lay on the rug, gazing peacefully at the night sky."
   resumed_result = graph.invoke(
       Command(resume={"edited_summary": edited_summary}),
       config=config
   )
   print(resumed_result)
-
   ```
   :::
 
@@ -898,7 +835,6 @@ await graph.invoke(
   );
   console.log(resumedResult);
   ```
-
   :::
 </Accordion>
 
@@ -912,7 +848,6 @@ To add a human approval step to a tool:
 2. Resume with a `Command` to continue based on human input.
 
 :::python
-
 ```python {highlight={8,20,25}}
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import interrupt
@@ -945,11 +880,9 @@ agent = create_react_agent(
 1. The @[`interrupt` function][interrupt] pauses the agent graph at a specific node. In this case, we call `interrupt()` at the beginning of the tool function, which pauses the graph at the node that executes the tool. The information inside `interrupt()` (e.g., tool calls) can be presented to a human, and the graph can be resumed with the user input (tool call approval, edit or feedback).
 2. The `InMemorySaver` is used to store the agent state at every step in the tool calling loop. This enables [short-term memory](/oss/langgraph/add-memory#add-short-term-memory) and [human-in-the-loop](/oss/langgraph/human-in-the-loop) capabilities. In this example, we use `InMemorySaver` to store the agent state in memory. In a production application, the agent state will be stored in a database.
 3. Initialize the agent with the `checkpointer`.
-
 :::
 
 :::js
-
 ```typescript {highlight={10,33,38}}
 import { MemorySaver } from "@langchain/langgraph";
 import { interrupt } from "@langchain/langgraph";
@@ -995,13 +928,11 @@ const agent = createReactAgent({
 1. The @[`interrupt` function][interrupt] pauses the agent graph at a specific node. In this case, we call `interrupt()` at the beginning of the tool function, which pauses the graph at the node that executes the tool. The information inside `interrupt()` (e.g., tool calls) can be presented to a human, and the graph can be resumed with the user input (tool call approval, edit or feedback).
 2. The `MemorySaver` is used to store the agent state at every step in the tool calling loop. This enables [short-term memory](/oss/langgraph/add-memory#add-short-term-memory) and [human-in-the-loop](/oss/langgraph/human-in-the-loop) capabilities. In this example, we use `MemorySaver` to store the agent state in memory. In a production application, the agent state will be stored in a database.
 3. Initialize the agent with the `checkpointSaver`.
-
 :::
 
 Run the agent with the `stream()` method, passing the `config` object to specify the thread ID. This allows the agent to resume the same conversation on future invocations.
 
 :::python
-
 ```python {highlight={3,9}}
 config = {
    "configurable": {
@@ -1016,11 +947,9 @@ for chunk in agent.stream(
     print(chunk)
     print("\n")
 ```
-
 :::
 
 :::js
-
 ```typescript {highlight={3,9}}
 const config = {
   configurable: {
@@ -1038,7 +967,6 @@ for await (const chunk of stream) {
   console.log("\n");
 }
 ```
-
 :::
 
 > You should see that the agent runs until it reaches the `interrupt()` call, at which point it pauses and waits for human input.
@@ -1046,7 +974,6 @@ for await (const chunk of stream) {
 Resume the agent with a `Command` to continue based on human input.
 
 :::python
-
 ```python {highlight={4}}
 from langgraph.types import Command
 
@@ -1060,11 +987,9 @@ for chunk in agent.stream(
 ```
 
 1. The @[`interrupt` function][interrupt] is used in conjunction with the @[`Command`][Command] object to resume the graph with a value provided by the human.
-
 :::
 
 :::js
-
 ```typescript {highlight={4}}
 import { Command } from "@langchain/langgraph";
 
@@ -1081,7 +1006,6 @@ for await (const chunk of resumeStream) {
 ```
 
 1. The @[`interrupt` function][interrupt] is used in conjunction with the @[`Command`][Command] object to resume the graph with a value provided by the human.
-
 :::
 
 ### Add interrupts to any tool
@@ -1089,7 +1013,6 @@ for await (const chunk of resumeStream) {
 You can create a wrapper to add interrupts to _any_ tool. The example below provides a reference implementation compatible with [Agent Inbox UI](https://github.com/langchain-ai/agent-inbox) and [Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui).
 
 :::python
-
 ```python title="Wrapper that adds human-in-the-loop to any tool" {highlight={37}}
 from typing import Callable
 from langchain_core.tools import BaseTool, tool as create_tool
@@ -1149,11 +1072,9 @@ def add_human_in_the_loop(
 
 1. This wrapper creates a new tool that calls `interrupt()` **before** executing the wrapped tool.
 2. `interrupt()` is using special input and output format that's expected by [Agent Inbox UI](https://github.com/langchain-ai/agent-inbox): - a list of @[`HumanInterrupt`][HumanInterrupt] objects is sent to `AgentInbox` render interrupt information to the end user - resume value is provided by `AgentInbox` as a list (i.e., `Command(resume=[...])`)
-
 :::
 
 :::js
-
 ```typescript title="Wrapper that adds human-in-the-loop to any tool" {highlight={41}}
 import { StructuredTool, tool } from "@langchain/core/tools";
 import { RunnableConfig } from "@langchain/core/runnables";
@@ -1226,13 +1147,11 @@ function addHumanInTheLoop(
 
 1. This wrapper creates a new tool that calls `interrupt()` **before** executing the wrapped tool.
 2. `interrupt()` is using special input and output format that's expected by [Agent Inbox UI](https://github.com/langchain-ai/agent-inbox): - a list of [`HumanInterrupt`] objects is sent to `AgentInbox` render interrupt information to the end user - resume value is provided by `AgentInbox` as a list (i.e., `Command({ resume: [...] })`)
-
 :::
 
 You can use the wrapper to add `interrupt()` to any tool without having to add it _inside_ the tool:
 
 :::python
-
 ```python {highlight={4,14,16,24}}
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import create_react_agent
@@ -1264,11 +1183,9 @@ for chunk in agent.stream(
 ```
 
 1. The `add_human_in_the_loop` wrapper is used to add `interrupt()` to the tool. This allows the agent to pause execution and wait for human input before proceeding with the tool call.
-
 :::
 
 :::js
-
 ```typescript {highlight={6,24,26,34}}
 import { MemorySaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
@@ -1313,7 +1230,6 @@ for await (const chunk of stream) {
 ```
 
 1. The `addHumanInTheLoop` wrapper is used to add `interrupt()` to the tool. This allows the agent to pause execution and wait for human input before proceeding with the tool call.
-
 :::
 
 > You should see that the agent runs until it reaches the `interrupt()` call,
@@ -1322,7 +1238,6 @@ for await (const chunk of stream) {
 Resume the agent with a `Command` to continue based on human input.
 
 :::python
-
 ```python {highlight={4}}
 from langgraph.types import Command
 
@@ -1334,11 +1249,9 @@ for chunk in agent.stream(
     print(chunk)
     print("\n")
 ```
-
 :::
 
 :::js
-
 ```typescript {highlight={4}}
 import { Command } from "@langchain/langgraph";
 
@@ -1353,7 +1266,6 @@ for await (const chunk of resumeStream) {
   console.log("\n");
 }
 ```
-
 :::
 
 ### Validate human input
@@ -1361,7 +1273,6 @@ for await (const chunk of resumeStream) {
 If you need to validate the input provided by the human within the graph itself (rather than on the client side), you can achieve this by using multiple interrupt calls within a single node.
 
 :::python
-
 ```python
 from langgraph.types import interrupt
 
@@ -1386,11 +1297,9 @@ def human_node(state: State):
         "age": answer
     }
 ```
-
 :::
 
 :::js
-
 ```typescript
 import { interrupt } from "@langchain/langgraph";
 
@@ -1417,7 +1326,6 @@ graphBuilder.addNode("humanNode", (state) => {
   };
 });
 ```
-
 :::
 
 <Accordion title="Extended example: validating user input">
@@ -1431,13 +1339,11 @@ graphBuilder.addNode("humanNode", (state) => {
   from langgraph.types import interrupt, Command
   from langgraph.checkpoint.memory import InMemorySaver
 
-# Define graph state
-
+  # Define graph state
   class State(TypedDict):
       age: int
 
-# Node that asks for human input and validates it
-
+  # Node that asks for human input and validates it
   def get_valid_age(state: State) -> State:
       prompt = "Please enter your age (must be a non-negative integer)."
 
@@ -1455,14 +1361,12 @@ graphBuilder.addNode("humanNode", (state) => {
 
       return {"age": age}
 
-# Node that uses the valid input
-
+  # Node that uses the valid input
   def report_age(state: State) -> State:
       print(f"✅ Human is {state['age']} years old.")
       return state
 
-# Build the graph
-
+  # Build the graph
   builder = StateGraph(State)
   builder.add_node("get_valid_age", get_valid_age)
   builder.add_node("report_age", report_age)
@@ -1471,32 +1375,26 @@ graphBuilder.addNode("humanNode", (state) => {
   builder.add_edge("get_valid_age", "report_age")
   builder.add_edge("report_age", END)
 
-# Create the graph with a memory checkpointer
-
+  # Create the graph with a memory checkpointer
   checkpointer = InMemorySaver()
   graph = builder.compile(checkpointer=checkpointer)
 
-# Run the graph until the first interrupt
-
+  # Run the graph until the first interrupt
   config = {"configurable": {"thread_id": uuid.uuid4()}}
   result = graph.invoke({}, config=config)
-  print(result["**interrupt**"])  # First prompt: "Please enter your age..."
+  print(result["__interrupt__"])  # First prompt: "Please enter your age..."
 
-# Simulate an invalid input (e.g., string instead of integer)
-
+  # Simulate an invalid input (e.g., string instead of integer)
   result = graph.invoke(Command(resume="not a number"), config=config)
-  print(result["**interrupt**"])  # Follow-up prompt with validation message
+  print(result["__interrupt__"])  # Follow-up prompt with validation message
 
-# Simulate a second invalid input (e.g., negative number)
-
+  # Simulate a second invalid input (e.g., negative number)
   result = graph.invoke(Command(resume="-10"), config=config)
-  print(result["**interrupt**"])  # Another retry
+  print(result["__interrupt__"])  # Another retry
 
-# Provide valid input
-
+  # Provide valid input
   final_result = graph.invoke(Command(resume="25"), config=config)
   print(final_result)  # Should include the valid age
-
   ```
   :::
 
@@ -1573,12 +1471,10 @@ graphBuilder.addNode("humanNode", (state) => {
   const finalResult = await graph.invoke(new Command({ resume: "25" }), config);
   console.log(finalResult);  // Should include the valid age
   ```
-
   :::
 </Accordion>
 
 :::python
-
 ## Debug with interrupts
 
 To debug and test a graph, use [static interrupts](/oss/langgraph/human-in-the-loop#key-capabilities) (also known as static breakpoints) to step through the graph execution one node at a time or to pause the graph execution at specific nodes. Static interrupts are triggered at defined points either before or after a node executes. You can set static interrupts by specifying `interrupt_before` and `interrupt_after` at compile time or run time.
@@ -1607,7 +1503,6 @@ Static interrupts are **not** recommended for human-in-the-loop workflows. Use [
 
     # Resume the graph
     graph.invoke(None, config=thread_config) # (6)!
-
 ```
 
     1. The breakpoints are set during `compile` time.
@@ -1722,7 +1617,6 @@ Static interrupts are **not** recommended for human-in-the-loop workflows. Use [
   for event in graph.stream(None, thread, stream_mode="values"):
       print(event)
   ```
-
 </Accordion>
 
 ### Use static interrupts in LangGraph Studio
@@ -1821,7 +1715,6 @@ Place code with side effects, such as API calls, after the `interrupt` or in a s
 When invoking a subgraph as a function, the parent graph will resume execution from the **beginning of the node** where the subgraph was invoked where the `interrupt` was triggered. Similarly, the **subgraph** will resume from the **beginning of the node** where the `interrupt()` function was called.
 
 :::python
-
 ```python
 def node_in_parent_graph(state: State):
     some_code()  # <-- This will re-execute when the subgraph is resumed.
@@ -1830,11 +1723,9 @@ def node_in_parent_graph(state: State):
     subgraph_result = subgraph.invoke(some_input)
     ...
 ```
-
 :::
 
 :::js
-
 ```typescript
 async function nodeInParentGraph(state: z.infer<typeof StateAnnotation>) {
   someCode(); // <-- This will re-execute when the subgraph is resumed.
@@ -1844,7 +1735,6 @@ async function nodeInParentGraph(state: z.infer<typeof StateAnnotation>) {
   // ...
 }
 ```
-
 :::
 
 <Accordion title="Extended example: parent and subgraph execution flow">
@@ -1869,7 +1759,6 @@ async function nodeInParentGraph(state: z.infer<typeof StateAnnotation>) {
   It counts the number of times each node is entered and prints the count.
 
   :::python
-
   ```python
   import uuid
   from typing import TypedDict
@@ -1965,11 +1854,9 @@ async function nodeInParentGraph(state: z.infer<typeof StateAnnotation>) {
   Got an answer of 35
   {'parent_node': {'state_counter': 1}}
   ```
-
   :::
 
   :::js
-
   ```typescript
   import { v4 as uuidv4 } from "uuid";
   import {
@@ -2067,7 +1954,6 @@ async function nodeInParentGraph(state: z.infer<typeof StateAnnotation>) {
   Got an answer of 35
   { parentNode: null }
   ```
-
   :::
 </Accordion>
 
@@ -2090,11 +1976,13 @@ To avoid issues, refrain from dynamically changing the node's structure between 
   from langgraph.types import interrupt, Command
   from langgraph.checkpoint.memory import InMemorySaver
 
+
   class State(TypedDict):
       """The graph state."""
 
       age: Optional[str]
       name: Optional[str]
+
 
   def human_node(state: State):
       if not state.get('name'):
@@ -2114,12 +2002,12 @@ To avoid issues, refrain from dynamically changing the node's structure between 
           "name": name,
       }
 
+
   builder = StateGraph(State)
   builder.add_node("human_node", human_node)
   builder.add_edge(START, "human_node")
 
-# A checkpointer must be enabled for interrupts to work
-
+  # A checkpointer must be enabled for interrupts to work!
   checkpointer = InMemorySaver()
   graph = builder.compile(checkpointer=checkpointer)
 
@@ -2134,7 +2022,6 @@ To avoid issues, refrain from dynamically changing the node's structure between 
 
   for chunk in graph.stream(Command(resume="John", update={"name": "foo"}), config):
       print(chunk)
-
   ```
 
   ```pycon
@@ -2142,6 +2029,5 @@ To avoid issues, refrain from dynamically changing the node's structure between 
   Name: N/A. Age: John
   {'human_node': {'age': 'John', 'name': 'N/A'}}
   ```
-
 </Accordion>
 :::
