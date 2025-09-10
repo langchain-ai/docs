@@ -29,6 +29,7 @@ pip install -U langgraph langchain[openai]
 ```bash uv
 uv add langgraph langchain[openai]
 ```
+
 </CodeGroup>
 
 Let's set up environment variables for OpenAI and [LangSmith](https://smith.langchain.com):
@@ -415,6 +416,7 @@ state = await graph.ainvoke(
 )
 print(state["followup"])
 ```
+
 ```
 I found 20 James Brown songs in the database, all from the album "Sex Machine". Here they are: ...
 ```
@@ -591,7 +593,6 @@ This is where trajectory evaluations come in. A trajectory evaluation:
 
 For this example, our end-to-end dataset contains an ordered list of steps that we expect the agent to take. Let's create an evaluator that checks the agent's actual trajectory against these expected steps and calculates what percentage were completed:
 
-
 ```python
 def trajectory_subsequence(outputs: dict, reference_outputs: dict) -> float:
     """Check how many of the desired steps the agent took."""
@@ -731,7 +732,7 @@ import requests
 from tabulate import tabulate
 from typing_extensions import Annotated, TypedDict
 
-url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
+url = "<https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db>"
 
 response = requests.get(url)
 
@@ -743,7 +744,6 @@ if response.status_code == 200:
     print("File downloaded and saved as Chinook.db")
 else:
     print(f"Failed to download the file. Status code: {response.status_code}")
-
 
 def _refund(
     invoice_id: int | None, invoice_line_ids: list[int] | None, mock: bool = False
@@ -845,7 +845,6 @@ def _refund(
 
     return float(total_refund)
 
-
 def _lookup(
     customer_first_name: str,
     customer_last_name: str,
@@ -937,8 +936,8 @@ def _lookup(
 
     return output
 
+# Graph state
 
-# Graph state.
 class State(TypedDict):
     """Agent state."""
 
@@ -955,8 +954,8 @@ class State(TypedDict):
     artist_name: str | None
     purchase_date_iso_8601: str | None
 
+# Instructions for extracting the user/purchase info from the conversation
 
-# Instructions for extracting the user/purchase info from the conversation.
 gather_info_instructions = """You are managing an online music store that sells song tracks. \
 Customers can buy multiple tracks at a time and these purchases are recorded in a database as \
 an Invoice per purchase and an associated set of Invoice Lines for each purchased track.
@@ -969,14 +968,15 @@ Line IDs if they would like refunds on individual tracks.
 Often a user will not know the specific Invoice ID(s) or Invoice Line ID(s) for which they \
 would like a refund. In this case you can help them look up their invoices by asking them to \
 specify:
-- Required: Their first name, last name, and phone number.
-- Optionally: The track name, artist name, album name, or purchase date.
+
+* Required: Their first name, last name, and phone number.
+* Optionally: The track name, artist name, album name, or purchase date.
 
 If the customer has not specified the required information (either Invoice/Invoice Line IDs \
 or first name, last name, phone) then please ask them to specify it."""
 
+# Extraction schema, mirrors the graph state
 
-# Extraction schema, mirrors the graph state.
 class PurchaseInformation(TypedDict):
     """All of the known information about the invoice / invoice lines the customer would like refunded. Do not make up values, leave fields as null if you don't know their value."""
 
@@ -995,14 +995,14 @@ class PurchaseInformation(TypedDict):
         "If the user hasn't enough identifying information, please tell them what the required information is and ask them to specify it.",
     ]
 
+# Model for performing extraction
 
-# Model for performing extraction.
 info_llm = init_chat_model("gpt-4o-mini").with_structured_output(
     PurchaseInformation, method="json_schema", include_raw=True
 )
 
+# Graph node for extracting user info and routing to lookup/refund/END
 
-# Graph node for extracting user info and routing to lookup/refund/END.
 async def gather_info(state: State) -> Command[Literal["lookup", "refund", END]]:
     info = await info_llm.ainvoke(
         [
@@ -1023,11 +1023,14 @@ async def gather_info(state: State) -> Command[Literal["lookup", "refund", END]]
     update = {"messages": [info["raw"]], **parsed}
     return Command(update=update, goto=goto)
 
+# Graph node for executing the refund
 
-# Graph node for executing the refund.
-# Note that here we inspect the runtime config for an "env" variable.
-# If "env" is set to "test", then we don't actually delete any rows from our database.
-# This will become important when we're running our evaluations.
+# Note that here we inspect the runtime config for an "env" variable
+
+# If "env" is set to "test", then we don't actually delete any rows from our database
+
+# This will become important when we're running our evaluations
+
 def refund(state: State, config: RunnableConfig) -> dict:
     # Whether to mock the deletion. True if the configurable var 'env' is set to 'test'.
     mock = config.get("configurable", {}).get("env", "prod") == "test"
@@ -1042,8 +1045,8 @@ def refund(state: State, config: RunnableConfig) -> dict:
         "followup": response,
     }
 
-
 # Graph node for looking up the users purchases
+
 def lookup(state: State) -> dict:
     args = (
         state[k]
@@ -1057,7 +1060,7 @@ def lookup(state: State) -> dict:
             "purchase_date_iso_8601",
         )
     )
-    results = _lookup(*args)
+    results =_lookup(*args)
     if not results:
         response = "We did not find any purchases associated with the information you've provided. Are you sure you've entered all of your information correctly?"
         followup = response
@@ -1070,8 +1073,8 @@ def lookup(state: State) -> dict:
         "invoice_line_ids": [res["invoice_line_id"] for res in results],
     }
 
-
 # Building our graph
+
 graph_builder = StateGraph(State)
 
 graph_builder.add_node(gather_info)
@@ -1084,13 +1087,18 @@ graph_builder.add_edge("refund", END)
 
 refund_graph = graph_builder.compile()
 
+# Our SQL queries will only work if we filter on the exact string values that are in the DB
 
-# Our SQL queries will only work if we filter on the exact string values that are in the DB.
 # To ensure this, we'll create vectorstore indexes for all of the artists, tracks and albums
+
 # ahead of time and use those to disambiguate the user input. E.g. if a user searches for
+
 # songs by "prince" and our DB records the artist as "Prince", ideally when we query our
+
 # artist vectorstore for "prince" we'll get back the value "Prince", which we can then
-# use in our SQL queries.
+
+# use in our SQL queries
+
 def index_fields() -> (
     tuple[InMemoryVectorStore, InMemoryVectorStore, InMemoryVectorStore]
 ):
@@ -1120,11 +1128,10 @@ def index_fields() -> (
     album_store.add_texts([a[0] for a in albums])
     return track_store, artist_store, album_store
 
-
 track_store, artist_store, album_store = index_fields()
 
-
 # Agent tools
+
 @tool
 def lookup_track(
     track_name: str | None = None,
@@ -1172,7 +1179,6 @@ def lookup_track(
     conn.close()
     return tracks
 
-
 @tool
 def lookup_album(
     track_name: str | None = None,
@@ -1213,7 +1219,6 @@ def lookup_album(
 
     conn.close()
     return albums
-
 
 @tool
 def lookup_artist(
@@ -1256,29 +1261,35 @@ def lookup_artist(
     conn.close()
     return artists
 
-
 # Agent model
+
 qa_llm = init_chat_model("claude-3-5-sonnet-latest")
+
 # The prebuilt ReACT agent only expects State to have a 'messages' key, so the
-# state we defined for the refund agent can also be passed to our lookup agent.
+
+# state we defined for the refund agent can also be passed to our lookup agent
+
 qa_graph = create_react_agent(qa_llm, [lookup_track, lookup_artist, lookup_album])
 
+# Schema for routing user intent
 
-# Schema for routing user intent.
 # We'll use structured outputs to enforce that the model returns only
-# the desired output.
+
+# the desired output
+
 class UserIntent(TypedDict):
     """The user's current intent in the conversation"""
 
     intent: Literal["refund", "question_answering"]
 
-
 # Routing model with structured output
+
 router_llm = init_chat_model("gpt-4o-mini").with_structured_output(
     UserIntent, method="json_schema", strict=True
 )
 
-# Instructions for routing.
+# Instructions for routing
+
 route_instructions = """You are managing an online music store that sells song tracks. \
 You can help customers in two types of ways: (1) answering general questions about \
 tracks sold at your store, (2) helping them get a refund on a purhcase they made at your store.
@@ -1291,8 +1302,8 @@ asking a general music question. Do NOT return anything else. Do NOT try to resp
 the user.
 """
 
+# Node for routing
 
-# Node for routing.
 async def intent_classifier(
     state: State,
 ) -> Command[Literal["refund_agent", "question_answering_agent"]]:
@@ -1301,20 +1312,23 @@ async def intent_classifier(
     )
     return Command(goto=response["intent"] + "_agent")
 
+# Node for making sure the 'followup' key is set before our agent run completes
 
-# Node for making sure the 'followup' key is set before our agent run completes.
 def compile_followup(state: State) -> dict:
     """Set the followup to be the last message if it hasn't explicitly been set."""
     if not state.get("followup"):
         return {"followup": state["messages"][-1].content}
     return {}
 
-
 # Agent definition
+
 graph_builder = StateGraph(State)
 graph_builder.add_node(intent_classifier)
-# Since all of our subagents have compatible state,
-# we can add them as nodes directly.
+
+# Since all of our subagents have compatible state
+
+# we can add them as nodes directly
+
 graph_builder.add_node("refund_agent", refund_graph)
 graph_builder.add_node("question_answering_agent", qa_graph)
 graph_builder.add_node(compile_followup)
@@ -1326,10 +1340,10 @@ graph_builder.add_edge("compile_followup", END)
 
 graph = graph_builder.compile()
 
-
 client = Client()
 
 # Create a dataset
+
 examples = [
     {
         "inputs": {
@@ -1388,6 +1402,7 @@ if not client.has_dataset(dataset_name=dataset_name):
     )
 
 # LLM-as-judge instructions
+
 grader_instructions = """You are a teacher grading a quiz.
 
 You will be given a QUESTION, the GROUND TRUTH (correct) RESPONSE, and the STUDENT RESPONSE.
@@ -1403,8 +1418,8 @@ False means that the student's response does not meet all of the criteria.
 
 Explain your reasoning in a step-by-step manner to ensure your reasoning and conclusion are correct."""
 
-
 # LLM-as-judge output schema
+
 class Grade(TypedDict):
     """Compare the expected and actual answers and grade the actual answer."""
 
@@ -1419,14 +1434,14 @@ class Grade(TypedDict):
         "True if the student response is mostly or exactly correct, otherwise False.",
     ]
 
-
 # Judge LLM
+
 grader_llm = init_chat_model("gpt-4o-mini", temperature=0).with_structured_output(
     Grade, method="json_schema", strict=True
 )
 
-
 # Evaluator function
+
 async def final_answer_correct(
     inputs: dict, outputs: dict, reference_outputs: dict
 ) -> bool:
@@ -1446,8 +1461,8 @@ async def final_answer_correct(
     )
     return grade["is_correct"]
 
-
 # Target function
+
 async def run_graph(inputs: dict) -> dict:
     """Run graph and track the trajectory it takes along with the final response."""
     result = await graph.ainvoke(
@@ -1460,8 +1475,8 @@ async def run_graph(inputs: dict) -> dict:
     )
     return {"response": result["followup"]}
 
-
 # Evaluation job and results
+
 experiment_results = await client.aevaluate(
     run_graph,
     data=dataset_name,
@@ -1471,7 +1486,6 @@ experiment_results = await client.aevaluate(
     max_concurrency=4,
 )
 experiment_results.to_pandas()
-
 
 def trajectory_subsequence(outputs: dict, reference_outputs: dict) -> float:
     """Check how many of the desired steps the agent took."""
@@ -1486,12 +1500,11 @@ def trajectory_subsequence(outputs: dict, reference_outputs: dict) -> float:
 
     return i / len(reference_outputs["trajectory"])
 
-
 async def run_graph(inputs: dict) -> dict:
     """Run graph and track the trajectory it takes along with the final response."""
     trajectory = []
-    # Set subgraph=True to stream events from subgraphs of the main graph: https://langchain-ai.github.io/langgraph/how-tos/streaming-subgraphs/
-    # Set stream_mode="debug" to stream all possible events: https://langchain-ai.github.io/langgra/langsmith/observability-concepts/streaming
+    # Set subgraph=True to stream events from subgraphs of the main graph: <https://langchain-ai.github.io/langgraph/how-tos/streaming-subgraphs/>
+    # Set stream_mode="debug" to stream all possible events: <https://langchain-ai.github.io/langgra/langsmith/observability-concepts/streaming>
     async for namespace, chunk in graph.astream(
         {
             "messages": [
@@ -1518,7 +1531,6 @@ async def run_graph(inputs: dict) -> dict:
 
     return {"trajectory": trajectory}
 
-
 experiment_results = await client.aevaluate(
     run_graph,
     data=dataset_name,
@@ -1530,6 +1542,7 @@ experiment_results = await client.aevaluate(
 experiment_results.to_pandas()
 
 # Create dataset
+
 examples = [
     {
         "inputs": {
@@ -1587,21 +1600,21 @@ if not client.has_dataset(dataset_name=dataset_name):
         examples=examples,
     )
 
-
 # Evaluator
+
 def correct(outputs: dict, reference_outputs: dict) -> bool:
     """Check if the agent chose the correct route."""
     return outputs["route"] == reference_outputs["route"]
 
-
 # Target function for running the relevant step
+
 async def run_intent_classifier(inputs: dict) -> dict:
     # Note that we can access and run the intent_classifier node of our graph directly.
     command = await graph.nodes["intent_classifier"].ainvoke(inputs)
     return {"route": command.goto}
 
-
 # Run evaluation
+
 experiment_results = await client.aevaluate(
     run_intent_classifier,
     data=dataset_name,
@@ -1610,5 +1623,6 @@ experiment_results = await client.aevaluate(
     max_concurrency=4,
 )
 experiment_results.to_pandas()
+
 ```
 </Accordion>
