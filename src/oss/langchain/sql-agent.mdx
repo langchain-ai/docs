@@ -106,22 +106,21 @@ else:
 :::
 :::js
 ```js
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 const url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db";
 const localPath = path.resolve("Chinook.db");
 
-if (existsSync(localPath)) {
-  console.log(`${localPath} already exists, skipping download.`);
-} else {
-  console.log(`Downloading ${url} ...`);
+async function resolveDbPath() {
+  if (await fs.exists(localPath)) {
+    return localPath;
+  }
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to download DB. Status code: ${resp.status}`);
   const buf = Buffer.from(await resp.arrayBuffer());
   await fs.writeFile(localPath, buf);
-  console.log(`File downloaded and saved as ${localPath}`);
+  return localPath;
 }
 ```
 :::
@@ -148,11 +147,20 @@ Use the `SqlDatabase` wrapper available in the `langchain/sql_db` to interact wi
 import { SqlDatabase } from "langchain/sql_db";
 import { DataSource } from "typeorm";
 
-const datasource = new DataSource({ type: "sqlite", database: localPath });
-const db = await SqlDatabase.fromDataSourceParams({ appDataSource: datasource });
+let db: SqlDatabase | undefined;
+async function getDb() {
+  if (!db) {
+    const dbPath = await resolveDbFile();
+    const datasource = new DataSource({ type: "sqlite", database: dbPath });
+    db = await SqlDatabase.fromDataSourceParams({ appDataSource: datasource });
+  }
+  return db;
+}
 
-const SCHEMA = await db.getTableInfo();
-
+async function getSchema() {
+  const db = await getDb();
+  return await db.getTableInfo();
+}
 ```
 :::
 
@@ -417,22 +425,22 @@ def _safe_sql(q: str) -> str:
 const DENY_RE = /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b/i;
 const HAS_LIMIT_TAIL_RE = /\blimit\b\s+\d+(\s*,\s*\d+)?\s*;?\s*$/i;
 
-function _safe_sql(q) {
+function sanitizeSqlQuery(q) {
   let query = String(q ?? "").trim();
 
   // block multiple statements (allow one optional trailing ;)
   const semis = [...query].filter((c) => c === ";").length;
   if (semis > 1 || (query.endsWith(";") && query.slice(0, -1).includes(";"))) {
-    return "Error: multiple statements are not allowed.";
+    throw new Error("multiple statements are not allowed.")
   }
   query = query.replace(/;+\s*$/g, "").trim();
 
   // read-only gate
   if (!query.toLowerCase().startsWith("select")) {
-    return "Error: only SELECT statements are allowed.";
+    throw new Error("Only SELECT statements are allowed")
   }
   if (DENY_RE.test(query)) {
-    return "Error: DML/DDL detected. Only read-only queries are permitted.";
+    throw new Error("DML/DDL detected. Only read-only queries are permitted.")
   }
 
   // append LIMIT only if not already present
@@ -467,15 +475,14 @@ def execute_sql(query: str) -> str:
 import { tool } from "langchain"
 import { z } from "zod";
 
-const execute_sql = tool(
+const executeSql = tool(
   async ({ query }) => {
-    const q = _safe_sql(query);
-    if (q.startsWith("Error:")) return q;
+    const q = sanitizeSqlQuery(query);
     try {
       const result = await db.run(q);
       return typeof result === "string" ? result : JSON.stringify(result, null, 2);
     } catch (e) {
-      return `Error: ${e?.message ?? String(e)}`;
+      throw new Error(e?.message ?? String(e))
     }
   },
   {
@@ -490,9 +497,16 @@ const execute_sql = tool(
 ```
 :::
 
+:::python
 ### 5. Use `create_agent`
 
 Use `create_agent` to build a [ReAct agent](https://arxiv.org/pdf/2210.03629) with minimal code. The agent will interpret the request and generate a SQL command. The tools will check the command for safety and then try to execute the command. If the command has an error, the error message is returned to the model. The model can then examine the original request and the new error message and generate a new command. This can continue until the LLM generates the command successfully or reaches an end count. This pattern of providing a model with feedback - error messages in this case - is very powerful.
+:::
+:::js
+### 5. Use `createAgent`
+
+Use `createAgent` to build a [ReAct agent](https://arxiv.org/pdf/2210.03629) with minimal code. The agent will interpret the request and generate a SQL command. The tools will check the command for safety and then try to execute the command. If the command has an error, the error message is returned to the model. The model can then examine the original request and the new error message and generate a new command. This can continue until the LLM generates the command successfully or reaches an end count. This pattern of providing a model with feedback - error messages in this case - is very powerful.
+:::
 
 Initialize the agent with a descriptive system prompt to customize its behavior:
 
@@ -518,13 +532,12 @@ Rules:
 :::
 :::js
 ```js
-import { SystemMessage } from "@langchain/core/messages";
-import { createAgent } from "langchain";
+import { SystemMessage } from "langchain";
 
-const SYSTEM = `You are a careful SQLite analyst.
+const getSystemPrompt = async () => new SystemMessage(`You are a careful SQLite analyst.
 
 Authoritative schema (do not invent columns/tables):
-${SCHEMA}
+${await getSchema()}
 
 Rules:
 - Think step-by-step.
@@ -535,8 +548,7 @@ Rules:
 - Limit the number of attempts to 5.
 - If you are not successful after 5 attempts, return a note to the user.
 - Prefer explicit column lists; avoid SELECT *.
-`;
-
+`);
 ```
 :::
 
@@ -556,10 +568,12 @@ agent = create_agent(
 
 :::js
 ```js
-const agent = await createAgent({
+import { createAgent } from "langchain";
+
+const agent = createAgent({
   model: "openai:gpt-5",
-  tools: [execute_sql],
-  prompt: new SystemMessage(SYSTEM),
+  tools: [executeSql],
+  prompt: getSystemPrompt,
 });
 
 ```
@@ -607,18 +621,14 @@ Sci Fi & Fantasy — about 48.53 minutes per track on average.
 
 :::js
 ```js
-function printLast(state) {
-  const m = state.messages?.at(-1);
-  if (!m) return;
-  const role = m._getType?.() ?? m.getType?.() ?? "msg";
-  console.log(`${role}: ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`);
-}
 const question = "Which genre, on average, has the longest tracks?";
-for await (const step of await agent.stream(
+const stream = await agent.stream(
   { messages: [{ role: "user", content: question }] },
   { streamMode: "values" }
-)) {
-  printLast("values" in step ? step.values : step);
+);
+for await (const step of stream) {
+  const message = step.messages.at(-1);
+  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
 }
 ```
 
@@ -627,7 +637,6 @@ human: Which genre, on average, has the longest tracks?
 ai:
 tool: [{"Genre":"Sci Fi & Fantasy","AvgMilliseconds":2911783.0384615385}]
 ai: Sci Fi & Fantasy — average track length ≈ 48.5 minutes (about 2,911,783 ms).
-
 ```
 :::
 
@@ -644,7 +653,6 @@ The agent correctly wrote a query, checked the query, and ran it to inform its f
 </Note>
 :::
 
-:::python
 #### (Optional) Use Studio
 
 [Studio](/langgraph-platform/langgraph-studio) provides a "client side" loop as well as memory so you can run this as a chat interface and query the database. You can ask questions like "Tell me the scheme of the database" or "Show me the invoices for the 5 top customers". You will see the SQL command that is generated and the resulting output. The details of how to get that started are below.
@@ -652,11 +660,20 @@ The agent correctly wrote a query, checked the query, and ran it to inform its f
 
 In addition to the previously mentioned packages, you will need to:
 
+:::python
 ```shell
 pip install -U langgraph-cli[inmem]>=0.4.0
 ```
+:::
+:::js
+```shell
+npm i -g langgraph-cli@latest
+```
+:::
+
 In directory you will run in, you will need a `langgraph.json` file with the following contents:
 
+:::python
 ```json
 {
   "dependencies": ["."],
@@ -667,10 +684,24 @@ In directory you will run in, you will need a `langgraph.json` file with the fol
   "env": ".env"
 }
 ```
+:::
+:::js
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+      "agent": "./sqlAgent.ts:agent",
+      "graph": "./sqlAgentLanggraph.ts:graph"
+  },
+  "env": ".env"
+}
+```
+:::
+
+:::python
 Create a file `sql_agent.py` and insert this:
 
 ```python
-
 #sql_agent.py for studio
 from langchain.agents import create_agent
 from langchain_core.messages import SystemMessage
@@ -768,9 +799,116 @@ agent = create_agent(
     prompt=SystemMessage(content=SYSTEM),
 )
 ```
-
-</Accordion>
 :::
+:::js
+```typescript
+import fs from "node:fs/promises";
+import path from "node:path";
+import { SqlDatabase } from "langchain/sql_db";
+import { DataSource } from "typeorm";
+import { SystemMessage, createAgent, tool } from "langchain"
+import { z } from "zod";
+
+const url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db";
+const localPath = path.resolve("Chinook.db");
+
+async function resolveDbPath() {
+  if (await fs.exists(localPath)) {
+    return localPath;
+  }
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to download DB. Status code: ${resp.status}`);
+  const buf = Buffer.from(await resp.arrayBuffer());
+  await fs.writeFile(localPath, buf);
+  return localPath;
+}
+
+let db: SqlDatabase | undefined;
+async function getDb() {
+  if (!db) {
+    const dbPath = await resolveDbPath();
+    const datasource = new DataSource({ type: "sqlite", database: dbPath });
+    db = await SqlDatabase.fromDataSourceParams({ appDataSource: datasource });
+  }
+  return db;
+}
+
+async function getSchema() {
+  const db = await getDb();
+  return await db.getTableInfo();
+}
+
+const DENY_RE = /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b/i;
+const HAS_LIMIT_TAIL_RE = /\blimit\b\s+\d+(\s*,\s*\d+)?\s*;?\s*$/i;
+
+function sanitizeSqlQuery(q) {
+  let query = String(q ?? "").trim();
+
+  // block multiple statements (allow one optional trailing ;)
+  const semis = [...query].filter((c) => c === ";").length;
+  if (semis > 1 || (query.endsWith(";") && query.slice(0, -1).includes(";"))) {
+    throw new Error("multiple statements are not allowed.")
+  }
+  query = query.replace(/;+\s*$/g, "").trim();
+
+  // read-only gate
+  if (!query.toLowerCase().startsWith("select")) {
+    throw new Error("Only SELECT statements are allowed")
+  }
+  if (DENY_RE.test(query)) {
+    throw new Error("DML/DDL detected. Only read-only queries are permitted.")
+  }
+
+  // append LIMIT only if not already present
+  if (!HAS_LIMIT_TAIL_RE.test(query)) {
+    query += " LIMIT 5";
+  }
+  return query;
+}
+
+const executeSql = tool(
+  async ({ query }) => {
+    const q = sanitizeSqlQuery(query);
+    try {
+      const result = await db.run(q);
+      return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+    } catch (e) {
+      throw new Error(e?.message ?? String(e))
+    }
+  },
+  {
+    name: "execute_sql",
+    description: "Execute a READ-ONLY SQLite SELECT query and return results.",
+    schema: z.object({
+      query: z.string().describe("SQLite SELECT query to execute (read-only)."),
+    }),
+  }
+);
+
+const getSystemPrompt = async () => new SystemMessage(`You are a careful SQLite analyst.
+
+Authoritative schema (do not invent columns/tables):
+${await getSchema()}
+
+Rules:
+- Think step-by-step.
+- When you need data, call the tool \`execute_sql\` with ONE SELECT query.
+- Read-only only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
+- Limit to 5 rows unless user explicitly asks otherwise.
+- If the tool returns 'Error:', revise the SQL and try again.
+- Limit the number of attempts to 5.
+- If you are not successful after 5 attempts, return a note to the user.
+- Prefer explicit column lists; avoid SELECT *.
+`);
+
+export const agent = createAgent({
+  model: "openai:gpt-5",
+  tools: [executeSql],
+  prompt: getSystemPrompt,
+});
+```
+:::
+</Accordion>
 
 :::python
 ## Build a customized workflow
