@@ -1,5 +1,3 @@
-# Documentation update
-
 ## Overview
 <!-- Brief description of what documentation is being added/updated -->
 
