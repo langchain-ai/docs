@@ -28,11 +28,9 @@ Once you have set these environment variables, enter the playground and select t
 
 ![](/langsmith/images/azure-playground.png)
 
-## Mount internal CAs to LangSmith applications for TLS
+## Mount internal CAs for TLS
 
-You can mount custom CAs to your LangSmith instance for TLS handshakes with Postgres/ClickHouse/Redis.
-
-1. Create a file containing all CAs required for TLS with your databases. If your deployment is communicating directly to `beacon.langchain.com` without a proxy, make sure to include a public CA that is trusted by beacon (Digicert). All certs should be concatenated in the file, with a space in between.
+1. Create a file containing all CAs required for TLS with databases and external services. If your deployment is communicating directly to `beacon.langchain.com` without a proxy, make sure to include a public trusted CA. All certs should be concatenated in this file with an empty line in between.
 ```
 -----BEGIN CERTIFICATE-----
 <PUBLIC_CA>
@@ -44,8 +42,9 @@ You can mount custom CAs to your LangSmith instance for TLS handshakes with Post
 
 ...
 ```
-2. Create a Kubernetes secret containing this file. Example command: `kubectl create secret generic langsmith-tls-cert --from-file=ca.crt=<CA_BUNDLE_PATH> -n langsmith`
-3. Provide the following values:
+2. Create a Kubernetes secret with a key containing the contents of this file.
+    - Example: `kubectl create secret generic <SECRET_NAME> --from-file=<SECRET_KEY>=<CA_BUNDLE_FILE_PATH> -n <NAMESPACE>`
+3. If using custom CA for TLS with your databases, provide the following values to your LangSmith helm chart:
 ```yaml Helm
 config:
   customCa:
@@ -57,8 +56,8 @@ clickhouse:
     tls: true # Only enable if you want TLS for Clickhouse.
 postgres:
   external:
-    tls: true # Only enable if you want TLS for Postgres.
+    customTls: true # Only enable if you want TLS for Postgres.
 ```
 4. Make sure to use TLS supported connection strings:
-    - Postgres: Add `?sslmode=verify-full&sslrootcert=system` to the end of your connection string
-    - Redis: Use `rediss://` instead of `redis://` as the prefix
+    - <b>Postgres</b>: Add `?sslmode=verify-full&sslrootcert=system` to the end.
+    - <b>Redis</b>: Use `rediss://` instead of `redis://` as the prefix.
