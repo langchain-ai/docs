@@ -1,0 +1,174 @@
+---
+title: Compass DeFi Toolkit
+---
+
+Interact with various DeFi protocols. Non-custodial.Tools return *unsigned transactions*. The toolkit is built on top of a Universal DeFi API ([Compass API](https://api.compasslabs.ai/)) allowing agents to perform financial operations like:
+
+- **Swapping tokens** on Uniswap and Aerodrome
+- **Lending** or **borrowing** assets using protocols on Aave
+- **Providing liquidity** on Aerodrome and Uniswap
+- **Transferring funds** between wallets.
+- Querying balances, portfolios and **monitoring positions**.
+
+## Overview
+
+### Integration details
+
+| Class                    | Package             | Serializable | JS support |                                         Version                                         |
+|:-------------------------|:--------------------| :---: | :---: |:----------------------------------------------------------------------------------------------:|
+| LangchainCompassToolkit  | `langchain-compass` | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-compass?style=flat-square&label=%20) |
+
+### Tool features
+
+Here’s a sample of the tools this toolkit provides (subject to change daily):
+
+- `aave_supply`: Supply assets to Aave to earn interest.
+- `aave_borrow`: Borrow assets from Aave using collateral.
+- `uniswap_swap_sell_exactly`: Swap a specific amount of one token on Uniswap.
+- `generic_portfolio_get`: Retrieve a wallet’s portfolio in USD and token balances.
+- `generic_transfer_erc20`: Transfer ERC20 tokens between addresses.
+
+## Setup
+
+Here we will:
+
+1. Install the langchain package
+2. Import and instantiate the toolkit
+3. Pass the tools to your agent with `toolkit.get_tools()`
+
+### Installation
+
+This toolkit lives in the `langchain-compass` package:
+
+```python
+%pip install -qU langchain-compass
+```
+
+#### Environment Setup
+
+To run these examples, ensure LangChain has access to an LLM service. For instance, if you're using GPT-4o, create a `.env` file containing:
+
+```plaintext
+# .env file
+OPENAI_API_KEY=<your_openai_api_key_here>
+```
+
+### Instantiation
+
+Now we can instantiate our toolkit:
+
+```python
+from langchain_compass.toolkits import LangchainCompassToolkit
+
+toolkit = LangchainCompassToolkit(compass_api_key=None)
+```
+
+### Tools
+
+View [available tools](#tool-features):
+
+```python
+tools = toolkit.get_tools()
+for tool in tools:
+    print(tool.name)
+```
+
+```
+# Expected output:
+
+aave_supply
+aave_borrow
+aave_repay
+aave_withdraw
+aave_asset_price_get
+aave_liquidity_change_get
+aave_user_position_summary_get
+...
+```
+
+## Invocation
+
+To invoke a single tool programmatically:
+
+```python
+tool_name = "generic_ens_get"
+tool = next(tool for tool in tools if tool.name == tool_name)
+tool.invoke({"ens_name": "vitalik.eth", "chain": "ethereum:mainnet"})
+```
+
+```output
+EnsNameInfoResponse(wallet_address='0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045', registrant='0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+```
+
+## Use within an agent
+
+We will need a LLM or chat model:
+
+```python
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+
+load_dotenv()
+
+llm = ChatOpenAI(model="gpt-4o")
+```
+
+Initialize the agent with the tools:
+
+```python
+from langchain.agents import create_agent
+
+tools = toolkit.get_tools()
+agent_executor = create_agent(llm, tools)
+```
+
+Example usage:
+
+```python
+example_query = "please set an allowance on Uniswap of 10 WETH for vitalic.eth."  # spelt wrong intentionally
+
+events = agent_executor.stream(
+    {"messages": [("user", example_query)]},
+    stream_mode="values",
+)
+for event in events:
+    event["messages"][-1].pretty_print()
+```
+
+Expected output:
+
+```
+================================[1m Human Message [0m=================================
+
+please set an allowance on Uniswap of 10 WETH for vitalic.eth.
+==================================[1m Ai Message [0m==================================
+Tool Calls:
+  generic_ens_get (call_MHIXRXxWH0L7iUEYHwvDUdU1)
+ Call ID: call_MHIXRXxWH0L7iUEYHwvDUdU1
+  Args:
+    chain: ethereum:mainnet
+    ens_name: vitalic.eth
+=================================[1m Tool Message [0m=================================
+Name: generic_ens_get
+
+wallet_address='0x44761Ef63FaD902D8f8dC77e559Ab116929881Db' registrant='0x44761Ef63FaD902D8f8dC77e559Ab116929881Db'
+==================================[1m Ai Message [0m==================================
+Tool Calls:
+  generic_allowance_set (call_IEBftbtBfKCkI1zFXXtEY8tq)
+ Call ID: call_IEBftbtBfKCkI1zFXXtEY8tq
+  Args:
+    amount: 10
+    chain: ethereum:mainnet
+    contract_name: UniswapV3Router
+    sender: 0x44761Ef63FaD902D8f8dC77e559Ab116929881Db
+    token: WETH
+=================================[1m Tool Message [0m=================================
+Name: generic_allowance_set
+
+{"type": "unsigned_transaction", "content": {"chainId": 1, "data": "0x095ea7b300000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc450000000000000000000000000000000000000000000000008ac7230489e80000", "from": "0x44761Ef63FaD902D8f8dC77e559Ab116929881Db", "gas": 46434, "to": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "value": 0, "nonce": 79, "maxFeePerGas": 2265376912, "maxPriorityFeePerGas": 6400594}}
+
+```
+
+## API reference
+
+`langchain-compass` is built on top of the Compass API. Each tool corresponds to an API endpoint. [Please check out the docs here](https://api.compasslabs.ai/)
