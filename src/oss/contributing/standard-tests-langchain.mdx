@@ -12,20 +12,34 @@ When creating either a custom class for yourself or to publish in a LangChain in
 
 First, install the required dependencies:
 
+:::python
 <CardGroup cols={2}>
-    <Card title="langchain-core" icon="cube">
+    <Card title="langchain-core" icon="cube" href="https://github.com/langchain-ai/langchain/tree/master/libs/core#readme" arrow>
         Defines the interfaces we want to import to define our custom components
     </Card>
 
-    <Card title="langchain-tests" icon="flask">
-        Provides the standard tests and pytest plugins necessary to run them
+    <Card title="langchain-tests" icon="flask" href="https://github.com/langchain-ai/langchain/tree/master/libs/standard-tests#readme" arrow>
+        Provides the standard tests and `pytest` plugins necessary to run them
     </Card>
 </CardGroup>
+:::
+:::js
+<CardGroup cols={2}>
+    <Card title="langchain-core" icon="cube" href="https://github.com/langchain-ai/langchainjs/tree/main/langchain-core#readme" arrow>
+        Defines the interfaces we want to import to define our custom components
+    </Card>
 
+    <Card title="langchain-tests" icon="flask" href="https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-standard-tests#readme" arrow>
+        Provides the standard tests and plugins necessary to run them
+    </Card>
+</CardGroup>
+:::
+
+:::python
 <Warning>
-    Because added tests in new versions of `langchain-tests` can break your CI/CD pipelines, we recommend pinning the
-    version of `langchain-tests` to avoid unexpected changes.
+    Because added tests in new versions of `langchain-tests` can break your CI/CD pipelines, we recommend pinning to the latest version of [`langchain-tests`](https://pypi.org/project/langchain-tests/#history) to avoid unexpected changes.
 </Warning>
+:::
 
 :::python
 <CodeGroup>
@@ -38,7 +52,6 @@ First, install the required dependencies:
     uv add langchain-tests
     ```
 </CodeGroup>
-
 :::
 
 :::js
@@ -94,44 +107,73 @@ There are 2 namespaces in the `langchain-tests` package:
 </AccordionGroup>
 
 :::python
-Both types of tests are implemented as `pytest` class-based test suites.
+Both types of tests are implemented as [`pytest`](https://docs.pytest.org/en/stable/) class-based test suites.
 :::
 
 By subclassing the base classes for each type of standard test, you get all of the standard tests for that type, and you can override the properties that the test suite uses to configure the tests.
 
 <Note>
-    We recommend organizing tests in subdirectories:
+    You should typically organize tests in these subdirectories:
     - `tests/unit_tests` for unit tests
     - `tests/integration_tests` for integration tests
 </Note>
 
 ## Implementing standard tests
 
+For a test run to be successful, the a given test should pass only if the model supports the capability being tested. Otherwise, the test should be skipped.
+
+Tests for optional capabilities are controlled via properties that can be overridden. For example, to enable image input integration tests on chat models:
+
+:::python
+```python tests/integration_tests/test_standard.py
+class TestChatParrotLinkStandard(ChatModelIntegrationTests):
+    # ... other required properties
+
+    @property
+    def supports_image_inputs(self) -> bool:
+        return True
+```
+:::
+:::js
+```javascript tests/chat_models.standard.int.test.ts
+class ChatParrotLinkStandardIntegrationTests extends ChatModelIntegrationTests<
+    ChatParrotLinkCallOptions,
+    AIMessageChunk
+> {
+    constructor() {
+        // ... other required properties
+
+        super({
+            // ... other required properties
+            supportsParallelToolCalls: true,
+            // ...
+        });
+    }
+```
+:::
+
+:::python
+<Info>
+    See the complete list of configurable capabilities and their defaults in the API references for [unit tests](https://python.langchain.com/api_reference/standard_tests/unit_tests/langchain_tests.unit_tests.chat_models.ChatModelUnitTests.html) and [integration tests](https://python.langchain.com/api_reference/standard_tests/integration_tests/langchain_tests.integration_tests.chat_models.ChatModelIntegrationTests.html).
+</Info>
+:::
+:::js
+<Info>
+    See the complete list of configurable capabilities and their defaults in the API references for [unit tests](https://v03.api.js.langchain.com/classes/_langchain_standard_tests.ChatModelUnitTests.html) and [integration tests](https://v03.api.js.langchain.com/classes/_langchain_standard_tests.ChatModelIntegrationTests.html).
+</Info>
+:::
+
+:::python
 <Tabs>
     <Tab title="Chat models">
-        To configure standard tests for a chat model, we subclass `ChatModelUnitTests` and `ChatModelIntegrationTests`. Override these `@property` methods:
+        To configure standard tests for a chat model, subclass `ChatModelUnitTests` and `ChatModelIntegrationTests`. Override these `@property` methods:
 
         | Property | Description |
         | --- | --- |
         | `chat_model_class` | The class for the chat model to be tested |
         | `chat_model_params` | The parameters to pass to the chat model's constructor |
 
-        Additionally, chat model standard tests test a range of behaviors, from basic requirements to optional capabilities like multi-modal support and tool-calling. For a test run to be successful:
-
-        1. **If a feature is supported**: it should pass
-        2. **If a feature is not supported**: it should be skipped
-
-        Tests for optional capabilities are controlled via properties that can be overridden. For example, to enable integration tests for image inputs:
-
-        ```python
-        @property
-        def supports_image_inputs(self) -> bool:
-            return True
-        ```
-
-        <Info>
-            See the complete list of configurable capabilities in the API references for [unit tests](https://python.langchain.com/api_reference/standard_tests/unit_tests/langchain_tests.unit_tests.chat_models.ChatModelUnitTests.html) and [integration tests](https://python.langchain.com/api_reference/standard_tests/integration_tests/langchain_tests.integration_tests.chat_models.ChatModelIntegrationTests.html).
-        </Info>
+        Additionally, chat model standard tests test a range of behaviors, from basic requirements to optional capabilities like [multimodal support](/oss/langchain/models#multimodal) and [tool calling](/oss/langchain/models#tool-calling).
 
         <CodeGroup>
             ```python title="tests/unit_tests/test_chat_models.py"
@@ -342,10 +384,34 @@ By subclassing the base classes for each type of standard test, you get all of t
         ```
     </Tab>
 </Tabs>
+:::
+:::js
+TODO
+:::
 
 ## Running the tests
 
+:::python
+If bootstrapping an integration, a `Makefile` is provided that includes targets for running unit and integration tests:
+
+```bash
+make test
+make integration_test
+```
+
+Otherwise, if you followed the recommended directory structure, you can run all tests with:
+
+```bash
+uv run --group test pytest tests/unit_tests/
+uv run --group test --group test_integration pytest -n auto tests/integration_tests/
+
+# For certain unit tests, you may need to set certain flags and environment variables:
+TIKTOKEN_CACHE_DIR=tiktoken_cache uv run --group test pytest --disable-socket --allow-unix-socket tests/unit_tests/
+```
+:::
+:::js
 TODO
+:::
 
 ## Test suite information and troubleshooting
 
