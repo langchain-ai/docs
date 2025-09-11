@@ -229,7 +229,7 @@ class Parser:
         return previous
 
     def _check(self, *kinds: TokenType) -> bool:
-        """Return ``True`` if current token matches any *kinds*."""
+        """Return `True` if current token matches any *kinds*."""
         return self._token.type in kinds
 
     def _match(self, *kinds: TokenType) -> bool:
