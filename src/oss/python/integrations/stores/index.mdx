@@ -1,0 +1,41 @@
+---
+title: "Key-value stores"
+---
+
+## Overview
+
+LangChain provides a key-value store interface for storing and retrieving data by key. The key-value store interface in LangChain is primarily used for caching [embeddings](/oss/integrations/text_embedding).
+
+## Interface
+
+All [`BaseStores`](https://python.langchain.com/api_reference/core/stores/langchain_core.stores.BaseStore.html) support the following interface:
+
+- `mget(key: Sequence[str]) -> List[Optional[bytes]]`: get the contents of multiple keys, returning `None` if the key does not exist
+- `mset(key_value_pairs: Sequence[Tuple[str, bytes]]) -> None`: set the contents of multiple keys
+- `mdelete(key: Sequence[str]) -> None`: delete multiple keys
+- `yield_keys(prefix: Optional[str] = None) -> Iterator[str]`: yield all keys in the store, optionally filtering by a prefix
+
+<Note>
+Base stores are designed to work **multiple** key-value pairs at once for efficiency. This saves on network round-trips and may allow for more efficient batch operations in the underlying store.
+</Note>
+
+## Built-in stores for local development
+
+<Columns cols={2}>
+  <Card title="InMemoryByteStore" icon="link" href="/oss/integrations/stores/in_memory" arrow="true" cta="View guide" />
+  <Card title="LocalFileStore" icon="link" href="/oss/integrations/stores/file_system" arrow="true" cta="View guide" />
+</Columns>
+
+## Custom stores
+
+You can also implement your own custom store by extending the `BaseStore` class. See the [store interface documentation](https://python.langchain.com/api_reference/core/stores/langchain_core.stores.BaseStore.html) for more details.
+
+## All integrations
+
+<Columns cols={3}>
+  <Card title="AstraDBByteStore" icon="link" href="/oss/integrations/stores/astradb" arrow="true" cta="View guide" />
+  <Card title="CassandraByteStore" icon="link" href="/oss/integrations/stores/cassandra" arrow="true" cta="View guide" />
+  <Card title="ElasticsearchEmbeddingsCache" icon="link" href="/oss/integrations/stores/elasticsearch" arrow="true" cta="View guide" />
+  <Card title="RedisStore" icon="link" href="/oss/integrations/stores/redis" arrow="true" cta="View guide" />
+  <Card title="UpstashRedisByteStore" icon="link" href="/oss/integrations/stores/upstash_redis" arrow="true" cta="View guide" />
+</Columns>

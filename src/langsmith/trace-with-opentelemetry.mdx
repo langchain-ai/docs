@@ -27,7 +27,7 @@ If you're using LangChain or LangGraph, use the built-in integration to trace yo
    </CodeGroup>
 
    <Info>
-   Requires Python SDK version `langsmith>=0.3.18`.
+   Requires Python SDK version `langsmith>=0.3.18`. We recommend `langsmith>=0.4.25` to benefit from important OpenTelemetry fixes.
    </Info>
 
 2. In your LangChain/LangGraph App, enable the OpenTelemetry integration by setting the `LANGSMITH_OTEL_ENABLED` environment variable:
@@ -65,7 +65,7 @@ If you're using LangChain or LangGraph, use the built-in integration to trace yo
 
 ## Trace a non-LangChain application
 
-For non-LangChain applications or custom instrumentation, you can trace your application in LangSmith with a standard OpenTelemetry client:
+For non-LangChain applications or custom instrumentation, you can trace your application in LangSmith with a standard OpenTelemetry client. (We recommend **langsmith ≥ 0.4.25**.)
 
 1. Install the OpenTelemetry SDK, OpenTelemetry exporter packages, as well as the OpenAI package:
 
@@ -181,7 +181,7 @@ For non-LangChain applications or custom instrumentation, you can trace your app
 While LangSmith is the default destination for OpenTelemetry traces, you can also configure OpenTelemetry to send traces to other observability platforms.
 
 <Info>
-In langsmith Python SDK version ≥ 0.4.1, setting LANGSMITH\_OTEL\_ENABLED=true will by default send traces to both LangSmith and your instrumented OTEL endpoint. No extra code is needed for fan-out.
+Available in LangSmith Python SDK **≥ 0.4.1**. We recommend **≥ 0.4.25** for fixes that improve OTEL export and hybrid fan-out stability.
 </Info>
 
 ### Use environment variables for global configuration
@@ -237,9 +237,10 @@ print(result.content)
 ```
 
 <Info>
-To disable hybrid tracing behavior after 0.4.1 and send traces only to your OTEL endpoint and exclude sending to LangSmith, add an additional env var:
+Hybrid tracing is available in version **≥ 0.4.1**. To send traces **only** to your OTEL endpoint, set:
 
-LANGSMITH\_OTEL\_ONLY = "true"
+`LANGSMITH_OTEL_ONLY="true"`
+(Recommendation: use **langsmith ≥ 0.4.25**.)
 </Info>
 
 ## Supported OpenTelemetry attribute and event mapping
@@ -406,196 +407,49 @@ For exception events:
 
 ## Implementation examples
 
-### Trace using the Traceloop SDK
+### Trace using the LangSmith SDK
 
-The Traceloop SDK is an OpenTelemetry compatible SDK that covers a range of models, vector databases and frameworks. If there are integrations that you are interested in instrumenting that are covered by this SDK, you can use this SDK with OpenTelemetry to log traces to LangSmith.
+Use the LangSmith SDK's OpenTelemetry helper to configure export:
 
-To see what integrations are supported by the Traceloop SDK, see the [Traceloop SDK documentation](https://www.traceloop.com/docs/openllmetry/tracing/supported).
+```python
+import asyncio
+from langsmith.integrations.otel import configure
+from google.adk import Runner
+from google.adk.agents import LlmAgent
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 
-To get started, follow these steps:
+# Configure LangSmith OpenTelemetry export (no OTEL env vars or headers needed)
+configure(project_name="adk-otel-demo")
 
-1. Install the Traceloop SDK and OpenAI:
 
-   <CodeGroup>
+async def main():
+    agent = LlmAgent(
+        name="travel_assistant",
+        model="gemini-2.0-flash-exp",
+        instruction="You are a helpful travel assistant.",
+    )
 
-   ```bash pip
-   pip install traceloop-sdk
-   pip install openai
-   ```
+    session_service = InMemorySessionService()
+    runner = Runner(app_name="travel_app", agent=agent, session_service=session_service)
 
-   </CodeGroup>
+    user_id = "user_123"
+    session_id = "session_abc"
+    await session_service.create_session(app_name="travel_app", user_id=user_id, session_id=session_id)
 
-2. Configure your environment:
+    new_message = types.Content(parts=[types.Part(text="Hi! Recommend a weekend trip to Paris.")], role="user")
 
-   <CodeGroup>
+    for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
+        print(event)
 
-   ```bash Shell
-   TRACELOOP_BASE_URL=https://api.smith.langchain.com/otel
-   TRACELOOP_HEADERS=x-api-key=<your_langsmith_api_key>
-   ```
 
-   </CodeGroup>
+if __name__ == "__main__":
+    asyncio.run(main())
+```
 
-   Optional: Specify a custom project name other than "default":
-
-   <CodeGroup>
-
-   ```bash Shell
-   TRACELOOP_HEADERS=x-api-key=<your_langsmith_api_key>,Langsmith-Project=<langsmith_project_name>
-   ```
-
-   </CodeGroup>
-
-3. To use the SDK, you need to initialize it before logging traces:
-
-   ```python
-   from traceloop.sdk import Traceloop
-   Traceloop.init()
-   ```
-
-4. Log a trace:
-
-   ```python
-   import os
-   from openai import OpenAI
-   from traceloop.sdk import Traceloop
-
-   client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-   Traceloop.init()
-
-   completion = client.chat.completions.create(
-       model="gpt-4o-mini",
-       messages=[
-           {"role": "system", "content": "You are a helpful assistant."},
-           {
-               "role": "user",
-               "content": "Write a haiku about recursion in programming."
-           }
-       ]
-   )
-
-   print(completion.choices[0].message)
-   ```
-
-5. View the trace in your LangSmith dashboard ([example](https://smith.langchain.com/public/106f5bed-edca-4357-91a5-80089252c9ed/r)).
-
-### Trace using the Arize SDK
-
-With the Arize SDK and OpenTelemetry, you can log traces from multiple other frameworks to LangSmith. Below is an example of tracing CrewAI to LangSmith, you can find a full list of supported frameworks [here](https://docs.arize.com/phoenix/tracing/integrations-tracing). To make this example work with other frameworks, you just need to change the instrumentor to match the framework.
-
-1. Install the required packages:
-
-   <CodeGroup>
-
-   ```bash pip
-   pip install -qU arize-phoenix-otel openinference-instrumentation-crewai crewai crewai-tools
-   ```
-
-   </CodeGroup>
-
-2. Set the following environment variables:
-
-   <CodeGroup>
-
-   ```bash Shell
-   OPENAI_API_KEY=<your_openai_api_key>
-   SERPER_API_KEY=<your_serper_api_key>
-   ```
-
-   </CodeGroup>
-
-3. Before running any application code, set up our instrumentor (you can replace this with any of the frameworks supported [here](https://docs.arize.com/phoenix/tracing/integrations-tracing)):
-
-   ```python
-   from opentelemetry.sdk.trace import TracerProvider
-   from opentelemetry.sdk.trace.export import BatchSpanProcessor
-   from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-   # Add LangSmith API Key for tracing
-   LANGSMITH_API_KEY = "YOUR_API_KEY"
-   # Set the endpoint for OTEL collection
-   ENDPOINT = "https://api.smith.langchain.com/otel/v1/traces"
-   # Select the project to trace to
-   LANGSMITH_PROJECT = "YOUR_PROJECT_NAME"
-
-   # Create the OTLP exporter
-   otlp_exporter = OTLPSpanExporter(
-       endpoint=ENDPOINT,
-       headers={"x-api-key": LANGSMITH_API_KEY, "Langsmith-Project": LANGSMITH_PROJECT}
-   )
-
-   # Set up the trace provider
-   provider = TracerProvider()
-   processor = BatchSpanProcessor(otlp_exporter)
-   provider.add_span_processor(processor)
-
-   # Now instrument CrewAI
-   from openinference.instrumentation.crewai import CrewAIInstrumentor
-   CrewAIInstrumentor().instrument(tracer_provider=provider)
-   ```
-
-4. Run a CrewAI workflow and the trace will automatically be logged to LangSmith:
-
-   ```python
-   from crewai import Agent, Task, Crew, Process
-   from crewai_tools import SerperDevTool
-
-   search_tool = SerperDevTool()
-
-   # Define your agents with roles and goals
-   researcher = Agent(
-       role='Senior Research Analyst',
-       goal='Uncover cutting-edge developments in AI and data science',
-       backstory="""You work at a leading tech think tank.
-       Your expertise lies in identifying emerging trends.
-       You have a knack for dissecting complex data and presenting actionable insights.""",
-       verbose=True,
-       allow_delegation=False,
-       # You can pass an optional llm attribute specifying what model you wanna use.
-       # llm=ChatOpenAI(model_name="gpt-3.5", temperature=0.7),
-       tools=[search_tool]
-   )
-
-   writer = Agent(
-       role='Tech Content Strategist',
-       goal='Craft compelling content on tech advancements',
-       backstory="""You are a renowned Content Strategist, known for your insightful and engaging articles.
-       You transform complex concepts into compelling narratives.""",
-       verbose=True,
-       allow_delegation=True
-   )
-
-   # Create tasks for your agents
-   task1 = Task(
-       description="""Conduct a comprehensive analysis of the latest advancements in AI in 2024.
-       Identify key trends, breakthrough technologies, and potential industry impacts.""",
-       expected_output="Full analysis report in bullet points",
-       agent=researcher
-   )
-
-   task2 = Task(
-       description="""Using the insights provided, develop an engaging blog
-       post that highlights the most significant AI advancements.
-       Your post should be informative yet accessible, catering to a tech-savvy audience.
-       Make it sound cool, avoid complex words so it doesn't sound like AI.""",
-       expected_output="Full blog post of at least 4 paragraphs",
-       agent=writer
-   )
-
-   # Instantiate your crew with a sequential process
-   crew = Crew(
-       agents=[researcher, writer],
-       tasks=[task1, task2],
-       verbose= False,
-       process = Process.sequential
-   )
-
-   # Get your crew to work!
-   result = crew.kickoff()
-   print("######################")
-   print(result)
-   ```
+<Note>
+You do not need to set OTEL environment variables or exporters. `configure()` wires them for LangSmith automatically; instrumentors (like `GoogleADKInstrumentor`) create the spans.
+</Note>
 
 5. View the trace in your LangSmith dashboard ([example](https://smith.langchain.com/public/106f5bed-edca-4357-91a5-80089252c9ed/r)).
 

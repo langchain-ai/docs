@@ -1,0 +1,799 @@
+---
+title: Tools
+---
+
+import AlphaCallout from "/snippets/alpha-lc-callout.mdx";
+
+<AlphaCallout />
+
+## Overview
+
+Tools are components that [Agents](/oss/langchain/agents) call to perform actions. They extend model capabilities by letting them interact with the world through well-defined inputs and outputs.
+
+## Creating tools
+
+### Basic tool definition
+
+:::python
+The simplest way to create a tool is with the `@tool` decorator. By default, the function's docstring becomes the tool's description that helps the model understand when to use it:
+
+```python wrap
+from langchain_core.tools import tool
+
+@tool
+def search_database(query: str, limit: int = 10) -> str:
+    """Search the customer database for records matching the query.
+
+    Args:
+        query: Search terms to look for
+        limit: Maximum number of results to return
+    """
+    return f"Found {limit} results for '{query}'"
+```
+
+Type hints are **required** as they define the tool's input schema. The docstring should be informative and concise to help the model understand the tool's purpose.
+:::
+
+:::js
+The simplest way to create a tool is by importing the `tool` function from the `langchain` package. You can use [zod](https://zod.dev/) to define the tool's input schema:
+
+```ts
+import { z } from "zod"
+import { tool } from "langchain"
+
+const searchDatabase = tool(
+    ({ query, limit }) => {
+        return `Found ${limit} results for '${query}'`
+    },
+    {
+        name: "search_database",
+        description: "Search the customer database for records matching the query.",
+        schema: z.object({
+            query: z.string().describe("Search terms to look for"),
+            limit: z.number().describe("Maximum number of results to return")
+        })
+    }
+);
+```
+
+Alternatively, you can define the `schema` property as a JSON schema object:
+
+```ts
+const searchDatabase = tool(
+    (input) => {
+        const { query, limit } = input as { query: string; limit: number }
+        return `Found ${limit} results for '${query}'`
+    },
+    {
+        name: "search_database",
+        description: "Search the customer database for records matching the query.",
+        schema: {
+            type: "object",
+            properties: {
+                query: { type: "string", description: "Search terms to look for" },
+                limit: { type: "number", description: "Maximum number of results to return" }
+            },
+            required: ["query", "limit"]
+        }
+    }
+);
+```
+:::
+
+:::python
+### Customizing tool properties
+
+#### Custom tool name
+
+By default, the tool name comes from the function name. Override it when you need something more descriptive:
+
+```python wrap
+@tool("web_search")  # Custom name
+def search(query: str) -> str:
+    """Search the web for information."""
+    return f"Results for: {query}"
+
+print(search.name)  # web_search
+```
+
+#### Custom tool description
+
+Override the auto-generated tool description for clearer model guidance:
+
+```python wrap
+@tool("calculator", description="Performs arithmetic calculations. Use this for any math problems.")
+def calc(expression: str) -> str:
+    """Evaluate mathematical expressions."""
+    return str(eval(expression))
+```
+
+### Advanced schema definition
+
+Define complex inputs with Pydantic models or JSON schemas:
+
+<CodeGroup>
+    ```python wrap Pydantic model
+    from pydantic import BaseModel, Field
+    from typing import Literal
+
+    class WeatherInput(BaseModel):
+        """Input for weather queries."""
+        location: str = Field(description="City name or coordinates")
+        units: Literal["celsius", "fahrenheit"] = Field(
+            default="celsius",
+            description="Temperature unit preference"
+        )
+        include_forecast: bool = Field(
+            default=False,
+            description="Include 5-day forecast"
+        )
+
+    @tool(args_schema=WeatherInput)
+    def get_weather(location: str, units: str = "celsius", include_forecast: bool = False) -> str:
+        """Get current weather and optional forecast."""
+        temp = 22 if units == "celsius" else 72
+        result = f"Current weather in {location}: {temp} degrees {units[0].upper()}"
+        if include_forecast:
+            result += "\nNext 5 days: Sunny"
+        return result
+    ```
+
+    ```python wrap JSON Schema
+    weather_schema = {
+        "type": "object",
+        "properties": {
+            "location": {"type": "string"},
+            "units": {"type": "string"},
+            "include_forecast": {"type": "boolean"}
+        },
+        "required": ["location", "units", "include_forecast"]
+    }
+
+    @tool(args_schema=weather_schema)
+    def get_weather(location: str, units: str = "celsius", include_forecast: bool = False) -> str:
+        """Get current weather and optional forecast."""
+        temp = 22 if units == "celsius" else 72
+        result = f"Current weather in {location}: {temp} degrees {units[0].upper()}"
+        if include_forecast:
+            result += "\nNext 5 days: Sunny"
+        return result
+    ```
+</CodeGroup>
+:::
+
+## Using tools with agents
+
+Agents go beyond simple tool binding by adding reasoning loops, state management, and multi-step execution.
+
+<Tip>To see examples of how to use tools with agents, see [Agents](/oss/langchain/agents).</Tip>
+
+## Advanced tool patterns
+
+### ToolNode
+
+:::python
+ToolNode is a prebuilt LangGraph component that handles tool calls within an agent's workflow. It works seamlessly with `create_agent()`, offering advanced tool execution control, built in parallelism, and error handling.
+:::
+
+:::js
+ToolNode is a prebuilt LangGraph component that handles tool calls within an agent's workflow. It works seamlessly with `createAgent()`, offering advanced tool execution control, built in parallelism, and error handling.
+:::
+
+#### Configuration options
+
+`ToolNode` accepts the following parameters:
+
+:::python
+```python wrap
+from langchain.agents import ToolNode
+
+tool_node = ToolNode(
+    tools=[...],              # List of tools or callables
+    handle_tool_errors=True,  # Error handling configuration
+    ...
+)
+```
+:::
+
+:::js
+```ts
+import { ToolNode } from "langchain";
+
+const toolNode = new ToolNode([searchDatabase, calculate], {
+    name: "tools",
+    tags: ["tool-execution"],
+    handleToolErrors: true
+})
+```
+:::
+
+:::python
+<ParamField path="tools" required>
+    A list of tools that this node can execute. Can include:
+
+    - LangChain `@tool` decorated functions
+    - Callable objects (e.g. functions) with proper type hints and a docstring
+</ParamField>
+:::
+
+:::js
+<ParamField path="tools">A list of LangChain `tool` objects.</ParamField>
+:::
+
+:::python
+<ParamField path="handle_tool_errors">
+    Controls how tool execution failures are handled.
+    Can be:
+        - `bool`
+        - `str`
+        - `Callable[..., str]`
+        - `type[Exception]`
+        - `tuple[type[Exception], ...]`
+
+    Default: internal `_default_handle_tool_errors`
+</ParamField>
+:::
+
+:::js
+<ParamField path="handleToolErrors">
+    Controls how tool execution failures are handled.
+    Can be:
+        - `boolean`
+            - `((error: unknown, toolCall: ToolCall) => ToolMessage | undefined)`
+
+    See [Error handling strategies](#error-handling-strategies) below for details.
+    Default: `true`
+</ParamField>
+:::
+
+#### Error handling strategies
+
+{/* TODO this section isn't very visually appealing */}
+:::python
+`ToolNode` provides built-in error handling for tool execution through its `handle_tool_errors` property.
+
+To customize the error handling behavior, you can configure `handle_tool_errors` to either be a boolean, a string, a callable, an exception type, or a tuple of exception types:
+
+- **`True`**: Catch all errors and return a ToolMessage with the default error template containing the exception details.
+- **`str`**: Catch all errors and return a ToolMessage with this custom error message string.
+- **`type[Exception]`**: Only catch exceptions with the specified type and return the default error message for it.
+- **`tuple[type[Exception], ...]`**: Only catch exceptions with the specified types and return default error messages for them.
+- **`Callable[..., str]`**: Catch exceptions matching the callable's signature and return the string result of calling it with the exception.
+- **`False`**: Disable error handling entirely, allowing exceptions to propagate.
+
+`handle_tool_errors` defaults to a callable `_default_handle_tool_errors` that:
+
+- catches tool invocation errors `ToolInvocationError` (due to invalid arguments provided by the model) and returns a descriptive error message
+- ignores tool execution errors (they will be re-raised with the template string `TOOL_CALL_ERROR_TEMPLATE = "Error: {error}\n Please fix your mistakes."`)
+:::
+
+:::js
+`ToolNode` provides built-in error handling for tool execution through its `handleToolErrors` property.
+
+To customize the error handling behavior, you can configure `handleToolErrors` to either be a `boolean` or a custom error handler function:
+
+- **`true`**: Catch all errors and return a `ToolMessage` with the default error template containing the exception details. (default)
+- **`false`**: Disable error handling entirely, allowing exceptions to propagate.
+- **`((error: unknown, toolCall: ToolCall) => ToolMessage | undefined)`**: Catch all errors and return a `ToolMessage` with the result of calling the function with the exception.
+:::
+
+Examples of how to use the different error handling strategies:
+
+:::python
+```python wrap
+# Retry on all exception types with the default error message template string
+tool_node = ToolNode(tools=[my_tool], handle_tool_errors=True)
+
+# Retry on all exception types with a custom message string
+tool_node = ToolNode(
+    tools=[my_tool],
+    handle_tool_errors="I encountered an issue. Please try rephrasing your request."
+)
+
+# Retry on ValueError with a custom message, otherwise raise
+def handle_errors(e: ValueError) -> str:
+    return "Invalid input provided"
+
+tool_node = ToolNode([my_tool], handle_tool_errors=handle_errors)
+
+# Retry on ValueError and KeyError with the default error message template string, otherwise raise
+tool_node = ToolNode(
+    tools=[my_tool],
+    handle_tool_errors=(ValueError, KeyError)
+)
+```
+:::
+:::js
+```ts
+const toolNode = new ToolNode([my_tool], {
+    handleToolErrors: true
+})
+
+const toolNode = new ToolNode([my_tool], {
+    handleToolErrors: (error, toolCall) => {
+        return new ToolMessage({
+            content: "I encountered an issue. Please try rephrasing your request.",
+            tool_call_id: toolCall.id
+        })
+    }
+})
+```
+:::
+
+:::python
+
+#### Using with create_agent()
+
+<Note>
+    We recommend that you familiarize yourself with `create_agent()` before covering this section. [Read more about agents](/oss/langchain/agents).
+</Note>
+
+Pass a configured `ToolNode` directly to `create_agent()`:
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.agents import ToolNode, create_agent
+import random
+
+@tool
+def fetch_user_data(user_id: str) -> str:
+    """Fetch user data from database."""
+    if random.random() > 0.7:
+        raise ConnectionError("Database connection timeout")
+    return f"User {user_id}: John Doe, john@example.com, Active"
+
+@tool
+def process_transaction(amount: float, user_id: str) -> str:
+    """Process a financial transaction."""
+    if amount > 10000:
+        raise ValueError(f"Amount {amount} exceeds maximum limit of 10000")
+    return f"Processed ${amount} for user {user_id}"
+
+def handle_errors(e: Exception) -> str:
+    if isinstance(e, ConnectionError):
+        return "The database is currently overloaded, but it is safe to retry. Please try again with the same parameters."
+    elif isinstance(e, ValueError):
+        return f"Error: {e}. Try to process the transaction in smaller amounts."
+    return f"Error: {e}. Please try again."
+
+tool_node = ToolNode(
+    tools=[fetch_user_data, process_transaction],
+    handle_tool_errors=handle_errors
+)
+
+agent = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=tool_node,
+    prompt="You are a financial assistant."
+)
+
+agent.invoke({
+    "messages": [{"role": "user", "content": "Process a payment of 15000 dollars for user123. Generate a receipt email and address it to the user."}]
+})
+```
+
+When you pass a `ToolNode` to `create_agent()`, the agent uses your exact configuration including error handling, custom names, and tags. This is useful when you need fine-grained control over tool execution behavior.
+:::
+:::js
+
+#### Agent creation
+
+Pass a configured `ToolNode` directly to `createAgent()`:
+
+```ts wrap
+import { z } from "zod"
+import { ChatOpenAI } from "@langchain/openai"
+import { ToolNode, createAgent } from "langchain"
+
+const searchDatabase = tool(
+    ({ query }) => {
+        return `Results for: ${query}`
+    },
+    {
+        name: "search_database",
+        description: "Search the database.",
+        schema: z.object({
+            query: z.string().describe("The query to search the database with")
+        })
+    }
+);
+
+const sendEmail = tool(
+    ({ to, subject, body }) => {
+        return `Email sent to ${to}`
+    },
+    {
+        name: "send_email",
+        description: "Send an email.",
+        schema: z.object({
+            to: z.string().describe("The email address to send the email to"),
+            subject: z.string().describe("The subject of the email"),
+            body: z.string().describe("The body of the email")
+        })
+    }
+);
+
+// Configure ToolNode with custom error handling
+const toolNode = new ToolNode([searchDatabase, sendEmail], {
+    name: "email_tools",
+    handleToolErrors: (error, toolCall) => {
+        return new ToolMessage({
+            content: "I encountered an issue. Please try rephrasing your request.",
+            tool_call_id: toolCall.id
+        });
+    }
+});
+
+// Create agent with the configured ToolNode
+const agent = createAgent({
+    model: new ChatOpenAI({ model: "gpt-5" }),
+    tools: toolNode, // Pass ToolNode instead of tools list
+    prompt: "You are a helpful email assistant."
+});
+
+// The agent will use your custom ToolNode configuration
+const result = await agent.invoke({
+    messages: [{ role: "user", content: "Search for John and email him" }]
+})
+```
+
+When you pass a `ToolNode` to `createAgent()`, the agent uses your exact configuration including error handling, custom names, and tags. This is useful when you need fine-grained control over tool execution behavior.
+:::
+
+### State, context, and memory
+
+<AccordionGroup>
+:::python
+    <Accordion title="Accessing agent state inside a tool">
+        <Info>
+            **`state`**: The agent maintains state throughout its execution - this includes messages, custom fields, and any data your tools need to track. State flows through the graph and can be accessed and modified by tools.
+        </Info>
+
+        <Info>
+            **`InjectedState`**: An annotation that allows tools to access the current graph state without exposing it to the LLM. This lets tools read information like message history or custom state fields while keeping the tool's schema simple.
+        </Info>
+
+        Tools can access the current graph state using the `InjectedState` annotation:
+
+        ```python wrap
+        from typing_extensions import Annotated
+        from langchain.agents.tool_node import InjectedState
+
+        # Access the current conversation state
+        @tool
+        def summarize_conversation(
+            state: Annotated[dict, InjectedState]
+        ) -> str:
+            """Summarize the conversation so far."""
+            messages = state["messages"]
+
+            human_msgs = sum(1 for m in messages if m.__class__.__name__ == "HumanMessage")
+            ai_msgs = sum(1 for m in messages if m.__class__.__name__ == "AIMessage")
+            tool_msgs = sum(1 for m in messages if m.__class__.__name__ == "ToolMessage")
+
+            return f"Conversation has {human_msgs} user messages, {ai_msgs} AI responses, and {tool_msgs} tool results"
+
+        # Access custom state fields
+        @tool
+        def get_user_preference(
+            pref_name: str,
+            preferences: Annotated[dict, InjectedState("user_preferences")]  # InjectedState parameters are not visible to the model
+        ) -> str:
+            """Get a user preference value."""
+            return preferences.get(pref_name, "Not set")
+        ```
+
+        <Warning>
+            State-injected arguments are hidden from the model. For the example above, the model only sees `pref_name` in the tool schema - `preferences` is *not* included in the request.
+        </Warning>
+    </Accordion>
+
+    <Accordion title="Updating agent state inside a tool">
+        <Info>
+        **`Command`**: A special return type that tools can use to update the agent's state or control the graph's execution flow. Instead of just returning data, tools can return `Command`s to modify state or direct the agent to specific nodes.
+        </Info>
+
+        Use a tool that returns a `Command` to update the agent state:
+
+        ```python wrap
+        from langgraph.types import Command
+        from langchain_core.messages import RemoveMessage
+        from langgraph.graph.message import REMOVE_ALL_MESSAGES
+        from langchain_core.tools import tool, InjectedToolCallId
+        from typing_extensions import Annotated
+
+        # Update the conversation history by removing all messages
+        @tool
+        def clear_conversation() -> Command:
+            """Clear the conversation history."""
+
+            return Command(
+                update={
+                    "messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES)],
+                }
+            )
+
+        # Update the user_name in the agent state
+        @tool
+        def update_user_name(
+            new_name: str,
+            tool_call_id: Annotated[dict, InjectedToolCallId]
+        ) -> Command:
+            """Update the user's name."""
+            return Command(update={"user_name": new_name})
+        ```
+    </Accordion>
+:::
+
+    <Accordion title="Accessing runtime context inside a tool">
+        <Info>
+            **`runtime`**: The execution environment of your agent, containing immutable configuration and contextual data that persists throughout the agent's execution (e.g., user IDs, session details, or application-specific configuration).
+        </Info>
+
+        :::python
+        Tools can access an agent's runtime context through `get_runtime`:
+
+        ```python wrap
+        from dataclasses import dataclass
+        from langchain_openai import ChatOpenAI
+        from langchain.agents import create_agent
+        from langchain_core.tools import tool
+        from langgraph.runtime import get_runtime
+
+        USER_DATABASE = {
+            "user123": {
+                "name": "Alice Johnson",
+                "account_type": "Premium",
+                "balance": 5000,
+                "email": "alice@example.com"
+            },
+            "user456": {
+                "name": "Bob Smith",
+                "account_type": "Standard",
+                "balance": 1200,
+                "email": "bob@example.com"
+            }
+        }
+
+        @dataclass
+        class UserContext:
+            user_id: str
+
+        @tool
+        def get_account_info() -> str:
+            """Get the current user's account information."""
+            runtime = get_runtime(UserContext)
+            user_id = runtime.context.user_id
+
+            if user_id in USER_DATABASE:
+                user = USER_DATABASE[user_id]
+                return f"Account holder: {user['name']}\nType: {user['account_type']}\nBalance: ${user['balance']}"
+            return "User not found"
+
+        model = ChatOpenAI(model="gpt-4o")
+        agent = create_agent(
+            model,
+            tools=[get_account_info],
+            context_schema=UserContext,
+            prompt="You are a financial assistant."
+        )
+
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": "What's my current balance?"}]},
+            context=UserContext(user_id="user123")
+        )
+        ```
+        :::
+        :::js
+        Tools can access an agent's runtime context through the `config` parameter:
+
+        ```ts wrap
+        import { z } from "zod"
+        import { ChatOpenAI } from "@langchain/openai"
+        import { ToolNode, createAgent } from "langchain"
+
+        const getUserName = tool(
+            (_, config) => {
+                return config.context.user_name
+            },
+            {
+                name: "get_user_name",
+                description: "Get the user's name.",
+                schema: z.object({})
+            }
+        );
+
+        const contextSchema = z.object({
+            user_name: z.string()
+        });
+
+        const agent = createAgent({
+            model: new ChatOpenAI({ model: "gpt-4o" }),
+            tools: [getUserName],
+            contextSchema,
+        })
+
+        const result = await agent.invoke(
+            {
+                messages: [{ role: "user", content: "What is my name?" }]
+            },
+            {
+                context: { user_name: "John Smith" }
+            }
+        );
+        ```
+        :::
+    </Accordion>
+
+    <Accordion title="Accessing long-term memory inside a tool">
+        <Info>
+            **`store`**: LangChain's persistence layer. An agent's long-term memory store, e.g. user-specific or application-specific data stored across conversations.
+        </Info>
+
+        :::python
+        Tools can access an agent's store through `get_store`:
+
+        ```python wrap
+        from langgraph.config import get_store
+
+        @tool
+        def get_user_info(user_id: str) -> str:
+            """Look up user info."""
+            store = get_store()
+            user_info = store.get(("users",), user_id)
+            return str(user_info.value) if user_info else "Unknown user"
+        ```
+        :::
+        :::js
+        You can initialize an `InMemoryStore` to store long-term memory:
+
+        ```ts wrap
+        import { z } from "zod";
+        import { createAgent, InMemoryStore } from "langchain";
+        import { ChatOpenAI } from "@langchain/openai";
+
+        const store = new InMemoryStore();
+
+        const getUserInfo = tool(
+            ({ user_id }) => {
+                return store.get(["users"], user_id)
+            },
+            {
+                name: "get_user_info",
+                description: "Look up user info.",
+                schema: z.object({
+                user_id: z.string()
+                })
+            }
+        );
+
+        const agent = createAgent({
+            model: new ChatOpenAI({ model: "gpt-4o" }),
+            tools: [getUserInfo],
+            store,
+        });
+        ```
+        :::
+    </Accordion>
+
+    <Accordion title="Updating long-term memory inside a tool">
+        To update long-term memory, you can use the `.put()` method of `InMemoryStore`. A complete example of persistent memory across sessions:
+
+        :::python
+        ```python wrap expandable
+        from typing import Any
+        from langgraph.config import get_store
+        from langgraph.store.memory import InMemoryStore
+        from langchain.agents import create_agent
+        from langchain_core.tools import tool
+
+        @tool
+        def get_user_info(user_id: str) -> str:
+            """Look up user info."""
+            store = get_store()
+            user_info = store.get(("users",), user_id)
+            return str(user_info.value) if user_info else "Unknown user"
+
+        @tool
+        def save_user_info(user_id: str, user_info: dict[str, Any]) -> str:
+            """Save user info."""
+            store = get_store()
+            store.put(("users",), user_id, user_info)
+            return "Successfully saved user info."
+
+        store = InMemoryStore()
+        agent = create_agent(
+            model,
+            tools=[get_user_info, save_user_info],
+            store=store
+        )
+
+        # First session: save user info
+        agent.invoke({
+            "messages": [{"role": "user", "content": "Save the following user: userid: abc123, name: Foo, age: 25, email: foo@langchain.dev"}]
+        })
+
+        # Second session: get user info
+        agent.invoke({
+            "messages": [{"role": "user", "content": "Get user info for user with id 'abc123'"}]
+        })
+        # Here is the user info for user with ID "abc123":
+        # - Name: Foo
+        # - Age: 25
+        # - Email: foo@langchain.dev
+        ```
+        :::
+
+        :::js
+        ```ts wrap expandable
+        import { z } from "zod";
+        import { createAgent, tool, InMemoryStore } from "langchain";
+        import { ChatOpenAI } from "@langchain/openai";
+
+        const store = new InMemoryStore();
+
+        const getUserInfo = tool(
+            async ({ user_id }) => {
+                const value = await store.get(["users"], user_id);
+                console.log("get_user_info", user_id, value);
+                return value;
+            },
+            {
+                name: "get_user_info",
+                description: "Look up user info.",
+                schema: z.object({
+                user_id: z.string(),
+                }),
+            }
+        );
+
+        const saveUserInfo = tool(
+            async ({ name, age, email }) => {
+                console.log("save_user_info", name, age, email);
+                await store.put(["users"], name, { name, age, email });
+                return "Successfully saved user info.";
+            },
+            {
+                name: "save_user_info",
+                description: "Save user info.",
+                schema: z.object({
+                name: z.string(),
+                age: z.number(),
+                email: z.string(),
+                }),
+            }
+        );
+
+        const agent = createAgent({
+            llm: new ChatOpenAI({ model: "gpt-4o" }),
+            tools: [getUserInfo, saveUserInfo],
+            store,
+        });
+
+        // First session: save user info
+        await agent.invoke({
+            messages: [
+                {
+                role: "user",
+                content:
+                    "Save the following user: userid: abc123, name: Foo, age: 25, email: foo@langchain.dev",
+                },
+            ],
+        });
+
+        // Second session: get user info
+        const result = await agent.invoke({
+            messages: [
+                { role: "user", content: "Get user info for user with id 'abc123'" },
+            ],
+        });
+
+        console.log(result);
+        // Here is the user info for user with ID "abc123":
+        // - Name: Foo
+        // - Age: 25
+        // - Email: foo@langchain.dev
+        ```
+        :::
+    </Accordion>
+</AccordionGroup>

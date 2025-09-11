@@ -65,6 +65,7 @@ Makefile              # Build automation
 - **Only edit files in `src/`** - The `build/` directory is automatically generated
 - **Use Mintlify syntax** - See [Mintlify documentation](https://mintlify.com/docs) for formatting guidelines
 - **Test your changes** - Use `docs dev` to preview changes locally with hot reload (on save)
+- **Use safe Mintlify commands** - Use `make mint-broken-links` instead of `mint broken-links` to check final built documentation
 
 ### Available Commands
 
@@ -72,6 +73,8 @@ Makefile              # Build automation
 
 - `make dev` - Start development mode with file watching and live rebuild
 - `make build` - Build documentation to `./build` directory
+- `make mint-broken-links` - Check for broken links in built documentation (excludes integrations)
+- `make mint-broken-links-all` - Check for broken links in built documentation (includes all directories)
 - `make install` - Install all dependencies
 - `make clean` - Remove build artifacts
 - `make test` - Run the test suite
@@ -188,3 +191,32 @@ Once your branch has been merged into `main`, you need to push the changes to `p
 2. Click the **Run workflow** button.
 3. Select the **main** branch to deploy.
 4. Click **Run workflow**.
+
+## Troubleshooting
+
+### Mintlify .venv Parsing Error
+
+**Problem**: Running `mint broken-links` or other Mintlify commands from the project root causes parsing errors like:
+```
+Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licenses/LICENSE.md 
+- 3:48: Unexpected character '@' (U+0040) in name
+```
+
+**Root Cause**: Mintlify tries to parse all files in the directory, including Python virtual environment files that contain invalid MDX syntax.
+
+**Solutions** (in order of preference):
+
+1. **Use the safe Make commands** (recommended):
+   ```bash
+   make mint-broken-links  # Builds docs first, then checks links (excludes integrations)
+   ```
+
+2. **Run Mintlify commands from the build directory**:
+   ```bash
+   cd build               # Change to build directory where final docs are
+   mint broken-links      # Now safe to run
+   ```
+
+**Why this works**: The solution ensures Mintlify commands run from the `build/` directory where the final documentation is generated, which is the correct place to check for broken links. This avoids scanning the Python virtual environment in the project root.
+
+**Prevention**: Always use the provided Make commands instead of running raw `mint` commands from the project root.
