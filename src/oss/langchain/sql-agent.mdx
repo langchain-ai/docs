@@ -1,0 +1,1307 @@
+---
+title: Build a SQL agent
+---
+
+import ChatModelTabsPy from '/snippets/chat-model-tabs.mdx';
+import ChatModelTabsJS from '/snippets/chat-model-tabs-js.mdx';
+
+:::python
+In this tutorial, you will learn how to build an agent that can answer questions about a SQL database. You'll build an agent in two ways:
+
+1. [Build an agent with minimal code](#build-an-agent-with-minimal-code)
+2. [Build a customized workflow using LangGraph](#build-a-customized-workflow)
+:::
+:::js
+In this tutorial, you will learn how to build an agent with minimal code that can answer questions about a SQL database.
+:::
+
+At a high level, the agent will:
+
+<Steps>
+<Step title="Fetch the available tables and schemas from the database"></Step>
+<Step title="Decide which tables are relevant to the question"></Step>
+<Step title="Generate a query based on the question and information from the schemas"></Step>
+<Step title="Safety-check the query to limit the impact of LLM-generated queries"></Step>
+<Step title="Execute the query and return the results"></Step>
+<Step title="Correct mistakes surfaced by the database engine until the query is successful"></Step>
+<Step title="Formulate a response based on the results"></Step>
+</Steps>
+
+<Warning>
+Building Q&A systems of SQL databases requires executing model-generated SQL queries. There are inherent risks in doing this. Make sure that your database connection permissions are always scoped as narrowly as possible for your agent's needs. This will mitigate, though not eliminate, the risks of building a model-driven system.
+</Warning>
+
+## Before you begin
+
+1. Install dependencies:
+
+    :::python
+    <CodeGroup>
+    ```bash pip
+    pip install langchain  langgraph  langchain-community
+    ```
+    </CodeGroup>
+    :::
+    :::js
+    <CodeGroup>
+    ```bash npm
+    npm i langchain @langchain/core typeorm sqlite3 zod
+    ```
+    ```bash yarn
+    yarn add langchain @langchain/core typeorm sqlite3 zod
+    ```
+    ```bash pnpm
+    pnpm add langchain @langchain/core typeorm sqlite3 zod
+    ```
+    </CodeGroup>
+    :::
+
+2. Set up [LangSmith](https://smith.langchain.com) to inspect what is happening inside your chain or agent. Then set the following environment variables:
+
+    ```shell
+    export LANGSMITH_TRACING="true"
+    export LANGSMITH_API_KEY="..."
+    ```
+
+## Build an agent with minimal code
+
+### 1. Select an LLM
+
+:::python
+Select a model that supports [tool-calling](/oss/integrations/providers):
+
+<ChatModelTabsPy />
+:::
+:::js
+
+Select a model that supports [tool-calling](/oss/integrations/providers):
+<ChatModelTabsJS />
+:::
+
+The output shown in the examples below used OpenAI.
+
+### 2. Configure the database
+
+You will be creating a [SQLite database](https://www.sqlitetutorial.net/sqlite-sample-database/) for this tutorial. SQLite is a lightweight database that is easy to set up and use. We will be loading the `chinook` database, which is a sample database that represents a digital media store.
+
+For convenience, we have hosted the database (`Chinook.db`) on a public GCS bucket.
+
+:::python
+```python
+import requests, pathlib
+
+url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
+local_path = pathlib.Path("Chinook.db")
+
+if local_path.exists():
+    print(f"{local_path} already exists, skipping download.")
+else:
+    response = requests.get(url)
+    if response.status_code == 200:
+        local_path.write_bytes(response.content)
+        print(f"File downloaded and saved as {local_path}")
+    else:
+        print(f"Failed to download the file. Status code: {response.status_code}")
+```
+:::
+:::js
+```js
+import fs from "node:fs/promises";
+import path from "node:path";
+
+const url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db";
+const localPath = path.resolve("Chinook.db");
+
+async function resolveDbPath() {
+  if (await fs.exists(localPath)) {
+    return localPath;
+  }
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to download DB. Status code: ${resp.status}`);
+  const buf = Buffer.from(await resp.arrayBuffer());
+  await fs.writeFile(localPath, buf);
+  return localPath;
+}
+```
+:::
+
+### 3. Add tools for database interactions
+:::python
+Use the `SQLDatabase` wrapper available in the `langchain_community` package to interact with the database. The wrapper provides a simple interface to execute SQL queries and fetch results:
+
+```python
+from langchain_community.utilities import SQLDatabase
+
+db = SQLDatabase.from_uri("sqlite:///Chinook.db")
+```
+You will extract information about the database that will help the LLM generate queries. This is stored for inclusion in the LLM Prompt.
+```python
+SCHEMA = db.get_table_info()
+
+```
+:::
+:::js
+
+Use the `SqlDatabase` wrapper available in the `langchain/sql_db` to interact with the database. The wrapper provides a simple interface to execute SQL queries and fetch results:
+```js
+import { SqlDatabase } from "langchain/sql_db";
+import { DataSource } from "typeorm";
+
+let db: SqlDatabase | undefined;
+async function getDb() {
+  if (!db) {
+    const dbPath = await resolveDbFile();
+    const datasource = new DataSource({ type: "sqlite", database: dbPath });
+    db = await SqlDatabase.fromDataSourceParams({ appDataSource: datasource });
+  }
+  return db;
+}
+
+async function getSchema() {
+  const db = await getDb();
+  return await db.getTableInfo();
+}
+```
+:::
+
+<Accordion title="Show output">
+
+```sql
+
+CREATE TABLE "Album" (
+	"AlbumId" INTEGER NOT NULL,
+	"Title" NVARCHAR(160) NOT NULL,
+	"ArtistId" INTEGER NOT NULL,
+	PRIMARY KEY ("AlbumId"),
+	FOREIGN KEY("ArtistId") REFERENCES "Artist" ("ArtistId")
+)
+
+/*
+3 rows from Album table:
+AlbumId	Title	ArtistId
+1	For Those About To Rock We Salute You	1
+2	Balls to the Wall	2
+3	Restless and Wild	2
+*/
+
+
+CREATE TABLE "Artist" (
+	"ArtistId" INTEGER NOT NULL,
+	"Name" NVARCHAR(120),
+	PRIMARY KEY ("ArtistId")
+)
+
+/*
+3 rows from Artist table:
+ArtistId	Name
+1	AC/DC
+2	Accept
+3	Aerosmith
+*/
+
+
+CREATE TABLE "Customer" (
+	"CustomerId" INTEGER NOT NULL,
+	"FirstName" NVARCHAR(40) NOT NULL,
+	"LastName" NVARCHAR(20) NOT NULL,
+	"Company" NVARCHAR(80),
+	"Address" NVARCHAR(70),
+	"City" NVARCHAR(40),
+	"State" NVARCHAR(40),
+	"Country" NVARCHAR(40),
+	"PostalCode" NVARCHAR(10),
+	"Phone" NVARCHAR(24),
+	"Fax" NVARCHAR(24),
+	"Email" NVARCHAR(60) NOT NULL,
+	"SupportRepId" INTEGER,
+	PRIMARY KEY ("CustomerId"),
+	FOREIGN KEY("SupportRepId") REFERENCES "Employee" ("EmployeeId")
+)
+
+/*
+3 rows from Customer table:
+CustomerId	FirstName	LastName	Company	Address	City	State	Country	PostalCode	Phone	Fax	Email	SupportRepId
+1	Luís	Gonçalves	Embraer - Empresa Brasileira de Aeronáutica S.A.	Av. Brigadeiro Faria Lima, 2170	São José dos Campos	SP	Brazil	12227-000	+55 (12) 3923-5555	+55 (12) 3923-5566	luisg@embraer.com.br	3
+2	Leonie	Köhler	None	Theodor-Heuss-Straße 34	Stuttgart	None	Germany	70174	+49 0711 2842222	None	leonekohler@surfeu.de	5
+3	François	Tremblay	None	1498 rue Bélanger	Montréal	QC	Canada	H2G 1A7	+1 (514) 721-4711	None	ftremblay@gmail.com	3
+*/
+
+
+CREATE TABLE "Employee" (
+	"EmployeeId" INTEGER NOT NULL,
+	"LastName" NVARCHAR(20) NOT NULL,
+	"FirstName" NVARCHAR(20) NOT NULL,
+	"Title" NVARCHAR(30),
+	"ReportsTo" INTEGER,
+	"BirthDate" DATETIME,
+	"HireDate" DATETIME,
+	"Address" NVARCHAR(70),
+	"City" NVARCHAR(40),
+	"State" NVARCHAR(40),
+	"Country" NVARCHAR(40),
+	"PostalCode" NVARCHAR(10),
+	"Phone" NVARCHAR(24),
+	"Fax" NVARCHAR(24),
+	"Email" NVARCHAR(60),
+	PRIMARY KEY ("EmployeeId"),
+	FOREIGN KEY("ReportsTo") REFERENCES "Employee" ("EmployeeId")
+)
+
+/*
+3 rows from Employee table:
+EmployeeId	LastName	FirstName	Title	ReportsTo	BirthDate	HireDate	Address	City	State	Country	PostalCode	Phone	Fax	Email
+1	Adams	Andrew	General Manager	None	1962-02-18 00:00:00	2002-08-14 00:00:00	11120 Jasper Ave NW	Edmonton	AB	Canada	T5K 2N1	+1 (780) 428-9482	+1 (780) 428-3457	andrew@chinookcorp.com
+2	Edwards	Nancy	Sales Manager	1	1958-12-08 00:00:00	2002-05-01 00:00:00	825 8 Ave SW	Calgary	AB	Canada	T2P 2T3	+1 (403) 262-3443	+1 (403) 262-3322	nancy@chinookcorp.com
+3	Peacock	Jane	Sales Support Agent	2	1973-08-29 00:00:00	2002-04-01 00:00:00	1111 6 Ave SW	Calgary	AB	Canada	T2P 5M5	+1 (403) 262-3443	+1 (403) 262-6712	jane@chinookcorp.com
+*/
+
+
+CREATE TABLE "Genre" (
+	"GenreId" INTEGER NOT NULL,
+	"Name" NVARCHAR(120),
+	PRIMARY KEY ("GenreId")
+)
+
+/*
+3 rows from Genre table:
+GenreId	Name
+1	Rock
+2	Jazz
+3	Metal
+*/
+
+
+CREATE TABLE "Invoice" (
+	"InvoiceId" INTEGER NOT NULL,
+	"CustomerId" INTEGER NOT NULL,
+	"InvoiceDate" DATETIME NOT NULL,
+	"BillingAddress" NVARCHAR(70),
+	"BillingCity" NVARCHAR(40),
+	"BillingState" NVARCHAR(40),
+	"BillingCountry" NVARCHAR(40),
+	"BillingPostalCode" NVARCHAR(10),
+	"Total" NUMERIC(10, 2) NOT NULL,
+	PRIMARY KEY ("InvoiceId"),
+	FOREIGN KEY("CustomerId") REFERENCES "Customer" ("CustomerId")
+)
+
+/*
+3 rows from Invoice table:
+InvoiceId	CustomerId	InvoiceDate	BillingAddress	BillingCity	BillingState	BillingCountry	BillingPostalCode	Total
+1	2	2009-01-01 00:00:00	Theodor-Heuss-Straße 34	Stuttgart	None	Germany	70174	1.98
+2	4	2009-01-02 00:00:00	Ullevålsveien 14	Oslo	None	Norway	0171	3.96
+3	8	2009-01-03 00:00:00	Grétrystraat 63	Brussels	None	Belgium	1000	5.94
+*/
+
+
+CREATE TABLE "InvoiceLine" (
+	"InvoiceLineId" INTEGER NOT NULL,
+	"InvoiceId" INTEGER NOT NULL,
+	"TrackId" INTEGER NOT NULL,
+	"UnitPrice" NUMERIC(10, 2) NOT NULL,
+	"Quantity" INTEGER NOT NULL,
+	PRIMARY KEY ("InvoiceLineId"),
+	FOREIGN KEY("TrackId") REFERENCES "Track" ("TrackId"),
+	FOREIGN KEY("InvoiceId") REFERENCES "Invoice" ("InvoiceId")
+)
+
+/*
+3 rows from InvoiceLine table:
+InvoiceLineId	InvoiceId	TrackId	UnitPrice	Quantity
+1	1	2	0.99	1
+2	1	4	0.99	1
+3	2	6	0.99	1
+*/
+
+
+CREATE TABLE "MediaType" (
+	"MediaTypeId" INTEGER NOT NULL,
+	"Name" NVARCHAR(120),
+	PRIMARY KEY ("MediaTypeId")
+)
+
+/*
+3 rows from MediaType table:
+MediaTypeId	Name
+1	MPEG audio file
+2	Protected AAC audio file
+3	Protected MPEG-4 video file
+*/
+
+
+CREATE TABLE "Playlist" (
+	"PlaylistId" INTEGER NOT NULL,
+	"Name" NVARCHAR(120),
+	PRIMARY KEY ("PlaylistId")
+)
+
+/*
+3 rows from Playlist table:
+PlaylistId	Name
+1	Music
+2	Movies
+3	TV Shows
+*/
+
+
+CREATE TABLE "PlaylistTrack" (
+	"PlaylistId" INTEGER NOT NULL,
+	"TrackId" INTEGER NOT NULL,
+	PRIMARY KEY ("PlaylistId", "TrackId"),
+	FOREIGN KEY("TrackId") REFERENCES "Track" ("TrackId"),
+	FOREIGN KEY("PlaylistId") REFERENCES "Playlist" ("PlaylistId")
+)
+
+/*
+3 rows from PlaylistTrack table:
+PlaylistId	TrackId
+1	3402
+1	3389
+1	3390
+*/
+
+
+CREATE TABLE "Track" (
+	"TrackId" INTEGER NOT NULL,
+	"Name" NVARCHAR(200) NOT NULL,
+	"AlbumId" INTEGER,
+	"MediaTypeId" INTEGER NOT NULL,
+	"GenreId" INTEGER,
+	"Composer" NVARCHAR(220),
+	"Milliseconds" INTEGER NOT NULL,
+	"Bytes" INTEGER,
+	"UnitPrice" NUMERIC(10, 2) NOT NULL,
+	PRIMARY KEY ("TrackId"),
+	FOREIGN KEY("MediaTypeId") REFERENCES "MediaType" ("MediaTypeId"),
+	FOREIGN KEY("GenreId") REFERENCES "Genre" ("GenreId"),
+	FOREIGN KEY("AlbumId") REFERENCES "Album" ("AlbumId")
+)
+
+/*
+3 rows from Track table:
+TrackId	Name	AlbumId	MediaTypeId	GenreId	Composer	Milliseconds	Bytes	UnitPrice
+1	For Those About To Rock (We Salute You)	1	1	1	Angus Young, Malcolm Young, Brian Johnson	343719	11170334	0.99
+2	Balls to the Wall	2	2	1	None	342562	5510424	0.99
+3	Fast As a Shark	3	2	1	F. Baltes, S. Kaufman, U. Dirkscneider & W. Hoffman	230619	3990994	0.99
+*/
+```
+
+</Accordion>
+
+### 4. Execute SQL queries
+
+Before running the command, do a check to check the LLM generated command in ` _safe_sql`:
+
+:::python
+```python
+import re
+from langchain_core.tools import tool
+DENY_RE = re.compile(r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b", re.I)
+HAS_LIMIT_TAIL_RE = re.compile(r"(?is)\blimit\b\s+\d+(\s*,\s*\d+)?\s*;?\s*$")
+
+def _safe_sql(q: str) -> str:
+    # normalize
+    q = q.strip()
+    # block multiple statements (allow one optional trailing ;)
+    if q.count(";") > 1 or (q.endswith(";") and ";" in q[:-1]):
+        return "Error: multiple statements are not allowed."
+    q = q.rstrip(";").strip()
+
+    # read-only gate
+    if not q.lower().startswith("select"):
+        return "Error: only SELECT statements are allowed."
+    if DENY_RE.search(q):
+        return "Error: DML/DDL detected. Only read-only queries are permitted."
+
+    # append LIMIT only if not already present at the end (robust to whitespace/newlines)
+    if not HAS_LIMIT_TAIL_RE.search(q):
+        q += " LIMIT 5"
+    return q
+```
+:::
+:::js
+```js
+
+const DENY_RE = /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b/i;
+const HAS_LIMIT_TAIL_RE = /\blimit\b\s+\d+(\s*,\s*\d+)?\s*;?\s*$/i;
+
+function sanitizeSqlQuery(q) {
+  let query = String(q ?? "").trim();
+
+  // block multiple statements (allow one optional trailing ;)
+  const semis = [...query].filter((c) => c === ";").length;
+  if (semis > 1 || (query.endsWith(";") && query.slice(0, -1).includes(";"))) {
+    throw new Error("multiple statements are not allowed.")
+  }
+  query = query.replace(/;+\s*$/g, "").trim();
+
+  // read-only gate
+  if (!query.toLowerCase().startsWith("select")) {
+    throw new Error("Only SELECT statements are allowed")
+  }
+  if (DENY_RE.test(query)) {
+    throw new Error("DML/DDL detected. Only read-only queries are permitted.")
+  }
+
+  // append LIMIT only if not already present
+  if (!HAS_LIMIT_TAIL_RE.test(query)) {
+    query += " LIMIT 5";
+  }
+  return query;
+}
+
+```
+:::
+
+Then, use `run` from `SQLDatabase` to execute commands with an `execute_sql` tool:
+
+:::python
+```python
+@tool
+def execute_sql(query: str) -> str:
+    """Execute a READ-ONLY SQLite SELECT query and return results."""
+    query = _safe_sql(query)
+    q = query
+    if q.startswith("Error:"):
+        return q
+    try:
+        return db.run(q)
+    except Exception as e:
+        return f"Error: {e}"
+```
+:::
+:::js
+```js
+import { tool } from "langchain"
+import { z } from "zod";
+
+const executeSql = tool(
+  async ({ query }) => {
+    const q = sanitizeSqlQuery(query);
+    try {
+      const result = await db.run(q);
+      return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+    } catch (e) {
+      throw new Error(e?.message ?? String(e))
+    }
+  },
+  {
+    name: "execute_sql",
+    description: "Execute a READ-ONLY SQLite SELECT query and return results.",
+    schema: z.object({
+      query: z.string().describe("SQLite SELECT query to execute (read-only)."),
+    }),
+  }
+);
+
+```
+:::
+
+:::python
+### 5. Use `create_agent`
+
+Use `create_agent` to build a [ReAct agent](https://arxiv.org/pdf/2210.03629) with minimal code. The agent will interpret the request and generate a SQL command. The tools will check the command for safety and then try to execute the command. If the command has an error, the error message is returned to the model. The model can then examine the original request and the new error message and generate a new command. This can continue until the LLM generates the command successfully or reaches an end count. This pattern of providing a model with feedback - error messages in this case - is very powerful.
+:::
+:::js
+### 5. Use `createAgent`
+
+Use `createAgent` to build a [ReAct agent](https://arxiv.org/pdf/2210.03629) with minimal code. The agent will interpret the request and generate a SQL command. The tools will check the command for safety and then try to execute the command. If the command has an error, the error message is returned to the model. The model can then examine the original request and the new error message and generate a new command. This can continue until the LLM generates the command successfully or reaches an end count. This pattern of providing a model with feedback - error messages in this case - is very powerful.
+:::
+
+Initialize the agent with a descriptive system prompt to customize its behavior:
+
+:::python
+```python
+
+SYSTEM = f"""You are a careful SQLite analyst.
+
+Authoritative schema (do not invent columns/tables):
+{SCHEMA}
+
+Rules:
+- Think step-by-step.
+- When you need data, call the tool `execute_sql` with ONE SELECT query.
+- Read-only only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
+- Limit to 5 rows unless user explicitly asks otherwise.
+- If the tool returns 'Error:', revise the SQL and try again.
+- Limit the number of attempts to 5.
+- If you are not successful after 5 attempts, return a note to the user.
+- Prefer explicit column lists; avoid SELECT *.
+"""
+```
+:::
+:::js
+```js
+import { SystemMessage } from "langchain";
+
+const getSystemPrompt = async () => new SystemMessage(`You are a careful SQLite analyst.
+
+Authoritative schema (do not invent columns/tables):
+${await getSchema()}
+
+Rules:
+- Think step-by-step.
+- When you need data, call the tool \`execute_sql\` with ONE SELECT query.
+- Read-only only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
+- Limit to 5 rows unless user explicitly asks otherwise.
+- If the tool returns 'Error:', revise the SQL and try again.
+- Limit the number of attempts to 5.
+- If you are not successful after 5 attempts, return a note to the user.
+- Prefer explicit column lists; avoid SELECT *.
+`);
+```
+:::
+
+Now, create an agent with the model, tools, and prompt:
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain_core.messages import SystemMessage
+agent = create_agent(
+    model=llm,
+    tools=[execute_sql],
+    prompt=SystemMessage(content=SYSTEM),
+)
+```
+:::
+
+:::js
+```js
+import { createAgent } from "langchain";
+
+const agent = createAgent({
+  model: "openai:gpt-5",
+  tools: [executeSql],
+  prompt: getSystemPrompt,
+});
+
+```
+:::
+
+### 5. Run the agent
+
+Run the agent on a sample query and observe its behavior:
+
+:::python
+```python
+question = "Which genre on average has the longest tracks?"
+
+for step in agent.stream(
+    {"messages": [{"role": "user", "content": question}]},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+```
+================================ Human Message =================================
+
+Which genre on average has the longest tracks?
+================================== Ai Message ==================================
+Tool Calls:
+  execute_sql (call_4Xghu6nWYhbFlOwSgvNNiJul)
+ Call ID: call_4Xghu6nWYhbFlOwSgvNNiJul
+  Args:
+    query: SELECT g.GenreId, g.Name AS GenreName, ROUND(AVG(t.Milliseconds), 2) AS AvgMilliseconds, ROUND(AVG(t.Milliseconds) / 60000.0, 2) AS AvgMinutes
+FROM Track t
+JOIN Genre g ON t.GenreId = g.GenreId
+GROUP BY g.GenreId, g.Name
+ORDER BY AVG(t.Milliseconds) DESC
+LIMIT 1;
+================================= Tool Message =================================
+Name: execute_sql
+
+[(20, 'Sci Fi & Fantasy', 2911783.04, 48.53)]
+================================== Ai Message ==================================
+
+Sci Fi & Fantasy — about 48.53 minutes per track on average.
+```
+:::
+
+:::js
+```js
+const question = "Which genre, on average, has the longest tracks?";
+const stream = await agent.stream(
+  { messages: [{ role: "user", content: question }] },
+  { streamMode: "values" }
+);
+for await (const step of stream) {
+  const message = step.messages.at(-1);
+  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
+}
+```
+
+```
+human: Which genre, on average, has the longest tracks?
+ai:
+tool: [{"Genre":"Sci Fi & Fantasy","AvgMilliseconds":2911783.0384615385}]
+ai: Sci Fi & Fantasy — average track length ≈ 48.5 minutes (about 2,911,783 ms).
+```
+:::
+
+The agent correctly wrote a query, checked the query, and ran it to inform its final response.
+
+:::python
+<Note>
+    You can inspect all aspects of the above run, including steps taken, tools invoked, what prompts were seen by the LLM, and more in the [LangSmith trace](https://smith.langchain.com/public/cd2ce887-388a-4bb1-a29d-48208ce50d15/r).
+</Note>
+:::
+:::js
+<Note>
+    You can inspect all aspects of the above run, including steps taken, tools invoked, what prompts were seen by the LLM, and more in the [LangSmith trace](https://smith.langchain.com/public/653d218b-af67-4854-95ca-6abecb9b2520/r).
+</Note>
+:::
+
+#### (Optional) Use Studio
+
+[Studio](/langgraph-platform/langgraph-studio) provides a "client side" loop as well as memory so you can run this as a chat interface and query the database. You can ask questions like "Tell me the scheme of the database" or "Show me the invoices for the 5 top customers". You will see the SQL command that is generated and the resulting output. The details of how to get that started are below.
+<Accordion title="Run your agent in Studio">
+
+In addition to the previously mentioned packages, you will need to:
+
+:::python
+```shell
+pip install -U langgraph-cli[inmem]>=0.4.0
+```
+:::
+:::js
+```shell
+npm i -g langgraph-cli@latest
+```
+:::
+
+In directory you will run in, you will need a `langgraph.json` file with the following contents:
+
+:::python
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+      "agent": "./sql_agent.py:agent",
+      "graph": "./sql_agent_langgraph.py:graph"
+  },
+  "env": ".env"
+}
+```
+:::
+:::js
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+      "agent": "./sqlAgent.ts:agent",
+      "graph": "./sqlAgentLanggraph.ts:graph"
+  },
+  "env": ".env"
+}
+```
+:::
+
+:::python
+Create a file `sql_agent.py` and insert this:
+
+```python
+#sql_agent.py for studio
+from langchain.agents import create_agent
+from langchain_core.messages import SystemMessage
+
+
+# initialize an LLM
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model("openai:gpt-5")
+
+# Get the database, store it locally
+import requests, pathlib
+
+url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
+local_path = pathlib.Path("Chinook.db")
+
+if local_path.exists():
+    print(f"{local_path} already exists, skipping download.")
+else:
+    response = requests.get(url)
+    if response.status_code == 200:
+        local_path.write_bytes(response.content)
+        print(f"File downloaded and saved as {local_path}")
+    else:
+        print(f"Failed to download the file. Status code: {response.status_code}")
+
+from langchain_community.utilities import SQLDatabase
+
+db = SQLDatabase.from_uri("sqlite:///Chinook.db")
+
+#print(f"Dialect: {db.dialect}")
+#print(f"Available tables: {db.get_usable_table_names()}")
+#print(f'Sample output: {db.run("SELECT * FROM Artist LIMIT 5;")}')
+
+SCHEMA = db.get_table_info()
+
+import re
+from langchain_core.tools import tool
+DENY_RE = re.compile(r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b", re.I)
+HAS_LIMIT_TAIL_RE = re.compile(r"(?is)\blimit\b\s+\d+(\s*,\s*\d+)?\s*;?\s*$")
+
+def _safe_sql(q: str) -> str:
+    # normalize
+    q = q.strip()
+    # block multiple statements (allow one optional trailing ;)
+    if q.count(";") > 1 or (q.endswith(";") and ";" in q[:-1]):
+        return "Error: multiple statements are not allowed."
+    q = q.rstrip(";").strip()
+
+    # read-only gate
+    if not q.lower().startswith("select"):
+        return "Error: only SELECT statements are allowed."
+    if DENY_RE.search(q):
+        return "Error: DML/DDL detected. Only read-only queries are permitted."
+
+    # append LIMIT only if not already present at the end (robust to whitespace/newlines)
+    if not HAS_LIMIT_TAIL_RE.search(q):
+        q += " LIMIT 5"
+    return q
+
+@tool
+def execute_sql(query: str) -> str:
+    """Execute a READ-ONLY SQLite SELECT query and return results."""
+    query = _safe_sql(query)
+    q = query
+    if q.startswith("Error:"):
+        return q
+    try:
+        return db.run(q)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+SYSTEM = f"""You are a careful SQLite analyst.
+
+Authoritative schema (do not invent columns/tables):
+{SCHEMA}
+
+Rules:
+- Think step-by-step.
+- When you need data, call the tool `execute_sql` with ONE SELECT query.
+- Read-only only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
+- Limit to 5 rows unless user explicitly asks otherwise.
+- If the tool returns 'Error:', revise the SQL and try again.
+- Limit the number of attempts to 5.
+- If you are not successful after 5 attempts, return a note to the user.
+- Prefer explicit column lists; avoid SELECT *.
+"""
+
+from langchain.agents import create_agent
+from langchain_core.messages import SystemMessage
+agent = create_agent(
+    model=llm,
+    tools=[execute_sql],
+    prompt=SystemMessage(content=SYSTEM),
+)
+```
+:::
+:::js
+```typescript
+import fs from "node:fs/promises";
+import path from "node:path";
+import { SqlDatabase } from "langchain/sql_db";
+import { DataSource } from "typeorm";
+import { SystemMessage, createAgent, tool } from "langchain"
+import { z } from "zod";
+
+const url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db";
+const localPath = path.resolve("Chinook.db");
+
+async function resolveDbPath() {
+  if (await fs.exists(localPath)) {
+    return localPath;
+  }
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to download DB. Status code: ${resp.status}`);
+  const buf = Buffer.from(await resp.arrayBuffer());
+  await fs.writeFile(localPath, buf);
+  return localPath;
+}
+
+let db: SqlDatabase | undefined;
+async function getDb() {
+  if (!db) {
+    const dbPath = await resolveDbPath();
+    const datasource = new DataSource({ type: "sqlite", database: dbPath });
+    db = await SqlDatabase.fromDataSourceParams({ appDataSource: datasource });
+  }
+  return db;
+}
+
+async function getSchema() {
+  const db = await getDb();
+  return await db.getTableInfo();
+}
+
+const DENY_RE = /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b/i;
+const HAS_LIMIT_TAIL_RE = /\blimit\b\s+\d+(\s*,\s*\d+)?\s*;?\s*$/i;
+
+function sanitizeSqlQuery(q) {
+  let query = String(q ?? "").trim();
+
+  // block multiple statements (allow one optional trailing ;)
+  const semis = [...query].filter((c) => c === ";").length;
+  if (semis > 1 || (query.endsWith(";") && query.slice(0, -1).includes(";"))) {
+    throw new Error("multiple statements are not allowed.")
+  }
+  query = query.replace(/;+\s*$/g, "").trim();
+
+  // read-only gate
+  if (!query.toLowerCase().startsWith("select")) {
+    throw new Error("Only SELECT statements are allowed")
+  }
+  if (DENY_RE.test(query)) {
+    throw new Error("DML/DDL detected. Only read-only queries are permitted.")
+  }
+
+  // append LIMIT only if not already present
+  if (!HAS_LIMIT_TAIL_RE.test(query)) {
+    query += " LIMIT 5";
+  }
+  return query;
+}
+
+const executeSql = tool(
+  async ({ query }) => {
+    const q = sanitizeSqlQuery(query);
+    try {
+      const result = await db.run(q);
+      return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+    } catch (e) {
+      throw new Error(e?.message ?? String(e))
+    }
+  },
+  {
+    name: "execute_sql",
+    description: "Execute a READ-ONLY SQLite SELECT query and return results.",
+    schema: z.object({
+      query: z.string().describe("SQLite SELECT query to execute (read-only)."),
+    }),
+  }
+);
+
+const getSystemPrompt = async () => new SystemMessage(`You are a careful SQLite analyst.
+
+Authoritative schema (do not invent columns/tables):
+${await getSchema()}
+
+Rules:
+- Think step-by-step.
+- When you need data, call the tool \`execute_sql\` with ONE SELECT query.
+- Read-only only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
+- Limit to 5 rows unless user explicitly asks otherwise.
+- If the tool returns 'Error:', revise the SQL and try again.
+- Limit the number of attempts to 5.
+- If you are not successful after 5 attempts, return a note to the user.
+- Prefer explicit column lists; avoid SELECT *.
+`);
+
+export const agent = createAgent({
+  model: "openai:gpt-5",
+  tools: [executeSql],
+  prompt: getSystemPrompt,
+});
+```
+:::
+</Accordion>
+
+:::python
+## Build a customized workflow
+
+The prebuilt agent lets us get started quickly, but at each step, the agent has access to the full set of tools. We can enforce a higher degree of control in LangGraph by customizing the agent. Below, we implement a simple ReAct-agent setup, with dedicated nodes for specific tasks. We will add customer information to [state](/oss/langgraph/graph-api#state).
+
+You will construct a dedicated node to set up the database for use by a particular customer. The customer node will fetch the customer ID and store it to state.
+
+Putting steps in dedicated nodes lets you (1) control the workflow, and (2) customize the prompts associated with each step.
+
+### 1. Initialize the model and database
+
+As above, we initialize our model and database.
+
+```python
+# initialize an LLM
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model("openai:gpt-5")
+
+import pathlib
+import requests
+
+# Initialize the database
+
+url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
+local_path = pathlib.Path("Chinook.db")
+
+if local_path.exists():
+    print(f"{local_path} already exists, skipping download.")
+else:
+    response = requests.get(url)
+    if response.status_code == 200:
+        local_path.write_bytes(response.content)
+        print(f"File downloaded and saved as {local_path}")
+    else:
+        print(f"Failed to download the file. Status code: {response.status_code}")
+
+db = SQLDatabase.from_uri("sqlite:///Chinook.db")
+SCHEMA = db.get_table_info()
+```
+
+### 2. Define the state
+You will be creating a graph. The graph state contains messages as before, but has added fields to track customer information across nodes. These are referred to in tools, so you'll define that now.
+
+```python
+# Graph State
+class GraphState(MessagesState):
+    first_name: Optional[str]
+    last_name: Optional[str]
+    customer: bool
+    customer_id: Optional[int]
+```
+
+### 3. Define tools
+In this example, you will enforce limits on what a customer can access. The LLM prompt will reflect this, but the enforcement will happen during tool calling. This model increases the scope of `_safe_sql`.
+
+<Accordion title="_safe_sql and supporting routines">
+
+```python
+# --- Policy configuration ------------------------------------------------------
+
+# Tables a customer is allowed to read
+CUSTOMER_ALLOWLIST = {
+    "invoice",
+    "invoiceline",
+    "track",
+    "album",
+    "artist",
+    "genre",
+    "mediatype",
+    "playlist",
+    "playlisttrack",
+}
+
+# Tables that are customer-scoped (must include CustomerId = :customer_id)
+CUSTOMER_SCOPED = {"invoice", "invoiceline"}
+
+# --- Safety regexes ------------------------------------------------------------
+DENY_RE = re.compile(r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b", re.I)
+HAS_LIMIT_TAIL_RE = re.compile(r"(?is)\blimit\b\s+\d+(\s*,\s*\d+)?\s*;?\s*$")
+
+# Disallow non-plain-select constructs to keep verification simple
+NON_PLAIN_SQL_RE = re.compile(r"\b(with|union|intersect|except)\b|\(\s*select\b", re.I)
+
+# Extract FROM/JOIN tables & aliases (very lightweight parsing)
+FROM_RE = re.compile(r"\bfrom\s+([\"`\[]?\w+[\"`\]]?)(?:\s+as\s+(\w+)|\s+(\w+))?", re.I)
+JOIN_RE = re.compile(r"\bjoin\s+([\"`\[]?\w+[\"`\]]?)(?:\s+as\s+(\w+)|\s+(\w+))?", re.I)
+
+# Simple checks around CustomerId usage
+CUSTID_PLACEHOLDER_EQ_RE = re.compile(r"\b(?:\w+\.)?customerid\s*=\s*:customer_id\b", re.I)
+CUSTID_NUMERIC_EQ_RE     = re.compile(r"\b(?:\w+\.)?customerid\s*=\s*\d+\b", re.I)
+
+
+def _normalize_ident(name: str) -> str:
+    # strip quotes/backticks/brackets and lower-case
+    return re.sub(r'^[\"`\[]|[\"`\]]$', '', name).lower()
+
+
+def _extract_tables_and_aliases(q: str):
+    tables = set()
+    alias_map = {}  # alias -> base table (lower-cased)
+    for m in FROM_RE.finditer(q):
+        base = _normalize_ident(m.group(1))
+        alias = (m.group(2) or m.group(3) or "").lower()
+        tables.add(base)
+        if alias:
+            alias_map[alias] = base
+    for m in JOIN_RE.finditer(q):
+        base = _normalize_ident(m.group(1))
+        alias = (m.group(2) or m.group(3) or "").lower()
+        tables.add(base)
+        if alias:
+            alias_map[alias] = base
+    return tables, alias_map
+
+
+def _safe_sql(q: str, customer_id: int) -> str:
+    # normalize
+    q = q.strip()
+    # block multiple statements (allow one optional trailing ;)
+    if q.count(";") > 1 or (q.endswith(";") and ";" in q[:-1]):
+        return "Error: multiple statements are not allowed."
+    q = q.rstrip(";").strip()
+
+    # read-only gate
+    if not q.lower().startswith("select"):
+        return "Error: only SELECT statements are allowed."
+    if DENY_RE.search(q):
+        return "Error: DML/DDL detected. Only read-only queries are permitted."
+
+    # plain-select only (no CTEs, subqueries, UNION/INTERSECT/EXCEPT)
+    if NON_PLAIN_SQL_RE.search(q):
+        return "Error: only plain SELECTs (no CTEs/subqueries/UNION/INTERSECT/EXCEPT) are allowed."
+
+    # gather referenced tables & aliases
+    tables, alias_map = _extract_tables_and_aliases(q)
+    if not tables:
+        return "Error: could not determine referenced tables."
+
+    # allowlist enforcement
+    disallowed = {t for t in tables if t not in CUSTOMER_ALLOWLIST}
+    if disallowed:
+        bad = ", ".join(sorted(disallowed))
+        return f"Error: access to tables [{bad}] is not permitted."
+
+    # customer-scoped enforcement
+    needs_customer_filter = bool(CUSTOMER_SCOPED & tables)
+    if needs_customer_filter:
+        # forbid numeric literals for CustomerId
+        if CUSTID_NUMERIC_EQ_RE.search(q):
+            return "Error: use the :customer_id placeholder (no numeric literals) for CustomerId."
+
+        # require a CustomerId = :customer_id predicate in the query text
+        if not CUSTID_PLACEHOLDER_EQ_RE.search(q):
+            return "Error: queries touching Invoice/InvoiceLine must include CustomerId = :customer_id."
+
+        # Special rule for InvoiceLine: must also reference Invoice (joined)
+        if "invoiceline" in tables and "invoice" not in tables:
+            return "Error: queries referencing InvoiceLine must also join Invoice and filter by CustomerId = :customer_id."
+
+    # append LIMIT if not present at the end (robust to whitespace/newlines)
+    if not HAS_LIMIT_TAIL_RE.search(q):
+        q += " LIMIT 5"
+    return q
+
+```
+
+</Accordion>
+
+
+Now, let's update the `execute_sql` tool. Note something interesting. The tool has the graph  *inject* the graph state into the routine when executed in the `ToolNode`. This relieves the LLM of having to be aware of this argument. In this case, we don't pass the customer id to the LLM.
+
+```python
+@tool(parse_docstring=True)
+def execute_sql(
+    query: str,
+    state: Annotated[GraphState, InjectedState],  # provides access to customer_id
+) -> str:
+    """Execute a READ-ONLY SQLite SELECT query (customer-scoped) and return results.
+
+    Args:
+        query: a string containing a valid SQL query
+
+    Returns:
+        A string with the response to the query or an error
+    """
+    customer_id = int(state["customer_id"])
+    safe_q = _safe_sql(query, customer_id)
+    if safe_q.startswith("Error:"):
+        return safe_q
+    try:
+        # Bind the named parameter expected by the query (:customer_id)
+        return db.run(safe_q, parameters={"customer_id": customer_id})
+    except Exception as e:
+        return f"Error: {e}"
+```
+
+Let's define the system prompt the LLM will use when generating SQL
+
+```python
+SYSTEM = """You are a careful SQLite analyst.
+
+Authoritative schema (do not invent columns/tables):
+{SCHEMA}
+
+Always use the `:customer_id` placeholder; never hardcode IDs or use names.
+The system binds the actual value at execution.
+
+Rules:
+- Think step-by-step.
+- When you need data, call the tool `execute_sql` with ONE SELECT query.
+- Read-only only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
+- Limit to 5 rows unless the user explicitly asks otherwise.
+- If the tool returns 'Error:', revise the SQL and try again.
+- Limit the number of attempts to 5.
+- If you are not successful after 5 attempts, return a note to the user.
+- Prefer explicit column lists; avoid SELECT *.
+"""
+```
+
+### 4. Add nodes and edges
+
+Now, let's build our graph, starting with nodes and edges.
+The `identify` node accepts the customer's name as input, looks up the customer ID in the database, and stores it in the state. It will respond with a message if it is not in the database.
+We will assume that the customer name is an input to the graph from the `invoke` function. This graph could be extended in the future with features such as user login and authentication.
+
+```python
+import re
+
+_ID_RE = re.compile(r"\b\d+\b")  # first integer in the run() string
+
+def identify_node(state: GraphState) -> GraphState:
+    first = (state.get("first_name") or "").strip()
+    last  = (state.get("last_name") or "").strip()
+
+    if not (first and last):
+        return {}  # nothing to change
+
+    # simple quote escaping for SQL string literal
+    sf = first.replace("'", "''")
+    sl = last.replace("'", "''")
+
+    try:
+        cust_raw = db.run(
+            "SELECT CustomerId FROM Customer "
+            f"WHERE FirstName = '{sf}' AND LastName = '{sl}' "
+            "LIMIT 1"
+        )
+        if not cust_raw:
+            return {}  # no change
+
+        m = _ID_RE.search(cust_raw)
+        if not m:
+            # couldn't parse an ID; don't crash—just no update
+            return {}
+
+        customer_id = int(m.group(0))
+        return {
+            "customer": True,
+            "customer_id": customer_id,
+        }
+
+    except Exception as e:
+        print(f"Customer lookup failed: {e}")
+        return {}
+
+# conditional edge
+def route_from_identify(state: GraphState):
+    # Continue only if an ID is present; otherwise END
+    if state.get("employee_id") or state.get("customer_id"):
+        return "llm"
+    return "unknown_user"
+```
+
+If the user is unknown, this node creates a message for the user. This node could be extended to create logging of non-customer attempted accesses.
+
+```python
+# Node Return Unknown User Message
+def unknown_user_node(state: GraphState):
+    return {
+        "messages": AIMessage(
+            f"The user, first_name:{state.get('first_name','missing')}, "
+            f"last_name:{state.get('last_name','missing')} is not in the database"
+        )
+    }
+```
+The following nodes form a standard ReAct loop.
+
+```python
+# Node LLM ReAct step
+model_with_tools = llm.bind_tools([execute_sql])
+
+def llm_node(state: GraphState) -> GraphState:
+    msgs = [SystemMessage(content=SYSTEM.format(SCHEMA=SCHEMA))] + state["messages"]
+    ai: AIMessage = model_with_tools.invoke(msgs)
+    return { "messages": [ai]}
+
+def route_from_llm(state: GraphState):
+    last = state["messages"][-1]
+    if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+        return "tools"
+    return END
+
+
+# Node : Tool execution
+tool_node = ToolNode([execute_sql])
+```
+
+Finally, we build and compile our graph.
+
+```python
+# Build Graph
+builder = StateGraph(GraphState)
+
+builder.add_node("identify", identify_node)
+builder.add_node("unknown_user", unknown_user_node)
+builder.add_node("llm", llm_node)
+builder.add_node("tools", tool_node)
+
+builder.set_entry_point("identify")
+builder.add_conditional_edges("identify", route_from_identify, {"llm": "llm", "unknown_user": "unknown_user"})
+builder.add_conditional_edges("llm", route_from_llm, {"tools": "tools", END: END})
+builder.add_edge("tools", "llm")
+
+graph = builder.compile()
+```
+
+We visualize the application below:
+```python
+from IPython.display import Image, display
+from langchain_core.runnables.graph import CurveStyle, MermaidDrawMethod, NodeStyles
+
+display(Image(graph.get_graph().draw_mermaid_png()))
+
+```
+<img
+  src="/oss/images/sql-agent-langgraph.png"
+  alt="SQL agent graph"
+  style={{ height: "300px" }}
+/>
+
+We can now invoke the graph as before:
+```python
+question = "Show me my last 3 invoices."
+for step in graph.stream(
+    {"messages": [{"role": "user", "content": question}],
+      "first_name": "Frank",
+      "last_name": "Harris",
+    },
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+
+```
+
+```
+================================ Human Message =================================
+
+Show me my last 3 invoices.
+================================ Human Message =================================
+
+Show me my last 3 invoices.
+================================== Ai Message ==================================
+Tool Calls:
+  execute_sql (call_5wfXt4YKdS2xttnEFc68uG4F)
+ Call ID: call_5wfXt4YKdS2xttnEFc68uG4F
+  Args:
+    query: SELECT InvoiceId, InvoiceDate, BillingAddress, BillingCity, BillingState, BillingCountry, BillingPostalCode, Total
+FROM Invoice
+WHERE CustomerId = :customer_id
+ORDER BY InvoiceDate DESC, InvoiceId DESC
+LIMIT 3;
+================================= Tool Message =================================
+Name: execute_sql
+
+[(374, '2013-07-04 00:00:00', '1600 Amphitheatre Parkway', 'Mountain View', 'CA', 'USA', '94043-1351', 5.94), (352, '2013-04-01 00:00:00', '1600 Amphitheatre Parkway', 'Mountain View', 'CA', 'USA', '94043-1351', 3.96), (329, '2012-12-28 00:00:00', '1600 Amphitheatre Parkway', 'Mountain View', 'CA', 'USA', '94043-1351', 1.98)]
+================================== Ai Message ==================================
+
+Here are your last 3 invoices:
+- InvoiceId: 374 | Date: 2013-07-04 | Total: 5.94 | Billing: 1600 Amphitheatre Parkway, Mountain View, CA, USA 94043-1351
+- InvoiceId: 352 | Date: 2013-04-01 | Total: 3.96 | Billing: 1600 Amphitheatre Parkway, Mountain View, CA, USA 94043-1351
+- InvoiceId: 329 | Date: 2012-12-28 | Total: 1.98 | Billing: 1600 Amphitheatre Parkway, Mountain View, CA, USA 94043-1351
+```
+
+<Note>
+    See [LangSmith trace](https://smith.langchain.com/public/05ce5f9b-18d3-47fe-9a14-49e32fcac14e/r) for the above run.
+</Note>
+:::
+
+## Next steps
+
+Check out the [Evaluate a graph](/langsmith/evaluate-graph) guide for evaluating LangGraph applications, including SQL agents like this one, using LangSmith.
+
+
+

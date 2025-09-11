@@ -2,12 +2,7 @@
 <!-- Brief description of what documentation is being added/updated -->
 
 ## Type of change
-<!-- Check the relevant box -->
-- [ ] New documentation page
-- [ ] Update existing documentation
-- [ ] Fix typo, bug, broken link, or formatting issue
-- [ ] Remove outdated content
-- [ ] Other (please describe):
+**Type:** [Replace with: New documentation page / Update existing documentation / Fix typo/bug/link/formatting / Remove outdated content / Other]
 
 ## Related issues/PRs
 <!-- Link to related issues, feature PRs, or discussions (if applicable) -->
@@ -19,7 +14,7 @@
 - Slack thread:
 
 ## Checklist
-<!-- Check all that apply -->
+<!-- Put an 'x' in all boxes that apply -->
 - [ ] I have read the [contributing guidelines](README.md)
 - [ ] I have tested my changes locally using `docs dev`
 - [ ] All code examples have been tested and work correctly
