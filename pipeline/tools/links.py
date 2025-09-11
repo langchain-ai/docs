@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _find_git_root(start: Path) -> Path:
-    """Return the repository root - the closest ancestor containing ``.git``.
+    """Return the repository root - the closest ancestor containing `.git`.
 
     Args:
         start: A path *inside* the repository.
@@ -38,7 +38,7 @@ def _find_git_root(start: Path) -> Path:
         The absolute path to the repo's root directory.
 
     Raises:
-        RuntimeError: If no ``.git`` directory is found while traversing up the
+        RuntimeError: If no `.git` directory is found while traversing up the
             directory tree.
     """
     for candidate in (start, *start.parents):
@@ -53,7 +53,7 @@ def _rel_to_docs_root(path: Path, docs_root: Path) -> Path:
 
     Args:
         path: The file path to normalise.
-        docs_root: The root of the documentation tree (``<repo>/src``).
+        docs_root: The root of the documentation tree (`<repo>/src`).
 
     Returns:
         A :class:`pathlib.Path` representing *path* relative to *docs_root*.
@@ -79,7 +79,7 @@ def _update_internal_links_in_moved_file(
         dry_run: Whether the operation is a preview (no disk writes).
 
     Returns:
-        A list of ``(old_url, new_url)`` tuples representing link changes.
+        A list of `(old_url, new_url)` tuples representing link changes.
     """
     if not file_path.exists():
         return []
@@ -153,11 +153,11 @@ def _rewrite_links(
         md_file: The Markdown file whose links are scanned.
         old_abs: Absolute path of the file being moved.
         new_abs: Absolute path where the file will be moved to.
-        docs_root: The root of the documentation tree (``<repo>/src``).
+        docs_root: The root of the documentation tree (`<repo>/src`).
         dry_run: Whether the operation is a preview (no disk writes).
 
     Returns:
-        A list of ``(old_url, new_url)`` tuples representing link changes.
+        A list of `(old_url, new_url)` tuples representing link changes.
     """
     src: str = md_file.read_text(encoding=ENCODING)
     modified: bool = False
@@ -225,7 +225,7 @@ def _update_internal_links_in_moved_notebook(
         dry_run: Whether the operation is a preview (no disk writes).
 
     Returns:
-        A list of ``(old_url, new_url)`` tuples representing link changes.
+        A list of `(old_url, new_url)` tuples representing link changes.
     """
     if not file_path.exists():
         return []
@@ -393,7 +393,7 @@ def _scan_and_rewrite(
         dry_run: Whether the operation is a preview (no disk writes).
 
     Returns:
-        A list of ``(old_url, new_url)`` tuples representing every link change
+        A list of `(old_url, new_url)` tuples representing every link change
         performed (or that *would* be performed in dry-run mode).
     """
     changes: list[_LinkChange] = []
@@ -416,7 +416,7 @@ def _scan_and_rewrite(
 
 
 def _write_changes_log(old_path: Path, new_path: Path, root: Path) -> None:
-    """Append file move to ``link_changes.jsonl`` as a JSON array.
+    """Append file move to `link_changes.jsonl` as a JSON array.
 
     Args:
         old_path: The original file path.

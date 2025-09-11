@@ -1887,14 +1887,14 @@ def tool_node(state: dict):
 
 
 # Conditional edge function to route to the tool node or end based upon whether the LLM made a tool call
-def should_continue(state: MessagesState) -> Literal["environment", END]:
+def should_continue(state: MessagesState) -> Literal["tool_node", END]:
     """Decide if we should continue the loop or stop based upon whether the LLM made a tool call"""
 
     messages = state["messages"]
     last_message = messages[-1]
     # If the LLM makes a tool call, then perform an action
     if last_message.tool_calls:
-        return "Action"
+        return "tool_node"
     # Otherwise, we stop (reply to the user)
     return END
 
@@ -1904,20 +1904,16 @@ agent_builder = StateGraph(MessagesState)
 
 # Add nodes
 agent_builder.add_node("llm_call", llm_call)
-agent_builder.add_node("environment", tool_node)
+agent_builder.add_node("tool_node", tool_node)
 
 # Add edges to connect nodes
 agent_builder.add_edge(START, "llm_call")
 agent_builder.add_conditional_edges(
     "llm_call",
     should_continue,
-    {
-        # Name returned by should_continue : Name of next node to visit
-        "Action": "environment",
-        END: END,
-    },
+    ["tool_node", END]
 )
-agent_builder.add_edge("environment", "llm_call")
+agent_builder.add_edge("tool_node", "llm_call")
 
 # Compile the agent
 agent = agent_builder.compile()
@@ -2077,7 +2073,7 @@ function shouldContinue(state: typeof MessagesAnnotation.State) {
 
   // If the LLM makes a tool call, then perform an action
   if (lastMessage?.tool_calls?.length) {
-    return "Action";
+    return "toolNode";
   }
   // Otherwise, we stop (reply to the user)
   return "__end__";
@@ -2086,19 +2082,15 @@ function shouldContinue(state: typeof MessagesAnnotation.State) {
 // Build workflow
 const agentBuilder = new StateGraph(MessagesAnnotation)
   .addNode("llmCall", llmCall)
-  .addNode("tools", toolNode)
+  .addNode("toolNode", toolNode)
   // Add edges to connect nodes
   .addEdge("__start__", "llmCall")
   .addConditionalEdges(
     "llmCall",
     shouldContinue,
-    {
-      // Name returned by shouldContinue : Name of next node to visit
-      "Action": "tools",
-      "__end__": "__end__",
-    }
+    ["toolNode", "__end__"]
   )
-  .addEdge("tools", "llmCall")
+  .addEdge("toolNode", "llmCall")
   .compile();
 
 // Invoke
