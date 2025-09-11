@@ -143,12 +143,6 @@ def doc() -> str:
 title: Integration packages
 ---
 
-<Info>
-
-If you'd like to contribute an integration, see [Contributing integrations](/oss/contributing#add-a-new-integration).
-
-</Info>
-
 ## Integration packages
 
 These providers have standalone `langchain-{{provider}}` packages for improved versioning, dependency management and testing.
@@ -157,8 +151,11 @@ These providers have standalone `langchain-{{provider}}` packages for improved v
 
 ## All providers
 
-Click [here](/oss/integrations/providers/all_providers) to see all providers or search
-for a provider using the search field.
+Click [here](/oss/integrations/providers/all_providers) to see all providers or search for a provider using the search field.
+
+<Info>
+    If you'd like to contribute an integration, see [Contributing integrations](/oss/contributing#add-a-new-integration).
+</Info>
 
 """  # noqa: E501
 
