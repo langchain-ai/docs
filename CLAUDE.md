@@ -24,6 +24,16 @@
 ## docs.json
 
 - Refer to the [docs.json schema](https://mintlify.com/docs.json) when building the docs.json file and site navigation
+- If adding a new group, ensure the root `index.mdx` is included in the `pages` array like:
+
+```json
+{
+  "group": "New group",
+  "pages": ["new-group/index", "new-group/other-page"]
+}
+```
+
+If the trailing `/index` (no extension included) is omitted, the Mintlify parser will raise a warning even though the site will still build.
 
 ## Frontmatter requirements for pages
 
