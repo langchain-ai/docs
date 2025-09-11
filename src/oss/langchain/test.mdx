@@ -1,3 +1,946 @@
 ---
-title: (Coming Soon) Test
+title: Test
 ---
+
+Agentic applications let an LLM decide its own next steps to solve a problem. That flexibility is powerful, but the model's black-box nature makes it hard to predict how a tweak in one part of your agent will affect the rest. To build production-ready agents, thorough testing is essential.
+
+There are a few approaches to testing your agents:
+:::python
+- [Unit tests](#unit-testing) exercise small, deterministic pieces of your agent in isolation using in-memory fakes so you can assert exact behavior quickly and deterministically.
+:::
+:::js
+- Unit tests exercise small, deterministic pieces of your agent in isolation using in-memory fakes so you can assert exact behavior quickly and deterministically.
+:::
+- [Integration tests](#integration-testing) test the agent using real network calls to confirm that components work together, credentials and schemas line up, and latency is acceptable.
+
+Agentic applications tend to lean more on integration because they chain multiple components together and must deal with flakiness due to the nondeterministic nature of LLMs.
+
+:::python
+
+## Unit Testing
+
+### Mocking Chat Model
+
+For logic not requiring API calls, you can use an in-memory stub for mocking responses.
+
+LangChain provides [`GenericFakeChatModel`](https://python.langchain.com/api_reference/core/language_models/langchain_core.language_models.fake_chat_models.GenericFakeChatModel.html) for mocking text responses. It accepts an iterator of responses (AIMessages or strings) and returns one per invocation. It supports both regular and streaming usage.
+
+```python
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+model = GenericFakeChatModel(messages=iter([
+    AIMessage(content="", tool_calls=[ToolCall(name="foo", args={"bar": "baz"}, id="call_1")]), 
+    "bar"
+]))
+
+model.invoke("hello")
+# AIMessage(content='', ..., tool_calls=[{'name': 'foo', 'args': {'bar': 'baz'}, 'id': 'call_1', 'type': 'tool_call'}])
+```
+
+If we invoke the model again, it will return the next item in the iterator:
+
+```python
+model.invoke("hello, again!")
+# AIMessage(content='bar', ...)
+```
+
+### InMemorySaver Checkpointer
+
+To enable persistence during testing, you can use the `InMemorySaver` checkpointer. This allows you to simulate multiple turns to test state-dependent behavior:
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model, 
+    tools=[],
+    checkpointer=InMemorySaver()
+)
+
+# First invocation
+agent.invoke(HumanMessage(content="I live in Sydney, Australia."))
+
+# Second invocation: the first message is persisted (Sydney location), so the model returns GMT+10 time
+agent.invoke(HumanMessage(content="What's my local time?"))
+```
+:::
+
+## Integration Testing
+
+Many agent behaviors only emerge when using a real LLM, such as which tool the agent decides to call, how it formats responses, or whether a prompt modification affects the entire execution trajectory. LangChain's [`agentevals`](https://github.com/langchain-ai/agentevals) package provides evaluators specifically designed for testing agent trajectories with live models.
+
+AgentEvals lets you easily evaluate the trajectory of your agent (the exact sequence of messages, including tool calls) by performing a **trajectory match** or by using an **LLM judge**:
+
+<Card title="Trajectory match" icon="equals" arrow="true" href="#trajectory-match-evaluator">
+Hard-code a reference trajectory for a given input and validate the run via a step-by-step comparison.
+
+Ideal for testing well-defined workflows where you know the expected behavior. Use when you have specific expectations about which tools should be called and in what order. This approach is deterministic, fast, and cost-effective since it doesn't require additional LLM calls.
+</Card>
+
+<Card title="LLM-as-judge" icon="gavel" arrow="true" href="#llm-as-judge-evaluator">
+Use a LLM to qualitatively validate your agent's execution trajectory. The "judge" LLM reviews the agent's decisions against a prompt rubric (which can include a reference trajectory).
+
+More flexible and can assess nuanced aspects like efficiency and appropriateness, but requires an LLM call and is less deterministic. Use when you want to evaluate the overall quality and reasonableness of the agent's trajectory without strict tool call or ordering requirements.
+</Card>
+
+### Installing AgentEvals
+
+:::python
+```bash
+pip install agentevals
+```
+:::
+
+:::js
+```bash
+npm install agentevals @langchain/core
+```
+:::
+
+Or, clone the [AgentEvals repository](https://github.com/langchain-ai/agentevals) directly.
+
+### Trajectory Match Evaluator
+
+:::python
+AgentEvals offers the `create_trajectory_match_evaluator` function to match your agent's trajectory against a reference trajectory. There are four modes to choose from:
+:::
+:::js
+AgentEvals offers the `createTrajectoryMatchEvaluator` function to match your agent's trajectory against a reference trajectory. There are four modes to choose from:
+:::
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `strict` | Exact match of messages and tool calls in the same order | Testing specific sequences (e.g., policy lookup before authorization) |
+| `unordered` | Same tool calls allowed in any order | Verifying information retrieval when order doesn't matter |
+| `subset` | Agent calls only tools from reference (no extras) | Ensuring agent doesn't exceed expected scope |
+| `superset` | Agent calls at least the reference tools (extras allowed) | Verifying minimum required actions are taken |
+
+<Accordion title="Strict match">
+
+The `strict` mode ensures trajectories contain identical messages in the same order with the same tool calls, though it allows for differences in message content. This is useful when you need to enforce a specific sequence of operations, such as requiring a policy lookup before authorizing an action.
+
+:::python
+```python highlight={13-15}
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from agentevals.trajectory.match import create_trajectory_match_evaluator
+
+@tool
+def get_weather(city: str):
+    """Get weather information for a city."""
+    return f"It's 75 degrees and sunny in {city}."
+
+agent = create_agent("openai:gpt-4o", tools=[get_weather])
+
+evaluator = create_trajectory_match_evaluator(
+    trajectory_match_mode="strict",
+)
+
+def test_weather_tool_called_strict():
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's the weather in San Francisco?")]
+    })
+    
+    reference_trajectory = [
+        HumanMessage(content="What's the weather in San Francisco?"),
+        AIMessage(content="", tool_calls=[
+            {"id": "call_1", "name": "get_weather", "args": {"city": "San Francisco"}}
+        ]),
+        ToolMessage(content="It's 75 degrees and sunny in San Francisco.", tool_call_id="call_1"),
+        AIMessage(content="The weather in San Francisco is 75 degrees and sunny."),
+    ]
+
+    evaluation = evaluator(
+        outputs=result["messages"], 
+        reference_outputs=reference_trajectory
+    )
+    # {
+    #     'key': 'trajectory_strict_match',
+    #     'score': True,
+    #     'comment': None,
+    # }
+    assert evaluation["score"] is True
+```
+:::
+
+:::js
+```ts highlight={25-27}
+import { createAgent } from "langchain"
+import { tool } from "@langchain/core/tools";
+import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { createTrajectoryMatchEvaluator } from "agentevals";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }: { city: string }) => {
+    return `It's 75 degrees and sunny in ${city}.`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather information for a city.",
+    schema: z.object({
+      city: z.string(),
+    }),
+  }
+);
+
+const agent = createAgent({
+  llm: "openai:gpt-4o",
+  tools: [getWeather]
+});
+
+const evaluator = createTrajectoryMatchEvaluator({
+  trajectoryMatchMode: "strict",
+});
+
+async function testWeatherToolCalledStrict() {
+  const result = await agent.invoke({
+    messages: [new HumanMessage("What's the weather in San Francisco?")]
+  });
+  
+  const referenceTrajectory = [
+    new HumanMessage("What's the weather in San Francisco?"),
+    new AIMessage({
+      content: "",
+      tool_calls: [
+        { id: "call_1", name: "get_weather", args: { city: "San Francisco" } }
+      ]
+    }),
+    new ToolMessage({
+      content: "It's 75 degrees and sunny in San Francisco.",
+      tool_call_id: "call_1"
+    }),
+    new AIMessage("The weather in San Francisco is 75 degrees and sunny."),
+  ];
+
+  const evaluation = await evaluator({
+    outputs: result.messages,
+    referenceOutputs: referenceTrajectory
+  });
+  // {
+  //     'key': 'trajectory_strict_match',
+  //     'score': true,
+  //     'comment': null,
+  // }
+  expect(evaluation.score).toBe(true);
+}
+```
+:::
+
+</Accordion>
+
+<Accordion title="Unordered match">
+
+The `unordered` mode allows the same tool calls in any order, which is helpful when you want to verify that specific information was retrieved but don't care about the sequence. For example, an agent might need to check both weather and events for a city, but the order doesn't matter.
+
+:::python
+```python highlight={18-20}
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from agentevals.trajectory.match import create_trajectory_match_evaluator
+
+@tool
+def get_weather(city: str):
+    """Get weather information for a city."""
+    return f"It's 75 degrees and sunny in {city}."
+
+@tool
+def get_events(city: str):
+    """Get events happening in a city."""
+    return f"Concert at the park in {city} tonight."
+
+agent = create_agent("openai:gpt-4o", tools=[get_weather, get_events])
+
+evaluator = create_trajectory_match_evaluator(
+    trajectory_match_mode="unordered",
+)
+
+def test_multiple_tools_any_order():
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's happening in SF today?")]
+    })
+    
+    # Reference shows tools called in different order than actual execution
+    reference_trajectory = [
+        HumanMessage(content="What's happening in SF today?"),
+        AIMessage(content="", tool_calls=[
+            {"id": "call_1", "name": "get_events", "args": {"city": "SF"}},
+            {"id": "call_2", "name": "get_weather", "args": {"city": "SF"}},
+        ]),
+        ToolMessage(content="Concert at the park in SF tonight.", tool_call_id="call_1"),
+        ToolMessage(content="It's 75 degrees and sunny in SF.", tool_call_id="call_2"),
+        AIMessage(content="Today in SF: 75 degrees and sunny with a concert at the park tonight."),
+    ]
+    
+    evaluation = evaluator(
+        outputs=result["messages"], 
+        reference_outputs=reference_trajectory,
+    )
+    # {
+    #     'key': 'trajectory_unordered_match',
+    #     'score': True,
+    # }
+    assert evaluation["score"] is True
+```
+:::
+
+:::js
+```ts highlight={34-36}
+import { createAgent } from "langchain"
+import { tool } from "@langchain/core/tools";
+import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { createTrajectoryMatchEvaluator } from "agentevals";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }: { city: string }) => {
+    return `It's 75 degrees and sunny in ${city}.`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather information for a city.",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+const getEvents = tool(
+  async ({ city }: { city: string }) => {
+    return `Concert at the park in ${city} tonight.`;
+  },
+  {
+    name: "get_events",
+    description: "Get events happening in a city.",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+const agent = createAgent({
+  llm: "openai:gpt-4o",
+  tools: [getWeather, getEvents]
+});
+
+const evaluator = createTrajectoryMatchEvaluator({
+  trajectoryMatchMode: "unordered",
+});
+
+async function testMultipleToolsAnyOrder() {
+  const result = await agent.invoke({
+    messages: [new HumanMessage("What's happening in SF today?")]
+  });
+  
+  // Reference shows tools called in different order than actual execution
+  const referenceTrajectory = [
+    new HumanMessage("What's happening in SF today?"),
+    new AIMessage({
+      content: "",
+      tool_calls: [
+        { id: "call_1", name: "get_events", args: { city: "SF" } },
+        { id: "call_2", name: "get_weather", args: { city: "SF" } },
+      ]
+    }),
+    new ToolMessage({
+      content: "Concert at the park in SF tonight.",
+      tool_call_id: "call_1"
+    }),
+    new ToolMessage({
+      content: "It's 75 degrees and sunny in SF.",
+      tool_call_id: "call_2"
+    }),
+    new AIMessage("Today in SF: 75 degrees and sunny with a concert at the park tonight."),
+  ];
+  
+  const evaluation = await evaluator({
+    outputs: result.messages,
+    referenceOutputs: referenceTrajectory,
+  });
+  // {
+  //     'key': 'trajectory_unordered_match',
+  //     'score': true,
+  // }
+  expect(evaluation.score).toBe(true);
+}
+```
+:::
+
+</Accordion>
+
+<Accordion title="Subset and superset match">
+
+The `superset` and `subset` modes match partial trajectories. The `superset` mode verifies that the agent called at least the tools in the reference trajectory, allowing additional tool calls. The `subset` mode ensures the agent did not call any tools beyond those in the reference.
+
+:::python
+```python highlight={18-20}
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from agentevals.trajectory.match import create_trajectory_match_evaluator
+
+@tool
+def get_weather(city: str):
+    """Get weather information for a city."""
+    return f"It's 75 degrees and sunny in {city}."
+
+@tool
+def get_detailed_forecast(city: str):
+    """Get detailed weather forecast for a city."""
+    return f"Detailed forecast for {city}: sunny all week."
+
+agent = create_agent("openai:gpt-4o", tools=[get_weather, get_detailed_forecast])
+
+evaluator = create_trajectory_match_evaluator(
+    trajectory_match_mode="superset",
+)
+
+def test_agent_calls_required_tools_plus_extra():
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's the weather in Boston?")]
+    })
+    
+    # Reference only requires get_weather, but agent may call additional tools
+    reference_trajectory = [
+        HumanMessage(content="What's the weather in Boston?"),
+        AIMessage(content="", tool_calls=[
+            {"id": "call_1", "name": "get_weather", "args": {"city": "Boston"}},
+        ]),
+        ToolMessage(content="It's 75 degrees and sunny in Boston.", tool_call_id="call_1"),
+        AIMessage(content="The weather in Boston is 75 degrees and sunny."),
+    ]
+    
+    evaluation = evaluator(
+        outputs=result["messages"], 
+        reference_outputs=reference_trajectory,
+    )
+    # {
+    #     'key': 'trajectory_superset_match',
+    #     'score': True,
+    #     'comment': None,
+    # }
+    assert evaluation["score"] is True
+```
+:::
+
+:::js
+```ts highlight={34-36}
+import { createAgent } from "langchain"
+import { tool } from "@langchain/core/tools";
+import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { createTrajectoryMatchEvaluator } from "agentevals";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }: { city: string }) => {
+    return `It's 75 degrees and sunny in ${city}.`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather information for a city.",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+const getDetailedForecast = tool(
+  async ({ city }: { city: string }) => {
+    return `Detailed forecast for ${city}: sunny all week.`;
+  },
+  {
+    name: "get_detailed_forecast",
+    description: "Get detailed weather forecast for a city.",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+const agent = createAgent({
+  llm: "openai:gpt-4o",
+  tools: [getWeather, getDetailedForecast]
+});
+
+const evaluator = createTrajectoryMatchEvaluator({
+  trajectoryMatchMode: "superset",
+});
+
+async function testAgentCallsRequiredToolsPlusExtra() {
+  const result = await agent.invoke({
+    messages: [new HumanMessage("What's the weather in Boston?")]
+  });
+  
+  // Reference only requires getWeather, but agent may call additional tools
+  const referenceTrajectory = [
+    new HumanMessage("What's the weather in Boston?"),
+    new AIMessage({
+      content: "",
+      tool_calls: [
+        { id: "call_1", name: "get_weather", args: { city: "Boston" } },
+      ]
+    }),
+    new ToolMessage({
+      content: "It's 75 degrees and sunny in Boston.",
+      tool_call_id: "call_1"
+    }),
+    new AIMessage("The weather in Boston is 75 degrees and sunny."),
+  ];
+  
+  const evaluation = await evaluator({
+    outputs: result.messages,
+    referenceOutputs: referenceTrajectory,
+  });
+  // {
+  //     'key': 'trajectory_superset_match',
+  //     'score': true,
+  //     'comment': null,
+  // }
+  expect(evaluation.score).toBe(true);
+}
+```
+:::
+
+</Accordion>
+
+<Info>
+:::python
+You can also set the `tool_args_match_mode` property and/or `tool_args_match_overrides` to customize how the evaluator considers equality between tool calls in the actual trajectory vs. the reference. By default, only tool calls with the same arguments to the same tool are considered equal. Visit the [repository](https://github.com/langchain-ai/agentevals?tab=readme-ov-file#tool-args-match-modes) for more details. 
+:::
+:::js
+You can also set the `toolArgsMatchMode` property and/or `toolArgsMatchOverrides` to customize how the evaluator considers equality between tool calls in the actual trajectory vs. the reference. By default, only tool calls with the same arguments to the same tool are considered equal. Visit the [repository](https://github.com/langchain-ai/agentevals?tab=readme-ov-file#tool-args-match-modes) for more details.
+:::
+</Info>
+
+### LLM-as-Judge Evaluator
+
+:::python
+You can also use an LLM to evaluate the agent's execution path with the `create_trajectory_llm_as_judge` function. Unlike the trajectory match evaluators, it doesn't require a reference trajectory, but one can be provided if available.
+:::
+:::js
+You can also use an LLM to evaluate the agent's execution path with the `createTrajectoryLLMAsJudge` function. Unlike the trajectory match evaluators, it doesn't require a reference trajectory, but one can be provided if available.
+:::
+
+<Accordion title="Without reference trajectory">
+:::python
+```python highlight={13-16}
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from agentevals.trajectory.llm import create_trajectory_llm_as_judge, TRAJECTORY_ACCURACY_PROMPT
+
+@tool
+def get_weather(city: str):
+    """Get weather information for a city."""
+    return f"It's 75 degrees and sunny in {city}."
+
+agent = create_agent("openai:gpt-4o", tools=[get_weather])
+
+evaluator = create_trajectory_llm_as_judge(
+    model="openai:o3-mini",
+    prompt=TRAJECTORY_ACCURACY_PROMPT,
+)
+
+def test_trajectory_quality():
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's the weather in Seattle?")]
+    })
+    
+    evaluation = evaluator(
+        outputs=result["messages"],
+    )
+    # {
+    #     'key': 'trajectory_accuracy',
+    #     'score': True,
+    #     'comment': 'The provided agent trajectory is reasonable...'
+    # }
+    assert evaluation["score"] is True
+```
+:::
+:::js
+```ts highlight={23-26}
+import { createAgent } from "langchain"
+import { tool } from "@langchain/core/tools";
+import { HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+import { createTrajectoryLLMAsJudge, TRAJECTORY_ACCURACY_PROMPT } from "agentevals";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }: { city: string }) => {
+    return `It's 75 degrees and sunny in ${city}.`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather information for a city.",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+const agent = createAgent({
+  llm: "openai:gpt-4o",
+  tools: [getWeather]
+});
+
+const evaluator = createTrajectoryLLMAsJudge({
+  model: "openai:o3-mini",
+  prompt: TRAJECTORY_ACCURACY_PROMPT,
+});
+
+async function testTrajectoryQuality() {
+  const result = await agent.invoke({
+    messages: [new HumanMessage("What's the weather in Seattle?")]
+  });
+  
+  const evaluation = await evaluator({
+    outputs: result.messages,
+  });
+  // {
+  //     'key': 'trajectory_accuracy',
+  //     'score': true,
+  //     'comment': 'The provided agent trajectory is reasonable...'
+  // }
+  expect(evaluation.score).toBe(true);
+}
+```
+:::
+</Accordion>
+
+<Accordion title="With reference trajectory">
+
+If you have a reference trajectory, you can add an extra variable to your prompt and pass in the reference trajectory. Below, we use the prebuilt `TRAJECTORY_ACCURACY_PROMPT_WITH_REFERENCE` prompt and configure the `reference_outputs` variable:
+
+:::python
+```python
+evaluator = create_trajectory_llm_as_judge(
+    model="openai:o3-mini",
+    prompt=TRAJECTORY_ACCURACY_PROMPT_WITH_REFERENCE,
+)
+evaluation = judge_with_reference(
+    outputs=result["messages"],
+    reference_outputs=reference_trajectory,
+)
+```
+:::
+
+:::js
+```ts
+import { TRAJECTORY_ACCURACY_PROMPT_WITH_REFERENCE } from "agentevals";
+
+const evaluator = createTrajectoryLLMAsJudge({
+  model: "openai:o3-mini",
+  prompt: TRAJECTORY_ACCURACY_PROMPT_WITH_REFERENCE,
+});
+
+const evaluation = await evaluator({
+  outputs: result.messages,
+  referenceOutputs: referenceTrajectory,
+});
+```
+:::
+
+</Accordion>
+
+<Info>
+For more configurability over how the LLM evaluates the trajectory, visit the [repository](https://github.com/langchain-ai/agentevals?tab=readme-ov-file#trajectory-llm-as-judge).
+</Info>
+
+:::python
+### Async Support
+
+All `agentevals` evaluators support Python asyncio. For evaluators that use factory functions, async versions are available by adding `async` after `create_` in the function name.
+
+<Accordion title="Async judge and evaluator example">
+
+```python
+from agentevals.trajectory.llm import create_async_trajectory_llm_as_judge, TRAJECTORY_ACCURACY_PROMPT
+from agentevals.trajectory.match import create_async_trajectory_match_evaluator
+
+async_judge = create_async_trajectory_llm_as_judge(
+    model="openai:o3-mini",
+    prompt=TRAJECTORY_ACCURACY_PROMPT,
+)
+
+async_evaluator = create_async_trajectory_match_evaluator(
+    trajectory_match_mode="strict",
+)
+
+async def test_async_evaluation():
+    result = await agent.ainvoke({
+        "messages": [HumanMessage(content="What's the weather?")]
+    })
+    
+    evaluation = await async_judge(outputs=result["messages"])
+    assert evaluation["score"] is True
+```
+
+</Accordion>
+
+:::
+
+## LangSmith Integration
+
+For tracking experiments over time, you can log evaluator results to [LangSmith](https://smith.langchain.com/), a platform for building production-grade LLM applications that includes tracing, evaluation, and experimentation tools.
+
+First, set up LangSmith by setting the required environment variables:
+
+```bash
+export LANGSMITH_API_KEY="your_langsmith_api_key"
+export LANGSMITH_TRACING="true"
+```
+
+:::python
+LangSmith offers two main approaches for running evaluations: [pytest](/langsmith/pytest) integration and the `evaluate` function.
+
+<Accordion title="Using pytest integration">
+
+```python
+import pytest
+from langsmith import testing as t
+from agentevals.trajectory.llm import create_trajectory_llm_as_judge, TRAJECTORY_ACCURACY_PROMPT
+
+trajectory_evaluator = create_trajectory_llm_as_judge(
+    model="openai:o3-mini",
+    prompt=TRAJECTORY_ACCURACY_PROMPT,
+)
+
+@pytest.mark.langsmith
+def test_trajectory_accuracy():
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's the weather in SF?")]
+    })
+    
+    reference_trajectory = [
+        HumanMessage(content="What's the weather in SF?"),
+        AIMessage(content="", tool_calls=[
+            {"id": "call_1", "name": "get_weather", "args": {"city": "SF"}},
+        ]),
+        ToolMessage(content="It's 75 degrees and sunny in SF.", tool_call_id="call_1"),
+        AIMessage(content="The weather in SF is 75 degrees and sunny."),
+    ]
+    
+    # Log inputs, outputs, and reference outputs to LangSmith
+    t.log_inputs({})
+    t.log_outputs({"messages": result["messages"]})
+    t.log_reference_outputs({"messages": reference_trajectory})
+    
+    trajectory_evaluator(
+        outputs=result["messages"],
+        reference_outputs=reference_trajectory
+    )
+```
+
+Run the evaluation with pytest:
+
+```bash
+pytest test_trajectory.py --langsmith-output
+```
+
+Results will be automatically logged to LangSmith.
+
+</Accordion>
+
+<Accordion title="Using the evaluate function">
+
+Alternatively, you can create a dataset in LangSmith and use the `evaluate` function:
+
+```python
+from langsmith import Client
+from agentevals.trajectory.llm import create_trajectory_llm_as_judge, TRAJECTORY_ACCURACY_PROMPT
+
+client = Client()
+
+trajectory_evaluator = create_trajectory_llm_as_judge(
+    model="openai:o3-mini",
+    prompt=TRAJECTORY_ACCURACY_PROMPT,
+)
+
+def run_agent(inputs):
+    """Your agent function that returns trajectory messages."""
+    return agent.invoke(inputs)["messages"]
+
+experiment_results = client.evaluate(
+    run_agent,
+    data="your_dataset_name",
+    evaluators=[trajectory_evaluator]
+)
+```
+
+Results will be automatically logged to LangSmith.
+
+
+</Accordion>
+
+<Tip>
+To learn more about evaluating your agent, see the [LangSmith docs](/langsmith/pytest).
+</Tip>
+:::
+
+:::js
+LangSmith offers two main approaches for running evaluations: [Vitest/Jest](/langsmith/vitest-jest) integration and the `evaluate` function.
+
+<Accordion title="Using vitest/jest integration">
+
+```ts
+import * as ls from "langsmith/vitest";
+// import * as ls from "langsmith/jest";
+
+import { createTrajectoryLLMAsJudge, TRAJECTORY_ACCURACY_PROMPT } from "agentevals";
+
+const trajectoryEvaluator = createTrajectoryLLMAsJudge({
+  model: "openai:o3-mini",
+  prompt: TRAJECTORY_ACCURACY_PROMPT,
+});
+
+ls.describe("trajectory accuracy", () => {
+  ls.test("accurate trajectory", {
+    inputs: {
+      messages: [
+        {
+          role: "user",
+          content: "What is the weather in SF?"
+        }
+      ]
+    },
+    referenceOutputs: {
+      messages: [
+        new HumanMessage("What is the weather in SF?"),
+        new AIMessage({
+          content: "",
+          tool_calls: [
+            { id: "call_1", name: "get_weather", args: { city: "SF" } }
+          ]
+        }),
+        new ToolMessage({
+          content: "It's 75 degrees and sunny in SF.",
+          tool_call_id: "call_1"
+        }),
+        new AIMessage("The weather in SF is 75 degrees and sunny."),
+      ],
+    },
+  }, async ({ inputs, referenceOutputs }) => {
+    const result = await agent.invoke({
+      messages: [new HumanMessage("What is the weather in SF?")]
+    });
+    
+    ls.logOutputs({ messages: result.messages });
+
+    await trajectoryEvaluator({
+      inputs,
+      outputs: result.messages,
+      referenceOutputs,
+    });
+  });
+});
+```
+
+Run the evaluation with your test runner:
+
+```bash
+vitest run test_trajectory.eval.ts
+# or
+jest test_trajectory.eval.ts
+```
+
+</Accordion>
+
+<Accordion title="Using the evaluate function">
+
+Alternatively, you can create a dataset in LangSmith and use the `evaluate` function:
+
+```ts
+import { evaluate } from "langsmith/evaluation";
+import { createTrajectoryLLMAsJudge, TRAJECTORY_ACCURACY_PROMPT } from "agentevals";
+
+const trajectoryEvaluator = createTrajectoryLLMAsJudge({
+  model: "openai:o3-mini",
+  prompt: TRAJECTORY_ACCURACY_PROMPT,
+});
+
+async function runAgent(inputs: any) {
+  const result = await agent.invoke(inputs);
+  return result.messages;
+}
+
+await evaluate(
+  runAgent,
+  {
+    data: "your_dataset_name",
+    evaluators: [trajectoryEvaluator],
+  }
+);
+```
+
+Results will be automatically logged to LangSmith.
+
+</Accordion>
+
+<Tip>
+To learn more about evaluating your agent, see the [LangSmith docs](/langsmith/vitest-jest).
+</Tip>
+:::
+
+## Recording & Replaying HTTP Calls
+
+Integration tests that call real LLM APIs can be slow and expensive, especially when run frequently in CI/CD pipelines. We recommend using a library for recording HTTP requests and responses, then replaying them in subsequent runs without making actual network calls.
+
+:::python
+You can use [`vcrpy`](https://pypi.org/project/vcrpy/1.5.2/) to achieve this. If you're using `pytest`, the [`pytest-recording` plugin](https://pypi.org/project/pytest-recording/) provides a simple way to enable this with minimal configuration. Request/responses are recorded in cassettes, which are then used to mock the real network calls in subsequent runs.
+
+Set up your `conftest.py` file to filter out sensitive information from the cassettes:
+
+```py conftest.py
+import pytest
+
+@pytest.fixture(scope="session")
+def vcr_config():
+    return {
+        "filter_headers": [
+            ("authorization", "XXXX"),
+            ("x-api-key", "XXXX"),
+            # ... other headers you want to mask
+        ],
+        "filter_query_parameters": [
+            ("api_key", "XXXX"),
+            ("key", "XXXX"),
+        ],
+    }
+```
+
+Then configure your project to recognise the `vcr` marker:
+
+<CodeGroup>
+```ini pytest.ini
+[pytest]
+markers =
+    vcr: record/replay HTTP via VCR
+addopts = --record-mode=once
+```
+```toml pyproject.toml
+[tool.pytest.ini_options]
+markers = [
+  "vcr: record/replay HTTP via VCR"
+]
+addopts = "--record-mode=once"
+```
+</CodeGroup>
+
+<Info>
+The `--record-mode=once` option records HTTP interactions on the first run and replays them on subsequent runs.
+</Info>
+
+Now, simply decorate your tests with the `vcr` marker:
+
+```python
+@pytest.mark.vcr()
+def test_agent_trajectory():
+    # ...
+```
+
+The first time you run this test, your agent will make real network calls and pytest will generate a cassette file `test_agent_trajectory.yaml` in the `tests/cassettes` directory. Subsequent runs will use that cassette to mock the real network calls, granted the agent's requests don't change from the previous run. If they do, the test will fail and you'll need to delete the cassette and rerun the test to record fresh interactions.
+
+<Warning>
+When you modify prompts, add new tools, or change expected trajectories, your saved cassettes will become outdated and your existing tests **will fail**. You should delete the corresponding cassette files and rerun the tests to record fresh interactions.
+</Warning>
+:::
+
+:::js
+You can use [`nock`](https://github.com/nock/nock) to achieve this. Request/responses are recorded in cassettes, which are then used to mock the real network calls in subsequent runs.
+
+<Note>
+When you modify prompts, add new tools, or change expected trajectories, delete the corresponding cassette files and rerun the tests to record fresh interactions.
+</Note>
+:::
