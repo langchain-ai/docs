@@ -44,6 +44,7 @@ IGNORE_PACKGAGES = {
 #####################
 
 DOCS_DIR = Path(__file__).parents[2]
+PROVIDERS_PATH = "src/oss/python/integrations/providers"
 PACKAGE_YML = "https://raw.githubusercontent.com/langchain-ai/langchain/refs/heads/master/libs/packages.yml"
 
 # for now, only include packages that are in the langchain-ai org
@@ -74,10 +75,8 @@ def _enrich_package(p: dict) -> dict | None:
     p["js_exists"] = bool(p.get("js"))
     custom_provider_page = p.get("provider_page")
     default_provider_page = f"/oss/integrations/providers/{p['name_short']}/"
-    default_provider_page_exists = bool(
-        glob.glob(
-            str(DOCS_DIR / f"src/oss/python/integrations/providers/{p['name_short']}.*")
-        )
+    default_provider_page_exists = any(
+        (DOCS_DIR / PROVIDERS_PATH).glob(f"{p['name_short']}.*")
     )
     if custom_provider_page:
         p["provider_page"] = f"/oss/integrations/providers/{custom_provider_page}"
@@ -86,13 +85,15 @@ def _enrich_package(p: dict) -> dict | None:
     else:
         msg = (
             f"Provider page not found for {p['name_short']}. "
-            f"Please add one at oss/integrations/providers/{p['name_short']}.{{mdx,ipynb}}"
+            "Please add one at oss/integrations/providers/"
+            f"{p['name_short']}.{{mdx,ipynb}}"
         )
         raise ValueError(msg)
 
     if p["type"] in ("B", "C"):
         p["package_url"] = (
-            f"https://python.langchain.com/api_reference/{p['name_short'].replace('-', '_')}/"
+            "https://python.langchain.com/api_reference"
+            f"/{p['name_short'].replace('-', '_')}/"
         )
     else:
         p["package_url"] = f"https://pypi.org/project/{p['name']}/"
@@ -122,7 +123,8 @@ def package_row(p: dict) -> str:
     return (
         f"| {provider} | [{p['name']}]({p['package_url']}) | "
         f"![Downloads](https://static.pepy.tech/badge/{p['name']}/month) | "
-        f"![PyPI - Version](https://img.shields.io/pypi/v/{p['name']}?style=flat-square&label=%20&color=orange) | "
+        f"![PyPI - Version](https://img.shields.io/pypi/v/{p['name']}"
+        "?style=flat-square&label=%20&color=orange) | "
         f"{js} |"
     )
 
@@ -131,7 +133,7 @@ def table() -> str:
     """Generate the full markdown table for all packages."""
     header = """| Provider | Package Reference | Downloads | Version | [JS](https://js.langchain.com/docs/integrations/platforms/) |
 | :--- | :---: | :---: | :---: | :---: |
-"""
+"""  # noqa: E501
     return header + "\n".join(package_row(p) for p in packages_sorted)
 
 
@@ -158,7 +160,7 @@ These providers have standalone `langchain-{{provider}}` packages for improved v
 Click [here](/oss/integrations/providers/all_providers) to see all providers or search
 for a provider using the search field.
 
-"""
+"""  # noqa: E501
 
 
 if __name__ == "__main__":
