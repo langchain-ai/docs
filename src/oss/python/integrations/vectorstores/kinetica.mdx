@@ -1,0 +1,290 @@
+---
+title: Kinetica Vectorstore API
+---
+
+>[Kinetica](https://www.kinetica.com/) is a database with integrated support for vector similarity search
+
+It supports:
+
+- exact and approximate nearest neighbor search
+- L2 distance, inner product, and cosine distance
+
+This notebook shows how to use the Kinetica vector store (`Kinetica`).
+
+This needs an instance of Kinetica which can easily be setup using the instructions given here - [installation instruction](https://www.kinetica.com/developer-edition/).
+
+```python
+# Pip install necessary package
+%pip install -qU  langchain-openai langchain-community
+%pip install "gpudb>=7.2.2.0"
+%pip install -qU  tiktoken
+```
+
+We want to use `OpenAIEmbeddings` so we have to get the OpenAI API Key.
+
+```python
+import getpass
+import os
+
+if "OPENAI_API_KEY" not in os.environ:
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API Key:")
+```
+
+```python
+## Loading Environment Variables
+from dotenv import load_dotenv
+
+load_dotenv()
+```
+
+```output
+False
+```
+
+```python
+from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores import (
+    Kinetica,
+    KineticaSettings,
+)
+from langchain_openai import OpenAIEmbeddings
+```
+
+```python
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+```
+
+```python
+# Kinetica needs the connection to the database.
+# This is how to set it up.
+HOST = os.getenv("KINETICA_HOST", "http://127.0.0.1:9191")
+USERNAME = os.getenv("KINETICA_USERNAME", "")
+PASSWORD = os.getenv("KINETICA_PASSWORD", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+
+def create_config() -> KineticaSettings:
+    return KineticaSettings(host=HOST, username=USERNAME, password=PASSWORD)
+```
+
+```python
+from uuid import uuid4
+
+from langchain_core.documents import Document
+
+document_1 = Document(
+    page_content="I had chocolate chip pancakes and scrambled eggs for breakfast this morning.",
+    metadata={"source": "tweet"},
+)
+
+document_2 = Document(
+    page_content="The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees.",
+    metadata={"source": "news"},
+)
+
+document_3 = Document(
+    page_content="Building an exciting new project with LangChain - come check it out!",
+    metadata={"source": "tweet"},
+)
+
+document_4 = Document(
+    page_content="Robbers broke into the city bank and stole $1 million in cash.",
+    metadata={"source": "news"},
+)
+
+document_5 = Document(
+    page_content="Wow! That was an amazing movie. I can't wait to see it again.",
+    metadata={"source": "tweet"},
+)
+
+document_6 = Document(
+    page_content="Is the new iPhone worth the price? Read this review to find out.",
+    metadata={"source": "website"},
+)
+
+document_7 = Document(
+    page_content="The top 10 soccer players in the world right now.",
+    metadata={"source": "website"},
+)
+
+document_8 = Document(
+    page_content="LangGraph is the best framework for building stateful, agentic applications!",
+    metadata={"source": "tweet"},
+)
+
+document_9 = Document(
+    page_content="The stock market is down 500 points today due to fears of a recession.",
+    metadata={"source": "news"},
+)
+
+document_10 = Document(
+    page_content="I have a bad feeling I am going to get deleted :(",
+    metadata={"source": "tweet"},
+)
+
+documents = [
+    document_1,
+    document_2,
+    document_3,
+    document_4,
+    document_5,
+    document_6,
+    document_7,
+    document_8,
+    document_9,
+    document_10,
+]
+uuids = [str(uuid4()) for _ in range(len(documents))]
+```
+
+## Similarity Search with Euclidean Distance (Default)
+
+```python
+# The Kinetica Module will try to create a table with the name of the collection.
+# So, make sure that the collection name is unique and the user has the permission to create a table.
+
+COLLECTION_NAME = "langchain_example"
+connection = create_config()
+
+db = Kinetica(
+    connection,
+    embeddings,
+    collection_name=COLLECTION_NAME,
+)
+
+db.add_documents(documents=documents, ids=uuids)
+```
+
+```output
+['05e5a484-0273-49d1-90eb-1276baca31de',
+ 'd98b808f-dc0b-4328-bdbf-88f6b2ab6040',
+ 'ba0968d4-e344-4285-ae0f-f5199b56f9d6',
+ 'a25393b8-6539-45b5-993e-ea16d01941ec',
+ '804a37e3-1278-4b60-8b02-36b159ee8c1a',
+ '9688b594-3dc6-41d2-a937-babf8ff24c2f',
+ '40f7b8fe-67c7-489a-a5a5-7d3965e33bba',
+ 'b4fc1376-c113-41e9-8f16-f9320517bedd',
+ '4d94d089-fdde-442b-84ab-36d9fe0670c8',
+ '66fdb79d-49ce-4b06-901a-fda6271baf2a']
+```
+
+```python
+# query = "What did the president say about Ketanji Brown Jackson"
+# docs_with_score = db.similarity_search_with_score(query)
+```
+
+```python
+print()
+print("Similarity Search")
+results = db.similarity_search(
+    "LangChain provides abstractions to make working with LLMs easy",
+    k=2,
+    filter={"source": "tweet"},
+)
+for res in results:
+    print(f"* {res.page_content} [{res.metadata}]")
+
+print()
+print("Similarity search with score")
+results = db.similarity_search_with_score(
+    "Will it be hot tomorrow?", k=1, filter={"source": "news"}
+)
+for res, score in results:
+    print(f"* [SIM={score:3f}] {res.page_content} [{res.metadata}]")
+```
+
+```output
+Similarity Search
+* Building an exciting new project with LangChain - come check it out! [{'source': 'tweet'}]
+* LangGraph is the best framework for building stateful, agentic applications! [{'source': 'tweet'}]
+
+Similarity search with score
+* [SIM=0.945397] The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees. [{'source': 'news'}]
+```
+
+## Working with vectorstore
+
+Above, we created a vectorstore from scratch. However, often times we want to work with an existing vectorstore.
+In order to do that, we can initialize it directly.
+
+```python
+store = Kinetica(
+    collection_name=COLLECTION_NAME,
+    config=connection,
+    embedding_function=embeddings,
+)
+```
+
+### Add documents
+
+We can add documents to the existing vectorstore.
+
+```python
+store.add_documents([Document(page_content="foo")])
+```
+
+```output
+['68c4c679-c4d9-4f2d-bf01-f6c4f2181503']
+```
+
+```python
+docs_with_score = db.similarity_search_with_score("foo")
+```
+
+```python
+docs_with_score[0]
+```
+
+```output
+(Document(metadata={}, page_content='foo'), 0.0015394920483231544)
+```
+
+```python
+docs_with_score[1]
+```
+
+```output
+(Document(metadata={'source': 'tweet'}, page_content='Building an exciting new project with LangChain - come check it out!'),
+ 1.2609431743621826)
+```
+
+### Overriding a vectorstore
+
+If you have an existing collection, you override it by doing `from_documents` and setting `pre_delete_collection` = True
+
+```python
+db = Kinetica.from_documents(
+    documents=documents,
+    embedding=embeddings,
+    collection_name=COLLECTION_NAME,
+    config=connection,
+    pre_delete_collection=True,
+)
+```
+
+```python
+docs_with_score = db.similarity_search_with_score("foo")
+```
+
+```python
+docs_with_score[0]
+```
+
+```output
+(Document(metadata={'source': 'tweet'}, page_content='Building an exciting new project with LangChain - come check it out!'),
+ 1.260920763015747)
+```
+
+### Using a VectorStore as a Retriever
+
+```python
+retriever = store.as_retriever()
+```
+
+```python
+print(retriever)
+```
+
+```output
+tags=['Kinetica', 'OpenAIEmbeddings'] vectorstore=<langchain_community.vectorstores.kinetica.Kinetica object at 0x7a48142b2230> search_kwargs={}
+```

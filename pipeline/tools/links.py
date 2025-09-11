@@ -207,7 +207,7 @@ def _rewrite_links(
     return changes
 
 
-def _update_internal_links_in_moved_notebook(  # noqa: C901
+def _update_internal_links_in_moved_notebook(
     file_path: Path,
     old_parent: Path,
     new_parent: Path,
@@ -298,7 +298,7 @@ def _update_internal_links_in_moved_notebook(  # noqa: C901
     return changes
 
 
-def _rewrite_links_in_notebook(  # noqa: C901
+def _rewrite_links_in_notebook(
     notebook_file: Path,
     old_abs: Path,
     new_abs: Path,
@@ -428,7 +428,7 @@ def _write_changes_log(old_path: Path, new_path: Path, root: Path) -> None:
         fp.write(json.dumps([str(old_path), str(new_path)]) + "\n")
 
 
-def move_file_with_link_updates(  # noqa: C901, PLR0912
+def move_file_with_link_updates(
     old_path: Path,
     new_path: Path,
     *,

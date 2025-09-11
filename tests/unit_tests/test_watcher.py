@@ -30,7 +30,7 @@ def test_should_ignore_backup_files() -> None:
         # Test backup files (should be ignored)
         backup_files = [
             Path("langchain-models.mdx~"),
-            Path("src/oss/langchain-models.mdx~"),
+            Path("src/oss/langchain/models.mdx~"),
             Path("documentation.md~"),
             Path("config.json~"),
         ]

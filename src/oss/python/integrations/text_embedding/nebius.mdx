@@ -1,0 +1,245 @@
+---
+title: Nebius
+---
+
+[Nebius AI Studio](https://studio.nebius.ai/) provides API access to high-quality embedding models through a unified interface. The Nebius embedding models convert text into numerical vectors that capture semantic meaning, making them useful for various applications like semantic search, clustering, and recommendations.
+
+## Overview
+
+The `NebiusEmbeddings` class provides access to Nebius AI Studio's embedding models through LangChain. These embeddings can be used for semantic search, document similarity, and other NLP tasks requiring vector representations of text.
+
+### Integration details
+
+- **Provider**: Nebius AI Studio
+- **Model Types**: Text embedding models
+- **Primary Use Case**: Generate vector representations of text for semantic similarity and retrieval
+- **Available Models**: Various embedding models including BAAI/bge-en-icl and others
+- **Dimensions**: Varies by model (typically 1024-4096 dimensions)
+
+## Setup
+
+### Installation
+
+The Nebius integration can be installed via pip:
+
+```python
+%pip install -U langchain-nebius
+```
+
+### Credentials
+
+Nebius requires an API key that can be passed as an initialization parameter `api_key` or set as the environment variable `NEBIUS_API_KEY`. You can obtain an API key by creating an account on [Nebius AI Studio](https://studio.nebius.ai/).
+
+```python
+import getpass
+import os
+
+# Make sure you've set your API key as an environment variable
+if "NEBIUS_API_KEY" not in os.environ:
+    os.environ["NEBIUS_API_KEY"] = getpass.getpass("Enter your Nebius API key: ")
+```
+
+## Instantiation
+
+The `NebiusEmbeddings` class can be instantiated with optional parameters for the API key and model name:
+
+```python
+from langchain_nebius import NebiusEmbeddings
+
+# Initialize the embeddings model
+embeddings = NebiusEmbeddings(
+    # api_key="YOUR_API_KEY",  # You can pass the API key directly
+    model="BAAI/bge-en-icl"  # The default embedding model
+)
+```
+
+### Available Models
+
+The list of supported models is available at [studio.nebius.com/?modality=embedding](https://studio.nebius.com/?modality=embedding)
+
+## Indexing and Retrieval
+
+Embedding models are often used in retrieval-augmented generation (RAG) flows, both for indexing data and later retrieving it. The following example demonstrates how to use `NebiusEmbeddings` with a vector store for document retrieval.
+
+```python
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+
+# Prepare documents
+docs = [
+    Document(
+        page_content="Machine learning algorithms build mathematical models based on sample data"
+    ),
+    Document(page_content="Deep learning uses neural networks with many layers"),
+    Document(page_content="Climate change is a major global environmental challenge"),
+    Document(
+        page_content="Neural networks are inspired by the human brain's structure"
+    ),
+]
+
+# Create vector store
+vector_store = FAISS.from_documents(docs, embeddings)
+
+# Perform similarity search
+query = "How does the brain influence AI?"
+results = vector_store.similarity_search(query, k=2)
+
+print("Search results for query:", query)
+for i, doc in enumerate(results):
+    print(f"Result {i + 1}: {doc.page_content}")
+```
+
+```output
+Search results for query: How does the brain influence AI?
+Result 1: Neural networks are inspired by the human brain's structure
+Result 2: Deep learning uses neural networks with many layers
+```
+
+### Using with InMemoryVectorStore
+
+You can also use the `InMemoryVectorStore` for lightweight applications:
+
+```python
+from langchain_core.vectorstores import InMemoryVectorStore
+
+# Create a sample text
+text = "LangChain is a framework for developing applications powered by language models"
+
+# Create a vector store
+vectorstore = InMemoryVectorStore.from_texts(
+    [text],
+    embedding=embeddings,
+)
+
+# Use as a retriever
+retriever = vectorstore.as_retriever()
+
+# Retrieve similar documents
+docs = retriever.invoke("What is LangChain?")
+print(f"Retrieved document: {docs[0].page_content}")
+```
+
+```output
+Retrieved document: LangChain is a framework for developing applications powered by language models
+```
+
+## Direct Usage
+
+You can directly use the `NebiusEmbeddings` class to generate embeddings for text without using a vector store.
+
+### Embedding a Single Text
+
+You can use the `embed_query` method to embed a single piece of text:
+
+```python
+query = "What is machine learning?"
+query_embedding = embeddings.embed_query(query)
+
+# Check the embedding dimension
+print(f"Embedding dimension: {len(query_embedding)}")
+print(f"First few values: {query_embedding[:5]}")
+```
+
+```output
+Embedding dimension: 4096
+First few values: [0.007419586181640625, 0.002246856689453125, 0.00193023681640625, -0.0066070556640625, -0.0179901123046875]
+```
+
+### Embedding Multiple Texts
+
+You can embed multiple texts at once using the `embed_documents` method:
+
+```python
+documents = [
+    "Machine learning is a branch of artificial intelligence",
+    "Deep learning is a subfield of machine learning",
+    "Natural language processing deals with interactions between computers and human language",
+]
+
+document_embeddings = embeddings.embed_documents(documents)
+
+# Check the results
+print(f"Number of document embeddings: {len(document_embeddings)}")
+print(f"Each embedding has {len(document_embeddings[0])} dimensions")
+```
+
+```output
+Number of document embeddings: 3
+Each embedding has 4096 dimensions
+```
+
+### Async Support
+
+NebiusEmbeddings supports async operations:
+
+```python
+import asyncio
+
+
+async def generate_embeddings_async():
+    # Embed a single query
+    query_result = await embeddings.aembed_query("What is the capital of France?")
+    print(f"Async query embedding dimension: {len(query_result)}")
+
+    # Embed multiple documents
+    docs = [
+        "Paris is the capital of France",
+        "Berlin is the capital of Germany",
+        "Rome is the capital of Italy",
+    ]
+    docs_result = await embeddings.aembed_documents(docs)
+    print(f"Async document embeddings count: {len(docs_result)}")
+
+
+await generate_embeddings_async()
+```
+
+```output
+Async query embedding dimension: 4096
+Async document embeddings count: 3
+```
+
+### Document Similarity Example
+
+```python
+import numpy as np
+from scipy.spatial.distance import cosine
+
+# Create some documents
+documents = [
+    "Machine learning algorithms build mathematical models based on sample data",
+    "Deep learning uses neural networks with many layers",
+    "Climate change is a major global environmental challenge",
+    "Neural networks are inspired by the human brain's structure",
+]
+
+# Embed the documents
+embeddings_list = embeddings.embed_documents(documents)
+
+
+# Function to calculate similarity
+def calculate_similarity(embedding1, embedding2):
+    return 1 - cosine(embedding1, embedding2)
+
+
+# Print similarity matrix
+print("Document Similarity Matrix:")
+for i, emb_i in enumerate(embeddings_list):
+    similarities = []
+    for j, emb_j in enumerate(embeddings_list):
+        similarity = calculate_similarity(emb_i, emb_j)
+        similarities.append(f"{similarity:.4f}")
+    print(f"Document {i + 1}: {similarities}")
+```
+
+```output
+Document Similarity Matrix:
+Document 1: ['1.0000', '0.8282', '0.5811', '0.7985']
+Document 2: ['0.8282', '1.0000', '0.5897', '0.8315']
+Document 3: ['0.5811', '0.5897', '1.0000', '0.5918']
+Document 4: ['0.7985', '0.8315', '0.5918', '1.0000']
+```
+
+## API Reference
+
+For more details about the Nebius AI Studio API, visit the [Nebius AI Studio Documentation](https://studio.nebius.ai/docs/api-reference).

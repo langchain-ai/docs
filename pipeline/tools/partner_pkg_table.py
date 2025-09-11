@@ -1,4 +1,4 @@
-"""This script populates the Python integrations landing page at
+"""This script populates the Python integrations landing page at.
 
 oss/python/integrations/providers
 
@@ -127,7 +127,7 @@ def package_row(p: dict) -> str:
 
 
 def table() -> str:
-    header = """| Provider | Package | Downloads | Latest | [JS](https://js.langchain.com/docs/integrations/platforms/) |
+    header = """| Provider | Package Reference | Downloads | Version | [JS](https://js.langchain.com/docs/integrations/platforms/) |
 | :--- | :---: | :---: | :---: | :---: |
 """
     return header + "\n".join(package_row(p) for p in packages_sorted)

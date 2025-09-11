@@ -9,11 +9,7 @@ Our implementation supports almost anything that is OIDC compliant, with a few e
 
 ![LangSmith UI with OAuth SSO](/langsmith/images/langsmith-ui-sso.png)
 
-## With Client Secret (Recommended)
-
-By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `Client Secret`. In this version of the flow, your client secret is stored security in the LangSmith platform (not on the frontend) and used for authentication and establishing auth sessions.
-
-### Requirements
+## Overview
 
 <Note>
 You may upgrade a [basic auth](/langsmith/self-host-basic-auth) installation to this mode, but not a [none auth](/langsmith/authentication-methods#none) installation. In order to upgrade, simply remove the basic auth configuration and add the required configuration parameters as shown below. Users may then login via OAuth *only*. **In order to maintain access post-upgrade, you must have access to login via OAuth using an email address that previously logged in via basic auth.**
@@ -23,12 +19,25 @@ You may upgrade a [basic auth](/langsmith/self-host-basic-auth) installation to 
 LangSmith does not support moving from SSO to basic auth mode in self-hosted at the moment. We also do not support moving from OAuth Mode with client secret to OAuth mode without a client secret and vice versa. Finally, we do not support having both basic auth and OAuth at the same time. Ensure you disable the basic auth configuration when enabling OAuth.
 </Warning>
 
+## With Client Secret (Recommended)
+
+By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `Client Secret`. In this version of the flow, your client secret is stored security in the LangSmith platform (not on the frontend) and used for authentication and establishing auth sessions.
+
+### Prerequisites
+
+* You must be self-hosted and on an Enterprise plan.
 * Your IdP must support the `Authorization Code` flow with `Client Secret`.
 * Your IdP must support using an external discovery/issuer URL. We will use this to fetch the necessary routes and keys for your IdP.
 * You must provide the `OIDC`, `email`, and `profile` scopes to LangSmith. We use these to fetch the necessary user information and email for your users.
-* You will need to set the callback URL in your IdP to `https://<host>/api/v1/oauth/custom-oidc/callback`, where host is the domain or IP you have provisioned for your LangSmith instance. This is where your IdP will redirect the user after they have authenticated.
+<Note>
+
+Langsmith SSO is only supported over `https`.
+</Note>
+
+### Configuration
+
+* You will need to set the callback URL in your IdP to `https://<host>/api/v1/oauth/custom-oidc/callback`, where `host` is the domain or IP you have provisioned for your LangSmith instance. This is where your IdP will redirect the user after they have authenticated.
 * You will need to provide the `oauthClientId`, `oauthClientSecret`, `hostname`, and `oauthIssuerUrl` in your `values.yaml` file. This is where you will configure your LangSmith instance.
-* *Note*: Langsmith SSO is only supported through `https`.
 
 <CodeGroup>
 
@@ -67,9 +76,7 @@ All of the environment variables in this section are for the `platform-backend` 
 * `OAUTH_SESSION_MAX_SEC` (default 1 day) can be overridden to a maximum of one week (`604800`)
 * For identity provider setups that don't support refresh tokens, setting `OAUTH_OVERRIDE_TOKEN_EXPIRY="true"` will take `OAUTH_SESSION_MAX_SEC` as the session length, ignoring the identity token expiration
 
-### Identity Provider (IdP) Setup
-
-**Google Workspace**
+### Google Workspace IdP setup
 
 You can use Google Workspace as a single sign-on (SSO) provider using [OAuth2.0 and OIDC](https://developers.google.com/identity/openid-connect/openid-connect) without PKCE.
 
@@ -99,26 +106,109 @@ You must have administrator-level access to your organization's Google Cloud Pla
 
 9. (Optional) control who within your organization has access to LangSmith: [https://admin.google.com/ac/owl/list?tab=configuredApps](https://admin.google.com/ac/owl/list?tab=configuredApps). See [Google's documentation](https://support.google.com/a/answer/7281227?hl=en\&fl=1\&sjid=9554153972856467090-NA) for additional details.
 
-10. Configure LangSmith to use this OAuth application. For examples, here are the `config `values that would be used for Kubernetes configuration:
+10. Configure LangSmith to use this OAuth application. For examples, here are the `config`values that would be used for Kubernetes configuration:
 
     1. `oauthClientId`: `Client ID` (ends with `.apps.googleusercontent.com`)
     2. `oauthClientSecret`: `Client secret`
-    3. `hostname`: the domain of your instance e.g. `https://langsmith.yourdomain.com` (no trailing slash)
+    3. `hostname`: the domain of your LangSmith instance e.g. `https://langsmith.yourdomain.com` (no trailing slash)
     4. `oauthIssuerUrl`: `https://accounts.google.com`
     5. `oauth.enabled`: `true`
     6. `authType`: `mixed`
+
+### Okta IdP setup
+
+#### Supported features
+
+* IdP-initiated SSO
+* SP-initiated SSO
+
+#### Configuration steps
+
+For additional information, see Okta's [documentation](https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard_oidc.htm).
+
+<div id="via-okta-integration-network">
+    <b>Via Okta Integration Network (recommended)</b>
+</div>
+
+<Note>
+This method of configuration is required in order to use SCIM with Okta.
+</Note>
+
+1. Sign in to [Okta](https://login.okta.com/).
+1. In the upper-right corner, select Admin. The button is not visible from the Admin area.
+1. Select `Browse App Integration Catalog`.
+1. Find and select the LangSmith application.
+1. On the application overview page, select Add Integration.
+1. Fill in `ApiUrlBase`:
+   * `https://<langsmith_url>/api/v1`, e.g., `https://langsmith.yourdomain.com/api/v1`.
+   * If your installation is configured with a subdomain / path prefix, include that in the URL, e.g., `https://langsmith.yourdomain.com/prefix/api/v1`.
+1. Fill in `AuthHost`: Same as `ApiUrlBase`.
+1. Fill in `LangSmithUrl`: The `<langsmith_url>` portion from above, e.g., `langsmith.yourdomain.com`.
+1. Under Application Visibility, keep the box unchecked.
+1. Select Next.
+1. Select `OpenID Connect`.
+1. Fill in `Sign-On Options`:
+   * `Application username format`: `Email`.
+   * `Update application username on`: `Create and update`.
+   * `Allow users to securely see their password`: leave **unchecked**.
+1. Click **Save**.
+1. Configure LangSmith to use this OAuth application. As an example, here are the `config` values that would be used for Kubernetes configuration:
+
+    1. `oauthClientId`: `Client ID` (starts with `0o`)
+    2. `oauthClientSecret`: `Client secret`
+    3. `hostname`: the domain of your instance e.g. `https://langsmith.yourdomain.com` (no trailing slash)
+    4. `oauthIssuerUrl`: the URL of your Okta instance e.g. `https://company-7422949.okta.com`
+    5. `oauth.enabled`: `true`
+    6. `authType`: `mixed`
+
+<div id="via-okta-custom-app-integration">
+    <b>Via Custom App Integration</b>
+</div>
+
+<Warning>
+SCIM is not compatible with this method of configuration. Refer to [**Via Okta Integration Network**](#via-okta-integration-network).
+</Warning>
+
+1. Log in to Okta as an administrator, and go to the **Okta Admin console**.
+1. Under **Applications** > **Applications** click **Create App Integration**.
+1. Select **OIDC - OpenID Connect** as the Sign-in method and **Web Application** as the Application type, then click **Next**.
+1. Enter an `App integration name` (e.g., `LangSmith`).
+1. Recommended: Check **Core grants > Refresh Token** (see [session length controls](#session-length-controls)).
+1. In **Sign-in redirect URIs** put the domain of your LangSmith instance followed by `/api/v1/oauth/custom-oidc/callback`, e.g., `https://langsmith.yourdomain.com/api/v1/oauth/custom-oidc/callback`. If your installation is configured with a subdomain / path prefix, include that in the URL, e.g., `https://langsmith.yourdomain.com/prefix/api/v1/oauth/custom-oidc/callback`.
+1. Remove the default URI under **Sign-out redirect URIs**.
+1. Under **Trusted Origins > Base URIs** add your langsmith URL with the protocol, e.g., `https://langsmith.yourdomain.com`.
+1. Select your desired option under **Assignments > Controlled access**:
+    * Allow everyone in your organization to access.
+    * Limit access to selected groups.
+    * Skip group assignment for now.
+1. Click **Save**.
+1. Under **Sign On > OpenID Connect ID Token** set **Issuer** to **Okta URL**.
+1. (Optional) Under **General > Login** set **Login initiated by** to `Either Okta or App` to enable IdP-initiated login.
+1. (Recommended) Under **General > Login > Email verification experience** fill in the **Callback URI** with the LangSmith URL, e.g., `https://langsmith.yourdomain.com`.
+1. Configure LangSmith to use this OAuth application. As an example, here are the `config` values that would be used for Kubernetes configuration:
+
+    1. `oauthClientId`: `Client ID` (starts with `0o`)
+    2. `oauthClientSecret`: `Client secret`
+    3. `hostname`: the domain of your LangSmith instance e.g. `https://langsmith.yourdomain.com` (no trailing slash)
+    4. `oauthIssuerUrl`: the URL of your Okta instance e.g. `https://company-7422949.okta.com`
+    5. `oauth.enabled`: `true`
+    6. `authType`: `mixed`
+
+#### SP-initiated SSO
+
+Users can sign in using the **Login via SSO** button on the LangSmith homepage.
 
 ## Without Client Secret (PKCE) (Deprecated)
 
 We recommend running with a `Client Secret` if possible (previously we didn't support this). However, if your IdP does not support this, you can use the `Authorization Code with PKCE` flow.
 
-This flow does *not* require a `Client Secret` - see the flow [above](#with-secret) for the alternative that does.
+This flow does *not* require a `Client Secret`. For the alternative workflow, refer to [With client secret](#with-client-secret-recommended).
 
 ### Requirements
 
 There are a couple of requirements for using OAuth SSO with LangSmith:
 
-* Your IdP must support the `Authorization Code with PKCE` [flow](https://www.oauth.com/oauth2-servers/pkce) (Google does not support this flow for example, but see [below](#with-secret) for an alternative configuration that Google supports). This is often displayed in your OAuth Provider as configuring a "Single Page Application (SPA)"
+* Your IdP must support the `Authorization Code with PKCE` [flow](https://www.oauth.com/oauth2-servers/pkce) (Google does not support this flow for example, but see [above](#with-client-secret-recommended) for an alternative configuration that Google supports). This is often displayed in your OAuth Provider as configuring a "Single Page Application (SPA)"
 * Your IdP must support using an external discovery/issuer URL. We will use this to fetch the necessary routes and keys for your IdP.
 * You must provide the `OIDC`, `email`, and `profile` scopes to LangSmith. We use these to fetch the necessary user information and email for your users.
 * You will need to set the callback URL in your IdP to `http://<host>/oauth-callback`, where host is the domain or IP you have provisioned for your LangSmith instance. This is where your IdP will redirect the user after they have authenticated.

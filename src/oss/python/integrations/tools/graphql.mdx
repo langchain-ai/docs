@@ -1,0 +1,136 @@
+---
+title: GraphQL
+---
+
+>[GraphQL](https://graphql.org/) is a query language for APIs and a runtime for executing those queries against your data. `GraphQL` provides a complete and understandable description of the data in your API, gives clients the power to ask for exactly what they need and nothing more, makes it easier to evolve APIs over time, and enables powerful developer tools.
+
+By including a `BaseGraphQLTool` in the list of tools provided to an Agent, you can grant your Agent the ability to query data from GraphQL APIs for any purposes you need.
+
+This Jupyter Notebook demonstrates how to use the `GraphQLAPIWrapper` component with an Agent.
+
+In this example, we'll be using the public `Star Wars GraphQL API` available at the following endpoint: [swapi-graphql.netlify.app/graphql](https://swapi-graphql.netlify.app/graphql) .
+
+First, you need to install `httpx` and `gql` Python packages.
+
+```python
+pip install httpx gql > /dev/null
+```
+
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+```python
+%pip install -qU  langchain-community
+```
+
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+Now, let's create a BaseGraphQLTool instance with the specified Star Wars API endpoint and initialize an Agent with the tool.
+
+```python
+import os
+
+os.environ["OPENAI_API_KEY"] = ""
+```
+
+```python
+from langchain_community.agent_toolkits.load_tools import load_tools
+
+tools = load_tools(
+    ["graphql"],
+    graphql_endpoint="https://swapi-graphql.netlify.app/graphql",
+)
+```
+
+```python
+from langchain.agents import create_agent
+
+agent = create_agent("openai:gpt-4.1-mini", tools)
+```
+
+Now, we can use the Agent to run queries against the Star Wars GraphQL API. Let's ask the Agent to list all the Star Wars films and their release dates.
+
+```python
+graphql_fields = """allFilms {
+    films {
+      title
+      director
+      releaseDate
+      speciesConnection {
+        species {
+          name
+          classification
+          homeworld {
+            name
+          }
+        }
+      }
+    }
+  }
+
+"""
+
+suffix = "Search for the titles of all the stawars films stored in the graphql database that has this schema "
+
+input_message = {
+    "role": "user",
+    "content": suffix + graphql_fields,
+}
+
+for step in agent.stream(
+    {"messages": [input_message]},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+```output
+================================ Human Message =================================
+
+Search for the titles of all the stawars films stored in the graphql database that has this schema allFilms {
+    films {
+      title
+      director
+      releaseDate
+      speciesConnection {
+        species {
+          name
+          classification
+          homeworld {
+            name
+          }
+        }
+      }
+    }
+  }
+
+
+================================== Ai Message ==================================
+Tool Calls:
+  query_graphql (call_tN5A0dBbfOMewuw8Yy13bYpW)
+ Call ID: call_tN5A0dBbfOMewuw8Yy13bYpW
+  Args:
+    tool_input: query { allFilms { films { title } } }
+================================= Tool Message =================================
+Name: query_graphql
+
+"{\n  \"allFilms\": {\n    \"films\": [\n      {\n        \"title\": \"A New Hope\"\n      },\n      {\n        \"title\": \"The Empire Strikes Back\"\n      },\n      {\n        \"title\": \"Return of the Jedi\"\n      },\n      {\n        \"title\": \"The Phantom Menace\"\n      },\n      {\n        \"title\": \"Attack of the Clones\"\n      },\n      {\n        \"title\": \"Revenge of the Sith\"\n      }\n    ]\n  }\n}"
+================================== Ai Message ==================================
+
+The titles of all the Star Wars films stored in the database are:
+1. A New Hope
+2. The Empire Strikes Back
+3. Return of the Jedi
+4. The Phantom Menace
+5. Attack of the Clones
+6. Revenge of the Sith
+
+If you would like more information about any of these films, please let me know!
+```
+
+```python
+
+```

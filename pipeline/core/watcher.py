@@ -69,9 +69,9 @@ class DocsFileHandler(FileSystemEventHandler):
             return True
 
         # Ignore other kinds of temporary files
-        if file_name.startswith(".") and file_name.endswith((".tmp", ".temp", ".swp")):
-            return True
-        return False
+        return bool(
+            file_name.startswith(".") and file_name.endswith((".tmp", ".temp", ".swp"))
+        )
 
     def on_modified(self, event: FileSystemEvent) -> None:
         """Handle file modification events.
@@ -268,7 +268,7 @@ class FileWatcher:
         Args:
             files_to_build: List of source files that need to be built.
         """
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
 
         file_count = len(files_to_build)
 
