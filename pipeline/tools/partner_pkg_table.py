@@ -114,6 +114,7 @@ packages_sorted = sorted(packages, key=lambda p: p.get("downloads", 0), reverse=
 
 
 def package_row(p: dict) -> str:
+    """Generate a markdown table row for a package."""
     js = "✅" if p["js_exists"] else "❌"
     link = p["provider_page"]
     title = p["name_title"]
@@ -127,6 +128,7 @@ def package_row(p: dict) -> str:
 
 
 def table() -> str:
+    """Generate the full markdown table for all packages."""
     header = """| Provider | Package Reference | Downloads | Version | [JS](https://js.langchain.com/docs/integrations/platforms/) |
 | :--- | :---: | :---: | :---: | :---: |
 """
@@ -161,5 +163,5 @@ for a provider using the search field.
 
 if __name__ == "__main__":
     output_dir = Path() / "src" / "oss" / "python" / "integrations" / "providers"
-    with open(output_dir / "index.mdx", "w") as f:
+    with (output_dir / "index.mdx").open("w") as f:
         f.write(doc())
