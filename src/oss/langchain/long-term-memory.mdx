@@ -101,10 +101,17 @@ For more information about the memory store, see the [Persistence](/oss/langgrap
 
 :::python
 ```title="A tool the agent can use to look up user information" {highlight={6,8,20,22,28,34}}
+from dataclasses import dataclass
+
 from langchain_core.runnables import RunnableConfig
 from langchain.agents import create_agent
 from langgraph.config import get_store
+from langgraph.runtime import get_runtime
 from langgraph.store.memory import InMemoryStore
+
+@dataclass
+class Context:
+    user_id: str
 
 store = InMemoryStore() # (1)!
 
@@ -117,24 +124,25 @@ store.put(  # (2)!
     } # (5)!
 )
 
-def get_user_info(config: RunnableConfig) -> str:
+def get_user_info() -> str:
     """Look up user info."""
     # Same as that provided to `create_agent`
-    store = get_store() # (6)!
-    user_id = config["configurable"].get("user_id")
+    store = get_runtime().store # (6)!
+    user_id = get_runtime(Context).context.user_id
     user_info = store.get(("users",), user_id) # (7)!
     return str(user_info.value) if user_info else "Unknown user"
 
 agent = create_agent(
     model="anthropic:claude-3-7-sonnet-latest",
     tools=[get_user_info],
-    store=store # (8)!
+    store=store # (8)!,
+    context_schema=Context
 )
 
 # Run the agent
 agent.invoke(
     {"messages": [{"role": "user", "content": "look up user information"}]},
-    config={"configurable": {"user_id": "user_123"}}
+    context=Context(user_id="user_123")
 )
 ```
 
