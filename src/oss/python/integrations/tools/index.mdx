@@ -228,7 +228,7 @@ The following table shows tools that can be used to execute financial transactio
 <Card title="Wikidata" icon="link" href="/oss/integrations/tools/wikidata" arrow="true" cta="View guide" />
 <Card title="Wikipedia" icon="link" href="/oss/integrations/tools/wikipedia" arrow="true" cta="View guide" />
 <Card title="Wolfram Alpha" icon="link" href="/oss/integrations/tools/wolfram_alpha" arrow="true" cta="View guide" />
-<Card title="Writer Tools" icon="link" href="/oss/integrations/tools/writer" arrow="true" cta="View guide" />
+<Card title="WRITER Tools" icon="link" href="/oss/integrations/tools/writer" arrow="true" cta="View guide" />
 <Card title="Yahoo Finance News" icon="link" href="/oss/integrations/tools/yahoo_finance_news" arrow="true" cta="View guide" />
 <Card title="You.com Search" icon="link" href="/oss/integrations/tools/you" arrow="true" cta="View guide" />
 <Card title="YouTube" icon="link" href="/oss/integrations/tools/youtube" arrow="true" cta="View guide" />

@@ -1,18 +1,18 @@
 ---
-title: Writer LLM
+title: WRITER LLM
 ---
 
-[Writer](https://writer.com/) is a platform to generate different language content.
+[WRITER](https://writer.com/) is a platform to generate different language content.
 
-This example goes over how to use LangChain to interact with `Writer` [models](https://dev.writer.com/docs/models).
+This example goes over how to use LangChain to interact with `WRITER` [models](https://dev.writer.com/docs/models).
 
 ## Setup
 
-To access Writer models you'll need to create a Writer account, get an API key, and install the `writer-sdk` and `langchain-community` packages.
+To access WRITER models you'll need to create a WRITER account, get an API key, and install the `writer-sdk` and `langchain-community` packages.
 
 ### Credentials
 
-Head to [Writer AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) to sign up to OpenAI and generate an API key. Once you've done this set the WRITER_API_KEY environment variable:
+Head to [WRITER AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) to sign up for WRITER and generate an API key. Once you've done this set the WRITER_API_KEY environment variable:
 
 ```python
 import getpass
@@ -24,7 +24,7 @@ if not os.environ.get("WRITER_API_KEY"):
 
 ## Installation
 
-The LangChain Writer integration lives in the `langchain-community` package:
+The LangChain WRITER integration lives in the `langchain-community` package:
 
 ```python
 %pip install -qU langchain-community writer-sdk
@@ -71,8 +71,8 @@ for chunk in stream_response:
 
 ## Async
 
-Writer support asynchronous calls via **ainvoke()** and **astream()** methods
+WRITER support asynchronous calls via **ainvoke()** and **astream()** methods
 
 ## API reference
 
-For detailed documentation of all Writer features, head to our [API reference](https://dev.writer.com/api-guides/api-reference/completion-api/text-generation#text-generation).
+For detailed documentation of all WRITER features, head to our [API reference](https://dev.writer.com/api-guides/api-reference/completion-api/text-generation#text-generation).

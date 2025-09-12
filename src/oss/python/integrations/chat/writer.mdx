@@ -1,10 +1,10 @@
 ---
-title: Chat Writer
+title: ChatWriter
 ---
 
-This guide provides a quick overview for getting started with Writer [chat](/oss/concepts/chat_models/).
+This guide provides a quick overview for getting started with WRITER [chat](/oss/concepts/chat_models/).
 
-Writer has several chat models. You can find information about their latest models and their costs, context windows, and supported input types in the [Writer docs](https://dev.writer.com/home).
+WRITER has several chat models. You can find information about their latest models and their costs, context windows, and supported input types in the [WRITER docs](https://dev.writer.com/home).
 
 ## Overview
 
@@ -16,20 +16,20 @@ Writer has several chat models. You can find information about their latest mode
 
 ### Model features
 
-| [Tool calling](/oss/how-to/tool_calling) | Structured output | JSON mode | Image input | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | Native async |         [Token usage](/oss/how-to/chat_token_usage_tracking/)          | Logprobs |
+| [Tool calling](/oss/how-to/tool_calling) | [Structured output](/oss/langchain/structured-output) | JSON mode | Image input | Audio input | Video input | [Token-level streaming](/oss/how-to/chat_streaming/) | Native async |         [Token usage](/oss/how-to/chat_token_usage_tracking/)          | Logprobs |
 | :---: |:-----------------:| :---: | :---: |  :---: | :---: | :---: | :---: |:--------------------------------:|:--------:|
-| ✅ |         ❌         | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |                ✅                 |    ❌     |
+| ✅ |         ✅         | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |                ✅                 |    ❌     |
 
 ### Credentials
 
-Sign up for [Writer AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) and follow this [Quickstart](https://dev.writer.com/api-guides/quickstart) to obtain an API key. Then, set the WRITER_API_KEY environment variable:
+Sign up for [WRITER AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) and follow this [Quickstart](https://dev.writer.com/api-guides/quickstart) to obtain an API key. Then, set the WRITER_API_KEY environment variable:
 
 ```python
 import getpass
 import os
 
 if not os.getenv("WRITER_API_KEY"):
-    os.environ["WRITER_API_KEY"] = getpass.getpass("Enter your Writer API key: ")
+    os.environ["WRITER_API_KEY"] = getpass.getpass("Enter your WRITER API key: ")
 ```
 
 If you want to get automated tracing of your model calls, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
@@ -55,7 +55,7 @@ Now we can instantiate our model object in order to generate chat completions:
 from langchain_writer import ChatWriter
 
 llm = ChatWriter(
-    model="palmyra-x-004",
+    model="palmyra-x5",
     temperature=0,
     max_tokens=None,
     timeout=None,
@@ -110,7 +110,7 @@ for chunk in ai_stream:
 
 ## Tool calling
 
-Writer models like Palmyra X 004 support [tool calling](https://dev.writer.com/api-guides/tool-calling), which lets you describe tools and their arguments. The model will return a JSON object with a tool to invoke and the inputs to that tool.
+WRITER models like Palmyra X5 support [tool calling](https://dev.writer.com/api-guides/tool-calling), which lets you describe tools and their arguments. The model will return a JSON object with a tool to invoke and the inputs to that tool.
 
 ### Binding tools
 
@@ -158,7 +158,7 @@ print(ai_msg.tool_calls)
 
 ### A note on tool binding
 
-The `ChatWriter.bind_tools()` method does not create a new instance with bound tools, but stores the received `tools` and `tool_choice` in the initial class instance attributes to pass them as parameters during the Palmyra LLM call while using `ChatWriter` invocation. This approach allows the support of different tool types, e.g. `function` and `graph`. `Graph` is one of the remotely called Writer Palmyra tools. For further information, visit our [docs](https://dev.writer.com/api-guides/knowledge-graph#knowledge-graph).
+The `ChatWriter.bind_tools()` method does not create a new instance with bound tools, but stores the received `tools` and `tool_choice` in the initial class instance attributes to pass them as parameters during the Palmyra LLM call while using `ChatWriter` invocation. This approach allows the support of different tool types, e.g. `function` and `graph`. `Graph` is one of the remotely called WRITER Palmyra tools. For further information, visit our [docs](https://dev.writer.com/api-guides/knowledge-graph#knowledge-graph).
 
 For more information about tool usage in LangChain, visit the [LangChain tool calling documentation](https://python.langchain.com/docs/concepts/tool_calling/).
 
@@ -223,4 +223,4 @@ For detailed documentation of all ChatWriter features and configurations, head t
 
 ## Additional resources
 
-You can find information about Writer's models (including costs, context windows, and supported input types) and tools in the [Writer docs](https://dev.writer.com/home).
+You can find information about WRITER's models (including costs, context windows, and supported input types) and tools in the [WRITER docs](https://dev.writer.com/home).
