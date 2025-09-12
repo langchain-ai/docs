@@ -10,7 +10,6 @@ uv run python pipeline/tools/partner_pkg_table.py
 ```
 """
 
-import glob
 from pathlib import Path
 
 import requests
