@@ -81,5 +81,5 @@ Examples of structure-based splitting:
 ## Provider-specific
 
 <Columns cols={3}>
-<Card title="Writer" icon="link" href="/oss/integrations/splitters/writer" arrow="true" cta="View guide" />
+<Card title="WRITER" icon="link" href="/oss/integrations/splitters/writer" arrow="true" cta="View guide" />
 </Columns>

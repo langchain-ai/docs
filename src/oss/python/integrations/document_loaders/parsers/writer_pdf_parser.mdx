@@ -1,10 +1,10 @@
 ---
-title: Writer PDF Parser
+title: WRITER PDF Parser
 ---
 
-This guide provides a quick overview for getting started with the Writer `PDFParser` [document loader](/oss/concepts/document_loaders/).
+This guide provides a quick overview for getting started with the WRITER `PDFParser` [document loader](/oss/concepts/document_loaders/).
 
-Writer's [PDF Parser](https://dev.writer.com/api-guides/api-reference/tool-api/pdf-parser#parse-pdf) converts PDF documents into other formats like text or Markdown. This is particularly useful when you need to extract and process text content from PDF files for further analysis or integration into your workflow. In `langchain-writer`, we provide usage of Writer's PDF Parser as a LangChain document parser.
+WRITER's [PDF Parser](https://dev.writer.com/api-guides/api-reference/tool-api/pdf-parser#parse-pdf) converts PDF documents into other formats like text or Markdown. This is particularly useful when you need to extract and process text content from PDF files for further analysis or integration into your workflow. In `langchain-writer`, we provide usage of WRITER's PDF Parser as a LangChain document parser.
 
 ## Overview
 
@@ -24,14 +24,14 @@ The `PDFParser` is available in the `langchain-writer` package:
 
 ### Credentials
 
-Sign up for [Writer AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) to generate an API key (you can follow this [Quickstart](https://dev.writer.com/api-guides/quickstart)). Then, set the WRITER_API_KEY environment variable:
+Sign up for [WRITER AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) to generate an API key (you can follow this [Quickstart](https://dev.writer.com/api-guides/quickstart)). Then, set the WRITER_API_KEY environment variable:
 
 ```python
 import getpass
 import os
 
 if not os.getenv("WRITER_API_KEY"):
-    os.environ["WRITER_API_KEY"] = getpass.getpass("Enter your Writer API key: ")
+    os.environ["WRITER_API_KEY"] = getpass.getpass("Enter your WRITER API key: ")
 ```
 
 It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com/) for best-in-class observability. If you wish to do so, you can set the `LANGSMITH_TRACING` and `LANGSMITH_API_KEY` environment variables:
@@ -43,7 +43,7 @@ It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain
 
 ### Instantiation
 
-Next, instantiate an instance of the Writer PDF Parser with the desired output format:
+Next, instantiate an instance of the WRITER PDF Parser with the desired output format:
 
 ```python
 from langchain_writer.pdf_parser import PDFParser
@@ -83,4 +83,4 @@ For detailed documentation of all `PDFParser` features and configurations, head 
 
 ## Additional resources
 
-You can find information about Writer's models (including costs, context windows, and supported input types) and tools in the [Writer docs](https://dev.writer.com/home).
+You can find information about WRITER's models (including costs, context windows, and supported input types) and tools in the [WRITER docs](https://dev.writer.com/home).

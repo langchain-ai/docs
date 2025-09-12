@@ -1,10 +1,10 @@
 ---
-title: "Text splitters"
+title: "WRITER text splitters"
 ---
 
-This guide provides a quick overview for getting started with Writer's [text splitter](/oss/integrations/splitters/).
+This guide provides a quick overview for getting started with WRITER's [text splitter](/oss/integrations/splitters/).
 
-Writer's [context-aware splitting endpoint](https://dev.writer.com/api-guides/tools#context-aware-text-splitting) provides intelligent text splitting capabilities for long documents (up to 4000 words). Unlike simple character-based splitting, it preserves the semantic meaning and context between chunks, making it ideal for processing long-form content while maintaining coherence. In `langchain-writer`, we provide usage of Writer's context-aware splitting endpoint as a LangChain text splitter.
+WRITER's [context-aware splitting endpoint](https://dev.writer.com/api-guides/tools#context-aware-text-splitting) provides intelligent text splitting capabilities for long documents (up to 4000 words). Unlike simple character-based splitting, it preserves the semantic meaning and context between chunks, making it ideal for processing long-form content while maintaining coherence. In `langchain-writer`, we provide usage of WRITER's context-aware splitting endpoint as a LangChain text splitter.
 
 ## Overview
 
@@ -24,14 +24,14 @@ The `WriterTextSplitter` is available in the `langchain-writer` package:
 
 ### Credentials
 
-Sign up for [Writer AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) to generate an API key (you can follow this [Quickstart](https://dev.writer.com/api-guides/quickstart)). Then, set the WRITER_API_KEY environment variable:
+Sign up for [WRITER AI Studio](https://app.writer.com/aistudio/signup?utm_campaign=devrel) to generate an API key (you can follow this [Quickstart](https://dev.writer.com/api-guides/quickstart)). Then, set the WRITER_API_KEY environment variable:
 
 ```python
 import getpass
 import os
 
 if not os.getenv("WRITER_API_KEY"):
-    os.environ["WRITER_API_KEY"] = getpass.getpass("Enter your Writer API key: ")
+    os.environ["WRITER_API_KEY"] = getpass.getpass("Enter your WRITER API key: ")
 ```
 
 It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com/) for best-in-class observability. If you wish to do so, you can set the `LANGSMITH_TRACING` and `LANGSMITH_API_KEY` environment variables:
@@ -169,4 +169,4 @@ For detailed documentation of all `WriterTextSplitter` features and configuratio
 
 ## Additional resources
 
-You can find information about Writer's models (including costs, context windows, and supported input types) and tools in the [Writer docs](https://dev.writer.com/home).
+You can find information about WRITER's models (including costs, context windows, and supported input types) and tools in the [WRITER docs](https://dev.writer.com/home).

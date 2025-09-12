@@ -16,19 +16,24 @@ logger = logging.getLogger(__name__)
 
 
 def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
-    """Apply conditional rendering to markdown content.
+    r"""Apply conditional rendering to markdown content.
 
     Processes conditional blocks like:
     :::python
     This content is only shown for Python
     :::
 
+    Escaped blocks (with backslash) are preserved as literal text:
+    \:::python
+    This will appear as :::python in the output
+    \:::
+
     Args:
         md_text: The markdown content to process.
         target_language: The target language ("python" or "js").
 
     Returns:
-        Processed markdown with conditional blocks resolved.
+        Processed markdown with conditional blocks resolved and escaped tags unescaped.
 
     Raises:
         ValueError: If target_language is not "python" or "js".
@@ -37,10 +42,11 @@ def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
         msg = "target_language must be 'python' or 'js'"
         raise ValueError(msg)
 
+    # Pattern for non-escaped conditional blocks
     pattern = re.compile(
-        r"(?P<indent>[ \t]*):::(?P<language>\w+)\s*\n"
-        r"(?P<content>((?:.*\n)*?))"  # Capture the content inside the block
-        r"(?P=indent)[ \t]*:::"  # Match closing with same indentation
+        r"(?P<indent>[ \t]*)(?<!\\):::(?P<language>\w+)\s*\n"
+        r"(?P<content>((?:.*\n)*?))"  # Capture content inside the block
+        r"(?P=indent)[ \t]*(?<!\\):::"  # Match closing, same indentation, not escaped
     )
 
     def replace_conditional_blocks(match: re.Match) -> str:
@@ -58,7 +64,11 @@ def _apply_conditional_rendering(md_text: str, target_language: str) -> str:
         # If the language does not match, return an empty string
         return ""
 
-    return pattern.sub(replace_conditional_blocks, md_text)
+    # Process conditional blocks first
+    result = pattern.sub(replace_conditional_blocks, md_text)
+
+    # Then unescape escaped tags by removing the backslash
+    return re.sub(r"\\(:::)", r"\1", result)
 
 
 def preprocess_markdown(

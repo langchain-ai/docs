@@ -10,7 +10,6 @@ uv run python pipeline/tools/partner_pkg_table.py
 ```
 """
 
-import glob
 from pathlib import Path
 
 import requests
@@ -44,6 +43,7 @@ IGNORE_PACKGAGES = {
 #####################
 
 DOCS_DIR = Path(__file__).parents[2]
+PROVIDERS_PATH = "src/oss/python/integrations/providers"
 PACKAGE_YML = "https://raw.githubusercontent.com/langchain-ai/langchain/refs/heads/master/libs/packages.yml"
 
 # for now, only include packages that are in the langchain-ai org
@@ -74,10 +74,8 @@ def _enrich_package(p: dict) -> dict | None:
     p["js_exists"] = bool(p.get("js"))
     custom_provider_page = p.get("provider_page")
     default_provider_page = f"/oss/integrations/providers/{p['name_short']}/"
-    default_provider_page_exists = bool(
-        glob.glob(
-            str(DOCS_DIR / f"src/oss/python/integrations/providers/{p['name_short']}.*")
-        )
+    default_provider_page_exists = any(
+        (DOCS_DIR / PROVIDERS_PATH).glob(f"{p['name_short']}.*")
     )
     if custom_provider_page:
         p["provider_page"] = f"/oss/integrations/providers/{custom_provider_page}"
@@ -86,13 +84,15 @@ def _enrich_package(p: dict) -> dict | None:
     else:
         msg = (
             f"Provider page not found for {p['name_short']}. "
-            f"Please add one at oss/integrations/providers/{p['name_short']}.{{mdx,ipynb}}"
+            "Please add one at oss/integrations/providers/"
+            f"{p['name_short']}.{{mdx,ipynb}}"
         )
         raise ValueError(msg)
 
     if p["type"] in ("B", "C"):
         p["package_url"] = (
-            f"https://python.langchain.com/api_reference/{p['name_short'].replace('-', '_')}/"
+            "https://python.langchain.com/api_reference"
+            f"/{p['name_short'].replace('-', '_')}/"
         )
     else:
         p["package_url"] = f"https://pypi.org/project/{p['name']}/"
@@ -114,6 +114,7 @@ packages_sorted = sorted(packages, key=lambda p: p.get("downloads", 0), reverse=
 
 
 def package_row(p: dict) -> str:
+    """Generate a markdown table row for a package."""
     js = "✅" if p["js_exists"] else "❌"
     link = p["provider_page"]
     title = p["name_title"]
@@ -121,15 +122,17 @@ def package_row(p: dict) -> str:
     return (
         f"| {provider} | [{p['name']}]({p['package_url']}) | "
         f"![Downloads](https://static.pepy.tech/badge/{p['name']}/month) | "
-        f"![PyPI - Version](https://img.shields.io/pypi/v/{p['name']}?style=flat-square&label=%20&color=orange) | "
+        f"![PyPI - Version](https://img.shields.io/pypi/v/{p['name']}"
+        "?style=flat-square&label=%20&color=orange) | "
         f"{js} |"
     )
 
 
 def table() -> str:
+    """Generate the full markdown table for all packages."""
     header = """| Provider | Package Reference | Downloads | Version | [JS](https://js.langchain.com/docs/integrations/platforms/) |
 | :--- | :---: | :---: | :---: | :---: |
-"""
+"""  # noqa: E501
     return header + "\n".join(package_row(p) for p in packages_sorted)
 
 
@@ -139,12 +142,6 @@ def doc() -> str:
 title: Integration packages
 ---
 
-<Info>
-
-If you'd like to contribute an integration, see [Contributing integrations](/oss/integrations/contributing).
-
-</Info>
-
 ## Integration packages
 
 These providers have standalone `langchain-{{provider}}` packages for improved versioning, dependency management and testing.
@@ -153,13 +150,16 @@ These providers have standalone `langchain-{{provider}}` packages for improved v
 
 ## All providers
 
-Click [here](/oss/integrations/providers/all_providers) to see all providers or search
-for a provider using the search field.
+Click [here](/oss/integrations/providers/all_providers) to see all providers or search for a provider using the search field.
 
-"""
+<Info>
+    If you'd like to contribute an integration, see [Contributing integrations](/oss/contributing#add-a-new-integration).
+</Info>
+
+"""  # noqa: E501
 
 
 if __name__ == "__main__":
     output_dir = Path() / "src" / "oss" / "python" / "integrations" / "providers"
-    with open(output_dir / "index.mdx", "w") as f:
+    with (output_dir / "index.mdx").open("w") as f:
         f.write(doc())

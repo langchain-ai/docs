@@ -197,8 +197,9 @@ Once your branch has been merged into `main`, you need to push the changes to `p
 ### Mintlify .venv Parsing Error
 
 **Problem**: Running `mint broken-links` or other Mintlify commands from the project root causes parsing errors like:
+
 ```
-Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licenses/LICENSE.md 
+Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licenses/LICENSE.md
 - 3:48: Unexpected character '@' (U+0040) in name
 ```
 
@@ -207,11 +208,13 @@ Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licen
 **Solutions** (in order of preference):
 
 1. **Use the safe Make commands** (recommended):
+
    ```bash
    make mint-broken-links  # Builds docs first, then checks links (excludes integrations)
    ```
 
 2. **Run Mintlify commands from the build directory**:
+
    ```bash
    cd build               # Change to build directory where final docs are
    mint broken-links      # Now safe to run
@@ -220,3 +223,16 @@ Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licen
 **Why this works**: The solution ensures Mintlify commands run from the `build/` directory where the final documentation is generated, which is the correct place to check for broken links. This avoids scanning the Python virtual environment in the project root.
 
 **Prevention**: Always use the provided Make commands instead of running raw `mint` commands from the project root.
+
+### Warning: page doesn't exist
+
+If adding a new group, ensure the root `index.mdx` is included in the `pages` array like:
+
+```json
+{
+  "group": "New group",
+  "pages": ["new-group/index", "new-group/other-page"]
+}
+```
+
+If the trailing `/index` (no extension included) is omitted, the Mintlify parser will raise a warning even though the site will still build.
