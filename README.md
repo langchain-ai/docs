@@ -140,13 +140,20 @@ make test
 
 ### Code Quality
 
-Before submitting changes, ensure your code passes linting:
+Before submitting changes, ensure your code passes formatting and linting checks:
 
 ```bash
-make lint
+# Format code automatically
 make format
+
+# Check for linting issues
+make lint
+
+# Fix markdown issues
 make lint_md_fix
 ```
+
+**Note**: All pull requests are automatically checked by CI/CD. The same linting and formatting standards will be enforced, and PRs cannot be merged if these checks fail.
 
 ## Development Workflow
 

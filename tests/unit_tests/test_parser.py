@@ -79,10 +79,10 @@ EXAMPLE_ADMONITION_BLANK = """\
 EXPECTED_ADMONITION_BLANK = """\
 <Accordion title="Example Title">
   Paragraph 1
-  
+
   Paragraph 2
 </Accordion>
-"""  # noqa: W293
+"""
 
 
 def test_example_admonition_with_blank_line() -> None:
@@ -276,11 +276,11 @@ def test_code_block_in_tab() -> None:
 
 
 INPUT_CODE_FENCE = """\
-``` 
+```
 def example_function():
     print("This is an example function.")
 ```
-"""  # noqa: W291
+"""
 
 EXPECTED_CODE_FENCE = """\
 ```
@@ -299,10 +299,10 @@ INPUT_CODE_BLOCK_WITH_BLANK_LINE = """\
 ```python
 def foo():
     x = 1
-    
+
     y = 2
 ```
-"""  # noqa: W293
+"""
 
 
 def test_long_code_block() -> None:
