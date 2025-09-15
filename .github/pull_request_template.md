@@ -2,6 +2,7 @@
 <!-- Brief description of what documentation is being added/updated -->
 
 ## Type of change
+
 **Type:** [Replace with: New documentation page / Update existing documentation / Fix typo/bug/link/formatting / Remove outdated content / Other]
 
 ## Related issues/PRs
@@ -37,4 +38,5 @@ Examples:
 
 ## Additional notes
 <!-- Any other information that would be helpful for reviewers -->
+
 
