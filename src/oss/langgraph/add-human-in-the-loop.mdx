@@ -1,5 +1,6 @@
 ---
 title: Enable human intervention
+sidebarTitle: Human-in-the-loop
 ---
 
 import AlphaCallout from '/snippets/alpha-lg-callout.mdx';
@@ -8,14 +9,12 @@ import AlphaCallout from '/snippets/alpha-lg-callout.mdx';
 
 To review, edit, and approve tool calls in an agent or workflow, use interrupts to pause a graph and wait for human input. Interrupts use LangGraph's [persistence](/oss/langgraph/persistence) layer, which saves the graph state, to indefinitely pause graph execution until you resume.
 
-<Info>
-For more information about human-in-the-loop workflows, see the [Human-in-the-Loop](/oss/langgraph/human-in-the-loop) conceptual guide.
-</Info>
+![image](/oss/images/tool-call-review.png)
 
 ## Pause using `interrupt`
 
 :::python
-[Dynamic interrupts](/oss/langgraph/human-in-the-loop#key-capabilities) (also known as dynamic breakpoints) are triggered based on the current state of the graph. You can set dynamic interrupts by calling @[`interrupt` function][interrupt] in the appropriate place. The graph will pause, which allows for human intervention, and then resumes the graph with their input. It's useful for tasks like approvals, edits, or gathering additional context.
+[Dynamic interrupts](/oss/langgraph/add-human-in-the-loop#key-capabilities) (also known as dynamic breakpoints) are triggered based on the current state of the graph. You can set dynamic interrupts by calling @[`interrupt` function][interrupt] in the appropriate place. The graph will pause, which allows for human intervention, and then resumes the graph with their input. It's useful for tasks like approvals, edits, or gathering additional context.
 
 <Note>
 As of v1.0, `interrupt` is the recommended way to pause a graph. `NodeInterrupt` is deprecated and will be removed in v2.0.
@@ -23,7 +22,7 @@ As of v1.0, `interrupt` is the recommended way to pause a graph. `NodeInterrupt`
 :::
 
 :::js
-[Dynamic interrupts](/oss/langgraph/human-in-the-loop#key-capabilities) (also known as dynamic breakpoints) are triggered based on the current state of the graph. You can set dynamic interrupts by calling @[`interrupt` function][interrupt] in the appropriate place. The graph will pause, which allows for human intervention, and then resumes the graph with their input. It's useful for tasks like approvals, edits, or gathering additional context.
+[Dynamic interrupts](/oss/langgraph/add-human-in-the-loop#key-capabilities) (also known as dynamic breakpoints) are triggered based on the current state of the graph. You can set dynamic interrupts by calling @[`interrupt` function][interrupt] in the appropriate place. The graph will pause, which allows for human intervention, and then resumes the graph with their input. It's useful for tasks like approvals, edits, or gathering additional context.
 :::
 
 To use `interrupt` in your graph, you need to:
@@ -240,17 +239,6 @@ console.log(await graph.invoke(new Command({ resume: "Edited text" }), config));
   :::
 </Accordion>
 
-<Tip>
-**New in 0.4.0**
-:::python
-`__interrupt__` is a special key that will be returned when running the graph if the graph is interrupted. Support for `__interrupt__` in `invoke` and `ainvoke` has been added in version 0.4.0. If you're on an older version, you will only see `__interrupt__` in the result if you use `stream` or `astream`. You can also use `graph.get_state(thread_id)` to get the interrupt value(s).
-:::
-
-:::js
-`__interrupt__` is a special key that will be returned when running the graph if the graph is interrupted. Support for `__interrupt__` in `invoke` has been added in version 0.4.0. If you're on an older version, you will only see `__interrupt__` in the result if you use `stream`. You can also use `graph.getState(config)` to get the interrupt value(s).
-:::
-</Tip>
-
 <Warning>
 :::python
 Interrupts resemble Python's input() function in terms of developer experience, but they do not automatically resume execution from the interruption point. Instead, they rerun the entire node where the interrupt was used. For this reason, interrupts are typically best placed at the start of a node or in a dedicated node.
@@ -366,6 +354,13 @@ await parentGraph.invoke(new Command({ resume: resumeMap }), threadConfig);
 :::
 
 ## Common patterns
+
+There are four typical design patterns that you can implement using `interrupt` and `Command`:
+
+* [Approve or reject](#approve-or-reject): Pause the graph before a critical step, such as an API call, to review and approve the action. If the action is rejected, you can prevent the graph from executing the step, and potentially take an alternative action. This pattern often involves routing the graph based on the human's input.
+* [Edit graph state](#review-and-edit-state): Pause the graph to review and edit the graph state. This is useful for correcting mistakes or updating the state with additional information. This pattern often involves updating the state with the human's input.
+* [Review tool calls](#review-tool-calls): Pause the graph to review and edit tool calls requested by the LLM before tool execution.
+* [Validate human input](#validate-human-input): Pause the graph to validate human input before proceeding with the next step.
 
 Below we show different design patterns that can be implemented using `interrupt` and `Command`.
 
@@ -878,7 +873,7 @@ agent = create_react_agent(
 ```
 
 1. The @[`interrupt` function][interrupt] pauses the agent graph at a specific node. In this case, we call `interrupt()` at the beginning of the tool function, which pauses the graph at the node that executes the tool. The information inside `interrupt()` (e.g., tool calls) can be presented to a human, and the graph can be resumed with the user input (tool call approval, edit or feedback).
-2. The `InMemorySaver` is used to store the agent state at every step in the tool calling loop. This enables [short-term memory](/oss/langgraph/add-memory#add-short-term-memory) and [human-in-the-loop](/oss/langgraph/human-in-the-loop) capabilities. In this example, we use `InMemorySaver` to store the agent state in memory. In a production application, the agent state will be stored in a database.
+2. The `InMemorySaver` is used to store the agent state at every step in the tool calling loop. This enables [short-term memory](/oss/langgraph/add-memory#add-short-term-memory) and [human-in-the-loop](/oss/langgraph/add-human-in-the-loop) capabilities. In this example, we use `InMemorySaver` to store the agent state in memory. In a production application, the agent state will be stored in a database.
 3. Initialize the agent with the `checkpointer`.
 :::
 
@@ -926,7 +921,7 @@ const agent = createReactAgent({
 ```
 
 1. The @[`interrupt` function][interrupt] pauses the agent graph at a specific node. In this case, we call `interrupt()` at the beginning of the tool function, which pauses the graph at the node that executes the tool. The information inside `interrupt()` (e.g., tool calls) can be presented to a human, and the graph can be resumed with the user input (tool call approval, edit or feedback).
-2. The `MemorySaver` is used to store the agent state at every step in the tool calling loop. This enables [short-term memory](/oss/langgraph/add-memory#add-short-term-memory) and [human-in-the-loop](/oss/langgraph/human-in-the-loop) capabilities. In this example, we use `MemorySaver` to store the agent state in memory. In a production application, the agent state will be stored in a database.
+2. The `MemorySaver` is used to store the agent state at every step in the tool calling loop. This enables [short-term memory](/oss/langgraph/add-memory#add-short-term-memory) and [human-in-the-loop](/oss/langgraph/add-human-in-the-loop) capabilities. In this example, we use `MemorySaver` to store the agent state in memory. In a production application, the agent state will be stored in a database.
 3. Initialize the agent with the `checkpointSaver`.
 :::
 
@@ -1477,7 +1472,7 @@ graphBuilder.addNode("humanNode", (state) => {
 :::python
 ## Debug with interrupts
 
-To debug and test a graph, use [static interrupts](/oss/langgraph/human-in-the-loop#key-capabilities) (also known as static breakpoints) to step through the graph execution one node at a time or to pause the graph execution at specific nodes. Static interrupts are triggered at defined points either before or after a node executes. You can set static interrupts by specifying `interrupt_before` and `interrupt_after` at compile time or run time.
+To debug and test a graph, use [static interrupts](/oss/langgraph/add-human-in-the-loop#key-capabilities) (also known as static breakpoints) to step through the graph execution one node at a time or to pause the graph execution at specific nodes. Static interrupts are triggered at defined points either before or after a node executes. You can set static interrupts by specifying `interrupt_before` and `interrupt_after` at compile time or run time.
 
 <Warning>
 Static interrupts are **not** recommended for human-in-the-loop workflows. Use [dynamic interrupts](#pause-using-interrupt) instead.
