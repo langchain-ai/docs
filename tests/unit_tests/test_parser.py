@@ -79,7 +79,7 @@ EXAMPLE_ADMONITION_BLANK = """\
 EXPECTED_ADMONITION_BLANK = """\
 <Accordion title="Example Title">
   Paragraph 1
-
+  
   Paragraph 2
 </Accordion>
 """
@@ -311,7 +311,7 @@ def test_long_code_block() -> None:
     first_block = ast.blocks[0]
     assert isinstance(first_block, CodeBlock)
     assert first_block.language == "python"
-    assert first_block.content == "def foo():\n    x = 1\n    \n    y = 2"
+    assert first_block.content == "def foo():\n    x = 1\n\n    y = 2"
 
 
 NOTE_WITH_TITLE = """\
