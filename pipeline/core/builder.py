@@ -503,7 +503,7 @@ class DocumentationBuilder:
                         # e.g., "python/concepts/low_level.md" > "concepts/low_level.md"
                         relative_path = Path(*relative_path.parts[1:])
 
-                # Build to output_dir/ (not output_dir/oss/)
+                # Build to output_dir/ (not `output_dir/oss/`)
                 output_path = self.build_dir / output_dir / relative_path
 
                 result = self._build_single_file(
