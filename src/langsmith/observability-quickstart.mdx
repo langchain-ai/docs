@@ -3,7 +3,7 @@ title: Tracing quickstart
 sidebarTitle: Trace an application
 ---
 
-[_Observability_](/langsmith/observability-concepts) is a critical requirement for large language model (LLM) applications. LLMs are non-deterministic, which means that the same input can produce different outputs across runs. This behavior makes debugging and monitoring more challenging than with traditional software.
+[_Observability_](/langsmith/observability-concepts) is a critical requirement for applications built with large language models (LLMs). LLMs are non-deterministic, which means that the same prompt can produce different responses. This behavior makes debugging and monitoring more challenging than with traditional software.
 
 LangSmith addresses this by providing end-to-end visibility into how your application handles a request. Each request generates a [_trace_](/langsmith/observability-concepts#traces), which captures the full record of what happened. Within a trace are individual [_runs_](/langsmith/observability-concepts#runs), the specific operations your application performed, such as an LLM call or a retrieval step. Tracing runs allows you to inspect, debug, and validate your application’s behavior.
 
@@ -18,7 +18,6 @@ In this quickstart, you will set up a minimal [_Retrieval Augmented Generation (
 If you prefer to watch a video on getting started with tracing, refer to:
 
 - The quickstart [Video guide](#video-guide).
-- [Tracing Basics video](https://academy.langchain.com/courses/intro-to-langsmith) included in the Introduction to LangSmith LangChain Academy course.
 </Tip>
 
 ## Prerequisites
@@ -33,9 +32,9 @@ Before you begin, make sure you have:
 If you're building an application with [LangChain](https://python.langchain.com/docs/introduction/) or [LangGraph](https://langchain-ai.github.io/langgraph/), you can enable LangSmith tracing with a single environment variable. Get started by reading the guides for tracing with [LangChain](/langsmith/trace-with-langchain) or tracing with [LangGraph](/langsmith/trace-with-langgraph).
 </Tip>
 
-## 1. Create a project and dependencies
+## 1. Create a directory and install dependencies
 
-Create a project for the app and install the dependencies in your environment:
+Create a directory for your project and install the dependencies in your environment:
 
 <CodeGroup>
 
@@ -81,9 +80,9 @@ You can use the example app code outlined in this step to instrument a RAG appli
 
 This is a minimal RAG app that uses the OpenAI SDK directly without any LangSmith tracing added yet. It has three main parts:
 
-- Retriever function: Simulates document retrieval that always returns the same string.
-- OpenAI client: Instantiates a plain OpenAI client to send a chat completion request.
-- RAG function: Combines the retrieved documents with the user’s question to form a system prompt, calls the `chat.completions.create()` endpoint with `gpt-4o-mini`, and returns the assistant’s response.
+- **Retriever function**: Simulates document retrieval that always returns the same string.
+- **OpenAI client**: Instantiates a plain OpenAI client to send a chat completion request.
+- **RAG function**: Combines the retrieved documents with the user’s question to form a system prompt, calls the `chat.completions.create()` endpoint with `gpt-4o-mini`, and returns the assistant’s response.
 
 Add the following code into your app file (e.g., `app.py` or `app.ts`):
 
@@ -172,12 +171,12 @@ This snippet wraps the OpenAI client so that every subsequent model call is logg
 
     ```python Python highlight={2,7}
     from openai import OpenAI
-    from langsmith.wrappers import wrap_openai  # traces SDK calls
+    from langsmith.wrappers import wrap_openai  # traces openai calls
 
     def retriever(query: str):
         return ["Harrison worked at Kensho"]
 
-    client = wrap_openai(OpenAI())  # child run for the model call
+    client = wrap_openai(OpenAI())  # log traces by wrapping the model calls 
 
     def rag(question: str) -> str:
         docs = retriever(question)
@@ -201,13 +200,13 @@ This snippet wraps the OpenAI client so that every subsequent model call is logg
     ```typescript TypeScript highlight={3,9}
     import "dotenv/config";
     import OpenAI from "openai";
-    import { wrapOpenAI } from "langsmith/wrappers"; // traces SDK calls
+    import { wrapOpenAI } from "langsmith/wrappers"; // traces openai calls
 
     function retriever(query: string): string[] {
     return ["Harrison worked at Kensho"];
     }
 
-    const client = wrapOpenAI(new OpenAI()); // child run for the model call
+    const client = wrapOpenAI(new OpenAI()); // log traces by wrapping the model calls 
 
     async function rag(question: string) {
     const docs = retriever(question);
@@ -254,7 +253,7 @@ This snippet wraps the OpenAI client so that every subsequent model call is logg
     Harrison worked at Kensho.
     ```
 
-1. In the [platform UI](smith.langchain.com), select the **default** workspace (or the workspace you specified in [Step 2](#2-set-up-environment-variables)). Select the tracing project and then the run under the **Runs** tab. You'll find a trace of just the OpenAI call.
+1. In the [LangSmith UI](https://smith.langchain.com), navigate to the **default** Tracing Project for your workspace (or the workspace you specified in [Step 2](#2-set-up-environment-variables). You'll see the OpenAI call we just instrumented.
 
 <div style={{ textAlign: 'center' }}>
 <img
@@ -281,12 +280,12 @@ You can also use the `traceable` decorator for [Python](https://docs.smith.langc
     ```python Python highlight={3,10}
     from openai import OpenAI
     from langsmith.wrappers import wrap_openai
-    from langsmith import traceable  # parent run for your function
+    from langsmith import traceable  
 
     def retriever(query: str):
         return ["Harrison worked at Kensho"]
 
-    client = wrap_openai(OpenAI())  # keep this so the LLM call nests as a child run
+    client = wrap_openai(OpenAI())  # keep this to capture the prompt and response from the LLM
 
     @traceable
     def rag(question: str) -> str:
@@ -311,13 +310,13 @@ You can also use the `traceable` decorator for [Python](https://docs.smith.langc
     ```typescript TypeScript highlight={3,11}
     import "dotenv/config";
     import OpenAI from "openai";
-    import { wrapOpenAI, traceable } from "langsmith/wrappers"; // parent + child
+    import { wrapOpenAI, traceable } from "langsmith/wrappers"; 
 
     function retriever(query: string): string[] {
     return ["Harrison worked at Kensho"];
     }
 
-    const client = wrapOpenAI(new OpenAI()); // keep this to nest the LLM call
+    const client = wrapOpenAI(new OpenAI()); // # keep this to capture the prompt and response from the LLM
 
     const rag = traceable(async (question: string) => {
     const docs = retriever(question);
@@ -357,7 +356,7 @@ You can also use the `traceable` decorator for [Python](https://docs.smith.langc
 
     </CodeGroup>
 
-1. Return to the [platform UI](smith.langchain.com), select the **default** workspace, or the workspace you specified in [Step 2](#2-set-up-environment-variables). Select the tracing project and then the most recent run under the **Runs** tab. You'll find a trace of the entire app pipeline.
+1. Return to the [LangSmith UI](https://smith.langchain.com), navigate to the **default** Tracing Project for your workspace (or the workspace you specified in [Step 2](#2-set-up-environment-variables). You'll find a trace of the entire app pipeline.
 
 <div style={{ textAlign: 'center' }}>
 <img
