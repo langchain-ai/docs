@@ -3,45 +3,65 @@ title: Tracing quickstart
 sidebarTitle: Trace an application
 ---
 
-Observability is important for any software application, but especially so for LLM applications. LLMs are **non-deterministic** by nature, meaning they can **produce unexpected results**. This makes them trickier than normal to debug.
+[_Observability_](/langsmith/observability-concepts) is a critical requirement for applications built with large language models (LLMs). LLMs are non-deterministic, which means that the same prompt can produce different responses. This behavior makes debugging and monitoring more challenging than with traditional software.
 
-This is where LangSmith can help! LangSmith gives you **visibility into each step** your application takes when handling a request — helping you **debug faster and gain confidence** in your app. From prototyping to production, LangSmith has you covered with **tracing,  filtering, charting, and alerting** to keep your application reliable at scale.
+LangSmith addresses this by providing end-to-end visibility into how your application handles a request. Each request generates a [_trace_](/langsmith/observability-concepts#traces), which captures the full record of what happened. Within a trace are individual [_runs_](/langsmith/observability-concepts#runs), the specific operations your application performed, such as an LLM call or a retrieval step. Tracing runs allows you to inspect, debug, and validate your application’s behavior.
 
-# Get started
+In this quickstart, you will set up a minimal [_Retrieval Augmented Generation (RAG)_](https://www.mckinsey.com/featured-insights/mckinsey-explainers/what-is-retrieval-augmented-generation-rag) application and add tracing with LangSmith. You will:
 
-This tutorial will show you how to instrument a simple [RAG](https://www.mckinsey.com/featured-insights/mckinsey-explainers/what-is-retrieval-augmented-generation-rag) application that consists of a retrieval step to fetch data and an LLM call to OpenAI to answer the user question based on the data.
+1. Configure your environment.
+1. Create an application that retrieves context and calls an LLM.
+1. Enable tracing to capture both the retrieval step and the LLM call.
+1. View the resulting traces in the LangSmith UI.
 
 <Tip>
-If you're building an application with [LangChain](https://python.langchain.com/docs/introduction/) or [LangGraph](https://langchain-ai.github.io/langgraph/), you can enable LangSmith tracing with a single environment variable.
-
-Get started by reading the guides for tracing with [LangChain](/langsmith/trace-with-langchain) or tracing with [LangGraph](/langsmith/trace-with-langgraph).
+If you prefer to watch a video on getting started with tracing, refer to the quickstart [Video guide](#video-guide).
 </Tip>
 
-## 1. Install Dependencies
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- **A LangSmith account**: Sign up or log in at [smith.langchain.com](https://smith.langchain.com).
+- **A LangSmith API key**: Follow the [Create an API key](/langsmith/create-account-api-key#create-an-api-key) guide.
+- **An OpenAI API key**: Generate this from the [OpenAI dashboard](https://platform.openai.com/account/api-keys).
+
+The example app in this quickstart will use OpenAI as the LLM provider. You can adapt the example for your app's LLM provider.
+
+<Tip>
+If you're building an application with [LangChain](https://python.langchain.com/docs/introduction/) or [LangGraph](https://langchain-ai.github.io/langgraph/), you can enable LangSmith tracing with a single environment variable. Get started by reading the guides for tracing with [LangChain](/langsmith/trace-with-langchain) or tracing with [LangGraph](/langsmith/trace-with-langgraph).
+</Tip>
+
+## 1. Create a directory and install dependencies
+
+In your terminal, create a directory for your project and install the dependencies in your environment:
 
 <CodeGroup>
 
 ```bash Python
+mkdir ls-observability-quickstart && cd ls-observability-quickstart
+python -m venv .venv && source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -U langsmith openai
 ```
 
 ```bash TypeScript
-yarn add langsmith openai
+mkdir ls-observability-quickstart-ts && cd ls-observability-quickstart-ts
+npm init -y
+npm install langsmith openai typescript ts-node
+npx tsc --init
 ```
 
 </CodeGroup>
 
-## 2. Create an API key
+## 2. Set up environment variables
 
-To create an API key head to the [LangSmith settings page](https://smith.langchain.com/settings). Then click **+ API Key.**
+Set the following environment variables:
 
-## 3. Set up environment variables
-
-This example uses OpenAI, but you can adapt it to use any LLM provider.
-
-If you're using Anthropic, use the [Anthropic wrapper](/langsmith/annotate-code#wrap-the-anthropic-client-python-only) to trace your calls. For other providers, use [the traceable wrapper](/langsmith/annotate-code#use-%40traceable-%2F-traceable).
-
-If your LangSmith API key is linked to multiple workspaces, set the `LANGSMITH_WORKSPACE_ID` environment variable to specify which workspace to use.
+- `LANGSMITH_TRACING`
+- `LANGSMITH_API_KEY`
+- `OPENAI_API_KEY` (or your LLM provider's API key)
+- (optional) `LANGSMITH_WORKSPACE_ID`: If your LangSmith API is linked to multiple workspaces, set this variable to specify which workspace to use.
 
 ``` bash
 export LANGSMITH_TRACING=true
@@ -50,230 +70,314 @@ export OPENAI_API_KEY="<your-openai-api-key>"
 export LANGSMITH_WORKSPACE_ID="<your-workspace-id>"
 ```
 
-## 4. Define your application
+If you're using Anthropic, use the [Anthropic wrapper](/langsmith/annotate-code#wrap-the-anthropic-client-python-only) to trace your calls. For other providers, use [the traceable wrapper](/langsmith/annotate-code#use-%40traceable-%2F-traceable).
 
-We will instrument a simple RAG application for this tutorial, but feel free to use your own code if you'd like - just make sure it has an LLM call!
+## 3. Define your application
 
-<Accordion title="Application Code">
+You can use the example app code outlined in this step to instrument a RAG application. Or, you can use your own application code that includes an LLM call.
+
+This is a minimal RAG app that uses the OpenAI SDK directly without any LangSmith tracing added yet. It has three main parts:
+
+- **Retriever function**: Simulates document retrieval that always returns the same string.
+- **OpenAI client**: Instantiates a plain OpenAI client to send a chat completion request.
+- **RAG function**: Combines the retrieved documents with the user’s question to form a system prompt, calls the `chat.completions.create()` endpoint with `gpt-4o-mini`, and returns the assistant’s response.
+
+Add the following code into your app file (e.g., `app.py` or `app.ts`):
+
+<CodeGroup>
+
+```python Python
+from openai import OpenAI
+
+def retriever(query: str):
+    # Minimal example retriever
+    return ["Harrison worked at Kensho"]
+
+# OpenAI client call (no wrapping yet)
+client = OpenAI()
+
+def rag(question: str) -> str:
+    docs = retriever(question)
+    system_message = (
+        "Answer the user's question using only the provided information below:\n"
+        + "\n".join(docs)
+    )
+
+    # This call is not traced yet
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": question},
+        ],
+    )
+    return resp.choices[0].message.content
+
+if __name__ == "__main__":
+    print(rag("Where did Harrison work?"))
+```
+
+```typescript TypeScript
+import "dotenv/config";
+import OpenAI from "openai";
+
+// Minimal example retriever
+function retriever(query: string): string[] {
+  return ["Harrison worked at Kensho"];
+}
+
+// OpenAI client call (no wrapping yet)
+const client = new OpenAI();
+
+async function rag(question: string) {
+  const docs = retriever(question);
+  const systemMessage =
+    "Answer the user's question using only the provided information below:\n" +
+    docs.join("\n");
+
+  // This call is not traced yet
+  const resp = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemMessage },
+      { role: "user", content: question },
+    ],
+  });
+
+  return resp.choices[0].message?.content;
+}
+
+(async () => {
+  console.log(await rag("Where did Harrison work?"));
+})();
+```
+
+</CodeGroup>
+
+## 4. Trace LLM calls
+
+To start, you’ll trace all your OpenAI calls. LangSmith provides wrappers:
+
+- Python: [`wrap_openai`](https://docs.smith.langchain.com/reference/python/wrappers/langsmith.wrappers._openai.wrap_openai)
+- TypeScript: [`wrapOpenAI`](https://docs.smith.langchain.com/reference/js/functions/wrappers_openai.wrapOpenAI)
+
+This snippet wraps the OpenAI client so that every subsequent model call is logged automatically as a traced child run in LangSmith.
+
+1. Include the highlighted lines in your app file:
+
     <CodeGroup>
 
-```python Python
-from openai import OpenAI
-openai_client = OpenAI()
+    ```python Python highlight={2,7}
+    from openai import OpenAI
+    from langsmith.wrappers import wrap_openai  # traces openai calls
 
-# This is the retriever we will use in RAG
-# This is mocked out, but it could be anything we want
-def retriever(query: str):
-    results = ["Harrison worked at Kensho"]
-    return results
+    def retriever(query: str):
+        return ["Harrison worked at Kensho"]
 
-# This is the end-to-end RAG chain.
-# It does a retrieval step then calls OpenAI
-def rag(question):
-    docs = retriever(question)
-    system_message = """Answer the users question using only the provided information below:
-        {docs}""".format(docs="\n".join(docs))
+    client = wrap_openai(OpenAI())  # log traces by wrapping the model calls
 
-    return openai_client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": question},
+    def rag(question: str) -> str:
+        docs = retriever(question)
+        system_message = (
+            "Answer the user's question using only the provided information below:\n"
+            + "\n".join(docs)
+        )
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": question},
+            ],
+        )
+        return resp.choices[0].message.content
+
+    if __name__ == "__main__":
+        print(rag("Where did Harrison work?"))
+    ```
+
+    ```typescript TypeScript highlight={3,9}
+    import "dotenv/config";
+    import OpenAI from "openai";
+    import { wrapOpenAI } from "langsmith/wrappers"; // traces openai calls
+
+    function retriever(query: string): string[] {
+    return ["Harrison worked at Kensho"];
+    }
+
+    const client = wrapOpenAI(new OpenAI()); // log traces by wrapping the model calls
+
+    async function rag(question: string) {
+    const docs = retriever(question);
+    const systemMessage =
+        "Answer the user's question using only the provided information below:\n" +
+        docs.join("\n");
+
+    const resp = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: question },
         ],
-        model="gpt-4o-mini",
-    )
-```
+    });
 
-```typescript TypeScript
-import { OpenAI } from "openai";
+    return resp.choices[0].message?.content;
+    }
 
-const openAIClient = new OpenAI();
-
-// This is the retriever we will use in RAG
-// This is mocked out, but it could be anything we want
-async function retriever(query: string) {
-  return ["This is a document"];
-}
-
-// This is the end-to-end RAG chain.
-// It does a retrieval step then calls OpenAI
-async function rag(question: string) {
-  const docs = await retriever(question);
-
-  const systemMessage =
-    "Answer the users question using only the provided information below:\n\n" +
-    docs.join("\n");
-
-  return await openAIClient.chat.completions.create({
-    messages: [
-      { role: "system", content: systemMessage },
-      { role: "user", content: question },
-    ],
-    model: "gpt-4o-mini",
-  });
-}
-```
+    (async () => {
+    console.log(await rag("Where did Harrison work?"));
+    })();
+    ```
 
     </CodeGroup>
-</Accordion>
 
-## 5. Trace OpenAI calls
+1. Call your application:
 
-The first thing you might want to trace is all your OpenAI calls. LangSmith makes this easy with the [`wrap_openai`](https://docs.smith.langchain.com/reference/python/wrappers/langsmith.wrappers._openai.wrap_openai) (Python) or [`wrapOpenAI`](https://docs.smith.langchain.com/reference/js/functions/wrappers_openai.wrapOpenAI) (TypeScript) wrappers. All you have to do is modify your code to use the wrapped client instead of using the `OpenAI` client directly.
+    <CodeGroup>
 
-<CodeGroup>
+    ```bash Python
+    python app.py
+    ```
 
-```python Python
-from openai import OpenAI
-from langsmith.wrappers import wrap_openai
+    ```bash TypeScript
+    npx ts-node app.ts
+    ```
 
-openai_client = wrap_openai(OpenAI())
+    </CodeGroup>
 
-# This is the retriever we will use in RAG
-# This is mocked out, but it could be anything we want
-def retriever(query: str):
-    results = ["Harrison worked at Kensho"]
-    return results
 
-# This is the end-to-end RAG chain.
-# It does a retrieval step then calls OpenAI
-def rag(question):
-    docs = retriever(question)
-    system_message = """Answer the users question using only the provided information below:
-        {docs}""".format(docs="\n".join(docs))
+    You'll receive the following output:
 
-    return openai_client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": question},
+    ```
+    Harrison worked at Kensho.
+    ```
+
+1. In the [LangSmith UI](https://smith.langchain.com), navigate to the **default** Tracing Project for your workspace (or the workspace you specified in [Step 2](#2-set-up-environment-variables)). You'll see the OpenAI call you just instrumented.
+
+<div style={{ textAlign: 'center' }}>
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/trace-quickstart-llm-call.png"
+    alt="LangSmith UI showing an LLM call trace called ChatOpenAI with a system and human input followed by an AI Output."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/trace-quickstart-llm-call-dark.png"
+    alt="LangSmith UI showing an LLM call trace called ChatOpenAI with a system and human input followed by an AI Output."
+/>
+</div>
+
+## 5. Trace an entire application
+
+You can also use the `traceable` decorator for [Python](https://docs.smith.langchain.com/reference/python/run_helpers/langsmith.run_helpers.traceable) or [TypeScript](https://langsmith-docs-bdk0fivr6-langchain.vercel.app/reference/js/functions/traceable.traceable) to trace your entire application instead of just the LLM calls.
+
+1. Include the highlighted code in your app file:
+
+    <CodeGroup>
+
+    ```python Python highlight={3,10}
+    from openai import OpenAI
+    from langsmith.wrappers import wrap_openai
+    from langsmith import traceable
+
+    def retriever(query: str):
+        return ["Harrison worked at Kensho"]
+
+    client = wrap_openai(OpenAI())  # keep this to capture the prompt and response from the LLM
+
+    @traceable
+    def rag(question: str) -> str:
+        docs = retriever(question)
+        system_message = (
+            "Answer the user's question using only the provided information below:\n"
+            + "\n".join(docs)
+        )
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": question},
+            ],
+        )
+        return resp.choices[0].message.content
+
+    if __name__ == "__main__":
+        print(rag("Where did Harrison work?"))
+    ```
+
+    ```typescript TypeScript highlight={3,11}
+    import "dotenv/config";
+    import OpenAI from "openai";
+    import { wrapOpenAI, traceable } from "langsmith/wrappers";
+
+    function retriever(query: string): string[] {
+    return ["Harrison worked at Kensho"];
+    }
+
+    const client = wrapOpenAI(new OpenAI()); // keep this to capture the prompt and response from the LLM
+
+    const rag = traceable(async (question: string) => {
+    const docs = retriever(question);
+    const systemMessage =
+        "Answer the user's question using only the provided information below:\n" +
+        docs.join("\n");
+
+    const resp = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: question },
         ],
-        model="gpt-4o-mini",
-    )
-```
+    });
 
-```typescript TypeScript
-import { OpenAI } from "openai";
-import { wrapOpenAI } from "langsmith/wrappers";
+    return resp.choices[0].message?.content;
+    });
 
-const openAIClient = wrapOpenAI(new OpenAI());
+    (async () => {
+    console.log(await rag("Where did Harrison work?"));
+    })();
+    ```
 
-// This is the retriever we will use in RAG
-// This is mocked out, but it could be anything we want
-async function retriever(query: string) {
-  return ["This is a document"];
-}
+    </CodeGroup>
 
-// This is the end-to-end RAG chain.
-// It does a retrieval step then calls OpenAI
-async function rag(question: string) {
-  const docs = await retriever(question);
+1. Call the application again to create a run:
 
-  const systemMessage =
-    "Answer the users question using only the provided information below:\n\n" +
-    docs.join("\n");
+    <CodeGroup>
 
-  return await openAIClient.chat.completions.create({
-    messages: [
-      { role: "system", content: systemMessage },
-      { role: "user", content: question },
-    ],
-    model: "gpt-4o-mini",
-  });
-}
-```
+    ```bash Python
+    python app.py
+    ```
 
-</CodeGroup>
+    ```bash TypeScript
+    npx ts-node app.ts
+    ```
 
-Now when you call your application as follows:
+    </CodeGroup>
 
-```
-rag("where did harrison work")
-```
+1. Return to the [LangSmith UI](https://smith.langchain.com), navigate to the **default** Tracing Project for your workspace (or the workspace you specified in [Step 2](#2-set-up-environment-variables)). You'll find a trace of the entire app pipeline with the **rag** step and the **ChatOpenAI** LLM call.
 
-This will produce a trace of just the OpenAI call in LangSmith's default tracing project. It should look something like [this](https://smith.langchain.com/public/e7b7d256-10fe-4d49-a8d5-36ca8e5af0d2/r).
+<div style={{ textAlign: 'center' }}>
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/trace-quickstart-app.png"
+    alt="LangSmith UI showing a trace of the entire application called rag with an input followed by an output."
+/>
 
-![](/langsmith/images/tracing-tutorial-openai.png)
-
-## 6. Trace entire application
-
-You can also use the `traceable` decorator ([Python](https://docs.smith.langchain.com/reference/python/run_helpers/langsmith.run_helpers.traceable) or [TypeScript](https://langsmith-docs-bdk0fivr6-langchain.vercel.app/reference/js/functions/traceable.traceable)) to trace your entire application instead of just the LLM calls.
-
-<CodeGroup>
-
-```python Python
-from openai import OpenAI
-from langsmith import traceable
-from langsmith.wrappers import wrap_openai
-
-openai_client = wrap_openai(OpenAI())
-
-def retriever(query: str):
-    results = ["Harrison worked at Kensho"]
-    return results
-
-@traceable
-def rag(question):
-    docs = retriever(question)
-    system_message = """Answer the users question using only the provided information below:
-        {docs}""".format(docs="\n".join(docs))
-
-    return openai_client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": question},
-        ],
-        model="gpt-4o-mini",
-    )
-```
-
-```typescript TypeScript
-import { OpenAI } from "openai";
-import { traceable } from "langsmith/traceable";
-import { wrapOpenAI } from "langsmith/wrappers";
-
-const openAIClient = wrapOpenAI(new OpenAI());
-
-async function retriever(query: string) {
-  return ["This is a document"];
-}
-
-const rag = traceable(async function rag(question: string) {
-  const docs = await retriever(question);
-
-  const systemMessage =
-    "Answer the users question using only the provided information below:\n\n" +
-    docs.join("\n");
-
-  return await openAIClient.chat.completions.create({
-    messages: [
-      { role: "system", content: systemMessage },
-      { role: "user", content: question },
-    ],
-    model: "gpt-4o-mini",
-  });
-});
-```
-
-</CodeGroup>
-
-Now if you call your application as follows:
-
-```
-rag("where did harrison work")
-```
-
-This will produce a trace of just the entire pipeline (with the OpenAI call as a child run) - it should look something like [this](https://smith.langchain.com/public/2174f4e9-48ab-4f9e-a8c4-470372d976f1/r)
-
-![](/langsmith/images/tracing-tutorial-chain.png)
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/trace-quickstart-app-dark.png"
+    alt="LangSmith UI showing a trace of the entire application called rag with an input followed by an output."
+/>
+</div>
 
 ## Next steps
 
-Congratulations! If you've made it this far, you're well on your way to being an expert in observability with LangSmith. Here are some topics you might want to explore next:
+Here are some topics you might want to explore next:
 
-* [Tracing Integrations](/langsmith/trace-with-langchain)
-* [Send traces to a specific project](/langsmith/log-traces-to-project)
-* [Filter traces in a project](/langsmith/filter-traces-in-application)
-
-If you prefer a video tutorial, check out the [Tracing Basics video](https://academy.langchain.com/pages/intro-to-langsmith-preview) from the Introduction to LangSmith Course.
+- [Tracing integrations](/langsmith/trace-with-langchain) provide support for various LLM providers and agent frameworks.
+- [Filtering traces](/langsmith/filter-traces-in-application) can help you effectively navigate and analyze data in tracing projects that contain a significant amount of data.
+- [Trace a RAG application](/langsmith/observability-llm-tutorial) is a full tutorial, which adds observability to an application from development through to production.
+- [Sending traces to a specific project](/langsmith/log-traces-to-project) changes the destination project of your traces.
 
 ## Video guide
 <iframe
