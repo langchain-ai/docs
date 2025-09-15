@@ -1,4 +1,4 @@
-.PHONY: dev build format lint test install clean lint_md lint_md_fix mint-broken-links mint-broken-links-all lint-ci format-check
+.PHONY: dev build format lint test install clean lint_md lint_md_fix mint-broken-links mint-broken-links-all format-check
 
 dev:
 	@echo "Starting development mode..."
@@ -14,25 +14,19 @@ TEST_FILE ?= tests/unit_tests
 # Define a variable for Python and notebook files.
 PYTHON_FILES=.
 
-lint: build
+lint:
 	uv run ruff format $(PYTHON_FILES) --diff
 	uv run ruff check $(PYTHON_FILES) --diff
 	uv run mypy $(PYTHON_FILES)
 
-# CI version of lint (no build step needed)
-lint-ci:
-	uv run ruff format . --diff
-	uv run ruff check . --diff
-	uv run mypy .
-
-format: build
+format:
 	uv run ruff format $(PYTHON_FILES)
 	uv run ruff check --fix $(PYTHON_FILES)
 
 # Check formatting without applying changes (for CI)
 format-check:
-	uv run ruff format . --check --diff
-	uv run ruff check .
+	uv run ruff format $(PYTHON_FILES) --check --diff
+	uv run ruff check $(PYTHON_FILES)
 
 lint_md:
 	@echo "Linting markdown files..."

@@ -262,7 +262,7 @@ class DocumentationBuilder:
         elif relative_path.parts[0] in {"langgraph-platform", "labs", "langsmith"}:
             self._build_unversioned_file(file_path, relative_path)
         # Handle shared files (images, docs.json, etc.)
-        elif self._is_shared_file(file_path):
+        elif self.is_shared_file(file_path):
             self._build_shared_file(file_path, relative_path)
         # Handle root-level files
         else:
@@ -276,7 +276,7 @@ class DocumentationBuilder:
             relative_path: Relative path from src_dir.
         """
         # Skip shared files - they're handled separately
-        if self._is_shared_file(file_path):
+        if self.is_shared_file(file_path):
             self._build_shared_file(file_path, relative_path)
             return
 
@@ -464,7 +464,7 @@ class DocumentationBuilder:
         all_files = [
             file_path
             for file_path in oss_dir.rglob("*")
-            if file_path.is_file() and not self._is_shared_file(file_path)
+            if file_path.is_file() and not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -541,7 +541,7 @@ class DocumentationBuilder:
         all_files = [
             file_path
             for file_path in src_path.rglob("*")
-            if file_path.is_file() and not self._is_shared_file(file_path)
+            if file_path.is_file() and not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -669,7 +669,7 @@ class DocumentationBuilder:
             return True
         return False
 
-    def _is_shared_file(self, file_path: Path) -> bool:
+    def is_shared_file(self, file_path: Path) -> bool:
         """Check if a file should be shared between versions rather than duplicated.
 
         Args:
@@ -702,7 +702,7 @@ class DocumentationBuilder:
         shared_files = [
             file_path
             for file_path in self.src_dir.rglob("*")
-            if file_path.is_file() and self._is_shared_file(file_path)
+            if file_path.is_file() and self.is_shared_file(file_path)
         ]
 
         if not shared_files:
