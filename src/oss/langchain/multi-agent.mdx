@@ -2,10 +2,10 @@
 title: Multi-agent
 ---
 
+
 import AlphaCallout from '/snippets/alpha-lc-callout.mdx';
 
 <AlphaCallout />
-
 
 **Multi-agent systems** break a complex application into multiple specialized agents that work together to solve problems.  
 Instead of relying on a single agent to handle every step, **multi-agent architectures** allow you to compose smaller, focused agents into a coordinated workflow.
@@ -16,20 +16,12 @@ Multi-agent systems are useful when:
 * Context or memory grows too large for one agent to track effectively.
 * Tasks require **specialization** (e.g., a planner, researcher, math expert).
 
-Benefits include:
+## Multi-agent patterns
 
-| Benefit            | Description                                                       |
-|--------------------|-------------------------------------------------------------------|
-| **Modularity**     | Easier to develop, test, and maintain smaller, focused agents.    |
-| **Specialization** | Each agent can be optimized for a particular domain or task type. |
-| **Control**        | Explicitly define communication and control flow between agents.  |
-
-## Two common patterns
-
-| Pattern          | How it Works                                                                                                                                                     | Control Flow                                                | Example Use Case                                 |
-|------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|--------------------------------------------------|
-| **Tool Calling** | A central agent calls other agents as *tools*. The “tool” agents don’t talk to the user directly — they just run their task and return results.                  | Centralized — all routing passes through the calling agent. | Task orchestration, structured workflows.        |
-| **Handoffs**     | The current agent decides to **transfer control** to another agent. The active agent changes, and the user may continue interacting directly with the new agent. | Decentralized — agents can change who is active.            | Multi-domain conversations, specialist takeover. |
+| Pattern          | How it works                                                                                                                                                     | Control flow                                               | Example use case                                 |
+|------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------|--------------------------------------------------|
+| **Tool Calling** | A central agent calls other agents as *tools*. The “tool” agents don’t talk to the user directly — they just run their task and return results.                  | Centralized: all routing passes through the calling agent. | Task orchestration, structured workflows.        |
+| **Handoffs**     | The current agent decides to **transfer control** to another agent. The active agent changes, and the user may continue interacting directly with the new agent. | Decentralized: agents can change who is active.            | Multi-domain conversations, specialist takeover. |
 
 ### Tool calling
 
@@ -42,8 +34,6 @@ Flow:
 3. The **tool agent** returns results to the controller.
 4. The **controller** decides the next step or finishes.
 
-✅ Predictable, centralized routing.  
-⚠️ Tool agents won’t initiate new questions to the user — their role is fully defined by the controller.
 
 ```mermaid
 graph LR
@@ -55,6 +45,12 @@ graph LR
     B --> E[User Response]
 ````
 
+<Tip>
+    Agents used as tools are generally **not expected** to continue conversation with the user.
+    Their role is to perform a task and return results to the controller agent.
+    If you need subagents to be able to converse with the user, use **handoffs** instead.
+</Tip>
+
 ### Handoffs
 
 In **handoffs**, agents can directly pass control to each other. The “active” agent changes, and the user interacts with whichever agent currently has control.
@@ -65,9 +61,6 @@ Flow:
 2. It passes control (and state) to the **next agent**.
 3. The **new agent** interacts directly with the user until it decides to hand off again or finish.
 
-✅ Flexible, more natural conversational flow between specialists.
-⚠️ Less centralized — harder to guarantee predictable behavior.
-
 ```mermaid
 graph LR
     A[User] --> B[Agent A]
@@ -75,7 +68,7 @@ graph LR
     C --> A
 ```
 
-## Choosing between tool calling and handoffs
+## Choosing a pattern
 
 | Question                                              | Tool Calling | Handoffs |
 |-------------------------------------------------------|--------------|----------|
@@ -84,26 +77,29 @@ graph LR
 | Complex, human-like conversation between specialists? | ❌ Limited    | ✅ Strong |
 
 <Tip>
-You can also combine these patterns — e.g., use a top-level **tool-calling controller** for high-level routing, but allow **handoffs** within a team of related agents for smoother conversation.
+You can mix both patterns — use **handoffs** for agent switching, and have each agent **call subagents as tools** for specialized tasks.
 </Tip>
 
-## Context engineering
 
-Whether you’re implementing handoffs or tool calling, the quality of your system depends heavily on **how you pass context** to agents and subagents.
+## Customizing agent context
 
-LangChain gives you fine-grained control over this process, allowing you to:
+Context engineering determines **what information** is passed to agents at each step.
+LangChain enables fine-grained control over:
 
-* Decide **which parts of the conversation history** or state are passed to each agent.
-* Provide **specialized prompts** for different subagents.
-* Include or exclude **intermediate reasoning steps** from the shared state.
-* Tailor inputs so that each agent gets exactly the information it needs to work effectively.
+* Which parts of the conversation or state are passed to each agent.
+* Specialized prompts tailored to subagents.
+* Inclusion/exclusion of intermediate reasoning.
+* Customizing input/output formats per agent.
 
-This **context engineering** capability lets you fine-tune every aspect of agent behavior, ensuring that each agent receives the right data, at the right time, in the right format — whether it’s acting as a tool or taking over as the active agent via a handoff.
+The quality of your system **heavily depends** on context engineering. The goal is to ensure that each agent has access to the correct data it needs to perform its task, whether it’s acting as a tool or as an active agent.
 
-## Using tool calling to call sub agents
+## Calling subagents as tools
 
-The most common (and simple) way to call sub agents is call them as tools.
-The base case for this looks like:
+One of the simplest ways to compose agents is to let the main agent **treat subagents like tools**. In this setup, the main (or controller) agent routes work to specialized subagents, gathers their responses, and decides the next step.
+
+### Minimal example
+
+Below is a minimal example where the main agent is given access to a single subagent via a tool definition:
 
 :::python
 ```python
@@ -129,24 +125,26 @@ agent = create_agent(..., tools=[call_subagent1])
 TODO
 :::
 
-Note that there are several places where we do context engineering that you make way to change:
-1. Name of subagent (`"subagent1_name"`): This is what the main agent sees when calling the sub agent, and should be treated as part of the prompt.
-2. Description of subagent (`"subagent1_description"`): This is what the main agent sees when calling the sub agent, and should be treated as part of the prompt.
-3. Input to subagent: Here we are passing the `query` generated by the agent. This is context engineering for the sub agent. You can control (in a few ways) the input to the sub agent.
-4. Output of the subagent: Here we are passing the `.text` property of the final message. This is context engineering for the main agent (since this gets passed back to the main agent as a tool call. You can control (in a few ways) the output of the sub agent.
+In this pattern:
+1. The main agent invokes `call_subagent1` when it decides the task matches the subagent’s description.
+2. The subagent runs independently and returns its result.
+3. The main agent receives the result and continues orchestration.
 
-### Input to the sub agent
+### Where to customize
 
-If you want to control the input to the sub agent, there are two primary ways to do this.
+There are several points where you can control how context is passed between the main agent and its subagents:
 
-**Modify via prompting**
-If the main agent is generating some query to the sub agent, but you are finding it is incomplete or not good enough, the main way to fix this is via prompting.
-You should modify the main agent prompt or the sub agent description to include a better description of what to pass to the sub agent.
+1. **Subagent name** (`"subagent1_name"`): This is how the main agent refers to the subagent. Since it influences prompting, choose it carefully.
+2. **Subagent description** (`"subagent1_description"`): This is what the main agent “knows” about the subagent. It directly shapes how the main agent decides when to call it.
+3. [**Input to the subagent**](#control-subagent-input): In this example, we pass the agent-generated `query` directly. You can customize this input to better shape how the subagent interprets tasks.
+4. **Output from the subagent**: Here, we return the `.text` property of the final message. This is the **response** passed back to the main agent. You can adjust what is returned to control how the main agent interprets results.
 
-**Modify manually**
-Sometimes, you will want to pass more context to the sub agent that just does not make sense to include in the query that the main agent generates.
-A common example of this is passing the full conversation to date to the sub agent.
-This can be done by modifying the logic inside the tool call to access the state of the agent at that point, and then pass that to the sub agent.
+### Control the input to the subagent
+
+There are two main levers to control the input that the main agent passes to a subagent:
+
+* **Modify the prompt** – Adjust the main agent's prompt or the tool metadata (i.e., sub-agent's name and description) to better guide when and how it calls the subagent.
+* **Context injection** – Add input that isn’t practical to capture in a static prompt (e.g., full message history, prior results, task metadata) by adjusting the tool call to pull from the agent’s state.
 
 :::python
 ```python
@@ -158,7 +156,8 @@ from langchain.agents.tool_node import InjectedState
     name="subagent1_name",
     description="subagent1_description"
 )
-# Often when passing in the full conversation, you do NOT want the main agent to generate any query
+# Example of passing the full conversation history to the sub agent via the state.
+# When passing the full conversation, you often do NOT want to pass in a query.
 def call_subagent1(state: Annotated[CustomState, InjectedState]):
     result = subagent1.invoke({
         "messages": state["messages"]
@@ -170,21 +169,16 @@ def call_subagent1(state: Annotated[CustomState, InjectedState]):
 TODO
 :::
 
-### Output of the sub agent
+### Control the output from the subagent
 
-If you want to control the output of the sub agent, there are two primary ways.
+Two common strategies for shaping what the main agent receives back from a subagent:
 
-**Modify via prompting**
-If the sub agent is generating some output, but you are finding it is incomplete or not good enough, the main way to fix this is via prompting.
-You should modify the sub agent prompt to include a better description of what to return.
-
-A common failure mode here is that the sub agent will make a bunch of tool calls, or intermediate thoughts, and then NOT respond with information about those in it's final message.
-It's often necessary to remind the sub agent that the user will not see any of it's work, and that it should include anything it wants the sub agent to see in it's final response.
-
-**Modify manually**
-Sometimes, you will want to pass more context to the main agent that just does not make sense to have the subagent return in it's message.
-A common example of this is passing some specific state keys back to the main agent.
-This can be done by modifying the logic inside the tool call to return that state as well.
+* **Modify the prompt** – Refine the subagent’s prompt to specify exactly what should be returned.
+    * Useful when outputs are incomplete, too verbose, or missing key details.
+    * A common failure mode is that the subagent performs tool calls or reasoning but does **not include the results** in its final message. Remind it that the controller (and user) only see the final output, so all relevant info must be included there.
+* **Custom output formatting** – adjust or enrich the subagent's response in code before handing it back to the main agent.
+    * Example: pass specific state keys back to the main agent in addition to the final text.
+    * This requires wrapping the result in a `Command` (or equivalent structure) so you can merge custom state with the subagent’s response.
 
 :::python
 ```python
@@ -222,3 +216,9 @@ def call_subagent1(
 :::js
 TODO
 :::
+
+
+## Handoffs between agents
+
+**Coming soon!**
+
