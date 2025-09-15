@@ -1,4 +1,4 @@
-.PHONY: dev build format lint test install clean format_diff lint_diff unsafe_format lint_md lint_md_fix mint-broken-links mint-broken-links-all
+.PHONY: dev build format lint test install clean lint_md lint_md_fix mint-broken-links mint-broken-links-all format-check
 
 dev:
 	@echo "Starting development mode..."
@@ -12,20 +12,21 @@ build:
 TEST_FILE ?= tests/unit_tests
 
 # Define a variable for Python and notebook files.
-lint format: PYTHON_FILES=.
-lint_diff format_diff: PYTHON_FILES=$(shell git diff --relative=. --name-only --diff-filter=d master | grep -E '\.py$$|\.ipynb$$')
+PYTHON_FILES=.
 
-lint lint_diff:
-	[ "$(PYTHON_FILES)" = "" ] ||	uv run ruff format $(PYTHON_FILES) --diff
-	[ "$(PYTHON_FILES)" = "" ] ||	uv run ruff check $(PYTHON_FILES) --diff
-	[ "$(PYTHON_FILES)" = "" ] || uv run mypy $(PYTHON_FILES)
+lint:
+	uv run ruff format $(PYTHON_FILES) --diff
+	uv run ruff check $(PYTHON_FILES) --diff
+	uv run mypy $(PYTHON_FILES)
 
-format format_diff:
-	[ "$(PYTHON_FILES)" = "" ] || uv run ruff format $(PYTHON_FILES)
-	[ "$(PYTHON_FILES)" = "" ] || uv run ruff check --fix $(PYTHON_FILES)
+format:
+	uv run ruff format $(PYTHON_FILES)
+	uv run ruff check --fix $(PYTHON_FILES)
 
-unsafe_format:
-	[ "$(PYTHON_FILES)" = "" ] || uv run ruff check --fix --unsafe-fixes $(PYTHON_FILES)
+# Check formatting without applying changes (for CI)
+format-check:
+	uv run ruff format $(PYTHON_FILES) --check --diff
+	uv run ruff check $(PYTHON_FILES)
 
 lint_md:
 	@echo "Linting markdown files..."

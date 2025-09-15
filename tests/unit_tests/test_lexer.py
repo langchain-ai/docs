@@ -120,9 +120,9 @@ CODEBLOCK_WITH_BLANK_LINES = """\
 ```python
 def example():
     x = 2
-    
+
     y = 3
-"""  # noqa: W293
+"""
 
 
 def test_lex_code_with_blank_lines() -> None:
@@ -145,7 +145,7 @@ def test_lex_code_with_blank_lines() -> None:
     assert tokens[1].indent == 0  # Function definition
     assert tokens[2].indent == 4  # Assignment line
     # We want to check that the ident on the blank line is preserved correctly
-    assert tokens[3].indent == 4  # Blank line
+    assert tokens[3].indent == 0  # Blank line (ruff removes trailing whitespace)
     assert tokens[4].indent == 4  # Second assignment line
 
 

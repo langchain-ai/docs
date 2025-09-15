@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -268,8 +269,6 @@ class FileWatcher:
         Args:
             files_to_build: List of source files that need to be built.
         """
-        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
-
         file_count = len(files_to_build)
 
         if file_count == 1:
@@ -342,7 +341,6 @@ class FileWatcher:
         Args:
             source_files: List of source files that were built.
         """
-        from concurrent.futures import ThreadPoolExecutor
 
         def touch_files_for_source(source_file: Path) -> int:
             """Touch all built files for a source file. Returns count touched."""
@@ -355,9 +353,9 @@ class FileWatcher:
 
                 # Handle different content types based on the updated build_file logic
                 if relative_path.parts[0] == "oss":
-                    # OSS content is versioned - check both Python and JavaScript versions
+                    # OSS content is versioned - check Python and JavaScript versions
                     # Skip if it's a shared file (images, JS, CSS) - those go to root
-                    if self.builder._is_shared_file(source_file):
+                    if self.builder.is_shared_file(source_file):
                         built_file = self.build_dir / relative_path
                         if built_file.suffix.lower() == ".md":
                             built_file = built_file.with_suffix(".mdx")
@@ -397,8 +395,8 @@ class FileWatcher:
                         os.utime(built_file, (current_time, current_time))
                         touched_count += 1
 
-                elif self.builder._is_shared_file(source_file):
-                    # Shared files (images, docs.json, JS/CSS) - go directly to build root
+                elif self.builder.is_shared_file(source_file):
+                    # Shared files (images, docs.json, JS/CSS) - go to build root
                     built_file = self.build_dir / relative_path
                     if built_file.exists():
                         os.utime(built_file, (current_time, current_time))

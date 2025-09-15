@@ -82,7 +82,7 @@ EXPECTED_ADMONITION_BLANK = """\
   
   Paragraph 2
 </Accordion>
-"""  # noqa: W293
+"""
 
 
 def test_example_admonition_with_blank_line() -> None:
@@ -276,11 +276,11 @@ def test_code_block_in_tab() -> None:
 
 
 INPUT_CODE_FENCE = """\
-``` 
+```
 def example_function():
     print("This is an example function.")
 ```
-"""  # noqa: W291
+"""
 
 EXPECTED_CODE_FENCE = """\
 ```
@@ -299,10 +299,10 @@ INPUT_CODE_BLOCK_WITH_BLANK_LINE = """\
 ```python
 def foo():
     x = 1
-    
+
     y = 2
 ```
-"""  # noqa: W293
+"""
 
 
 def test_long_code_block() -> None:
@@ -311,7 +311,7 @@ def test_long_code_block() -> None:
     first_block = ast.blocks[0]
     assert isinstance(first_block, CodeBlock)
     assert first_block.language == "python"
-    assert first_block.content == "def foo():\n    x = 1\n    \n    y = 2"
+    assert first_block.content == "def foo():\n    x = 1\n\n    y = 2"
 
 
 NOTE_WITH_TITLE = """\

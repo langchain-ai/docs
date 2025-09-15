@@ -157,7 +157,7 @@ def temp_directory(files: list[File]) -> Iterator[Path]:
             assert (temp_dir / "index.md").exists()
         ```
     """
-    temp_dir = Path(tempfile.mkdtemp())
+    temp_dir = Path(tempfile.mkdtemp()).resolve()
 
     try:
         # Create test files in temp directory
