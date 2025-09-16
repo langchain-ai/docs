@@ -222,9 +222,8 @@ class DataProcessor:
 If there's a **cleaner**, **more scalable**, or **simpler** design, highlight it and suggest improvements that would:
 
 - Reduce code duplication through shared utilities
-- Make unit testing easier
+- Make unit testing easier (e.g., through dependency injection)
 - Improve separation of concerns (single responsibility)
-- Make unit testing easier through dependency injection
 - Add clarity without adding complexity
 - Prefer dataclasses for structured data
 
