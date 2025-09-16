@@ -159,14 +159,15 @@ from langchain.agents.tool_node import InjectedState
     name="subagent1_name",
     description="subagent1_description"
 )
-def call_subagent1(state: Annotated[CustomState, InjectedState]):
+def call_subagent1(query: str, state: Annotated[CustomState, InjectedState]):
+    # Apply any logic needed to transform the messages into a suitable input
+    subagent_input = some_logic(query, state.messages)
     result = subagent1.invoke({
-        "messages": [
-            {
-                "role": "user", 
-                "content": some_logic(state.messages)  # Apply any logic needed to transform the messages
-            }
-        ]
+        "messages": subagent_input,
+        # You could also pass other state keys here as needed.
+        # Make sure to define these in both the main and subagent's 
+        # state schemas.
+        "example_state_key": state.example_state_key
     })
     return result["messages"][-1].text
 ```
@@ -178,14 +179,17 @@ import { Command } from "@langchain/langgraph";
 import { z } from "zod";
 
 // Example of passing the full conversation history to the sub agent via the state.
-// When passing the full conversation, you often do NOT want to pass in a query.
 const callSubagent1 = tool(
-  async () => {
+  async ({query}) => {
     const state = getCurrentTaskInput<AgentState>();
-    // Apply any logic needed to transform the messages
-    const subAgentInput = someLogic(state.messages);
+    // Apply any logic needed to transform the messages into a suitable input
+    const subAgentInput = someLogic(query, state.messages);
     const result = await subagent1.invoke({
       messages: subAgentInput,
+      // You could also pass other state keys here as needed.
+      // Make sure to define these in both the main and subagent's
+      // state schemas.
+      exampleStateKey: state.exampleStateKey
     });
     return result.messages.at(-1)?.content;
   },
