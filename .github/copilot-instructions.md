@@ -1,4 +1,29 @@
-# LangChain's unified Mintlify documentation
+# LangChain's unified documentation overview
+
+This repository encompasses the comprehensive documentation for LangChain's products and services, all hosted on the Mintlify platform. The documentation is divided into sections for each product. This is a shared set of guidelines to ensure consistency and quality across all content.
+
+## Folder Structure
+
+All documentation lives in the `src/` folder, with the following structure:
+
+- `/oss`: Documentation for the open-source LangChain and LangGraph framework
+    - `/python`: Python-specific integrations and release notes
+    - `/javascript`: JS/TS-specific integrations and release notes
+    - `/langchain`: Docs on core components, advanced usage, and production usage of LangChain
+    - `/langgraph`: Docs on capabilities, production usage, and APIs in LangGraph
+    - `/reference`: Links out to reference docs for both LangChain and LangGraph
+    - `/contributing`: Guidelines on contributing to the docs, codebase, and submit integrations
+    - `/images`: Shared images used across OSS docs
+    - The root contains product/language agnostic meta-info such as our versioning & release policy and the releases page.
+- `/langsmith`: Documentation for LangSmith, including quickstarts, observability, evaluation, prompt engineering, self hosting, and administration.
+- `/langgraph-platform`: Documentation for the LangGraph Platform, including quickstarts, features, guides on building & deploying using the platform, management & administration, and reference docs.
+- `/labs`: Home to LangChain's experimental AI products, including deep agents, open SWE, and Open Agent Platform
+- `/images`: Shared images used across all docs
+- `/snippets`: Shared code snippets used across all docs
+
+## Libraries and Frameworks
+
+Documentaiton is written for Mintlify's MDX syntax and uses Mintlify components. For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
 
 ## Working relationship
 
@@ -60,5 +85,3 @@ If the trailing `/index` (no extension included) is omitted, the Mintlify parser
 - Include untested code examples
 - Make assumptions - always ask for clarification
 
-For questions, refer to the Mintlify docs (either via MCP, if available), or at the
-[Mintlify documentation](https://docs.mintlify.com/docs/introduction).
