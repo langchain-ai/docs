@@ -106,7 +106,7 @@ import { z } from "zod";
 const subagent1 = createAgent({...});
 
 const callSubagent1 = tool(
-  async ({ query: string }) => {
+  async (query) => {
     const result = await subagent1.invoke({
       messages: [{ role: "user", content: input.query }]
     });
@@ -115,9 +115,7 @@ const callSubagent1 = tool(
   {
     name: "subagent1_name",
     description: "subagent1_description",
-    schema: z.object({
-      query: z.string().describe("The query to send to subagent1")
-    })
+    schema: z.string().describe("The query to send to subagent1")
   }
 );
 
@@ -170,39 +168,25 @@ def call_subagent1(state: Annotated[CustomState, InjectedState]):
 :::
 :::js
 ```typescript
-import { createAgent, tool, ToolMessage } from "langchain";
+import { createAgent, tool, AgentState, ToolMessage } from "langchain";
 import { Command } from "@langchain/langgraph";
 import { z } from "zod";
 
+// Example of passing the full conversation history to the sub agent via the state.
+// When passing the full conversation, you often do NOT want to pass in a query.
 const callSubagent1 = tool(
-  async (input: { query: string }, config) => {
+  async () => {
+    const state = getCurrentTaskInput<AgentState>();
     const result = await subagent1.invoke({
-      messages: [{ role: "user", content: input.query }]
+      messages: state.messages,
     });
-    
-    // Return a Command to update multiple state keys
-    return new Command({
-      update: {
-        // Pass back additional state from the subagent
-        exampleStateKey: result.exampleStateKey,
-        messages: [
-          new ToolMessage({
-            content: result.messages.at(-1)?.text,
-            tool_call_id: config.toolCall?.id!
-          })
-        ]
-      }
-    });
+    return result.messages.at(-1)?.content;
   },
   {
     name: "subagent1_name",
-    description: "subagent1_description", 
-    schema: z.object({
-      query: z.string().describe("The query to send to subagent1")
-    })
+    description: "subagent1_description",
   }
 );
-```
 :::
 
 ### Control the output from the subagent
