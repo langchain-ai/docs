@@ -106,16 +106,18 @@ import { z } from "zod";
 const subagent1 = createAgent({...});
 
 const callSubagent1 = tool(
-  async (query) => {
+  async ({query}) => {
     const result = await subagent1.invoke({
-      messages: [{ role: "user", content: input.query }]
+      messages: [{ role: "user", content: query }]
     });
     return result.messages.at(-1)?.text;
   },
   {
     name: "subagent1_name",
     description: "subagent1_description",
-    schema: z.string().describe("The query to send to subagent1")
+    schema: z.object({
+      query: z.string().describe("The query to to send to subagent1."),
+    }),
   }
 );
 
@@ -157,11 +159,14 @@ from langchain.agents.tool_node import InjectedState
     name="subagent1_name",
     description="subagent1_description"
 )
-# Example of passing the full conversation history to the sub agent via the state.
-# When passing the full conversation, you often do NOT want to pass in a query.
 def call_subagent1(state: Annotated[CustomState, InjectedState]):
     result = subagent1.invoke({
-        "messages": state["messages"]
+        "messages": [
+            {
+                "role": "user", 
+                "content": some_logic(state.messages)  # Apply any logic needed to transform the messages
+            }
+        ]
     })
     return result["messages"][-1].text
 ```
@@ -177,8 +182,10 @@ import { z } from "zod";
 const callSubagent1 = tool(
   async () => {
     const state = getCurrentTaskInput<AgentState>();
+    // Apply any logic needed to transform the messages
+    const subAgentInput = someLogic(state.messages);
     const result = await subagent1.invoke({
-      messages: state.messages,
+      messages: subAgentInput,
     });
     return result.messages.at(-1)?.content;
   },
@@ -240,9 +247,9 @@ import { Command } from "@langchain/langgraph";
 import { z } from "zod";
 
 const callSubagent1 = tool(
-  async (input: { query: string }, config) => {
+  async ({ query }, config) => {
     const result = await subagent1.invoke({
-      messages: [{ role: "user", content: input.query }]
+      messages: [{ role: "user", content: query }]
     });
     
     // Return a Command to update multiple state keys
