@@ -23,7 +23,7 @@ All documentation lives in the `src/` folder, with the following structure:
 
 ## Libraries and Frameworks
 
-Documentaiton is written for Mintlify's MDX syntax and uses Mintlify components. For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
+Documentation is written for Mintlify's MDX syntax and uses Mintlify components. For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
 
 ## Working relationship
 
