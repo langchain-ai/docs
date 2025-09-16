@@ -2,6 +2,7 @@
 applyTo: "src/oss/**"
 ---
 
+> **Note:** The `applyTo` field in the frontmatter specifies that the following instructions and guidelines apply to all files and directories matching the pattern `src/oss/**`. This directive is used by our documentation tooling to target specific parts of the codebase for these guidelines.
 LangChain and LangGraph documentation lives in the `src/oss` folder and refers to the open-source LangChain and LangGraph frameworks. Each repository is a monorepo. Each library within the respective repos live in a subdirectory under `libs/`.
 
 # Global Development Guidelines for LangChain and LangGraph Projects
