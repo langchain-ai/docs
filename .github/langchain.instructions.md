@@ -2,7 +2,7 @@
 applyTo: "src/oss/**"
 ---
 
-LangChain and LangGraph documentation lives in the `src/oss` folder and refers to the open-source LangChain and LangGraph frameworks. Each repository is a monorepo. Each library lives in a subdirectory under `libs/`.
+LangChain and LangGraph documentation lives in the `src/oss` folder and refers to the open-source LangChain and LangGraph frameworks. Each repository is a monorepo. Each library within the respective repos live in a subdirectory under `libs/`.
 
 # Global Development Guidelines for LangChain and LangGraph Projects
 
