@@ -237,7 +237,12 @@ The middleware ensures tool call integrity by:
 
 ### Human-in-the-loop
 
-The `humanInTheLoopMiddleware` enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
+:::python
+The `HumanInTheLoop` middleware enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
+:::
+:::js
+The `humanInTheLoop` middleware enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
+:::
 
 **Key features:**
 
@@ -265,12 +270,19 @@ agent = create_agent(
     middleware=[
         HumanInTheLoopMiddleware(
             tool_configs={
-                "write_file": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
-                "execute_sql": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
-                # Safe operation, no approval needed
-                "read_data": {"allow_approve": False, "allow_edit": False, "allow_respond": False},
+                "write_file": {
+                    "allow_accept": True,
+                    "allow_edit": True,
+                    "allow_respond": True,
+                    "description": "⚠️ File write operation requires approval",
+                },
+                "execute_sql": {
+                    "allow_accept": True,
+                    "description": "🚨 SQL execution requires DBA approval",
+                },
+                "read_data": False,  # Safe operation, no approval needed
             },
-            message_prefix="Tool execution pending approval",
+            description_prefix="Tool execution pending approval",
         ),
     ],
     checkpointer=InMemorySaver(),  # Required for interrupts
@@ -284,7 +296,7 @@ import { createAgent } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 
 import { humanInTheLoopMiddleware } from "langchain/middleware";
-import { Command } from "@langchain/langgraph";
+import { Command, MemorySaver } from "@langchain/langgraph";
 
 const agent = createAgent({
     model: "openai:gpt-4o",
@@ -293,24 +305,26 @@ const agent = createAgent({
         humanInTheLoopMiddleware({
             toolConfigs: {
                 write_file: {
-                    requireApproval: true,
+                    allowAccept: true,
+                    allowEdit: true,
+                    allowRespond: true,
                     description: "⚠️ File write operation requires approval",
                 },
                 execute_sql: {
-                    requireApproval: true,
+                    allowAccept: true,
                     description: "🚨 SQL execution requires DBA approval",
                 },
-                read_data: {
-                    requireApproval: false, // Safe operation, no approval needed
-                },
+                read_data: false, // Safe operation, no approval needed
             },
-            messagePrefix: "Tool execution pending approval",
+            descriptionPrefix: "Tool execution pending approval",
         }),
     ],
     checkpointer: new MemorySaver(), // Required for interrupts
 });
 ```
 :::
+
+<Note>This adds a note in the content</Note>
 
 **Handling approval requests:**
 
@@ -350,8 +364,9 @@ if state.next:
 
 :::js
 ```typescript
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage } from "langchain";
 import { Command } from "@langchain/langgraph";
+import type { Interrupt, HumanInTheLoopRequest } from "langchain/middleware";
 
 // Initial invocation
 const result = await agent.invoke(
@@ -361,39 +376,176 @@ const result = await agent.invoke(
     config
 );
 
-// Check if paused for approval
-const state = await agent.graph.getState(config);
-if (state.next?.length > 0) {
-    const requests = state.tasks?.[0]?.interrupts?.[0]?.value;
+// Check if agent is paused for approval
+if (result.__interrupt__) {
+    const interruptRequest = initialResult.__interrupt__?.[0] as Interrupt<
+        HumanInTheLoopRequest[]
+    >;
 
-    // Display tool details to human
-    console.log("Tool:", requests[0].action);
-    console.log("Arguments:", requests[0].args);
+    // Show tool call details to user
+    console.log("Tool:", interruptRequest.value[0].actionRequest);
+    console.log("Allowed actions:", interruptRequest.value[0].config);
 
-    // Resume with approval decision
+    // Resume with approval
     await agent.invoke(
-        new Command({
-            resume: [{ type: "accept" }], // or "edit", "ignore", "response"
-        }),
+        new Command({ resume: [{ type: "accept" }] }),
         config
     );
 }
 ```
 :::
 
+**Handling edit requests:**
+
+When a tool requires editing, the agent execution pauses and waits for human input:
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
+
+# Create the human-in-the-loop middleware
+hitl_middleware = HumanInTheLoopMiddleware(
+    tool_configs={
+        "write_file": {
+            "allow_edit": True,
+            "allow_accept": True,
+            "description": "⚠️ File write operation requires approval",
+        },
+        "calculator": True,
+    }
+)
+
+checkpointer = InMemorySaver()
+agent = create_agent(
+    model="openai:gpt-4o",
+    checkpointer=checkpointer,
+    prompt="You are a helpful assistant. Use the tools provided to help the user.",
+    tools=[write_file_tool],
+    middleware=[hitl_middleware],
+)
+
+config = {
+    "configurable": {
+        "thread_id": "conversation-id-123",
+    }
+}
+
+# Initial invocation
+initial_result = agent.invoke(
+    {
+        "messages": [HumanMessage("Write to greeting.txt with the content 'Hello, world!'")],
+    },
+    config
+)
+
+# Check if execution was interrupted for approval
+state = agent.get_state(config)
+if state.next:
+    interrupt_request = state.tasks[0].interrupts[0].value[0]
+
+    # Create resume command with edited arguments
+    resume = [
+        {
+            "type": "edit",
+            "args": {
+                "action": "write_file",
+                "args": {"filename": "greeting.txt", "content": "Safe content"},
+            },
+        }
+    ]
+
+    # Resume with approval
+    agent.invoke(Command(resume=resume), config)
+```
+:::
+
+:::js
+```typescript
+import type { Interrupt, HumanInTheLoopRequest } from "langchain/middleware";
+
+const hitlMiddleware = humanInTheLoopMiddleware({
+  toolConfigs: {
+    write_file: {
+      allowEdit: true,
+      allowAccept: true,
+      description: "⚠️ File write operation requires approval",
+    },
+    calculator: true,
+  },
+});
+
+const checkpointer = new MemorySaver();
+const agent = createAgent({
+  model: "openai:gpt-4o",
+  checkpointer,
+  prompt:
+    "You are a helpful assistant. Use the tools provided to help the user.",
+  tools: [writeFileTool],
+  middleware: [hitlMiddleware] as const,
+});
+
+const config = {
+  configurable: {
+    thread_id: "conversation-id-123",
+  },
+};
+
+// Initial invocation
+const initialResult = await agent.invoke(
+  {
+    messages: [new HumanMessage("Write to greeting.txt with the content 'Hello, world!'")],
+  },
+  config
+);
+
+const interruptRequest = initialResult.__interrupt__?.[0] as Interrupt<
+  HumanInTheLoopRequest[]
+>[0];
+const resume: HumanInTheLoopMiddlewareHumanResponse[] = {
+  type: "edit",
+  args: {
+    action: "write_file",
+    args: { filename: "greeting.txt", content: "Safe content" },
+  },
+};
+
+// Resume with approval
+await agent.invoke(new Command({ resume }), config);
+```
+:::
+
+<Note>
+When editing tool arguments, make changes conservatively. Significant modifications to the original arguments may cause the model to re-evaluate its approach and potentially execute the tool multiple times or take unexpected actions.
+</Note>
+
 **Response types:**
 
 - `accept`: Execute the tool with original arguments
 - `edit`: Modify arguments before execution - `{ type: "edit", args: { action: "tool_name", args: { modified: "args" } } }`
-- `ignore`: Skip tool execution and terminate agent
 - `response`: Provide manual response instead of executing tool - `{ type: "response", args: "Manual response text" }`
 
 **Configuration:**
 
-- `toolConfigs`: Map of tool names to their approval settings
-    - `requireApproval`: Whether the tool needs human approval
-    - `description`: Custom message shown during approval request
-- `messagePrefix`: Default prefix for approval messages
+:::python
+- `tool_configs`: Map of tool names to their approval settings, each with the following options:
+    - `allow_accept`: Whether the human can approve the current action without changes
+    - `allow_edit`: Whether the human can reject the current action with feedback
+    - `allow_respond`: Whether the human can approve the current action with edited content
+    - `description`: The description attached to the request for human input
+- `description_prefix`: The prefix to use when constructing action requests.
+:::
+:::js
+- `toolConfigs`: Map of tool names to their approval settings, each with the following options:
+    - `allowAccept`: Whether the human can approve the current action without changes
+    - `allowEdit`: Whether the human can reject the current action with feedback
+    - `allowRespond`: Whether the human can approve the current action with edited content
+    - `description`: The description attached to the request for human input
+- `descriptionPrefix`: The prefix to use when constructing action requests.
+:::
 
 The middleware processes tool calls in order, bundling multiple approval requests into a single interrupt for efficiency. Tools not requiring approval execute immediately without interruption.
 
@@ -445,6 +597,7 @@ agent.invoke({"messages": [HumanMessage("What's my name?")]}, common_config)
 import { createAgent, HumanMessage } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 import { anthropicPromptCachingMiddleware } from "langchain/middleware";
+import { MemorySaver } from "@langchain/langgraph";
 
 const LONG_PROMPT = `
 Please be a helpful assistant.
@@ -473,9 +626,16 @@ Middleware for agents are subclasses of `AgentMiddleware`, which implement one o
 
 `AgentMiddleware` currently provides three different ways to modify the core agent loop:
 
+:::python
 - `before_model`: runs before the model is run. Can update state or exit early with a jump.
 - `modify_model_request`: runs before the model is run. Cannot update state or exit early with a jump.
 - `after_model`: runs after the model is run. Can update state or exit early with a jump.
+:::
+:::js
+- `beforeModel`: runs before the model is run. Can update state or exit early with a jump.
+- `modifyModelRequest`: runs before the model is run. Cannot update state or exit early with a jump.
+- `afterModel`: runs after the model is run. Can update state or exit early with a jump.
+:::
 
 In order to **exit early**, you can add a `jump_to` key to the state update with one of the following values:
 
@@ -487,7 +647,12 @@ If this is specified, all subsequent middleware will not run.
 
 Learn more about exiting early in the [agent jumps](#agent-jumps) section.
 
+:::python
 ### `before_model`
+:::
+:::js
+### `beforeModel`
+:::
 
 Runs before the model is run. Can modify state by returning a new state object or state update.
 
@@ -518,7 +683,12 @@ function beforeModel(state: AgentState): AgentState | AgentJump | undefined {
 ```
 :::
 
+:::python
 ### `modify_model_request`
+:::
+:::js
+### `modifyModelRequest`
+:::
 
 Runs before the model has run, but after all the `before_model` calls.
 These functions **cannot** modify permanent state or exit early.
@@ -565,7 +735,12 @@ function modifyModelRequest (request: ModelRequest, state: AgentState): ModelReq
 ```
 :::
 
+:::python
 ### `after_model`
+:::
+:::js
+### `afterModel`
+:::
 
 Runs after the model is run. Can modify state by returning a new state object or state update.
 
@@ -846,7 +1021,13 @@ You can provide multiple middlewares. They are executed in the following logic:
 
 ## Agent jumps
 
+:::python
 In order to **exit early**, you can add a `jump_to` key to the state update with one of the following values:
+:::
+:::js
+In order to **exit early**, you can add a `jumpTo` key to the state update with one of the following values:
+:::
+
 
 - `"model"`: Jump to the model node
 - `"tools"`: Jump to the tools node
@@ -883,7 +1064,7 @@ import type { AgentState, AgentJump } from "langchain";
 afterModel (state: AgentState): AgentState | AgentJump | undefined {
     return {
         messages: ...,
-        jump_to: "model"
+        jumpTo: "model"
     }
 }
 ```
