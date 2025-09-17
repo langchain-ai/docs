@@ -788,6 +788,9 @@ class DocumentationBuilder:
             with output_path.open("w", encoding="utf-8") as f:
                 f.write(processed_content)
 
-        except Exception:
-            logger.exception("Failed to process snippet markdown file %s", input_path)
+        except (OSError, UnicodeDecodeError) as e:
+            logger.exception("File I/O or decoding error in snippet markdown file %s", input_path)
+            raise
+        except re.error as e:
+            logger.exception("Regex error in snippet markdown file %s", input_path)
             raise
