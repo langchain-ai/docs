@@ -718,7 +718,83 @@ class DocumentationBuilder:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             if file_path.suffix.lower() in self.copy_extensions:
-                shutil.copy2(file_path, output_path)
-                copied_count += 1
+                # Handle markdown files with preprocessing for /oss/ link resolution
+                if file_path.suffix.lower() in {".md", ".mdx"}:
+                    # For snippet files, we need to handle URL rewriting differently
+                    # Use a special marker-based approach for dynamic URL resolution
+                    if "snippets" in relative_path.parts:
+                        logger.info(
+                            "Processing snippet file with URL rewriting: %s",
+                            relative_path,
+                        )
+                        self._process_snippet_markdown_file(file_path, output_path)
+                    else:
+                        # Regular markdown processing without language-specific rewrite
+                        self._process_markdown_file(file_path, output_path, None)
+                    copied_count += 1
+                else:
+                    shutil.copy2(file_path, output_path)
+                    copied_count += 1
 
         logger.info("✅ Shared files copied: %d files", copied_count)
+
+    def _process_snippet_markdown_file(
+        self, input_path: Path, output_path: Path
+    ) -> None:
+        """Process a snippet markdown file with language-aware URL resolution.
+
+        For snippet files that contain /oss/ links, we need to create versions
+        that work properly when included in different language contexts.
+        We'll modify the URLs to use relative paths that resolve correctly.
+
+        Args:
+            input_path: Path to the source snippet markdown file.
+            output_path: Path where the processed file should be written.
+        """
+        try:
+            # Read the source markdown content
+            with input_path.open("r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Apply standard markdown preprocessing
+            processed_content = preprocess_markdown(
+                content, input_path, target_language=None
+            )
+
+            # Convert /oss/ links to relative paths that work from any language context
+            def convert_oss_link(match: re.Match) -> str:
+                """Convert /oss/ links to language-agnostic relative paths."""
+                pre = match.group(1)  # Everything before the URL
+                url = match.group(2)  # The URL
+                post = match.group(3)  # Everything after the URL
+
+                # Only convert absolute /oss/ paths that don't contain 'images'
+                if url.startswith("/oss/") and "images" not in url:
+                    # Convert to relative path that works from oss/python/* or oss/js/*
+                    # e.g., /oss/releases/langchain-v1 becomes ../releases/langchain-v1
+                    parts = url.split("/")
+                    oss_path = "/".join(parts[2:])  # Remove /oss/ prefix
+                    url = f"../{oss_path}"  # Make it relative
+
+                return f"{pre}{url}{post}"
+
+            # Apply URL conversion
+            pattern = r'(\[.*?\]\(|\bhref="|")(/oss/[^")\s]+)([")\s])'
+            processed_content = re.sub(pattern, convert_oss_link, processed_content)
+
+            # Convert .md to .mdx if needed
+            if input_path.suffix.lower() == ".md":
+                output_path = output_path.with_suffix(".mdx")
+
+            # Write the processed content
+            with output_path.open("w", encoding="utf-8") as f:
+                f.write(processed_content)
+
+        except (OSError, UnicodeDecodeError):
+            logger.exception(
+                "File I/O or decoding error in snippet markdown file %s", input_path
+            )
+            raise
+        except re.error:
+            logger.exception("Regex error in snippet markdown file %s", input_path)
+            raise
