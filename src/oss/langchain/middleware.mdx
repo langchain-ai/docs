@@ -2,6 +2,10 @@
 title: Middleware
 ---
 
+import AlphaCallout from '/snippets/alpha-lc-callout.mdx';
+
+<AlphaCallout />
+
 
 Middleware provides a way to more tightly control what happens inside the agent.
 
@@ -152,7 +156,7 @@ LangChain provides several built in middleware to use off-the-shelf
 
 The `summarizationMiddleware` automatically manages conversation history by summarizing older messages when token limits are approached. This middleware monitors the total token count of messages and creates concise summaries to preserve context while staying within model limits.
 
-**Key keatures:**
+**Key features:**
 
 - Automatic token counting and threshold monitoring
 - Intelligent message partitioning that preserves AI/Tool message pairs
@@ -206,12 +210,24 @@ const agent = createAgent({
 
 **Configuration options:**
 
+:::python
+- `model`: Language model to use for generating summaries (required)
+- `max_tokens_before_summary`: Token threshold that triggers summarization
+- `messages_to_keep`: Number of recent messages to preserve (default: 20)
+- `token_counter`: Custom function for counting tokens (defaults to character-based approximation)
+- `summary_prompt`: Custom prompt template for summary generation
+- `summary_prefix`: Prefix added to system messages containing summaries (default: "## Previous conversation summary:")
+:::
+
+:::js
+
 - `model`: Language model to use for generating summaries (required)
 - `maxTokensBeforeSummary`: Token threshold that triggers summarization
 - `messagesToKeep`: Number of recent messages to preserve (default: 20)
 - `tokenCounter`: Custom function for counting tokens (defaults to character-based approximation)
 - `summaryPrompt`: Custom prompt template for summary generation
 - `summaryPrefix`: Prefix added to system messages containing summaries (default: "## Previous conversation summary:")
+:::
 
 The middleware ensures tool call integrity by:
 
@@ -249,17 +265,10 @@ agent = create_agent(
     middleware=[
         HumanInTheLoopMiddleware(
             tool_configs={
-                "write_file": {
-                    "require_approval": True,
-                    "description": "⚠️ File write operation requires approval",
-                },
-                "execute_sql": {
-                    "require_approval": True,
-                    "description": "🚨 SQL execution requires DBA approval",
-                },
-                "read_data": {
-                    "require_approval": False,  # Safe operation, no approval needed
-                },
+                "write_file": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
+                "execute_sql": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
+                # Safe operation, no approval needed
+                "read_data": {"allow_approve": False, "allow_edit": False, "allow_respond": False},
             },
             message_prefix="Tool execution pending approval",
         ),
@@ -272,6 +281,8 @@ agent = create_agent(
 :::js
 ```typescript
 import { createAgent } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
+
 import { humanInTheLoopMiddleware } from "langchain/middleware";
 import { Command } from "@langchain/langgraph";
 
@@ -321,7 +332,7 @@ result = agent.invoke(
 # Check if paused for approval
 state = agent.get_state(config)
 if state.next:
-    request = state.tasks[0].interrupts[0].value[0]["action_request"]
+    request = state["__interrupt__"].value[0]["action_request"]
 
     # Display tool details to human
     print("Tool:", request["action"])
@@ -339,6 +350,9 @@ if state.next:
 
 :::js
 ```typescript
+import { HumanMessage } from "@langchain/core/messages";
+import { Command } from "@langchain/langgraph";
+
 // Initial invocation
 const result = await agent.invoke(
     {
@@ -428,7 +442,8 @@ agent.invoke({"messages": [HumanMessage("What's my name?")]}, common_config)
 :::
 :::js
 ```typescript
-import { createAgent, HumanMessage, MemorySaver } from "langchain";
+import { createAgent, HumanMessage } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
 import { anthropicPromptCachingMiddleware } from "langchain/middleware";
 
 const LONG_PROMPT = `
@@ -507,8 +522,8 @@ function beforeModel(state: AgentState): AgentState | AgentJump | undefined {
 
 Runs before the model has run, but after all the `before_model` calls.
 These functions **cannot** modify permanent state or exit early.
-Rather, they are intended to modify calls to the model in a **stateless\* way.
-If you want to modify calls to the model in a **stateful\*\* way, you will need to use `before_model`
+Rather, they are intended to modify calls to the model in a **stateless** way.
+If you want to modify calls to the model in a **stateful** way, you will need to use `before_model`
 
 Modifies the model request. The model request has several key properties:
 - `model` (`BaseChatModel`): the model to use. Note: this needs to the base chat model, not a string.
@@ -721,7 +736,6 @@ agent = create_agent(
 :::
 
 :::js
-
 ```typescript
 const middleware1 = createMiddleware({
     name: "Middleware1",
