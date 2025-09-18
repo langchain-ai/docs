@@ -127,7 +127,7 @@ This project uses [Mintlify](https://mintlify.com/docs) for documentation genera
 - **Components** - Special Mintlify components for enhanced formatting
 - **Code blocks** - Syntax highlighting and copy functionality
 - **Navigation** - Automatic sidebar generation from file structure
-- **Code language fences** - Custom code language fences for Python and Javascript (`:::python` and `:::js`). Both are closed with the `:::` fence. These are used to tag content that is specific to that language and will generate two outputs: one for each language.
+- **Code language fences** (only used in `/oss`) - Custom code language fences for Python and Javascript (`:::python` and `:::js`). Both are closed with the `:::` fence. These are used to tag content that is specific to that language and will generate two outputs: one for each language.
 
 Refer to the [Mintlify documentation](https://mintlify.com/docs) for detailed syntax and component usage.
 
