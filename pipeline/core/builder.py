@@ -725,7 +725,7 @@ class DocumentationBuilder:
                     if "snippets" in relative_path.parts:
                         logger.info(
                             "Processing snippet file with URL rewriting: %s",
-                            relative_path
+                            relative_path,
                         )
                         self._process_snippet_markdown_file(file_path, output_path)
                     else:
@@ -738,7 +738,9 @@ class DocumentationBuilder:
 
         logger.info("✅ Shared files copied: %d files", copied_count)
 
-    def _process_snippet_markdown_file(self, input_path: Path, output_path: Path) -> None:
+    def _process_snippet_markdown_file(
+        self, input_path: Path, output_path: Path
+    ) -> None:
         """Process a snippet markdown file with language-aware URL resolution.
 
         For snippet files that contain /oss/ links, we need to create versions
@@ -788,9 +790,11 @@ class DocumentationBuilder:
             with output_path.open("w", encoding="utf-8") as f:
                 f.write(processed_content)
 
-        except (OSError, UnicodeDecodeError) as e:
-            logger.exception("File I/O or decoding error in snippet markdown file %s", input_path)
+        except (OSError, UnicodeDecodeError):
+            logger.exception(
+                "File I/O or decoding error in snippet markdown file %s", input_path
+            )
             raise
-        except re.error as e:
+        except re.error:
             logger.exception("Regex error in snippet markdown file %s", input_path)
             raise
