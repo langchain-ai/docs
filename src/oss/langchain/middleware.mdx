@@ -52,9 +52,9 @@ Each middleware can add in three different types of modifiers:
 - `Middleware.after_model`: runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `END`)
 :::
 :::js
-- `Middleware.beforeModel`: runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
-- `Middleware.modifyModelRequest`: runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
-- `Middleware.afterModel`: runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+- `beforeModel`: runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+- `modifyModelRequest`: runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
+- `afterModel`: runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `__end__`)
 :::
 
 :::python
@@ -238,10 +238,10 @@ The middleware ensures tool call integrity by:
 ### Human-in-the-loop
 
 :::python
-The `HumanInTheLoop` middleware enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
+The `HumanInTheLoopMiddleware` enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
 :::
 :::js
-The `humanInTheLoop` middleware enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
+The `humanInTheLoopMiddleware` middleware enables human oversight and intervention for tool calls made by AI agents. This middleware intercepts tool executions and allows human operators to approve, modify, reject, or manually respond to tool calls before they execute.
 :::
 
 **Key features:**
@@ -257,6 +257,16 @@ The `humanInTheLoop` middleware enables human oversight and intervention for too
 - Quality control and safety checks for AI actions
 - Compliance scenarios requiring audit trails
 - Development and testing of agent behaviors
+
+<Note>
+This middleware requires a checkpointer to store the agent state. Please ensure to import a checkpointer and pass it to the agent.
+:::python
+For more information, please refer to the [persistence](/oss/javascript/langgraph/persistence) documentation.
+:::
+:::js
+For more information, please refer to the [persistence](/oss/javascript/langgraph/persistence) documentation.
+:::
+</Note>
 
 :::python
 ```python
@@ -564,7 +574,6 @@ history across invocations.
 from langchain_anthropic import ChatAnthropic
 from langchain.agents.middleware.prompt_caching import AnthropicPromptCachingMiddleware
 from langchain.agents import create_agent
-from langgraph.checkpoint.memory import InMemorySaver
 
 LONG_PROMPT = """
 Please be a helpful assistant.
@@ -576,22 +585,18 @@ agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-latest"),
     prompt=LONG_PROMPT,
     middleware=[AnthropicPromptCachingMiddleware(ttl="5m")],
-    checkpointer=InMemorySaver(),
 )
 
-common_config = {"configurable": {"thread_id": "1"}}
-
 # cache store
-agent.invoke({"messages": [HumanMessage("Hi, my name is Bob")]}, common_config)
+agent.invoke({"messages": [HumanMessage("Hi, my name is Bob")]})
 
-# cache hit
-agent.invoke({"messages": [HumanMessage("What's my name?")]}, common_config)
+# cache hit, system prompt is cached
+agent.invoke({"messages": [HumanMessage("What's my name?")]})
 ```
 :::
 :::js
 ```typescript
 import { createAgent, HumanMessage } from "langchain";
-import { MemorySaver } from "@langchain/langgraph";
 import { anthropicPromptCachingMiddleware } from "langchain/middleware";
 
 const LONG_PROMPT = `
@@ -600,18 +605,21 @@ Please be a helpful assistant.
 <Lots more context ...>
 `;
 
-const checkpointer = new MemorySaver();
 const agent = createAgent({
-    model: "anthropic:claude-sonnet-4-latest",
-    prompt: LONG_PROMPT,
-    middleware: [anthropicPromptCachingMiddleware({ ttl: "5m" })],
-    checkpointer,
+  model: "anthropic:claude-sonnet-4-latest",
+  prompt: LONG_PROMPT,
+  middleware: [anthropicPromptCachingMiddleware({ ttl: "5m" })],
 });
-const config = { configurable: { thread_id: "1" } };
 
-const result = await agent.invoke({ messages: [HumanMessage("Hi, my name is Bob")] }, config);
+// cache store
+await agent.invoke({
+  messages: [HumanMessage("Hi, my name is Bob")]
+});
 
-const result = await agent.invoke({ messages: [HumanMessage("What's my name?")] }, config);
+// cache hit, system prompt is cached
+const result = await agent.invoke({
+  messages: [HumanMessage("What's my name?")]
+});
 ```
 :::
 
