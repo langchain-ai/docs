@@ -91,8 +91,9 @@ In general, follow the [Google Developer Documentation Style Guide](https://deve
 
 ## Do not
 
-- Skip frontmatter on any MDX file
-- Use absolute URLs for internal links
-- Include untested code examples
-- Make assumptions - always ask for clarification
+- Do not skip frontmatter on any MDX file
+- Do not use absolute URLs for internal links
+- Do not review code blocks (denoted by ```), as they are often not full snippets
+- Do not include untested code examples
+- Do not make assumptions - always ask for clarification
 
