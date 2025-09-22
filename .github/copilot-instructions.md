@@ -2,7 +2,7 @@
 
 This repository encompasses the comprehensive documentation for LangChain's products and services, all hosted on the Mintlify platform. The documentation is divided into sections for each product. This is a shared set of guidelines to ensure consistency and quality across all content.
 
-## Folder Structure
+## Folder structure
 
 All documentation lives in the `src/` folder, with the following structure:
 
@@ -14,6 +14,7 @@ All documentation lives in the `src/` folder, with the following structure:
     - `/reference`: Links out to reference docs for both LangChain and LangGraph
     - `/contributing`: Guidelines on contributing to the docs, codebase, and submit integrations
     - `/images`: Shared images used across OSS docs
+    - `/concepts`: Shared concepts used across OSS docs
     - The root contains product/language agnostic meta-info such as our versioning & release policy and the releases page.
 - `/langsmith`: Documentation for LangSmith, including quickstarts, observability, evaluation, prompt engineering, self hosting, and administration.
 - `/langgraph-platform`: Documentation for the LangGraph Platform, including quickstarts, features, guides on building & deploying using the platform, management & administration, and reference docs.
@@ -21,7 +22,7 @@ All documentation lives in the `src/` folder, with the following structure:
 - `/images`: Shared images used across all docs
 - `/snippets`: Shared code snippets used across all docs
 
-## Libraries and Frameworks
+## Libraries and frameworks
 
 Documentation is written for Mintlify's MDX syntax and uses Mintlify components. For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
 
@@ -62,10 +63,19 @@ If the trailing `/index` (no extension included) is omitted, the Mintlify parser
 
 ## Frontmatter requirements for pages
 
-- title: Clear, descriptive page title
-- description: Concise summary for SEO/navigation
+- title: Clear, descriptive, concise page title
 
-## Writing standards
+## Custom code language fences
+
+We have implemented custom code language fences for Python and Javascript. They are used to tag content that is specific to that language. Use either `:::python` or `:::js` to tag content that is specific to that language. Both are closed with the `:::` fence.
+
+If any code fences like this exist on the code page, then two outputs (one for each language) will be created. For example, if this syntax is on the page in `/concepts/foo.mdx`, two pages will be created at `/python/concepts/foo.mdx` and `/javascript/concepts/foo.mdx`.
+
+For implementation details, see `pipeline/preprocessors/markdown_preprocessor.py`.
+
+## Style guide
+
+In general, follow the [Google Developer Documentation Style Guide](https://developers.google.com/style). You can also access this style guide through the [Vale-compatible implementation](https://github.com/errata-ai/Google).
 
 - Second-person voice ("you")
 - Prerequisites at start of procedural content
@@ -74,9 +84,10 @@ If the trailing `/index` (no extension included) is omitted, the Mintlify parser
 - Include both basic and advanced use cases
 - Language tags on all code blocks
 - Alt text on all images
-- Relative paths for internal links
+- Root relative paths for internal links
 - Correct spelling
 - Correct grammar
+- Sentence-case for headings
 
 ## Do not
 
