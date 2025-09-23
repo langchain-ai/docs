@@ -467,32 +467,39 @@ When no `prompt` is provided, the agent will infer its task from the messages di
 
 #### Dynamic prompts with middleware
 
-For more advanced use cases where you need to modify the system prompt based on runtime context or agent state, you can use the `DynamicSystemPromptMiddleware`. This is especially useful for personalizing prompts based on user roles, conversation context, or other dynamic factors:
+For more advanced use cases where you need to modify the system prompt based on runtime context or agent state, you can use the `modify_model_request` decorator to create a simple custom middleware.
+
+Dynamic system prompt is especially useful for personalizing prompts based on user roles, conversation context, or other changing factors:
 
 :::python
 ```python wrap
-from langchain.agents import create_agent
-from langchain.agents.middleware import DynamicSystemPromptMiddleware
+from langchain.agents import create_agent, AgentState
+from langchain.agents.middleware.types import modify_model_request
 from langgraph.runtime import Runtime
 from typing import TypedDict
 
 class Context(TypedDict):
     user_role: str
 
-def dynamic_system_prompt(state, runtime: Runtime[Context]) -> str:
+@modify_model_request
+def dynamic_system_prompt(state: AgentState, request: ModelRequest, runtime: Runtime[Context]) -> ModelRequest:
     user_role = runtime.context.get("user_role", "user")
     base_prompt = "You are a helpful assistant."
-    
+
     if user_role == "expert":
-        return f"{base_prompt} Provide detailed technical responses."
+        prompt = f"{base_prompt} Provide detailed technical responses."
     elif user_role == "beginner":
-        return f"{base_prompt} Explain concepts simply and avoid jargon."
-    return base_prompt
+        prompt = f"{base_prompt} Explain concepts simply and avoid jargon."
+    else:
+        prompt = base_prompt
+
+    request.system_prompt = base_prompt
+    return request
 
 agent = create_agent(
     model="openai:gpt-4o",
     tools=tools,
-    middleware=[DynamicSystemPromptMiddleware(dynamic_system_prompt)],
+    middleware=[dynamic_system_prompt],
 )
 
 # The system prompt will be set dynamically based on context
@@ -516,7 +523,7 @@ const agent = createAgent({
             systemPromptFunction: (state, runtime) => {
                 const userRole = runtime?.context?.userRole || "user";
                 const basePrompt = "You are a helpful assistant.";
-                
+
                 if (userRole === "expert") {
                     return `${basePrompt} Provide detailed technical responses.`;
                 } else if (userRole === "beginner") {

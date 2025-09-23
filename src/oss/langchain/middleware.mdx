@@ -470,7 +470,7 @@ const result = await agent.invoke({ messages: [HumanMessage("What's my name?")] 
 
 ### Dynamic system prompt
 
-`DynamicSystemPromptMiddleware` allows you to set the system prompt dynamically right before each model invocation. This middleware is particularly useful when the prompt depends on the current agent state or runtime context.
+A system prompt can be dynamically set right before each model invocation using the `@modify_model_request` decorator. This middleware is particularly useful when the prompt depends on the current agent state or runtime context.
 
 For example, you can adjust the system prompt based on the user's expertise level:
 
@@ -478,29 +478,32 @@ For example, you can adjust the system prompt based on the user's expertise leve
 ```python
 from typing import TypedDict
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import DynamicSystemPromptMiddleware
+from langchain.agents import create_agent, AgentState
+from langchain.agents.middleware.types import modify_model_request
 from langgraph.runtime import Runtime
 
 class Context(TypedDict):
     user_role: str
 
-def dynamic_system_prompt(state, runtime: Runtime[Context]) -> str:
+@modify_model_request
+def dynamic_system_prompt(state: AgentState, request: ModelRequest, runtime: Runtime[Context]) -> ModelRequest:
     user_role = runtime.context.get("user_role", "user")
     base_prompt = "You are a helpful assistant."
 
     if user_role == "expert":
-        return f"{base_prompt} Provide detailed technical responses."
+        prompt = f"{base_prompt} Provide detailed technical responses."
     elif user_role == "beginner":
-        return f"{base_prompt} Explain concepts simply and avoid jargon."
-    return base_prompt
+        prompt = f"{base_prompt} Explain concepts simply and avoid jargon."
+    else:
+        prompt = base_prompt
+
+    request.system_prompt = prompt
+    return request
 
 agent = create_agent(
     model="openai:gpt-4o",
     tools=[web_search],
-    middleware=[
-        DynamicSystemPromptMiddleware(dynamic_system_prompt),
-    ],
+    middleware=[dynamic_system_prompt],
 )
 
 # Use with context
