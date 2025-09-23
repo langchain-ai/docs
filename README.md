@@ -1,4 +1,4 @@
-# Documentation Build Pipeline
+# Documentation build pipeline
 
 This repository contains the documentation build pipeline for LangChain projects.
 
@@ -8,7 +8,7 @@ The pipeline is structured with source files in `/src` and build artifacts in `/
 
 Documentation changes follow a PR workflow where all tests must pass before merging. Publishing is handled by the [publish workflow](https://github.com/langchain-ai/docs/actions/workflows/publish.yml) (requires authorization), and [preview branches](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml) are available for testing changes.
 
-## Directory Structure
+## Directory structure
 
 ```text
 src/                  # Source documentation files (edit these)
@@ -60,16 +60,16 @@ Makefile              # Build automation
    - `docs migrate <path>` - Convert MkDocs markdown files to Mintlify format
    - `docs migrate-docusaurus <path>` - Convert Docusaurus markdown files to Mintlify format
 
-### Important Rules
+### Important rules
 
 - **Only edit files in `src/`** - The `build/` directory is automatically generated
 - **Use Mintlify syntax** - See [Mintlify documentation](https://mintlify.com/docs) for formatting guidelines
 - **Test your changes** - Use `docs dev` to preview changes locally with hot reload (on save)
 - **Use safe Mintlify commands** - Use `make mint-broken-links` instead of `mint broken-links` to check final built documentation
 
-### Available Commands
+### Available commands
 
-#### Make Commands
+#### Make commands
 
 - `make dev` - Start development mode with file watching and live rebuild
 - `make build` - Build documentation to `./build` directory
@@ -113,13 +113,13 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 - **`docs build`** - Build documentation files
   - `--watch` - Watch for file changes after building
 
-### File Formats
+### File formats
 
 - **Markdown files** (`.md`, `.mdx`) - Standard documentation content
-- **Jupyter notebooks** (`.ipynb`) - Converted to markdown during build
+- **Jupyter notebooks** (`.ipynb`) - Converted to markdown during build, though these are not recommended for new content.
 - **Assets** - Images and other files are copied to the build directory
 
-### Documentation Syntax
+### Documentation syntax
 
 This project uses [Mintlify](https://mintlify.com/docs) for documentation generation. Key features:
 
@@ -127,6 +127,7 @@ This project uses [Mintlify](https://mintlify.com/docs) for documentation genera
 - **Components** - Special Mintlify components for enhanced formatting
 - **Code blocks** - Syntax highlighting and copy functionality
 - **Navigation** - Automatic sidebar generation from file structure
+- **Code language fences** (only used in `/oss`) - Custom code language fences for Python and Javascript (`:::python` and `:::js`). Both are closed with the `:::` fence. These are used to tag content that is specific to that language and will generate two outputs: one for each language.
 
 Refer to the [Mintlify documentation](https://mintlify.com/docs) for detailed syntax and component usage.
 
@@ -138,7 +139,7 @@ Run the test suite to ensure your changes don't break existing functionality:
 make test
 ```
 
-### Code Quality
+### Code quality
 
 Before submitting changes, ensure your code passes formatting and linting checks:
 
@@ -155,7 +156,7 @@ make lint_md_fix
 
 **Note**: All pull requests are automatically checked by CI/CD. The same linting and formatting standards will be enforced, and PRs cannot be merged if these checks fail.
 
-## Development Workflow
+## Development workflow
 
 1. **Start development mode:**
 

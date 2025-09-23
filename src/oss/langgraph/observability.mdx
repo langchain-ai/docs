@@ -3,6 +3,7 @@ title: Observability
 ---
 
 import AlphaCallout from '/snippets/alpha-lg-callout.mdx';
+import observability from '/snippets/oss/observability.mdx';
 
 <AlphaCallout />
 
@@ -12,7 +13,11 @@ Traces are a series of steps that your application takes to go from input to out
 * [Evaluate the application performance](/oss/langchain/evals).
 * [Monitor the application](/langsmith/dashboards).
 
-To get started, sign up for a free account at [LangSmith](https://smith.langchain.com/).
+## Prerequisites
+
+Before you begin, ensure you have the following:
+
+* A [LangSmith account](https://smith.langchain.com/) (free to sign up)
 
 ## Enable tracing
 
@@ -23,10 +28,63 @@ export LANGSMITH_TRACING=true
 export LANGSMITH_API_KEY=<your-api-key>
 ```
 
-For more information, see [Trace with LangGraph](https://docs.smith.langchain.com/observability/how_to_guides/trace_with_langgraph).
+By default, the trace will be logged to the project with the name `default`. To configure a custom project name, see [Log to a project](#log-to-a-project).
 
-## Learn more
+For more information, see [Trace with LangGraph](/langsmith/trace-with-langgraph).
 
-* [LangSmith Observability quickstart](https://docs.smith.langchain.com/observability)
-* [Trace with LangGraph](https://docs.smith.langchain.com/observability/how_to_guides/trace_with_langgraph)
-* [Tracing conceptual guide](https://docs.smith.langchain.com/observability/concepts#traces)
+<observability />
+
+## Use anonymizers to prevent logging of sensitive data in traces
+
+You may want to mask sensitive data to prevent it from being logged to LangSmith. You can create [anonymizers](/langsmith/mask-inputs-outputs#rule-based-masking-of-inputs-and-outputs) and apply them to
+your graph using configuration. This example will redact anything matching the Social Security Number format XXX-XX-XXXX from traces sent to LangSmith.
+
+:::python
+```python Python
+from langchain_core.tracers.langchain import LangChainTracer
+from langgraph.graph import StateGraph, MessagesState
+from langsmith import Client
+from langsmith.anonymizer import create_anonymizer
+
+anonymizer = create_anonymizer([
+    # Matches SSNs
+    { "pattern": r"\b\d{3}-?\d{2}-?\d{4}\b", "replace": "<ssn>" }
+])
+
+tracer_client = Client(anonymizer=anonymizer)
+tracer = LangChainTracer(client=tracer_client)
+# Define the graph
+graph = (
+    StateGraph(MessagesState)
+    ...
+    .compile()
+    .with_config({'callbacks': [tracer]})
+)
+```
+:::
+:::js
+```typescript TypeScript
+import { StateGraph } from "@langchain/langgraph";
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import { StateAnnotation } from "./state.js";
+import { createAnonymizer } from "langsmith/anonymizer"
+import { Client } from "langsmith"
+
+
+const anonymizer = createAnonymizer([
+    # Matches SSNs
+    { pattern: /\b\d{3}-?\d{2}-?\d{4}\b/, replace: "<ssn>" }
+])
+
+const langsmithClient = new Client({ anonymizer })
+const tracer = new LangChainTracer({
+  client: langsmithClient,
+});
+
+export const graph = new StateGraph(StateAnnotation)
+  .compile()
+  .withConfig({
+    callbacks: [tracer],
+});
+```
+:::
