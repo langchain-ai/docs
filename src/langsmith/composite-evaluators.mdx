@@ -9,6 +9,7 @@ _Composite evaluators_ are a way to combine multiple evaluator scores into a sin
 
 You can create composite evaluators on a [tracing project](/langsmith/observability-concepts#projects) (for [online evaluations](/langsmith/evaluation-concepts#online-evaluation)) or a [dataset](/langsmith/evaluation-concepts#datasets) (for [offline evaluations](/langsmith/evaluation-concepts#offline-evaluation)). With composite evaluators in the UI, you can compute a weighted average or weighted sum of multiple evaluator scores, with configurable weights.
 
+<div style={{ textAlign: 'center' }}>
 <img
     className="block dark:hidden"
     src="/langsmith/images/create_composite_evaluator-light.png"
@@ -20,6 +21,7 @@ You can create composite evaluators on a [tracing project](/langsmith/observabil
     src="/langsmith/images/create_composite_evaluator-dark.png"
     alt="LangSmith UI showing an LLM call trace called ChatOpenAI with a system and human input followed by an AI Output."
 />
+</div>
 
 
 ### 1. Navigate to the tracing project or dataset
@@ -41,7 +43,6 @@ To start configuring a composite evaluator, navigate to the **Tracing Projects**
 <Tip> If you need to adjust the weights for the composite scores, they can be updated after the evaluator is created. The resulting scores will be updated for all runs that have the evaluator configured. </Tip>
 
 ### 3. View composite evaluator results
-
 Composite scores are attached to a run as **feedback**, similarly to feedback from a single evaluator. How you can view them depends on where the evaluation was run:
 
 **On a tracing project**:
@@ -59,6 +60,8 @@ Composite scores are attached to a run as **feedback**, similarly to feedback fr
 
 This guide describes setting up an evaluation that uses multiple evaluators and combines their scores with a custom aggregation function.
 
+<Note> Requires langsmith>=0.4.29 </Note>
+
 ### 1. Configure evaluators on a dataset
 Start by configuring your evaluators. In this example, the application generates a tweet from a blog introduction and uses three evaluators — summary, tone, and formatting — to assess the output.
 
@@ -67,10 +70,8 @@ If you already have your own dataset with evaluators configured, you can skip th
 <Accordion title="Configure evaluators on a dataset.">
 
 ```python
-# Import dependencies
 import os
 from dotenv import load_dotenv
-from langsmith import traceable, wrappers
 from openai import OpenAI
 from langsmith import Client
 from pydantic import BaseModel
@@ -87,6 +88,7 @@ langsmith_project = os.getenv('LANGSMITH_PROJECT', 'default')
 
 # Create a dataset. Only need to do this once.
 client = Client()
+oai_client = OpenAI()
 
 examples = [
   {
@@ -98,6 +100,7 @@ examples = [
 ]
 
 dataset = client.create_dataset(dataset_name="Blog Intros")
+
 client.create_examples(
   dataset_id=dataset.id,
   examples=examples,
@@ -175,6 +178,9 @@ results = client.evaluate(
     evaluators=[summary, tone, formatting],
     experiment_prefix="gpt-5-nano",
 )
+
+# Get the experiment name to be used in client.get_experiment_results() in the next section
+experiment_name = results.experiment_name
 ```
 </Accordion>
 
@@ -187,44 +193,63 @@ Create composite feedback that aggregates the individual evaluator scores using 
 ```python
 from typing import Dict
 import math
-import pandas as pd
+from langsmith import Client
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# TODO: Replace with your experiment name. Can be found in UI or from the above client.evaluate() result
+YOUR_EXPERIMENT_NAME = "placeholder_experiment_name"
 
 # Set weights for the individual evaluator scores
 DEFAULT_WEIGHTS: Dict[str, float] = {
-    "feedback.summary": 0.7,
-    "feedback.tone": 0.2,
-    "feedback.formatting": 0.1,
+    "summary": 0.7,
+    "tone": 0.2,
+    "formatting": 0.1,
 }
-WEIGHTED_KEY = "weighted_summary"
+WEIGHTED_FEEDBACK_NAME = "weighted_summary"
 
 # Pull experiment results
-EXPERIMENT_ID = list(client.list_projects(reference_dataset_name=DATASET_NAME, limit=1))[0].id
-df = client.get_test_results(project_id=EXPERIMENT_ID)
+client = Client()
+results = client.get_experiment_results(
+    name=YOUR_EXPERIMENT_NAME,
+)
 
-# Skip rows with any missing metric
-required = list(DEFAULT_WEIGHTS.keys())
-missing_cols = [c for c in required if c not in df.columns]
-if missing_cols:
-    raise ValueError(f"Missing columns in DataFrame: {missing_cols}")
-
-# Calculate weighted score. This can be any aggregation function
-def row_score(row: pd.Series) -> float:
-    if row[required].isna().any():
+# Calculate weighted score for each run
+def calculate_weighted_score(feedback_stats: dict) -> float:
+    if not feedback_stats:
         return float("nan")
-    return float(sum(row[c] * DEFAULT_WEIGHTS[c] for c in required))
 
-df[WEIGHTED_KEY] = df.apply(row_score, axis=1)
+    # Check if all required metrics are present and have data
+    required_metrics = set(DEFAULT_WEIGHTS.keys())
+    available_metrics = set(feedback_stats.keys())
 
-# Write feedback back to LangSmith
-for _, row in df.iterrows():
-    run_id = row["id"]
-    score = row[WEIGHTED_KEY]
-    if isinstance(score, (int, float)) and not math.isnan(score):
-        client.create_feedback(
-            run_id=run_id,
-            key=WEIGHTED_KEY,
-            score=float(score)
-        )
+    if not required_metrics.issubset(available_metrics):
+        return float("nan")
+
+    # Calculate weighted score
+    total_score = 0.0
+    for metric, weight in DEFAULT_WEIGHTS.items():
+        metric_data = feedback_stats[metric]
+        if metric_data.get("n", 0) > 0 and "avg" in metric_data:
+            total_score += metric_data["avg"] * weight
+        else:
+            return float("nan")
+
+    return total_score
+
+# Process each run and write feedback
+# Note that experiment results need to finish processing before this should be called.
+for example_with_runs in results["examples_with_runs"]:
+    for run in example_with_runs.runs:
+        if run.feedback_stats:
+            score = calculate_weighted_score(run.feedback_stats)
+            if not math.isnan(score):
+                client.create_feedback(
+                    run_id=run.id,
+                    key=WEIGHTED_FEEDBACK_NAME,
+                    score=float(score)
+                )
 ```
 </Accordion>
 
