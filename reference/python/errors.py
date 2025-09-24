@@ -1,5 +1,6 @@
 """Errors for the Python reference docs build."""
 
+
 class TarPathTraversalError(Exception):
     """Raised when a tar extraction would escape the target directory."""
 

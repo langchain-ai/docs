@@ -21,6 +21,7 @@ DIST_DIR = Path(__file__).parent / ".." / "dist" / "python"
 
 VERSION_TAGS: list[str] = []
 
+
 def _extract_html_dir(tar: tarfile.TarFile, path: Path) -> None:
     """Extract only `api_reference_build/html` members from the tar into `path`.
 
@@ -48,6 +49,7 @@ def _extract_html_dir(tar: tarfile.TarFile, path: Path) -> None:
                 with dest_path.open("wb") as out_f:
                     shutil.copyfileobj(fileobj, out_f)
 
+
 def _fetch_extract_tarball(url: str, tmpdir: Path) -> None:
     """Download tarball from `url` and extract relevant HTML into `tmpdir`."""
     parsed_url = urllib.parse.urlparse(url)
@@ -68,19 +70,17 @@ def _fetch_extract_tarball(url: str, tmpdir: Path) -> None:
             logger.debug("Cleaning up %s", tmp_tarball_path)
             tmp_tarball.close()
 
+
 def _extract_reference_tag(tag: str, output_dir: Path) -> None:
     """Extract a specific tagged release of the reference HTML into `output_dir`."""
-    tarball_url = (
-        f"https://github.com/langchain-ai/langchain-api-docs-html/archive/refs/tags/{tag}.tar.gz"
-    )
+    tarball_url = f"https://github.com/langchain-ai/langchain-api-docs-html/archive/refs/tags/{tag}.tar.gz"
     logger.info("Extracting %s", tarball_url)
     _fetch_extract_tarball(tarball_url, output_dir)
 
+
 def _extract_reference_latest(output_dir: Path) -> None:
     """Extract the latest main branch reference HTML into `output_dir`."""
-    tarball_url = (
-        "https://github.com/langchain-ai/langchain-api-docs-html/archive/refs/heads/main.tar.gz"
-    )
+    tarball_url = "https://github.com/langchain-ai/langchain-api-docs-html/archive/refs/heads/main.tar.gz"
     logger.info("Extracting %s", tarball_url)
     _fetch_extract_tarball(tarball_url, output_dir)
 
@@ -94,6 +94,7 @@ def clean() -> None:
             shutil.rmtree(entry)
         else:
             entry.unlink()
+
 
 def build() -> None:
     """Build the Python reference docs into `DIST_DIR`."""
