@@ -472,7 +472,7 @@ async function build() {
     []
   );
 
-  const installPromise = Promise.all(
+  await Promise.all(
     installTargets.map(async (t) => {
       if ('package' in t) {
         await installDependencies({ cwd: packagePath(t), silent: true });
@@ -482,14 +482,9 @@ async function build() {
     })
   );
 
-  const typedocConfigPromise = Promise.all(
-    packages.map(async (pkg) => {
-      await installDependencies({ cwd: packagePath(pkg), silent: true });
-      ensurePackageTypedocConfig(pkg);
-    })
-  );
-
-  await Promise.all([installPromise, typedocConfigPromise]);
+  for (const p of packages) {
+    ensurePackageTypedocConfig(p);
+  }
 
   const entrypoints = packages.map((pkg) => path.join(remotePath(pkg), pkg.path));
 
