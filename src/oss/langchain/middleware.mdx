@@ -47,14 +47,14 @@ Middleware provides control over what happens before and after those steps.
 Each middleware can add in three different types of modifiers:
 
 :::python
-- `before_model`: Runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+- `before_model`: Runs before model execution. Can update state or jump to a different node (`model`, `tools`, `end`)
 - `modify_model_request`: Runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
 - `after_model`: Runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `END`)
 :::
 :::js
-- `beforeModel`: Runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+- `beforeModel`: Runs before model execution. Can update state or jump to a different node (`model`, `tools`, `end`)
 - `modifyModelRequest`: Runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
-- `afterModel`: Runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+- `afterModel`: Runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `end`)
 :::
 
 :::python
@@ -843,7 +843,6 @@ agent = create_agent(
 )
 ```
 :::
-
 :::js
 ```typescript
 const agent = createAgent({
@@ -884,7 +883,7 @@ In order to **exit early**, you can add a `jump_to` key to the state update with
 
 - `"model"`: Jump to the model node
 - `"tools"`: Jump to the tools node
-- `"__end__"`: Jump to the end node
+- `"end"`: Jump to the end node
 
 If this is specified, all subsequent middleware will not run.
 
@@ -911,7 +910,7 @@ class MyMiddleware(AgentMiddleware):
         if len(state["messages"]) > 50:
             return {
                 "messages": [AIMessage("I'm sorry, the conversation has been terminated.")],
-                "jump_to": "__end__"
+                "jump_to": "end"
             }
         return state
 ```
@@ -933,20 +932,39 @@ function beforeModel(state: AgentState): AgentState | AgentJump | undefined {
 ### `modifyModelRequest`
 :::
 
+:::python
 Runs before the model has run, but after all the `before_model` calls.
+:::
+:::js
+Runs before the model has run, but after all the `beforeModel` calls.
+:::
 These functions **cannot** modify permanent state or exit early.
 Rather, they are intended to modify calls to the model in a **stateless** way.
+:::python
 If you want to modify calls to the model in a **stateful** way, you will need to use `before_model`
+:::
+:::js
+If you want to modify calls to the model in a **stateful** way, you will need to use `beforeModel`
+:::
 
 Modifies the model request. The model request has several key properties:
 - `model` (`BaseChatModel`): the model to use. Note: this needs to the base chat model, not a string.
+:::python
 - `system_prompt` (`str`): the system prompt to use. Will get prepended to `messages`
+:::
+:::js
+- `systemPrompt` (`string`): the system prompt to use. Will get prepended to `messages`
+:::
 - `messages` (list of messages): the message list. Should not include system prompt.
 :::python
 - `tool_choice` (Any): the tool choice to use
 :::
 :::js
-- `tool_choice` (Any): the tool choice to use
+- `toolChoice`: Can be one of:
+  - `"auto"`: means the model can pick between generating a message or calling one or more tools.
+  - `"none"`: means the model will not call any tool and instead generates a message.
+  - `"required"`: means the model must call one or more tools.
+  - `{ type: "function", function: { name: string } }`: The model will use the specified function.
 :::
 - `tools` (list of `BaseTool`): the tools to use for this model call
 :::python
@@ -1028,7 +1046,7 @@ class MyMiddleware(AgentMiddleware[MyState]):
     def before_model(self, state: AgentState) -> dict[str, Any] | None:
         # terminate early if the model has been called too many times
         if state["model_call_count"] > 10:
-            return {"jump_to": "__end__"}
+            return {"jump_to": "end"}
         return state
 
     def after_model(self, state: AgentState) -> dict[str, Any] | None:
@@ -1271,10 +1289,9 @@ In order to **exit early**, you can add a `jump_to` key to the state update with
 In order to **exit early**, you can add a `jumpTo` key to the state update with one of the following values:
 :::
 
-
 - `"model"`: Jump to the model node
 - `"tools"`: Jump to the tools node
-- `"__end__"`: Jump to the end node
+- `"end"`: Jump to the end node
 
 If this is specified, all subsequent middleware will not run.
 
@@ -1302,13 +1319,16 @@ class MyMiddleware(AgentMiddleware):
 :::
 :::js
 ```typescript
-import type { AgentState, AgentJump } from "langchain";
+import type { createMiddleware } from "langchain";
 
-afterModel (state: AgentState): AgentState | AgentJump | undefined {
-    return {
-        messages: ...,
-        jumpTo: "model"
+const middleware = createMiddleware({
+    name: "MyMiddleware",
+    afterModel: (state) => {
+        return {
+            messages: ...,
+            jumpTo: "model"
+        }
     }
-}
+});
 ```
 :::
