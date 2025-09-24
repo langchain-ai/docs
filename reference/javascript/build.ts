@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import { installDependencies } from 'nypm';
 import { type TypeDocOptions, Application } from 'typedoc';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import fs from 'fs';
 import path from 'path';
 
 /**
@@ -44,6 +44,8 @@ type PackageGroup = {
 };
 
 type Source = PackageGroup | Package;
+
+const DIST_DIR = path.resolve(__dirname, '..', 'dist', 'javascript');
 
 const SOURCES: Source[] = [
   {
@@ -274,9 +276,9 @@ const iife = <T>(fn: () => T) => fn();
  * @param {(json: any) => any} fn - A function that takes the parsed JSON object and returns the modified object.
  */
 const updateJsonFile = (relativePath: string, fn: (json: any) => any) => {
-  const contents = readFileSync(relativePath).toString();
+  const contents = fs.readFileSync(relativePath).toString();
   const res = fn(JSON.parse(contents));
-  writeFileSync(relativePath, JSON.stringify(res, null, 2) + '\n');
+  fs.writeFileSync(relativePath, JSON.stringify(res, null, 2) + '\n');
 };
 
 /**
@@ -372,7 +374,7 @@ async function getLocalRemoteSha(remote: Remote) {
  * @returns {Promise<void>} Resolves when the local repository is ensured to be up to date.
  */
 async function ensureLatestRemote(remote: Remote) {
-  if (existsSync(remotePath(remote))) {
+  if (fs.existsSync(remotePath(remote))) {
     const sha = await getLatestRemoteSha(remote);
     const localSha = await getLocalRemoteSha(remote);
     if (sha === localSha) return;
@@ -392,13 +394,16 @@ async function ensureLatestRemote(remote: Remote) {
  * The command output is inherited from the parent process.
  */
 function pullRemote(remote: Remote) {
-  const cmd = [
+  console.info(`Pulling remote ${remote.repo}/${remote.branch ?? 'main'}`);
+  const rimrafCmd = ['rm -rf', remotePath(remote)];
+  execSync(rimrafCmd.join(' '), { encoding: 'utf-8', stdio: 'inherit' });
+  const cloneCmd = [
     'git clone --depth 1',
     `https://github.com/${remote.repo}.git`,
     remote.branch ? `-b ${remote.branch}` : '',
     remotePath(remote),
   ];
-  execSync(cmd.join(' '), { encoding: 'utf-8', stdio: 'inherit' });
+  execSync(cloneCmd.join(' '), { encoding: 'utf-8', stdio: 'inherit' });
 }
 
 /**
@@ -431,8 +436,8 @@ function ensurePackageTypedocConfig(pkg: Package) {
     }, []);
   });
 
-  if (!existsSync(typedocConfigPath)) {
-    writeFileSync(typedocConfigPath, '{}');
+  if (!fs.existsSync(typedocConfigPath)) {
+    fs.writeFileSync(typedocConfigPath, '{}');
   }
   updateJsonFile(typedocConfigPath, () => ({
     ...PACKAGE_TYPEDOC_CONFIG,
@@ -454,9 +459,7 @@ async function build() {
   const packages = Array.from(iteratePackages(SOURCES));
 
   await Promise.all(
-    remotes.map(async (r) => {
-      await ensureLatestRemote(r);
-    })
+    remotes.map((r) => ensureLatestRemote(r))
   );
 
   const installTargets = reducePackages<Array<Package | Remote>>(
@@ -474,6 +477,7 @@ async function build() {
 
   await Promise.all(
     installTargets.map(async (t) => {
+      console.info(`Installing dependencies for ${t.repo}/${t.branch ?? 'main'}`);
       if ('package' in t) {
         await installDependencies({ cwd: packagePath(t), silent: true });
       } else {
@@ -488,6 +492,8 @@ async function build() {
 
   const entrypoints = packages.map((pkg) => path.join(remotePath(pkg), pkg.path));
 
+  console.info(`Generating docs for ${entrypoints.length} entrypoints`);
+
   const app = await Application.bootstrapWithPlugins({
     ...ROOT_TYPEDOC_CONFIG,
     entryPoints: entrypoints,
@@ -495,8 +501,11 @@ async function build() {
 
   const reflection = await app.convert();
   if (reflection) {
-    await app.generateDocs(reflection, '../dist/javascript');
+    console.info(`Writing docs to ${DIST_DIR}`);
+    await app.generateDocs(reflection, DIST_DIR);
   }
+
+  console.info('Done');
 }
 
 if (require.main === module) {
