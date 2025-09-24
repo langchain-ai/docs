@@ -151,6 +151,7 @@ LangChain provides several built in middleware to use off-the-shelf
 - [Summarization](#summarization)
 - [Human-in-the-loop](#human-in-the-loop)
 - [Anthropic prompt caching](#anthropic-prompt-caching)
+- [Dynamic system prompt](#dynamic-system-prompt)
 
 ### Summarization
 
@@ -726,6 +727,138 @@ await agent.invoke({
 // cache hit, system prompt is cached
 const result = await agent.invoke({
   messages: [HumanMessage("What's my name?")]
+});
+```
+:::
+
+### Dynamic system prompt
+
+:::python
+A system prompt can be dynamically set right before each model invocation using the `@modify_model_request` decorator. This middleware is particularly useful when the prompt depends on the current agent state or runtime context.
+
+For example, you can adjust the system prompt based on the user's expertise level:
+
+```python
+from typing import TypedDict
+
+from langchain.agents import create_agent, AgentState
+from langchain.agents.middleware.types import modify_model_request
+from langgraph.runtime import Runtime
+
+class Context(TypedDict):
+    user_role: str
+
+@modify_model_request
+def dynamic_system_prompt(state: AgentState, request: ModelRequest, runtime: Runtime[Context]) -> ModelRequest:
+    user_role = runtime.context.get("user_role", "user")
+    base_prompt = "You are a helpful assistant."
+
+    if user_role == "expert":
+        prompt = f"{base_prompt} Provide detailed technical responses."
+    elif user_role == "beginner":
+        prompt = f"{base_prompt} Explain concepts simply and avoid jargon."
+    else:
+        prompt = base_prompt
+
+    request.system_prompt = prompt
+    return request
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[web_search],
+    middleware=[dynamic_system_prompt],
+)
+
+# Use with context
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Explain async programming"}]},
+    {"context": {"user_role": "expert"}}
+)
+```
+:::
+:::js
+
+A system prompt can be dynamically set right before each model invocation using the `dynamicSystemPromptMiddleware` middleware. This middleware is particularly useful when the prompt depends on the current agent state or runtime context.
+
+For example, you can adjust the system prompt based on the user's expertise level:
+
+```typescript
+import { z } from "zod";
+import { createAgent } from "langchain";
+import { dynamicSystemPromptMiddleware } from "langchain/middleware";
+
+const contextSchema = z.object({
+    userRole: z.enum(["expert", "beginner"]),
+});
+
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [...],
+    contextSchema,
+    middleware: [
+        dynamicSystemPromptMiddleware<z.infer<typeof contextSchema>>((state, runtime) => {
+            const userRole = runtime.context.userRole || "user";
+            const basePrompt = "You are a helpful assistant.";
+
+            if (userRole === "expert") {
+                return `${basePrompt} Provide detailed technical responses.`;
+            } else if (userRole === "beginner") {
+                return `${basePrompt} Explain concepts simply and avoid jargon.`;
+            }
+            return basePrompt;
+        }),
+    ],
+});
+
+// The system prompt will be set dynamically based on context
+const result = await agent.invoke(
+    { messages: [{ role: "user", content: "Explain async programming" }] },
+    { context: { userRole: "expert" } }
+);
+```
+:::
+
+Alternatively, you can adjust the system prompt based on the conversation length:
+
+:::python
+```python
+from langchain.agents.middleware.types import modify_model_request
+
+@modify_model_request
+def simple_prompt(state: AgentState, request: ModelRequest) -> ModelRequest:
+    message_count = len(state["messages"])
+
+    if message_count > 10:
+        prompt = "You are in an extended conversation. Be more concise."
+    else:
+        prompt = "You are a helpful assistant."
+
+    request.system_prompt = prompt
+    return request
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[search_tool],
+    middleware=[simple_prompt],
+)
+```
+:::
+
+:::js
+```typescript
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [searchTool],
+    middleware: [
+        dynamicSystemPromptMiddleware((state) => {
+            const messageCount = state.messages.length;
+
+            if (messageCount > 10) {
+                return "You are in an extended conversation. Be more concise.";
+            }
+            return "You are a helpful assistant.";
+        }),
+    ],
 });
 ```
 :::
