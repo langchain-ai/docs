@@ -13,6 +13,7 @@ Documentation changes follow a PR workflow where all tests must pass before merg
 ```text
 src/                  # Source documentation files (edit these)
 build/                # Generated output files (do not edit)
+reference/            # Reference docs pipeline
 pipeline/             # Build pipeline source code
 tests/                # Test files for the pipeline
 Makefile              # Build automation
@@ -75,6 +76,8 @@ Makefile              # Build automation
 - `make build` - Build documentation to `./build` directory
 - `make mint-broken-links` - Check for broken links in built documentation (excludes integrations)
 - `make mint-broken-links-all` - Check for broken links in built documentation (includes all directories)
+- `make build-references` - Build reference docs
+- `make preview-references` - Preview reference docs
 - `make install` - Install all dependencies
 - `make clean` - Remove build artifacts
 - `make test` - Run the test suite
