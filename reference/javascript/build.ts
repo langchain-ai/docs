@@ -1,17 +1,41 @@
 import { execSync } from 'child_process';
-import { installDependencies} from "nypm";
+import { installDependencies } from 'nypm';
 import { type TypeDocOptions, Application } from 'typedoc';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import path from 'path';
 
+/**
+ * A reference to a remote repository
+ */
 type Remote = {
+  /**
+   * The GitHub repository in the format "owner/repo".
+   */
   repo: string;
+  /**
+   * The branch to use from the repository. Defaults to "main" if not specified.
+   */
   branch?: string;
 };
 
+/**
+ * A reference to a package in a remote repository that should be included in reference docs.
+ */
 type Package = Remote & {
+  /**
+   * The name of the package (as published to npm).
+   */
   package: string;
+  /**
+   * The relative path to the package within the repository.
+   */
   path: string;
+  /**
+   * Whether to run package installation for this package.
+   * If true, dependencies will be installed from the package directory
+   * instead of the remote's root directory
+   */
+  packageInstall?: boolean;
 };
 
 type PackageGroup = {
@@ -206,24 +230,28 @@ const SOURCES: Source[] = [
       },
     ],
   },
+  {
+    group: 'LangSmith',
+    items: [
+      {
+        package: 'langsmith',
+        path: 'js',
+        repo: 'langchain-ai/langsmith-sdk',
+        branch: 'main',
+        packageInstall: true,
+      },
+    ],
+  },
 ];
 
 const ROOT_TYPEDOC_CONFIG: TypeDocOptions = {
-  out: "public",
-  sort: [
-    "kind",
-    "visibility",
-    "instance-first",
-    "required-first",
-    "alphabetical",
-  ],
-  plugin: [
-    "typedoc-plugin-expand-object-like-types",
-  ],
-  logLevel: "Error",
-  name: "langchain.js",
-  hostedBaseUrl: "https://reference.langchain.com/javascript",
-  entryPointStrategy: "packages",
+  out: 'public',
+  sort: ['kind', 'visibility', 'instance-first', 'required-first', 'alphabetical'],
+  plugin: ['typedoc-plugin-expand-object-like-types'],
+  logLevel: 'Error',
+  name: 'langchain.js',
+  hostedBaseUrl: 'https://reference.langchain.com/javascript',
+  entryPointStrategy: 'packages',
   includeVersion: true,
 };
 
@@ -235,7 +263,7 @@ const PACKAGE_TYPEDOC_CONFIG: TypeDocOptions = {
   includeVersion: true,
   categorizeByGroup: true,
   skipErrorChecking: true,
-}
+};
 
 const iife = <T>(fn: () => T) => fn();
 
@@ -248,7 +276,7 @@ const iife = <T>(fn: () => T) => fn();
 const updateJsonFile = (relativePath: string, fn: (json: any) => any) => {
   const contents = readFileSync(relativePath).toString();
   const res = fn(JSON.parse(contents));
-  writeFileSync(relativePath, JSON.stringify(res, null, 2) + "\n");
+  writeFileSync(relativePath, JSON.stringify(res, null, 2) + '\n');
 };
 
 /**
@@ -259,6 +287,14 @@ const updateJsonFile = (relativePath: string, fn: (json: any) => any) => {
  */
 const remotePath = (remote: Remote) =>
   path.join(__dirname, 'remotes', remote.repo, remote.branch ?? 'main');
+
+/**
+ * Constructs the absolute filesystem path for a given package.
+ *
+ * @param {Package} pkg - The package object containing the path and remote information.
+ * @returns {string} The absolute path to the package directory.
+ */
+const packagePath = (pkg: Package) => path.join(remotePath(pkg), pkg.path);
 
 /**
  * Recursively iterates over a list of sources, yielding each individual package.
@@ -304,11 +340,11 @@ function reducePackages<T>(sources: Source[], fn: (acc: T, pkg: Package) => T, i
  * @returns {Promise<string>} The SHA of the latest commit on the specified branch.
  */
 async function getLatestRemoteSha(remote: Remote): Promise<string> {
-	const branch = remote.branch ?? 'main';
-	const apiUrl = `https://api.github.com/repos/${remote.repo}/commits/${branch}`;
-	const res = await fetch(apiUrl);
-	const data = await res.json();
-	return data.sha;
+  const branch = remote.branch ?? 'main';
+  const apiUrl = `https://api.github.com/repos/${remote.repo}/commits/${branch}`;
+  const res = await fetch(apiUrl);
+  const data = await res.json();
+  return data.sha;
 }
 
 /**
@@ -320,11 +356,8 @@ async function getLatestRemoteSha(remote: Remote): Promise<string> {
  * @returns {Promise<string>} The SHA of the current commit on the specified branch in the local repository.
  */
 async function getLocalRemoteSha(remote: Remote) {
-	const res = execSync(
-		`git rev-parse ${remote.branch ?? 'main'}`,
-		{ cwd: remotePath(remote) }
-	);
-	return res.toString().trim();
+  const res = execSync(`git rev-parse ${remote.branch ?? 'main'}`, { cwd: remotePath(remote) });
+  return res.toString().trim();
 }
 
 /**
@@ -382,12 +415,12 @@ function pullRemote(remote: Remote) {
  */
 function ensurePackageTypedocConfig(pkg: Package) {
   const packageJsonPath = path.join(remotePath(pkg), pkg.path, 'package.json');
-  const typedocConfigPath = path.join(remotePath(pkg), pkg.path, 'typedoc.json')
+  const typedocConfigPath = path.join(remotePath(pkg), pkg.path, 'typedoc.json');
 
   const packageEntrypoints = iife(() => {
     const packageJson = require(packageJsonPath);
     const exports: Record<string, any> =
-      "exports" in packageJson && typeof packageJson.exports === 'object'
+      'exports' in packageJson && typeof packageJson.exports === 'object'
         ? packageJson.exports
         : {};
     return Object.values(exports).reduce<string[]>((acc, value) => {
@@ -399,7 +432,7 @@ function ensurePackageTypedocConfig(pkg: Package) {
   });
 
   if (!existsSync(typedocConfigPath)) {
-    writeFileSync(typedocConfigPath, "{}");
+    writeFileSync(typedocConfigPath, '{}');
   }
   updateJsonFile(typedocConfigPath, () => ({
     ...PACKAGE_TYPEDOC_CONFIG,
@@ -409,31 +442,65 @@ function ensurePackageTypedocConfig(pkg: Package) {
 }
 
 async function build() {
-  const remotes = reducePackages<Remote[]>(SOURCES, (acc, pkg) => {
-    const existing = acc.find((r) => r.repo === pkg.repo && r.branch === pkg.branch);
-    if (!existing) acc.push({ repo: pkg.repo, branch: pkg.branch });
-    return acc;
-  }, [])
+  const remotes = reducePackages<Remote[]>(
+    SOURCES,
+    (acc, pkg) => {
+      const existing = acc.find((r) => r.repo === pkg.repo && r.branch === pkg.branch);
+      if (!existing) acc.push({ repo: pkg.repo, branch: pkg.branch });
+      return acc;
+    },
+    []
+  );
+  const packages = Array.from(iteratePackages(SOURCES));
 
-  await Promise.all(remotes.map(async (r) => {
-    await ensureLatestRemote(r);
-    await installDependencies({ cwd: remotePath(r) })
-  }))
+  await Promise.all(
+    remotes.map(async (r) => {
+      await ensureLatestRemote(r);
+    })
+  );
 
-  const entrypoints: string[] = [];
-  for (const pkg of iteratePackages(SOURCES)) {
-    ensurePackageTypedocConfig(pkg);
-    entrypoints.push(path.join(remotePath(pkg), pkg.path));
-  }
+  const installTargets = reducePackages<Array<Package | Remote>>(
+    SOURCES,
+    (acc, pkg) => {
+      if (pkg.packageInstall) acc.push(pkg);
+      else {
+        const existingRemote = acc.find((r) => r.repo === pkg.repo && r.branch === pkg.branch);
+        if (!existingRemote) acc.push({ repo: pkg.repo, branch: pkg.branch });
+      }
+      return acc;
+    },
+    []
+  );
+
+  const installPromise = Promise.all(
+    installTargets.map(async (t) => {
+      if ('package' in t) {
+        await installDependencies({ cwd: packagePath(t), silent: true });
+      } else {
+        await installDependencies({ cwd: remotePath(t), silent: true });
+      }
+    })
+  );
+
+  const typedocConfigPromise = Promise.all(
+    packages.map(async (pkg) => {
+      await installDependencies({ cwd: packagePath(pkg), silent: true });
+      ensurePackageTypedocConfig(pkg);
+    })
+  );
+
+  await Promise.all([installPromise, typedocConfigPromise]);
+
+  const entrypoints = packages.map((pkg) => path.join(remotePath(pkg), pkg.path));
 
   const app = await Application.bootstrapWithPlugins({
     ...ROOT_TYPEDOC_CONFIG,
     entryPoints: entrypoints,
-  })
+  });
 
   const reflection = await app.convert();
   if (reflection) {
-    await app.generateDocs(reflection, "../dist/javascript")
+    await app.generateDocs(reflection, '../dist/javascript');
   }
 }
 
