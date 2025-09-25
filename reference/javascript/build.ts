@@ -269,6 +269,8 @@ const PACKAGE_TYPEDOC_CONFIG: TypeDocOptions = {
 
 const iife = <T>(fn: () => T) => fn();
 
+const exec = (args: string[]) => execSync(args.join(' '), { encoding: 'utf-8', stdio: 'inherit' });
+
 /**
  * Reads a JSON file, applies a transformation function to its contents, and writes the result back to the file.
  *
@@ -344,66 +346,75 @@ function reducePackages<T>(sources: Source[], fn: (acc: T, pkg: Package) => T, i
 async function getLatestRemoteSha(remote: Remote): Promise<string> {
   const branch = remote.branch ?? 'main';
   const apiUrl = `https://api.github.com/repos/${remote.repo}/commits/${branch}`;
-  const res = await fetch(apiUrl);
+  // These headers aren't explicitly required by GitHub, but we include them
+  // if they are present to avoid rate limiting.
+  const headers: Record<string, string> = process.env.GITHUB_TOKEN ? {
+    'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  } : {};
+  const res = await fetch(apiUrl, { headers });
   const data = await res.json();
   return data.sha;
 }
 
 /**
- * Retrieves the current commit SHA for the specified branch of a local clone of a remote repository.
+ * Retrieves the locally cached commit SHA for the specified remote branch.
  *
- * @param {Remote} remote - The remote repository object containing:
- *   - repo: The GitHub repository in the format "owner/repo".
- *   - branch (optional): The branch to retrieve the SHA from. Defaults to "main" if not specified.
- * @returns {Promise<string>} The SHA of the current commit on the specified branch in the local repository.
+ * Reads the SHA stored in a `.sha` file inside the `remotePath(remote)` directory.
+ * If the cache file does not exist, returns an empty string.
+ *
+ * @param {Remote} remote - The remote repository reference.
+ * @returns {Promise<string>} The cached SHA string, or an empty string if not present.
  */
 async function getLocalRemoteSha(remote: Remote) {
-  const res = execSync(`git rev-parse ${remote.branch ?? 'main'}`, { cwd: remotePath(remote) });
-  return res.toString().trim();
+  const shaFile = path.join(remotePath(remote), '.sha');
+  if (fs.existsSync(shaFile)) {
+    try {
+      const res = fs.readFileSync(shaFile, 'utf-8');
+      return res.toString().trim();
+    } catch {
+      return '';
+    }
+  }
+  return '';
 }
 
 /**
- * Ensures that the local clone of a remote GitHub repository is up to date with the latest commit on the specified branch.
+ * Ensures that the local copy of a remote GitHub repository branch is up to date.
  *
- * - If the local repository exists and its latest commit SHA matches the remote's latest commit SHA, no action is taken.
- * - If the local repository does not exist or is out of date, the repository is (re)cloned from the remote.
+ * - Compares the latest remote commit SHA with a locally cached SHA (stored in `.sha`).
+ * - If up to date, no action is taken. Otherwise, downloads and extracts the branch tarball.
  *
- * @param {Remote} remote - The remote repository object containing:
- *   - repo: The GitHub repository in the format "owner/repo".
- *   - branch (optional): The branch to check and update. Defaults to "main" if not specified.
- * @returns {Promise<void>} Resolves when the local repository is ensured to be up to date.
+ * @param {Remote} remote - The remote repository reference.
+ * @returns {Promise<void>} Resolves when the local copy is ensured to be up to date.
  */
 async function ensureLatestRemote(remote: Remote) {
-  if (fs.existsSync(remotePath(remote))) {
-    const sha = await getLatestRemoteSha(remote);
-    const localSha = await getLocalRemoteSha(remote);
-    if (sha === localSha) return;
-  }
-  pullRemote(remote);
+  const latestSha = await getLatestRemoteSha(remote);
+  const localSha = await getLocalRemoteSha(remote);
+  if (fs.existsSync(remotePath(remote)) && latestSha === localSha) return;
+  pullRemote(remote, latestSha);
 }
 
 /**
- * Clones a remote Git repository to a local directory.
+ * Downloads a GitHub branch tarball and extracts it to the target directory.
  *
- * @param {Remote} remote - The remote repository object containing the repository name and optional branch.
- *   - repo: The GitHub repository in the format "owner/repo".
- *   - branch (optional): The branch to clone. Defaults to "main" if not specified.
+ * @param {Remote} remote - The remote repository reference.
+ * @param {string} latestSha - The latest commit SHA for the target branch to cache locally.
  *
- * The repository is cloned with a depth of 1 (shallow clone) into a directory
- * determined by the `remotePath` function. If a branch is specified, it is checked out.
- * The command output is inherited from the parent process.
+ * The tarball at `https://github.com/<repo>/archive/refs/heads/<branch>.tar.gz` is
+ * streamed to `tar` with `--strip-components=1` so the contents are extracted directly
+ * into the directory returned by `remotePath(remote)`.
  */
-function pullRemote(remote: Remote) {
-  console.info(`Pulling remote ${remote.repo}/${remote.branch ?? 'main'}`);
-  const rimrafCmd = ['rm -rf', remotePath(remote)];
-  execSync(rimrafCmd.join(' '), { encoding: 'utf-8', stdio: 'inherit' });
-  const cloneCmd = [
-    'git clone --depth 1',
-    `https://github.com/${remote.repo}.git`,
-    remote.branch ? `-b ${remote.branch}` : '',
-    remotePath(remote),
-  ];
-  execSync(cloneCmd.join(' '), { encoding: 'utf-8', stdio: 'inherit' });
+function pullRemote(remote: Remote, latestSha: string) {
+  const branch = remote.branch ?? 'main';
+  const target = remotePath(remote);
+  const url = `https://github.com/${remote.repo}/archive/refs/heads/${branch}.tar.gz`;
+  console.info(`Fetching remote tarball ${remote.repo}/${branch}`);
+  exec(['rm -rf', target]);
+  exec(['mkdir -p', target]);
+  exec([`curl -L -s`, url, `| tar -xz --strip-components=1 -C`, target]);
+  const shaFile = path.join(target, '.sha');
+  fs.writeFileSync(shaFile, `${latestSha}\n`);
 }
 
 /**

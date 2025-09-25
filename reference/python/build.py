@@ -1,7 +1,7 @@
 """Build helpers for fetching and extracting Python API reference HTML.
 
-Downloads tarballs from GitHub and extracts only the
-`api_reference_build/html` directory into the `dist/python` directory.
+Downloads tarballs from GitHub and extracts the entire archive into the
+`dist/python` directory.
 """
 
 import logging
@@ -22,28 +22,24 @@ DIST_DIR = Path(__file__).parent / ".." / "dist" / "python"
 VERSION_TAGS: list[str] = []
 
 
-def _extract_html_dir(tar: tarfile.TarFile, path: Path) -> None:
-    """Extract only `api_reference_build/html` members from the tar into `path`.
+def _safe_extract_all(tar: tarfile.TarFile, path: Path) -> None:
+    """Extract all members from the tar into `path`, preserving structure.
 
     Guards against path traversal by verifying each member remains under `path`.
     """
     for member in tar.getmembers():
-        member_path = path / member.name
-        if not member_path.is_relative_to(path):
+        dest_path = path / member.name
+        if not dest_path.is_relative_to(path):
             raise TarPathTraversalError
-        # Only extract files under any path ending with api_reference_build/html/...
-        parts = member.name.split("api_reference_build/html/", 1)
-        if len(parts) != 2:  # noqa: PLR2004
-            continue
-        relative_path = parts[1]
-        if not relative_path:  # skip the html/ directory itself
-            continue
-        dest_path = path / relative_path
+
         logger.debug("%s -> %s", member.name, dest_path)
-        # Ensure the destination directory exists
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        # Only extract regular files
+
+        if member.isdir():
+            dest_path.mkdir(parents=True, exist_ok=True)
+            continue
+
         if member.isfile():
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
             fileobj = tar.extractfile(member)
             if fileobj is not None:
                 with dest_path.open("wb") as out_f:
@@ -64,7 +60,7 @@ def _fetch_extract_tarball(url: str, tmpdir: Path) -> None:
             with urllib.request.urlopen(url) as response:  # noqa: S310 (validated scheme)
                 shutil.copyfileobj(response, tmp_tarball)
             with tarfile.open(tmp_tarball_path, "r:gz") as tar:
-                _extract_html_dir(tar, tmpdir)
+                _safe_extract_all(tar, tmpdir)
     finally:
         with suppress(Exception):
             logger.debug("Cleaning up %s", tmp_tarball_path)
