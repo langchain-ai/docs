@@ -50,11 +50,23 @@ Each middleware can add in three different types of modifiers:
 - `before_model`: Runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
 - `modify_model_request`: Runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
 - `after_model`: Runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `END`)
+
+In addition to that, each middleware can define the following static properties:
+- `name`: The name of the middleware (required)
+- `tools`: The tools that the middleware makes available to the agent (optional)
+- `state_schema`: The schema of the state that the middleware requires (optional)
+- `context_schema`: The schema of the context that the middleware requires (optional)
 :::
 :::js
 - `beforeModel`: Runs before model execution. Can update state or jump to a different node (`model`, `tools`, `__end__`)
 - `modifyModelRequest`: Runs before model execution, to prepare the model request object. Can only modify the current model request object (no permanent state updates) and cannot jump to a different node.
 - `afterModel`: Runs after model execution, before tools are executed. Can update state or jump to a different node (`model`, `tools`, `__end__`)
+
+In addition to that, each middleware can define the following static properties:
+- `name`: The name of the middleware (required)
+- `tools`: The tools that the middleware makes available to the agent (optional)
+- `stateSchema`: The schema of the state that the middleware requires (optional)
+- `contextSchema`: The schema of the context that the middleware requires (optional)
 :::
 
 :::python
@@ -815,7 +827,7 @@ Modifies the model request. The model request has several key properties:
 :::js
 - `tool_choice` (Any): the tool choice to use
 :::
-- `tools` (list of `BaseTool`): the tools to use for this model call
+- `tools` (list of strings): the tool names to use for this model call
 :::python
 - `response_format` (`ResponseFormat`): the response format to use for structured output
 :::
@@ -840,7 +852,11 @@ class MyMiddleware(AgentMiddleware):
 :::js
 ```typescript
 function modifyModelRequest (request: ModelRequest, state: AgentState): ModelRequest {
-    return request;
+    // Select specific tools by name for this model call
+    return {
+        ...request,
+        tools: ["weatherTool", "calculatorTool"] // Array of tool names
+    };
 }
 ```
 :::
@@ -1202,12 +1218,12 @@ Keep the active tool set small (e.g., top 3-10). This maximizes signal-to-noise 
 :::python
 ### How it works with `create_agent`
 
-Pass the full tool catalog to `create_agent` and use middleware hooks (prefer `modify_model_request`) to set `request.tools` to a small, relevant subset each turn. This avoids overflowing the prompt while keeping the validation superset intact.
+Pass the full tool catalog to `create_agent` and use middleware hooks (prefer `modify_model_request`) to set `request.tools` to a small, relevant subset of tool names each turn. This avoids overflowing the prompt while keeping the validation superset intact.
 :::
 :::js
 ### How it works with `createAgent`
 
-Pass the full tool catalog to `createAgent` and use middleware hooks (prefer `modifyModelRequest`) to set `request.tools` to a small, relevant subset each turn. This avoids overflowing the prompt while keeping the validation superset intact.
+Pass the full tool catalog to `createAgent` and use middleware hooks (prefer `modifyModelRequest`) to set `request.tools` to a small, relevant subset of tool names each turn. This avoids overflowing the prompt while keeping the validation superset intact.
 :::
 
 #### Simple: context/state-gated tool choice
@@ -1250,7 +1266,7 @@ class ToolSelector(AgentMiddleware):
         provider = (
             runtime.context.vcs_provider if getattr(runtime, "context", None) else "github"
         ).lower()
-        active = [gitlab_create_issue] if provider == "gitlab" else [github_create_issue]
+        active = ["gitlab_create_issue"] if provider == "gitlab" else ["github_create_issue"]
         request.tools = active  # [!code highlight]
         return request  # [!code highlight]
 
@@ -1314,9 +1330,7 @@ const vcsToolGate = createMiddleware({
   contextSchema: z.object({ vcsProvider: z.string() }),
   modifyModelRequest: (request, _state, runtime) => {
     const provider = runtime.context.vcsProvider.toLowerCase();
-    const active =
-      provider === "gitlab" ? [gitlabCreateIssue] : [githubCreateIssue];
-    return { ...request, tools: active };
+    return { ...request, tools: [provider === "gitlab" ? "gitlab_create_issue" : "github_create_issue"] };
   },
 });
 
@@ -1425,8 +1439,8 @@ class SelectToolsMiddleware(AgentMiddleware):
         content = (
             last["content"] if isinstance(last, dict) else getattr(last, "content", None)
         )
-        active = select_top_k_by_similarity(content, 8) if content else full_catalog[:5]
-        request.tools = active
+        active_tools = select_top_k_by_similarity(content, 8) if content else full_catalog[:5]
+        request.tools = [tool.name for tool in active_tools]
         return request
 
 agent = create_agent(
@@ -1508,11 +1522,11 @@ const selectToolsMiddleware = createMiddleware({
   name: "SelectToolsMiddleware",
   modifyModelRequest: async (request, state) => {
     const last = state.messages.at(-1);
-    const active = last?.content
+    const activeTools = last?.content
       ? // only give me the most relevant tool
         await selectTopKBySimilarity(last.content as string, 1)
       : fullCatalog.slice(0, 5);
-    return { ...request, tools: active };
+    return { ...request, tools: activeTools.map(tool => tool.name) };
   },
 });
 
