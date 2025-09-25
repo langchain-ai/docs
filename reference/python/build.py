@@ -1,7 +1,8 @@
 """Build helpers for fetching and extracting Python API reference HTML.
 
-Downloads tarballs from GitHub and extracts the entire archive into the
-`dist/python` directory.
+Downloads tarballs from GitHub and extracts only the `api_reference_build`
+directory into the `dist/python` directory (dropping any top-level prefix like
+`langchain-api-docs-html-*`).
 """
 
 import logging
@@ -22,13 +23,23 @@ DIST_DIR = Path(__file__).parent / ".." / "dist" / "python"
 VERSION_TAGS: list[str] = []
 
 
-def _safe_extract_all(tar: tarfile.TarFile, path: Path) -> None:
-    """Extract all members from the tar into `path`, preserving structure.
+def _extract_api_reference_build(tar: tarfile.TarFile, path: Path) -> None:
+    """Extract only `api_reference_build` members from the tar into `path`.
+
+    Drops the top-level prefix (e.g., `langchain-api-docs-html-main/`) so that
+    files are written under `path/api_reference_build/...`.
 
     Guards against path traversal by verifying each member remains under `path`.
     """
     for member in tar.getmembers():
-        dest_path = path / member.name
+        try:
+            start_idx = member.name.index("api_reference_build")
+        except ValueError:
+            continue
+
+        # Keep `api_reference_build/...` (or the directory itself)
+        relative_with_prefix = member.name[start_idx:]
+        dest_path = path / relative_with_prefix
         if not dest_path.is_relative_to(path):
             raise TarPathTraversalError
 
@@ -60,7 +71,7 @@ def _fetch_extract_tarball(url: str, tmpdir: Path) -> None:
             with urllib.request.urlopen(url) as response:  # noqa: S310 (validated scheme)
                 shutil.copyfileobj(response, tmp_tarball)
             with tarfile.open(tmp_tarball_path, "r:gz") as tar:
-                _safe_extract_all(tar, tmpdir)
+                _extract_api_reference_build(tar, tmpdir)
     finally:
         with suppress(Exception):
             logger.debug("Cleaning up %s", tmp_tarball_path)
