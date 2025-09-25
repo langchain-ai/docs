@@ -253,6 +253,7 @@ const ROOT_TYPEDOC_CONFIG: TypeDocOptions = {
   logLevel: 'Error',
   name: 'langchain.js',
   hostedBaseUrl: 'https://reference.langchain.com/javascript',
+  useHostedBaseUrlForAbsoluteLinks: false,
   entryPointStrategy: 'packages',
   includeVersion: true,
 };
