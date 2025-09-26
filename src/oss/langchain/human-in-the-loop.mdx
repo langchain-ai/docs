@@ -88,6 +88,9 @@ const agent = createAgent({
                 },
                 read_data: false, // Safe operation, no approval needed
             },
+            // Prefix for interrupt messages - combined with tool name and args to form the full message
+            // e.g., "Tool execution pending approval: execute_sql with query='DELETE FROM...'"
+            // Individual tools can override this by specifying a "description" in their interrupt config
             descriptionPrefix: "Tool execution pending approval",
         }),
     ],
@@ -174,13 +177,23 @@ const result = await agent.invoke(
 );
 
 
-// If an interrupt is triggered, the result will include an `__interrupt__` field, which will contain interrupts for human review.
-const requests = state.tasks?.[0]?.interrupts?.[0]?.value;
+// The interrupt contains information about the actions to be approved.
+console.log(result.__interrupt__);
+// > [
+// >    Interrupt(
+// >       value=[
+// >          {
+// >             action: 'execute_sql',
+// >             args: { query: 'DELETE FROM records WHERE created_at < NOW() - INTERVAL \'30 days\';' },
+// >          }
+// >       ],
+// >    )
+// > ]
 
 // Resume with approval decision
 await agent.invoke(
     new Command({ // [!code highlight]
-        resume: [{ type: "accept" }], // or "edit", "response" [!code highlight]
+        resume: [{ type: "accept" }], // or "edit", "respond" [!code highlight]
     }), // [!code highlight]
     config
 );
@@ -193,6 +206,7 @@ await agent.invoke(
 <Tab title="✅ accept">
 Use `accept` to approve the tool call as-is and execute it without changes.
 
+:::python
 ```python
 agent.invoke(
     Command(
@@ -208,11 +222,31 @@ agent.invoke(
     config=config  # Same thread ID to resume the paused conversation
 )
 ```
+:::
+
+:::js
+```typescript
+await agent.invoke(
+    new Command({
+        // Responses are provided as a list, one per action under review.
+        // The order of responses must match the order of actions
+        // listed in the `__interrupt__` request.
+        resume: [
+            {
+                type: "accept",
+            }
+        ]
+    }),
+    config  // Same thread ID to resume the paused conversation
+);
+```
+:::
 </Tab>
 <Tab title="✏️ edit">
     Use `edit` to modify the tool call before execution.
     Provide the new tool name and arguments.
 
+    :::python
     ```python
     agent.invoke(
         Command(
@@ -230,12 +264,34 @@ agent.invoke(
         config=config  # Same thread ID to resume the paused conversation
     )
     ```
+    :::
+
+    :::js
+    ```typescript
+    await agent.invoke(
+        new Command({
+            // Responses are provided as a list, one per action under review.
+            // The order of responses must match the order of actions
+            // listed in the `__interrupt__` request.
+            resume: [
+                {
+                    type: "edit",
+                    action: "new_tool_name",          // updated tool to call
+                    args: { modified_arg: "value" },  // updated arguments
+                }
+            ]
+        }),
+        config  // Same thread ID to resume the paused conversation
+    );
+    ```
+    :::
 
 </Tab>
 
 <Tab title="❌ respond">
     Use `respond` to reject the tool call and provide feedback instead of execution.
 
+    :::python
     ```python
     agent.invoke(
         Command(
@@ -252,6 +308,26 @@ agent.invoke(
         config=config  # Same thread ID to resume the paused conversation
     )
     ```
+    :::
+
+    :::js
+    ```typescript
+    await agent.invoke(
+        new Command({
+            // Responses are provided as a list, one per action under review.
+            // The order of responses must match the order of actions
+            // listed in the `__interrupt__` request.
+            resume: [
+                {
+                    type: "respond",
+                    tool_message: "Manual response text",
+                }
+            ]
+        }),
+        config  // Same thread ID to resume the paused conversation
+    );
+    ```
+    :::
 
 </Tab>
 </Tabs>
