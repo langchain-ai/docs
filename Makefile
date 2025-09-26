@@ -66,12 +66,12 @@ clean:
 # Note: mint must be installed globally via npm
 mint-broken-links: build
 	@echo "Checking for broken links (excluding integrations directories)..."
-	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.1.0'"; exit 1; }
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
 	@cd build && mint broken-links 2>&1 | python3 ../scripts/filter_broken_links.py --exclude-integrations
 
 mint-broken-links-all: build
 	@echo "Checking for broken links (including all directories)..."
-	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.1.0'"; exit 1; }
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
 	@cd build && mint broken-links 2>&1 | python3 ../scripts/filter_broken_links.py
 
 check-pnpm:
