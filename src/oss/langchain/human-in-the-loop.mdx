@@ -48,13 +48,12 @@ agent = create_agent(
     middleware=[
         HumanInTheLoopMiddleware( # [!code highlight]
             interrupt_on={
-                "write_file": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
-
-                "execute_sql": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
+                "write_file": True,  # All actions (accept, edit, respond) allowed
+                "execute_sql": {"allow_accept": True, "allow_respond": True},  # No editing allowed
                 # Safe operation, no approval needed
-                "read_data": {"allow_approve": False, "allow_edit": False, "allow_respond": False},
+                "read_data": False,
             },
-            message_prefix="Tool execution pending approval",
+            description_prefix="Tool execution pending approval",
         ),
     ],
     # Human-in-the-loop requires checkpointing to handle interrupts.
@@ -151,7 +150,7 @@ print(result['__interrupt__'])
 # Resume with approval decision
 agent.invoke(
     Command( # [!code highlight]
-        resume=[{"type": "accept"}]  # or "edit", "response" [!code highlight]
+        resume=[{"type": "accept"}]  # or "edit", "respond" [!code highlight]
     ), # [!code highlight]
     config=config
 )
@@ -201,12 +200,13 @@ agent.invoke(
         # Responses are provided as a list, one per action under review.
         # The order of responses must match the order of actions
         # listed in the `__interrupt__` request.
-        [
+        resume=[
             {
                 "type": "accept",
             }
         ]
-    )
+    ),
+    config=config  # Same thread ID to resume the paused conversation
 )
 ```
 </Tab>
@@ -220,14 +220,15 @@ agent.invoke(
             # Responses are provided as a list, one per action under review.
             # The order of responses must match the order of actions
             # listed in the `__interrupt__` request.
-            [
+            resume=[
                 {
                     "type": "edit",
                     "action": "new_tool_name",          # updated tool to call
                     "args": {"modified_arg": "value"},  # updated arguments
                 }
             ]
-        )
+        ),
+        config=config  # Same thread ID to resume the paused conversation
     )
     ```
 
@@ -242,13 +243,14 @@ agent.invoke(
             # Responses are provided as a list, one per action under review.
             # The order of responses must match the order of actions
             # listed in the `__interrupt__` request.
-            [
+            resume=[
                 {
                     "type": "respond",
                     "tool_message": "Manual response text",
                 }
             ]
-        )
+        ),
+        config=config  # Same thread ID to resume the paused conversation
     )
     ```
 
