@@ -57,7 +57,7 @@ LINK_MAPS: list[LinkMap] = [
             "InjectedState": "reference/agents/#langgraph.prebuilt.tool_node.InjectedState",
             "InMemorySaver": "reference/checkpoints/#langgraph.checkpoint.memory.InMemorySaver",
             "init_chat_model": "https://python.langchain.com/api_reference/langchain/chat_models/langchain.chat_models.base.init_chat_model.html",
-            "interrupt": "reference/types/#langgraph.types.Interrupt",
+            "interrupt": "reference/types/#langgraph.types.interrupt",
             "CompiledStateGraph.invoke": "reference/graphs/#langgraph.graph.state.CompiledStateGraph.invoke",
             "JsonPlusSerializer": "reference/checkpoints/#langgraph.checkpoint.serde.jsonplus.JsonPlusSerializer",
             "langgraph.json": "cloud/reference/cli/#configuration-file",

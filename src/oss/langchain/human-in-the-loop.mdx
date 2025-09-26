@@ -1,17 +1,281 @@
 ---
-title: Human-in-the-loop - Coming soon
+title: Human-in-the-loop
 ---
 
 import AlphaCallout from '/snippets/alpha-lc-callout.mdx';
 
 <AlphaCallout />
 
-This page covers how to use [human-in-the-loop](/oss/langgraph/add-human-in-the-loop) in LangChain.
+The Human-in-the-Loop (HITL) middleware lets you add human oversight to agent tool calls.  
+When a model proposes an action that might require review — for example, writing to a file or executing SQL — the middleware can pause execution and wait for a decision.
 
-## Overview
+It does this by checking each tool call against a configurable policy. If intervention is needed, the middleware issues an @[interrupt] that halts execution. The graph state is saved using LangGraph’s [persistence layer](/oss/langgraph/persistence), so execution can pause safely and resume later.
 
-## Interrupt Config
+A human response then determines what happens next: the action can be accepted as-is (`accept`), modified before running (`edit`), or rejected with feedback (`respond`).
 
-## Resuming
+## Interrupt response types
 
-## Common Patterns
+The middleware defines three built-in ways a human can respond to an interrupt:
+
+| Response Type | Description                                                               | Example Use Case                                    |
+|---------------|---------------------------------------------------------------------------|-----------------------------------------------------|
+| ✅ `accept`    | The action is approved as-is and executed without changes.                | Send an email draft exactly as written              |
+| ✏️ `edit`     | The tool call is executed with modifications.                             | Change the recipient before sending an email        |
+| ❌ `respond`   | The tool call is rejected, with an explanation added to the conversation. | Reject an email draft and explain how to rewrite it |
+
+<Note>
+    The available response types for each tool depend on the policy you configure in `interrupt_on`.
+    When multiple tool calls are paused at the same time, each action requires a separate response.
+    Responses must be provided in the same order as the actions appear in the interrupt request.
+</Note>
+
+
+## Configuring interrupts
+
+To use HITL, add the middleware to the agent’s `middleware` list when creating the agent.
+
+You configure it with a mapping of tool actions to the response types that are allowed for each action. The middleware will interrupt execution when a tool call matches an action in the mapping.
+
+:::python
+```python
+from langchain.agents import create_agent 
+from langchain.agents.middleware import HumanInTheLoopMiddleware # [!code highlight]
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[write_file_tool, execute_sql_tool, read_data_tool],
+    middleware=[
+        HumanInTheLoopMiddleware( # [!code highlight]
+            interrupt_on={
+                "write_file": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
+
+                "execute_sql": {"allow_approve": True, "allow_edit": True, "allow_respond": True},
+                # Safe operation, no approval needed
+                "read_data": {"allow_approve": False, "allow_edit": False, "allow_respond": False},
+            },
+            message_prefix="Tool execution pending approval",
+        ),
+    ],
+    # Human-in-the-loop requires checkpointing to handle interrupts.
+    # In production, use a persistent checkpointer like AsyncPostgressSaver.
+    checkpointer=InMemorySaver(),  # [!code highlight]
+)
+```
+:::
+
+:::js
+```ts
+import { createAgent } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
+
+import { humanInTheLoopMiddleware } from "langchain/middleware";
+import { Command } from "@langchain/langgraph";
+
+const agent = createAgent({
+    model: "openai:gpt-4o",
+    tools: [writeFileTool, executeSQLTool, readDataTool],
+    middleware: [
+        humanInTheLoopMiddleware({
+            interruptOn: {
+                write_file: {
+                    requireApproval: true,
+                    description: "⚠️ File write operation requires approval",
+                },
+                execute_sql: {
+                    requireApproval: true,
+                    description: "🚨 SQL execution requires DBA approval",
+                },
+                read_data: {
+                    requireApproval: false, // Safe operation, no approval needed
+                },
+            },
+            messagePrefix: "Tool execution pending approval",
+        }),
+    ],
+    checkpointer: new MemorySaver(), // [!code highlight]
+});
+```
+:::
+
+
+<Important>
+    You must configure a checkpointer to persist the graph state across interrupts.
+    In production, use a persistent checkpointer like @[AsyncPostgressSaver]. For testing or prototyping, use @[InMemorySaver].
+
+    When invoking the agent, pass a `config` that includes the **thread ID** to associate execution with a conversation thread.
+    See the [LangGraph human-in-the-loop documentation](/oss/langgraph/human-in-the-loop) for details.
+</Important>
+
+
+## Responding to interrupts
+
+When you invoke the agent, it runs until it either completes or an interrupt is raised. An interrupt is triggered when a tool call matches the policy you configured in `interrupt_on`. In that case, the invocation result will include an `__interrupt__` field with the actions that require review. You can then present those actions to a reviewer and resume execution once responses are provided.
+
+
+:::python
+```python
+from langgraph.types import Command
+
+# Human-in-the-loop leverages LangGraph's persistence layer.
+# You must provide a thread ID to associate the execution with a conversation thread,
+# so the conversation can be paused and resumed (as is needed for human review).
+config = {"configurable": {"thread_id": "some_id"}} # [!code highlight]
+# Run the graph until the interrupt is hit.
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Delete old records from the database",
+            }
+        ]
+    },
+    config=config # [!code highlight]
+)
+
+# The interrupt contains information about the actions to be approved.
+print(result['__interrupt__'])
+# > [
+# >    Interrupt(
+# >       value=[
+# >          {
+# >             'action': 'execute_sql',
+# >             'args': {'query': 'DELETE FROM records WHERE created_at < NOW() - INTERVAL \'30 days\';'},
+# >          }
+# >       ],
+# >    )
+# > ]
+
+
+# Resume with approval decision
+agent.invoke(
+    Command( # [!code highlight]
+        resume=[{"type": "accept"}]  # or "edit", "response" [!code highlight]
+    ), # [!code highlight]
+    config=config
+)
+```
+:::
+
+:::js
+```typescript
+import { HumanMessage } from "@langchain/core/messages";
+import { Command } from "@langchain/langgraph";
+
+// You must provide a thread ID to associate the execution with a conversation thread,
+// so the conversation can be paused and resumed (as is needed for human review).
+const config = { configurable: { thread_id: "some_id" } }; // [!code highlight]
+
+// Run the graph until the interrupt is hit.
+const result = await agent.invoke(
+    {
+        messages: [new HumanMessage("Delete old records from the database")],
+    },
+    config // [!code highlight]
+);
+
+
+// If an interrupt is triggered, the result will include an `__interrupt__` field, which will contain interrupts for human review.
+const requests = state.tasks?.[0]?.interrupts?.[0]?.value;
+
+// Resume with approval decision
+await agent.invoke(
+    new Command({ // [!code highlight]
+        resume: [{ type: "accept" }], // or "edit", "response" [!code highlight]
+    }), // [!code highlight]
+    config
+);
+```
+:::
+
+
+## Response types
+
+<Tabs>
+<Tab title="✅ accept">
+Use `accept` to approve the tool call as-is and execute it without changes.
+
+```python
+agent.invoke(
+    Command(
+        # Responses are provided as a list, one per action under review.
+        # The order of responses must match the order of actions
+        # listed in the `__interrupt__` request.
+        [
+            {
+                "type": "accept",
+            }
+        ]
+    )
+)
+```
+</Tab>
+<Tab title="✏️ edit">
+    Use `edit` to modify the tool call before execution.
+    Provide the new tool name and arguments.
+
+    ```python
+    agent.invoke(
+        Command(
+            # Responses are provided as a list, one per action under review.
+            # The order of responses must match the order of actions
+            # listed in the `__interrupt__` request.
+            [
+                {
+                    "type": "edit",
+                    "action": "new_tool_name",          # updated tool to call
+                    "args": {"modified_arg": "value"},  # updated arguments
+                }
+            ]
+        )
+    )
+    ```
+
+</Tab>
+
+<Tab title="❌ respond">
+    Use `respond` to reject the tool call and provide feedback instead of execution.
+
+    ```python
+    agent.invoke(
+        Command(
+            # Responses are provided as a list, one per action under review.
+            # The order of responses must match the order of actions
+            # listed in the `__interrupt__` request.
+            [
+                {
+                    "type": "respond",
+                    "tool_message": "Manual response text",
+                }
+            ]
+        )
+    )
+    ```
+
+</Tab>
+</Tabs>
+
+
+## Execution lifecycle
+
+The middleware defines an `after_model` hook that runs after the model generates a response but before any tool calls are executed:
+
+1. The agent invokes the model to generate a response.
+2. The middleware inspects the response for tool calls.
+3. If any calls require human input, the middleware builds a list of `HumanInterrupt` objects and calls @[interrupt].
+4. The agent waits for human responses.
+5. Based on responses, the middleware executes approved or edited calls, synthesizes @[ToolMessage]'s for rejected calls, and resumes execution.
+
+
+
+## UI integration
+
+The prebuilt `HumanInTheLoopMiddleware` is designed to work out-of-the-box with LangChain provided UI applications like [Agent ChatUI](/oss/langchain/ui). The middleware's interrupt messages include all the information needed to render a review interface, including tool names, arguments, and allowed response types.
+
+## Custom HITL logic
+
+For more specialized workflows, you can build custom HITL logic directly using the @[interrupt] primitive and [Middleware](/oss/langchain/middleware) abstraction.
+
+Review the [execution lifecycle](#execution-lifecycle) above to understand how to integrate interrupts into the agent's operation.
+
