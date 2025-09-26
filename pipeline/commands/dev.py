@@ -126,7 +126,7 @@ async def dev_command(
 
         try:
             await asyncio.wait_for(mint_process.wait(), timeout=5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             mint_process.kill()
 
         # Wait for log forwarding tasks to complete
