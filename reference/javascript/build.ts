@@ -458,6 +458,18 @@ function ensurePackageTypedocConfig(pkg: Package) {
   }));
 }
 
+/**
+ * Injects a <base> tag into the specified HTML file.
+ * Opens the file at the given path, replaces </head> with the base tag, and writes it back.
+ *
+ * @param {string} filePath - The path to the HTML file to modify.
+ */
+function injectBaseTag(filePath: string) {
+	const contents = fs.readFileSync(filePath, 'utf-8');
+	const updated = contents.replace('<head>', '<head><base href="/javascript/">');
+	fs.writeFileSync(filePath, updated);
+}
+
 async function build() {
   const remotes = reducePackages<Remote[]>(
     SOURCES,
@@ -515,6 +527,15 @@ async function build() {
   if (reflection) {
     console.info(`Writing docs to ${DIST_DIR}`);
     await app.generateDocs(reflection, DIST_DIR);
+    fs.glob("**/*.html", { cwd: DIST_DIR }, (err, files) => {
+      if (err) {
+        console.error(err);
+        return;
+      }
+      for (const file of files) {
+        injectBaseTag(path.join(DIST_DIR, file));
+      }
+    });
   }
 
   console.info('Done');
