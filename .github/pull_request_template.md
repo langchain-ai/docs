@@ -33,8 +33,8 @@ Examples:
 - [ ] All code examples have been tested and work correctly
 - [ ] I have used **root relative** paths for internal links
 - [ ] I have updated navigation in `src/docs.json` if needed
-- [ ] I have gotten approval from the relevant reviewers
-- [ ] (Internal team members only / optional) I have created a preview deployment using the [Create Preview Branch workflow](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml)
+- I have gotten approval from the relevant reviewers
+- (Internal team members only / optional) I have created a preview deployment using the [Create Preview Branch workflow](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml)
 
 ## Additional notes
 <!-- Any other information that would be helpful for reviewers -->

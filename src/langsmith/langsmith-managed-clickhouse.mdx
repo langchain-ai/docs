@@ -3,32 +3,21 @@ title: LangSmith-managed ClickHouse
 sidebarTitle: LangSmith-managed ClickHouse
 ---
 
+import FeedbackDataFields from '/snippets/langsmith/feedback-data-fields.mdx';
+
 <Check>
-Please read the [LangSmith architectural overview](/langsmith/architectural-overview) and [guide on connecting to external Clickhouse](/langsmith/self-host-external-clickhouse) before proceeding with this guide.
+Please read the [LangSmith architectural overview](/langsmith/architectural-overview) and [guide on connecting to external ClickHouse](/langsmith/self-host-external-clickhouse) before proceeding with this guide.
 </Check>
 
-As mentioned in previous guides, LangSmith uses Clickhouse as the primary storage engine for **traces** and **feedback**. For easier management and scaling, it is recommended to connect a self-hosted LangSmith instance to an external Clickhouse instance. LangSmith-managed ClickHouse is an option that allows you to use a fully managed ClickHouse instance that is monitored and maintained by the LangSmith team.
+LangSmith uses ClickHouse as the primary storage engine for **traces** and **feedback**. For easier management and scaling, it is recommended to connect a self-hosted LangSmith instance to an external ClickHouse instance. LangSmith-managed ClickHouse is an option that allows you to use a fully managed ClickHouse instance that is monitored and maintained by the LangSmith team.
 
 ## Architecture Overview
 
-Using LangSmith Managed Clickhouse with your Self-Hosted LangSmith instance is fairly simple. The overall architecture is similar to using a fully self-hosted ClickHouse instance, with a few key differences:
+The architecture of using LangSmith-managed ClickHouse with your self-hosted LangSmith instance is similar to using a fully self-hosted ClickHouse instance, with a few key differences:
 
-* You will need to set up a private network connection between your LangSmith instance and the LangSmith-managed ClickHouse instance. This is to ensure that your data is secure and that you can connect to the ClickHouse instance from your self-hosted LangSmith instance.
-* With this option, sensitive information (inputs and outputs) of your traces will be stored in cloud object storage (S3 or GCS) within your cloud instead of Clickhouse to ensure that sensitive information doesn't leave your VPC.
-
-<Note>
-Clickhouse stores **runs** and **feedback** data.
-
-This [reference doc](/langsmith/feedback-data-format) explains the format we use to store feedback, which is the LangSmith's way of representing evaluation scores and annotations on runs. This [reference doc](/langsmith/run-data-format) explains the format we use to store runs (spans), which are the building blocks of traces.
-
-Our definition of sensitive information as it relates to application data are `inputs`, `outputs`, `errors`, `manifests`, `extras`, and `events` of a **run**, since these fields can contain prompts and completions from LLMs.
-
-With LangSmith-managed ClickHouse, we store `inputs`, `outputs`, `errors`, `manifests`, `extras`, and `events` in cloud object storage (S3 or GCS) within your cloud and store the rest of the run data in ClickHouse. This ensures that sensitive information doesn't leave your VPC.
-
-Please note, ALL **feedback** data is stored in ClickHouse. Please do not send sensitive information in feedback (scores and annotations/comments) or in any other **run** fields that are mentioned above.
-</Note>
-
-* The LangSmith team will monitor your ClickHouse instance and ensure that it is running smoothly. This allows us to track metrics like run-ingestion delay and query performance.
+- You will need to set up a private network connection between your LangSmith instance and the LangSmith-managed ClickHouse instance. This is to ensure that your data is secure and that you can connect to the ClickHouse instance from your self-hosted LangSmith instance.
+- With this option, sensitive information (inputs and outputs) of your traces will be stored in cloud object storage (S3 or GCS) within your cloud instead of ClickHouse to ensure that sensitive information doesn't leave your VPC. For more details on where particular data fields are stored, refer to [Data storage](#data-storage).
+- The LangSmith team will monitor your ClickHouse instance and ensure that it is running smoothly. This allows us to track metrics like run-ingestion delay and query performance.
 
 The overall architecture looks like this:
 
@@ -36,7 +25,84 @@ The overall architecture looks like this:
 
 ## Requirements
 
-* **You must use a supported blob storage option.** Read the [blob storage guide](/langsmith/self-host-blob-storage) for more information.
-* To use private endpoints, ensure that your VPC is in a ClickHouse Cloud supported [region](https://clickhouse.com/docs/en/cloud/reference/supported-regions). Otherwise, you will need to use a public endpoint we will secure with firewall rules. Your VPC will need to have a NAT gateway to allow us to whitelist your traffic.
-* You must have a VPC that can connect to the LangSmith-managed Clickhouse service. You will need to work with our team to set up the necessary networking.
-* You must have a LangSmith self-hosted instance running. You can use our managed ClickHouse service with both [Kubernetes](/langsmith/kubernetes) and [Docker](/langsmith/docker) installations.
+- **You must use a supported blob storage option.** Read the [blob storage guide](/langsmith/self-host-blob-storage) for more information.
+- To use private endpoints, ensure that your VPC is in a ClickHouse Cloud supported [region](https://clickhouse.com/docs/en/cloud/reference/supported-regions). Otherwise, you will need to use a public endpoint we will secure with firewall rules. Your VPC will need to have a NAT gateway to allow us to allowlist your traffic.
+- You must have a VPC that can connect to the LangSmith-managed ClickHouse service. You will need to work with our team to set up the necessary networking.
+- You must have a LangSmith self-hosted instance running. You can use our managed ClickHouse service with both [Kubernetes](/langsmith/kubernetes) and [Docker](/langsmith/docker) installations.
+
+## Data storage
+
+ClickHouse stores **runs** and **feedback** data, specifically:
+
+- All feedback data fields.
+- Some run data fields.
+
+For a list of fields, refer to [Stored run data fields](#stored-run-data-fields) and [Stored feedback data fields](#stored-feedback-data-fields).
+
+LangChain defines sensitive application data as `inputs`, `outputs`, `errors`, `manifests`, `extras`, and `events` of a run, since these fields may contain LLM prompts and completions. With LangSmith-managed ClickHouse, these sensitive fields are stored in cloud object storage (S3 or GCS) within your cloud, while the rest of the run data is stored in ClickHouse, ensuring sensitive information never leaves your VPC.
+
+### Stored feedback data fields
+
+<Note>
+Because all feedback data is stored in ClickHouse, do not send sensitive information in feedback (scores and annotations/comments) or in any other run fields that are mentioned in [Stored run data fields](#stored-run-data-fields).
+</Note>
+
+Using a LangSmith-managed ClickHouse setup, **all feedback data fields are stored in ClickHouse**:
+
+<FeedbackDataFields/>
+
+This [reference doc](/langsmith/feedback-data-format) explains the stored feedback format, which is the LangSmith's way of representing evaluation scores and annotations on runs.
+
+### Stored run data fields
+
+Run data fields are split between the managed ClickHouse database and your cloud object storage (e.g., S3 or GCS).
+
+<Note>
+For run fields stored in object storage, only a reference or pointer is kept in ClickHouse. For example, `inputs` and `outputs` content are offloaded to S3/GCS, with the ClickHouse record storing corresponding S3 URLs in the `inputs_s3_urls` and `outputs_s3_urls` fields.
+</Note>
+
+The table details each run field and where it is stored:
+
+| Field                     | Storage Location |
+|---------------------------|------------------|
+| `id`                      | ClickHouse       |
+| `name`                    | ClickHouse       |
+| `inputs`                  | **Object Storage**   |
+| `run_type`                | ClickHouse       |
+| `start_time`              | ClickHouse       |
+| `end_time`                | ClickHouse       |
+| `extra`                   | **Object Storage**   |
+| `error`                   | **Object Storage**   |
+| `outputs`                 | **Object Storage**   |
+| `events`                  | **Object Storage**   |
+| `tags`                    | ClickHouse       |
+| `trace_id`                | ClickHouse       |
+| `dotted_order`            | ClickHouse       |
+| `status`                  | ClickHouse       |
+| `child_run_ids`           | ClickHouse       |
+| `direct_child_run_ids`    | ClickHouse       |
+| `parent_run_ids`          | ClickHouse       |
+| `feedback_stats`         | ClickHouse       |
+| `reference_example_id`    | ClickHouse       |
+| `total_tokens`            | ClickHouse       |
+| `prompt_tokens`           | ClickHouse       |
+| `completion_tokens`       | ClickHouse       |
+| `total_cost`              | ClickHouse       |
+| `prompt_cost`             | ClickHouse       |
+| `completion_cost`         | ClickHouse       |
+| `first_token_time`        | ClickHouse       |
+| `session_id`              | ClickHouse       |
+| `in_dataset`              | ClickHouse       |
+| `parent_run_id`           | ClickHouse       |
+| `execution_order` (deprecated) | ClickHouse    |
+| `serialized`              | ClickHouse       |
+| `manifest_id` (deprecated) | ClickHouse       |
+| `manifest_s3_id`          | ClickHouse       |
+| `inputs_s3_urls`          | ClickHouse       |
+| `outputs_s3_urls`         | ClickHouse       |
+| `price_model_id`          | ClickHouse       |
+| `app_path`                | ClickHouse       |
+| `last_queued_at`          | ClickHouse       |
+| `share_token`             | ClickHouse       |
+
+This [reference doc](/langsmith/run-data-format) explains the format of stored runs (spans), which are the building blocks of traces.
