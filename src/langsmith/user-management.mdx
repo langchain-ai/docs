@@ -99,7 +99,7 @@ SAML SSO is available for organizations on the [Enterprise plan](https://www.lan
 - Your Identity Provider (IdP) must support the SAML 2.0 standard.
 - Only [`Organization Admins`](/langsmith/observability-concepts#organization-roles) can configure SAML SSO.
 
-For instructions on using SCIM along with SAML for user provisioning and deprovisioning, refer to the [SCIM setup](#user-management).
+For instructions on using SCIM along with SAML for user provisioning and deprovisioning, refer to the [SCIM setup](#set-up-scim-for-your-organization).
 
 ### Initial configuration
 
@@ -269,6 +269,8 @@ Have a user with access sign in via the unique login URL from the **SSO Configur
 - SP-initiated SSO
 - Just-In-Time provisioning
 - Enforce SSO only
+- Import Users
+- Import Groups
 
 #### Configuration steps
 
@@ -464,7 +466,7 @@ While specific instructions depending on the identity provider may vary, these m
    If your company has a group naming policy, you should instead map from the `description` identity provider attribute and
    set the description based on the [Group Naming Convention](#group-naming-convention) section.
 
-### Step 1: Configure SAML SSO (Cloud only)
+### Step 1 - Configure SAML SSO (Cloud only)
 
 There are two scenarios for [SAML SSO](#set-up-saml-sso-for-your-organization) configuration:
 
@@ -485,11 +487,12 @@ The NameID should not be an email address or username because email addresses an
 
 The NameID format must be `Persistent`, unless you are using a field, like email, that requires a different format.
 
-### Step 2: Disable JIT provisioning
+### Step 2 - Disable JIT provisioning
 
 Before enabling SCIM, disable [Just-in-time (JIT) provisioning](/langsmith/user-management#just-in-time-jit-provisioning) to prevent conflicts between automatic and manual user provisioning.
 
 #### Disabling JIT for Cloud
+
 Use the `PATCH /orgs/current/info` [endpoint](https://api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch):
 
 ```bash
@@ -500,14 +503,16 @@ curl -X PATCH $LANGCHAIN_ENDPOINT/orgs/current/info \
 ```
 
 #### Disabling JIT for Self-Hosted
+
 As of LangSmith chart version **0.11.14**, you can disable JIT provisioning for your self-hosted organization using SSO. To disable, set the following values:
+
 ```yaml
 commonEnv:
   - name: SELF_HOSTED_JIT_PROVISIONING_ENABLED
     value: "false"
 ```
 
-### Step 3: Generate SCIM bearer token
+### Step 3 - Generate SCIM bearer token
 
 <Note>
 In self-hosted environments, the full URL below may look like `https://langsmith.yourdomain.com/api/v1/platform/orgs/current/scim/tokens` (without a subdomain, note the `/api/v1` path prefix) or `https://langsmith.yourdomain.com/subdomain/api/v1/platform/orgs/current/scim/tokens` (with a subdomain) - see the [ingress docs](/langsmith/self-host-ingress) for more details.
@@ -518,7 +523,6 @@ Generate a SCIM Bearer Token for your organization. This token will be used by y
 ```bash
 curl -X POST $LANGCHAIN_ENDPOINT/v1/platform/orgs/current/scim/tokens \
   -H "X-Api-Key: $LANGCHAIN_API_KEY" \
-  -H "X-Organization-Id: $LANGCHAIN_ORGANIZATION_ID" \
   -H "Content-Type: application/json" \
   -d '{"description": "Your description here"}'
 ```
@@ -530,7 +534,7 @@ Note that the SCIM Bearer Token value is not available outside of the response t
 - `PATCH /v1/platform/orgs/current/scim/tokens/{scim_token_id}` (only the `description` field is supported)
 - `DELETE /v1/platform/orgs/current/scim/tokens/{scim_token_id}`
 
-### Step 4: Configure your Identity Provider
+### Step 4 - Configure your Identity Provider
 
 <Note>
 If you use Azure Entra ID (formerly Azure AD) or Okta, there are specific instructions for identity provider setup (refer to [Azure Entra ID](#azure-entra-id-configuration-steps), [Okta](#okta)). The requirements and steps above are applicable for all identity providers.
@@ -644,14 +648,8 @@ See [SAML SSO setup](#okta) for cloud or [OAuth2.0 setup](/langsmith/self-host-s
 
 **Step 2: Configure API Integration**
 
-1. In the Provisioning tab, select Configure API integration.
-1. Select Enable API integration.
-1. For Base URL (if present):
-
-- US: `https://api.smith.langchain.com/scim/v2`
-- EU: `https://eu.api.smith.langchain.com/scim/v2`
-- Self-hosted: `<langsmith_url>/scim/v2` (note there is no `/api/v1` path prefix) or if a subdomain is configured `<langsmith_url>/subdomain/scim/v2`
-
+1. In the Provisioning tab, select `Integration`.
+1. Select `Edit` then `Enable API integration`.
 1. For API Token, paste the SCIM token you [generated above](#step-3-generate-scim-bearer-token).
 1. Keep `Import Groups` checked.
 1. To verify the configuration, select Test API Credentials.

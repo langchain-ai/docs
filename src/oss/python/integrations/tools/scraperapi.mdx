@@ -1,0 +1,190 @@
+---
+title: ScraperAPI
+---
+
+Give your AI agent the ability to browse websites, search Google and Amazon in just two lines of code.
+
+The `langchain-scraperapi` package adds three ready-to-use LangChain tools backed by the [ScraperAPI](https://www.scraperapi.com/) service:
+
+| Tool class | Use it to |
+|------------|------------------|
+| `ScraperAPITool` | Grab the HTML/text/markdown of any web page |
+| `ScraperAPIGoogleSearchTool` | Get structured Google Search SERP data |
+| `ScraperAPIAmazonSearchTool` | Get structured Amazon product-search data |
+
+## Overview
+
+### Integration details
+
+| Package | Serializable | JS support |  Package latest |
+| :--- | :---: | :---: | :---: |
+| [langchain-scraperapi](https://pypi.org/project/langchain-scraperapi/) | ❌ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-scraperapi?style=flat-square&label=%20) |
+
+## Setup
+
+Install the `langchain-scraperapi` package:
+
+```python
+%pip install -qU langchain-scraperapi
+```
+
+### Credentials
+
+Create an account at [ScraperAPI](https://www.scraperapi.com/) and get an API key:
+
+```python
+import os
+
+if not os.environ.get("SCRAPERAPI_API_KEY"):
+    os.environ["SCRAPERAPI_API_KEY"] = "your-api-key"
+```
+
+## Instantiation
+
+```python
+from langchain_scraperapi.tools import ScraperAPITool
+
+tool = ScraperAPITool()
+```
+
+## Invocation
+
+### Invoke directly with args
+
+```python
+output = tool.invoke(
+    {
+        "url": "https://langchain.com",
+        "output_format": "markdown",
+        "render": True,
+    }
+)
+print(output)
+```
+
+## Features
+
+### 1. `ScraperAPITool` — browse any website
+
+Invoke the raw ScraperAPI endpoint and get HTML, rendered DOM, text, or markdown.
+
+**Invocation arguments:**
+
+* **`url`** **(required)** – target page URL
+* **Optional (mirror ScraperAPI query params):**
+  * `output_format`: `"text"` | `"markdown"` (default returns raw HTML)
+  * `country_code`: e.g. `"us"`, `"de"`
+  * `device_type`: `"desktop"` | `"mobile"`
+  * `premium`: `bool` – use premium proxies
+  * `render`: `bool` – run JS before returning HTML
+  * `keep_headers`: `bool` – include response headers
+
+For the complete set of modifiers see the [ScraperAPI request-customisation docs](https://docs.scraperapi.com/python/making-requests/customizing-requests).
+
+```python
+from langchain_scraperapi.tools import ScraperAPITool
+
+tool = ScraperAPITool()
+
+html_text = tool.invoke(
+    {
+        "url": "https://langchain.com",
+        "output_format": "markdown",
+        "render": True,
+    }
+)
+print(html_text[:300], "…")
+```
+
+### 2. `ScraperAPIGoogleSearchTool` — structured Google Search
+
+Structured SERP data via `/structured/google/search`.
+
+**Invocation arguments:**
+
+* **`query`** **(required)** – natural-language search string
+* **Optional:** `country_code`, `tld`, `uule`, `hl`, `gl`, `ie`, `oe`, `start`, `num`
+* `output_format`: `"json"` (default) or `"csv"`
+
+```python
+from langchain_scraperapi.tools import ScraperAPIGoogleSearchTool
+
+google_search = ScraperAPIGoogleSearchTool()
+
+results = google_search.invoke(
+    {
+        "query": "what is langchain",
+        "num": 20,
+        "output_format": "json",
+    }
+)
+print(results)
+```
+
+### 3. `ScraperAPIAmazonSearchTool` — structured Amazon Search
+
+Structured product results via `/structured/amazon/search`.
+
+**Invocation arguments:**
+
+* **`query`** **(required)** – product search terms
+* **Optional:** `country_code`, `tld`, `page`
+* `output_format`: `"json"` (default) or `"csv"`
+
+```python
+from langchain_scraperapi.tools import ScraperAPIAmazonSearchTool
+
+amazon_search = ScraperAPIAmazonSearchTool()
+
+products = amazon_search.invoke(
+    {
+        "query": "noise cancelling headphones",
+        "tld": "co.uk",
+        "page": 2,
+    }
+)
+print(products)
+```
+
+## Use within an agent
+
+Here is an example of using the tools in an AI agent. The `ScraperAPITool` gives the AI the ability to browse any website, summarize articles, and click on links to navigate between pages.
+
+```python
+%pip install -qU langchain-openai langchain
+```
+
+```python
+import os
+
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+from langchain_scraperapi.tools import ScraperAPITool
+
+os.environ["SCRAPERAPI_API_KEY"] = "your-api-key"
+os.environ["OPENAI_API_KEY"] = "your-api-key"
+
+tools = [ScraperAPITool(output_format="markdown")]
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+agent = create_agent(
+    model=llm,
+    tools=tools,
+    prompt="You are a helpful assistant that can browse websites for users. When asked to browse a website or a link, do so with the ScraperAPITool, then provide information based on the website based on the user's needs.",
+)
+
+response = agent.invoke(
+    {"messages": [{"role": "user", "content": "can you browse hacker news and summarize the first website"}]}
+)
+print(response["messages"][-1].content)
+```
+
+## API reference
+
+Below you can find more information on additional parameters to the tools to customize your requests:
+
+* [ScraperAPITool](https://docs.scraperapi.com/python/making-requests/customizing-requests)
+* [ScraperAPIGoogleSearchTool](https://docs.scraperapi.com/python/make-requests-with-scraperapi-in-python/scraperapi-structured-data-collection-in-python/google-serp-api-structured-data-in-python)
+* [ScraperAPIAmazonSearchTool](https://docs.scraperapi.com/python/make-requests-with-scraperapi-in-python/scraperapi-structured-data-collection-in-python/amazon-search-api-structured-data-in-python)
+
+The LangChain wrappers surface these parameters directly.
