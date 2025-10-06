@@ -41,6 +41,10 @@ This site is currently being migrated from a previous Sphinx-based implementatio
 
 ---
 
+## Paths
+
+For packages that live in the `langchain-ai/langchain` monorepo, the path to the package should exist at `https://reference.langchain.com/python/{PACKAGE}/` where `PACKAGE` is the package name as defined in the `pyproject.toml` file, with hyphens replaced by underscores. For example, the `langchain-openai` package should be documented at `https://reference.langchain.com/python/langchain_openai/`.
+
 ## Local Development
 
 `langchain-ai/` org repositories that needed to be cloned locally for local reference doc generation:

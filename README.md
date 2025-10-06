@@ -249,7 +249,11 @@ Once your branch has been merged into `main`, you need to push the changes to `p
 
 ## Troubleshooting
 
-### Mintlify `.venv` Parsing Error
+### `docs dev` not working / running
+
+Re-do the [steps to set up your dev environment](#set-up-a-dev-environment), ensuring you have activated the virtual environment and installed all dependencies.
+
+### Mintlify `.venv` parsing error
 
 **Problem**: Running `mint broken-links` or other Mintlify commands from the project root causes parsing errors like:
 
