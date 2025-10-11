@@ -144,33 +144,36 @@ Dynamic models are selected at <Tooltip tip="The execution environment of your a
 
 :::python
 
-To use a dynamic model, create middleware with the `@wrap_model_call` decorator that modifies the model in the request:
+To use a dynamic model, create middleware with the `@modify_model_request` decorator that modifies the model in the request:
 
 ```python wrap
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from langchain.agents.middleware import modify_model_request, ModelRequest, AgentState
+from langgraph.runtime import Runtime
 
 basic_model = ChatOpenAI(model="gpt-4o-mini")
 advanced_model = ChatOpenAI(model="gpt-4o")
 
-@wrap_model_call
-def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
-    """Choose model based on conversation complexity."""
-    message_count = len(request.state["messages"])
 
-    if message_count > 10:
+@modify_model_request
+def dynamic_model_selection(request: ModelRequest, state: AgentState, runtime: Runtime) -> ModelRequest:
+    """Choose model based on conversation complexity."""
+    message_count = len(request.system_prompt)
+    if message_count > 100:
         # Use advanced model for longer conversations
-        model = advanced_model
-    else:
         model = basic_model
+    else:
+        model = advanced_model
 
     request.model = model
-    return handler(request)
+    return request
+
 
 agent = create_agent(
     model=basic_model,  # Default model
-    tools=tools,
+    # tools=tools,
+    system_prompt="You are an intelligent assistant and your name is Cute Bear",
     middleware=[dynamic_model_selection]
 )
 ```
