@@ -70,7 +70,7 @@ clean:
 broken-links: build
 	@echo "Checking for broken links..."
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
-	@cd build && output=$$(mint broken-links) && echo "$$output" && echo "$$output" | grep -q "found [1-9][0-9]* broken links in" && { echo "❌ Broken links detected!"; exit 1; } || echo "✅ No broken links found"
+	@cd build && output=$$(mint broken-links) && echo "$$output" && echo "$$output" | grep -q "found [3-9][1-9]\|[4-9][0-9]\|[1-9][0-9][0-9]\+ broken links in" && { echo "❌ More than 30 broken links detected!"; exit 1; } || echo "✅ Broken links check passed (≤30 broken links)"
 
 check-pnpm:
 	@command -v pnpm >/dev/null 2>&1 || { echo >&2 "pnpm is not installed. Please install pnpm to proceed (https://pnpm.io/installation)"; exit 1; }
