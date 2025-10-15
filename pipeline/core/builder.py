@@ -827,7 +827,12 @@ class DocumentationBuilder:
                 post = match.group(3)  # Everything after the URL
 
                 # Only convert absolute /oss/ paths that don't contain 'images' or '/oss/python' or '/oss/javascript'
-                if url.startswith("/oss/") and "images" not in url and "/oss/python" not in url and "/oss/javascript" not in url:
+                if (
+                    url.startswith("/oss/")
+                    and "images" not in url
+                    and "/oss/python" not in url
+                    and "/oss/javascript" not in url
+                ):
                     # Convert to relative path that works from oss/python/* or oss/js/*
                     # e.g., /oss/releases/langchain-v1 becomes ../releases/langchain-v1
                     parts = url.split("/")
