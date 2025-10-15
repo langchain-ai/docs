@@ -381,6 +381,10 @@ class DocumentationBuilder:
         Returns:
             True if the file was built successfully, False if skipped.
         """
+        # Skip template files
+        if file_path.name == "TEMPLATE.mdx":
+            return False
+
         # Create output directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -418,6 +422,10 @@ class DocumentationBuilder:
         Returns:
             True if the file was copied, False if it was skipped.
         """
+        # Skip template files
+        if file_path.name == "TEMPLATE.mdx":
+            return False
+
         relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
         output_path = self.build_dir / relative_path
 
@@ -647,6 +655,10 @@ class DocumentationBuilder:
         Returns:
             True if the file was copied, False if it was skipped.
         """
+        # Skip template files
+        if file_path.name == "TEMPLATE.mdx":
+            return False
+
         # Update progress bar description with current file
         pbar.set_postfix_str(display_path)
 
@@ -814,8 +826,13 @@ class DocumentationBuilder:
                 url = match.group(2)  # The URL
                 post = match.group(3)  # Everything after the URL
 
-                # Only convert absolute /oss/ paths that don't contain 'images'
-                if url.startswith("/oss/") and "images" not in url:
+                # Only convert absolute /oss/ paths that don't contain 'images' or '/oss/python' or '/oss/javascript'
+                if (
+                    url.startswith("/oss/")
+                    and "images" not in url
+                    and "/oss/python" not in url
+                    and "/oss/javascript" not in url
+                ):
                     # Convert to relative path that works from oss/python/* or oss/js/*
                     # e.g., /oss/releases/langchain-v1 becomes ../releases/langchain-v1
                     parts = url.split("/")

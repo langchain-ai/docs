@@ -4,4 +4,8 @@ title: Nvidia AI Endpoints - LangChain Integration Reference
 
 # :simple-nvidia:{ .lg .middle } `langchain-nvidia-ai-endpoints`
 
+[![PyPI - Version](https://img.shields.io/pypi/v/langchain-nvidia-ai-endpoints?label=%20)](https://pypi.org/project/langchain-nvidia-ai-endpoints/#history)
+[![PyPI - License](https://img.shields.io/pypi/l/langchain-nvidia-ai-endpoints)](https://opensource.org/licenses/MIT)
+[![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-nvidia-ai-endpoints)](https://pypistats.org/packages/langchain-nvidia-ai-endpoints)
+
 This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/nvidia_ai_endpoints/index.html).

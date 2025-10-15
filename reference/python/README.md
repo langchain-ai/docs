@@ -35,6 +35,7 @@ This site is currently being migrated from a previous Sphinx-based implementatio
 - [ ] Fix `navigation.path` feature/plugin in `mkdocs.yml` not working
 - [ ] Resolve Griffe errors
 - [ ] Set up CI to fail on unexpected Griffe warnings
+- [ ] "Module last updated" auto-generation for module pages using source file commit timestamps or the MkDocs plugin [git-revision-date-localized](https://github.com/timvink/mkdocs-git-revision-date-localized-plugin)
 - [ ] Fix search magnifying glass icon color in dark mode
 - [ ] Copy page support (need to add a post-processing step to generate markdown files to serve alongside the API reference docs)
 - [ ] Language switcher (JS/TS)

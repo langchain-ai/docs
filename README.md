@@ -57,11 +57,14 @@ Built files are stored in `/reference/dist/{LANGUAGE}`, which is then deployed t
 
 ## Contributing
 
-The following steps refer to the [`docs.langchain.com`](https://docs.langchain.com) Mintlify documentation site. For contributing to the reference docs, see the `README.md` files in `/reference/python` and `/reference/javascript`.
+Before making any changes, we encourage you to read the LangChain [contributing guide](https://docs.langchain.com/oss/python/contributing/documentation) to understand our documentation types and their writing and quality standards.
 
-### Set up a dev environment
+> [!IMPORTANT]
+> The following steps refer to the [`docs.langchain.com`](https://docs.langchain.com) Mintlify documentation site. For contributing to reference docs, see the `README.md` file in the `/reference/python` and `/reference/javascript` directories.
 
-1. Clone this repo. Ensure the steps in [IDE_SETUP.md](./IDE_SETUP.md) are followed to configure your IDE/editor to automatically apply the correct settings.
+### Set up a local dev environment
+
+1. Clone this repo. Follow the steps outlined in [IDE_SETUP.md](./IDE_SETUP.md).
 2. Install `uv` from <https://docs.astral.sh/uv/> (if not already installed)
 3. Install `npm` from <https://nodejs.org/en/download/> (if not already installed)
 4. Create and activate a virtual environment:
@@ -121,7 +124,7 @@ Common commands:
 * `make lint_md_fix` - Lint and fix markdown files
 * `make help` - Show all available commands
 
-#### docs CLI Tool
+#### `docs` CLI Tool
 
 The `docs` command (installed as `uv run docs`) provides additional functionality:
 
@@ -153,12 +156,12 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 ### File formats
 
 * **Markdown files** (`.md`, `.mdx`) - Standard documentation content
-* **Jupyter notebooks** (`.ipynb`) - Converted to markdown during build, though **these are not recommended for new content!**
+* **Jupyter notebooks** (`.ipynb`) - Converted to markdown during build, though **these are not recommended for new content!** Your PR will likely be rejected if you attempt to add a Jupyter notebook unless asked to by a maintainer.
 * **Assets** - Images and other files are copied to the build directory
 
 ### Documentation syntax
 
-This project uses [Mintlify](https://mintlify.com/docs) for documentation generation. Key features:
+Our primary docs the [Mintlify](https://mintlify.com/docs) platform for docs generation. Key features include:
 
 * **Frontmatter** - YAML metadata at the top of files
 * **Components** - Special Mintlify components for enhanced formatting
@@ -250,7 +253,7 @@ Once your branch has been merged into `main`, you need to push the changes to `p
 
 ### `docs dev` not working / running
 
-Re-do the [steps to set up your dev environment](#set-up-a-dev-environment), ensuring you have activated the virtual environment and installed all dependencies.
+Re-do the [steps to set up your dev environment](#set-up-a-local-dev-environment), ensuring you have activated the virtual environment and installed all dependencies.
 
 ### Mintlify `.venv` parsing error
 
