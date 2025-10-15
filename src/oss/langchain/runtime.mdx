@@ -20,7 +20,7 @@ LangGraph exposes a @[Runtime] object with the following information:
 2. **Store**: a @[BaseStore] instance used for [long-term memory](/oss/langchain/long-term-memory)
 3. **Stream writer**: an object used for streaming information via the `"custom"` stream mode
 
-You can access the runtime information within [tools](#inside-tools), [prompt](#inside-prompt), and [pre and post model hooks](#inside-pre-and-post-model-hooks).
+You can access the runtime information within [tools](#inside-tools) and [middleware](#inside-middleware).
 
 ## Access
 
@@ -145,34 +145,48 @@ const fetchUserEmailPreferences = tool(
 ```
 :::
 
-### Inside prompt
+### Inside middleware
+
+You can access runtime information in middleware to create dynamic prompts, modify messages, or control agent behavior based on user context.
 
 :::python
-Use the @[get_runtime] function from `langgraph.runtime` to access the @[Runtime] object inside a prompt function.
+Use `request.runtime` to access the @[Runtime] object inside middleware decorators. The runtime object is available in the `ModelRequest` parameter passed to middleware functions.
 
 ```python
 from dataclasses import dataclass
 
 from langchain.messages import AnyMessage
-from langchain.agents import create_agent
-from langgraph.runtime import get_runtime  # [!code highlight]
+from langchain.agents import create_agent, AgentState
+from langchain.agents.middleware import dynamic_prompt, ModelRequest, before_model, after_model
+from langgraph.runtime import Runtime
 
 @dataclass
 class Context:
     user_name: str
 
-from langchain.agents.middleware import dynamic_prompt, ModelRequest
-
+# Dynamic prompts
 @dynamic_prompt
 def dynamic_system_prompt(request: ModelRequest) -> str:
-    user_name = request.runtime.context["user_name"]
+    user_name = request.runtime.context.user_name  # [!code highlight]
     system_prompt = f"You are a helpful assistant. Address the user as {user_name}."
     return system_prompt
+
+# Before model hook
+@before_model
+def log_before_model(state: AgentState, runtime: Runtime[Context]) -> dict | None:  # [!code highlight]
+    print(f"Processing request for user: {runtime.context.user_name}")  # [!code highlight]
+    return None
+
+# After model hook
+@after_model
+def log_after_model(state: AgentState, runtime: Runtime[Context]) -> dict | None:  # [!code highlight]
+    print(f"Completed request for user: {runtime.context.user_name}")  # [!code highlight]
+    return None
 
 agent = create_agent(
     model="openai:gpt-5-nano",
     tools=[...],
-    middleware=[dynamic_system_prompt],
+    middleware=[dynamic_system_prompt, log_before_model, log_after_model],  # [!code highlight]
     context_schema=Context
 )
 
@@ -183,36 +197,52 @@ agent.invoke(
 ```
 :::
 :::js
-Use the `runtime` parameter to access the @[Runtime] object inside a prompt function.
+Use the `runtime` parameter to access the @[Runtime] object inside middleware.
 
 ```ts
 import { z } from "zod";
-import { createAgent, type AgentState, SystemMessage } from "langchain";
+import { createAgent, createMiddleware, type AgentState, SystemMessage } from "langchain";
 import { type Runtime } from "@langchain/langgraph"; // [!code highlight]
 
 const contextSchema = z.object({
   userName: z.string(),
 });
 
-const prompt = (
-  state: AgentState,
-  runtime: Runtime<z.infer<typeof contextSchema>> // [!code highlight]
-) => {
-  const userName = runtime.context?.userName; // [!code highlight]
-  if (!userName) {
-    throw new Error("userName is required");
-  }
+// Dynamic prompt middleware
+const dynamicPromptMiddleware = createMiddleware({
+  name: "DynamicPrompt",
+  beforeModel: (state: AgentState, runtime: Runtime<z.infer<typeof contextSchema>>) => {  // [!code highlight]
+    const userName = runtime.context?.userName;  // [!code highlight]
+    if (!userName) {
+      throw new Error("userName is required");
+    }
 
-  const systemMsg = `You are a helpful assistant. Address the user as ${userName}.`; // [!code highlight]
-  return [new SystemMessage(systemMsg), ...state.messages];
-};
+    const systemMsg = `You are a helpful assistant. Address the user as ${userName}.`;
+    return {
+      messages: [new SystemMessage(systemMsg), ...state.messages]
+    };
+  }
+});
+
+// Logging middleware
+const loggingMiddleware = createMiddleware({
+  name: "Logging",
+  beforeModel: (state: AgentState, runtime: Runtime<z.infer<typeof contextSchema>>) => {  // [!code highlight]
+    console.log(`Processing request for user: ${runtime.context?.userName}`);  // [!code highlight]
+    return;
+  },
+  afterModel: (state: AgentState, runtime: Runtime<z.infer<typeof contextSchema>>) => {  // [!code highlight]
+    console.log(`Completed request for user: ${runtime.context?.userName}`);  // [!code highlight]
+    return;
+  }
+});
 
 const agent = createAgent({
   model: "openai:gpt-4o",
   tools: [
     /* ... */
   ],
-  prompt,
+  middleware: [dynamicPromptMiddleware, loggingMiddleware],  // [!code highlight]
   contextSchema,
 });
 
@@ -220,88 +250,5 @@ const result = await agent.invoke(
   { messages: [{ role: "user", content: "What's my name?" }] },
   { context: { userName: "John Smith" } }
 );
-```
-:::
-
-### Inside pre and post model hooks
-
-:::python
-To access the underlying graph runtime information in a pre or post model hook, you can:
-
-1. Use the @[get_runtime] function from `langgraph.runtime` to access the @[Runtime] object inside the hook
-2. Inject the @[Runtime] directly via the hook signature
-
-This above options are purely preferential and not functionally different.
-
-<Tabs>
-	<Tab title="Using get_runtime">
-		```python
-		from langgraph.runtime import get_runtime  # [!code highlight]
-
-		def pre_model_hook(state: State) -> State:
-		    runtime = get_runtime(Context)  # [!code highlight]
-            ...
-		```
-	</Tab>
-	<Tab title="Injection">
-		```python
-		from langgraph.runtime import Runtime  # [!code highlight]
-
-		def pre_model_hook(state: State, runtime: Runtime[Context]):  # [!code highlight]
-		    ...
-		```
-	</Tab>
-</Tabs>
-:::
-
-:::js
-Use the `runtime` parameter to access the @[Runtime] object inside a pre or post model hook.
-
-```ts
-import { z } from "zod";
-import { type Runtime } from "@langchain/langgraph"; // [!code highlight]
-import { createAgent, type AgentState } from "langchain";
-
-const contextSchema = z.object({
-  userName: z.string(),
-});
-
-const preModelHook = (
-  state: AgentState,
-  runtime: Runtime<z.infer<typeof contextSchema>> // [!code highlight]
-) => {
-  const userName = runtime.context?.userName; // [!code highlight]
-  if (!userName) {
-    throw new Error("userName is required");
-  }
-
-  return {
-    // ...
-  };
-};
-
-const postModelHook = (
-  state: AgentState,
-  runtime: Runtime<z.infer<typeof contextSchema>> // [!code highlight]
-) => {
-  const userName = runtime.context?.userName; // [!code highlight]
-  if (!userName) {
-    throw new Error("userName is required");
-  }
-
-  return {
-    // ...
-  };
-};
-
-const agent = createAgent({
-  model: "openai:gpt-4o-mini",
-  tools: [
-    /* ... */
-  ],
-  contextSchema,
-  preModelHook,
-  postModelHook,
-});
 ```
 :::

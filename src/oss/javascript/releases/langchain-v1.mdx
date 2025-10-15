@@ -1,300 +1,327 @@
 ---
-title: LangChain JavaScript v1.0
-sidebarTitle: v1.0
+title: What's new in v1
+sidebarTitle: Release notes
 ---
 
 import AlphaCallout from '/snippets/alpha-lc-callout.mdx';
 
 <AlphaCallout />
 
+**LangChain v1 is a focused, production-ready foundation for building agents.** We've streamlined the framework around three core improvements:
+
+<CardGroup cols={1}>
+    <Card title="createAgent" icon="robot" href="#create-agent" arrow>
+        A new standard way to build agents in LangChain, replacing `createReactAgent` from LangGraph with a cleaner, more powerful API.
+    </Card>
+    <Card title="Standard content blocks" icon="cube" href="#standard-content-blocks" arrow>
+        A new `contentBlocks` property that provides unified access to modern LLM features across all providers.
+    </Card>
+    <Card title="Simplified package" icon="sitemap" href="#simplified-package" arrow>
+        The `langchain` package has been streamlined to focus on essential building blocks for agents, with legacy functionality moved to `@langchain/classic`.
+    </Card>
+</CardGroup>
+
+To upgrade,
+
+<CodeGroup>
+```bash npm
+npm install langchain@next @langchain/core@next
+```
+```bash pnpm
+pnpm install langchain@next @langchain/core@next
+```
+```bash yarn
+yarn add langchain@next @langchain/core@next
+```
+```bash bun
+bun add langchain@next @langchain/core@next
+```
+</CodeGroup>
+
+For a complete list of changes, see the [migration guide](/oss/javascript/migrate/langchain-v1).
+
+## `createAgent`
+
+`createAgent` is the standard way to build agents in LangChain 1.0. It provides a simpler interface than `createReactAgent` while offering greater customization potential by using middleware.
+
+```ts
+import { createAgent } from "langchain";
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-5-20250929",
+  tools: [getWeather],
+  systemPrompt: "You are a helpful assistant.",
+});
+
+const result = await agent.invoke({
+  messages: [
+    { role: "user", content: "What is the weather in Tokyo?" },
+  ],
+});
+
+console.log(result.content);
+```
+
+Under the hood, `createAgent` is built on the basic agent loop -- calling a model, letting it choose tools to execute, and then finishing when it calls no more tools:
+
+<div style={{ display: "flex", justifyContent: "center" }}>
+  <img
+    src="/oss/images/core_agent_loop.png"
+    alt="Core agent loop diagram"
+    height="300"
+    className="rounded-lg"
+  />
+</div>
+
+For more information, see [Agents](/oss/langchain/agents).
+
+### Middleware
+
+Middleware is the defining feature of `createAgent`. It makes `createAgent` highly customizable, raising the ceiling for what you can build.
+
+Great agents require [context engineering](/oss/langchain/context-engineering): getting the right information to the model at the right time. Middleware helps you control dynamic prompts, conversation summarization, selective tool access, state management, and guardrails through a composable abstraction.
+
+#### Prebuilt middleware
+
+LangChain provides a few [prebuilt middlewares](/oss/python/langchain/middleware#built-in-middleware) for common patterns, including:
+
+- `summarizationMiddleware`: Condense conversation history when it gets too long
+- `humanInTheLoopMiddleware`: Require approval for sensitive tool calls
+- `piiRedactionMiddleware`: Redact sensitive information before sending to the model
+
+```ts
+import {
+  createAgent,
+  summarizationMiddleware,
+  humanInTheLoopMiddleware,
+  piiRedactionMiddleware,
+} from "langchain";
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-5-20250929",
+  tools: [readEmail, sendEmail],
+  middleware: [
+    piiRedactionMiddleware({ patterns: ["email", "phone", "ssn"] }),
+    summarizationMiddleware({
+      model: "anthropic:claude-sonnet-4-5-20250929",
+      maxTokensBeforeSummary: 500,
+    }),
+    humanInTheLoopMiddleware({
+      interruptOn: {
+        sendEmail: {
+          allowedDecisions: ["approve", "edit", "reject"],
+        },
+      },
+    }),
+  ] as const,
+});
+```
+
+#### Custom middleware
+
+You can also build custom middleware to fit your specific needs.
+
+Build custom middleware by implementing any of these hooks using the `createMiddleware` function:
+
+| Hook              | When it runs             | Use cases                               |
+|-------------------|--------------------------|-----------------------------------------|
+| `beforeAgent`     | Before calling the agent | Load memory, validate input             |
+| `beforeModel`     | Before each LLM call     | Update prompts, trim messages           |
+| `wrapModelCall`   | Around each LLM call     | Intercept and modify requests/responses |
+| `wrapToolCall`    | Around each tool call    | Intercept and modify tool execution     |
+| `afterModel`      | After each LLM response  | Validate output, apply guardrails       |
+| `afterAgent`      | After agent completes    | Save results, cleanup                   |
+
+![Middleware flow diagram](/images/middleware_final.png)
+
+Example custom middleware:
+
+```ts
+import { createMiddleware } from "langchain";
+
+const contextSchema = z.object({
+  userExpertise: z.enum(["beginner", "expert"]).default("beginner"),
+})
+
+const expertiseBasedToolMiddleware = createMiddleware({
+  wrapModelCall: async (request, handler) => {
+    const userLevel = request.runtime.context.userExpertise;
+    if (userLevel === "expert") {
+      const tools = [advancedSearch, dataAnalysis];
+      return handler(
+        request.replace("openai:gpt-5", tools)
+      );
+    }
+    const tools = [simpleSearch, basicCalculator];
+    return handler(
+      request.replace("openai:gpt-5-nano", tools)
+    );
+  },
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-5-20250929",
+  tools: [simpleSearch, advancedSearch, basicCalculator, dataAnalysis],
+  middleware: [expertiseBasedToolMiddleware],
+  contextSchema,
+});
+```
+
+For more information, see [the complete middleware guide](/oss/langchain/middleware).
+
+### Built on LangGraph
+
+Because `createAgent` is built on LangGraph, you automatically get built in support for long running and reliable agents via:
+
+<CardGroup cols={2}>
+    <Card title="Persistence" icon="database">
+        Conversations automatically persist across sessions with built-in checkpointing
+    </Card>
+    <Card title="Streaming" icon="water">
+        Stream tokens, tool calls, and reasoning traces in real-time
+    </Card>
+    <Card title="Human-in-the-loop" icon="hand">
+        Pause agent execution for human approval before sensitive actions
+    </Card>
+    <Card title="Time travel" icon="clock-rotate-left">
+        Rewind conversations to any point and explore alternate paths and prompts
+    </Card>
+</CardGroup>
+
+You don't need to learn LangGraph to use these features—they work out of the box.
+
+### Structured output
+
+`createAgent` has improved structured output generation:
+
+- **Main loop integration**: Structured output is now generated in the main loop instead of requiring an additional LLM call
+- **Structured output strategy**: Models can choose between calling tools or using provider-side structured output generation
+- **Cost reduction**: Eliminates extra expense from additional LLM calls
+
+```ts
+import { createAgent } from "langchain";
+import { z } from "zod";
+
+const weatherSchema = z.object({
+  temperature: z.number(),
+  condition: z.string(),
+});
+
+const agent = createAgent({
+  model: "openai:gpt-4o-mini",
+  tools: [getWeather],
+  responseFormat: weatherSchema,
+});
+
+const result = await agent.invoke({
+  messages: [
+    { role: "user", content: "What is the weather in Tokyo?" },
+  ],
+});
+
+console.log(result.structuredResponse);
+```
+
+**Error handling**: Control error handling via the `handleErrors` parameter to `ToolStrategy`:
+- **Parsing errors**: Model generates data that doesn't match desired structure
+- **Multiple tool calls**: Model generates 2+ tool calls for structured output schemas
+
+---
+
+## Standard content blocks
+
 <Note>
-    1.0 Alpha releases are available for the following packages:
+    1.0 Alpha releases are available for most packages. Only the following currently support new content blocks:
 
     - `langchain`
     - `@langchain/core`
     - `@langchain/anthropic`
     - `@langchain/openai`
 
-    Broader support will be rolled out during the alpha period.
+    Broader support for content blocks will be rolled out during the alpha period and following stable release.
 </Note>
 
-## <Icon icon="sparkles" /> New features
+### Benefits
 
-### Core exports from `langchain`
+- **Provider agnostic**: Access reasoning traces, citations, built-in tools (web search, code interpreters, etc.), and other features using the same API regardless of provider
+- **Type safe**: Full type hints for all content block types
+- **Backward compatible**: Standard content can be [loaded lazily](/oss/langchain/messages#standard-content-blocks), so there are no associated breaking changes
 
-The `langchain` package now exports key primitives like `tool`, message types, `ToolNode`, `createAgent`, and more directly from the root package.
+For more information, see our guide on [content blocks](/oss/langchain/messages#content)
 
-```ts
-import { tool, HumanMessage, createAgent } from "langchain";
+---
+
+## Simplified package
+
+LangChain v1 streamlines the `langchain` package namespace to focus on essential building blocks for agents. The package exposes only the most useful and relevant functionality:
+
+Most of these are re-exported from `@langchain/core` for convenience, which gives you a focused API surface for building agents.
+
+
+### `@langchain/classic`
+
+Legacy functionality has moved to [`@langchain/classic`](https://www.npmjs.com/package/@langchain/classic) to keep the core package lean and focused.
+
+#### What's in `@langchain/classic`
+
+- Legacy chains and chain implementations
+- The indexing API
+- [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) exports
+- Other deprecated functionality
+
+If you use any of this functionality, install [`@langchain/classic`](https://www.npmjs.com/package/@langchain/classic):
+
+<CodeGroup>
+```bash npm
+npm install @langchain/classic
+```
+```bash pnpm
+pnpm install @langchain/classic
+```
+```bash yarn
+yarn add @langchain/classic
+```
+```bash bun
+bun add @langchain/classic
+```
+</CodeGroup>
+
+Then update your imports:
+
+```typescript
+import { ... } from "langchain"; // [!code --]
+import { ... } from "@langchain/classic"; // [!code ++]
+
+import { ... } from "langchain/chains"; // [!code --]
+import { ... } from "@langchain/classic/chains"; // [!code ++]
 ```
 
-### `createAgent` in core `langchain`
-
-The [React-style agent](/oss/langchain/agents) is now part of the core `langchain` project. Import directly from `langchain`:
-
-```ts
-import { createAgent, HumanMessage, tool } from "langchain";
-import { z } from "zod";
-
-const getWeather = tool(async ({ city }) => `Sunny in ${city}`, {
-  name: "getWeather",
-  description: "Get current weather by city",
-  schema: z.object({ city: z.string() }),
-});
-
-const agent = await createAgent({
-  // New: pass a model by name
-  model: "openai:gpt-4o-mini",
-  tools: [getWeather],
-  responseFormat: z.object({ answer: z.string() }),
-});
-
-const res = await agent.invoke({
-  messages: [new HumanMessage("Weather in SF?")],
-});
-console.log(res.structuredResponse.answer);
-```
-
-You can now pass a **"model as string"** option to define the model to use. This requires you to have the specific model provider package installed (e.g. `@langchain/openai` for `openai:gpt-4o-mini`).
-
-### `ToolNode` exported from `langchain`
-
-Build agent graphs that execute tools as a node. This makes tool execution composable within graph workflows.
-
-```ts
-import { StateGraph } from "@langchain/langgraph";
-import { ToolNode, tool } from "langchain";
-
-const tools = [tool(async ({ query }) => `Results for: ${query}`, {
-  name: "search", schema: z.object({ query: z.string() })
-})];
-
-const graph = new StateGraph({ channels: { messages: [] } })
-  .addNode("tools", new ToolNode(tools))
-  .addEdge("__start__", "tools");
-
-const result = await graph.compile().invoke({
-  messages: [/* tool call messages */]
-});
-```
-
-### Default tool-error handling in agents
-
-When `handleToolErrors` is **`true` (default)**, tool exceptions are caught and converted into a **`ToolMessage`** so the agent can recover. Set it to `false` to surface raw errors for strict workflows.
-
-```ts
-import { ToolNode, ToolMessage, tool } from "langchain";
-
-const tools = [
-  tool(/* ... */),
-  // ...
-];
-
-// default: handleToolErrors: true → returns a ToolMessage with error text
-const forgiving = new ToolNode(tools);
-
-// strict: throw on tool error
-const strict = new ToolNode(tools, { handleToolErrors: false });
-
-// dynamic: custom error handling
-const dynamic = new ToolNode(tools, {
-  handleToolErrors: (error, toolCall) => {
-    if (error instanceof Error && error.message.includes("Fetch Failed")) {
-      return new ToolMessage({
-        content: "Fetch Failed. Please try again.",
-        tool_call_id: toolCall.id!,
-      });
-    }
-
-    throw error;
-  },
-});
-```
-
-### Standard typed message content
-
-`@langchain/core` features standard, typed message content. This includes standard types for reasoning, citations, server-side tool calls, and other modern LLM features.
-
-There are no breaking changes associated with existing message content. The standard content can be lazily-parsed off of existing v0 messages using the `contentBlocks` property:
-
-```ts
-import { AIMessage } from "@langchain/core";
-
-new AIMessage("Hello, world").contentBlocks
-```
-
-## <Icon icon="ban" /> Breaking changes
-
-<Accordion title="Require Node.js ≥ 20" icon="node-js">
-    LangChain packages now require Node 20+. Update your engines and CI accordingly.
-
-    ```json
-    // package.json
-    { "engines": { "node": ">=20" } }
-    ```
-</Accordion>
-
-<Accordion title="Removed legacy subpath exports" icon="folder-minus">
-    Several legacy export paths have been removed to create a cleaner surface area:
-
-    **All `langchain/schema/*` exports removed**
-
-    - `langchain/schema/prompt_template` → use `langchain/prompts`
-    ```diff
-    - import { PromptTemplate } from "langchain/schema/prompt_template";
-    + import { PromptTemplate } from "langchain/prompts";
-    ```
-
-    - `langchain/schema/query_constructor` → use `langchain/chains/query_constructor`
-    ```diff
-    - import type { AttributeInfo } from "langchain/schema/query_constructor";
-    + import type { AttributeInfo } from "langchain/chains/query_constructor";
-    ```
-
-    **`langchain/runnables/remote` export removed**
-
-    If you used this entrypoint, migrate off this subpath (no 1:1 replacement export in `langchain` package).
-
-    **`langchain/smith` export path removed**
-
-    Use the separate `langsmith` package and opt-in (see fixes section below).
-</Accordion>
-
-<Accordion title="Prebuilt Callbacks removed from `langchain`" icon="phone-slash">
-    The `./callbacks` entrypoint is gone. Prefer LCEL observability (runnables), agent/tool messages, or provider-native hooks instead.
-
-    ```diff
-    - import { ... } from "langchain/callbacks";
-    // Replace with runnable config / tracing via LangSmith (optional) or agent nodes.
-    ```
-</Accordion>
-
-<Accordion title="Agents imports removed from `langchain`" icon="robot">
-    All `./agents` imports have been removed from the `langchain` package. There is no direct replacement - use `createAgent` instead for building agents.
-
-    ```diff
-    - import { AgentExecutor, createOpenAIFunctionsAgent } from "langchain/agents";
-    + import { createAgent } from "langchain";
-
-    // Replace legacy agent patterns with createAgent
-    - const agent = createOpenAIFunctionsAgent({ llm, tools, prompt });
-    - const agentExecutor = new AgentExecutor({ agent, tools });
-    + const agent = createAgent({ model: "openai:gpt-4o-mini", tools });
-    ```
-</Accordion>
-
-<Accordion title="Removed `@langchain/azure-openai` package" icon="cloud-slash">
-    The entire `@langchain/azure-openai` package has been removed as all its primitives were deprecated.
-
-    **Migration:** Use `@langchain/openai` with Azure OpenAI configuration instead:
-
-    ```ts
-    import { AzureChatOpenAI } from "@langchain/openai";
-
-    const model = new AzureChatOpenAI({
-      azureOpenAIApiKey: "your-key",
-      azureOpenAIApiInstanceName: "your-instance",
-      azureOpenAIApiDeploymentName: "your-deployment",
-      azureOpenAIApiVersion: "2023-05-15",
-    });
-    ```
-</Accordion>
-
-## <Icon icon="compass" /> Migration guide
-
-Follow these steps to migrate your JavaScript/TypeScript code to LangChain v1.0:
-
-### 1. Node version
-
-Set `engines.node` to `>=20` and update CI runners:
-
-```jsonc
-// package.json
-{ "engines": { "node": ">=20" } }
-```
-
-### 2. Import path updates
-
-**All `langchain/schema/*` exports removed:**
-```diff
-- import { PromptTemplate } from "langchain/schema/prompt_template";
-+ import { PromptTemplate } from "langchain/prompts";
-
-- import type { AttributeInfo } from "langchain/schema/query_constructor";
-+ import type { AttributeInfo } from "langchain/chains/query_constructor";
-```
-
-**Remove unsupported imports:**
-```diff
-- import { ... } from "langchain/runnables/remote";  // No longer exported
-- import { ... } from "langchain/smith";             // Use separate langsmith package
-- import { ... } from "langchain/callbacks";         // Use LCEL observability instead
-- import { ... } from "langchain/agents";            // Use createAgent instead
-```
-
-**Azure OpenAI package removed:**
-```diff
-- import { AzureChatOpenAI } from "@langchain/azure-openai";
-+ import { AzureChatOpenAI } from "@langchain/openai";
-// Configure with Azure endpoints in ChatOpenAI constructor
-```
-
-### 3. Agent migration
-
-**Replace legacy agent imports with `createAgent`:**
-
-```diff
-- import { AgentExecutor, createOpenAIFunctionsAgent } from "langchain/agents";
-- import { createReactAgent } from "@langchain/langgraph/prebuilt";
-+ import { createAgent } from "langchain";
-```
-
-**Migrate from legacy agent patterns:**
-
-```diff
-// Old pattern
-- const agent = createOpenAIFunctionsAgent({ llm, tools, prompt });
-- const agentExecutor = new AgentExecutor({ agent, tools });
-- const result = await agentExecutor.invoke({ input: "Hello" });
-
-// New pattern
-+ const agent = createAgent({
-+   model: "openai:gpt-4o-mini",
-+   tools,
-+   responseFormat: z.object({ answer: z.string() })
-+ });
-+ const result = await agent.invoke({
-+   messages: [new HumanMessage("Hello")]
-+ });
-```
-
-You can now pass **`model` as a model name string** to `createAgent`. This requires you to have the specific model provider package installed (e.g. `@langchain/openai` for `openai:gpt-4o-mini`).
-
-Use `ToolNode` to encapsulate tool execution in graphs:
-
-```ts
-import { ToolNode } from "langchain";
-
-const toolNode = new ToolNode([/* tools */]);
-```
-
-### 4. Error handling configuration
-
-Decide on error policy for `ToolNode`:
-
-```ts
-// Default: soft-handling (converts errors to ToolMessage)
-const forgiving = new ToolNode([/* tools */], { handleToolErrors: true });
-
-// Strict: throw on tool error
-const strict = new ToolNode([/* tools */], { handleToolErrors: false });
-```
-
-## <Icon icon="bullhorn" /> Reporting issues
-
-Please report any issues discovered with 1.0 on
-[GitHub](https://github.com/langchain-ai/langchainjs/issues) using the
-[`'v1'` label](https://github.com/langchain-ai/langchainjs/issues?q=state%3Aopen%20label%3Av1).
+## Reporting issues
+
+Please report any issues discovered with 1.0 on [GitHub](https://github.com/langchain-ai/langchainjs/issues) using the [`'v1'` label](https://github.com/langchain-ai/langchainjs/issues?q=state%3Aopen%20label%3Av1).
+
+## Additional resources
+
+<CardGroup cols={3}>
+    <Card title="LangChain 1.0" icon="rocket" href="https://blog.langchain.com/langchain-langchain-1-0-alpha-releases/">
+        Read the announcement
+    </Card>
+    <Card title="Middleware Guide" icon="puzzle-piece" href="https://blog.langchain.com/agent-middleware/">
+        Deep dive into middleware
+    </Card>
+    <Card title="Agents Documentation" icon="book" href="/oss/langchain/agents" arrow>
+        Full agent documentation
+    </Card>
+    <Card title="Message Content" icon="message" href="/oss/langchain/messages#content" arrow>
+        New content blocks API
+    </Card>
+    <Card title="Migration guide" icon="arrow-right-arrow-left" href="/oss/migrate/langchain-v1" arrow>
+        How to migrate to LangChain v1
+    </Card>
+    <Card title="GitHub" icon="github" href="https://github.com/langchain-ai/langchain">
+        Report issues or contribute
+    </Card>
+</CardGroup>
 
 ## See also
 

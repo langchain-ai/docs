@@ -2,8 +2,8 @@
 
 🦜 **Welcome!** This repository contains the documentation build pipeline for LangChain projects.
 
-* 🏠 [`docs.langchain.com`](https://docs.langchain.com) is our docs home, centralizing LangChain, LangGraph, LangGraph Platform, LangSmith, and LangChain Labs (Deep Agents, Open SWE, Open Agent Platform). This site is hosted on [Mintlify](https://mintlify.com).
-* 🛠️ `reference.langchain.com` is home to the API reference docs for LangChain, LangGraph, LangGraph Platform, and LangChain integration packages (e.g. [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/)). These are static sites built from the source code and deployed to [Vercel](https://vercel.com).
+* 🏠 [`docs.langchain.com`](https://docs.langchain.com) is our docs home, centralizing LangChain, LangGraph, LangSmith, and LangChain Labs (Deep Agents, Open SWE, Open Agent Platform). This site is hosted on [Mintlify](https://mintlify.com).
+* 🛠️ `reference.langchain.com` is home to the API reference docs for LangChain, LangGraph, LangSmith, and LangChain integration packages (e.g. [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/)). These are static sites built from the source code and deployed to [Vercel](https://vercel.com).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
 
@@ -25,7 +25,6 @@ pipeline/                 # Build pipeline source code
 scripts/                  # Helper scripts
 src/                      # Source documentation files (edit these)
     labs/                 # LangChain Labs docs
-    langgraph-platform/   # LangGraph Platform docs
     langsmith/            # LangSmith docs
     oss/                  # LangChain, LangGraph, and integrations docs
     docs.json             # Mintlify site configuration

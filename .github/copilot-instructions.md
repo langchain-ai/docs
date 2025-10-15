@@ -16,8 +16,7 @@ All documentation lives in the `src/` folder, with the following structure:
     - `/images`: Shared images used across OSS docs
     - `/concepts`: Shared concepts used across OSS docs
     - The root contains product/language agnostic meta-info such as our versioning & release policy and the releases page.
-- `/langsmith`: Documentation for LangSmith, including quickstarts, observability, evaluation, prompt engineering, self hosting, and administration.
-- `/langgraph-platform`: Documentation for the LangGraph Platform, including quickstarts, features, guides on building & deploying using the platform, management & administration, and reference docs.
+- `/langsmith`: Documentation for LangSmith, including quickstarts, observability, evaluation, prompt engineering, guides on building & deploying using the platform, management & administration, and reference docs.
 - `/labs`: Home to LangChain's experimental AI products, including deep agents, open SWE, and Open Agent Platform
 - `/images`: Shared images used across all docs
 - `/snippets`: Shared code snippets used across all docs

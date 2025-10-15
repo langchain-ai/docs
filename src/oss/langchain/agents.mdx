@@ -181,30 +181,40 @@ Pre-bound models (models with `.bind_tools()` already called) are not supported 
 :::
 :::js
 
-To use a dynamic model, you need to provide a function that receives the graph state and runtime and returns an instance of a chat model. The returned chat model needs to have the tools bound to it using `.bindTools(tools)`, where `tools` is a subset of the `tools` parameter.
+To use a dynamic model, create middleware with `wrapModelCall` that modifies the model in the request:
 
 ```ts wrap
-import { createAgent, AgentState } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
+import { createAgent, createMiddleware } from "langchain";
 
-const selectModel = (state: AgentState) => {
-  const messageCount = state.messages.length;
+const basicModel = new ChatOpenAI({ model: "gpt-4o-mini" });
+const advancedModel = new ChatOpenAI({ model: "gpt-4o" });
 
-  if (messageCount > 10) {
-    return new ChatOpenAI({ model: "gpt-4.1" }).bindTools(tools);
-  }
-  return new ChatOpenAI({ model: "gpt-4o" }).bindTools(tools);
-};
+const dynamicModelSelection = createMiddleware({
+  name: "DynamicModelSelection",
+  wrapModelCall: (request, handler) => {
+    // Choose model based on conversation complexity
+    const messageCount = request.messages.length;
+
+    return handler({
+        ...request,
+        model: messageCount > 10 ? advancedModel : basicModel,
+    });
+  },
+});
 
 const agent = createAgent({
-  llm: selectModel,
+  model: "gpt-4o-mini", // Base model (used when messageCount ≤ 10)
   tools,
+  middleware: [dynamicModelSelection] as const,
 });
 ```
+
+For more details on middleware and advanced patterns, see the [middleware documentation](/oss/langchain/middleware).
 :::
 
 <Tip>
-For model configuration details, see [Models](/oss/langchain/models).
+For model configuration details, see [Models](/oss/langchain/models). For dynamic model selection patterns, see [Dynamic model in middleware](/oss/langchain/middleware#dynamic-model).
 </Tip>
 
 ### Tools
@@ -519,7 +529,7 @@ const result = await agent.invoke(
 For more details on message types and formatting, see [Messages](/oss/langchain/messages). For comprehensive middleware documentation, see [Middleware](/oss/langchain/middleware).
 </Tip>
 
-## Advanced configuration
+## Advanced concepts
 
 ### Structured output
 
@@ -677,215 +687,6 @@ const CustomAgentState = createAgent({
 To learn more about memory, see [Memory](/oss/concepts/memory). For information on implementing long-term memory that persists across sessions, see [Long-term memory](/oss/langchain/long-term-memory).
 </Tip>
 
-### Before model hook
-
-Pre-model hook is middleware that processes state before the model is called. Use cases include message trimming, summarization, and context injection.
-
-```mermaid
-%%{
-    init: {
-        "fontFamily": "monospace",
-        "flowchart": {
-        "curve": "basis"
-        },
-        "themeVariables": {"edgeLabelBackground": "transparent"}
-    }
-}%%
-graph TD
-    S(["\_\_start\_\_"])
-    PRE(before_model)
-    MODEL(model)
-    TOOLS(tools)
-    END(["\_\_end\_\_"])
-
-    S --> PRE
-    PRE --> MODEL
-    MODEL -.-> TOOLS
-    MODEL -.-> END
-    TOOLS --> PRE
-
-    classDef blueHighlight fill:#0a1c25,stroke:#0a455f,color:#bae6fd;
-    class S blueHighlight;
-    class END blueHighlight;
-```
-
-:::python
-
-Use the `@before_model` decorator to create middleware that runs before the model is called:
-
-```python wrap
-from langchain.messages import RemoveMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import before_model
-from langgraph.runtime import Runtime
-
-@before_model
-def trim_messages(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
-    """Keep only the last few messages to fit context window."""
-    messages = state["messages"]
-
-    if len(messages) <= 3:
-        return None  # No changes needed
-
-    first_msg = messages[0]
-    recent_messages = messages[-3:] if len(messages) % 2 == 0 else messages[-4:]
-    new_messages = [first_msg] + recent_messages
-
-    return {
-        "messages": [
-            RemoveMessage(id=REMOVE_ALL_MESSAGES),
-            *new_messages
-        ]
-    }
-
-agent = create_agent(
-    model,
-    tools=tools,
-    middleware=[trim_messages]
-)
-```
-
-<Info>
-When returning `messages` from `before_model` middleware, you should **overwrite the `messages` key** by including `RemoveMessage(id=REMOVE_ALL_MESSAGES)` first, followed by your new messages.
-</Info>
-
-:::
-:::js
-```ts wrap
-import { createAgent, type AgentState } from "langchain";
-import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
-import { RemoveMessage } from "@langchain/core/messages";
-
-const trimMessages = (state: AgentState) => {
-  const messages = state.messages;
-
-  if (messages.length <= 3) {
-    return { messages };
-  }
-
-  const firstMsg = messages[0];
-  const recentMessages = messages.length % 2 === 0
-    ? messages.slice(-3)
-    : messages.slice(-4);
-
-  const newMessages = [firstMsg, ...recentMessages];
-
-  return {
-    messages: [
-      new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
-      ...newMessages
-    ]
-  };
-};
-
-const agent = createAgent({
-  model: "openai:gpt-4o",
-  tools,
-  preModelHook: trimMessages,
-});
-```
-:::
-
-### After model hook
-
-After model hook is middleware that processes the model's response before tool execution. Use cases include validation, guardrails, or other post-processing.
-
-```mermaid
-%%{
-    init: {
-        "fontFamily": "monospace",
-        "flowchart": {
-        "curve": "basis"
-        },
-        "themeVariables": {"edgeLabelBackground": "transparent"}
-    }
-}%%
-graph TD
-    S(["\_\_start\_\_"])
-    MODEL(model)
-    POST(after_model)
-    TOOLS(tools)
-    END(["\_\_end\_\_"])
-
-    S --> MODEL
-    MODEL --> POST
-    POST -.-> END
-    POST -.-> TOOLS
-    TOOLS --> MODEL
-
-    classDef blueHighlight fill:#0a1c25,stroke:#0a455f,color:#bae6fd;
-    class S blueHighlight;
-    class END blueHighlight;
-    class POST greenHighlight;
-```
-
-:::python
-
-Use the `@after_model` decorator to create middleware that runs after the model is called:
-
-```python wrap
-from typing import Any
-from langchain.messages import AIMessage, RemoveMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import after_model
-from langgraph.runtime import Runtime
-
-@after_model
-def validate_response(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
-    """Check model response for policy violations."""
-    messages = state["messages"]
-    last_message = messages[-1]
-
-    if "confidential" in last_message.content.lower():
-        return {
-            "messages": [
-                RemoveMessage(id=REMOVE_ALL_MESSAGES),
-                *messages[:-1],
-                AIMessage(content="I cannot share confidential information.")
-            ]
-        }
-
-    return None  # No changes needed
-
-agent = create_agent(
-    model,
-    tools=tools,
-    middleware=[validate_response]
-)
-```
-
-:::
-:::js
-```ts wrap
-import { createAgent, type AgentState, AIMessage, RemoveMessage } from "langchain";
-import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
-
-const validateResponse = (state: AgentState) => {
-  const messages = state.messages;
-  const lastMessage = messages.at(-1)?.text;
-
-  if (lastMessage?.toLowerCase().includes("confidential")) {
-    return {
-      messages: [
-        new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
-        ...state.messages.slice(0, -1),
-        new AIMessage("I cannot share confidential information."),
-      ],
-    };
-  }
-  return {};
-};
-
-const agent = createAgent({
-  model: "openai:gpt-4o",
-  tools,
-  postModelHook: validateResponse,
-});
-```
-:::
-
 ### Streaming
 
 We've seen how the agent can be called with `.invoke` to get a final response. If the agent executes multiple steps, this may take a while. To show intermediate progress, we can stream back messages as they occur.
@@ -931,3 +732,27 @@ for await (const chunk of stream) {
 <Tip>
 For more details on streaming, see [Streaming](/oss/langchain/streaming).
 </Tip>
+
+### Middleware
+
+[Middleware](/oss/langchain/middleware) provides powerful extensibility for customizing agent behavior at different stages of execution. You can use middleware to:
+
+- Process state before the model is called (e.g., message trimming, context injection)
+- Modify or validate the model's response (e.g., guardrails, content filtering)
+- Handle tool execution errors with custom logic
+- Implement dynamic model selection based on state or context
+- Add custom logging, monitoring, or analytics
+
+Middleware integrates seamlessly into the agent's execution graph, allowing you to intercept and modify data flow at key points without changing the core agent logic.
+
+:::python
+<Tip>
+For comprehensive middleware documentation including decorators like `@before_model`, `@after_model`, and `@wrap_tool_call`, see [Middleware](/oss/langchain/middleware).
+</Tip>
+:::
+
+:::js
+<Tip>
+For comprehensive middleware documentation including hooks like `beforeModel`, `afterModel`, and `wrapToolCall`, see [Middleware](/oss/langchain/middleware).
+</Tip>
+:::

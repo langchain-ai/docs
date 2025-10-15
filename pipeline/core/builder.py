@@ -92,10 +92,6 @@ class DocumentationBuilder:
         logger.info("Building LangGraph JavaScript version...")
         self._build_langgraph_version("oss/javascript", "js")
 
-        # Build unversioned content (same content regardless of version)
-        logger.info("Building LangGraph Platform content...")
-        self._build_unversioned_content("langgraph-platform", "langgraph-platform")
-
         logger.info("Building LangChain Labs content...")
         self._build_unversioned_content("labs", "labs")
 
@@ -305,7 +301,7 @@ class DocumentationBuilder:
         if relative_path.parts[0] == "oss":
             self._build_oss_file(file_path, relative_path)
         # Check if this is unversioned content
-        elif relative_path.parts[0] in {"langgraph-platform", "labs", "langsmith"}:
+        elif relative_path.parts[0] in {"labs", "langsmith"}:
             self._build_unversioned_file(file_path, relative_path)
         # Handle shared files (images, docs.json, etc.)
         elif self.is_shared_file(file_path):
@@ -340,7 +336,7 @@ class DocumentationBuilder:
             logger.info("Built JavaScript version: oss/javascript/%s", oss_relative)
 
     def _build_unversioned_file(self, file_path: Path, relative_path: Path) -> None:
-        """Build an unversioned file (langgraph-platform, labs, langsmith).
+        """Build an unversioned file (langsmith, labs).
 
         Args:
             file_path: Path to the source file.
@@ -573,10 +569,10 @@ class DocumentationBuilder:
         )
 
     def _build_unversioned_content(self, source_dir: str, output_dir: str) -> None:
-        """Build unversioned content (langgraph-platform/, labs/, langsmith/).
+        """Build unversioned content (labs/, langsmith/).
 
         Args:
-            source_dir: Source directory name (e.g., "langgraph-platform", "labs").
+            source_dir: Source directory name (e.g., "labs").
             output_dir: Output directory name (same as source_dir).
         """
         src_path = self.src_dir / source_dir
