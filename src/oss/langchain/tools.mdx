@@ -153,35 +153,38 @@ Define complex inputs with Pydantic models or JSON schemas:
 **Why this matters:** Tools are most powerful when they can access agent state, runtime context, and long-term memory. This enables tools to make context-aware decisions, personalize responses, and maintain information across conversations.
 </Info>
 
-Tools can access different types of data:
+Tools can access runtime information through the `ToolRuntime` parameter, which provides:
 
 - **State** - Mutable data that flows through execution (messages, counters, custom fields)
-- **Runtime** - Access to context, memory (store), and streaming capabilities via `get_runtime()`
+- **Context** - Immutable configuration like user IDs, session details, or application-specific configuration
+- **Store** - Persistent long-term memory across conversations
+- **Stream Writer** - Stream custom updates as tools execute
+- **Config** - RunnableConfig for the execution
+- **Tool Call ID** - ID of the current tool call
 
-### State
+### ToolRuntime
 
-Use `InjectedState` to access and modify the agent's state during execution. State includes messages, custom fields, and any data your tools need to track.
+Use `ToolRuntime` to access all runtime information in a single parameter. Simply add `runtime: ToolRuntime` to your tool signature, and it will be automatically injected without being exposed to the LLM.
 
 <Info>
-**`InjectedState`**: An annotation that allows tools to access the current graph state without exposing it to the LLM. This lets tools read information like message history or custom state fields while keeping the tool's schema simple.
+**`ToolRuntime`**: A unified parameter that provides tools access to state, context, store, streaming, config, and tool call ID. This replaces the older pattern of using separate `InjectedState`, `InjectedStore`, `get_runtime()`, and `InjectedToolCallId` annotations.
 </Info>
 
 :::python
 **Accessing state:**
 
-Tools can access the current graph state using the `InjectedState` annotation:
+Tools can access the current graph state using `ToolRuntime`:
 
 ```python wrap
-from typing_extensions import Annotated
-from langchain.tools import InjectedState
+from langchain.tools import tool, ToolRuntime
 
 # Access the current conversation state
 @tool
 def summarize_conversation(
-    state: Annotated[dict, InjectedState]
+    runtime: ToolRuntime
 ) -> str:
     """Summarize the conversation so far."""
-    messages = state["messages"]
+    messages = runtime.state["messages"]
 
     human_msgs = sum(1 for m in messages if m.__class__.__name__ == "HumanMessage")
     ai_msgs = sum(1 for m in messages if m.__class__.__name__ == "AIMessage")
@@ -193,14 +196,15 @@ def summarize_conversation(
 @tool
 def get_user_preference(
     pref_name: str,
-    preferences: Annotated[dict, InjectedState("user_preferences")]  # InjectedState parameters are not visible to the model
+    runtime: ToolRuntime  # ToolRuntime parameter is not visible to the model
 ) -> str:
     """Get a user preference value."""
+    preferences = runtime.state.get("user_preferences", {})
     return preferences.get(pref_name, "Not set")
 ```
 
 <Warning>
-State-injected arguments are hidden from the model. For the example above, the model only sees `pref_name` in the tool schema - `preferences` is *not* included in the request.
+The `tool_runtime` parameter is hidden from the model. For the example above, the model only sees `pref_name` in the tool schema - `tool_runtime` is *not* included in the request.
 </Warning>
 
 **Updating state:**
@@ -211,8 +215,7 @@ Use `Command` to update the agent's state or control the graph's execution flow:
 from langgraph.types import Command
 from langchain.messages import RemoveMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langchain.tools import tool, InjectedToolCallId
-from typing_extensions import Annotated
+from langchain.tools import tool, ToolRuntime
 
 # Update the conversation history by removing all messages
 @tool
@@ -229,30 +232,25 @@ def clear_conversation() -> Command:
 @tool
 def update_user_name(
     new_name: str,
-    tool_call_id: Annotated[dict, InjectedToolCallId]
+    runtime: ToolRuntime
 ) -> Command:
     """Update the user's name."""
     return Command(update={"user_name": new_name})
 ```
 :::
 
-### Runtime
-
-Use `get_runtime()` to access immutable configuration, context, memory (store), and streaming capabilities. The runtime provides access to data that persists across the agent's execution.
-
 #### Context
 
-Access immutable configuration and contextual data like user IDs, session details, or application-specific configuration.
+Access immutable configuration and contextual data like user IDs, session details, or application-specific configuration through `runtime.context`.
 
 :::python
-Tools can access runtime context through `get_runtime()`:
+Tools can access runtime context through `ToolRuntime`:
 
 ```python wrap
 from dataclasses import dataclass
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
-from langchain.tools import tool
-from langgraph.runtime import get_runtime
+from langchain.tools import tool, ToolRuntime
 
 USER_DATABASE = {
     "user123": {
@@ -274,9 +272,8 @@ class UserContext:
     user_id: str
 
 @tool
-def get_account_info() -> str:
+def get_account_info(runtime: ToolRuntime[UserContext]) -> str:
     """Get the current user's account information."""
-    runtime = get_runtime(UserContext)
     user_id = runtime.context.user_id
 
     if user_id in USER_DATABASE:
@@ -341,31 +338,30 @@ const result = await agent.invoke(
 
 #### Memory (Store)
 
-Access persistent data across conversations using the store. The store is accessed via `get_runtime().store` and allows you to save and retrieve user-specific or application-specific data.
+Access persistent data across conversations using the store. The store is accessed via `runtime.store` and allows you to save and retrieve user-specific or application-specific data.
 
 :::python
-Tools can access and update the store through `get_runtime().store`:
+Tools can access and update the store through `ToolRuntime`:
 
 ```python wrap expandable
 from typing import Any
-from langgraph.runtime import get_runtime
 from langgraph.store.memory import InMemoryStore
 from langchain.agents import create_agent
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 
 # Access memory
 @tool
-def get_user_info(user_id: str) -> str:
+def get_user_info(user_id: str, runtime: ToolRuntime) -> str:
     """Look up user info."""
-    store = get_runtime().store
+    store = runtime.store
     user_info = store.get(("users",), user_id)
     return str(user_info.value) if user_info else "Unknown user"
 
 # Update memory
 @tool
-def save_user_info(user_id: str, user_info: dict[str, Any]) -> str:
+def save_user_info(user_id: str, user_info: dict[str, Any], runtime: ToolRuntime) -> str:
     """Save user info."""
-    store = get_runtime().store
+    store = runtime.store
     store.put(("users",), user_id, user_info)
     return "Successfully saved user info."
 
@@ -469,17 +465,16 @@ console.log(result);
 
 #### Stream Writer
 
-Stream custom updates from tools as they execute using `get_runtime().stream_writer`. This is useful for providing real-time feedback to users about what a tool is doing.
+Stream custom updates from tools as they execute using `runtime.stream_writer`. This is useful for providing real-time feedback to users about what a tool is doing.
 
 :::python
 ```python wrap
-from langchain.tools import tool
-from langgraph.runtime import get_runtime
+from langchain.tools import tool, ToolRuntime
 
 @tool
-def get_weather(city: str) -> str:
+def get_weather(city: str, runtime: ToolRuntime) -> str:
     """Get weather for a given city."""
-    writer = get_runtime().stream_writer
+    writer = runtime.stream_writer
 
     # Stream custom updates as the tool executes
     writer(f"Looking up data for city: {city}")
@@ -489,7 +484,7 @@ def get_weather(city: str) -> str:
 ```
 
 <Note>
-If you use `get_runtime().stream_writer` inside your tool, the tool must be invoked within a LangGraph execution context. See [Streaming](/oss/langchain/streaming) for more details.
+If you use `runtime.stream_writer` inside your tool, the tool must be invoked within a LangGraph execution context. See [Streaming](/oss/langchain/streaming) for more details.
 </Note>
 :::
 

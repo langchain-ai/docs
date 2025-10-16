@@ -74,7 +74,7 @@ The table below outlines what functionality has changed from `create_react_agent
 | [Prompts](#prompts) | Parameter renamed to `system_prompt`, dynamic prompts use middleware |
 | [Pre-model hook](#pre-model-hook) | Replaced by middleware with `before_model` method |
 | [Post-model hook](#post-model-hook) | Replaced by middleware with `after_model` method |
-| [Custom state](#custom-state) | Defined in middleware, `TypedDict` only |
+| [Custom state](#custom-state) | `TypedDict` only, can be defined via `state_schema` or middleware |
 | [Model](#model) | Dynamic selection via middleware, pre-bound models not supported |
 | [Tools](#tools) | Tool error handling moved to middleware with `wrap_tool_call` |
 | [Structured output](#structured-output) | prompted output removed, use `ToolStrategy`/`ProviderStrategy` |
@@ -323,36 +323,42 @@ agent = create_react_agent(
 
 ### Custom state
 
-Custom state is now defined in middleware using the @[`state_schema`] attribute:
+Custom state extends the default agent state with additional fields. You can define custom state in two ways:
+
+1. **Via `state_schema` on @[`create_agent`]** - Best for state used in tools
+2. **Via middleware** - Best for state managed by specific middleware hooks and tools attached to said middleware
+
+<Note>
+Defining custom state via middleware is preferred over defining it via `state_schema` on @[`create_agent`] because it allows you to keep state extensions conceptually scoped to the relevant middleware and tools.
+
+`state_schema` is still supported for backwards compatibility on `create_agent`.
+</Note>
+
+#### Defining state via `state_schema`
+
+Use the @[`state_schema`] parameter when your custom state needs to be accessed by tools:
 
 <CodeGroup>
 ```python v1 (new)
-from typing import Annotated
-from langchain.tools import tool
-from langchain.agents import create_agent  # [!code highlight]
-from langchain.agents.middleware import AgentMiddleware, AgentState  # [!code highlight]
-from langgraph.prebuilt import InjectedState
+from langchain.tools import tool, ToolRuntime
+from langchain.agents import create_agent, AgentState  # [!code highlight]
 
 # Define custom state extending AgentState
 class CustomState(AgentState):
     user_name: str
 
-# Create middleware that manages custom state
-class UserStateMiddleware(AgentMiddleware[CustomState]):  # [!code highlight]
-    state_schema = CustomState  # [!code highlight]
-
 @tool  # [!code highlight]
 def greet(
-    state: Annotated[CustomState, InjectedState]
+    runtime: ToolRuntime[CustomState]
 ) -> str:
     """Use this to greet the user by name."""
-    user_name = state.get("user_name", "Unknown")  # [!code highlight]
+    user_name = runtime.state.get("user_name", "Unknown")  # [!code highlight]
     return f"Hello {user_name}!"
 
 agent = create_agent(  # [!code highlight]
     model="anthropic:claude-sonnet-4-5-20250929",
     tools=[greet],
-    middleware=[UserStateMiddleware()]  # [!code highlight]
+    state_schema=CustomState  # [!code highlight]
 )
 ```
 ```python v0 (old)
@@ -378,30 +384,56 @@ agent = create_react_agent(
 ```
 </CodeGroup>
 
-<Note>
-    Custom state is defined by creating a class that extends @[`AgentState`] and assigning it to the middleware's @[`state_schema`] attribute.
-</Note>
+#### Defining state via middleware
+
+Middleware can also define custom state by setting the `state_schema` attribute.
+This helps to keep state extensions conceptually scoped to the relevant middleware and tools.
+
+```python
+from langchain.agents.middleware import AgentState, AgentMiddleware
+from typing_extensions import NotRequired
+from typing import Any
+
+class CustomState(AgentState):
+    model_call_count: NotRequired[int]
+
+class CallCounterMiddleware(AgentMiddleware[CustomState]):
+    state_schema = CustomState  # [!code highlight]
+
+    def before_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
+        count = state.get("model_call_count", 0)
+        if count > 10:
+            return {"jump_to": "end"}
+        return None
+
+    def after_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
+        return {"model_call_count": state.get("model_call_count", 0) + 1}
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5-20250929",
+    tools=[...],
+    middleware=[CallCounterMiddleware()]  # [!code highlight]
+)
+```
+
+See the [middleware documentation](/oss/langchain/middleware#custom-state-schema) for more details on defining custom state via middleware.
 
 #### State type restrictions
 
-@[`create_agent`] now only supports `TypedDict` for state schemas. Pydantic models and dataclasses are no longer supported.
+@[`create_agent`] only supports `TypedDict` for state schemas. Pydantic models and dataclasses are no longer supported.
 
 <CodeGroup>
 ```python v1 (new)
-from langchain.agents import AgentState
-from langchain.agents.middleware import AgentMiddleware
+from langchain.agents import AgentState, create_agent
 
 # AgentState is a TypedDict
 class CustomAgentState(AgentState):  # [!code highlight]
     user_id: str
 
-class CustomAgentMiddleware(AgentMiddleware[CustomAgentState]):
-    state_schema = CustomAgentState
-
 agent = create_agent(
     model="anthropic:claude-sonnet-4-5-20250929",
     tools=tools,
-    middleware=[CustomAgentMiddleware()]
+    state_schema=CustomAgentState  # [!code highlight]
 )
 ```
 

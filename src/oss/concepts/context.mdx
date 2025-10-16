@@ -59,26 +59,29 @@ graph.invoke(
 <Tabs>
     <Tab title="Agent prompt">
     ```python
-    from langchain.messages import AnyMessage
-    from langgraph.runtime import get_runtime
-    from langgraph.prebuilt.chat_agent_executor import AgentState
-    from langgraph.prebuilt import create_react_agent
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
 
-    def prompt(state: AgentState) -> list[AnyMessage]:  # [!code highlight]
-        runtime = get_runtime(ContextSchema)
-        system_msg = f"You are a helpful assistant. Address the user as {runtime.context.user_name}."
-        return [{"role": "system", "content": system_msg}] + state["messages"]
+    @dataclass
+    class ContextSchema:
+        user_name: str
 
-    agent = create_react_agent(
+    @dynamic_prompt  # [!code highlight]
+    def personalized_prompt(request: ModelRequest) -> str:  # [!code highlight]
+        user_name = request.runtime.context.user_name
+        return f"You are a helpful assistant. Address the user as {user_name}."
+
+    agent = create_agent(
         model="anthropic:claude-sonnet-4-5-20250929",
         tools=[get_weather],
-        prompt=prompt,
+        middleware=[personalized_prompt],
         context_schema=ContextSchema
     )
 
     agent.invoke(
         {"messages": [{"role": "user", "content": "what is the weather in sf"}]},
-        context={"user_name": "John Smith"}  # [!code highlight]
+        context=ContextSchema(user_name="John Smith")  # [!code highlight]
     )
 ```
 
@@ -97,14 +100,13 @@ graph.invoke(
     </Tab>
     <Tab title="In a tool">
     ```python
-    from langgraph.runtime import get_runtime
+    from langchain.tools import tool, ToolRuntime
 
     @tool
-    def get_user_email() -> str:
+    def get_user_email(runtime: ToolRuntime[ContextSchema]) -> str:
         """Retrieve user information based on user ID."""
         # simulate fetching user info from a database
-        runtime = get_runtime(ContextSchema)  # [!code highlight]
-        email = get_user_email_from_db(runtime.context.user_name)
+        email = get_user_email_from_db(runtime.context.user_name)  # [!code highlight]
         return email
 ```
 

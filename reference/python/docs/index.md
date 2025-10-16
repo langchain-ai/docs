@@ -13,3 +13,7 @@ These pages detail the core interfaces you will use when building applications w
     This site contains **Python reference documentation**. You can find **conceptual guides, tutorials, and more** in the [main LangChain documentation site](https://docs.langchain.com).
 
     JavaScript/TypeScript reference documentation is available on the [JS/TS reference site](https://reference.langchain.com/javascript).
+
+## Contributing and cross-referencing
+
+For information on how these docs are built, how to contribute, and how to automatically cross-reference in your project(s), please see the [README](https://github.com/langchain-ai/docs/blob/main/reference/python/README.md).

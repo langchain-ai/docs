@@ -669,28 +669,59 @@ Information stored in the state can be thought of as the [short-term memory](/os
 
 :::python
 
-Custom state schemas must extend @[`AgentState`] as a `TypedDict`. Define them in middleware using the `state_schema` attribute:
+Custom state schemas must extend @[`AgentState`] as a `TypedDict`.
 
-```python wrap
-from typing import Annotated, TypedDict
-from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import AgentMiddleware
+There are two ways to define custom state:
+1. Via middleware (preferred)
+2. Via `state_schema` on @[`create_agent`]
 
-# Define custom state extending AgentState
-class CustomAgentState(AgentState):
-    """Extended state with user preferences."""
+<Note>
+Defining custom state via middleware is preferred over defining it via `state_schema` on @[`create_agent`] because it allows you to keep state extensions conceptually scoped to the relevant middleware and tools.
+
+`state_schema` is still supported for backwards compatibility on `create_agent`.
+</Note>
+
+#### Defining state via middleware
+
+Use middleware to define custom state when your custom state needs to be accessed by specific middleware hooks and tools attached to said middleware.
+
+```python
+class CustomState(AgentState):
     user_preferences: dict
 
-# Create middleware with custom state
-class PreferencesMiddleware(AgentMiddleware[CustomAgentState]):
-    state_schema = CustomAgentState  # Set the state schema
+class CustomMiddleware(AgentMiddleware):
+    state_schema = CustomState
+    tools = [tool1, tool2]
+
+    def before_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
+        ...
 
 agent = create_agent(
     model,
     tools=tools,
-    middleware=[PreferencesMiddleware()]
+    middleware=[CustomMiddleware()]
 )
 
+# The agent can now track additional state beyond messages
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "I prefer technical explanations"}],
+    "user_preferences": {"style": "technical", "verbosity": "detailed"},
+})
+```
+
+#### Defining state via `state_schema`
+
+Use the @[`state_schema`] parameter as a shortcut to define custom state that is only used in tools.
+
+```python
+class CustomState(AgentState):
+    user_preferences: dict
+
+agent = create_agent(
+    model,
+    tools=[tool1, tool2],
+    state_schema=CustomState
+)
 # The agent can now track additional state beyond messages
 result = agent.invoke({
     "messages": [{"role": "user", "content": "I prefer technical explanations"}],
