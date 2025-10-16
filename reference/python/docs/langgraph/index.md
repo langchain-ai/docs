@@ -4,9 +4,13 @@ hide:
   - toc
 ---
 
+[![PyPI - Version](https://img.shields.io/pypi/v/langgraph?label=%20)](https://pypi.org/project/langgraph/#history)
+[![PyPI - License](https://img.shields.io/pypi/l/langgraph)](https://opensource.org/licenses/MIT)
+[![PyPI - Downloads](https://img.shields.io/pepy/dt/langgraph)](https://pypistats.org/packages/langgraph)
+
 Welcome to the LangGraph reference docs! These pages detail the core interfaces you will use when building with LangGraph. Each section covers a different part of the ecosystem.
 
-## `langgraph`
+## :simple-langgraph:{ .lg .middle } `langgraph`
 
 The core APIs for the LangGraph open source library.
 
@@ -22,7 +26,7 @@ The core APIs for the LangGraph open source library.
 - [Constants](constants.md): Global constants.
 - [Channels](channels.md): Message passing and channels.
 
-## Prebuilt components
+## :material-package-check:{ .lg .middle } Prebuilt components
 
 Higher-level abstractions for common workflows, agents, and other patterns.
 

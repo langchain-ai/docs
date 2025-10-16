@@ -1,6 +1,6 @@
 # LangChain Python Reference Documentation
 
-This directory contains the source code and build process for the Python reference documentation site, hosted at [`reference.langchain.com/python`](https://reference.langchain.com/python). This site serves references for LangChain, LangGraph, LangGraph Platform, and LangChain integration packages (such as [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/), etc.).
+This directory contains the source code and build process for the Python reference documentation site, hosted at [`reference.langchain.com/python`](https://reference.langchain.com/python). This site serves references for LangChain, LangGraph, LangSmith, and LangChain integration packages (such as [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/), etc.).
 
 The site is built using [MkDocs](https://www.mkdocs.org/) with the [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) theme and the [mkdocstrings](https://mkdocstrings.github.io/) plugin for generating API reference documentation from docstrings. See all config options in the [`mkdocs.yml`](./mkdocs.yml) file.
 
@@ -30,11 +30,13 @@ This site is currently being migrated from a previous Sphinx-based implementatio
 - [ ] [Inheritance diagrams](https://mkdocstrings.github.io/python/usage/configuration/general/#show_inheritance_diagram)
 - [ ] Consider using [inherited docstrings](https://mkdocstrings.github.io/griffe/extensions/official/inherited-docstrings/)
 - [ ] Pydantic object refs preloading so that we link to them? Should find their tree and load it in (like we did for old LC)
+- [ ] Fix TOC shadow overflow (started in `reference/python/docs/stylesheets/toc.css`) but was funky
 - [ ] Post-processing step to link out to imports from code blocks
   - [ ] Maybe there's a plugin?
 - [ ] Fix `navigation.path` feature/plugin in `mkdocs.yml` not working
 - [ ] Resolve Griffe errors
 - [ ] Set up CI to fail on unexpected Griffe warnings
+- [ ] "Module last updated" auto-generation for module pages using source file commit timestamps or the MkDocs plugin [git-revision-date-localized](https://github.com/timvink/mkdocs-git-revision-date-localized-plugin)
 - [ ] Fix search magnifying glass icon color in dark mode
 - [ ] Copy page support (need to add a post-processing step to generate markdown files to serve alongside the API reference docs)
 - [ ] Language switcher (JS/TS)
@@ -51,36 +53,108 @@ For packages that live in the `langchain-ai/langchain` monorepo, the path to the
 
 ## Local Development
 
-`langchain-ai/` org repositories that needed to be cloned locally for local reference doc generation:
+### Setup
+
+This project supports two installation modes:
+
+1. **Development mode** (`pyproject.dev.toml`) - Uses local editable installs from cloned repositories
+2. **Production mode** (`pyproject.toml`) - Uses git sources directly
+
+### Development Workflow
+
+For local development with live source code:
+
+```bash
+# 1. Ensure repos are cloned in the expected structure (see below)
+
+# 2. Switch to development mode and install
+make dev-install
+
+# 3. Serve the docs locally
+make serve-docs
+
+# Check current configuration anytime
+make config-status
+```
+
+When you edit source code in the local repositories, changes will be reflected immediately since packages are installed as editable.
+
+**How it works:** The `make dev-install` command:
+
+1. Switches `pyproject.toml` to use local editable installs (via `switch-config.sh`)
+2. Backs up the production config to `pyproject.prod.toml`
+3. Installs all packages from local repos with `uv sync`
+
+### Production/CI Workflow
+
+For production builds or CI:
+
+```bash
+# Switch to production mode and install
+make prod-install
+
+# Build the documentation
+make build
+```
+
+**How it works:** The `make prod-install` command:
+
+1. Restores `pyproject.toml` to use git sources
+2. Installs all packages from git with `uv sync --link-mode=copy`
+
+### Manual Configuration Switching
+
+You can also use the script directly:
+
+```bash
+# Switch to development mode
+./switch-config.sh dev
+
+# Switch to production mode
+./switch-config.sh prod
+
+# Check current mode
+./switch-config.sh status
+```
+
+### Required Repository Structure
+
+The `pyproject.dev.toml` file expects repositories to be cloned in this structure:
 
 ```txt
-langchain
-langchain-community
-langchain-mcp-adapters
-langchain-datastax
-langchain-ai21
-langchain-aws
-langchain-azure
-langchain-cerebras
-langchain-cohere
-langchain-ibm
-langchain-elastic
-langchain-google
-langchain-milvus
-langchain-mongodb
-langchain-neo4j
-langchain-nvidia
-langchain-pinecone
-langchain-postgres
-langchain-redis
-langchain-sema4
-langchain-snowflake
-langchain-together
-langchain-unstructured
-langchain-upstage
-langchain-weaviate
-langgraph
-langgraph-supervisor-py
-langgraph-swarm-py
+/some-parent-folder/
+  ├── docs/                  # This repository
+  │   └── reference/python/
+  ├── langchain/             # Main LangChain monorepo
+  ├── langgraph/             # Main LangGraph monorepo
+  ├── langchain-community/
+  ├── langchain-mcp-adapters/
+  ├── langchain-datastax/
+  ├── langchain-ai21/
+  ├── langchain-aws/
+  ├── langchain-azure/
+  ├── langchain-cerebras/
+  ├── langchain-cohere/
+  ├── langchain-ibm/
+  ├── langchain-elastic/
+  ├── langchain-google/
+  ├── langchain-milvus/
+  ├── langchain-mongodb/
+  ├── langchain-neo4j/
+  ├── langchain-nvidia/
+  ├── langchain-pinecone/
+  ├── langchain-postgres/
+  ├── langchain-redis/
+  ├── langchain-sema4/
+  ├── langchain-snowflake/
+  ├── langchain-tavily/
+  ├── langchain-together/
+  ├── langchain-unstructured/
+  ├── langchain-upstage/
+  ├── langchain-weaviate/
+  ├── langgraph-supervisor-py/
+  └── langgraph-swarm-py/
 ```
+
+If you only need to work on specific packages, you can comment out the others in `pyproject.dev.toml`.
 

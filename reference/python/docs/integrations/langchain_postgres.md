@@ -4,4 +4,8 @@ title: Postgres - LangChain Integration Reference
 
 # :simple-postgresql:{ .lg .middle } `langchain-postgres`
 
+[![PyPI - Version](https://img.shields.io/pypi/v/langchain-postgres?label=%20)](https://pypi.org/project/langchain-postgres/#history)
+[![PyPI - License](https://img.shields.io/pypi/l/langchain-postgres)](https://opensource.org/licenses/MIT)
+[![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-postgres)](https://pypistats.org/packages/langchain-postgres)
+
 This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/postgres/index.html).

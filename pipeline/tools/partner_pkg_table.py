@@ -172,7 +172,7 @@ def package_row(p: dict) -> str:
 
 def table() -> str:
     """Generate the full markdown table for all packages."""
-    header = """| Provider Overview | Package API Reference | Downloads | Latest Version | JS/TS Support |
+    header = """| Provider | Package API reference | Downloads | Latest version | JS/TS support |
 | :--- | :--- | :--- | :--- | :--- |
 """  # noqa: E501
     return header + "\n".join(package_row(p) for p in PACKAGES_SORTED)

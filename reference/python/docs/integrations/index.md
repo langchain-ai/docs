@@ -4,7 +4,7 @@ hide:
   - toc
 ---
 
-Welcome! These pages include reference documentation for all `langchain-x` Python packages.
+Welcome! These pages include reference documentation for all `langchain-*` Python packages.
 
 ## Popular providers
 

@@ -2,9 +2,15 @@
 title: Agents
 ---
 
-import AlphaCallout from '/snippets/alpha-lc-callout.mdx';
+import AlphaCalloutPy from '/snippets/alpha-lc-callout-py.mdx';
+import AlphaCalloutJS from '/snippets/alpha-lc-callout-js.mdx';
 
-<AlphaCallout />
+:::python
+<AlphaCalloutPy />
+:::
+:::js
+<AlphaCalloutJS />
+:::
 
 Agents combine language models with tools to create systems that can reason about tasks, decide which tools to use, and iteratively work towards solutions.
 
@@ -181,30 +187,40 @@ Pre-bound models (models with `.bind_tools()` already called) are not supported 
 :::
 :::js
 
-To use a dynamic model, you need to provide a function that receives the graph state and runtime and returns an instance of a chat model. The returned chat model needs to have the tools bound to it using `.bindTools(tools)`, where `tools` is a subset of the `tools` parameter.
+To use a dynamic model, create middleware with `wrapModelCall` that modifies the model in the request:
 
 ```ts wrap
-import { createAgent, AgentState } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
+import { createAgent, createMiddleware } from "langchain";
 
-const selectModel = (state: AgentState) => {
-  const messageCount = state.messages.length;
+const basicModel = new ChatOpenAI({ model: "gpt-4o-mini" });
+const advancedModel = new ChatOpenAI({ model: "gpt-4o" });
 
-  if (messageCount > 10) {
-    return new ChatOpenAI({ model: "gpt-4.1" }).bindTools(tools);
-  }
-  return new ChatOpenAI({ model: "gpt-4o" }).bindTools(tools);
-};
+const dynamicModelSelection = createMiddleware({
+  name: "DynamicModelSelection",
+  wrapModelCall: (request, handler) => {
+    // Choose model based on conversation complexity
+    const messageCount = request.messages.length;
+
+    return handler({
+        ...request,
+        model: messageCount > 10 ? advancedModel : basicModel,
+    });
+  },
+});
 
 const agent = createAgent({
-  llm: selectModel,
+  model: "gpt-4o-mini", // Base model (used when messageCount ≤ 10)
   tools,
+  middleware: [dynamicModelSelection] as const,
 });
 ```
+
+For more details on middleware and advanced patterns, see the [middleware documentation](/oss/langchain/middleware).
 :::
 
 <Tip>
-For model configuration details, see [Models](/oss/langchain/models).
+For model configuration details, see [Models](/oss/langchain/models). For dynamic model selection patterns, see [Dynamic model in middleware](/oss/langchain/middleware#dynamic-model).
 </Tip>
 
 ### Tools
@@ -241,7 +257,7 @@ agent = create_agent(model, tools=[search, get_weather])
 :::
 :::js
 ```ts wrap
-import { z } from "zod";
+import * as z from "zod";
 import { createAgent, tool } from "langchain";
 
 const search = tool(
@@ -321,26 +337,37 @@ The agent will return a `ToolMessage` with the custom error message when a tool 
 
 :::
 :::js
-```ts wrap
-import { ToolNode, ToolMessage } from "langchain";
 
-const toolNode = new ToolNode(
-  [search, calculate],
-  {
-    handleToolErrors: (error, toolCall) => {
+To customize how tool errors are handled, use the `wrapToolCall` hook in a custom middleware:
+
+```ts wrap
+import { createAgent, createMiddleware, ToolMessage } from "langchain";
+
+const handleToolErrors = createMiddleware({
+  name: "HandleToolErrors",
+  wrapToolCall: (request, handler) => {
+    try {
+      return handler(request);
+    } catch (error) {
+      // Return a custom error message to the model
       return new ToolMessage({
-        content: "Please check your input and try again.",
-        tool_call_id: toolCall.id
+        content: `Tool error: Please check your input and try again. (${error})`,
+        tool_call_id: request.toolCall.id!,
       });
     }
-  }
-);
+  },
+});
 
 const agent = createAgent({
   model: "openai:gpt-4o",
-  tools: toolNode,
-})
+  tools: [
+    /* ... */
+  ],
+  middleware: [handleToolErrors] as const,
+});
 ```
+
+The agent will return a `ToolMessage` with the custom error message when a tool fails.
 :::
 
 <Tip>
@@ -480,9 +507,8 @@ result = agent.invoke(
 
 :::js
 ```typescript wrap
-import { z } from "zod";
-import { createAgent } from "langchain";
-import { dynamicSystemPromptMiddleware } from "langchain/middleware";
+import * as z from "zod";
+import { createAgent, dynamicSystemPromptMiddleware } from "langchain";
 
 const contextSchema = z.object({
   userRole: z.enum(["expert", "beginner"]),
@@ -519,7 +545,30 @@ const result = await agent.invoke(
 For more details on message types and formatting, see [Messages](/oss/langchain/messages). For comprehensive middleware documentation, see [Middleware](/oss/langchain/middleware).
 </Tip>
 
-## Advanced configuration
+## Invocation
+
+You can invoke an agent by passing an update to its [state](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesstate) in their state; to invoke the agent, pass a new message:
+
+:::python
+```python
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What's the weather in San Francisco?"}]}
+)
+```
+:::
+:::js
+```typescript
+await agent.invoke({
+  messages: [{ role: "user", content: "What's the weather in San Francisco?" }],
+})
+```
+:::
+
+For streaming steps and / or tokens from the agent, refer to the [streaming](/oss/langchain/streaming) guide.
+
+Otherwise, the agent follows the LangGraph [Graph API](/oss/langgraph/use-graph-api) and supports all associated methods.
+
+## Advanced concepts
 
 ### Structured output
 
@@ -577,7 +626,7 @@ In v1, simply passing a schema (e.g., `response_format=ContactInfo`) is no longe
 In some situations, you may want the agent to return an output in a specific format. LangChain provides a simple, universal way to do this with the `responseFormat` parameter.
 
 ```ts wrap
-import { z } from "zod";
+import * as z from "zod";
 import { createAgent } from "langchain";
 
 const ContactInfo = z.object({
@@ -650,13 +699,13 @@ result = agent.invoke({
 ```
 
 <Note>
-In v1, custom state schemas **must** be `TypedDict` types. Pydantic models and dataclasses are no longer supported. See the [v1 migration guide](/oss/python/migrate/langchain-v1#state-type-restrictions) for more details.
+In v1, custom state schemas **must** be `TypedDict` types. Pydantic models and dataclasses are no longer supported. See the [v1 migration guide](/oss/migrate/langchain-v1#state-type-restrictions) for more details.
 </Note>
 
 :::
 :::js
 ```ts wrap
-import { z } from "zod";
+import * as z from "zod";
 import { MessagesZodState } from "@langchain/langgraph";
 import { createAgent, type BaseMessage } from "langchain";
 
@@ -676,215 +725,6 @@ const CustomAgentState = createAgent({
 <Tip>
 To learn more about memory, see [Memory](/oss/concepts/memory). For information on implementing long-term memory that persists across sessions, see [Long-term memory](/oss/langchain/long-term-memory).
 </Tip>
-
-### Before model hook
-
-Pre-model hook is middleware that processes state before the model is called. Use cases include message trimming, summarization, and context injection.
-
-```mermaid
-%%{
-    init: {
-        "fontFamily": "monospace",
-        "flowchart": {
-        "curve": "basis"
-        },
-        "themeVariables": {"edgeLabelBackground": "transparent"}
-    }
-}%%
-graph TD
-    S(["\_\_start\_\_"])
-    PRE(before_model)
-    MODEL(model)
-    TOOLS(tools)
-    END(["\_\_end\_\_"])
-
-    S --> PRE
-    PRE --> MODEL
-    MODEL -.-> TOOLS
-    MODEL -.-> END
-    TOOLS --> PRE
-
-    classDef blueHighlight fill:#0a1c25,stroke:#0a455f,color:#bae6fd;
-    class S blueHighlight;
-    class END blueHighlight;
-```
-
-:::python
-
-Use the `@before_model` decorator to create middleware that runs before the model is called:
-
-```python wrap
-from langchain.messages import RemoveMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import before_model
-from langgraph.runtime import Runtime
-
-@before_model
-def trim_messages(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
-    """Keep only the last few messages to fit context window."""
-    messages = state["messages"]
-
-    if len(messages) <= 3:
-        return None  # No changes needed
-
-    first_msg = messages[0]
-    recent_messages = messages[-3:] if len(messages) % 2 == 0 else messages[-4:]
-    new_messages = [first_msg] + recent_messages
-
-    return {
-        "messages": [
-            RemoveMessage(id=REMOVE_ALL_MESSAGES),
-            *new_messages
-        ]
-    }
-
-agent = create_agent(
-    model,
-    tools=tools,
-    middleware=[trim_messages]
-)
-```
-
-<Info>
-When returning `messages` from `before_model` middleware, you should **overwrite the `messages` key** by including `RemoveMessage(id=REMOVE_ALL_MESSAGES)` first, followed by your new messages.
-</Info>
-
-:::
-:::js
-```ts wrap
-import { createAgent, type AgentState } from "langchain";
-import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
-import { RemoveMessage } from "@langchain/core/messages";
-
-const trimMessages = (state: AgentState) => {
-  const messages = state.messages;
-
-  if (messages.length <= 3) {
-    return { messages };
-  }
-
-  const firstMsg = messages[0];
-  const recentMessages = messages.length % 2 === 0
-    ? messages.slice(-3)
-    : messages.slice(-4);
-
-  const newMessages = [firstMsg, ...recentMessages];
-
-  return {
-    messages: [
-      new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
-      ...newMessages
-    ]
-  };
-};
-
-const agent = createAgent({
-  model: "openai:gpt-4o",
-  tools,
-  preModelHook: trimMessages,
-});
-```
-:::
-
-### After model hook
-
-After model hook is middleware that processes the model's response before tool execution. Use cases include validation, guardrails, or other post-processing.
-
-```mermaid
-%%{
-    init: {
-        "fontFamily": "monospace",
-        "flowchart": {
-        "curve": "basis"
-        },
-        "themeVariables": {"edgeLabelBackground": "transparent"}
-    }
-}%%
-graph TD
-    S(["\_\_start\_\_"])
-    MODEL(model)
-    POST(after_model)
-    TOOLS(tools)
-    END(["\_\_end\_\_"])
-
-    S --> MODEL
-    MODEL --> POST
-    POST -.-> END
-    POST -.-> TOOLS
-    TOOLS --> MODEL
-
-    classDef blueHighlight fill:#0a1c25,stroke:#0a455f,color:#bae6fd;
-    class S blueHighlight;
-    class END blueHighlight;
-    class POST greenHighlight;
-```
-
-:::python
-
-Use the `@after_model` decorator to create middleware that runs after the model is called:
-
-```python wrap
-from typing import Any
-from langchain.messages import AIMessage, RemoveMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import after_model
-from langgraph.runtime import Runtime
-
-@after_model
-def validate_response(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
-    """Check model response for policy violations."""
-    messages = state["messages"]
-    last_message = messages[-1]
-
-    if "confidential" in last_message.content.lower():
-        return {
-            "messages": [
-                RemoveMessage(id=REMOVE_ALL_MESSAGES),
-                *messages[:-1],
-                AIMessage(content="I cannot share confidential information.")
-            ]
-        }
-
-    return None  # No changes needed
-
-agent = create_agent(
-    model,
-    tools=tools,
-    middleware=[validate_response]
-)
-```
-
-:::
-:::js
-```ts wrap
-import { createAgent, type AgentState, AIMessage, RemoveMessage } from "langchain";
-import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
-
-const validateResponse = (state: AgentState) => {
-  const messages = state.messages;
-  const lastMessage = messages.at(-1)?.text;
-
-  if (lastMessage?.toLowerCase().includes("confidential")) {
-    return {
-      messages: [
-        new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
-        ...state.messages.slice(0, -1),
-        new AIMessage("I cannot share confidential information."),
-      ],
-    };
-  }
-  return {};
-};
-
-const agent = createAgent({
-  model: "openai:gpt-4o",
-  tools,
-  postModelHook: validateResponse,
-});
-```
-:::
 
 ### Streaming
 
@@ -931,3 +771,27 @@ for await (const chunk of stream) {
 <Tip>
 For more details on streaming, see [Streaming](/oss/langchain/streaming).
 </Tip>
+
+### Middleware
+
+[Middleware](/oss/langchain/middleware) provides powerful extensibility for customizing agent behavior at different stages of execution. You can use middleware to:
+
+- Process state before the model is called (e.g., message trimming, context injection)
+- Modify or validate the model's response (e.g., guardrails, content filtering)
+- Handle tool execution errors with custom logic
+- Implement dynamic model selection based on state or context
+- Add custom logging, monitoring, or analytics
+
+Middleware integrates seamlessly into the agent's execution graph, allowing you to intercept and modify data flow at key points without changing the core agent logic.
+
+:::python
+<Tip>
+For comprehensive middleware documentation including decorators like `@before_model`, `@after_model`, and `@wrap_tool_call`, see [Middleware](/oss/langchain/middleware).
+</Tip>
+:::
+
+:::js
+<Tip>
+For comprehensive middleware documentation including hooks like `beforeModel`, `afterModel`, and `wrapToolCall`, see [Middleware](/oss/langchain/middleware).
+</Tip>
+:::

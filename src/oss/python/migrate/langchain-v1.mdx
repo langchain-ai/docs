@@ -1,9 +1,9 @@
 ---
 title: LangChain v1 migration guide
-sidebarTitle: Migrate to v1
+sidebarTitle: Migration guide
 ---
 
-This guide outlines the major changes between LangChain v1 and previous versions.
+This guide outlines the major changes between [LangChain v1](/oss/releases/langchain-v1) and previous versions.
 
 ## Simplified package
 
@@ -11,21 +11,21 @@ The `langchain` package namespace has been significantly reduced in v1 to focus 
 
 ### Namespace
 
-| Module | What's available | Notes |
-|--------|------------------|-------|
-| `langchain.agents` | `create_agent`, `AgentState` | Core agent creation functionality |
-| `langchain.messages` | Message types, content blocks, `trim_messages` | Re-exported from `langchain-core` |
-| `langchain.tools` | `tool`, `BaseTool`, injection helpers | Re-exported from `langchain-core` |
-| `langchain.chat_models` | `init_chat_model`, `BaseChatModel` | Unified model initialization |
-| `langchain.embeddings` | `Embeddings`, `init_embeddings`, | Embedding models |
+| Module                  | What's available                               | Notes                             |
+|-------------------------|------------------------------------------------|-----------------------------------|
+| `langchain.agents`      | `create_agent`, `AgentState`                   | Core agent creation functionality |
+| `langchain.messages`    | Message types, content blocks, `trim_messages` | Re-exported from `langchain-core` |
+| `langchain.tools`       | `tool`, `BaseTool`, injection helpers          | Re-exported from `langchain-core` |
+| `langchain.chat_models` | `init_chat_model`, `BaseChatModel`             | Unified model initialization      |
+| `langchain.embeddings`  | `init_embeddings`, `Embeddings`                | Embedding models                  |
 
 ### `langchain-classic`
 
-If you were using any of the following from the `langchain` package, you'll need to install `langchain-classic` and update your imports:
+If you were using any of the following from the `langchain` package, you'll need to install [`langchain-classic`](https://pypi.org/project/langchain-classic/) and update your imports:
 
 - Legacy chains (`LLMChain`, `ConversationChain`, etc.)
 - The indexing API
-- `langchain-community` re-exports
+- [`langchain-community`](https://pypi.org/project/langchain-community) re-exports
 - Other deprecated functionality
 
 <CodeGroup>
@@ -38,26 +38,37 @@ from langchain_classic.indexes import ...
 ```
 
 ```python v0 (old)
+# Chains
 from langchain.chains import LLMChain
+
+# Indexing
 from langchain.indexes import ...
 ```
 </CodeGroup>
 
-**Installation**:
-```bash
-uv pip install langchain-classic
+
+Install with:
+
+<CodeGroup>
+```bash pip
+pip install langchain-classic
 ```
+
+```bash uv
+uv add langchain-classic
+```
+</CodeGroup>
 
 ---
 
 ## Migrate to `create_agent`
 
-Pre v1, we recommended you use `langgraph.prebuilt.create_react_agent` to build agents.
-In v1, we recommend you use `langchain.agents.create_agent` to build agents.
+Prior to v1.0, we recommended using `langgraph.prebuilt.create_react_agent` to build agents.
+Now, we recommend you use `langchain.agents.create_agent` to build agents.
 
 The table below outlines what functionality has changed from `create_react_agent` to `create_agent`:
 
-| Section | What changed |
+| Section | TL;DR - What's changed |
 |---------|--------------|
 | [Import path](#import-path) | Package moved from `langgraph.prebuilt` to `langchain.agents` |
 | [Prompts](#prompts) | Parameter renamed to `system_prompt`, dynamic prompts use middleware |
@@ -76,16 +87,12 @@ The table below outlines what functionality has changed from `create_react_agent
 The import path for the agent prebuilt has changed from `langgraph.prebuilt` to `langchain.agents`.
 The name of the function has changed from `create_react_agent` to `create_agent`:
 
-<CodeGroup>
-```python v1 (new)
-from langchain.agents import create_agent
+```python
+from langgraph.prebuilt import create_react_agent # [!code --]
+from langchain.agents import create_agent # [!code ++]
 ```
-```python v0 (old)
-from langgraph.prebuilt import create_react_agent
-```
-</CodeGroup>
 
-For more information, see [Agents](/oss/python/langchain/agents).
+For more information, see [Agents](/oss/langchain/agents).
 
 ### Prompts
 
@@ -236,7 +243,7 @@ Common use cases include:
 * Trimming messages
 * Input guardrails, like PII redaction
 
-v1 now has summarization middleware built in:
+v1 now has summarization middleware as a built in option:
 
 <CodeGroup>
 ```python v1 (new)
@@ -276,7 +283,7 @@ This new pattern is more extensible-- you can define multiple middlewares to run
 reusing common patterns across different agents.
 
 Common use cases include:
-* Human in the loop
+* [Human in the loop](/oss/langchain/human-in-the-loop)
 * Output guardrails
 
 v1 has a built in middleware for human in the loop approval for tool calls:
@@ -507,7 +514,7 @@ The `tools` argument to `create_agent` accepts a list of:
 * Callable objects (functions) with proper type hints and a docstring
 * `dict` that represents a built-in provider tools
 
-It no longer accepts `ToolNode` instances.
+The argument will no longer accept `ToolNode` instances.
 
 <CodeGroup>
 ```python v1 (new)
@@ -662,6 +669,156 @@ result = agent.invoke(
 <Note>
     The old `config["configurable"]` pattern still works for backward compatibility, but using the new `context` parameter is recommended for new applications or applications migrating to v1.
 </Note>
+
+---
+
+## Standard content
+
+In v1, messages gain provider-agnostic standard content blocks. Access them via `message.content_blocks` for a consistent, typed view across providers. The existing `message.content` field remains unchanged for strings or provider-native structures.
+
+### What changed
+
+- New `content_blocks` property on messages for normalized content
+- Standardized block shapes, documented in [Messages](/oss/langchain/messages#standard-content-blocks)
+- Optional serialization of standard blocks into `content` via `LC_OUTPUT_VERSION=v1` or `output_version="v1"`
+
+### Read standardized content
+
+<CodeGroup>
+```python v1 (new)
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("openai:gpt-5-nano")
+response = model.invoke("Explain AI")
+
+for block in response.content_blocks:
+    if block["type"] == "reasoning":
+        print(block.get("reasoning"))
+    elif block["type"] == "text":
+        print(block.get("text"))
+```
+```python v0 (old)
+# Provider-native formats vary; you needed per-provider handling
+response = model.invoke("Explain AI")
+for item in response.content:
+    if item.get("type") == "reasoning":
+        ...  # OpenAI-style reasoning
+    elif item.get("type") == "thinking":
+        ...  # Anthropic-style thinking
+    elif item.get("type") == "text":
+        ...  # Text
+```
+</CodeGroup>
+
+### Create multimodal messages
+
+<CodeGroup>
+```python v1 (new)
+from langchain.messages import HumanMessage
+
+message = HumanMessage(content_blocks=[
+    {"type": "text", "text": "Describe this image."},
+    {"type": "image", "url": "https://example.com/image.jpg"},
+])
+res = model.invoke([message])
+```
+```python v0 (old)
+from langchain.messages import HumanMessage
+
+message = HumanMessage(content=[
+    # Provider-native structure
+    {"type": "text", "text": "Describe this image."},
+    {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}},
+])
+res = model.invoke([message])
+```
+</CodeGroup>
+
+### Example block shapes
+
+```python
+# Text block
+text_block = {
+    "type": "text",
+    "text": "Hello world",
+}
+
+# Image block
+image_block = {
+    "type": "image",
+    "url": "https://example.com/image.png",
+    "mime_type": "image/png",
+}
+```
+
+See the content blocks [reference](/oss/langchain/messages#content-block-reference) for more details.
+
+### Serialize standard content
+
+Standard content blocks are **not serialized** into the `content` attribute by default. If you need to access standard content blocks in the `content` attribute (e.g., when sending messages to a client), you can opt-in to serializing them into `content`.
+
+<CodeGroup>
+```bash
+export LC_OUTPUT_VERSION=v1
+```
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    "openai:gpt-5-nano",
+    output_version="v1",
+)
+```
+</CodeGroup>
+
+<Note>
+    Learn more: [Messages](/oss/langchain/messages#content), [Standard content blocks](/oss/langchain/messages#standard-content-blocks), and [Multimodal](/oss/langchain/messages#multimodal).
+</Note>
+
+---
+
+## Simplified package
+
+The `langchain` package namespace has been significantly reduced in v1 to focus on essential building blocks for agents. The streamlined package makes it easier to discover and use the core functionality.
+
+### Namespace
+
+| Module | What's available | Notes |
+|--------|------------------|-------|
+| `langchain.agents` | `create_agent`, `AgentState` | Core agent creation functionality |
+| `langchain.messages` | Message types, content blocks, `trim_messages` | Re-exported from `langchain-core` |
+| `langchain.tools` | `tool`, `BaseTool`, injection helpers | Re-exported from `langchain-core` |
+| `langchain.chat_models` | `init_chat_model`, `BaseChatModel` | Unified model initialization |
+| `langchain.embeddings` | `Embeddings`, `init_embeddings`, | Embedding models |
+
+### `langchain-classic`
+
+If you were using any of the following from the `langchain` package, you'll need to install `langchain-classic` and update your imports:
+
+- Legacy chains (`LLMChain`, `ConversationChain`, etc.)
+- The indexing API
+- `langchain-community` re-exports
+- Other deprecated functionality
+
+<CodeGroup>
+```python v1 (new)
+# For legacy chains
+from langchain_classic.chains import LLMChain
+
+# For indexing
+from langchain_classic.indexes import ...
+```
+
+```python v0 (old)
+from langchain.chains import LLMChain
+from langchain.indexes import ...
+```
+</CodeGroup>
+
+**Installation**:
+```bash
+uv pip install langchain-classic
+```
 
 ---
 

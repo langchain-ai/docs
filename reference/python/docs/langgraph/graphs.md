@@ -3,8 +3,6 @@
 ::: langgraph.graph.state.StateGraph
     options:
       show_if_no_docstring: true
-      show_root_heading: true
-      show_root_full_path: false
       members:
         - add_node
         - add_edge
@@ -15,8 +13,6 @@
 ::: langgraph.graph.state.CompiledStateGraph
     options:
       show_if_no_docstring: true
-      show_root_heading: true
-      show_root_full_path: false
       members:
         - stream
         - astream
