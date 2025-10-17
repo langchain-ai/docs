@@ -2,14 +2,14 @@
 title: Short-term memory
 ---
 
-import AlphaCalloutPy from '/snippets/alpha-lc-callout-py.mdx';
-import AlphaCalloutJS from '/snippets/alpha-lc-callout-js.mdx';
+import StableCalloutPy from '/snippets/stable-lc-callout-py.mdx';
+import StableCalloutJS from '/snippets/stable-lc-callout-js.mdx';
 
 :::python
-<AlphaCalloutPy />
+<StableCalloutPy />
 :::
 :::js
-<AlphaCalloutJS />
+<StableCalloutJS />
 :::
 
 ## Overview
@@ -67,7 +67,7 @@ import { MemorySaver } from "@langchain/langgraph";
 const checkpointer = new MemorySaver();
 
 const agent = createAgent({
-    model: "anthropic:claude-3-7-sonnet-latest",
+    model: "anthropic:claude-sonnet-4-5",
     tools: [],
     checkpointer,
 });
@@ -116,27 +116,23 @@ const checkpointer = PostgresSaver.fromConnString(DB_URI);
 
 ## Customizing agent memory
 
-By default, agents use `AgentState` to manage short term memory, specifically the conversation history via a `messages` key.
+By default, agents use @[`AgentState`] to manage short term memory, specifically the conversation history via a `messages` key.
 
-You can extend `AgentState` to add additional fields. Custom state schemas are defined in middleware using the `state_schema` attribute.
+You can extend @[`AgentState`] to add additional fields. Custom state schemas are passed to @[`create_agent`] using the @[`state_schema`] parameter.
 
 :::python
 ```python
 from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import AgentMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 class CustomAgentState(AgentState):  # [!code highlight]
     user_id: str  # [!code highlight]
     preferences: dict  # [!code highlight]
 
-class StateExtensionMiddleware(AgentMiddleware[CustomAgentState]):
-    state_schema = CustomAgentState  # [!code highlight]
-
 agent = create_agent(
     "openai:gpt-5",
     [get_user_info],
-    middleware=[StateExtensionMiddleware()],  # [!code highlight]
+    state_schema=CustomAgentState,  # [!code highlight]
     checkpointer=InMemorySaver(),
 )
 
@@ -209,10 +205,15 @@ This allows the agent to keep track of the conversation without exceeding the LL
 
 Most LLMs have a maximum supported context window (denominated in tokens).
 
+:::python
+One way to decide when to truncate messages is to count the tokens in the message history and truncate whenever it approaches that limit. If you're using LangChain, you can use the trim messages utility and specify the number of tokens to keep from the list, as well as the `strategy` (e.g., keep the last `max_tokens`) to use for handling the boundary.
+:::
+:::js
 One way to decide when to truncate messages is to count the tokens in the message history and truncate whenever it approaches that limit. If you're using LangChain, you can use the trim messages utility and specify the number of tokens to keep from the list, as well as the `strategy` (e.g., keep the last `maxTokens`) to use for handling the boundary.
+:::
 
 :::python
-To trim message history in an agent, use the `@before_model` middleware decorator:
+To trim message history in an agent, use the @[`@before_model`] middleware decorator:
 
 ```python
 from langchain.messages import RemoveMessage
@@ -310,7 +311,7 @@ To delete messages from the graph state, you can use the `RemoveMessage`.
 
 For `RemoveMessage` to work, you need to use a state key with @[`add_messages`][add_messages] [reducer](/oss/langgraph/graph-api#reducers).
 
-The default `AgentState` provides this.
+The default @[`AgentState`] provides this.
 
 To remove specific messages:
 
@@ -492,7 +493,7 @@ Because of this, some applications benefit from a more sophisticated approach of
 
 
 :::python
-To summarize message history in an agent, use the built-in [`SummarizationMiddleware`](/oss/langchain/middleware#summarization):
+To summarize message history in an agent, use the built-in [``SummarizationMiddleware``](/oss/langchain/middleware#summarization):
 
 ```python
 from langchain.agents import create_agent
@@ -529,7 +530,7 @@ Your name is Bob!
 """
 ```
 
-See [SummarizationMiddleware](/oss/langchain/middleware#summarization) for more configuration options.
+See [`SummarizationMiddleware`](/oss/langchain/middleware#summarization) for more configuration options.
 :::
 :::js
 To summarize message history in an agent, use the built-in [`summarizationMiddleware`](/oss/langchain/middleware#summarization):
@@ -563,7 +564,7 @@ console.log(finalResponse.messages.at(-1)?.content);
 // Your name is Bob!
 ```
 
-See [summarizationMiddleware](/oss/langchain/middleware#summarization) for more configuration options.
+See [`summarizationMiddleware`](/oss/langchain/middleware#summarization) for more configuration options.
 :::
 
 ## Access memory
@@ -574,24 +575,24 @@ You can access and modify the short-term memory (state) of an agent in several w
 
 #### Read short-term memory in a tool
 
-Access short term memory (state) in a tool by injecting the agent's state into the tool signature with the `InjectedState` annotation.
+Access short term memory (state) in a tool using the `ToolRuntime` parameter.
 
-This annotation hides the state from the tool signature (so the model doesn't see it), but the tool can access it.
+The `tool_runtime` parameter is hidden from the tool signature (so the model doesn't see it), but the tool can access the state through it.
 
 :::python
 ```python
-from typing import Annotated
 from langchain.agents import create_agent, AgentState
-from langchain.tools import InjectedState
+from langchain.tools import tool, ToolRuntime
 
 class CustomState(AgentState):
     user_id: str
 
+@tool
 def get_user_info(
-    state: Annotated[CustomState, InjectedState]
+    runtime: ToolRuntime
 ) -> str:
     """Look up user info."""
-    user_id = state["user_id"]
+    user_id = runtime.state["user_id"]
     return "User is John Smith" if user_id == "user_123" else "Unknown user"
 
 agent = create_agent(
@@ -659,12 +660,10 @@ This is useful for persisting intermediate results or making information accessi
 
 :::python
 ```python
-from typing import Annotated
-from langchain.tools import InjectedToolCallId, InjectedState
+from langchain.tools import tool, ToolRuntime
 from langchain_core.runnables import RunnableConfig
 from langchain.messages import ToolMessage
 from langchain.agents import create_agent, AgentState
-from langgraph.runtime import get_runtime
 from langgraph.types import Command
 from pydantic import BaseModel
 
@@ -674,12 +673,12 @@ class CustomState(AgentState):  # [!code highlight]
 class CustomContext(BaseModel):
     user_id: str
 
+@tool
 def update_user_info(
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime[CustomContext, CustomState],
 ) -> Command:
     """Look up and update user info."""
-    runtime = get_runtime(CustomContext)  # [!code highlight]
-    user_id = runtime.context.user_id
+    user_id = runtime.context.user_id  # [!code highlight]
     name = "John Smith" if user_id == "user_123" else "Unknown user"
     return Command(update={
         "user_name": name,
@@ -687,16 +686,17 @@ def update_user_info(
         "messages": [
             ToolMessage(
                 "Successfully looked up user information",
-                tool_call_id=tool_call_id
+                tool_call_id=runtime.tool_call_id
             )
         ]
     })
 
+@tool
 def greet(
-    state: Annotated[CustomState, InjectedState]
+    runtime: ToolRuntime[CustomContext, CustomState]
 ) -> str:
     """Use this to greet the user once you found their info."""
-    user_name = state["user_name"]
+    user_name = runtime.state["user_name"]
     return f"Hello {user_name}!"
   # [!code highlight]
 agent = create_agent(
@@ -782,7 +782,6 @@ Access short term memory (state) in middleware to create dynamic prompts based o
 ```python
 from langchain.messages import AnyMessage
 from langchain.agents import create_agent, AgentState
-from langgraph.runtime import get_runtime
 from typing import TypedDict
 
 
@@ -921,7 +920,7 @@ for (const message of result.messages) {
 
 ### Before model
 
-Access short term memory (state) in `@before_model` middleware to process messages before model calls.
+Access short term memory (state) in @[`@before_model`] middleware to process messages before model calls.
 
 
 ```mermaid
@@ -1030,7 +1029,7 @@ const agent = createAgent({
 
 ### After model
 
-Access short term memory (state) in `@after_model` middleware to process messages after model calls.
+Access short term memory (state) in @[`@after_model`] middleware to process messages after model calls.
 
 ```mermaid
 %%{

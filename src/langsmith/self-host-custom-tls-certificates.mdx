@@ -3,11 +3,11 @@ title: Configure custom TLS certificates
 sidebarTitle: Configure custom TLS certificates
 ---
 
-Use this guide to configure TLS in LangSmith. Start by mounting internal certificate authorities (CAs) so your deployment trusts the right roots system‑wide, for database or external service calls. You can then configure Playground-specific mTLS for communicating securely with supported model providers.
+Use this guide to configure TLS in LangSmith. Start by mounting internal certificate authorities (CAs) so your deployment trusts the right roots system‑wide, for database or external service calls. You can then configure [Playground](/langsmith/prompt-engineering-concepts#prompt-playground)-specific mTLS for communicating securely with supported model providers.
 
 This page covers:
 
-- Mounting internal certificate authorities (CAs) system-wide to enable TLS for database connections and Playground model calls
+- [Mounting internal certificate authorities](#mount-internal-cas-for-tls) (CAs) system-wide to enable TLS for database connections and Playground model calls
 - Using Playground-specific TLS settings to provide client certs/keys for mTLS with supported model providers
 
 ## Mount internal CAs for TLS
@@ -16,49 +16,38 @@ This page covers:
 You must use Helm chart version 0.11.9 or later to mount internal CAs using the configuration below.
 </Note>
 
-You can use custom TLS certificates to connect to model providers in the LangSmith playground. This is useful if you are using a self-signed certificate, a certificate from a custom certificate authority or mutual TLS authentication.
-
-To use custom TLS certificates, you need to set the following environment variables. See the [self hosted deployment section](/langsmith/self-hosted) for more information on how to set up application configuration.
-
-* `LANGSMITH_PLAYGROUND_TLS_MODEL_PROVIDERS`: A comma-separated list of model providers that require custom TLS certificates. Note that `azure_openai`, `openai` and `custom` are currently the only supported model provider that supports custom TLS certificates, but more providers will be supported in the future.
-* `LANGSMITH_PLAYGROUND_TLS_CA`: The custom certificate authority (CA) certificate in PEM format. This must be a file path (for a mounted volume).
-* \[Optional] `LANGSMITH_PLAYGROUND_TLS_KEY`: The private key in PEM format. This must be a file path (for a mounted volume). This is usually only necessary for mutual TLS authentication.
-* \[Optional] `LANGSMITH_PLAYGROUND_TLS_CERT`: The certificate in PEM format. This must be a file path (for a mounted volume). This is usually only necessary for mutual TLS authentication.
-
-Once you have set these environment variables, enter the LangSmith Playground **Settings** page and select the **Provider** that requires custom TLS certificates. Set your model provider configuration as usual, and the custom TLS certificates will be used when connecting to the model provider.
-
-## Mount internal CAs for TLS
+Use this approach to make internal/public CAs trusted system‑wide by LangSmith (Playground model calls and [database/external service connections](/langsmith/self-hosted#storage-services)).
 
 1. Create a file containing all CAs required for TLS with databases and external services. If your deployment is communicating directly to `beacon.langchain.com` without a proxy, make sure to include a public trusted CA. All certs should be concatenated in this file with an empty line in between.
-```
------BEGIN CERTIFICATE-----
-<PUBLIC_CA>
------END CERTIFICATE-----
+    ```
+    -----BEGIN CERTIFICATE-----
+    <PUBLIC_CA>
+    -----END CERTIFICATE-----
 
------BEGIN CERTIFICATE-----
-<INTERNAL_CA>
------END CERTIFICATE-----
+    -----BEGIN CERTIFICATE-----
+    <INTERNAL_CA>
+    -----END CERTIFICATE-----
 
-...
-```
+    ...
+    ```
 2. Create a Kubernetes secret with a key containing the contents of this file.
-```bash
-kubectl create secret generic <SECRET_NAME> --from-file=<SECRET_KEY>=<CA_BUNDLE_FILE_PATH> -n <NAMESPACE>
-```
+    ```bash
+    kubectl create secret generic <SECRET_NAME> --from-file=<SECRET_KEY>=<CA_BUNDLE_FILE_PATH> -n <NAMESPACE>
+    ```
 3. If using custom CA for TLS with your databases and other external services, provide the following values to your LangSmith helm chart:
-```yaml Helm
-config:
-  customCa:
-    secretName: <SECRET_NAME> # The name of the secret created in step 2.
-    secretKey: <SECRET_KEY> # The key in the secret containing the CA bundle.
+    ```yaml Helm
+    config:
+    customCa:
+        secretName: <SECRET_NAME> # The name of the secret created in step 2.
+        secretKey: <SECRET_KEY> # The key in the secret containing the CA bundle.
 
-clickhouse:
-  external:
-    tls: true # Only enable if you want TLS for Clickhouse.
-postgres:
-  external:
-    customTls: true # Only enable if you want TLS for Postgres.
-```
+    clickhouse:
+    external:
+        tls: true # Only enable if you want TLS for Clickhouse.
+    postgres:
+    external:
+        customTls: true # Only enable if you want TLS for Postgres.
+    ```
 4. Make sure to use TLS supported connection strings:
     - <b>Postgres</b>: Add `?sslmode=verify-full&sslrootcert=system` to the end.
     - <b>Redis</b>: Use `rediss://` instead of `redis://` as the prefix.
@@ -83,6 +72,5 @@ To use custom TLS certificates, set the following environment variables. See the
 * [Optional] `LANGSMITH_PLAYGROUND_TLS_KEY`: The private key in PEM format. This must be a file path (for a mounted volume). This is usually only necessary for mutual TLS authentication.
 * [Optional] `LANGSMITH_PLAYGROUND_TLS_CERT`: The certificate in PEM format. This must be a file path (for a mounted volume). This is usually only necessary for mutual TLS authentication.
 * [Optional] `LANGSMITH_PLAYGROUND_TLS_CA`: The custom certificate authority (CA) certificate in PEM format. This must be a file path (for a mounted volume). Use this to mount CAs only if you're using a helm version below `0.11.9`; otherwise, use the [Mount internal CAs for TLS](./self-host-custom-tls-certificates#mount-internal-cas-for-tls) section above.
-
 
 Once you have set these environment variables, enter the LangSmith Playground **Settings** page and select the **Provider** that requires custom TLS certificates. Set your model provider configuration as usual, and the custom TLS certificates will be used when connecting to the model provider.

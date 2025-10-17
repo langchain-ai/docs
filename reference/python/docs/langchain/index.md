@@ -30,7 +30,7 @@ There are three main packages in the LangChain ecosystem, though most users will
 
     ---
 
-    Description WIP.
+    Legacy `langchain` implementations and components.
 
     [:octicons-arrow-right-24: Reference](../langchain_classic/index.md)
 

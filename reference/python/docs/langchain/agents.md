@@ -5,6 +5,13 @@
 ::: langchain.agents
     options:
       group_by_category: false
+      parameter_headings: true
       members:
         - create_agent
         - AgentState
+        - before_model
+        - after_model
+        - wrap_model_call
+        - wrap_tool_call
+        - dynamic-prompt
+        - ModelRequest

@@ -8,4 +8,4 @@ title: Cerebras - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-cerebras)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-cerebras)](https://pypistats.org/packages/langchain-cerebras)
 
-This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/cerebras/index.html).
+This package ref has not yet been migrated to v1.

@@ -8,4 +8,4 @@ title: HuggingFace - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-huggingface)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-huggingface)](https://pypistats.org/packages/langchain-huggingface)
 
-This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/huggingface/index.html).
+This package ref has not yet been migrated to v1.

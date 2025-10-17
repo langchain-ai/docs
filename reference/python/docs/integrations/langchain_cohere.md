@@ -8,4 +8,4 @@ title: Cohere - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-cohere)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-cohere)](https://pypistats.org/packages/langchain-cohere)
 
-This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/cohere/index.html).
+This package ref has not yet been migrated to v1.

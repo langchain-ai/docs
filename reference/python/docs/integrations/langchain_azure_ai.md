@@ -8,4 +8,4 @@ title: Azure AI - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-azure-ai)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-azure-ai)](https://pypistats.org/packages/langchain-azure-ai)
 
-This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/azure_ai/index.html).
+This package ref has not yet been migrated to v1.

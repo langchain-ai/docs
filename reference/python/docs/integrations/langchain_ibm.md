@@ -8,4 +8,4 @@ title: IBM - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-ibm)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-ibm)](https://pypistats.org/packages/langchain-ibm)
 
-This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/ibm/index.html).
+This package ref has not yet been migrated to v1.
