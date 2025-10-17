@@ -8,4 +8,4 @@ title: SQL Server - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-sqlserver)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-sqlserver)](https://pypistats.org/packages/langchain-sqlserver)
 
-This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/sqlserver/index.html).
+This package ref has not yet been migrated to v1.

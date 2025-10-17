@@ -17,7 +17,7 @@ dev-install:
 prod-install:
 	@./switch-config.sh prod
 	@echo "Installing dependencies..."
-	uv sync --link-mode=copy
+	uv sync
 
 # Show current configuration
 config-status:

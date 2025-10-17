@@ -6,5 +6,5 @@
     options:
       group_by_category: false
       members:
-        - init_embedding
+        - init_embeddings
         - Embeddings

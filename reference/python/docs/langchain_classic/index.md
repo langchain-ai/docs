@@ -6,4 +6,6 @@
 
 Reference documentation for the [`langchain-classic`](https://pypi.org/project/langchain-classic/) package.
 
-Use the left sidebar to navigate the different modules and classes within the package.
+Coming soon.
+
+<!-- Use the left sidebar to navigate the different modules and classes within the package. -->

@@ -153,26 +153,22 @@ PACKAGES_SORTED = PACKAGES_SORTED[:50]
 
 def package_row(p: dict) -> str:
     """Generate a markdown table row for a package."""
-    js = (
-        f"✅ [(npm)](https://www.npmjs.com/package/{p['js']})"
-        if p["js_exists"]
-        else "❌"
-    )
+    js = f"[✅](https://www.npmjs.com/package/{p['js']})" if p["js_exists"] else "❌"
     link = p["provider_page"]
     title = p["name_title"]
     provider = f"[{title}]({link})" if link else title
     return (
         f"| {provider} "
         f"| [`{p['name']}`]({p['package_url']}) "
-        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://static.pepy.tech/badge/{p["name"]}/month" alt="Downloads per month" noZoom height="100" class="rounded" /></a> '  # noqa: E501
-        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> '  # noqa: E501
+        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://static.pepy.tech/badge/{p["name"]}/month" alt="Downloads per month" noZoom class="rounded not-prose" /></a> '  # noqa: E501
+        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
         f"| {js} |"
     )
 
 
 def table() -> str:
     """Generate the full markdown table for all packages."""
-    header = """| Provider | Package API reference | Downloads | Latest version | JS/TS support |
+    header = """| Provider | Package API reference | Downloads | Latest version | <Tooltip tip="Whether an equivalent version exists in the TypeScript version of LangChain. Click the checkmark to visit the respective package.">JS/TS support</Tooltip> |
 | :--- | :--- | :--- | :--- | :--- |
 """  # noqa: E501
     return header + "\n".join(package_row(p) for p in PACKAGES_SORTED)

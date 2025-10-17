@@ -24,7 +24,7 @@ Welcome! These pages include reference documentation for all `langchain-*` Pytho
 
     Interact with Claude (Anthropic) APIs.
 
-    [:octicons-arrow-right-24: Reference](./langchain_anthropic.md)
+    [:octicons-arrow-right-24: Reference](./langchain_anthropic/index.md)
 
 - :simple-googlegemini:{ .lg .middle } __`langchain-google-genai`__
 

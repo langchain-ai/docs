@@ -3,14 +3,14 @@ title: Context engineering in agents
 sidebarTitle: Context engineering
 ---
 
-import AlphaCalloutPy from '/snippets/alpha-lc-callout-py.mdx';
-import AlphaCalloutJS from '/snippets/alpha-lc-callout-js.mdx';
+import StableCalloutPy from '/snippets/stable-lc-callout-py.mdx';
+import StableCalloutJS from '/snippets/stable-lc-callout-js.mdx';
 
 :::python
-<AlphaCalloutPy />
+<StableCalloutPy />
 :::
 :::js
-<AlphaCalloutJS />
+<StableCalloutJS />
 :::
 
 The hard part of building agents (or any LLM application) is making them reliable enough.
@@ -101,7 +101,7 @@ Let's explore the concrete patterns LangChain provides for context engineering.
 
 #### Static instructions
 
-For fixed instructions that don't change, use the `system_prompt` parameter:
+For fixed instructions that don't change, use the @[`system_prompt`] parameter:
 
 :::python
 ```python
@@ -129,7 +129,7 @@ const agent = createAgent({
 
 #### Dynamic instructions
 
-For instructions that depend on context (user profile, preferences, session data), use the `@dynamic_prompt` middleware:
+For instructions that depend on context (user profile, preferences, session data), use the @[`@dynamic_prompt`] middleware:
 
 :::python
 ```python
@@ -295,7 +295,7 @@ const agent = createAgent({
 ```
 :::
 
-For more sophisticated message management, use the built-in [SummarizationMiddleware](/oss/langchain/middleware#summarization) which automatically summarizes old messages when approaching token limits.
+For more sophisticated message management, use the built-in [`SummarizationMiddleware`](/oss/langchain/middleware#summarization) which automatically summarizes old messages when approaching token limits.
 
 See [Before model hook](/oss/langchain/agents#before-model-hook) for more examples.
 
@@ -306,12 +306,8 @@ Tools can access runtime context, session state, and long-term memory to make co
 :::python
 ```python
 from dataclasses import dataclass
-from langchain.tools import tool
+from langchain.tools import tool, ToolRuntime
 from langchain.agents import create_agent
-from langgraph.runtime import get_runtime
-from langgraph.config import get_store
-from typing_extensions import Annotated
-from langchain.tools import InjectedState
 
 @dataclass
 class Context:
@@ -321,11 +317,10 @@ class Context:
 @tool
 def search_documents(
     query: str,
-    state: Annotated[dict, InjectedState]
+    runtime: ToolRuntime[Context]
 ) -> str:
     """Search through documents."""
     # Access runtime context for user-specific configuration
-    runtime = get_runtime(Context)
     user_id = runtime.context.user_id
 
     # Access long-term memory for user preferences
@@ -333,7 +328,7 @@ def search_documents(
     search_prefs = store.get(("preferences", user_id), "search")
 
     # Access session state
-    conversation_history = state["messages"]
+    conversation_history = runtime.state["messages"]
 
     # Use all context to perform a better search
     results = perform_search(query, user_id, search_prefs, conversation_history)
@@ -436,7 +431,7 @@ def adaptive_model(
 
     if message_count > 20:
         # Long conversation - use model with larger context window
-        request.model = init_chat_model("anthropic:claude-sonnet-4-5-20250929")
+        request.model = init_chat_model("anthropic:claude-sonnet-4-5")
     elif message_count > 10:
         # Medium conversation - use mid-tier model
         request.model = init_chat_model("openai:gpt-4o")
@@ -466,7 +461,7 @@ const adaptiveModel = createMiddleware({
 
     if (messageCount > 20) {
       // Long conversation - use model with larger context window
-      model = initChatModel("anthropic:claude-sonnet-4-5-20250929");
+      model = initChatModel("anthropic:claude-sonnet-4-5");
     } else if (messageCount > 10) {
       // Medium conversation - use mid-tier model
       model = initChatModel("openai:gpt-4o");
@@ -488,7 +483,7 @@ See [Dynamic model](/oss/langchain/agents#dynamic-model) for more examples.
 1. **Start simple** - Begin with static prompts and tools, add dynamics only when needed
 2. **Test incrementally** - Add one context engineering feature at a time
 3. **Monitor performance** - Track model calls, token usage, and latency
-4. **Use built-in middleware** - Leverage [SummarizationMiddleware](/oss/langchain/middleware#summarization), [LLMToolSelectorMiddleware](/oss/langchain/middleware#llm-tool-selector), etc.
+4. **Use built-in middleware** - Leverage [`SummarizationMiddleware`](/oss/langchain/middleware#summarization), [`LLMToolSelectorMiddleware`](/oss/langchain/middleware#llm-tool-selector), etc.
 5. **Document your context strategy** - Make it clear what context is being passed and why
 
 ## Related resources
