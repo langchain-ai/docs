@@ -25,8 +25,10 @@ config-status:
 
 # Build files for deployment (uses current venv)
 build:
+	@echo "Syncing dependencies..."
+	@uv sync
 	@./install-mkdocs.sh
-	uv run python -m mkdocs build -c -f mkdocs.yml
+	@uv run python -m mkdocs build -c -f mkdocs.yml
 
 # To preview what the docs will look like when built
 serve-clean-docs:

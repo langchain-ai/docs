@@ -11,18 +11,15 @@ if [[ "${VERCEL:-0}" == "1" ]] && [[ -n "${MKDOCS_INSIDERS}" ]]; then
     echo "✓ Vercel environment detected with MKDOCS_INSIDERS token"
     echo "  Installing MkDocs Material Insiders..."
 
-    # Uninstall regular mkdocs-material if it exists
-    if uv pip list --system | grep -q "mkdocs-material"; then
-        echo "  Removing regular mkdocs-material..."
-        uv pip uninstall --system --yes mkdocs-material || true
-    fi
-
-    # Install MkDocs Material Insiders from private repo
+    # Install MkDocs Material Insiders from private repo into project venv
     INSIDERS_VERSION="9.6.21-insiders-4.53.17"
     INSIDERS_URL="git+https://${MKDOCS_INSIDERS}@github.com/squidfunk/mkdocs-material-insiders.git@${INSIDERS_VERSION}"
 
     echo "  Installing: mkdocs-material-insiders@${INSIDERS_VERSION}"
-    uv pip install --system "${INSIDERS_URL}"
+
+    # Uninstall regular mkdocs-material if it exists and install Insiders
+    uv pip uninstall --yes mkdocs-material || true
+    uv pip install "${INSIDERS_URL}"
 
     echo "✓ MkDocs Material Insiders installed successfully"
 else
