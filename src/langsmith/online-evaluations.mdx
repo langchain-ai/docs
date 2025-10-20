@@ -16,7 +16,9 @@ Online evaluations provide real-time feedback on your production traces. This is
 
 There are two types of online evaluations supported in LangSmith:
 
-- **[LLM-as-a-judge](/langsmith/evaluation-concepts#llm-as-judge)**: Use an LLM to evaluate your traces. Used as a scalable way to provide human-like judgement to your output (e.g. toxicity, hallucination, correctness, etc.).
+- **[LLM-as-a-judge](/langsmith/evaluation-concepts#llm-as-judge)**: Use an LLM to evaluate traces as a scalable substitute for human-like judgment (e.g., toxicity, hallucinations, correctness). Supports two different levels of granularity:
+    - **Run level**: Evaluate a single run.
+    - [**Thread level**](/langsmith/online-evaluations#configure-multi-turn-online-evaluators): Evaluate all traces in a thread.
 - **Custom Code**: Write an evaluator in Python directly in LangSmith. Often used for validating structure or statistical properties of your data.
 
 ## View online evaluators
@@ -29,7 +31,7 @@ Head to the **Tracing Projects** tab and select a tracing project. To view exist
 
 #### 1. Navigate to online evaluators
 
-Head to the **Tracing Projects** tab and select a tracing project. Click on **+ New** in the top right corner of the tracing project page, then click on **New Evaluator**.
+Head to the **Tracing Projects** tab and select a tracing project. Click on **+ New** in the top right corner of the tracing project page, then click on **New Evaluator**. Select the evaluator you want to configure.
 
 #### 2. Name your evaluator
 
@@ -44,7 +46,7 @@ For example, you may want to apply specific evaluators based on:
 Filters on evaluators work the same way as when you're filtering traces in a project. For more information on filters, you can refer to [this guide](./filter-traces-in-application).
 
 <Tip>
-**It's often helpful to inspect runs as you're creating a filter for your evaluator. With the evaluator configuration panel open, you can inspect runs and apply filters to them. Any filters you apply to the runs table will automatically be reflected in filters on your evaluator.**
+It's often helpful to inspect runs as you're creating a filter for your evaluator. With the evaluator configuration panel open, you can inspect runs and apply filters to them. Any filters you apply to the runs table will automatically be reflected in filters on your evaluator.
 </Tip>
 
 #### 4. (Optional) Configure a sampling rate
@@ -170,7 +172,7 @@ Once you **Save**, your online evaluator will run over newly sampled runs (or ba
 
 If you prefer a video tutorial, check out the [Online Evaluations video](https://academy.langchain.com/pages/intro-to-langsmith-preview) from the Introduction to LangSmith Course.
 
-## Video guide
+### Video guide
 <iframe
   className="w-full aspect-video rounded-xl"
   src="https://www.youtube.com/embed/z69cBXTJFZ0?si=GBKQ9_muHR1zllLl"
@@ -179,3 +181,76 @@ If you prefer a video tutorial, check out the [Online Evaluations video](https:/
   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
   allowFullScreen
 ></iframe>
+
+## Configure multi-turn online evaluators
+
+Multi-turn online evaluators allow you to evaluate entire conversations between a human and an agent — not just individual exchanges. They measure end-to-end interaction quality across all turns in a thread.
+
+You can use multi-turn evaluations to measure:
+1. Semantic Intent: What the user was trying to do.
+2. Semantic Outcome: What actually happened, did the task succeed.
+3. Trajectory: How the conversation unfolded, including trajectory of tool calls.
+
+### Prerequisites
+
+- Your tracing project must be using [threads](/langsmith/threads).
+- The top-level inputs and outputs of each trace in a thread must have a `messages` key that contains a list of messages. We support messages in [LangChain](/langsmith/log-llm-trace#messages-format), [OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat/create), and [Anthropic Messages](https://docs.claude.com/en/api/messages) formats.
+    - If the top-level inputs and outputs of each trace only contain the latest message in the conversation, LangSmith will automatically combine messages across turns into a thread.
+    - If the top-level inputs and outputs of each trace contain the full conversation history, LangSmith will use that directly.
+
+<Note>
+If your traces don't follow the format above, thread level evaluators won't work. You’ll need to update how you trace to LangSmith to ensure each trace’s top-level inputs and outputs contain a list of `messages`.
+
+Please refer to the [troubleshooting](#troubleshooting) section for more information.
+</Note>
+
+### Configuration
+
+1. Navigate to the **Tracing Projects** tab and select a tracing project.
+2. Click **+ New** in the top right corner of the tracing project page >  **New Evaluator** > **Evaluate a multi-turn thread**.
+3. **Name your evaluator**.
+4. **Apply filters or a sampling rate**. <br />
+Use filters or sampling to control evaluator cost. For example, evaluate only threads under *N* turns or sample 10% of all threads.
+5. **Configure an idle time**. <br />
+The first time you configure a thread level evaluator, you’ll define the idle time — the amount of time after the last trace in a thread before it’s considered complete and ready for evaluation. This value should reflect the expected length of user interactions in your app. It applies across all evaluators in the project.
+<Tip>
+When first testing your evaluator, use a short idle time so you can see results quickly. Once validated, increase it to match the expected length of user interactions.
+</Tip>
+6. **Configure your model.**<br />
+Select the provider and model you want to use for your evaluator. Threads tend to get long, so you should use a model with a higher context window in order to avoid running into limits. For example, OpenAI's GPT-4.1 mini or Gemini 2.5 Flash are good options as they both have 1M+ token context windows.
+
+7. **Configure your LLM-as-a-judge prompt.**<br />
+Define what you want to evaluate. This prompt will be used to evaluate the thread. You can also configure which parts of the `messages` list are passed to the evaluator to control the content it receives:
+    - All messages: Send the full message list.
+    - Human and AI pairs: Send only user and assistant messages (excluding system messages, tool calls, etc.).
+    - First human and last AI: Send only the first user message and the last assistant reply.
+
+9. **Set up your feedback configuration**.<br />
+Configure a name for the feedback key, the format for the feedback you want to collect and optionally enable reasoning on the feedback.
+
+<Warning>
+We don't recommend using the same feedback key for a thread-level evaluator and a run-level evaluator as it can be hard to distinguish between the two.
+</Warning>
+
+8. **Save your evaluator.**
+
+After saving, your evaluator will appear in the **Evaluators** tab. You can test it once the idle time has passed for any new threads created after saving.
+
+### Limits
+These are the current limits for multi-turn online evaluators (subject to change). Please reach out if you are running into any of these limits.
+
+- **Runs must be less than one week old**: When a thread becomes idle, only runs within the past 7 days are eligible for evaluation.
+- **Maximum of 500 threads evaluated at once**: If you have more than 500 threads marked as idle in a five minute period, we will automatically sample beyond 500.
+- **Maximum of 10 multi-turn online evaluators per workspace**
+
+### Troubleshooting
+
+**Checking the status of your evaluator** <br />
+You can check when your evaluator was last run by heading to the **Evaluators** tab within a tracing project and clicking the **Logs** button for the evaluator you created to view its run history.
+
+**Inspect the data sent to the evaluator** <br />
+Inspect the data sent to the evaluator by heading to the **Evaluators** tab within a tracing project, clicking on the evaluator you created and clicking the **Evaluator traces** tab.
+
+In this tab, you can see the inputs passed into the LLM-as-a-judge evaluator. If your messages are not being passed in correctly, you will see blank values in the inputs. This can happen if your messages are not formatted in one of [the expected formats](/langsmith/online-evaluations#prerequisites).
+
+
