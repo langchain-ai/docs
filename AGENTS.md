@@ -83,5 +83,6 @@ In general, follow the [Google Developer Documentation Style Guide](https://deve
 - Do not review code blocks (denoted by ```), as they are often not full snippets
 - Do not include untested code examples
 - Do not make assumptions - always ask for clarification
+- Do not include localization in relative links (e.g., `/python/` or `/javascript/`) - these are resolved automatically by the build pipeline
 
 For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
