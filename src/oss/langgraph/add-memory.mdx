@@ -1067,118 +1067,118 @@ const items = await store.search(["user_123", "memories"], {
 :::
 
 <Accordion title="Long-term memory with semantic search">
-  :::python
-  ```python
+    :::python
+    ```python
 
-  from langchain.embeddings import init_embeddings
-  from langchain.chat_models import init_chat_model
-  from langgraph.store.base import BaseStore
-  from langgraph.store.memory import InMemoryStore
-  from langgraph.graph import START, MessagesState, StateGraph
+    from langchain.embeddings import init_embeddings
+    from langchain.chat_models import init_chat_model
+    from langgraph.store.base import BaseStore
+    from langgraph.store.memory import InMemoryStore
+    from langgraph.graph import START, MessagesState, StateGraph
 
-  llm = init_chat_model("openai:gpt-4o-mini")
+    model = init_chat_model("openai:gpt-4o-mini")
 
-  # Create store with semantic search enabled
-  embeddings = init_embeddings("openai:text-embedding-3-small")
-  store = InMemoryStore(
-      index={
-          "embed": embeddings,
-          "dims": 1536,
-      }
-  )
+    # Create store with semantic search enabled
+    embeddings = init_embeddings("openai:text-embedding-3-small")
+    store = InMemoryStore(
+        index={
+            "embed": embeddings,
+            "dims": 1536,
+        }
+    )
 
-  store.put(("user_123", "memories"), "1", {"text": "I love pizza"})
-  store.put(("user_123", "memories"), "2", {"text": "I am a plumber"})
+    store.put(("user_123", "memories"), "1", {"text": "I love pizza"})
+    store.put(("user_123", "memories"), "2", {"text": "I am a plumber"})
 
-  def chat(state, *, store: BaseStore):
-      # Search based on user's last message
-      items = store.search(
-          ("user_123", "memories"), query=state["messages"][-1].content, limit=2
-      )
-      memories = "\n".join(item.value["text"] for item in items)
-      memories = f"## Memories of user\n{memories}" if memories else ""
-      response = llm.invoke(
-          [
-              {"role": "system", "content": f"You are a helpful assistant.\n{memories}"},
-              *state["messages"],
-          ]
-      )
-      return {"messages": [response]}
+    def chat(state, *, store: BaseStore):
+        # Search based on user's last message
+        items = store.search(
+            ("user_123", "memories"), query=state["messages"][-1].content, limit=2
+        )
+        memories = "\n".join(item.value["text"] for item in items)
+        memories = f"## Memories of user\n{memories}" if memories else ""
+        response = model.invoke(
+            [
+                {"role": "system", "content": f"You are a helpful assistant.\n{memories}"},
+                *state["messages"],
+            ]
+        )
+        return {"messages": [response]}
 
 
-  builder = StateGraph(MessagesState)
-  builder.add_node(chat)
-  builder.add_edge(START, "chat")
-  graph = builder.compile(store=store)
+    builder = StateGraph(MessagesState)
+    builder.add_node(chat)
+    builder.add_edge(START, "chat")
+    graph = builder.compile(store=store)
 
-  for message, metadata in graph.stream(
-      input={"messages": [{"role": "user", "content": "I'm hungry"}]},
-      stream_mode="messages",
-  ):
-      print(message.content, end="")
-  ```
-  :::
+    for message, metadata in graph.stream(
+        input={"messages": [{"role": "user", "content": "I'm hungry"}]},
+        stream_mode="messages",
+    ):
+        print(message.content, end="")
+    ```
+    :::
 
-  :::js
-  ```typescript
-  import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
-  import { StateGraph, START, MessagesZodMeta, InMemoryStore } from "@langchain/langgraph";
-  import { BaseMessage } from "@langchain/core/messages";
-  import { registry } from "@langchain/langgraph/zod";
-  import * as z from "zod";
+    :::js
+    ```typescript
+    import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
+    import { StateGraph, START, MessagesZodMeta, InMemoryStore } from "@langchain/langgraph";
+    import { BaseMessage } from "@langchain/core/messages";
+    import { registry } from "@langchain/langgraph/zod";
+    import * as z from "zod";
 
-  const MessagesZodState = z.object({
-    messages: z
-      .array(z.custom<BaseMessage>())
-      .register(registry, MessagesZodMeta),
-  });
+    const MessagesZodState = z.object({
+        messages: z
+        .array(z.custom<BaseMessage>())
+        .register(registry, MessagesZodMeta),
+    });
 
-  const llm = new ChatOpenAI({ model: "gpt-4o-mini" });
+    const model = new ChatOpenAI({ model: "gpt-4o-mini" });
 
-  // Create store with semantic search enabled
-  const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
-  const store = new InMemoryStore({
-    index: {
-      embeddings,
-      dims: 1536,
+    // Create store with semantic search enabled
+    const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
+    const store = new InMemoryStore({
+        index: {
+        embeddings,
+        dims: 1536,
+        }
+    });
+
+    await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
+    await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
+
+    const chat = async (state: z.infer<typeof MessagesZodState>, config) => {
+        // Search based on user's last message
+        const items = await config.store.search(
+        ["user_123", "memories"],
+        { query: state.messages.at(-1)?.content, limit: 2 }
+        );
+        const memories = items.map(item => item.value.text).join("\n");
+        const memoriesText = memories ? `## Memories of user\n${memories}` : "";
+
+        const response = await model.invoke([
+        { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
+        ...state.messages,
+        ]);
+
+        return { messages: [response] };
+    };
+
+    const builder = new StateGraph(MessagesZodState)
+        .addNode("chat", chat)
+        .addEdge(START, "chat");
+    const graph = builder.compile({ store });
+
+    for await (const [message, metadata] of await graph.stream(
+        { messages: [{ role: "user", content: "I'm hungry" }] },
+        { streamMode: "messages" }
+    )) {
+        if (message.content) {
+        console.log(message.content);
+        }
     }
-  });
-
-  await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
-  await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
-
-  const chat = async (state: z.infer<typeof MessagesZodState>, config) => {
-    // Search based on user's last message
-    const items = await config.store.search(
-      ["user_123", "memories"],
-      { query: state.messages.at(-1)?.content, limit: 2 }
-    );
-    const memories = items.map(item => item.value.text).join("\n");
-    const memoriesText = memories ? `## Memories of user\n${memories}` : "";
-
-    const response = await llm.invoke([
-      { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
-      ...state.messages,
-    ]);
-
-    return { messages: [response] };
-  };
-
-  const builder = new StateGraph(MessagesZodState)
-    .addNode("chat", chat)
-    .addEdge(START, "chat");
-  const graph = builder.compile({ store });
-
-  for await (const [message, metadata] of await graph.stream(
-    { messages: [{ role: "user", content: "I'm hungry" }] },
-    { streamMode: "messages" }
-  )) {
-    if (message.content) {
-      console.log(message.content);
-    }
-  }
-  ```
-  :::
+    ```
+    :::
 </Accordion>
 
 ## Manage short-term memory

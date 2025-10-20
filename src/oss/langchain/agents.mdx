@@ -12,7 +12,7 @@ import StableCalloutJS from '/snippets/stable-lc-callout-js.mdx';
 <StableCalloutJS />
 :::
 
-Agents combine language models with tools to create systems that can reason about tasks, decide which tools to use, and iteratively work towards solutions.
+Agents combine language models with [tools](/oss/langchain/tools) to create systems that can reason about tasks, decide which tools to use, and iteratively work towards solutions.
 
 :::python
 @[`create_agent`] provides a production-ready agent implementation.
@@ -74,7 +74,9 @@ The [model](/oss/langchain/models) is the reasoning engine of your agent. It can
 
 #### Static model
 
-Static models are configured once when creating the agent and remain unchanged throughout execution. This is the most common and straightforward approach. To initialize a static model from a <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model_provider)">model identifier string</Tooltip>:
+Static models are configured once when creating the agent and remain unchanged throughout execution. This is the most common and straightforward approach.
+
+To initialize a static model from a <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model_provider)">model identifier string</Tooltip>:
 
 :::python
 ```python wrap
@@ -102,7 +104,7 @@ const agent = createAgent({
     Model identifier strings support automatic inference (e.g., `"gpt-5"` will be inferred as `"openai:gpt-5"`). Refer to the @[reference][init_chat_model(model_provider)] to see a full list of model identifier string mappings.
 </Tip>
 
-For more control over the model configuration, initialize a model instance directly using the provider package:
+For more control over the model configuration, initialize a model instance directly using the provider package. In this example, we use @[`ChatOpenAI`]. See [Chat models](/oss/integrations/chat) for other available chat model classes.
 
 ```python wrap
 from langchain.agents import create_agent
@@ -149,12 +151,13 @@ Dynamic models are selected at <Tooltip tip="The execution environment of your a
 
 :::python
 
-To use a dynamic model, create middleware with the @[`@wrap_model_call`] decorator that modifies the model in the request:
+To use a dynamic model, create middleware using the @[`@wrap_model_call`] decorator that modifies the model in the request:
 
-```python wrap
+```python
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+
 
 basic_model = ChatOpenAI(model="gpt-4o-mini")
 advanced_model = ChatOpenAI(model="gpt-4o")
@@ -165,7 +168,7 @@ def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
     message_count = len(request.state["messages"])
 
     if message_count > 10:
-        # Use advanced model for longer conversations
+        # Use an advanced model for longer conversations
         model = advanced_model
     else:
         model = basic_model
@@ -180,16 +183,16 @@ agent = create_agent(
 )
 ```
 
-<Note>
+<Warning>
 Pre-bound models (models with @[`bind_tools`][BaseChatModel.bind_tools] already called) are not supported when using structured output. If you need dynamic model selection with structured output, ensure the models passed to the middleware are not pre-bound.
-</Note>
+</Warning>
 
 :::
 :::js
 
 To use a dynamic model, create middleware with `wrapModelCall` that modifies the model in the request:
 
-```ts wrap
+```ts
 import { ChatOpenAI } from "@langchain/openai";
 import { createAgent, createMiddleware } from "langchain";
 
@@ -233,6 +236,8 @@ Tools give agents the ability to take actions. Agents go beyond simple model-onl
 - Tool retry logic and error handling
 - State persistence across tool calls
 
+For more information, see [Tools](/oss/langchain/tools).
+
 #### Defining tools
 
 Pass a list of tools to the agent.
@@ -241,6 +246,7 @@ Pass a list of tools to the agent.
 ```python wrap
 from langchain.tools import tool
 from langchain.agents import create_agent
+
 
 @tool
 def search(query: str) -> str:
@@ -302,6 +308,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
 from langchain_core.messages import ToolMessage
 
+
 @wrap_tool_call
 def handle_tool_errors(request, handler):
     """Handle tool execution errors with custom messages."""
@@ -316,7 +323,7 @@ def handle_tool_errors(request, handler):
 
 agent = create_agent(
     model="openai:gpt-4o",
-    tools=[search, calculate],
+    tools=[search, get_weather],
     middleware=[handle_tool_errors]
 )
 ```
@@ -324,7 +331,6 @@ agent = create_agent(
 The agent will return a @[`ToolMessage`] with the custom error message when a tool fails:
 
 ```python
-# result["messages"]
 [
     ...
     ToolMessage(
@@ -369,10 +375,6 @@ const agent = createAgent({
 
 The agent will return a @[`ToolMessage`] with the custom error message when a tool fails.
 :::
-
-<Tip>
-Learn more about tools in [tools](/oss/langchain/tools).
-</Tip>
 
 #### Tool use in the ReAct loop
 
@@ -474,6 +476,7 @@ from typing import TypedDict
 from langchain.agents import create_agent
 from langchain.agents.middleware import dynamic_prompt, ModelRequest
 
+
 class Context(TypedDict):
     user_role: str
 
@@ -547,7 +550,7 @@ For more details on message types and formatting, see [Messages](/oss/langchain/
 
 ## Invocation
 
-You can invoke an agent by passing an update to its [state](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesstate) in their state; to invoke the agent, pass a new message:
+You can invoke an agent by passing an update to its [`State`](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesstate) in their state; to invoke the agent, pass a new message:
 
 :::python
 ```python
@@ -585,6 +588,7 @@ from pydantic import BaseModel
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 
+
 class ContactInfo(BaseModel):
     name: str
     email: str
@@ -618,7 +622,7 @@ agent = create_agent(
 ```
 
 <Note>
-In v1, simply passing a schema (e.g., `response_format=ContactInfo`) is no longer supported. You must explicitly use `ToolStrategy` or `ProviderStrategy`.
+As of `langchain 1.0`, simply passing a schema (e.g., `response_format=ContactInfo`) is no longer supported. You must explicitly use `ToolStrategy` or `ProviderStrategy`.
 </Note>
 
 :::
@@ -686,6 +690,10 @@ Defining custom state via middleware is preferred over defining it via @[`state_
 Use middleware to define custom state when your custom state needs to be accessed by specific middleware hooks and tools attached to said middleware.
 
 ```python
+from langchain.agents import AgentState
+from langchain.agents.middleware import AgentMiddleware
+
+
 class CustomState(AgentState):
     user_preferences: dict
 
@@ -714,6 +722,9 @@ result = agent.invoke({
 Use the @[`state_schema`] parameter as a shortcut to define custom state that is only used in tools.
 
 ```python
+from langchain.agents import AgentState
+
+
 class CustomState(AgentState):
     user_preferences: dict
 
@@ -730,7 +741,7 @@ result = agent.invoke({
 ```
 
 <Note>
-In v1, custom state schemas **must** be `TypedDict` types. Pydantic models and dataclasses are no longer supported. See the [v1 migration guide](/oss/migrate/langchain-v1#state-type-restrictions) for more details.
+As of `langchain 1.0`, custom state schemas **must** be `TypedDict` types. Pydantic models and dataclasses are no longer supported. See the [v1 migration guide](/oss/migrate/langchain-v1#state-type-restrictions) for more details.
 </Note>
 
 :::
@@ -762,7 +773,7 @@ To learn more about memory, see [Memory](/oss/concepts/memory). For information 
 We've seen how the agent can be called with `invoke` to get a final response. If the agent executes multiple steps, this may take a while. To show intermediate progress, we can stream back messages as they occur.
 
 :::python
-```python wrap
+```python
 for chunk in agent.stream({
     "messages": [{"role": "user", "content": "Search for AI news and summarize the findings"}]
 }, stream_mode="values"):
@@ -775,7 +786,7 @@ for chunk in agent.stream({
 ```
 :::
 :::js
-```ts wrap
+```ts
 const stream = await agent.stream(
   {
     messages: [{

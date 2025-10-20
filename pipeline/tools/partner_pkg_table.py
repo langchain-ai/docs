@@ -186,6 +186,18 @@ mode: wide
 
 LangChain Python offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
 
+<Columns cols={{3}}>
+    <Card title="Chat models" icon="message" href="/oss/integrations/chat">
+        Set up your project with our quickstart guide.
+    </Card>
+    <Card title="Embedding models" icon="layer-group" href="/oss/integrations/text_embedding">
+        Explore endpoints, parameters, and examples for your API.
+    </Card>
+    <Card title="Tools and toolkits" icon="screwdriver-wrench" href="/oss/integrations/tools">
+        Explore endpoints, parameters, and examples for your API.
+    </Card>
+</Columns>
+
 To see a full list of integrations by component type, refer to the categories in the sidebar.
 
 ## Popular providers

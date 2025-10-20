@@ -9,6 +9,12 @@ echo "Checking MkDocs Material installation requirements..."
 # Check if we're running on Vercel and install system dependencies
 if [[ "${VERCEL:-0}" == "1" ]]; then
     echo "✓ Vercel environment detected"
+
+    # Set locale to avoid package manager warnings
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export LANGUAGE=C.UTF-8
+
     echo "  Installing system dependencies..."
 
     # Install pngquant for image optimization
