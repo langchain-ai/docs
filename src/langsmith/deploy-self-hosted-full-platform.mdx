@@ -1,0 +1,72 @@
+---
+title: Self-host LangSmith with deployment
+sidebarTitle: With deployment
+icon: "server"
+---
+
+This guide shows you how to enable **deployment management** on your self-hosted LangSmith instance. This adds a [control plane](/langsmith/control-plane) and [data plane](/langsmith/data-plane) that let you deploy, scale, and manage agents and applications directly through the LangSmith UI.
+
+<Info>**Important**<br></br> Self-hosting LangSmith with deployment requires an [Enterprise](https://langchain.com/pricing) plan. </Info>
+
+<Note>
+**This setup page is for adding [deployment](/langsmith/deployments) capabilities to an existing LangSmith instance.**
+
+Review the [self-hosted options](/langsmith/self-hosted) to understand:
+- [LangSmith (observability)](/langsmith/self-hosted#langsmith): What you should install first.
+- [LangSmith with deployment](/langsmith/self-hosted#langsmith-with-deployment): What this guide enables.
+- [Standalone Server](/langsmith/self-hosted#standalone-server): Lightweight alternative without the UI.
+</Note>
+
+## Overview
+
+This guide builds on top of the [Kubernetes installation guide](/langsmith/kubernetes). **You must complete that guide first** before continuing. This page covers the additional setup steps required to enable deployment functionality:
+- Installing the LangGraph operator
+- Configuring your ingress
+- Connecting to the control plane
+
+## Prerequisites
+
+1. You are using Kubernetes.
+2. You have an instance of [self-hosted LangSmith](/langsmith/kubernetes) running.
+3. Use the [LangGraph CLI](/langsmith/cli) to [test your application locally](/langsmith/local-server).
+4. Use the [LangGraph CLI](/langsmith/cli) to build a Docker image (i.e. `langgraph build`) and push it to a registry your Kubernetes cluster has access to.
+5. `KEDA` is installed on your cluster.
+```bash
+  helm repo add kedacore https://kedacore.github.io/charts
+  helm install keda kedacore/keda --namespace keda --create-namespace
+```
+6. Ingress Configuration
+    1. You must set up an ingress for your LangSmith instance. All agents will be deployed as Kubernetes services behind this ingress. Use this guide to [set up an ingress](/langsmith/self-host-ingress) for your instance.
+7. You have slack space in your cluster for multiple deployments. `Cluster-Autoscaler` is recommended to automatically provision new nodes.
+8. A valid Dynamic PV provisioner or PVs available on your cluster. You can verify this by running:
+```bash
+  kubectl get storageclass
+```
+9. Egress to `https://beacon.langchain.com` from your network. This is required for license verification and usage reporting if not running in air-gapped mode. See the [Egress documentation](/langsmith/egress-metrics-metadata) for more details.
+
+## Setup
+
+1. As part of configuring your self-hosted LangSmith instance, you enable the `langgraphPlatform` option. This will provision a few key resources.
+    1. `listener`: This is a service that listens to the [control plane](/langsmith/control-plane) for changes to your deployments and creates/updates downstream CRDs.
+    2. `LangGraphPlatform CRD`: A CRD for LangSmith Deployment. This contains the spec for managing an instance of a LangSmith deployment.
+    3. `operator`: This operator handles changes to your LangSmith CRDs.
+    4. `host-backend`: This is the [control plane](/langsmith/control-plane).
+2. Two additional images will be used by the chart. Use the images that are specified in the latest release.
+```bash
+  hostBackendImage:
+    repository: "docker.io/langchain/hosted-langserve-backend"
+    pullPolicy: IfNotPresent
+  operatorImage:
+    repository: "docker.io/langchain/langgraph-operator"
+    pullPolicy: IfNotPresent
+```
+3. In your config file for langsmith (usually `langsmith_config.yaml`), enable the `langgraphPlatform` option. Note that you must also have a valid ingress setup:
+```bash
+  config:
+    langgraphPlatform:
+      enabled: true
+      langgraphPlatformLicenseKey: "YOUR_LANGGRAPH_PLATFORM_LICENSE_KEY"
+```
+4. In your `values.yaml` file, configure the `hostBackendImage` and `operatorImage` options (if you need to mirror images)
+5. You can also configure base templates for your agents by overriding the base templates [here](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml#L898).
+6. You create a deployment from the [control plane UI](/langsmith/control-plane#control-plane-ui).

@@ -4,7 +4,7 @@ import glob
 def update_mdx_files():
     # Get all MDX files in the specified directories
     mdx_files = []
-    for root in ["oss", "langsmith", "langgraph-platform"]:
+    for root in ["oss", "langsmith"]:
         mdx_files.extend(glob.glob(f"{root}/**/*.mdx", recursive=True))
 
     for file_path in mdx_files:

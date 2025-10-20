@@ -92,10 +92,6 @@ class DocumentationBuilder:
         logger.info("Building LangGraph JavaScript version...")
         self._build_langgraph_version("oss/javascript", "js")
 
-        # Build unversioned content (same content regardless of version)
-        logger.info("Building LangGraph Platform content...")
-        self._build_unversioned_content("langgraph-platform", "langgraph-platform")
-
         logger.info("Building LangChain Labs content...")
         self._build_unversioned_content("labs", "labs")
 
@@ -305,7 +301,7 @@ class DocumentationBuilder:
         if relative_path.parts[0] == "oss":
             self._build_oss_file(file_path, relative_path)
         # Check if this is unversioned content
-        elif relative_path.parts[0] in {"langgraph-platform", "labs", "langsmith"}:
+        elif relative_path.parts[0] in {"labs", "langsmith"}:
             self._build_unversioned_file(file_path, relative_path)
         # Handle shared files (images, docs.json, etc.)
         elif self.is_shared_file(file_path):
@@ -340,7 +336,7 @@ class DocumentationBuilder:
             logger.info("Built JavaScript version: oss/javascript/%s", oss_relative)
 
     def _build_unversioned_file(self, file_path: Path, relative_path: Path) -> None:
-        """Build an unversioned file (langgraph-platform, labs, langsmith).
+        """Build an unversioned file (langsmith, labs).
 
         Args:
             file_path: Path to the source file.
@@ -385,6 +381,10 @@ class DocumentationBuilder:
         Returns:
             True if the file was built successfully, False if skipped.
         """
+        # Skip template files
+        if file_path.name == "TEMPLATE.mdx":
+            return False
+
         # Create output directory if needed
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -422,6 +422,10 @@ class DocumentationBuilder:
         Returns:
             True if the file was copied, False if it was skipped.
         """
+        # Skip template files
+        if file_path.name == "TEMPLATE.mdx":
+            return False
+
         relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
         output_path = self.build_dir / relative_path
 
@@ -573,10 +577,10 @@ class DocumentationBuilder:
         )
 
     def _build_unversioned_content(self, source_dir: str, output_dir: str) -> None:
-        """Build unversioned content (langgraph-platform/, labs/, langsmith/).
+        """Build unversioned content (labs/, langsmith/).
 
         Args:
-            source_dir: Source directory name (e.g., "langgraph-platform", "labs").
+            source_dir: Source directory name (e.g., "labs").
             output_dir: Output directory name (same as source_dir).
         """
         src_path = self.src_dir / source_dir
@@ -651,6 +655,10 @@ class DocumentationBuilder:
         Returns:
             True if the file was copied, False if it was skipped.
         """
+        # Skip template files
+        if file_path.name == "TEMPLATE.mdx":
+            return False
+
         # Update progress bar description with current file
         pbar.set_postfix_str(display_path)
 
@@ -818,8 +826,13 @@ class DocumentationBuilder:
                 url = match.group(2)  # The URL
                 post = match.group(3)  # Everything after the URL
 
-                # Only convert absolute /oss/ paths that don't contain 'images'
-                if url.startswith("/oss/") and "images" not in url:
+                # Only convert absolute /oss/ paths that don't contain 'images' or '/oss/python' or '/oss/javascript'
+                if (
+                    url.startswith("/oss/")
+                    and "images" not in url
+                    and "/oss/python" not in url
+                    and "/oss/javascript" not in url
+                ):
                     # Convert to relative path that works from oss/python/* or oss/js/*
                     # e.g., /oss/releases/langchain-v1 becomes ../releases/langchain-v1
                     parts = url.split("/")

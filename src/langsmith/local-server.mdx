@@ -1,0 +1,243 @@
+---
+title: Run a LangGraph app locally
+sidebarTitle: Quickstart
+---
+
+This quickstart shows you how to set up a LangGraph application locally for testing and development.
+
+## Prerequisites
+
+Before you begin, ensure you have an API key for [LangSmith](https://smith.langchain.com/settings) (free to sign up).
+
+## 1. Install the LangGraph CLI
+
+<Tabs>
+    <Tab title="Python server">
+    ```shell
+    # Python >= 3.11 is required.
+
+    pip install -U "langgraph-cli[inmem]"
+    ```
+    </Tab>
+    <Tab title="Node server">
+    ```shell
+    npx @langchain/langgraph-cli
+    ```
+    </Tab>
+</Tabs>
+
+## 2. Create a LangGraph app 🌱
+
+Create a new app from the [`new-langgraph-project-python` template](https://github.com/langchain-ai/new-langgraph-project) or [`new-langgraph-project-js` template](https://github.com/langchain-ai/new-langgraphjs-project). This template demonstrates a single-node application you can extend with your own logic.
+
+<Tabs>
+    <Tab title="Python server">
+    ```shell
+    langgraph new path/to/your/app --template new-langgraph-project-python
+    ```
+    </Tab>
+    <Tab title="Node server">
+    ```shell
+    langgraph new path/to/your/app --template new-langgraph-project-js
+    ```
+    </Tab>
+</Tabs>
+
+<Tip>
+**Additional templates**<br></br>
+If you use [`langgraph new`](/langsmith/cli) without specifying a template, you will be presented with an interactive menu that will allow you to choose from a list of available templates.
+</Tip>
+
+## 3. Install dependencies
+
+In the root of your new LangGraph app, install the dependencies in `edit` mode so your local changes are used by the server:
+
+<Tabs>
+    <Tab title="Python server">
+    ```shell
+    cd path/to/your/app
+    pip install -e .
+    ```
+    </Tab>
+    <Tab title="Node server">
+    ```shell
+    cd path/to/your/app
+    yarn install
+    ```
+    </Tab>
+</Tabs>
+
+## 4. Create a `.env` file
+
+You will find a [`.env.example`](/langsmith/application-structure#configuration-file) in the root of your new LangGraph app. Create a `.env` file in the root of your new LangGraph app and copy the contents of the `.env.example` file into it, filling in the necessary API keys:
+
+```bash
+LANGSMITH_API_KEY=lsv2...
+```
+
+## 5. Launch LangGraph Server 🚀
+
+Start the LangGraph API server locally:
+
+<Tabs>
+    <Tab title="Python server">
+    ```shell
+    langgraph dev
+    ```
+    </Tab>
+    <Tab title="Node server">
+    ```shell
+    npx @langchain/langgraph-cli dev
+    ```
+    </Tab>
+</Tabs>
+
+Sample output:
+
+```
+>    Ready!
+>
+>    - API: [http://localhost:2024](http://localhost:2024/)
+>
+>    - Docs: http://localhost:2024/docs
+>
+>    - Studio Web UI: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
+```
+
+The [`langgraph dev`](/langsmith/cli) command starts [LangGraph Server](/langsmith/langgraph-server) in an in-memory mode. This mode is suitable for development and testing purposes.
+
+<Tip>
+For production use, deploy LangGraph Server with a persistent storage backend. For more information, refer to the LangSmith [hosting options](/langsmith/hosting).
+</Tip>
+
+## 6. Test the API
+
+<Tabs>
+    <Tab title="Python SDK (async)">
+    1. Install the LangGraph Python SDK:
+      ```shell
+      pip install langgraph-sdk
+      ```
+    2. Send a message to the assistant (threadless run):
+      ```python
+      from langgraph_sdk import get_client
+      import asyncio
+
+      client = get_client(url="http://localhost:2024")
+
+      async def main():
+          async for chunk in client.runs.stream(
+              None,  # Threadless run
+              "agent", # Name of assistant. Defined in langgraph.json.
+              input={
+              "messages": [{
+                  "role": "human",
+                  "content": "What is LangGraph?",
+                  }],
+              },
+          ):
+              print(f"Receiving new event of type: {chunk.event}...")
+              print(chunk.data)
+              print("\n\n")
+
+      asyncio.run(main())
+      ```
+    </Tab>
+    <Tab title="Python SDK (sync)">
+    1. Install the LangGraph Python SDK:
+      ```shell
+      pip install langgraph-sdk
+      ```
+    2. Send a message to the assistant (threadless run):
+      ```python
+      from langgraph_sdk import get_sync_client
+
+      client = get_sync_client(url="http://localhost:2024")
+
+      for chunk in client.runs.stream(
+          None,  # Threadless run
+          "agent", # Name of assistant. Defined in langgraph.json.
+          input={
+              "messages": [{
+                  "role": "human",
+                  "content": "What is LangGraph?",
+              }],
+          },
+          stream_mode="messages-tuple",
+      ):
+          print(f"Receiving new event of type: {chunk.event}...")
+          print(chunk.data)
+          print("\n\n")
+      ```
+    </Tab>
+    <Tab title="Javascript SDK">
+    1. Install the LangGraph JS SDK:
+      ```shell
+      npm install @langchain/langgraph-sdk
+      ```
+    2. Send a message to the assistant (threadless run):
+      ```js
+      const { Client } = await import("@langchain/langgraph-sdk");
+
+      // only set the apiUrl if you changed the default port when calling langgraph dev
+      const client = new Client({ apiUrl: "http://localhost:2024"});
+
+      const streamResponse = client.runs.stream(
+          null, // Threadless run
+          "agent", // Assistant ID
+          {
+              input: {
+                  "messages": [
+                      { "role": "user", "content": "What is LangGraph?"}
+                  ]
+              },
+              streamMode: "messages-tuple",
+          }
+      );
+
+      for await (const chunk of streamResponse) {
+          console.log(`Receiving new event of type: ${chunk.event}...`);
+          console.log(JSON.stringify(chunk.data));
+          console.log("\n\n");
+      }
+      ```
+    </Tab>
+    <Tab title="Rest API">
+    ```bash
+    curl -s --request POST \
+        --url "http://localhost:2024/runs/stream" \
+        --header 'Content-Type: application/json' \
+        --data "{
+            \"assistant_id\": \"agent\",
+            \"input\": {
+                \"messages\": [
+                    {
+                        \"role\": \"human\",
+                        \"content\": \"What is LangGraph?\"
+                    }
+                ]
+            },
+            \"stream_mode\": \"messages-tuple\"
+        }"
+    ```
+    </Tab>
+</Tabs>
+
+## Next steps
+
+Now that you have a LangGraph app running locally, you're ready to deploy it:
+
+**Choose a hosting option for LangSmith:**
+- [**Cloud**](/langsmith/cloud): Fastest setup, fully managed (recommended).
+- [**Hybrid**](/langsmith/hybrid): <Tooltip tip="The runtime environment where your LangGraph Servers and agents execute.">Data plane</Tooltip> in your cloud, <Tooltip tip="The LangSmith UI and APIs for managing deployments.">control plane</Tooltip> managed by LangChain.
+- [**Self-hosted**](/langsmith/self-hosted): Full control in your infrastructure.
+
+For more details, refer to the [hosting comparison](/langsmith/hosting).
+
+**Then deploy your app:**
+- [Deploy to Cloud quickstart](/langsmith/deployment-quickstart): Quick setup guide.
+- [Full Cloud setup guide](/langsmith/deploy-to-cloud): Comprehensive deployment documentation.
+
+**Explore features:**
+- **[Studio](/langsmith/studio)**: Visualize, interact with, and debug your application with the Studio UI. Try the [Studio quickstart](/langsmith/quick-start-studio).
+- **API References**: [LangGraph Server API](https://langchain-ai.github.io/langgraph/cloud/reference/api/api_ref/), [Python SDK](/langsmith/langgraph-python-sdk), [JS/TS SDK](/langsmith/langgraph-js-ts-sdk)

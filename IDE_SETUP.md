@@ -2,6 +2,8 @@
 
 This repository includes configuration files to ensure consistent formatting across different editors and IDEs used by documentation writers.
 
+Ensure the following steps are taken and configurations are in place before making substantial docs changes.
+
 ## Automatic Configuration
 
 ### VSCode

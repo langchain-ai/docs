@@ -378,11 +378,7 @@ class FileWatcher:
                                 os.utime(built_file, (current_time, current_time))
                                 touched_count += 1
 
-                elif relative_path.parts[0] in {
-                    "langgraph-platform",
-                    "labs",
-                    "langsmith",
-                }:
+                elif relative_path.parts[0] in {"labs", "langsmith"}:
                     # Unversioned content
                     built_file = self.build_dir / relative_path
 

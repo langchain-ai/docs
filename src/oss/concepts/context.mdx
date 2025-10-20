@@ -3,9 +3,15 @@ title: Context overview
 sidebarTitle: Context
 ---
 
-import AlphaCallout from '/snippets/alpha-lg-callout.mdx';
+import StableCalloutPy from '/snippets/stable-lg-callout-py.mdx';
+import StableCalloutJS from '/snippets/stable-lg-callout-js.mdx';
 
-<AlphaCallout />
+:::python
+<StableCalloutPy />
+:::
+:::js
+<StableCalloutJS />
+:::
 
 **Context engineering** is the practice of building dynamic systems that provide the right information and tools, in the right format, so that an AI application can accomplish a task. Context can be characterized along two key dimensions:
 
@@ -53,26 +59,29 @@ graph.invoke(
 <Tabs>
     <Tab title="Agent prompt">
     ```python
-    from langchain.messages import AnyMessage
-    from langgraph.runtime import get_runtime
-    from langgraph.prebuilt.chat_agent_executor import AgentState
-    from langgraph.prebuilt import create_react_agent
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
 
-    def prompt(state: AgentState) -> list[AnyMessage]:  # [!code highlight]
-        runtime = get_runtime(ContextSchema)
-        system_msg = f"You are a helpful assistant. Address the user as {runtime.context.user_name}."
-        return [{"role": "system", "content": system_msg}] + state["messages"]
+    @dataclass
+    class ContextSchema:
+        user_name: str
 
-    agent = create_react_agent(
-        model="anthropic:claude-3-7-sonnet-latest",
+    @dynamic_prompt  # [!code highlight]
+    def personalized_prompt(request: ModelRequest) -> str:  # [!code highlight]
+        user_name = request.runtime.context.user_name
+        return f"You are a helpful assistant. Address the user as {user_name}."
+
+    agent = create_agent(
+        model="anthropic:claude-sonnet-4-5",
         tools=[get_weather],
-        prompt=prompt,
+        middleware=[personalized_prompt],
         context_schema=ContextSchema
     )
 
     agent.invoke(
         {"messages": [{"role": "user", "content": "what is the weather in sf"}]},
-        context={"user_name": "John Smith"}  # [!code highlight]
+        context=ContextSchema(user_name="John Smith")  # [!code highlight]
     )
 ```
 
@@ -91,14 +100,13 @@ graph.invoke(
     </Tab>
     <Tab title="In a tool">
     ```python
-    from langgraph.runtime import get_runtime
+    from langchain.tools import tool, ToolRuntime
 
     @tool
-    def get_user_email() -> str:
+    def get_user_email(runtime: ToolRuntime[ContextSchema]) -> str:
         """Retrieve user information based on user ID."""
         # simulate fetching user info from a database
-        runtime = get_runtime(ContextSchema)  # [!code highlight]
-        email = get_user_email_from_db(runtime.context.user_name)
+        email = get_user_email_from_db(runtime.context.user_name)  # [!code highlight]
         return email
 ```
 
@@ -147,63 +155,56 @@ await graph.invoke(
 
     :::python
     ```python
-    from langchain.messages import AnyMessage
-    from langchain_core.runnables import RunnableConfig
-    from langgraph.prebuilt import create_react_agent
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
     from langgraph.prebuilt.chat_agent_executor import AgentState
 
     class CustomState(AgentState):  # [!code highlight]
         user_name: str
 
-    def prompt(
-        state: CustomState  # [!code highlight]
-    ) -> list[AnyMessage]:
-        user_name = state["user_name"]
-        system_msg = f"You are a helpful assistant. User's name is {user_name}"
-        return [{"role": "system", "content": system_msg}] + state["messages"]
+    @dynamic_prompt  # [!code highlight]
+    def personalized_prompt(request: ModelRequest) -> str:  # [!code highlight]
+        user_name = request.state.get("user_name", "User")
+        return f"You are a helpful assistant. User's name is {user_name}"
 
-    agent = create_react_agent(
-        model="anthropic:claude-3-7-sonnet-latest",
+    agent = create_agent(
+        model="anthropic:claude-sonnet-4-5",
         tools=[...],
         state_schema=CustomState,  # [!code highlight]
-        prompt=prompt
+        middleware=[personalized_prompt],  # [!code highlight]
     )
 
     agent.invoke({
         "messages": "hi!",
         "user_name": "John Smith"
     })
-```
+    ```
     :::
 
     :::js
     ```typescript
-    import type { BaseMessage } from "@langchain/core/messages";
-    import { createReactAgent } from "@langchain/langgraph/prebuilt";
-    import { MessagesZodMeta } from "@langchain/langgraph";
-    import { registry } from "@langchain/langgraph/zod";
+    import { createAgent, createMiddleware } from "langchain";
+    import type { AgentState } from "langchain";
     import * as z from "zod";
 
     const CustomState = z.object({ // [!code highlight]
-      messages: z
-        .array(z.custom<BaseMessage>())
-        .register(registry, MessagesZodMeta),
       userName: z.string(),
     });
 
-    const prompt = (
-      state: z.infer<typeof CustomState>
-    ): BaseMessage[] => {
-      const userName = state.userName;
-      const systemMsg = `You are a helpful assistant. User's name is ${userName}`;
-      return [{ role: "system", content: systemMsg }, ...state.messages];
-    };
+    const personalizedPrompt = createMiddleware({ // [!code highlight]
+      name: "PersonalizedPrompt",
+      stateSchema: CustomState,
+      wrapModelCall: (request, handler) => {
+        const userName = request.state.userName || "User";
+        const systemPrompt = `You are a helpful assistant. User's name is ${userName}`;
+        return handler({ ...request, systemPrompt });
+      },
+    });
 
-    const agent = createReactAgent({  // [!code highlight]
-      llm: model,
-      tools: [...],
-      stateSchema: CustomState, // [!code highlight]
-      stateModifier: prompt,
+    const agent = createAgent({  // [!code highlight]
+      model: "anthropic:claude-sonnet-4-5",
+      tools: [/* your tools here */],
+      middleware: [personalizedPrompt] as const, // [!code highlight]
     });
 
     await agent.invoke({
