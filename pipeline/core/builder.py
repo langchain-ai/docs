@@ -195,7 +195,7 @@ class DocumentationBuilder:
                 f"    [Edit the source of this page on GitHub.]({edit_url})\n"
                 "</Callout>\n"
                 f'<Tip icon="terminal" iconType="regular">\n'
-                f"    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for"
+                f"    [Use these docs programmatically](/use-these-docs) to Claude, VSCode, and more via MCP for"
                 f"    real-time answers.\n"
                 "</Tip>\n"
             )
