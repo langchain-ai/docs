@@ -23,7 +23,7 @@ The core APIs for the LangGraph open source library.
 - [Storage](store.md): Storage backends and options.
 - [Caching](cache.md): Caching mechanisms for performance.
 - [Types](types.md): Type definitions for graph components.
-- [Runtime](config.md): Runtime configuration and options.
+- [Runtime](runtime.md): Runtime configuration and options.
 - [Config](config.md): Configuration options.
 - [Errors](errors.md): Error types and handling.
 - [Constants](constants.md): Global constants.
