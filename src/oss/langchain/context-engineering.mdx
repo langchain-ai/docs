@@ -84,9 +84,8 @@ LangChain [middleware](/oss/langchain/middleware) is the mechanism under the hoo
 
 Middleware allows you to hook into any step in the agent lifecycle and:
 
-1. Read context
-2. Write context
-3. Jump to a different step in the agent lifecycle
+* Update context
+* Jump to a different step in the agent lifecycle
 
 Throughout this guide, you'll see frequent use of the middleware API as a means to the context engineering end.
 
@@ -102,13 +101,13 @@ Control what goes into each model call - instructions, available tools, which mo
         The full list of messages (conversation history) sent to the LLM.
     </Card>
     <Card title="Tools" icon="wrench" href="#tools">
-        What tools the agent has access to. The names and descriptions and arguments of these are just as important as the text in the prompt.
+        Utilities the agent has access to to take actions.
     </Card>
     <Card title="Model" icon="brain-circuit" href="#model">
-        The actual model to be called. Different models have different capabilities and costs.
+        The actual model (including configuration) to be called.
     </Card>
     <Card title="Response Format" icon="brackets-curly" href="#response-format">
-        What format the agent should respond in. The name and description and arguments of these are just as important as the text in the prompt.
+        Schema specification for the model's final response.
     </Card>
 </CardGroup>
 
@@ -343,7 +342,7 @@ It's critical to manage the content of messages to ensure that the LLM has the r
 
 <Tabs>
   <Tab title="State">
-    Trim messages transiently (only for this model call) based on conversation length:
+    Inject uploaded file context from State when relevant to current query:
 
     :::python
     ```python
@@ -352,16 +351,32 @@ It's critical to manage the content of messages to ensure that the LLM has the r
     from typing import Callable
 
     @wrap_model_call
-    def trim_messages_from_state(
+    def inject_file_context(
         request: ModelRequest,
         handler: Callable[[ModelRequest], ModelResponse]
     ) -> ModelResponse:
-        """Transiently trim messages - only affects this model call, not state."""
+        """Inject context about files user has uploaded this session."""
+        # Read from State: get uploaded files metadata
+        uploaded_files = request.state.get("uploaded_files", [])
 
-        if len(messages) > 10:
-            # Trim messages transiently for this call only
+        if uploaded_files:
+            # Build context about available files
+            file_descriptions = []
+            for file in uploaded_files:
+                file_descriptions.append(
+                    f"- {file['name']} ({file['type']}): {file['summary']}"
+                )
+
+            file_context = f"""Files you have access to in this conversation:
+{chr(10).join(file_descriptions)}
+
+Reference these files when answering questions."""
+
+            # Inject file context before recent messages
             request.messages = [
-                *request.messages[-8:]  # Recent messages
+                request.messages[0],  # System message
+                {"role": "user", "content": file_context},
+                *request.messages[1:]  # Rest of conversation
             ]
 
         return handler(request)
@@ -369,7 +384,7 @@ It's critical to manage the content of messages to ensure that the LLM has the r
     agent = create_agent(
         model="openai:gpt-4o",
         tools=[...],
-        middleware=[trim_messages_from_state]
+        middleware=[inject_file_context]
     )
     ```
     :::
@@ -378,16 +393,28 @@ It's critical to manage the content of messages to ensure that the LLM has the r
     ```typescript
     import { createMiddleware } from "langchain";
 
-    const trimMessagesFromState = createMiddleware({
-      name: "TrimMessagesFromState",
+    const injectFileContext = createMiddleware({
+      name: "InjectFileContext",
       wrapModelCall: (request, handler) => {
-        // Read from State: get all messages
+        // Read from State: get uploaded files metadata
+        const uploadedFiles = request.state.uploadedFiles || [];
 
-        if (messages.length > 10) {
-          // Trim messages transiently for this call only
+        if (uploadedFiles.length > 0) {
+          // Build context about available files
+          const fileDescriptions = uploadedFiles.map(file =>
+            `- ${file.name} (${file.type}): ${file.summary}`
+          );
+
+          const fileContext = `Files you have access to in this conversation:
+${fileDescriptions.join("\n")}
+
+Reference these files when answering questions.`;
+
+          // Inject file context before recent messages
           request.messages = [
-            messages[0],  // System message
-            ...request.messages.slice(-8)  // Recent messages
+            request.messages[0],  // System message
+            { role: "user", content: fileContext },
+            ...request.messages.slice(1)  // Rest of conversation
           ];
         }
 
@@ -398,14 +425,14 @@ It's critical to manage the content of messages to ensure that the LLM has the r
     const agent = createAgent({
       model: "openai:gpt-4o",
       tools: [...],
-      middleware: [trimMessagesFromState],
+      middleware: [injectFileContext],
     });
     ```
     :::
   </Tab>
 
   <Tab title="Store">
-    Transiently inject user preferences from Store into messages:
+    Inject user's email writing style from Store to guide drafting:
 
     :::python
     ```python
@@ -420,41 +447,39 @@ It's critical to manage the content of messages to ensure that the LLM has the r
         user_id: str
 
     @wrap_model_call
-    def inject_preferences_from_store(
+    def inject_writing_style(
         request: ModelRequest,
         handler: Callable[[ModelRequest], ModelResponse]
     ) -> ModelResponse:
-        """Transiently inject user preferences from Store as context."""
+        """Inject user's email writing style from Store."""
         user_id = request.runtime.context.user_id
 
-        # Read from Store: get user preferences (persistent)
+        # Read from Store: get user's writing style examples
         store = request.runtime.store
-        user_prefs = store.get(("preferences",), user_id)
+        writing_style = store.get(("writing_style",), user_id)
 
-        if user_prefs:
-            # Build context message from preferences
-            prefs = user_prefs.value
-            context_parts = []
-            if prefs.get("language"):
-                context_parts.append(f"preferred language: {prefs['language']}")
-            if prefs.get("timezone"):
-                context_parts.append(f"timezone: {prefs['timezone']}")
-            if prefs.get("interests"):
-                context_parts.append(f"interests: {', '.join(prefs['interests'])}")
+        if writing_style:
+            style = writing_style.value
+            # Build style guide from stored examples
+            style_context = f"""Your writing style:
+- Tone: {style.get('tone', 'professional')}
+- Typical greeting: "{style.get('greeting', 'Hi')}"
+- Typical sign-off: "{style.get('sign_off', 'Best')}"
+- Example email you've written:
+{style.get('example_email', '')}"""
 
-            if context_parts:
-                # Transiently inject preferences as a human message
-                request.messages = [
-                    *request.messages,
-                    {"role": "user", "content": f"My preferences: {', '.join(context_parts)}"}
-                ]
+            # Append at end - models pay more attention to final messages
+            request.messages = [
+                *request.messages,
+                {"role": "user", "content": style_context}
+            ]
 
         return handler(request)
 
     agent = create_agent(
         model="openai:gpt-4o",
         tools=[...],
-        middleware=[inject_preferences_from_store],
+        middleware=[inject_writing_style],
         context_schema=Context,
         store=InMemoryStore()
     )
@@ -470,37 +495,31 @@ It's critical to manage the content of messages to ensure that the LLM has the r
       userId: z.string(),
     });
 
-    const injectPreferencesFromStore = createMiddleware({
-      name: "InjectPreferencesFromStore",
+    const injectWritingStyle = createMiddleware({
+      name: "InjectWritingStyle",
       contextSchema,
       wrapModelCall: async (request, handler) => {
         const userId = request.runtime.context.userId;
 
-        // Read from Store: get user preferences (persistent)
+        // Read from Store: get user's writing style examples
         const store = request.runtime.store;
-        const userPrefs = await store.get(["preferences"], userId);
+        const writingStyle = await store.get(["writing_style"], userId);
 
-        if (userPrefs) {
-          // Build context message from preferences
-          const prefs = userPrefs.value;
-          const contextParts = [];
-          if (prefs.language) {
-            contextParts.push(`preferred language: ${prefs.language}`);
-          }
-          if (prefs.timezone) {
-            contextParts.push(`timezone: ${prefs.timezone}`);
-          }
-          if (prefs.interests) {
-            contextParts.push(`interests: ${prefs.interests.join(", ")}`);
-          }
+        if (writingStyle) {
+          const style = writingStyle.value;
+          // Build style guide from stored examples
+          const styleContext = `Your writing style:
+- Tone: ${style.tone || 'professional'}
+- Typical greeting: "${style.greeting || 'Hi'}"
+- Typical sign-off: "${style.signOff || 'Best'}"
+- Example email you've written:
+${style.exampleEmail || ''}`;
 
-          if (contextParts.length > 0) {
-            // Transiently inject preferences as a human message
-            request.messages = [
-              ...request.messages,
-              { role: "user", content: `My preferences: ${contextParts.join(", ")}` }
-            ];
-          }
+          // Append at end - models pay more attention to final messages
+          request.messages = [
+            ...request.messages,
+            { role: "user", content: styleContext }
+          ];
         }
 
         return handler(request);
@@ -511,53 +530,59 @@ It's critical to manage the content of messages to ensure that the LLM has the r
   </Tab>
 
   <Tab title="Runtime Context">
-    Transiently inject session context from Runtime Context:
+    Inject compliance rules from Runtime Context based on user's jurisdiction:
 
     :::python
     ```python
     from dataclasses import dataclass
-    from datetime import datetime
     from langchain.agents import create_agent
     from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
     from typing import Callable
 
     @dataclass
     class Context:
-        user_id: str
-        session_start: datetime
-        user_location: str
-        feature_flags: list[str]
+        user_jurisdiction: str
+        industry: str
+        compliance_frameworks: list[str]
 
     @wrap_model_call
-    def inject_session_context(
+    def inject_compliance_rules(
         request: ModelRequest,
         handler: Callable[[ModelRequest], ModelResponse]
     ) -> ModelResponse:
-        """Transiently inject session info from Runtime Context."""
-        # Read from Runtime Context: get session information
-        user_id = request.runtime.context.user_id
-        location = request.runtime.context.user_location
-        flags = request.runtime.context.feature_flags
+        """Inject compliance constraints from Runtime Context."""
+        # Read from Runtime Context: get compliance requirements
+        jurisdiction = request.runtime.context.user_jurisdiction
+        industry = request.runtime.context.industry
+        frameworks = request.runtime.context.compliance_frameworks
 
-        # Build context message from runtime information
-        context_parts = [f"user ID: {user_id}"]
-        if location:
-            context_parts.append(f"location: {location}")
-        if flags:
-            context_parts.append(f"enabled features: {', '.join(flags)}")
+        # Build compliance constraints
+        rules = []
+        if "GDPR" in frameworks:
+            rules.append("- Must obtain explicit consent before processing personal data")
+            rules.append("- Users have right to data deletion")
+        if "HIPAA" in frameworks:
+            rules.append("- Cannot share patient health information without authorization")
+            rules.append("- Must use secure, encrypted communication")
+        if industry == "finance":
+            rules.append("- Cannot provide financial advice without proper disclaimers")
 
-        # Transiently inject session context as a human message
-        request.messages = [
-            *request.messages,
-            {"role": "user", "content": f"Session context: {', '.join(context_parts)}"}
-        ]
+        if rules:
+            compliance_context = f"""Compliance requirements for {jurisdiction}:
+{chr(10).join(rules)}"""
+
+            # Append at end - models pay more attention to final messages
+            request.messages = [
+                *request.messages,
+                {"role": "user", "content": compliance_context}
+            ]
 
         return handler(request)
 
     agent = create_agent(
         model="openai:gpt-4o",
         tools=[...],
-        middleware=[inject_session_context],
+        middleware=[inject_compliance_rules],
         context_schema=Context
     )
     ```
@@ -569,35 +594,44 @@ It's critical to manage the content of messages to ensure that the LLM has the r
     import { createMiddleware } from "langchain";
 
     const contextSchema = z.object({
-      userId: z.string(),
-      sessionStart: z.date(),
-      userLocation: z.string(),
-      featureFlags: z.array(z.string()),
+      userJurisdiction: z.string(),
+      industry: z.string(),
+      complianceFrameworks: z.array(z.string()),
     });
 
     type Context = z.infer<typeof contextSchema>;
 
-    const injectSessionContext = createMiddleware<Context>({
-      name: "InjectSessionContext",
+    const injectComplianceRules = createMiddleware<Context>({
+      name: "InjectComplianceRules",
       contextSchema,
       wrapModelCall: (request, handler) => {
-        // Read from Runtime Context: get session information
-        const { userId, userLocation, featureFlags } = request.runtime.context;
+        // Read from Runtime Context: get compliance requirements
+        const { userJurisdiction, industry, complianceFrameworks } = request.runtime.context;
 
-        // Build context message from runtime information
-        const contextParts = [`user ID: ${userId}`];
-        if (userLocation) {
-          contextParts.push(`location: ${userLocation}`);
+        // Build compliance constraints
+        const rules = [];
+        if (complianceFrameworks.includes("GDPR")) {
+          rules.push("- Must obtain explicit consent before processing personal data");
+          rules.push("- Users have right to data deletion");
         }
-        if (featureFlags.length > 0) {
-          contextParts.push(`enabled features: ${featureFlags.join(", ")}`);
+        if (complianceFrameworks.includes("HIPAA")) {
+          rules.push("- Cannot share patient health information without authorization");
+          rules.push("- Must use secure, encrypted communication");
+        }
+        if (industry === "finance") {
+          rules.push("- Cannot provide financial advice without proper disclaimers");
         }
 
-        // Transiently inject session context as a human message
-        request.messages = [
-          ...request.messages,
-          { role: "user", content: `Session context: ${contextParts.join(", ")}` }
-        ];
+        if (rules.length > 0) {
+          const complianceContext = `Compliance requirements for ${userJurisdiction}:
+${rules.join("\n")}`;
+
+          // Append at end - models pay more attention to final messages
+          request.messages = [
+            ...request.messages,
+            { role: "user", content: complianceContext }
+          ];
+        }
 
         return handler(request);
       },
@@ -618,11 +652,65 @@ For **persistent** updates that modify state (like the summarization example in 
 
 ### Tools
 
-Tools are the piece of the puzzle that allow a model to interact with the world and take actions.
-It's important that a model is given access to the right tools, with the right descriptions, for a given task.
+Tools let the model interact with databases, APIs, and external systems. How you define and select tools directly impacts whether the model can complete tasks effectively.
 
-LangChain allows you to dynamically select tools based on the current state of the conversation
-so that you can give the model access to the right tools in the moment.
+#### Defining tools
+
+Each tool needs a clear name, description, argument names, and argument descriptions. These aren't just metadata—they guide the model's reasoning about when and how to use the tool.
+
+:::python
+```python
+from langchain.tools import tool
+
+@tool(parse_docstring=True)
+def search_orders(
+    user_id: str,
+    status: str,
+    limit: int = 10
+) -> str:
+    """Search for user orders by status.
+
+    Use this when the user asks about order history or wants to check
+    order status. Always filter by the provided status.
+
+    Args:
+        user_id: Unique identifier for the user
+        status: Order status: 'pending', 'shipped', or 'delivered'
+        limit: Maximum number of results to return
+    """
+    # Implementation here
+    pass
+```
+:::
+
+:::js
+```typescript
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const searchOrders = tool(
+  async ({ userId, status, limit = 10 }) => {
+    // Implementation here
+  },
+  {
+    name: "search_orders",
+    description: `Search for user orders by status.
+
+    Use this when the user asks about order history or wants to check
+    order status. Always filter by the provided status.`,
+    schema: z.object({
+      userId: z.string().describe("Unique identifier for the user"),
+      status: z.enum(["pending", "shipped", "delivered"]).describe("Order status to filter by"),
+      limit: z.number().default(10).describe("Maximum number of results to return"),
+    }),
+  }
+);
+```
+:::
+
+#### Selecting tools
+
+Not every tool is appropriate for every situation. Too many tools may overwhelm the model (overload context) and increase errors; too few limit capabilities. Dynamic tool selection adapts the available toolset based on authentication state, user permissions, feature flags, or conversation stage.
 
 <Tabs>
   <Tab title="State">
@@ -1119,7 +1207,58 @@ See [Dynamic model](/oss/langchain/agents#dynamic-model) for more examples.
 
 ### Response Format
 
-Structured output ensures predictable data formats from the LLM.
+Structured output transforms unstructured text into validated, structured data. When extracting specific fields or returning data for downstream systems, free-form text isn't sufficient.
+
+#### Defining formats
+
+Schema definitions guide the model. Field names, types, and descriptions specify exactly what format the output should adhere to.
+
+:::python
+```python
+from pydantic import BaseModel, Field
+
+class CustomerSupportTicket(BaseModel):
+    """Structured ticket information extracted from customer message."""
+
+    category: str = Field(
+        description="Issue category: 'billing', 'technical', 'account', or 'product'"
+    )
+    priority: str = Field(
+        description="Urgency level: 'low', 'medium', 'high', or 'critical'"
+    )
+    summary: str = Field(
+        description="One-sentence summary of the customer's issue"
+    )
+    customer_sentiment: str = Field(
+        description="Customer's emotional tone: 'frustrated', 'neutral', or 'satisfied'"
+    )
+```
+:::
+
+:::js
+```typescript
+import { z } from "zod";
+
+const customerSupportTicket = z.object({
+  category: z.enum(["billing", "technical", "account", "product"]).describe(
+    "Issue category"
+  ),
+  priority: z.enum(["low", "medium", "high", "critical"]).describe(
+    "Urgency level"
+  ),
+  summary: z.string().describe(
+    "One-sentence summary of the customer's issue"
+  ),
+  customerSentiment: z.enum(["frustrated", "neutral", "satisfied"]).describe(
+    "Customer's emotional tone"
+  ),
+}).describe("Structured ticket information extracted from customer message");
+```
+:::
+
+#### Selecting formats
+
+Dynamic response format selection adapts schemas based on user preferences, conversation stage, or role—returning simple formats early and detailed formats as complexity increases.
 
 <Tabs>
   <Tab title="State">
