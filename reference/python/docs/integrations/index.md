@@ -8,6 +8,9 @@ Welcome! These pages include reference documentation for all `langchain-*` Pytho
 
 To learn more about integrations in LangChain, visit the [Integrations overview](https://docs.langchain.com/oss/python/integrations/providers/overview).
 
+!!! tip "Model Context Protocol (MCP) support"
+    To use MCP tools within LangChain and LangGraph applications, refer to [`langchain-mcp-adapters`](../langchain_mcp_adapters/index.md).
+
 ## Popular providers
 
 <div class="grid cards" markdown>
@@ -78,10 +81,10 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
 </div>
 
-All providers are listed in the section navigation (left sidebar).
+Other providers are listed in the section navigation (left sidebar).
 
-!!! note
-    For integrations not listed on this site, please refer to their respective repositories.
+!!! question ""I don't see the integration I'm looking for?""
+    LangChain has hundreds of integrations, but not all are documented on this site. If you don't see the integration you're looking for, refer to their [provider page in the LangChain docs](https://docs.langchain.com/oss/python/integrations/providers/all_providers) or check their respective GitHub repository for more information.
 
-!!! note
+!!! note "Create new integrations"
     For information on contributing new integrations, see [the guide](https://docs.langchain.com/oss/python/contributing/integrations-langchain).
