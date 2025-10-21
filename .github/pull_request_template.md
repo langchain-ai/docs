@@ -34,7 +34,7 @@ Examples:
 - [ ] I have used **root relative** paths for internal links
 - [ ] I have updated navigation in `src/docs.json` if needed
 - I have gotten approval from the relevant reviewers
-- (Internal team members only / optional) I have created a preview deployment using the [Create Preview Branch workflow](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml)
+- (Internal team members only / optional) A preview deployment has been automatically created by the [Build Preview workflow](https://github.com/langchain-ai/docs/actions/workflows/build-preview.yml) and is viewable in the [Mintlify dashboard](https://dashboard.mintlify.com/langchain-5e9cc07a/langchain-5e9cc07a?section=previews)
 
 ## Additional notes
 <!-- Any other information that would be helpful for reviewers -->
