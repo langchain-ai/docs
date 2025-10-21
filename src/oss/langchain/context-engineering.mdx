@@ -74,9 +74,9 @@ Throughout this process, your agent accesses (reads / writes) different sources 
 
 | Data Source | Also Known As | Scope | Examples |
 |-------------|---------------|-------|----------|
+| **Runtime Context** | Static configuration | Conversation-scoped | User ID, API keys, database connections, permissions, environment settings |
 | **State** | Short-term memory | Conversation-scoped | Current messages, uploaded files, authentication status, tool results |
 | **Store** | Long-term memory | Cross-conversation | User preferences, extracted insights, memories, historical data |
-| **Runtime Context** | Static configuration | Conversation-scoped | User ID, API keys, database connections, permissions, environment settings |
 
 ### How it works
 
@@ -128,8 +128,8 @@ The system prompt sets the LLM's behavior and capabilities. Different users, con
 
     @dynamic_prompt
     def state_aware_prompt(request: ModelRequest) -> str:
-        # Read from State: check conversation length
-        message_count = len(request.state["messages"])
+        # request.messages is a shortcut for request.state["messages"]
+        message_count = len(request.messages)
 
         base = "You are a helpful assistant."
 
@@ -357,7 +357,7 @@ It's critical to manage the content of messages to ensure that the LLM has the r
     ) -> ModelResponse:
         """Inject context about files user has uploaded this session."""
         # Read from State: get uploaded files metadata
-        uploaded_files = request.state.get("uploaded_files", [])
+        uploaded_files = request.state.get("uploaded_files", [])  # [!code highlight]
 
         if uploaded_files:
             # Build context about available files
@@ -373,11 +373,11 @@ It's critical to manage the content of messages to ensure that the LLM has the r
 Reference these files when answering questions."""
 
             # Inject file context before recent messages
-            request.messages = [
-                request.messages[0],  # System message
+            messages = [  # [!code highlight]
+                *request.messages
                 {"role": "user", "content": file_context},
-                *request.messages[1:]  # Rest of conversation
             ]
+            request = request.override(messages=messages)  # [!code highlight]
 
         return handler(request)
 
@@ -397,7 +397,7 @@ Reference these files when answering questions."""
       name: "InjectFileContext",
       wrapModelCall: (request, handler) => {
         // Read from State: get uploaded files metadata
-        const uploadedFiles = request.state.uploadedFiles || [];
+        const uploadedFiles = request.state.uploadedFiles || [];  // [!code highlight]
 
         if (uploadedFiles.length > 0) {
           // Build context about available files
@@ -411,11 +411,11 @@ ${fileDescriptions.join("\n")}
 Reference these files when answering questions.`;
 
           // Inject file context before recent messages
-          request.messages = [
-            request.messages[0],  // System message
-            { role: "user", content: fileContext },
-            ...request.messages.slice(1)  // Rest of conversation
+          const messages = [  // [!code highlight]
+            ...request.messages  // Rest of conversation
+            { role: "user", content: fileContext }
           ];
+          request = request.override({ messages });  // [!code highlight]
         }
 
         return handler(request);
@@ -452,11 +452,11 @@ Reference these files when answering questions.`;
         handler: Callable[[ModelRequest], ModelResponse]
     ) -> ModelResponse:
         """Inject user's email writing style from Store."""
-        user_id = request.runtime.context.user_id
+        user_id = request.runtime.context.user_id  # [!code highlight]
 
         # Read from Store: get user's writing style examples
-        store = request.runtime.store
-        writing_style = store.get(("writing_style",), user_id)
+        store = request.runtime.store  # [!code highlight]
+        writing_style = store.get(("writing_style",), user_id)  # [!code highlight]
 
         if writing_style:
             style = writing_style.value
@@ -469,10 +469,11 @@ Reference these files when answering questions.`;
 {style.get('example_email', '')}"""
 
             # Append at end - models pay more attention to final messages
-            request.messages = [
+            messages = [
                 *request.messages,
                 {"role": "user", "content": style_context}
             ]
+            request = request.override(messages=messages)  # [!code highlight]
 
         return handler(request)
 
@@ -499,11 +500,11 @@ Reference these files when answering questions.`;
       name: "InjectWritingStyle",
       contextSchema,
       wrapModelCall: async (request, handler) => {
-        const userId = request.runtime.context.userId;
+        const userId = request.runtime.context.userId;  // [!code highlight]
 
         // Read from Store: get user's writing style examples
-        const store = request.runtime.store;
-        const writingStyle = await store.get(["writing_style"], userId);
+        const store = request.runtime.store;  // [!code highlight]
+        const writingStyle = await store.get(["writing_style"], userId);  // [!code highlight]
 
         if (writingStyle) {
           const style = writingStyle.value;
@@ -516,10 +517,11 @@ Reference these files when answering questions.`;
 ${style.exampleEmail || ''}`;
 
           // Append at end - models pay more attention to final messages
-          request.messages = [
+          const messages = [
             ...request.messages,
             { role: "user", content: styleContext }
           ];
+          request = request.override({ messages });  // [!code highlight]
         }
 
         return handler(request);
@@ -552,9 +554,9 @@ ${style.exampleEmail || ''}`;
     ) -> ModelResponse:
         """Inject compliance constraints from Runtime Context."""
         # Read from Runtime Context: get compliance requirements
-        jurisdiction = request.runtime.context.user_jurisdiction
-        industry = request.runtime.context.industry
-        frameworks = request.runtime.context.compliance_frameworks
+        jurisdiction = request.runtime.context.user_jurisdiction  # [!code highlight]
+        industry = request.runtime.context.industry  # [!code highlight]
+        frameworks = request.runtime.context.compliance_frameworks  # [!code highlight]
 
         # Build compliance constraints
         rules = []
@@ -572,10 +574,11 @@ ${style.exampleEmail || ''}`;
 {chr(10).join(rules)}"""
 
             # Append at end - models pay more attention to final messages
-            request.messages = [
+            messages = [
                 *request.messages,
                 {"role": "user", "content": compliance_context}
             ]
+            request = request.override(messages=messages)  # [!code highlight]
 
         return handler(request)
 
@@ -606,7 +609,7 @@ ${style.exampleEmail || ''}`;
       contextSchema,
       wrapModelCall: (request, handler) => {
         // Read from Runtime Context: get compliance requirements
-        const { userJurisdiction, industry, complianceFrameworks } = request.runtime.context;
+        const { userJurisdiction, industry, complianceFrameworks } = request.runtime.context;  // [!code highlight]
 
         // Build compliance constraints
         const rules = [];
@@ -627,10 +630,11 @@ ${style.exampleEmail || ''}`;
 ${rules.join("\n")}`;
 
           // Append at end - models pay more attention to final messages
-          request.messages = [
+          const messages = [
             ...request.messages,
             { role: "user", content: complianceContext }
           ];
+          request = request.override({ messages });  // [!code highlight]
         }
 
         return handler(request);
@@ -729,16 +733,18 @@ Not every tool is appropriate for every situation. Too many tools may overwhelm 
     ) -> ModelResponse:
         """Filter tools based on conversation State."""
         # Read from State: check if user has authenticated
-        state = request.state
-        is_authenticated = state.get("authenticated", False)
+        state = request.state  # [!code highlight]
+        is_authenticated = state.get("authenticated", False)  # [!code highlight]
         message_count = len(state["messages"])
 
         # Only enable sensitive tools after authentication
         if not is_authenticated:
-            request.tools = [t for t in request.tools if t.name.startswith("public_")]
+            tools = [t for t in request.tools if t.name.startswith("public_")]
+            request = request.override(tools=tools)  # [!code highlight]
         elif message_count < 5:
             # Limit tools early in conversation
-            request.tools = [t for t in request.tools if t.name != "advanced_search"]
+            tools = [t for t in request.tools if t.name != "advanced_search"]
+            request = request.override(tools=tools)  # [!code highlight]
 
         return handler(request)
 
@@ -808,7 +814,8 @@ Not every tool is appropriate for every situation. Too many tools may overwhelm 
         if feature_flags:
             enabled_features = feature_flags.value.get("enabled_tools", [])
             # Only include tools that are enabled for this user
-            request.tools = [t for t in request.tools if t.name in enabled_features]
+            tools = [t for t in request.tools if t.name in enabled_features]
+            request = request.override(tools=tools)
 
         return handler(request)
 
@@ -883,10 +890,12 @@ Not every tool is appropriate for every situation. Too many tools may overwhelm 
             pass
         elif user_role == "editor":
             # Editors can't delete
-            request.tools = [t for t in request.tools if t.name != "delete_data"]
+            tools = [t for t in request.tools if t.name != "delete_data"]
+            request = request.override(tools=tools)
         else:
             # Viewers get read-only tools
-            request.tools = [t for t in request.tools if t.name.startswith("read_")]
+            tools = [t for t in request.tools if t.name.startswith("read_")]
+            request = request.override(tools=tools)
 
         return handler(request)
 
@@ -962,18 +971,20 @@ might change during an agent run.
         handler: Callable[[ModelRequest], ModelResponse]
     ) -> ModelResponse:
         """Select model based on State conversation length."""
-        # Read from State: check conversation length
-        message_count = len(request.state["messages"])
+        # request.messages is a shortcut for request.state["messages"]
+        message_count = len(request.messages)  # [!code highlight]
 
         if message_count > 20:
             # Long conversation - use model with larger context window
-            request.model = large_model
+            model = large_model
         elif message_count > 10:
             # Medium conversation
-            request.model = standard_model
+            model = standard_model
         else:
             # Short conversation - use efficient model
-            request.model = efficient_model
+            model = efficient_model
+
+        request = request.override(model=model)  # [!code highlight]
 
         return handler(request)
 
@@ -1054,7 +1065,7 @@ might change during an agent run.
         if user_prefs:
             preferred_model = user_prefs.value.get("preferred_model")
             if preferred_model and preferred_model in MODEL_MAP:
-                request.model = MODEL_MAP[preferred_model]
+                request = request.override(model=MODEL_MAP[preferred_model])
 
         return handler(request)
 
@@ -1143,13 +1154,15 @@ might change during an agent run.
 
         if environment == "production" and cost_tier == "premium":
             # Production premium users get best model
-            request.model = premium_model
+            model = premium_model
         elif cost_tier == "budget":
             # Budget tier gets efficient model
-            request.model = budget_model
+            model = budget_model
         else:
             # Standard tier
-            request.model = standard_model
+            model = standard_model
+
+        request = request.override(model=model)
 
         return handler(request)
 
@@ -1287,15 +1300,15 @@ Dynamic response format selection adapts schemas based on user preferences, conv
         handler: Callable[[ModelRequest], ModelResponse]
     ) -> ModelResponse:
         """Select output format based on State."""
-        # Read from State: check conversation progress
-        message_count = len(request.state["messages"])
+        # request.messages is a shortcut for request.state["messages"]
+        message_count = len(request.messages)  # [!code highlight]
 
         if message_count < 3:
             # Early conversation - use simple format
-            request.response_format = SimpleResponse
+            request = request.override(response_format=SimpleResponse)  # [!code highlight]
         else:
             # Established conversation - use detailed format
-            request.response_format = DetailedResponse
+            request = request.override(response_format=DetailedResponse)  # [!code highlight]
 
         return handler(request)
 
@@ -1383,9 +1396,9 @@ Dynamic response format selection adapts schemas based on user preferences, conv
         if user_prefs:
             style = user_prefs.value.get("response_style", "concise")
             if style == "verbose":
-                request.response_format = VerboseResponse
+                request = request.override(response_format=VerboseResponse)
             else:
-                request.response_format = ConciseResponse
+                request = request.override(response_format=ConciseResponse)
 
         return handler(request)
 
@@ -1480,10 +1493,10 @@ Dynamic response format selection adapts schemas based on user preferences, conv
 
         if user_role == "admin" and environment == "production":
             # Admins in production get detailed output
-            request.response_format = AdminResponse
+            request = request.override(response_format=AdminResponse)
         else:
             # Regular users get simple output
-            request.response_format = UserResponse
+            request = request.override(response_format=UserResponse)
 
         return handler(request)
 
