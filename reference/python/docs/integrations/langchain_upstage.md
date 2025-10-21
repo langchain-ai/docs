@@ -8,4 +8,5 @@ title: Upstage - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-upstage)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-upstage)](https://pypistats.org/packages/langchain-upstage)
 
-This package ref has not yet been migrated to v1.
+!!! note
+    This package ref has not yet been fully migrated to v1.

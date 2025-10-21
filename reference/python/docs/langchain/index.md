@@ -34,4 +34,20 @@ There are three main packages in the LangChain ecosystem, though most users will
 
     [:octicons-arrow-right-24: Reference](../langchain_classic/index.md)
 
+- :material-test-tube:{ .lg .middle } __`langchain-tests`__
+
+    ---
+
+    Standard tests suite used to validate LangChain integration package implementations.
+
+    [:octicons-arrow-right-24: Reference](../langchain_tests/index.md)
+
+- :material-format-text:{ .lg .middle } __`langchain-text-splitters`__
+
+    ---
+
+    Text splitting utilities for document processing.
+
+    [:octicons-arrow-right-24: Reference](../langchain_text_splitters/index.md)
+
 </div>

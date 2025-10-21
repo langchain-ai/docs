@@ -67,12 +67,6 @@ const SOURCES: Source[] = [
     branch: "main",
   },
   {
-    package: "@langchain/mcp-adapters",
-    path: "libs/providers/langchain-mcp-adapters",
-    repo: "langchain-ai/langchainjs",
-    branch: "main",
-  },
-  {
     package: "@langchain/classic",
     path: "libs/langchain-classic",
     repo: "langchain-ai/langchainjs",

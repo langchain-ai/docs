@@ -8,4 +8,7 @@ title: Google (VertexAI) - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-google-vertexai)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-google-vertexai)](https://pypistats.org/packages/langchain-google-vertexai)
 
+!!! note
+    This package ref has not yet been fully migrated to v1.
+
 ::: langchain_google_vertexai

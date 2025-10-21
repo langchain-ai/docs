@@ -8,4 +8,5 @@ title: Azure Dynamic Sessions - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-azure-dynamic-sessions)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-azure-dynamic-sessions)](https://pypistats.org/packages/langchain-azure-dynamic-sessions)
 
-This package ref has not yet been migrated to v1.
+!!! note
+    This package ref has not yet been fully migrated to v1.

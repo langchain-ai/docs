@@ -4,7 +4,9 @@ hide:
   - toc
 ---
 
-Welcome! These pages include reference documentation for all `langchain-*` Python packages.
+Welcome! These pages include reference documentation for all `langchain-*` Python integration packages.
+
+To learn more about integrations in LangChain, visit the [Integrations overview](https://docs.langchain.com/oss/python/integrations/providers/overview).
 
 ## Popular providers
 
@@ -80,3 +82,6 @@ All providers are listed in the section navigation (left sidebar).
 
 !!! note
     For integrations not listed on this site, please refer to their respective repositories.
+
+!!! note
+    For information on contributing new integrations, see [the guide](https://docs.langchain.com/oss/python/contributing/integrations-langchain).

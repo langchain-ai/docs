@@ -8,4 +8,5 @@ title: Snowflake - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-snowflake)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-snowflake)](https://pypistats.org/packages/langchain-snowflake)
 
-This package ref has not yet been migrated to v1.
+!!! note
+    This package ref has not yet been fully migrated to v1.

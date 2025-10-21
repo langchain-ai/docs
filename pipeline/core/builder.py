@@ -192,8 +192,12 @@ class DocumentationBuilder:
             source_links_section = (
                 "\n\n---\n\n"
                 f'<Callout icon="pen-to-square" iconType="regular">\n'
-                f"  [Edit the source of this page on GitHub]({edit_url})\n"
+                f"    [Edit the source of this page on GitHub]({edit_url})\n"
                 "</Callout>\n"
+                f'<Tip icon="terminal" iconType="regular">\n'
+                f"    Connect these docs to Claude, VSCode, and more via MCP for"
+                f"    real-time answers. [See how](/use-these-docs)\n"
+                "</Tip>\n"
             )
 
             # Append to content
@@ -741,6 +745,10 @@ class DocumentationBuilder:
 
         # index.mdx at root should be shared
         if file_path.name == "index.mdx" and len(relative_path.parts) == 1:
+            return True
+
+        # use-these-docs.mdx at root should be shared
+        if file_path.name == "use-these-docs.mdx" and len(relative_path.parts) == 1:
             return True
 
         # Images directory should be shared
