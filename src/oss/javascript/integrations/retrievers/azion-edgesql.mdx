@@ -37,14 +37,17 @@ If you want to get automated tracing from individual queries, you can also set y
 
 This retriever lives in the `@langchain/community/retrievers/azion_edgesql` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  azion @langchain/openai @langchain/community
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install azion @langchain/openai @langchain/community
 ```
+```bash yarn
+yarn add azion @langchain/openai @langchain/community
+```
+```bash pnpm
+pnpm add azion @langchain/openai @langchain/community
+```
+</CodeGroup>
 
 ## Instantiation
 

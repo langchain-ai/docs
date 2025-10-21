@@ -20,14 +20,17 @@ To use Pinecone vector stores, you'll need to create a Pinecone account, initial
 
 This guide will also use [OpenAI embeddings](/oss/integrations/text_embedding/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/integrations/text_embedding) if you wish.
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/pinecone @langchain/openai @langchain/core @pinecone-database/pinecone@5
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install @langchain/pinecone @langchain/openai @langchain/core @pinecone-database/pinecone@5
 ```
+```bash yarn
+yarn add @langchain/pinecone @langchain/openai @langchain/core @pinecone-database/pinecone@5
+```
+```bash pnpm
+pnpm add @langchain/pinecone @langchain/openai @langchain/core @pinecone-database/pinecone@5
+```
+</CodeGroup>
 
 ### Credentials
 

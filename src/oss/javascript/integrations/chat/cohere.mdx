@@ -48,16 +48,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain ChatCohere integration lives in the `@langchain/cohere` package:
 
-```{=mdx}
-
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/cohere @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/cohere @langchain/core
 ```
+```bash yarn
+yarn add @langchain/cohere @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/cohere @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 
