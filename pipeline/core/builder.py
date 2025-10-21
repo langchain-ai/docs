@@ -192,11 +192,11 @@ class DocumentationBuilder:
             source_links_section = (
                 "\n\n---\n\n"
                 f'<Callout icon="pen-to-square" iconType="regular">\n'
-                f"    [Edit the source of this page on GitHub]({edit_url})\n"
+                f"    [Edit the source of this page on GitHub.]({edit_url})\n"
                 "</Callout>\n"
                 f'<Tip icon="terminal" iconType="regular">\n'
-                f"    Connect these docs to Claude, VSCode, and more via MCP for"
-                f"    real-time answers. [See how](/use-these-docs)\n"
+                f"    [Connect these docs programmatically](/use-these-docs) to Claude, VSCode, and more via MCP for"
+                f"    real-time answers.\n"
                 "</Tip>\n"
             )
 
