@@ -343,33 +343,28 @@ It's critical to manage the content of messages to ensure that the LLM has the r
 
 <Tabs>
   <Tab title="State">
-    Trim messages in State based on conversation length:
+    Trim messages transiently (only for this model call) based on conversation length:
 
     :::python
     ```python
     from langchain.agents import create_agent
-    from langchain.agents.middleware import before_model, AgentState
-    from langchain.messages import RemoveMessage
-    from langgraph.graph.message import REMOVE_ALL_MESSAGES
-    from langgraph.runtime import Runtime
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
 
-    @before_model
-    def trim_messages_from_state(state: AgentState, runtime: Runtime) -> dict | None:
-        """Read from State and write back trimmed messages."""
-        # Read from State: get all messages
-        messages = state["messages"]
+    @wrap_model_call
+    def trim_messages_from_state(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Transiently trim messages - only affects this model call, not state."""
 
-        if len(messages) <= 10:
-            return None  # No trimming needed
-
-        # Write to State: remove old messages, keep recent ones
-        return {
-            "messages": [
-                RemoveMessage(id=REMOVE_ALL_MESSAGES),
-                messages[0],  # System message
-                *messages[-8:]  # Recent messages
+        if len(messages) > 10:
+            # Trim messages transiently for this call only
+            request.messages = [
+                *request.messages[-8:]  # Recent messages
             ]
-        }
+
+        return handler(request)
 
     agent = create_agent(
         model="openai:gpt-4o",
@@ -381,27 +376,22 @@ It's critical to manage the content of messages to ensure that the LLM has the r
 
     :::js
     ```typescript
-    import { createMiddleware, RemoveMessage } from "langchain";
-    import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
+    import { createMiddleware } from "langchain";
 
     const trimMessagesFromState = createMiddleware({
       name: "TrimMessagesFromState",
-      beforeModel: (state) => {
+      wrapModelCall: (request, handler) => {
         // Read from State: get all messages
-        const messages = state.messages;
 
-        if (messages.length <= 10) {
-          return;  // No trimming needed
+        if (messages.length > 10) {
+          // Trim messages transiently for this call only
+          request.messages = [
+            messages[0],  // System message
+            ...request.messages.slice(-8)  // Recent messages
+          ];
         }
 
-        // Write to State: remove old messages, keep recent ones
-        return {
-          messages: [
-            new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
-            messages[0],  // System message
-            ...messages.slice(-8)  // Recent messages
-          ]
-        };
+        return handler(request);
       },
     });
 
@@ -415,47 +405,57 @@ It's critical to manage the content of messages to ensure that the LLM has the r
   </Tab>
 
   <Tab title="Store">
-    Summarize old messages and save summaries to Store:
+    Transiently inject user preferences from Store into messages:
 
     :::python
     ```python
+    from dataclasses import dataclass
     from langchain.agents import create_agent
-    from langchain.agents.middleware import before_model, AgentState
-    from langgraph.runtime import Runtime
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
     from langgraph.store.memory import InMemoryStore
 
-    @before_model
-    def summarize_to_store(state: AgentState, runtime: Runtime) -> dict | None:
-        """Read messages from State, summarize if needed, write summary to Store."""
-        messages = state["messages"]
+    @dataclass
+    class Context:
+        user_id: str
 
-        if len(messages) <= 20:
-            return None
+    @wrap_model_call
+    def inject_preferences_from_store(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Transiently inject user preferences from Store as context."""
+        user_id = request.runtime.context.user_id
 
-        # Read from Store: check if we've already summarized
-        store = runtime.store
-        existing_summary = store.get(("summaries",), "conversation")
+        # Read from Store: get user preferences (persistent)
+        store = request.runtime.store
+        user_prefs = store.get(("preferences",), user_id)
 
-        # Summarize older messages (you would call an LLM here)
-        old_messages = messages[1:-10]  # Skip system message and recent messages
-        summary = f"Previous conversation covered: {len(old_messages)} messages"
+        if user_prefs:
+            # Build context message from preferences
+            prefs = user_prefs.value
+            context_parts = []
+            if prefs.get("language"):
+                context_parts.append(f"preferred language: {prefs['language']}")
+            if prefs.get("timezone"):
+                context_parts.append(f"timezone: {prefs['timezone']}")
+            if prefs.get("interests"):
+                context_parts.append(f"interests: {', '.join(prefs['interests'])}")
 
-        # Write to Store: save the summary
-        store.put(("summaries",), "conversation", summary)
+            if context_parts:
+                # Transiently inject preferences as a human message
+                request.messages = [
+                    *request.messages,
+                    {"role": "user", "content": f"My preferences: {', '.join(context_parts)}"}
+                ]
 
-        # Keep only system message, summary as a message, and recent messages
-        return {
-            "messages": [
-                messages[0],  # System message
-                {"role": "system", "content": f"Previous context: {summary}"},
-                *messages[-10:]  # Recent messages
-            ]
-        }
+        return handler(request)
 
     agent = create_agent(
         model="openai:gpt-4o",
         tools=[...],
-        middleware=[summarize_to_store],
+        middleware=[inject_preferences_from_store],
+        context_schema=Context,
         store=InMemoryStore()
     )
     ```
@@ -463,36 +463,47 @@ It's critical to manage the content of messages to ensure that the LLM has the r
 
     :::js
     ```typescript
+    import * as z from "zod";
     import { createMiddleware } from "langchain";
 
-    const summarizeToStore = createMiddleware({
-      name: "SummarizeToStore",
-      beforeModel: async (state, runtime) => {
-        const messages = state.messages;
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
 
-        if (messages.length <= 20) {
-          return;
+    const injectPreferencesFromStore = createMiddleware({
+      name: "InjectPreferencesFromStore",
+      contextSchema,
+      wrapModelCall: async (request, handler) => {
+        const userId = request.runtime.context.userId;
+
+        // Read from Store: get user preferences (persistent)
+        const store = request.runtime.store;
+        const userPrefs = await store.get(["preferences"], userId);
+
+        if (userPrefs) {
+          // Build context message from preferences
+          const prefs = userPrefs.value;
+          const contextParts = [];
+          if (prefs.language) {
+            contextParts.push(`preferred language: ${prefs.language}`);
+          }
+          if (prefs.timezone) {
+            contextParts.push(`timezone: ${prefs.timezone}`);
+          }
+          if (prefs.interests) {
+            contextParts.push(`interests: ${prefs.interests.join(", ")}`);
+          }
+
+          if (contextParts.length > 0) {
+            // Transiently inject preferences as a human message
+            request.messages = [
+              ...request.messages,
+              { role: "user", content: `My preferences: ${contextParts.join(", ")}` }
+            ];
+          }
         }
 
-        // Read from Store: check if we've already summarized
-        const store = runtime.store;
-        const existingSummary = await store.get(["summaries"], "conversation");
-
-        // Summarize older messages
-        const oldMessages = messages.slice(1, -10);
-        const summary = `Previous conversation covered: ${oldMessages.length} messages`;
-
-        // Write to Store: save the summary
-        await store.put(["summaries"], "conversation", summary);
-
-        // Keep only system message, summary, and recent messages
-        return {
-          messages: [
-            messages[0],  // System message
-            { role: "system", content: `Previous context: ${summary}` },
-            ...messages.slice(-10)  // Recent messages
-          ]
-        };
+        return handler(request);
       },
     });
     ```
@@ -500,48 +511,53 @@ It's critical to manage the content of messages to ensure that the LLM has the r
   </Tab>
 
   <Tab title="Runtime Context">
-    Use Runtime Context to determine message management strategy:
+    Transiently inject session context from Runtime Context:
 
     :::python
     ```python
     from dataclasses import dataclass
+    from datetime import datetime
     from langchain.agents import create_agent
-    from langchain.agents.middleware import before_model, AgentState
-    from langgraph.runtime import Runtime
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
 
     @dataclass
     class Context:
-        max_messages: int
-        user_tier: str
+        user_id: str
+        session_start: datetime
+        user_location: str
+        feature_flags: list[str]
 
-    @before_model
-    def context_based_trimming(state: AgentState, runtime: Runtime) -> dict | None:
-        """Use Runtime Context to determine how many messages to keep."""
-        # Read from Runtime Context: get user's message limit
-        max_messages = runtime.context.max_messages
-        user_tier = runtime.context.user_tier
+    @wrap_model_call
+    def inject_session_context(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Transiently inject session info from Runtime Context."""
+        # Read from Runtime Context: get session information
+        user_id = request.runtime.context.user_id
+        location = request.runtime.context.user_location
+        flags = request.runtime.context.feature_flags
 
-        messages = state["messages"]
+        # Build context message from runtime information
+        context_parts = [f"user ID: {user_id}"]
+        if location:
+            context_parts.append(f"location: {location}")
+        if flags:
+            context_parts.append(f"enabled features: {', '.join(flags)}")
 
-        # Premium users get more context
-        if user_tier == "premium":
-            max_messages = max_messages * 2
+        # Transiently inject session context as a human message
+        request.messages = [
+            *request.messages,
+            {"role": "user", "content": f"Session context: {', '.join(context_parts)}"}
+        ]
 
-        if len(messages) <= max_messages:
-            return None
-
-        # Trim to max_messages
-        return {
-            "messages": [
-                messages[0],  # System message
-                *messages[-(max_messages-1):]
-            ]
-        }
+        return handler(request)
 
     agent = create_agent(
         model="openai:gpt-4o",
         tools=[...],
-        middleware=[context_based_trimming],
+        middleware=[inject_session_context],
         context_schema=Context
     )
     ```
@@ -553,37 +569,37 @@ It's critical to manage the content of messages to ensure that the LLM has the r
     import { createMiddleware } from "langchain";
 
     const contextSchema = z.object({
-      maxMessages: z.number(),
-      userTier: z.string(),
+      userId: z.string(),
+      sessionStart: z.date(),
+      userLocation: z.string(),
+      featureFlags: z.array(z.string()),
     });
 
     type Context = z.infer<typeof contextSchema>;
 
-    const contextBasedTrimming = createMiddleware<Context>({
-      name: "ContextBasedTrimming",
-      beforeModel: (state, runtime) => {
-        // Read from Runtime Context: get user's message limit
-        let maxMessages = runtime.context.maxMessages;
-        const userTier = runtime.context.userTier;
+    const injectSessionContext = createMiddleware<Context>({
+      name: "InjectSessionContext",
+      contextSchema,
+      wrapModelCall: (request, handler) => {
+        // Read from Runtime Context: get session information
+        const { userId, userLocation, featureFlags } = request.runtime.context;
 
-        const messages = state.messages;
-
-        // Premium users get more context
-        if (userTier === "premium") {
-          maxMessages = maxMessages * 2;
+        // Build context message from runtime information
+        const contextParts = [`user ID: ${userId}`];
+        if (userLocation) {
+          contextParts.push(`location: ${userLocation}`);
+        }
+        if (featureFlags.length > 0) {
+          contextParts.push(`enabled features: ${featureFlags.join(", ")}`);
         }
 
-        if (messages.length <= maxMessages) {
-          return;
-        }
+        // Transiently inject session context as a human message
+        request.messages = [
+          ...request.messages,
+          { role: "user", content: `Session context: ${contextParts.join(", ")}` }
+        ];
 
-        // Trim to maxMessages
-        return {
-          messages: [
-            messages[0],  // System message
-            ...messages.slice(-(maxMessages - 1))
-          ]
-        };
+        return handler(request);
       },
     });
     ```
@@ -593,7 +609,11 @@ It's critical to manage the content of messages to ensure that the LLM has the r
 </Tabs>
 
 <Note>
-You can also directly modify the message list being sent to the LLM using `wrap_model_call` middleware. This lets you filter out sensitive information or transform messages right before they're sent. See the [middleware documentation](/oss/langchain/middleware#wrap-model-call) for examples.
+**Transient vs Persistent Message Updates:**
+
+The examples above use `wrap_model_call` to make **transient** updates - modifying what messages are sent to the model for a single call without changing what's saved in state.
+
+For **persistent** updates that modify state (like the summarization example in [Life-cycle Context](#summarization)), use life-cycle hooks like `before_model` or `after_model` to permanently update the conversation history. See the [middleware documentation](/oss/langchain/middleware) for more details.
 </Note>
 
 ### Tools
@@ -1778,9 +1798,8 @@ Control what happens **between** the core agent steps - intercepting data flow t
 
 [Middleware](/oss/langchain/middleware) provides hooks that run between model calls and tool execution, with three key capabilities:
 
-1. **Read context** - Access state, store, and runtime context to make decisions about what to do next
-2. **Write context** - Modify state and store to persist changes, update conversation history, or save insights
-3. **Time travel** - Jump to different steps in the agent cycle based on context (e.g., skip tool execution if a condition is met, repeat model call with modified context)
+1. **Update context** - Modify state and store to persist changes, update conversation history, or save insights
+2. **Jump in the lifecycle** - Move to different steps in the agent cycle based on context (e.g., skip tool execution if a condition is met, repeat model call with modified context)
 
 <div style={{ display: "flex", justifyContent: "center" }}>
   <img
@@ -1792,7 +1811,7 @@ Control what happens **between** the core agent steps - intercepting data flow t
 
 ### Summarization
 
-One of the most common life-cycle patterns is automatically condensing conversation history when it gets too long. Unlike the transient message trimming shown in [Model Context](#messages), summarization with middleware permanently updates state - replacing old messages with a summary.
+One of the most common life-cycle patterns is automatically condensing conversation history when it gets too long. Unlike the transient message trimming shown in [Model Context](#messages), summarization **persistently updates state** - permanently replacing old messages with a summary that's saved for all future turns.
 
 LangChain offers built-in middleware for this:
 
