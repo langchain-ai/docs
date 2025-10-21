@@ -742,118 +742,6 @@ def run_query_tool_with_interrupt(config: RunnableConfig, **tool_input):
 
     return tool_response
 ```
-<Note>
-The above implementation follows the [tool interrupt example](/oss/langgraph/interrupts#configuring-interrupts) in the broader [human-in-the-loop](/oss/langgraph/interrupts) guide. Refer to that guide for details and alternatives.
-</Note>
-
-Let's now re-assemble our graph. We will replace the programmatic check with human review. Note that we now include a [checkpointer](/oss/langgraph/persistence); this is required to pause and resume the run.
-```python
-from langgraph.checkpoint.memory import InMemorySaver
-
-def should_continue(state: MessagesState) -> Literal[END, "run_query"]:
-    messages = state["messages"]
-    last_message = messages[-1]
-    if not last_message.tool_calls:
-        return END
-    else:
-        return "run_query"
-
-builder = StateGraph(MessagesState)
-builder.add_node(list_tables)
-builder.add_node(call_get_schema)
-builder.add_node(get_schema_node, "get_schema")
-builder.add_node(generate_query)
-builder.add_node(run_query_node, "run_query")
-
-builder.add_edge(START, "list_tables")
-builder.add_edge("list_tables", "call_get_schema")
-builder.add_edge("call_get_schema", "get_schema")
-builder.add_edge("get_schema", "generate_query")
-builder.add_conditional_edges(
-    "generate_query",
-    should_continue,
-)
-builder.add_edge("run_query", "generate_query")
-
-checkpointer = InMemorySaver() # [!code highlight]
-agent = builder.compile(checkpointer=checkpointer) # [!code highlight]
-```
-We can invoke the graph as before. This time, execution is interrupted:
-```python
-import json
-
-config = {"configurable": {"thread_id": "1"}}
-
-question = "Which genre on average has the longest tracks?"
-
-for step in agent.stream(
-    {"messages": [{"role": "user", "content": question}]},
-    config,
-    stream_mode="values",
-):
-    if "messages" in step:
-        step["messages"][-1].pretty_print()
-    elif "__interrupt__" in step:
-        action = step["__interrupt__"][0]
-        print("INTERRUPTED:")
-        for request in action.value:
-            print(json.dumps(request, indent=2))
-    else:
-        pass
-```
-```
-...
-
-INTERRUPTED:
-{
-  "action": "sql_db_query",
-  "args": {
-    "query": "SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgLength FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.Name ORDER BY AvgLength DESC LIMIT 5;"
-  },
-  "description": "Please review the tool call"
-}
-```
-We can accept or edit the tool call using [Command](/oss/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command):
-```python
-from langgraph.types import Command
-
-
-for step in agent.stream(
-    Command(resume={"type": "accept"}),
-    # Command(resume={"type": "edit", "args": {"query": "..."}}),
-    config,
-    stream_mode="values",
-):
-    if "messages" in step:
-        step["messages"][-1].pretty_print()
-    elif "__interrupt__" in step:
-        action = step["__interrupt__"][0]
-        print("INTERRUPTED:")
-        for request in action.value:
-            print(json.dumps(request, indent=2))
-    else:
-        pass
-```
-```
-================================== Ai Message ==================================
-Tool Calls:
-  sql_db_query (call_t4yXkD6shwdTPuelXEmY3sAY)
- Call ID: call_t4yXkD6shwdTPuelXEmY3sAY
-  Args:
-    query: SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgLength FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.Name ORDER BY AvgLength DESC LIMIT 5;
-================================= Tool Message =================================
-Name: sql_db_query
-
-[('Sci Fi & Fantasy', 2911783.0384615385), ('Science Fiction', 2625549.076923077), ('Drama', 2575283.78125), ('TV Shows', 2145041.0215053763), ('Comedy', 1585263.705882353)]
-================================== Ai Message ==================================
-
-The genre with the longest average track length is "Sci Fi & Fantasy" with an average length of about 2,911,783 milliseconds. Other genres with long average track lengths include "Science Fiction," "Drama," "TV Shows," and "Comedy."
-```
-
-Refer to the [human-in-the-loop guide](/oss/langgraph/interrupts) for details.
-
-## Next steps
-Check out the [Evaluate a graph](/langsmith/evaluate-graph) guide for evaluating LangGraph applications, including SQL agents like this one, using LangSmith.
 :::
 :::js
 ```typescript
@@ -895,11 +783,55 @@ const queryToolWithInterrupt = tool(
   }
 );
 ```
+:::
+
+:::python
+<Note>
+The above implementation follows the [tool interrupt example](/oss/langgraph/interrupts#configuring-interrupts) in the broader [human-in-the-loop](/oss/langgraph/interrupts) guide. Refer to that guide for details and alternatives.
+</Note>
+:::
+:::js
 <Note>
 The above implementation follows the [tool interrupt example](/oss/langgraph/add-human-in-the-loop#add-interrupts-to-any-tool) in the broader [human-in-the-loop](/oss/langgraph/add-human-in-the-loop) guide. Refer to that guide for details and alternatives.
 </Note>
+:::
 
 Let's now re-assemble our graph. We will replace the programmatic check with human review. Note that we now include a [checkpointer](/oss/langgraph/persistence); this is required to pause and resume the run.
+
+:::python
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+
+def should_continue(state: MessagesState) -> Literal[END, "run_query"]:
+    messages = state["messages"]
+    last_message = messages[-1]
+    if not last_message.tool_calls:
+        return END
+    else:
+        return "run_query"
+
+builder = StateGraph(MessagesState)
+builder.add_node(list_tables)
+builder.add_node(call_get_schema)
+builder.add_node(get_schema_node, "get_schema")
+builder.add_node(generate_query)
+builder.add_node(run_query_node, "run_query")
+
+builder.add_edge(START, "list_tables")
+builder.add_edge("list_tables", "call_get_schema")
+builder.add_edge("call_get_schema", "get_schema")
+builder.add_edge("get_schema", "generate_query")
+builder.add_conditional_edges(
+    "generate_query",
+    should_continue,
+)
+builder.add_edge("run_query", "generate_query")
+
+checkpointer = InMemorySaver() # [!code highlight]
+agent = builder.compile(checkpointer=checkpointer) # [!code highlight]
+```
+:::
+:::js
 ```typescript
 import { MemorySaver } from "@langchain/langgraph";
 
@@ -931,7 +863,35 @@ const builderWithHuman = new StateGraph(MessagesAnnotation)
 const checkpointer = new MemorySaver(); // [!code highlight]
 const agentWithHuman = builderWithHuman.compile({ checkpointer }); // [!code highlight]
 ```
+:::
+
 We can invoke the graph as before. This time, execution is interrupted:
+
+:::python
+```python
+import json
+
+config = {"configurable": {"thread_id": "1"}}
+
+question = "Which genre on average has the longest tracks?"
+
+for step in agent.stream(
+    {"messages": [{"role": "user", "content": question}]},
+    config,
+    stream_mode="values",
+):
+    if "messages" in step:
+        step["messages"][-1].pretty_print()
+    elif "__interrupt__" in step:
+        action = step["__interrupt__"][0]
+        print("INTERRUPTED:")
+        for request in action.value:
+            print(json.dumps(request, indent=2))
+    else:
+        pass
+```
+:::
+:::js
 ```typescript
 const config = { configurable: { thread_id: "1" } };
 
@@ -956,6 +916,8 @@ if (state.next.length > 0) {
   console.log(JSON.stringify(state.tasks[0].interrupts[0], null, 2));
 }
 ```
+:::
+
 ```
 ...
 
@@ -968,7 +930,32 @@ INTERRUPTED:
   "description": "Please review the tool call"
 }
 ```
+
 We can accept or edit the tool call using [Command](/oss/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command):
+
+:::python
+```python
+from langgraph.types import Command
+
+
+for step in agent.stream(
+    Command(resume={"type": "accept"}),
+    # Command(resume={"type": "edit", "args": {"query": "..."}}),
+    config,
+    stream_mode="values",
+):
+    if "messages" in step:
+        step["messages"][-1].pretty_print()
+    elif "__interrupt__" in step:
+        action = step["__interrupt__"][0]
+        print("INTERRUPTED:")
+        for request in action.value:
+            print(json.dumps(request, indent=2))
+    else:
+        pass
+```
+:::
+:::js
 ```typescript
 import { Command } from "@langchain/langgraph";
 
@@ -985,6 +972,26 @@ for await (const step of resumeStream) {
   }
 }
 ```
+:::
+
+:::python
+```
+================================== Ai Message ==================================
+Tool Calls:
+  sql_db_query (call_t4yXkD6shwdTPuelXEmY3sAY)
+ Call ID: call_t4yXkD6shwdTPuelXEmY3sAY
+  Args:
+    query: SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgLength FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.Name ORDER BY AvgLength DESC LIMIT 5;
+================================= Tool Message =================================
+Name: sql_db_query
+
+[('Sci Fi & Fantasy', 2911783.0384615385), ('Science Fiction', 2625549.076923077), ('Drama', 2575283.78125), ('TV Shows', 2145041.0215053763), ('Comedy', 1585263.705882353)]
+================================== Ai Message ==================================
+
+The genre with the longest average track length is "Sci Fi & Fantasy" with an average length of about 2,911,783 milliseconds. Other genres with long average track lengths include "Science Fiction," "Drama," "TV Shows," and "Comedy."
+```
+:::
+:::js
 ```
 ai: ""
 Tool calls: [
@@ -999,9 +1006,14 @@ Tool calls: [
 tool: "[{\"Name\":\"Sci Fi & Fantasy\",\"AvgLength\":2911783.0384615385},{\"Name\":\"Science Fiction\",\"AvgLength\":2625549.076923077},{\"Name\":\"Drama\",\"AvgLength\":2575283.78125},{\"Name\":\"TV Shows\",\"AvgLength\":2145041.0215053763},{\"Name\":\"Comedy\",\"AvgLength\":1585263.705882353}]"
 ai: "The genre with the longest average track length is \"Sci Fi & Fantasy\" with an average length of about 2,911,783 milliseconds. Other genres with long average track lengths include \"Science Fiction,\" \"Drama,\" \"TV Shows,\" and \"Comedy.\""
 ```
+:::
 
+:::python
+Refer to the [human-in-the-loop guide](/oss/langgraph/interrupts) for details.
+:::
+:::js
 Refer to the [human-in-the-loop guide](/oss/langgraph/human-in-the-loop) for details.
+:::
 
 ## Next steps
 Check out the [Evaluate a graph](/langsmith/evaluate-graph) guide for evaluating LangGraph applications, including SQL agents like this one, using LangSmith.
-:::
