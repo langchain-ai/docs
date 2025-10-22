@@ -8,4 +8,7 @@ title: Perplexity - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-perplexity)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-perplexity)](https://pypistats.org/packages/langchain-perplexity)
 
+!!! note
+    This package ref has not yet been fully migrated to v1.
+
 ::: langchain_perplexity

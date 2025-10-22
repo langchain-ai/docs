@@ -8,4 +8,5 @@ title: Sema4 - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-sema4)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-sema4)](https://pypistats.org/packages/langchain-sema4)
 
-This package ref has not yet been migrated to v1.
+!!! note
+    This package ref has not yet been fully migrated to v1.

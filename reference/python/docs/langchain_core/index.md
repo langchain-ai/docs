@@ -1,4 +1,4 @@
-# :material-atom:{ .lg .middle } `langchain_core`
+# :material-atom:{ .lg .middle } `langchain-core`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain-core?label=%20)](https://pypi.org/project/langchain-core/#history)
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-core)](https://opensource.org/licenses/MIT)

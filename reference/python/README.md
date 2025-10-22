@@ -43,6 +43,7 @@ handlers:
 This site is currently being migrated from a previous Sphinx-based implementation, so there are still some rough edges to be smoothed out. Here are some known issues and potential improvements:
 
 - [ ] For methods that are from base classes, indicate it is inherited from such and link to the base class
+- [ ] Exclude `langchain-classic` pages from search results?
 - [ ] [Backlinks](https://mkdocstrings.github.io/python/usage/configuration/general/#backlinks)
 - [ ] [More xref](https://github.com/analog-garage/mkdocstrings-python-xref)
 - [ ] [Modernize annotations](https://mkdocstrings.github.io/python/usage/configuration/signatures/#modernize_annotations)
@@ -156,7 +157,6 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
   ├── langchain-elastic/
   ├── langchain-google/
   ├── langchain-milvus/
-  ├── langchain-mongodb/
   ├── langchain-neo4j/
   ├── langchain-nvidia/
   ├── langchain-pinecone/
@@ -172,6 +172,8 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
   ├── langgraph-supervisor-py/
   └── langgraph-swarm-py/
 ```
+
+`langchain-mongodb` is not included as it is maintained and hosted separately by the MongoDB team.
 
 If you only need to work on specific packages, you can comment out the others in `pyproject.dev.toml`.
 

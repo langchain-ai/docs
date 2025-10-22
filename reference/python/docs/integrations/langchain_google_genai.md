@@ -8,4 +8,7 @@ title: Google (GenAI) - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-google-genai)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-google-genai)](https://pypistats.org/packages/langchain-google-genai)
 
+!!! note
+    This package ref has not yet been fully migrated to v1.
+
 ::: langchain_google_genai

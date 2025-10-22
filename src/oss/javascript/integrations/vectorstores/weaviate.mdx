@@ -20,14 +20,17 @@ To use Weaviate vector stores, you'll need to set up a Weaviate instance and ins
 
 This guide will also use [OpenAI embeddings](/oss/integrations/text_embedding/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/integrations/text_embedding) if you wish.
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/weaviate @langchain/core weaviate-client uuid @langchain/openai
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install @langchain/weaviate @langchain/core weaviate-client uuid @langchain/openai
 ```
+```bash yarn
+yarn add @langchain/weaviate @langchain/core weaviate-client uuid @langchain/openai
+```
+```bash pnpm
+pnpm add @langchain/weaviate @langchain/core weaviate-client uuid @langchain/openai
+```
+</CodeGroup>
 
 You'll need to run Weaviate either locally or on a server. See [the Weaviate documentation](https://weaviate.io/developers/weaviate/installation) for more information.
 
