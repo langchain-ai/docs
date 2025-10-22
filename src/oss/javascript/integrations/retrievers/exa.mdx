@@ -35,14 +35,17 @@ If you want to get automated tracing from individual queries, you can also set y
 
 This retriever lives in the `@langchain/exa` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/exa @langchain/core
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install @langchain/exa @langchain/core
 ```
+```bash yarn
+yarn add @langchain/exa @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/exa @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

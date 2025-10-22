@@ -1,3 +1,3 @@
-!!! danger "LEGACY DOCUMENTATION"
+!!! danger "`langchain-classic` documentation"
 
-    These docs cover the legacy `langchain-classic` package. This package is no longer actively maintained, barring security vulnerabilities. Users are strongly encouraged to migrate to the primary [`langchain`](https://pypi.org/project/langchain/) package for the latest features and improvements. [See docs for `langchain`](/python/langchain/langchain)
+    These docs cover the `langchain-classic` package. This package will be maintained for security vulnerabilities [until December 2026](https://docs.langchain.com/oss/python/release-policy). Users are encouraged to migrate to the [`langchain`](https://pypi.org/project/langchain/) package for the latest features and improvements. [See docs for `langchain`](/python/langchain/langchain)

@@ -46,16 +46,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain ChatGroq integration lives in the `@langchain/groq` package:
 
-```{=mdx}
-
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/groq @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/groq @langchain/core
 ```
+```bash yarn
+yarn add @langchain/groq @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/groq @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 
