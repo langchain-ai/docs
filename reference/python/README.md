@@ -43,17 +43,16 @@ handlers:
 This site is currently being migrated from a previous Sphinx-based implementation, so there are still some rough edges to be smoothed out. Here are some known issues and potential improvements:
 
 - [ ] For methods that are from base classes, indicate it is inherited from such and link to the base class
+- [ ] Exclude `langchain-classic` pages from search results?
 - [ ] [Backlinks](https://mkdocstrings.github.io/python/usage/configuration/general/#backlinks)
 - [ ] [More xref](https://github.com/analog-garage/mkdocstrings-python-xref)
 - [ ] [Modernize annotations](https://mkdocstrings.github.io/python/usage/configuration/signatures/#modernize_annotations)
 - [ ] [Inheritance diagrams](https://mkdocstrings.github.io/python/usage/configuration/general/#show_inheritance_diagram)
 - [ ] Consider using [inherited docstrings](https://mkdocstrings.github.io/griffe/extensions/official/inherited-docstrings/)
-- [ ] Pydantic object refs preloading so that we link to them? Should find their tree and load it in (like we did for old LC)
 - [ ] Fix TOC shadow overflow (started in `reference/python/docs/stylesheets/toc.css`) but was funky
 - [ ] Post-processing step to link out to imports from code blocks
   - [ ] Maybe there's a plugin?
 - [ ] Fix `navigation.path` feature/plugin in `mkdocs.yml` not working
-- [ ] Resolve Griffe errors
 - [ ] Set up CI to fail on unexpected Griffe warnings
 - [ ] "Module last updated" auto-generation for module pages using source file commit timestamps or the MkDocs plugin [git-revision-date-localized](https://github.com/timvink/mkdocs-git-revision-date-localized-plugin)
 - [ ] Fix search magnifying glass icon color in dark mode
@@ -158,7 +157,6 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
   ├── langchain-elastic/
   ├── langchain-google/
   ├── langchain-milvus/
-  ├── langchain-mongodb/
   ├── langchain-neo4j/
   ├── langchain-nvidia/
   ├── langchain-pinecone/
@@ -174,6 +172,8 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
   ├── langgraph-supervisor-py/
   └── langgraph-swarm-py/
 ```
+
+`langchain-mongodb` is not included as it is maintained and hosted separately by the MongoDB team.
 
 If you only need to work on specific packages, you can comment out the others in `pyproject.dev.toml`.
 

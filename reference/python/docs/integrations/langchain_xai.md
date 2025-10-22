@@ -8,4 +8,7 @@ title: xAI - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-xai)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-xai)](https://pypistats.org/packages/langchain-xai)
 
+!!! note
+    This package ref has not yet been fully migrated to v1.
+
 ::: langchain_xai

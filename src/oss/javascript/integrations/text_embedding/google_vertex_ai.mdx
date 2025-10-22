@@ -46,14 +46,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain `VertexAIEmbeddings` integration lives in the `@langchain/google-vertexai` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/google-vertexai @langchain/core
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install @langchain/google-vertexai @langchain/core
 ```
+```bash yarn
+yarn add @langchain/google-vertexai @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/google-vertexai @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

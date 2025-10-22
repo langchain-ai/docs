@@ -8,4 +8,5 @@ title: Neo4J - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-neo4j)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-neo4j)](https://pypistats.org/packages/langchain-neo4j)
 
-This package ref has not yet been migrated to v1.
+!!! note
+    This package ref has not yet been fully migrated to v1.
