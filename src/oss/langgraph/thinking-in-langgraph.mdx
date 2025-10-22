@@ -223,6 +223,7 @@ class EmailAgentState(TypedDict):
 
     # Generated content
     draft_response: str | None
+    messages: list[str] | None
 ```
 
 :::
@@ -738,12 +739,12 @@ We'll implement each node as a simple function. Remember: nodes take state, do w
         """Pause for human review using interrupt and route based on decision"""
 
         classification = state.get('classification', {})
-
+        
         # interrupt() must come first - any code before it will re-run on resume
         human_decision = interrupt({
-            "email_id": state['email_id'],
-            "original_email": state['email_content'],
-            "draft_response": state['draft_response'],
+            "email_id": state.get('email_id',''),
+            "original_email": state.get('email_content',''),
+            "draft_response": state.get('draft_response',''),
             "urgency": classification.get('urgency'),
             "intent": classification.get('intent'),
             "action": "Please review and approve/edit this response"
@@ -752,7 +753,7 @@ We'll implement each node as a simple function. Remember: nodes take state, do w
         # Now process the human's decision
         if human_decision.get("approved"):
             return Command(
-                update={"draft_response": human_decision.get("edited_response", state['draft_response'])},
+                update={"draft_response": human_decision.get("edited_response", state.get('draft_response',''))},
                 goto="send_reply"
             )
         else:
@@ -902,7 +903,7 @@ workflow.add_edge(START, "read_email")
 workflow.add_edge("read_email", "classify_intent")
 workflow.add_edge("send_reply", END)
 
-# Compile with checkpointer for persistence
+# Compile with checkpointer for persistence, in case run graph with Local_Server --> Please compile without checkpointer
 memory = MemorySaver()
 app = workflow.compile(checkpointer=memory)
 ```
@@ -1088,7 +1089,7 @@ A different valid approach: You could combine `Read Email` and `Classify Intent`
 
 Application-level concerns: The caching discussion in Step 2 (whether to cache search results) is an application-level decision, not a LangGraph framework feature. You implement caching within your node functions based on your specific requirements—LangGraph doesn't prescribe this.
 
-Controlling checkpoint behavior: You can adjust when checkpoints are written using [durability modes](/oss/langgraph/durable-execution#durability-modes). The default `"async"` mode writes checkpoints in the background for good performance while maintaining durability. Use `"exit"` mode to checkpoint only at completion (faster for long-running graphs where mid-execution recovery isn't needed), or `"sync"` mode to guarantee checkpoints are written before proceeding to the next step (useful when you need to ensure state is persisted before continuing execution).
+Performance considerations: More nodes doesn't mean slower execution. LangGraph writes checkpoints in the background by default ([async durability mode](/oss/langgraph/durable-execution#durability-modes)), so your graph continues running without waiting for checkpoints to complete. This means you get frequent checkpoints with minimal performance impact. You can adjust this behavior if needed—use `"exit"` mode to checkpoint only at completion, or `"sync"` mode to block execution until each checkpoint is written.
 </Accordion>
 
 ### Where to go from here
