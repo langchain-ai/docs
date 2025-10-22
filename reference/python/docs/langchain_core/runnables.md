@@ -7,3 +7,6 @@
 ::: langchain_core.runnables.base.RunnableParallel
 ::: langchain_core.runnables.base.RunnableSequence
 ::: langchain_core.runnables.base.RunnableSerializable
+::: langchain_core.runnables.RunnableConfig
+    options:
+      parameter_headings: true

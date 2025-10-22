@@ -24,15 +24,17 @@ Head [to this page](https://developers.cloudflare.com/workers-ai/) to sign up to
 
 The LangChain Cloudflare integration lives in the `@langchain/cloudflare` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/cloudflare @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/cloudflare @langchain/core
 ```
+```bash yarn
+yarn add @langchain/cloudflare @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/cloudflare @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

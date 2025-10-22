@@ -3,16 +3,6 @@ title: Context overview
 sidebarTitle: Context
 ---
 
-import AlphaCalloutPy from '/snippets/alpha-lg-callout-py.mdx';
-import AlphaCalloutJS from '/snippets/alpha-lg-callout-js.mdx';
-
-:::python
-<AlphaCalloutPy />
-:::
-:::js
-<AlphaCalloutJS />
-:::
-
 **Context engineering** is the practice of building dynamic systems that provide the right information and tools, in the right format, so that an AI application can accomplish a task. Context can be characterized along two key dimensions:
 
 1. By **mutability**:
@@ -23,13 +13,13 @@ import AlphaCalloutJS from '/snippets/alpha-lg-callout-js.mdx';
   * **Cross-conversation context**: Data that persists across multiple conversations or sessions
 
 <Tip>
-Runtime context refers to local context: data and dependencies your code needs to run. It does **not** refer to:
+    Runtime context refers to local context: data and dependencies your code needs to run. It does **not** refer to:
 
-* The LLM context, which is the data passed into the LLM's prompt.
-* The "context window", which is the maximum number of tokens that can be passed to the LLM.
+    * The LLM context, which is the data passed into the LLM's prompt.
+    * The "context window", which is the maximum number of tokens that can be passed to the LLM.
 
-Runtime context can be used to optimize the LLM context. For example, you can use user metadata
-in the runtime context to fetch user preferences and feed them into the context window.
+    Runtime context can be used to optimize the LLM context. For example, you can use user metadata
+    in the runtime context to fetch user preferences and feed them into the context window.
 </Tip>
 
 LangGraph provides three ways to manage context, which combines the mutability and lifetime dimensions:
@@ -59,30 +49,34 @@ graph.invoke(
 <Tabs>
     <Tab title="Agent prompt">
     ```python
-    from langchain.messages import AnyMessage
-    from langgraph.runtime import get_runtime
-    from langgraph.prebuilt.chat_agent_executor import AgentState
-    from langgraph.prebuilt import create_react_agent
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
 
-    def prompt(state: AgentState) -> list[AnyMessage]:  # [!code highlight]
-        runtime = get_runtime(ContextSchema)
-        system_msg = f"You are a helpful assistant. Address the user as {runtime.context.user_name}."
-        return [{"role": "system", "content": system_msg}] + state["messages"]
 
-    agent = create_react_agent(
-        model="anthropic:claude-3-7-sonnet-latest",
+    @dataclass
+    class ContextSchema:
+        user_name: str
+
+    @dynamic_prompt  # [!code highlight]
+    def personalized_prompt(request: ModelRequest) -> str:  # [!code highlight]
+        user_name = request.runtime.context.user_name
+        return f"You are a helpful assistant. Address the user as {user_name}."
+
+    agent = create_agent(
+        model="anthropic:claude-sonnet-4-5",
         tools=[get_weather],
-        prompt=prompt,
+        middleware=[personalized_prompt],
         context_schema=ContextSchema
     )
 
     agent.invoke(
         {"messages": [{"role": "user", "content": "what is the weather in sf"}]},
-        context={"user_name": "John Smith"}  # [!code highlight]
+        context=ContextSchema(user_name="John Smith")  # [!code highlight]
     )
 ```
 
-    * See [Agents](/oss/langchain/agents) for details.
+    See [Agents](/oss/langchain/agents) for details.
     </Tab>
     <Tab title="Workflow node">
     ```python
@@ -97,14 +91,13 @@ graph.invoke(
     </Tab>
     <Tab title="In a tool">
     ```python
-    from langgraph.runtime import get_runtime
+    from langchain.tools import tool, ToolRuntime
 
     @tool
-    def get_user_email() -> str:
+    def get_user_email(runtime: ToolRuntime[ContextSchema]) -> str:
         """Retrieve user information based on user ID."""
         # simulate fetching user info from a database
-        runtime = get_runtime(ContextSchema)  # [!code highlight]
-        email = get_user_email_from_db(runtime.context.user_name)
+        email = get_user_email_from_db(runtime.context.user_name)  # [!code highlight]
         return email
 ```
 
@@ -113,8 +106,8 @@ graph.invoke(
 </Tabs>
 
 <Tip>
-The `Runtime` object can be used to access static context and other utilities like the active store and stream writer.
-See the [Runtime][langgraph.runtime.Runtime] documentation for details.
+    The `Runtime` object can be used to access static context and other utilities like the active store and stream writer.
+    See the @[`Runtime`][langgraph.runtime.Runtime] documentation for details.
 </Tip>
 :::
 
@@ -155,7 +148,8 @@ await graph.invoke(
     ```python
     from langchain.agents import create_agent
     from langchain.agents.middleware import dynamic_prompt, ModelRequest
-    from langgraph.prebuilt.chat_agent_executor import AgentState
+    from langchain.agents import AgentState
+
 
     class CustomState(AgentState):  # [!code highlight]
         user_name: str
@@ -166,7 +160,7 @@ await graph.invoke(
         return f"You are a helpful assistant. User's name is {user_name}"
 
     agent = create_agent(
-        model="anthropic:claude-3-7-sonnet-latest",
+        model="anthropic:claude-sonnet-4-5",
         tools=[...],
         state_schema=CustomState,  # [!code highlight]
         middleware=[personalized_prompt],  # [!code highlight]
@@ -200,7 +194,7 @@ await graph.invoke(
     });
 
     const agent = createAgent({  // [!code highlight]
-      model: "anthropic:claude-3-7-sonnet-latest",
+      model: "anthropic:claude-sonnet-4-5",
       tools: [/* your tools here */],
       middleware: [personalizedPrompt] as const, // [!code highlight]
     });
@@ -209,7 +203,7 @@ await graph.invoke(
       messages: [{ role: "user", content: "hi!" }],
       userName: "John Smith",
     });
-```
+    ```
     :::
     </Tab>
     <Tab title="In a workflow">
@@ -234,7 +228,7 @@ await graph.invoke(
     builder.add_node(node)
     builder.set_entry_point("node")
     graph = builder.compile()
-```
+    ```
     :::
 
     :::js
@@ -262,17 +256,18 @@ await graph.invoke(
       .addEdge(START, "node");
 
     const graph = builder.compile();
-```
+    ```
     :::
     </Tab>
 </Tabs>
 
 <Tip>
-**Turning on memory**
-Please see the [memory guide](/oss/langgraph/add-memory) for more details on how to enable memory. This is a powerful feature that allows you to persist the agent's state across multiple invocations. Otherwise, the state is scoped only to a single run.
+    **Turning on memory**
+    Please see the [memory guide](/oss/langgraph/add-memory) for more details on how to enable memory. This is a powerful feature that allows you to persist the agent's state across multiple invocations. Otherwise, the state is scoped only to a single run.
 </Tip>
 
 <a id="store"></a>
+
 ## Dynamic cross-conversation context
 
 **Dynamic cross-conversation context** represents persistent, mutable data that spans across multiple conversations or sessions and is managed through the LangGraph store. This includes user profiles, preferences, and historical interactions. The LangGraph store acts as [long-term memory](/oss/concepts/memory#long-term-memory) across multiple runs. This can be used to read or update persistent facts (e.g., user profiles, preferences, prior interactions).

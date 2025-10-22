@@ -17,7 +17,7 @@ Please refer here for more details:
 [Sign Up](https://azure.microsoft.com/en-us/free/) for lifetime free access to get started today.
 
 ```python
-%pip install -qU azure-cosmos langchain-openai langchain-community
+%pip install -qU azure-cosmos langchain-openai langchain-azure-ai
 ```
 
 ```output
@@ -103,10 +103,10 @@ full_text_policy = {
 
 ```python
 from azure.cosmos import CosmosClient, PartitionKey
-from langchain_community.vectorstores.azure_cosmos_db_no_sql import (
+from langchain_azure_ai.vectorstores.azure_cosmos_db_no_sql import (
     AzureCosmosDBNoSqlVectorSearch,
 )
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings
 
 HOST = "AZURE_COSMOS_DB_ENDPOINT"
 KEY = "AZURE_COSMOS_DB_KEY"
@@ -210,16 +210,12 @@ Score 5:  0.8272138555588135
 ```python
 query = "What were the compute requirements for training GPT 4"
 
-pre_filter = {
-    "conditions": [
-        {"property": "metadata.page", "operator": "$eq", "value": 0},
-    ],
-}
 
+where = "c.metadata.page = 0"
 results = vector_search.similarity_search_with_score(
     query=query,
     k=5,
-    pre_filter=pre_filter,
+    where=where,
 )
 
 # Display results
@@ -249,23 +245,15 @@ Score 4:  0.8209972517303962
 ## Full Text Search
 
 ```python
-from langchain_community.vectorstores.azure_cosmos_db_no_sql import CosmosDBQueryType
-
 query = "What were the compute requirements for training GPT 4"
-pre_filter = {
-    "conditions": [
-        {
-            "property": "text",
-            "operator": "$full_text_contains_any",
-            "value": "What were the compute requirements for training GPT 4",
-        },
-    ],
-}
+
+where = "FullTextContainsAny(c.description, 'compute', 'GPT-4')"
+
 results = vector_search.similarity_search_with_score(
     query=query,
     k=5,
-    query_type=CosmosDBQueryType.FULL_TEXT_SEARCH,
-    pre_filter=pre_filter,
+    search_type="full_text_search",
+    where=where,
 )
 
 # Display results
@@ -295,10 +283,15 @@ Result 5:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf
 ```python
 query = "What were the compute requirements for training GPT 4"
 
+full_text_rank_filter = [
+    {"search_field": "description", "search_text": "compute requirements GPT-4"}
+]
+
 results = vector_search.similarity_search_with_score(
     query=query,
     k=5,
-    query_type=CosmosDBQueryType.FULL_TEXT_RANK,
+    search_type="full_text_ranking",
+    full_text_rank_filter=full_text_rank_filter,
 )
 
 # Display results
@@ -328,15 +321,20 @@ Result 5:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf
 ```python
 query = "What were the compute requirements for training GPT 4"
 
+full_text_rank_filter = [
+    {"search_field": "description", "search_text": "compute requirements GPT-4"}
+]
+
 results = vector_search.similarity_search_with_score(
     query=query,
     k=5,
-    query_type=CosmosDBQueryType.HYBRID,
+    search_type="hybrid",
+    full_text_rank_filter=full_text_rank_filter,
 )
 
 # Display results
 for i in range(0, len(results)):
-    print(f"Result {i + 1}: ", results[i][0].json())
+    print(f"Result {i + 1}: ", results[i][0])
     print(f"Score {i + 1}: ", results[i][1])
     print("\n")
 ```
@@ -367,20 +365,17 @@ Score 5:  0.8213247840132897
 ```python
 query = "What were the compute requirements for training GPT 4"
 
-pre_filter = {
-    "conditions": [
-        {
-            "property": "text",
-            "operator": "$full_text_contains_any",
-            "value": "compute requirements",
-        },
-        {"property": "metadata.page", "operator": "$eq", "value": 0},
-    ],
-    "logical_operator": "$and",
-}
+full_text_rank_filter = [
+    {"search_field": "description", "search_text": "compute requirements GPT-4"}
+]
+where = "c.metadata.page = 0"
 
 results = vector_search.similarity_search_with_score(
-    query=query, k=5, query_type=CosmosDBQueryType.HYBRID, pre_filter=pre_filter
+    query=query,
+    k=5,
+    search_type="hybrid",
+    where=where,
+    full_text_rank_filter=full_text_rank_filter,
 )
 
 # Display results
@@ -411,6 +406,54 @@ Result 5:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf
 Score 5:  0.8213247840132897
 ```
 
-```python
 
+## Hybrid Search with custom projection
+
+```python
+query = "What were the compute requirements for training GPT 4"
+
+full_text_rank_filter = [
+    {"search_field": "description", "search_text": "compute requirements GPT-4"}
+]
+where = "c.metadata.page = 0"
+
+projection_mapping = {
+            "description": "text",
+        }
+
+results = vector_search.similarity_search_with_score(
+    query=query,
+    k=5,
+    search_type="hybrid",
+    where=where,
+    full_text_rank_filter=full_text_rank_filter,
+    projection_mapping=projection_mapping,
+)
+
+# Display results
+for i in range(0, len(results)):
+    print(f"Result {i + 1}: ", results[i][0].json())
+    print(f"Score {i + 1}: ", results[i][1])
+    print("\n")
+```
+
+```output
+Result 1:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf","page":97,"id":"36dfcd6c-d3cf-4e34-a5d6-cc4d63013cba"},"page_content":"Figure 11: Results on IF evaluations across GPT3.5, GPT3.5-Turbo, GPT-4-launch\n98","type":"Document"}
+Score 1:  0.8173275975778744
+
+
+Result 2:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf","page":7,"id":"3d6e4715-4a38-40b1-89f1-e768bad5f9c8"},"page_content":"Preliminary results on a narrow set of academic vision benchmarks can be found in the GPT-4 blog\npost [ 65]. We plan to release more information about GPT-4’s visual capabilities in follow-up work.\n8","type":"Document"}
+Score 2:  0.8176419674549597
+
+
+Result 3:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf","page":2,"id":"f2746fd3-bbcb-4197-b2d5-ee7b355b6009"},"page_content":"the HumanEval dataset. A power law fit to the smaller models (excluding GPT-4) is shown as the dotted\nline; this fit accurately predicts GPT-4’s performance. The x-axis is training compute normalized so that\nGPT-4 is 1.\n3","type":"Document"}
+Score 3:  0.8053881702559759
+
+
+Result 4:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf","page":0,"id":"9d59c3ed-deac-48cb-9382-a8ab079334e5"},"page_content":"performance based on models trained with no more than 1/1,000th the compute of\nGPT-4.\n1 Introduction\nThis technical report presents GPT-4, a large multimodal model capable of processing image and\ntext inputs and producing text outputs. Such models are an important area of study as they have the\npotential to be used in a wide range of applications, such as dialogue systems, text summarization,\nand machine translation. As such, they have been the subject of substantial interest and progress in\nrecent years [1–34].\nOne of the main goals of developing such models is to improve their ability to understand and generate\nnatural language text, particularly in more complex and nuanced scenarios. To test its capabilities\nin such scenarios, GPT-4 was evaluated on a variety of exams originally designed for humans. In\nthese evaluations it performs quite well and often outscores the vast majority of human test takers.","type":"Document"}
+Score 4:  0.8394796122122777
+
+
+Result 5:  {"id":null,"metadata":{"source":"https://arxiv.org/pdf/2303.08774.pdf","page":1,"id":"20153a6c-7c2c-4328-9b0e-e3502d7ac4dd"},"page_content":"safety considerations above against the scientific value of further transparency.\n3 Predictable Scaling\nA large focus of the GPT-4 project was building a deep learning stack that scales predictably. The\nprimary reason is that for very large training runs like GPT-4, it is not feasible to do extensive\nmodel-specific tuning. To address this, we developed infrastructure and optimization methods that\nhave very predictable behavior across multiple scales. These improvements allowed us to reliably\npredict some aspects of the performance of GPT-4 from smaller models trained using 1,000×–\n10,000×less compute.\n3.1 Loss Prediction\nThe final loss of properly-trained large language models is thought to be well approximated by power\nlaws in the amount of compute used to train the model [41, 42, 2, 14, 15].\nTo verify the scalability of our optimization infrastructure, we predicted GPT-4’s final loss on our","type":"Document"}
+Score 5:  0.8213247840132897
 ```

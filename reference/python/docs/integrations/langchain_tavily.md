@@ -8,4 +8,7 @@ title: Tavily - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-tavily)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-tavily)](https://pypistats.org/packages/langchain-tavily)
 
+!!! warning
+    These docs are built from the [langchain-tavily repo](https://github.com/tavily-ai/langchain-tavily) and have not been verified for accuracy by the LangChain team.
+
 ::: langchain_tavily

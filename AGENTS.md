@@ -1,4 +1,15 @@
-# Mintlify documentation
+# LangChain's unified documentation overview
+
+This repository encompasses the comprehensive documentation for LangChain's products and services, hosted on the Mintlify platform. The documentation is divided into sections for each product. This is a shared set of guidelines to ensure consistency and quality across all content.
+
+## Scope
+
+**These instructions apply to manually authored documentation only. They do NOT apply to:**
+
+- Files in `**/reference/**` directories (auto-generated API reference documentation)
+- Build artifacts and generated files
+
+For reference documentation, see `.github/instructions/reference-docs.instructions.md`.
 
 ## Working relationship
 
@@ -37,10 +48,20 @@ If the trailing `/index` (no extension included) is omitted, the Mintlify parser
 
 ## Frontmatter requirements for pages
 
-- title: Clear, descriptive page title
+- title: Clear, descriptive, concise page title
 - description: Concise summary for SEO/navigation
 
-## Writing standards
+## Custom code language fences
+
+We have implemented custom code language fences for Python and JavaScript/TypeScript. They are used to tag content that is specific to that language. Use either `:::python` or `:::js` to tag content that is specific to that language. Both are closed with the `:::` fence.
+
+If any code fences like this exist on the code page, then two outputs (one for each language) will be created. For example, if this syntax is on the page in `/concepts/foo.mdx`, two pages will be created at `/python/concepts/foo.mdx` and `/javascript/concepts/foo.mdx`.
+
+For implementation details, see `pipeline/preprocessors/markdown_preprocessor.py`.
+
+## Style guide
+
+In general, follow the [Google Developer Documentation Style Guide](https://developers.google.com/style). You can also access this style guide through the [Vale-compatible implementation](https://github.com/errata-ai/Google).
 
 - Second-person voice ("you")
 - Prerequisites at start of procedural content
@@ -49,14 +70,19 @@ If the trailing `/index` (no extension included) is omitted, the Mintlify parser
 - Include both basic and advanced use cases
 - Language tags on all code blocks
 - Alt text on all images
-- Relative paths for internal links
+- Root relative paths for internal links
+- Correct spelling
+- Correct grammar
+- Sentence-case for headings
+- Ensure American English spelling
 
 ## Do not
 
-- Skip frontmatter on any MDX file
-- Use absolute URLs for internal links
-- Include untested code examples
-- Make assumptions - always ask for clarification
+- Do not skip frontmatter on any MDX file
+- Do not use absolute URLs for internal links
+- Do not review code blocks (denoted by ```), as they are often not full snippets
+- Do not include untested code examples
+- Do not make assumptions - always ask for clarification
+- Do not include localization in relative links (e.g., `/python/` or `/javascript/`) - these are resolved automatically by the build pipeline
 
-For questions, refer to the Mintlify docs (either via MCP, if available), or at the
-[Mintlify documentation](https://docs.mintlify.com/docs/introduction).
+For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).

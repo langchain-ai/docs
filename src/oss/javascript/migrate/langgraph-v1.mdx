@@ -1,0 +1,142 @@
+---
+title: LangGraph v1 migration guide
+sidebarTitle: Migration guide
+---
+
+This guide outlines changes in LangGraph v1 and how to migrate from previous versions. For a high-level overview of what's new, see the [release notes](/oss/releases/langgraph-v1).
+
+To upgrade,
+
+<CodeGroup>
+```bash npm
+npm install @langchain/langgraph@latest @langchain/core@latest
+```
+```bash pnpm
+pnpm add @langchain/langgraph@latest @langchain/core@latest
+```
+```bash yarn
+yarn add @langchain/langgraph@latest @langchain/core@latest
+```
+```bash bun
+bun add @langchain/langgraph@latest @langchain/core@latest
+```
+</CodeGroup>
+
+## Summary of changes
+
+| Area | What changed |
+|------|--------------|
+| React prebuilt | `createReactAgent` deprecated; use LangChain `createAgent` |
+| Interrupts | Typed interrupts supported via `interrupts` config |
+| `toLangGraphEventStream` removed | Use `graph.stream` with the desired `encoding` format |
+| `useStream` | Supports custom transports |
+
+---
+
+## Deprecation: `createReactAgent` → `createAgent`
+
+LangGraph v1 deprecates the `createReactAgent` prebuilt. Use LangChain's `createAgent`, which runs on LangGraph and adds a flexible middleware system.
+
+See the LangChain v1 docs for details:
+
+- [Release notes](/oss/releases/langchain-v1#createagent)
+- [Migration guide](/oss/migrate/langchain-v1#createagent)
+
+<CodeGroup>
+```typescript v1 (new)
+import { createAgent } from "langchain";
+
+const agent = createAgent({
+  model,
+  tools,
+  systemPrompt: "You are a helpful assistant.", // [!code highlight]
+});
+```
+```typescript v0 (old)
+import { createReactAgent } from "@langchain/langgraph/prebuilts";
+
+const agent = createReactAgent({
+  model,
+  tools,
+  prompt: "You are a helpful assistant.", // [!code highlight]
+});
+```
+</CodeGroup>
+---
+
+## Typed interrupts
+
+You can now define interrupt types at graph construction to strictly type the values passed to and received from interrupts.
+
+<CodeGroup>
+```typescript v1 (new)
+import { StateGraph, interrupt } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = z.object({ foo: z.string() });
+
+const graphConfig = {
+  interrupts: {
+    approve: interrupt<{ reason: string }, { messages: string[] }>(),
+  },
+}
+
+const graph = new StateGraph(State, graphConfig)
+  .addNode("node", async (state, runtime) => {
+    const value = runtime.interrupt.approve({ reason: "review" }); // [!code highlight]
+    return { foo: value };
+  })
+  .compile();
+```
+```typescript v0 (old)
+import { StateGraph } from "@langchain/langgraph";
+
+const graph = new StateGraph(State)
+  .addNode("node", async (state, runtime) => {
+    const value = runtime.interrupt.approve({ reason: "review" }); // [!code highlight]
+    return state;
+  })
+  .compile();
+```
+</CodeGroup>
+
+See [Interrupts](/oss/langgraph/interrupts) to learn more.
+
+---
+
+## Event stream encoding
+
+The low-level `toLangGraphEventStream` helper is removed. Streaming responses are handled by the SDK; when using low-level clients, select the wire format via an `encoding` option passed to `graph.stream`.
+
+<CodeGroup>
+```typescript v1 (new)
+const stream = await graph.stream(input, {
+  encoding: "text/event-stream",
+  streamMode: ["values", "messages"],
+});
+
+return new Response(stream, {
+  headers: { "Content-Type": "text/event-stream" }, // [!code highlight]
+});
+```
+```typescript v0 (old)
+return toLangGraphEventStreamResponse({
+  stream: graph.streamEvents(input, {
+    version: "v2",
+    streamMode: ["values", "messages"],
+  }),
+});
+```
+</CodeGroup>
+
+---
+
+## Breaking changes
+
+### Dropped Node 18 support
+
+All LangGraph packages now require **Node.js 20 or higher**. Node.js 18 reached [end of life](https://nodejs.org/en/about/releases/) in March 2025.
+
+### New build outputs
+
+Builds for all langgraph packages now use a bundler based approach instead of using raw typescript outputs. If you were importing files from the `dist/` directory (which is not recommended), you will need to update your imports to use the new module system.
