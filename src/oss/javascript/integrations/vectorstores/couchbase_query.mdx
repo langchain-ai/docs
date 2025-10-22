@@ -2,17 +2,17 @@
 title: Couchbase Query Vector Store
 ---
 
-The `CouchbaseQueryVectorStore` is an implementation of Vector Search that uses the [Query Service](https://docs.couchbase.com/server/current/learn/services-and-indexes/services/query-service.html) (SQL++) and [Index Service](https://docs.couchbase.com/server/current/learn/services-and-indexes/services/index-service.html) for vector similarity search instead of the Search service. This provides an alternative approach for vector operations using SQL++ queries with vector functions.
+The `CouchbaseQueryVectorStore` is the preferred implementation of Vector Search in Couchbase. It uses the [Query Service](https://docs.couchbase.com/server/current/learn/services-and-indexes/services/query-service.html) (SQL++) and [Index Service](https://docs.couchbase.com/server/current/learn/services-and-indexes/services/index-service.html) for vector similarity search, instead of the Search service. This provides a more powerful and straightforward approach for vector operations using SQL++ queries with vector functions.
 
 More information about Couchbase's vector search capabilities can be found in the official documentation: [Choose the Right Vector Index](https://docs.couchbase.com/server/current/vector-index/use-vector-indexes.html).
 
-<Note>
-This functionality is only available in Couchbase Server 8.0 and above, which introduced vector search capabilities in the Query service.
-</Note>
+<Warning>
+This functionality is only available in Couchbase Server 8.0 and above.
+</Warning>
 
-## Key Differences from CouchbaseVectorStore
+## Key Differences from `CouchbaseSearchVectorStore` (formerly `CouchbaseVectorStore`)
 
-- **Query Service**: Uses Couchbase's Query service with SQL++ instead of the Search service
+- **Query and Index Service**: Uses Couchbase's Query service with SQL++ instead of the Search service
 - **No Index Required**: Does not require a pre-configured search index for basic operations
 - **SQL++ Syntax**: Supports WHERE clauses and SQL++ query syntax for filtering
 - **Vector Functions**: Uses `APPROX_VECTOR_DISTANCE` function for similarity calculations
@@ -26,15 +26,15 @@ npm install couchbase @langchain/openai @langchain/community @langchain/core
 
 ## Create Couchbase Connection Object
 
-We create a connection to the Couchbase cluster initially and then pass the cluster object to the Vector Store. Here, we are connecting using the username and password.
-You can also connect using any other supported way to your cluster.
+We create a connection to the Couchbase cluster and then pass the cluster object to the Vector Store. Here, we are connecting using the username and password.
+You can also connect to your cluster using any other supported method.
 
 For more information on connecting to the Couchbase cluster, please check the [Node SDK documentation](https://docs.couchbase.com/nodejs-sdk/current/hello-world/start-using-sdk.html#connect).
 
 ```typescript
 import { Cluster } from "couchbase";
 
-const connectionString = "couchbase://localhost"; // or couchbases://localhost if you are using TLS
+const connectionString = "couchbase://localhost";
 const dbUsername = "Administrator"; // valid database user with read access to the bucket being queried
 const dbPassword = "Password"; // password for the database user
 
@@ -67,7 +67,7 @@ const vectorStore = await CouchbaseQueryVectorStore.initialize(embeddings, {
   bucketName: "my-bucket",
   scopeName: "my-scope", 
   collectionName: "my-collection",
-  textKey: "text",        // optional, defaults to "text"
+  textKey: "text", // optional, defaults to "text"
   embeddingKey: "embedding", // optional, defaults to "embedding"
   distanceStrategy: DistanceStrategy.COSINE, // optional, defaults to DOT
 });
@@ -77,7 +77,7 @@ const vectorStore = await CouchbaseQueryVectorStore.initialize(embeddings, {
 
 The Query vector store supports creating vector indexes to improve search performance. There are two types of indexes available:
 
-### HYPERSCALE Index
+### Hyperscale Index
 A specialized vector index optimized for vector operations using Couchbase's vector indexing capabilities:
 
 ```typescript
@@ -129,7 +129,7 @@ WITH {'dimension': 1536, 'similarity': 'dot', 'description': 'IVF1024,SQ8', 'sca
 
 ### Key Differences
 
-| Aspect | HYPERSCALE Index | COMPOSITE Index |
+| Aspect | Hyperscale Index | Composite Index |
 |--------|-------------|-----------------|
 | **SQL++ Syntax** | `CREATE VECTOR INDEX` | `CREATE INDEX` |
 | **Vector Field** | `(field VECTOR)` with `INCLUDE` clause | `(field1, field2, vector_field VECTOR)` |
@@ -321,13 +321,10 @@ await vectorStore.delete({ ids: documentIds });
 
 1. **Create Indexes**: Use `createIndex()` to create appropriate vector indexes for better performance
 2. **Choose Index Type**: 
-   - Use **HYPERSCALE indexes** for pure vector search workloads where you primarily perform similarity searches
-   - Use **COMPOSITE indexes** for mixed queries that combine vector similarity with scalar field filtering
+   - Use **Hyperscale indexes** for pure vector search workloads where you primarily perform similarity searches
+   - Use **Composite indexes** for mixed queries that combine vector similarity with scalar field filtering
 3. **Tune Parameters**: Adjust `indexScanNprobes` and `indexTrainlist` based on your data size and performance requirements
 4. **Filter Early**: Use WHERE clauses to reduce the search space before vector calculations
-5. **Index Strategy**:
-   - **HYPERSCALE**: Better for high-performance vector similarity search with minimal scalar filtering
-   - **COMPOSITE**: Better when you frequently filter by both vector similarity and scalar fields in the same query
 
 ## Error Handling
 
@@ -351,9 +348,9 @@ If you see errors related to insufficient training data, you may need to:
 - For collections with < 1 million vectors, use `number_of_vectors / 1000` for centroids
 - For larger collections, use `sqrt(number_of_vectors)` for centroids
 
-## Comparison with CouchbaseVectorStore
+## Comparison with `CouchbaseSearchVectorStore`
 
-| Feature | CouchbaseQueryVectorStore | CouchbaseVectorStore |
+| Feature | `CouchbaseQueryVectorStore` | `CouchbaseSearchVectorStore` |
 |---------|---------------------------|----------------------|
 | Service | Query (SQL++) | Search (FTS) |
 | Index Required | Optional (for performance) | Required |
@@ -362,21 +359,19 @@ If you see errors related to insufficient training data, you may need to:
 | Setup Complexity | Lower | Higher |
 | Performance | Good with indexes | Optimized for search |
 
-<br />
-<br />
+## Frequently Asked Questions
 
-# Frequently Asked Questions
+### Do I need to create an index before using `CouchbaseQueryVectorStore`?
 
-## Question: Do I need to create an index before using CouchbaseQueryVectorStore?
+No, unlike the Search-based `CouchbaseSearchVectorStore`, the Query-based implementation can work without pre-created indexes. However, creating appropriate vector indexes (Hyperscale or Composite) will significantly improve query performance.
 
-No, unlike the Search-based CouchbaseVectorStore, the Query-based implementation can work without pre-created indexes. However, creating appropriate vector indexes (HYPERSCALE or COMPOSITE) will significantly improve query performance.
+### When should I use Hyperscale vs. Composite indexes?
 
-## Question: When should I use HYPERSCALE vs COMPOSITE indexes?
+- Use **Hyperscale indexes** when you primarily perform vector similarity searches with minimal filtering on other fields
+- Use **Composite indexes** when you frequently combine vector similarity with filtering on scalar fields in the same query
+- Learn more about how to [Choose the Right Vector Index](https://docs.couchbase.com/server/current/vector-index/use-vector-indexes.html)
 
-- Use **HYPERSCALE indexes** when you primarily perform vector similarity searches with minimal filtering on other fields
-- Use **COMPOSITE indexes** when you frequently combine vector similarity with filtering on scalar fields in the same query
-
-## Question: Can I use both CouchbaseVectorStore and CouchbaseQueryVectorStore on the same data?
+### Can I use both `CouchbaseQueryVectorStore` and `CouchbaseSearchVectorStore` on the same data?
 
 Yes, both can work on the same document structure. However, they use different services (Search vs Query) and have different indexing requirements.
 
