@@ -8,4 +8,7 @@ title: Prompty - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-prompty)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-prompty)](https://pypistats.org/packages/langchain-prompty)
 
+!!! note
+    This package ref has not yet been fully migrated to v1.
+
 ::: langchain_prompty

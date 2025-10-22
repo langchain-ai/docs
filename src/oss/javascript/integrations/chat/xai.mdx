@@ -45,16 +45,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain `ChatXAI` integration lives in the `@langchain/xai` package:
 
-```{=mdx}
-
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/xai @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/xai @langchain/core
 ```
+```bash yarn
+yarn add @langchain/xai @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/xai @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

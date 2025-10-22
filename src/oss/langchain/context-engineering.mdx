@@ -3,485 +3,2011 @@ title: Context engineering in agents
 sidebarTitle: Context engineering
 ---
 
-import StableCalloutPy from '/snippets/stable-lc-callout-py.mdx';
-import StableCalloutJS from '/snippets/stable-lc-callout-js.mdx';
 
-:::python
-<StableCalloutPy />
-:::
-:::js
-<StableCalloutJS />
-:::
 
-The hard part of building agents (or any LLM application) is making them reliable enough.
-While they may work for a prototype, they often mess up in more real world and widespread use cases.
+## Overview
 
-Why do they mess up?
+The hard part of building agents (or any LLM application) is making them reliable enough. While they may work for a prototype, they often fail in real-world use cases.
 
-When agents mess up, it is because the LLM call inside the agent messes up.
-When LLMs mess up, they mess up for one of two reasons:
+### Why do agents fail?
 
-1. The underlying LLM is just not good enough
+When agents fail, it's usually because the LLM call inside the agent took the wrong action / didn't do what we expected. LLMs fail for one of two reasons:
+
+1. The underlying LLM is not capable enough
 2. The "right" context was not passed to the LLM
 
-More often than not - it is actually the second reason that causes agents to not be reliable.
+More often than not - it's actually the second reason that causes agents to not be reliable.
 
-Context engineering is building dynamic systems to provide the right information and tools in the right format such that the LLM can plausibly accomplish the task.
-This is the number one job of AI Engineers (or anyone working on AI systems).
-This lack of "right" context is the number one blocker for more reliable agents, and as such LangChain's agent abstractions are uniquely designed to facilitate context engineering.
+**Context engineering** is providing the right information and tools in the right format so the LLM can accomplish a task. This is the number one job of AI Engineers. This lack of "right" context is the number one blocker for more reliable agents, and LangChain's agent abstractions are uniquely designed to facilitate context engineering.
 
-## The core agent loop
+<Tip>
+New to context engineering? Start with the [conceptual overview](/oss/concepts/context) to understand the different types of context and when to use them.
+</Tip>
 
-It's important to understand the core agent loop to understand where context should be accessed and/or updated from.
+### The agent loop
 
-The core agent loop is quite simple:
-1. Get user input
-2. Call LLM, asking it to either respond or call tools
-3. If it decides to call tools - then go and execute those tools
-4. Repeat steps 2 and 3 until it decides to finish
+A typical agent loop consists of two main steps:
 
-The agent may have access to a lot of different context throughout this loop.
-What ultimately matters is the context that is ultimately passed to the LLM.
-This consists of the final prompt (or list of messages) and the tools it has access to.
+1. **Model call** - calls the LLM with a prompt and available tools, returns either a response or a request to execute tools
+2. **Tool execution** - executes the tools that the LLM requested, returns tool results
 
-## The model
+<div style={{ display: "flex", justifyContent: "center" }}>
+  <img
+    src="/oss/images/core_agent_loop.png"
+    alt="Core agent loop diagram"
+    className="rounded-lg"
+  />
+</div>
 
-The model (including specific model parameters) that you use is a key part of the agent loop.
-It drives the whole agent's reasoning logic.
+This loop continues until the LLM decides to finish.
 
-One reason the agent could mess up is the model you are using is just not good enough.
-In order to build reliable agents, you have to have access to all the possible models.
-LangChain, with its standard model interfaces, supports this - we have over 50 different provider integrations.
+### What you can control
 
-Model choice is also related to context engineering, in two ways.
+To build reliable agents, you need to control what happens at each step of the agent loop, as well as what happens between steps.
 
-First, the way you pass the context to the LLM may depend on what LLM you are using.
-Some model providers are better at JSON, some at XML.
-The context engineering you do may be specific to the model choice.
+| Context Type | What You Control | Transient or Persistent |
+|--------------|------------------|-------------------------|
+| **[Model Context](#model-context)** | What goes into model calls (instructions, message history, tools, response format) | Transient |
+| **[Tool Context](#tool-context)** | What tools can access and produce (reads/writes to state, store, runtime context) | Persistent |
+| **[Life-cycle Context](#life-cycle-context)** | What happens between model and tool calls (summarization, guardrails, logging, etc.) | Persistent |
 
-Second, the right model to use in the agent loop may depend on the context you want to pass it.
-As an obvious example - some models have different context windows.
-If the context in an agent builds up, you may want to use one model provider while the context is small, and then once it gets too large for that model's context window you may want to switch to another model.
+<CardGroup>
+  <Card title="Transient context" icon="bolt" iconType="duotone">
+    What the LLM sees for a single call. You can modify messages, tools, or prompts without changing what's saved in state.
+  </Card>
+  <Card title="Persistent context" icon="database" iconType="duotone">
+    What gets saved in state across turns. Life-cycle hooks and tool writes modify this permanently.
+  </Card>
+</CardGroup>
 
-## Types of context
+### Data sources
 
-There are a few different types of context that can be used to construct the context that is ultimately passed to the LLM.
+Throughout this process, your agent accesses (reads / writes) different sources of data:
 
-**Instructions:** Base instructions from the developer, commonly referred to as the system prompt.
-This may be static or dynamic.
+| Data Source | Also Known As | Scope | Examples |
+|-------------|---------------|-------|----------|
+| **Runtime Context** | Static configuration | Conversation-scoped | User ID, API keys, database connections, permissions, environment settings |
+| **State** | Short-term memory | Conversation-scoped | Current messages, uploaded files, authentication status, tool results |
+| **Store** | Long-term memory | Cross-conversation | User preferences, extracted insights, memories, historical data |
 
-**Tools:** What tools the agent has access to.
-The names and descriptions and arguments of these are just as important as the text in the prompt.
+### How it works
 
-**Structured output:** What format the agent should respond in.
-The name and description and arguments of these are just as important as the text in the prompt.
+LangChain [middleware](/oss/langchain/middleware) is the mechanism under the hood that makes context engineering practical for developers using LangChain.
 
+Middleware allows you to hook into any step in the agent lifecycle and:
 
-**Session context:** We also call this "short term memory" in the docs.
-In the context of a conversation, this is most easily thought of the list of messages that make up the conversation.
-But there can often be other, more structured information that you may want the agent to access or update throughout the session.
-The agent can read and write this context.
-This context is often put directly into the context that is passed to the LLM.
-Examples include: messages, files.
+* Update context
+* Jump to a different step in the agent lifecycle
 
-**Long term memory:** This is information that should persist across sessions (conversations).
-Examples include: extracted preferences
+Throughout this guide, you'll see frequent use of the middleware API as a means to the context engineering end.
 
-**Runtime configuration context:** This is context that is not the "state" or "memory" of the agent, but rather configuration for a given agent run.
-This is not modified by the agent, and typically isn't passed into the LLM, but is used to guide the agent's behavior or look up other context.
-Examples include: user ID, DB connections
+## Model Context
 
+Control what goes into each model call - instructions, available tools, which model to use, and output format. These decisions directly impact reliability and cost.
 
-## Context engineering with LangChain
+<CardGroup cols={2}>
+    <Card title="System Prompt" icon="message-lines" href="#system-prompt">
+        Base instructions from the developer to the LLM.
+    </Card>
+    <Card title="Messages" icon="comments" href="#messages">
+        The full list of messages (conversation history) sent to the LLM.
+    </Card>
+    <Card title="Tools" icon="wrench" href="#tools">
+        Utilities the agent has access to to take actions.
+    </Card>
+    <Card title="Model" icon="brain-circuit" href="#model">
+        The actual model (including configuration) to be called.
+    </Card>
+    <Card title="Response Format" icon="brackets-curly" href="#response-format">
+        Schema specification for the model's final response.
+    </Card>
+</CardGroup>
 
-Now we understand the basic agent loop, the importance of the model you use, and the different types of context that exist.
-Let's explore the concrete patterns LangChain provides for context engineering.
+All of these types of model context can draw from **state** (short-term memory), **store** (long-term memory), or **runtime context** (static configuration).
 
-### Managing instructions (system prompts)
+### System Prompt
 
-#### Static instructions
+The system prompt sets the LLM's behavior and capabilities. Different users, contexts, or conversation stages need different instructions. Successful agents draw on memories, preferences, and configuration to provide the right instructions for the current state of the conversation.
 
-For fixed instructions that don't change, use the @[`system_prompt`] parameter:
+<Tabs>
+  <Tab title="State">
+    Access message count or conversation context from state:
+
+    :::python
+    ```python
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
+
+    @dynamic_prompt
+    def state_aware_prompt(request: ModelRequest) -> str:
+        # request.messages is a shortcut for request.state["messages"]
+        message_count = len(request.messages)
+
+        base = "You are a helpful assistant."
+
+        if message_count > 10:
+            base += "\nThis is a long conversation - be extra concise."
+
+        return base
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[state_aware_prompt]
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import { createAgent } from "langchain";
+
+    const agent = createAgent({
+      model: "openai:gpt-4o",
+      tools: [...],
+      middleware: [
+        dynamicSystemPromptMiddleware((state) => {
+          // Read from State: check conversation length
+          const messageCount = state.messages.length;
+
+          let base = "You are a helpful assistant.";
+
+          if (messageCount > 10) {
+            base += "\nThis is a long conversation - be extra concise.";
+          }
+
+          return base;
+        }),
+      ],
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Store">
+    Access user preferences from long-term memory:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
+    from langgraph.store.memory import InMemoryStore
+
+    @dataclass
+    class Context:
+        user_id: str
+
+    @dynamic_prompt
+    def store_aware_prompt(request: ModelRequest) -> str:
+        user_id = request.runtime.context.user_id
+
+        # Read from Store: get user preferences
+        store = request.runtime.store
+        user_prefs = store.get(("preferences",), user_id)
+
+        base = "You are a helpful assistant."
+
+        if user_prefs:
+            style = user_prefs.value.get("communication_style", "balanced")
+            base += f"\nUser prefers {style} responses."
+
+        return base
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[store_aware_prompt],
+        context_schema=Context,
+        store=InMemoryStore()
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createAgent, dynamicSystemPromptMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
+
+    type Context = z.infer<typeof contextSchema>;
+
+    const agent = createAgent({
+      model: "openai:gpt-4o",
+      tools: [...],
+      contextSchema,
+      middleware: [
+        dynamicSystemPromptMiddleware<Context>(async (state, runtime) => {
+          const userId = runtime.context.userId;
+
+          // Read from Store: get user preferences
+          const store = runtime.store;
+          const userPrefs = await store.get(["preferences"], userId);
+
+          let base = "You are a helpful assistant.";
+
+          if (userPrefs) {
+            const style = userPrefs.value?.communicationStyle || "balanced";
+            base += `\nUser prefers ${style} responses.`;
+          }
+
+          return base;
+        }),
+      ],
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Runtime Context">
+    Access user ID or configuration from Runtime Context:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
+
+    @dataclass
+    class Context:
+        user_role: str
+        deployment_env: str
+
+    @dynamic_prompt
+    def context_aware_prompt(request: ModelRequest) -> str:
+        # Read from Runtime Context: user role and environment
+        user_role = request.runtime.context.user_role
+        env = request.runtime.context.deployment_env
+
+        base = "You are a helpful assistant."
+
+        if user_role == "admin":
+            base += "\nYou have admin access. You can perform all operations."
+        elif user_role == "viewer":
+            base += "\nYou have read-only access. Guide users to read operations only."
+
+        if env == "production":
+            base += "\nBe extra careful with any data modifications."
+
+        return base
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[context_aware_prompt],
+        context_schema=Context
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createAgent, dynamicSystemPromptMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userRole: z.string(),
+      deploymentEnv: z.string(),
+    });
+
+    type Context = z.infer<typeof contextSchema>;
+
+    const agent = createAgent({
+      model: "openai:gpt-4o",
+      tools: [...],
+      contextSchema,
+      middleware: [
+        dynamicSystemPromptMiddleware<Context>((state, runtime) => {
+          // Read from Runtime Context: user role and environment
+          const userRole = runtime.context.userRole;
+          const env = runtime.context.deploymentEnv;
+
+          let base = "You are a helpful assistant.";
+
+          if (userRole === "admin") {
+            base += "\nYou have admin access. You can perform all operations.";
+          } else if (userRole === "viewer") {
+            base += "\nYou have read-only access. Guide users to read operations only.";
+          }
+
+          if (env === "production") {
+            base += "\nBe extra careful with any data modifications.";
+          }
+
+          return base;
+        }),
+      ],
+    });
+    ```
+    :::
+  </Tab>
+
+</Tabs>
+
+### Messages
+
+Messages make up the prompt that is sent to the LLM.
+It's critical to manage the content of messages to ensure that the LLM has the right information to respond well.
+
+<Tabs>
+  <Tab title="State">
+    Inject uploaded file context from State when relevant to current query:
+
+    :::python
+    ```python
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
+
+    @wrap_model_call
+    def inject_file_context(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Inject context about files user has uploaded this session."""
+        # Read from State: get uploaded files metadata
+        uploaded_files = request.state.get("uploaded_files", [])  # [!code highlight]
+
+        if uploaded_files:
+            # Build context about available files
+            file_descriptions = []
+            for file in uploaded_files:
+                file_descriptions.append(
+                    f"- {file['name']} ({file['type']}): {file['summary']}"
+                )
+
+            file_context = f"""Files you have access to in this conversation:
+{chr(10).join(file_descriptions)}
+
+Reference these files when answering questions."""
+
+            # Inject file context before recent messages
+            messages = [  # [!code highlight]
+                *request.messages
+                {"role": "user", "content": file_context},
+            ]
+            request = request.override(messages=messages)  # [!code highlight]
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[inject_file_context]
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import { createMiddleware } from "langchain";
+
+    const injectFileContext = createMiddleware({
+      name: "InjectFileContext",
+      wrapModelCall: (request, handler) => {
+        // request.state is a shortcut for request.state.messages
+        const uploadedFiles = request.state.uploadedFiles || [];  // [!code highlight]
+
+        if (uploadedFiles.length > 0) {
+          // Build context about available files
+          const fileDescriptions = uploadedFiles.map(file =>
+            `- ${file.name} (${file.type}): ${file.summary}`
+          );
+
+          const fileContext = `Files you have access to in this conversation:
+${fileDescriptions.join("\n")}
+
+Reference these files when answering questions.`;
+
+          // Inject file context before recent messages
+          const messages = [  // [!code highlight]
+            ...request.messages  // Rest of conversation
+            { role: "user", content: fileContext }
+          ];
+          request = request.override({ messages });  // [!code highlight]
+        }
+
+        return handler(request);
+      },
+    });
+
+    const agent = createAgent({
+      model: "openai:gpt-4o",
+      tools: [...],
+      middleware: [injectFileContext],
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Store">
+    Inject user's email writing style from Store to guide drafting:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
+    from langgraph.store.memory import InMemoryStore
+
+    @dataclass
+    class Context:
+        user_id: str
+
+    @wrap_model_call
+    def inject_writing_style(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Inject user's email writing style from Store."""
+        user_id = request.runtime.context.user_id  # [!code highlight]
+
+        # Read from Store: get user's writing style examples
+        store = request.runtime.store  # [!code highlight]
+        writing_style = store.get(("writing_style",), user_id)  # [!code highlight]
+
+        if writing_style:
+            style = writing_style.value
+            # Build style guide from stored examples
+            style_context = f"""Your writing style:
+- Tone: {style.get('tone', 'professional')}
+- Typical greeting: "{style.get('greeting', 'Hi')}"
+- Typical sign-off: "{style.get('sign_off', 'Best')}"
+- Example email you've written:
+{style.get('example_email', '')}"""
+
+            # Append at end - models pay more attention to final messages
+            messages = [
+                *request.messages,
+                {"role": "user", "content": style_context}
+            ]
+            request = request.override(messages=messages)  # [!code highlight]
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[inject_writing_style],
+        context_schema=Context,
+        store=InMemoryStore()
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
+
+    const injectWritingStyle = createMiddleware({
+      name: "InjectWritingStyle",
+      contextSchema,
+      wrapModelCall: async (request, handler) => {
+        const userId = request.runtime.context.userId;  // [!code highlight]
+
+        // Read from Store: get user's writing style examples
+        const store = request.runtime.store;  // [!code highlight]
+        const writingStyle = await store.get(["writing_style"], userId);  // [!code highlight]
+
+        if (writingStyle) {
+          const style = writingStyle.value;
+          // Build style guide from stored examples
+          const styleContext = `Your writing style:
+- Tone: ${style.tone || 'professional'}
+- Typical greeting: "${style.greeting || 'Hi'}"
+- Typical sign-off: "${style.signOff || 'Best'}"
+- Example email you've written:
+${style.exampleEmail || ''}`;
+
+          // Append at end - models pay more attention to final messages
+          const messages = [
+            ...request.messages,
+            { role: "user", content: styleContext }
+          ];
+          request = request.override({ messages });  // [!code highlight]
+        }
+
+        return handler(request);
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Runtime Context">
+    Inject compliance rules from Runtime Context based on user's jurisdiction:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
+
+    @dataclass
+    class Context:
+        user_jurisdiction: str
+        industry: str
+        compliance_frameworks: list[str]
+
+    @wrap_model_call
+    def inject_compliance_rules(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Inject compliance constraints from Runtime Context."""
+        # Read from Runtime Context: get compliance requirements
+        jurisdiction = request.runtime.context.user_jurisdiction  # [!code highlight]
+        industry = request.runtime.context.industry  # [!code highlight]
+        frameworks = request.runtime.context.compliance_frameworks  # [!code highlight]
+
+        # Build compliance constraints
+        rules = []
+        if "GDPR" in frameworks:
+            rules.append("- Must obtain explicit consent before processing personal data")
+            rules.append("- Users have right to data deletion")
+        if "HIPAA" in frameworks:
+            rules.append("- Cannot share patient health information without authorization")
+            rules.append("- Must use secure, encrypted communication")
+        if industry == "finance":
+            rules.append("- Cannot provide financial advice without proper disclaimers")
+
+        if rules:
+            compliance_context = f"""Compliance requirements for {jurisdiction}:
+{chr(10).join(rules)}"""
+
+            # Append at end - models pay more attention to final messages
+            messages = [
+                *request.messages,
+                {"role": "user", "content": compliance_context}
+            ]
+            request = request.override(messages=messages)  # [!code highlight]
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[inject_compliance_rules],
+        context_schema=Context
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userJurisdiction: z.string(),
+      industry: z.string(),
+      complianceFrameworks: z.array(z.string()),
+    });
+
+    type Context = z.infer<typeof contextSchema>;
+
+    const injectComplianceRules = createMiddleware<Context>({
+      name: "InjectComplianceRules",
+      contextSchema,
+      wrapModelCall: (request, handler) => {
+        // Read from Runtime Context: get compliance requirements
+        const { userJurisdiction, industry, complianceFrameworks } = request.runtime.context;  // [!code highlight]
+
+        // Build compliance constraints
+        const rules = [];
+        if (complianceFrameworks.includes("GDPR")) {
+          rules.push("- Must obtain explicit consent before processing personal data");
+          rules.push("- Users have right to data deletion");
+        }
+        if (complianceFrameworks.includes("HIPAA")) {
+          rules.push("- Cannot share patient health information without authorization");
+          rules.push("- Must use secure, encrypted communication");
+        }
+        if (industry === "finance") {
+          rules.push("- Cannot provide financial advice without proper disclaimers");
+        }
+
+        if (rules.length > 0) {
+          const complianceContext = `Compliance requirements for ${userJurisdiction}:
+${rules.join("\n")}`;
+
+          // Append at end - models pay more attention to final messages
+          const messages = [
+            ...request.messages,
+            { role: "user", content: complianceContext }
+          ];
+          request = request.override({ messages });  // [!code highlight]
+        }
+
+        return handler(request);
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+</Tabs>
+
+<Note>
+**Transient vs Persistent Message Updates:**
+
+The examples above use `wrap_model_call` to make **transient** updates - modifying what messages are sent to the model for a single call without changing what's saved in state.
+
+For **persistent** updates that modify state (like the summarization example in [Life-cycle Context](#summarization)), use life-cycle hooks like `before_model` or `after_model` to permanently update the conversation history. See the [middleware documentation](/oss/langchain/middleware) for more details.
+</Note>
+
+### Tools
+
+Tools let the model interact with databases, APIs, and external systems. How you define and select tools directly impacts whether the model can complete tasks effectively.
+
+#### Defining tools
+
+Each tool needs a clear name, description, argument names, and argument descriptions. These aren't just metadata—they guide the model's reasoning about when and how to use the tool.
 
 :::python
 ```python
-from langchain.agents import create_agent
+from langchain.tools import tool
 
-agent = create_agent(
-    model="openai:gpt-4o",
-    tools=[...],
-    system_prompt="You are a customer support agent. Be helpful, concise, and professional."
-)
+@tool(parse_docstring=True)
+def search_orders(
+    user_id: str,
+    status: str,
+    limit: int = 10
+) -> str:
+    """Search for user orders by status.
+
+    Use this when the user asks about order history or wants to check
+    order status. Always filter by the provided status.
+
+    Args:
+        user_id: Unique identifier for the user
+        status: Order status: 'pending', 'shipped', or 'delivered'
+        limit: Maximum number of results to return
+    """
+    # Implementation here
+    pass
 ```
 :::
 
 :::js
 ```typescript
-import { createAgent } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
 
-const agent = createAgent({
-  model: "openai:gpt-4o",
-  tools: [...],
-  systemPrompt: "You are a customer support agent. Be helpful, concise, and professional.",
-});
-```
-:::
+const searchOrders = tool(
+  async ({ userId, status, limit = 10 }) => {
+    // Implementation here
+  },
+  {
+    name: "search_orders",
+    description: `Search for user orders by status.
 
-#### Dynamic instructions
-
-For instructions that depend on context (user profile, preferences, session data), use the @[`@dynamic_prompt`] middleware:
-
-:::python
-```python
-from dataclasses import dataclass
-from langchain.agents import create_agent
-from langchain.agents.middleware import dynamic_prompt, ModelRequest
-
-
-@dataclass
-class Context:
-    user_id: str
-
-@dynamic_prompt
-def personalized_prompt(request: ModelRequest) -> str:
-    # Access runtime context
-    user_id = request.runtime.context.user_id
-
-    # Look up user preferences from long-term memory
-    store = request.runtime.store
-    user_prefs = store.get(("users",), user_id)
-
-    # Access session state
-    message_count = len(request.state["messages"])
-
-    base = "You are a helpful assistant."
-
-    if user_prefs:
-        style = user_prefs.value.get("communication_style", "balanced")
-        base += f"\nUser prefers {style} responses."
-
-    if message_count > 10:
-        base += "\nThis is a long conversation - be extra concise."
-
-    return base
-
-agent = create_agent(
-    model="openai:gpt-4o",
-    tools=[...],
-    middleware=[personalized_prompt],
-    context_schema=Context
-)
-
-# Use the agent with context
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "Help me debug this code"}]},
-    context=Context(user_id="user_123")
-)
-```
-:::
-
-:::js
-```typescript
-import * as z from "zod";
-import { createAgent, dynamicSystemPromptMiddleware } from "langchain";
-
-const contextSchema = z.object({
-  userId: z.string(),
-});
-
-const agent = createAgent({
-  model: "openai:gpt-4o",
-  tools: [...],
-  contextSchema,
-  middleware: [
-    dynamicSystemPromptMiddleware((state, runtime) => {
-      const userId = runtime.context.userId;
-      const messageCount = state.messages.length;
-
-      let base = "You are a helpful assistant.";
-
-      // Add context-specific instructions
-      if (messageCount > 10) {
-        base += "\nThis is a long conversation - be extra concise.";
-      }
-
-      return base;
+    Use this when the user asks about order history or wants to check
+    order status. Always filter by the provided status.`,
+    schema: z.object({
+      userId: z.string().describe("Unique identifier for the user"),
+      status: z.enum(["pending", "shipped", "delivered"]).describe("Order status to filter by"),
+      limit: z.number().default(10).describe("Maximum number of results to return"),
     }),
-  ],
-});
-
-// Use the agent with context
-const result = await agent.invoke(
-  { messages: [{ role: "user", content: "Help me debug this code" }] },
-  { context: { userId: "user_123" } }
+  }
 );
 ```
 :::
 
-<Tip>
-**When to use each:**
-- **Static prompts**: Base instructions that never change
-- **Dynamic prompts**: Personalization, A/B testing, context-dependent behavior
-</Tip>
+#### Selecting tools
 
-### Managing conversation context (messages)
+Not every tool is appropriate for every situation. Too many tools may overwhelm the model (overload context) and increase errors; too few limit capabilities. Dynamic tool selection adapts the available toolset based on authentication state, user permissions, feature flags, or conversation stage.
 
-Long conversations can exceed context windows or degrade model performance. Use middleware to manage conversation history:
+<Tabs>
+  <Tab title="State">
+    Enable advanced tools only after certain conversation milestones:
 
-#### Trimming messages
+    :::python
+    ```python
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
+
+    @wrap_model_call
+    def state_based_tools(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Filter tools based on conversation State."""
+        # Read from State: check if user has authenticated
+        state = request.state  # [!code highlight]
+        is_authenticated = state.get("authenticated", False)  # [!code highlight]
+        message_count = len(state["messages"])
+
+        # Only enable sensitive tools after authentication
+        if not is_authenticated:
+            tools = [t for t in request.tools if t.name.startswith("public_")]
+            request = request.override(tools=tools)  # [!code highlight]
+        elif message_count < 5:
+            # Limit tools early in conversation
+            tools = [t for t in request.tools if t.name != "advanced_search"]
+            request = request.override(tools=tools)  # [!code highlight]
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[public_search, private_search, advanced_search],
+        middleware=[state_based_tools]
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import { createMiddleware } from "langchain";
+
+    const stateBasedTools = createMiddleware({
+      name: "StateBasedTools",
+      wrapModelCall: (request, handler) => {
+        // Read from State: check authentication and conversation length
+        const state = request.state;  // [!code highlight]
+        const isAuthenticated = state.authenticated || false;  // [!code highlight]
+        const messageCount = state.messages.length;
+
+        let filteredTools = request.tools;
+
+        // Only enable sensitive tools after authentication
+        if (!isAuthenticated) {
+          filteredTools = request.tools.filter(t => t.name.startsWith("public_"));  // [!code highlight]
+        } else if (messageCount < 5) {
+          filteredTools = request.tools.filter(t => t.name !== "advanced_search");  // [!code highlight]
+        }
+
+        return handler({ ...request, tools: filteredTools });  // [!code highlight]
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Store">
+    Filter tools based on user preferences or feature flags in Store:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
+    from langgraph.store.memory import InMemoryStore
+
+    @dataclass
+    class Context:
+        user_id: str
+
+    @wrap_model_call
+    def store_based_tools(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Filter tools based on Store preferences."""
+        user_id = request.runtime.context.user_id
+
+        # Read from Store: get user's enabled features
+        store = request.runtime.store
+        feature_flags = store.get(("features",), user_id)
+
+        if feature_flags:
+            enabled_features = feature_flags.value.get("enabled_tools", [])
+            # Only include tools that are enabled for this user
+            tools = [t for t in request.tools if t.name in enabled_features]
+            request = request.override(tools=tools)
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[search_tool, analysis_tool, export_tool],
+        middleware=[store_based_tools],
+        context_schema=Context,
+        store=InMemoryStore()
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
+
+    const storeBasedTools = createMiddleware({
+      name: "StoreBasedTools",
+      contextSchema,
+      wrapModelCall: async (request, handler) => {
+        const userId = request.runtime.context.userId;  // [!code highlight]
+
+        // Read from Store: get user's enabled features
+        const store = request.runtime.store;  // [!code highlight]
+        const featureFlags = await store.get(["features"], userId);  // [!code highlight]
+
+        let filteredTools = request.tools;
+
+        if (featureFlags) {
+          const enabledFeatures = featureFlags.value?.enabledTools || [];
+          filteredTools = request.tools.filter(t => enabledFeatures.includes(t.name));  // [!code highlight]
+        }
+
+        return handler({ ...request, tools: filteredTools });  // [!code highlight]
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Runtime Context">
+    Filter tools based on user permissions from Runtime Context:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from typing import Callable
+
+    @dataclass
+    class Context:
+        user_role: str
+
+    @wrap_model_call
+    def context_based_tools(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Filter tools based on Runtime Context permissions."""
+        # Read from Runtime Context: get user role
+        user_role = request.runtime.context.user_role
+
+        if user_role == "admin":
+            # Admins get all tools
+            pass
+        elif user_role == "editor":
+            # Editors can't delete
+            tools = [t for t in request.tools if t.name != "delete_data"]
+            request = request.override(tools=tools)
+        else:
+            # Viewers get read-only tools
+            tools = [t for t in request.tools if t.name.startswith("read_")]
+            request = request.override(tools=tools)
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[read_data, write_data, delete_data],
+        middleware=[context_based_tools],
+        context_schema=Context
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userRole: z.string(),
+    });
+
+    const contextBasedTools = createMiddleware({
+      name: "ContextBasedTools",
+      contextSchema,
+      wrapModelCall: (request, handler) => {
+        // Read from Runtime Context: get user role
+        const userRole = request.runtime.context.userRole;  // [!code highlight]
+
+        let filteredTools = request.tools;
+
+        if (userRole === "admin") {
+          // Admins get all tools
+        } else if (userRole === "editor") {
+          filteredTools = request.tools.filter(t => t.name !== "delete_data");  // [!code highlight]
+        } else {
+          filteredTools = request.tools.filter(t => t.name.startsWith("read_"));  // [!code highlight]
+        }
+
+        return handler({ ...request, tools: filteredTools });  // [!code highlight]
+      },
+    });
+    ```
+    :::
+  </Tab>
+</Tabs>
+
+See [Dynamically selecting tools](/oss/langchain/middleware#dynamically-selecting-tools) for more examples.
+
+### Model
+
+Different models have different strengths, costs, and context windows. Select the right model for the task at hand, which
+might change during an agent run.
+
+<Tabs>
+  <Tab title="State">
+    Use different models based on conversation length from State:
+
+    :::python
+    ```python
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from langchain.chat_models import init_chat_model
+    from typing import Callable
+
+    # Initialize models once outside the middleware
+    large_model = init_chat_model("anthropic:claude-sonnet-4-5")
+    standard_model = init_chat_model("openai:gpt-4o")
+    efficient_model = init_chat_model("openai:gpt-4o-mini")
+
+    @wrap_model_call
+    def state_based_model(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Select model based on State conversation length."""
+        # request.messages is a shortcut for request.state["messages"]
+        message_count = len(request.messages)  # [!code highlight]
+
+        if message_count > 20:
+            # Long conversation - use model with larger context window
+            model = large_model
+        elif message_count > 10:
+            # Medium conversation
+            model = standard_model
+        else:
+            # Short conversation - use efficient model
+            model = efficient_model
+
+        request = request.override(model=model)  # [!code highlight]
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o-mini",
+        tools=[...],
+        middleware=[state_based_model]
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import { createMiddleware, initChatModel } from "langchain";
+
+    // Initialize models once outside the middleware
+    const largeModel = initChatModel("anthropic:claude-sonnet-4-5");
+    const standardModel = initChatModel("openai:gpt-4o");
+    const efficientModel = initChatModel("openai:gpt-4o-mini");
+
+    const stateBasedModel = createMiddleware({
+      name: "StateBasedModel",
+      wrapModelCall: (request, handler) => {
+        // request.messages is a shortcut for request.state.messages
+        const messageCount = request.messages.length;  // [!code highlight]
+        let model;
+
+        if (messageCount > 20) {
+          model = largeModel;
+        } else if (messageCount > 10) {
+          model = standardModel;
+        } else {
+          model = efficientModel;
+        }
+
+        return handler({ ...request, model });  // [!code highlight]
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Store">
+    Use user's preferred model from Store:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from langchain.chat_models import init_chat_model
+    from typing import Callable
+    from langgraph.store.memory import InMemoryStore
+
+    @dataclass
+    class Context:
+        user_id: str
+
+    # Initialize available models once
+    MODEL_MAP = {
+        "gpt-4o": init_chat_model("openai:gpt-4o"),
+        "gpt-4o-mini": init_chat_model("openai:gpt-4o-mini"),
+        "claude-sonnet": init_chat_model("anthropic:claude-sonnet-4-5"),
+    }
+
+    @wrap_model_call
+    def store_based_model(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Select model based on Store preferences."""
+        user_id = request.runtime.context.user_id
+
+        # Read from Store: get user's preferred model
+        store = request.runtime.store
+        user_prefs = store.get(("preferences",), user_id)
+
+        if user_prefs:
+            preferred_model = user_prefs.value.get("preferred_model")
+            if preferred_model and preferred_model in MODEL_MAP:
+                request = request.override(model=MODEL_MAP[preferred_model])
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[store_based_model],
+        context_schema=Context,
+        store=InMemoryStore()
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware, initChatModel } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
+
+    // Initialize available models once
+    const MODEL_MAP = {
+      "gpt-4o": initChatModel("openai:gpt-4o"),
+      "gpt-4o-mini": initChatModel("openai:gpt-4o-mini"),
+      "claude-sonnet": initChatModel("anthropic:claude-sonnet-4-5"),
+    };
+
+    const storeBasedModel = createMiddleware({
+      name: "StoreBasedModel",
+      contextSchema,
+      wrapModelCall: async (request, handler) => {
+        const userId = request.runtime.context.userId;  // [!code highlight]
+
+        // Read from Store: get user's preferred model
+        const store = request.runtime.store;  // [!code highlight]
+        const userPrefs = await store.get(["preferences"], userId);  // [!code highlight]
+
+        let model = request.model;
+
+        if (userPrefs) {
+          const preferredModel = userPrefs.value?.preferredModel;
+          if (preferredModel && MODEL_MAP[preferredModel]) {
+            model = MODEL_MAP[preferredModel];  // [!code highlight]
+          }
+        }
+
+        return handler({ ...request, model });  // [!code highlight]
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Runtime Context">
+    Select model based on cost limits or environment from Runtime Context:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from langchain.chat_models import init_chat_model
+    from typing import Callable
+
+    @dataclass
+    class Context:
+        cost_tier: str
+        environment: str
+
+    # Initialize models once outside the middleware
+    premium_model = init_chat_model("anthropic:claude-sonnet-4-5")
+    standard_model = init_chat_model("openai:gpt-4o")
+    budget_model = init_chat_model("openai:gpt-4o-mini")
+
+    @wrap_model_call
+    def context_based_model(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Select model based on Runtime Context."""
+        # Read from Runtime Context: cost tier and environment
+        cost_tier = request.runtime.context.cost_tier
+        environment = request.runtime.context.environment
+
+        if environment == "production" and cost_tier == "premium":
+            # Production premium users get best model
+            model = premium_model
+        elif cost_tier == "budget":
+            # Budget tier gets efficient model
+            model = budget_model
+        else:
+            # Standard tier
+            model = standard_model
+
+        request = request.override(model=model)
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[context_based_model],
+        context_schema=Context
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware, initChatModel } from "langchain";
+
+    const contextSchema = z.object({
+      costTier: z.string(),
+      environment: z.string(),
+    });
+
+    // Initialize models once outside the middleware
+    const premiumModel = initChatModel("anthropic:claude-sonnet-4-5");
+    const standardModel = initChatModel("openai:gpt-4o");
+    const budgetModel = initChatModel("openai:gpt-4o-mini");
+
+    const contextBasedModel = createMiddleware({
+      name: "ContextBasedModel",
+      contextSchema,
+      wrapModelCall: (request, handler) => {
+        // Read from Runtime Context: cost tier and environment
+        const costTier = request.runtime.context.costTier;  // [!code highlight]
+        const environment = request.runtime.context.environment;  // [!code highlight]
+
+        let model;
+
+        if (environment === "production" && costTier === "premium") {
+          model = premiumModel;
+        } else if (costTier === "budget") {
+          model = budgetModel;
+        } else {
+          model = standardModel;
+        }
+
+        return handler({ ...request, model });  // [!code highlight]
+      },
+    });
+    ```
+    :::
+  </Tab>
+</Tabs>
+
+See [Dynamic model](/oss/langchain/agents#dynamic-model) for more examples.
+
+### Response Format
+
+Structured output transforms unstructured text into validated, structured data. When extracting specific fields or returning data for downstream systems, free-form text isn't sufficient.
+
+**How it works:** When you provide a schema as the response format, the model's final response is guaranteed to conform to that schema. The agent runs the model / tool calling loop until the model is done calling tools, then the final response is coerced into the provided format.
+
+#### Defining formats
+
+Schema definitions guide the model. Field names, types, and descriptions specify exactly what format the output should adhere to.
+
+:::python
+```python
+from pydantic import BaseModel, Field
+
+class CustomerSupportTicket(BaseModel):
+    """Structured ticket information extracted from customer message."""
+
+    category: str = Field(
+        description="Issue category: 'billing', 'technical', 'account', or 'product'"
+    )
+    priority: str = Field(
+        description="Urgency level: 'low', 'medium', 'high', or 'critical'"
+    )
+    summary: str = Field(
+        description="One-sentence summary of the customer's issue"
+    )
+    customer_sentiment: str = Field(
+        description="Customer's emotional tone: 'frustrated', 'neutral', or 'satisfied'"
+    )
+```
+:::
+
+:::js
+```typescript
+import { z } from "zod";
+
+const customerSupportTicket = z.object({
+  category: z.enum(["billing", "technical", "account", "product"]).describe(
+    "Issue category"
+  ),
+  priority: z.enum(["low", "medium", "high", "critical"]).describe(
+    "Urgency level"
+  ),
+  summary: z.string().describe(
+    "One-sentence summary of the customer's issue"
+  ),
+  customerSentiment: z.enum(["frustrated", "neutral", "satisfied"]).describe(
+    "Customer's emotional tone"
+  ),
+}).describe("Structured ticket information extracted from customer message");
+```
+:::
+
+#### Selecting formats
+
+Dynamic response format selection adapts schemas based on user preferences, conversation stage, or role—returning simple formats early and detailed formats as complexity increases.
+
+<Tabs>
+  <Tab title="State">
+    Configure structured output based on conversation state:
+
+    :::python
+    ```python
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from pydantic import BaseModel, Field
+    from typing import Callable
+
+    class SimpleResponse(BaseModel):
+        """Simple response for early conversation."""
+        answer: str = Field(description="A brief answer")
+
+    class DetailedResponse(BaseModel):
+        """Detailed response for established conversation."""
+        answer: str = Field(description="A detailed answer")
+        reasoning: str = Field(description="Explanation of reasoning")
+        confidence: float = Field(description="Confidence score 0-1")
+
+    @wrap_model_call
+    def state_based_output(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Select output format based on State."""
+        # request.messages is a shortcut for request.state["messages"]
+        message_count = len(request.messages)  # [!code highlight]
+
+        if message_count < 3:
+            # Early conversation - use simple format
+            request = request.override(response_format=SimpleResponse)  # [!code highlight]
+        else:
+            # Established conversation - use detailed format
+            request = request.override(response_format=DetailedResponse)  # [!code highlight]
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[state_based_output]
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import { createMiddleware } from "langchain";
+    import { z } from "zod";
+
+    const simpleResponse = z.object({
+      answer: z.string().describe("A brief answer"),
+    });
+
+    const detailedResponse = z.object({
+      answer: z.string().describe("A detailed answer"),
+      reasoning: z.string().describe("Explanation of reasoning"),
+      confidence: z.number().describe("Confidence score 0-1"),
+    });
+
+    const stateBasedOutput = createMiddleware({
+      name: "StateBasedOutput",
+      wrapModelCall: (request, handler) => {
+        // request.state is a shortcut for request.state.messages
+        const messageCount = request.messages.length;  // [!code highlight]
+
+        if (messageCount < 3) {
+          // Early conversation - use simple format
+          responseFormat = simpleResponse; // [!code highlight]
+        } else {
+          // Established conversation - use detailed format
+          responseFormat = detailedResponse; // [!code highlight]
+        }
+
+        return handler({ ...request, responseFormat });
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Store">
+    Configure output format based on user preferences in Store:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from pydantic import BaseModel, Field
+    from typing import Callable
+    from langgraph.store.memory import InMemoryStore
+
+    @dataclass
+    class Context:
+        user_id: str
+
+    class VerboseResponse(BaseModel):
+        """Verbose response with details."""
+        answer: str = Field(description="Detailed answer")
+        sources: list[str] = Field(description="Sources used")
+
+    class ConciseResponse(BaseModel):
+        """Concise response."""
+        answer: str = Field(description="Brief answer")
+
+    @wrap_model_call
+    def store_based_output(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Select output format based on Store preferences."""
+        user_id = request.runtime.context.user_id
+
+        # Read from Store: get user's preferred response style
+        store = request.runtime.store
+        user_prefs = store.get(("preferences",), user_id)
+
+        if user_prefs:
+            style = user_prefs.value.get("response_style", "concise")
+            if style == "verbose":
+                request = request.override(response_format=VerboseResponse)
+            else:
+                request = request.override(response_format=ConciseResponse)
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[store_based_output],
+        context_schema=Context,
+        store=InMemoryStore()
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
+
+    const verboseResponse = z.object({
+      answer: z.string().describe("Detailed answer"),
+      sources: z.array(z.string()).describe("Sources used"),
+    });
+
+    const conciseResponse = z.object({
+      answer: z.string().describe("Brief answer"),
+    });
+
+    const storeBasedOutput = createMiddleware({
+      name: "StoreBasedOutput",
+      wrapModelCall: async (request, handler) => {
+        const userId = request.runtime.context.userId;  // [!code highlight]
+
+        // Read from Store: get user's preferred response style
+        const store = request.runtime.store;  // [!code highlight]
+        const userPrefs = await store.get(["preferences"], userId);  // [!code highlight]
+
+        if (userPrefs) {
+          const style = userPrefs.value?.responseStyle || "concise";
+          if (style === "verbose") {
+            request.responseFormat = verboseResponse;  // [!code highlight]
+          } else {
+            request.responseFormat = conciseResponse;  // [!code highlight]
+          }
+        }
+
+        return handler(request);
+      },
+    });
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Runtime Context">
+    Configure output format based on Runtime Context like user role or environment:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+    from pydantic import BaseModel, Field
+    from typing import Callable
+
+    @dataclass
+    class Context:
+        user_role: str
+        environment: str
+
+    class AdminResponse(BaseModel):
+        """Response with technical details for admins."""
+        answer: str = Field(description="Answer")
+        debug_info: dict = Field(description="Debug information")
+        system_status: str = Field(description="System status")
+
+    class UserResponse(BaseModel):
+        """Simple response for regular users."""
+        answer: str = Field(description="Answer")
+
+    @wrap_model_call
+    def context_based_output(
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
+        """Select output format based on Runtime Context."""
+        # Read from Runtime Context: user role and environment
+        user_role = request.runtime.context.user_role
+        environment = request.runtime.context.environment
+
+        if user_role == "admin" and environment == "production":
+            # Admins in production get detailed output
+            request = request.override(response_format=AdminResponse)
+        else:
+            # Regular users get simple output
+            request = request.override(response_format=UserResponse)
+
+        return handler(request)
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[...],
+        middleware=[context_based_output],
+        context_schema=Context
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { createMiddleware } from "langchain";
+
+    const contextSchema = z.object({
+      userRole: z.string(),
+      environment: z.string(),
+    });
+
+    const adminResponse = z.object({
+      answer: z.string().describe("Answer"),
+      debugInfo: z.record(z.any()).describe("Debug information"),
+      systemStatus: z.string().describe("System status"),
+    });
+
+    const userResponse = z.object({
+      answer: z.string().describe("Answer"),
+    });
+
+    const contextBasedOutput = createMiddleware({
+      name: "ContextBasedOutput",
+      wrapModelCall: (request, handler) => {
+        // Read from Runtime Context: user role and environment
+        const userRole = request.runtime.context.userRole;  // [!code highlight]
+        const environment = request.runtime.context.environment;  // [!code highlight]
+
+        if (userRole === "admin" && environment === "production") {
+          responseFormat = adminResponse;  // [!code highlight]
+        } else {
+          responseFormat = userResponse;  // [!code highlight]
+        }
+
+        return handler({ ...request, responseFormat });
+      },
+    });
+    ```
+    :::
+  </Tab>
+</Tabs>
+
+## Tool Context
+
+Tools are special in that they both read and write context.
+
+In the most basic case, when a tool executes, it receives the LLM's request parameters and returns a tool message back. The tool does its work and produces a result.
+
+Tools can also fetch important information for the model that allows it to perform and complete tasks.
+
+### Reads
+
+Most real-world tools need more than just the LLM's parameters. They need user IDs for database queries, API keys for external services, or current session state to make decisions. Tools read from state, store, and runtime context to access this information.
+
+<Tabs>
+  <Tab title="State">
+    Read from State to check current session information:
+
+    :::python
+    ```python
+    from langchain.tools import tool, ToolRuntime
+    from langchain.agents import create_agent
+
+    @tool
+    def check_authentication(
+        runtime: ToolRuntime
+    ) -> str:
+        """Check if user is authenticated."""
+        # Read from State: check current auth status
+        current_state = runtime.state
+        is_authenticated = current_state.get("authenticated", False)
+
+        if is_authenticated:
+            return "User is authenticated"
+        else:
+            return "User is not authenticated"
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[check_authentication]
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { tool } from "@langchain/core/tools";
+    import { createAgent } from "langchain";
+
+    const checkAuthentication = tool(
+      async (_, { runtime }) => {
+        // Read from State: check current auth status
+        const currentState = runtime.state;
+        const isAuthenticated = currentState.authenticated || false;
+
+        if (isAuthenticated) {
+          return "User is authenticated";
+        } else {
+          return "User is not authenticated";
+        }
+      },
+      {
+        name: "check_authentication",
+        description: "Check if user is authenticated",
+        schema: z.object({}),
+      }
+    );
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Store">
+    Read from Store to access persisted user preferences:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.tools import tool, ToolRuntime
+    from langchain.agents import create_agent
+    from langgraph.store.memory import InMemoryStore
+
+    @dataclass
+    class Context:
+        user_id: str
+
+    @tool
+    def get_preference(
+        preference_key: str,
+        runtime: ToolRuntime[Context]
+    ) -> str:
+        """Get user preference from Store."""
+        user_id = runtime.context.user_id
+
+        # Read from Store: get existing preferences
+        store = runtime.store
+        existing_prefs = store.get(("preferences",), user_id)
+
+        if existing_prefs:
+            value = existing_prefs.value.get(preference_key)
+            return f"{preference_key}: {value}" if value else f"No preference set for {preference_key}"
+        else:
+            return "No preferences found"
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[get_preference],
+        context_schema=Context,
+        store=InMemoryStore()
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { tool } from "@langchain/core/tools";
+    import { createAgent } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
+
+    const getPreference = tool(
+      async ({ preferenceKey }, { runtime }) => {
+        const userId = runtime.context.userId;
+
+        // Read from Store: get existing preferences
+        const store = runtime.store;
+        const existingPrefs = await store.get(["preferences"], userId);
+
+        if (existingPrefs) {
+          const value = existingPrefs.value?.[preferenceKey];
+          return value ? `${preferenceKey}: ${value}` : `No preference set for ${preferenceKey}`;
+        } else {
+          return "No preferences found";
+        }
+      },
+      {
+        name: "get_preference",
+        description: "Get user preference from Store",
+        schema: z.object({
+          preferenceKey: z.string(),
+        }),
+      }
+    );
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Runtime Context">
+    Read from Runtime Context for configuration like API keys and user IDs:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.tools import tool, ToolRuntime
+    from langchain.agents import create_agent
+
+    @dataclass
+    class Context:
+        user_id: str
+        api_key: str
+        db_connection: str
+
+    @tool
+    def fetch_user_data(
+        query: str,
+        runtime: ToolRuntime[Context]
+    ) -> str:
+        """Fetch data using Runtime Context configuration."""
+        # Read from Runtime Context: get API key and DB connection
+        user_id = runtime.context.user_id
+        api_key = runtime.context.api_key
+        db_connection = runtime.context.db_connection
+
+        # Use configuration to fetch data
+        results = perform_database_query(db_connection, query, api_key)
+
+        return f"Found {len(results)} results for user {user_id}"
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[fetch_user_data],
+        context_schema=Context
+    )
+
+    # Invoke with runtime context
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": "Get my data"}]},
+        context=Context(
+            user_id="user_123",
+            api_key="sk-...",
+            db_connection="postgresql://..."
+        )
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { tool } from "@langchain/core/tools";
+    import { createAgent } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+      apiKey: z.string(),
+      dbConnection: z.string(),
+    });
+
+    const fetchUserData = tool(
+      async ({ query }, { runtime }) => {
+        // Read from Runtime Context: get API key and DB connection
+        const { userId, apiKey, dbConnection } = runtime.context;
+
+        // Use configuration to fetch data
+        const results = await performDatabaseQuery(dbConnection, query, apiKey);
+
+        return `Found ${results.length} results for user ${userId}`;
+      },
+      {
+        name: "fetch_user_data",
+        description: "Fetch data using Runtime Context configuration",
+        schema: z.object({
+          query: z.string(),
+        }),
+      }
+    );
+
+    const agent = createAgent({
+      model: "openai:gpt-4o",
+      tools: [fetchUserData],
+      contextSchema,
+    });
+    ```
+    :::
+  </Tab>
+</Tabs>
+
+### Writes
+
+Tool results can be used to help an agent complete a given task. Tools can both return results directly to the model
+and update the memory of the agent to make important context available to future steps.
+
+<Tabs>
+  <Tab title="State">
+    Write to State to track session-specific information using Command:
+
+    :::python
+    ```python
+    from langchain.tools import tool, ToolRuntime
+    from langchain.agents import create_agent
+    from langgraph.types import Command
+
+    @tool
+    def authenticate_user(
+        password: str,
+        runtime: ToolRuntime
+    ) -> Command:
+        """Authenticate user and update State."""
+        # Perform authentication (simplified)
+        if password == "correct":
+            # Write to State: mark as authenticated using Command
+            return Command(
+                update={"authenticated": True},
+            )
+        else:
+            return Command(update={"authenticated": False})
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[authenticate_user]
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { tool } from "@langchain/core/tools";
+    import { createAgent } from "langchain";
+    import { Command } from "@langchain/langgraph";
+
+    const authenticateUser = tool(
+      async ({ password }, { runtime }) => {
+        // Perform authentication
+        if (password === "correct") {
+          // Write to State: mark as authenticated using Command
+          return new Command({
+            update: { authenticated: true },
+          });
+        } else {
+          return new Command({ update: { authenticated: false } });
+        }
+      },
+      {
+        name: "authenticate_user",
+        description: "Authenticate user and update State",
+        schema: z.object({
+          password: z.string(),
+        }),
+      }
+    );
+    ```
+    :::
+  </Tab>
+
+  <Tab title="Store">
+    Write to Store to persist data across sessions:
+
+    :::python
+    ```python
+    from dataclasses import dataclass
+    from langchain.tools import tool, ToolRuntime
+    from langchain.agents import create_agent
+    from langgraph.store.memory import InMemoryStore
+
+    @dataclass
+    class Context:
+        user_id: str
+
+    @tool
+    def save_preference(
+        preference_key: str,
+        preference_value: str,
+        runtime: ToolRuntime[Context]
+    ) -> str:
+        """Save user preference to Store."""
+        user_id = runtime.context.user_id
+
+        # Read existing preferences
+        store = runtime.store
+        existing_prefs = store.get(("preferences",), user_id)
+
+        # Merge with new preference
+        prefs = existing_prefs.value if existing_prefs else {}
+        prefs[preference_key] = preference_value
+
+        # Write to Store: save updated preferences
+        store.put(("preferences",), user_id, prefs)
+
+        return f"Saved preference: {preference_key} = {preference_value}"
+
+    agent = create_agent(
+        model="openai:gpt-4o",
+        tools=[save_preference],
+        context_schema=Context,
+        store=InMemoryStore()
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    import * as z from "zod";
+    import { tool } from "@langchain/core/tools";
+    import { createAgent } from "langchain";
+
+    const contextSchema = z.object({
+      userId: z.string(),
+    });
+
+    const savePreference = tool(
+      async ({ preferenceKey, preferenceValue }, { runtime }) => {
+        const userId = runtime.context.userId;
+
+        // Read existing preferences
+        const store = runtime.store;
+        const existingPrefs = await store.get(["preferences"], userId);
+
+        // Merge with new preference
+        const prefs = existingPrefs?.value || {};
+        prefs[preferenceKey] = preferenceValue;
+
+        // Write to Store: save updated preferences
+        await store.put(["preferences"], userId, prefs);
+
+        return `Saved preference: ${preferenceKey} = ${preferenceValue}`;
+      },
+      {
+        name: "save_preference",
+        description: "Save user preference to Store",
+        schema: z.object({
+          preferenceKey: z.string(),
+          preferenceValue: z.string(),
+        }),
+      }
+    );
+    ```
+    :::
+  </Tab>
+</Tabs>
+
+See [Tools](/oss/langchain/tools) for comprehensive examples of accessing state, store, and runtime context in tools.
+
+## Life-cycle Context
+
+Control what happens **between** the core agent steps - intercepting data flow to implement cross-cutting concerns like summarization, guardrails, and logging.
+
+As you've seen in [Model Context](#model-context) and [Tool Context](#tool-context), [middleware](/oss/langchain/middleware) is the mechanism that makes context engineering practical. Middleware allows you to hook into any step in the agent lifecycle and either:
+
+1. **Update context** - Modify state and store to persist changes, update conversation history, or save insights
+2. **Jump in the lifecycle** - Move to different steps in the agent cycle based on context (e.g., skip tool execution if a condition is met, repeat model call with modified context)
+
+<div style={{ display: "flex", justifyContent: "center" }}>
+  <img
+    src="/oss/images/middleware_final.png"
+    alt="Middleware hooks in the agent loop"
+    className="rounded-lg"
+  />
+</div>
+
+### Example: Summarization
+
+One of the most common life-cycle patterns is automatically condensing conversation history when it gets too long. Unlike the transient message trimming shown in [Model Context](#messages), summarization **persistently updates state** - permanently replacing old messages with a summary that's saved for all future turns.
+
+LangChain offers built-in middleware for this:
 
 :::python
 ```python
 from langchain.agents import create_agent
-from langchain.agents.middleware import before_model, AgentState
-from langchain.messages import RemoveMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langgraph.runtime import Runtime
-
-
-@before_model
-def trim_messages(state: AgentState, runtime: Runtime) -> dict | None:
-    """Keep only the most recent messages to stay within context window."""
-    messages = state["messages"]
-
-    if len(messages) <= 10:
-        return None  # No trimming needed
-
-    # Keep system message + last 8 messages
-    return {
-        "messages": [
-            RemoveMessage(id=REMOVE_ALL_MESSAGES),
-            messages[0],  # System message
-            *messages[-8:]  # Recent messages
-        ]
-    }
+from langchain.agents.middleware import SummarizationMiddleware
 
 agent = create_agent(
     model="openai:gpt-4o",
     tools=[...],
-    middleware=[trim_messages]
+    middleware=[
+        SummarizationMiddleware(
+            model="openai:gpt-4o-mini",
+            max_tokens_before_summary=4000,  # Trigger summarization at 4000 tokens
+            messages_to_keep=20,  # Keep last 20 messages after summary
+        ),
+    ],
 )
 ```
 :::
 
 :::js
 ```typescript
-import { createMiddleware, RemoveMessage } from "langchain";
-import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
-
-const trimMessages = createMiddleware({
-  name: "TrimMessages",
-  beforeModel: (state) => {
-    const messages = state.messages;
-
-    if (messages.length <= 10) {
-      return;  // No trimming needed
-    }
-
-    // Keep system message + last 8 messages
-    return {
-      messages: [
-        new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
-        messages[0],  // System message
-        ...messages.slice(-8)  // Recent messages
-      ]
-    };
-  },
-});
+import { createAgent, summarizationMiddleware } from "langchain";
 
 const agent = createAgent({
   model: "openai:gpt-4o",
   tools: [...],
-  middleware: [trimMessages],
+  middleware: [
+    summarizationMiddleware({
+      model: "openai:gpt-4o-mini",
+      maxTokensBeforeSummary: 4000, // Trigger summarization at 4000 tokens
+      messagesToKeep: 20, // Keep last 20 messages after summary
+    }),
+  ],
 });
 ```
 :::
 
-For more sophisticated message management, use the built-in [`SummarizationMiddleware`](/oss/langchain/middleware#summarization) which automatically summarizes old messages when approaching token limits.
+When the conversation exceeds the token limit, `SummarizationMiddleware` automatically:
+1. Summarizes older messages using a separate LLM call
+2. Replaces them with a summary message in State (permanently)
+3. Keeps recent messages intact for context
 
-See [Before model hook](/oss/langchain/agents#before-model-hook) for more examples.
+The summarized conversation history is permanently updated - future turns will see the summary instead of the original messages.
 
-### Contextual tool execution
-
-Tools can access runtime context, session state, and long-term memory to make context-aware decisions:
-
-:::python
-```python
-from dataclasses import dataclass
-from langchain.tools import tool, ToolRuntime
-from langchain.agents import create_agent
-
-
-@dataclass
-class Context:
-    user_id: str
-    api_key: str
-
-@tool
-def search_documents(
-    query: str,
-    runtime: ToolRuntime[Context]
-) -> str:
-    """Search through documents."""
-    # Access runtime context for user-specific configuration
-    user_id = runtime.context.user_id
-
-    # Access long-term memory for user preferences
-    store = runtime.store
-    search_prefs = store.get(("preferences", user_id), "search")
-
-    # Access session state
-    conversation_history = runtime.state["messages"]
-
-    # Use all context to perform a better search
-    results = perform_search(query, user_id, search_prefs, conversation_history)
-    return f"Found {len(results)} results: {results}"
-
-agent = create_agent(
-    model="openai:gpt-4o",
-    tools=[search_documents],
-    context_schema=Context
-)
-```
-:::
-
-See [Tools](/oss/langchain/tools) for comprehensive examples of accessing state, context, and memory in tools.
-
-### Dynamic tool selection
-
-Control which tools the agent can access based on context, state, or user permissions:
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from typing import Callable
-
-
-@wrap_model_call
-def permission_based_tools(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse]
-) -> ModelResponse:
-    """Filter tools based on user permissions."""
-    user_role = request.runtime.context.get("user_role", "viewer")
-
-    if user_role == "admin":
-        # Admins get all tools
-        pass
-    elif user_role == "editor":
-        # Editors can't delete
-        request.tools = [t for t in request.tools if t.name != "delete_data"]
-    else:
-        # Viewers get read-only tools
-        request.tools = [t for t in request.tools if t.name.startswith("read_")]
-
-    return handler(request)
-
-agent = create_agent(
-    model="openai:gpt-4o",
-    tools=[read_data, write_data, delete_data],
-    middleware=[permission_based_tools]
-)
-```
-:::
-
-:::js
-```typescript
-import { createMiddleware } from "langchain";
-
-const permissionBasedTools = createMiddleware({
-  name: "PermissionBasedTools",
-  wrapModelCall: (request, handler) => {
-    const userRole = request.runtime.context.userRole || "viewer";
-    let filteredTools = request.tools;
-
-    if (userRole === "admin") {
-      // Admins get all tools
-    } else if (userRole === "editor") {
-      // Editors can't delete
-      filteredTools = request.tools.filter(t => t.name !== "delete_data");
-    } else {
-      // Viewers get read-only tools
-      filteredTools = request.tools.filter(t => t.name.startsWith("read_"));
-    }
-
-    return handler({ ...request, tools: filteredTools });
-  },
-});
-```
-:::
-
-See [Dynamically selecting tools](/oss/langchain/middleware#dynamically-selecting-tools) for more examples.
-
-### Dynamic model selection
-
-Switch models based on conversation complexity, context window needs, or cost optimization:
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from langchain.chat_models import init_chat_model
-from typing import Callable
-
-
-@wrap_model_call
-def adaptive_model(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse]
-) -> ModelResponse:
-    """Use different models based on conversation length."""
-    message_count = len(request.messages)
-
-    if message_count > 20:
-        # Long conversation - use model with larger context window
-        request.model = init_chat_model("anthropic:claude-sonnet-4-5")
-    elif message_count > 10:
-        # Medium conversation - use mid-tier model
-        request.model = init_chat_model("openai:gpt-4o")
-    else:
-        # Short conversation - use efficient model
-        request.model = init_chat_model("openai:gpt-4o-mini")
-
-    return handler(request)
-
-agent = create_agent(
-    model="openai:gpt-4o-mini",  # Default model
-    tools=[...],
-    middleware=[adaptive_model]
-)
-```
-:::
-
-:::js
-```typescript
-import { createMiddleware, initChatModel } from "langchain";
-
-const adaptiveModel = createMiddleware({
-  name: "AdaptiveModel",
-  wrapModelCall: (request, handler) => {
-    const messageCount = request.messages.length;
-    let model;
-
-    if (messageCount > 20) {
-      // Long conversation - use model with larger context window
-      model = initChatModel("anthropic:claude-sonnet-4-5");
-    } else if (messageCount > 10) {
-      // Medium conversation - use mid-tier model
-      model = initChatModel("openai:gpt-4o");
-    } else {
-      // Short conversation - use efficient model
-      model = initChatModel("openai:gpt-4o-mini");
-    }
-
-    return handler({ ...request, model });
-  },
-});
-```
-:::
-
-See [Dynamic model](/oss/langchain/agents#dynamic-model) for more examples.
+<Note>
+For a complete list of built-in middleware, available hooks, and how to create custom middleware, see the [Middleware documentation](/oss/langchain/middleware).
+</Note>
 
 ## Best practices
 
@@ -490,11 +2016,12 @@ See [Dynamic model](/oss/langchain/agents#dynamic-model) for more examples.
 3. **Monitor performance** - Track model calls, token usage, and latency
 4. **Use built-in middleware** - Leverage [`SummarizationMiddleware`](/oss/langchain/middleware#summarization), [`LLMToolSelectorMiddleware`](/oss/langchain/middleware#llm-tool-selector), etc.
 5. **Document your context strategy** - Make it clear what context is being passed and why
+6. **Understand transient vs persistent**: Model context changes are transient (per-call), while life-cycle context changes persist to state
 
 ## Related resources
 
+- [Context conceptual overview](/oss/concepts/context) - Understand context types and when to use them
 - [Middleware](/oss/langchain/middleware) - Complete middleware guide
 - [Tools](/oss/langchain/tools) - Tool creation and context access
 - [Memory](/oss/concepts/memory) - Short-term and long-term memory patterns
 - [Agents](/oss/langchain/agents) - Core agent concepts
-

@@ -20,16 +20,17 @@ The `InMemoryStore` allows for a generic type to be assigned to the values in th
 
 The LangChain InMemoryStore integration lives in the `@langchain/core` package:
 
-```{=mdx}
-
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/core
 ```
+```bash yarn
+yarn add @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 
