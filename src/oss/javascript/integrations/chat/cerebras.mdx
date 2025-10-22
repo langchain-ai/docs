@@ -53,16 +53,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain ChatCerebras integration lives in the `@langchain/cerebras` package:
 
-```{=mdx}
-
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/cerebras @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/cerebras @langchain/core
 ```
+```bash yarn
+yarn add @langchain/cerebras @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/cerebras @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

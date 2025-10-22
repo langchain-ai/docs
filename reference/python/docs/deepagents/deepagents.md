@@ -1,3 +1,0 @@
-# Deep Agents
-
-::: deepagents

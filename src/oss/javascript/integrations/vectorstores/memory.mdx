@@ -22,14 +22,17 @@ To use in-memory vector stores, you'll need to install the `langchain` package:
 
 This guide will also use [OpenAI embeddings](/oss/integrations/text_embedding/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/integrations/text_embedding) if you wish.
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  langchain @langchain/openai @langchain/core
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install langchain @langchain/openai @langchain/core
 ```
+```bash yarn
+yarn add langchain @langchain/openai @langchain/core
+```
+```bash pnpm
+pnpm add langchain @langchain/openai @langchain/core
+```
+</CodeGroup>
 
 ### Credentials
 
