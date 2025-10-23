@@ -8,4 +8,7 @@ title: Google (Community) - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-google-community)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-google-community)](https://pypistats.org/packages/langchain-google-community)
 
+!!! note
+    This package ref has not yet been fully migrated to v1.
+
 ::: langchain_google_community

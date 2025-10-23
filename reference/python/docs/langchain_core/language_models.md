@@ -6,10 +6,12 @@
       members: []
 ::: langchain_core.language_models.chat_models
     options:
+      parameter_headings: true
       members:
         - BaseChatModel
 ::: langchain_core.messages
     options:
+      parameter_headings: true
       members:
         - BaseMessage
         - BaseMessageChunk

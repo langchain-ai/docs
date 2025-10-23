@@ -25,3 +25,9 @@
         - InterruptOnConfig
         - ModelRequest
         - ModelResponse
+        - before_model
+        - after_model
+        - wrap_model_call
+        - wrap_tool_call
+        - dynamic-prompt
+        - ModelRequest

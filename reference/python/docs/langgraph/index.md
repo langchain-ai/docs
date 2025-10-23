@@ -23,10 +23,15 @@ The core APIs for the LangGraph open source library.
 - [Storage](store.md): Storage backends and options.
 - [Caching](cache.md): Caching mechanisms for performance.
 - [Types](types.md): Type definitions for graph components.
+- [Runtime](runtime.md): Runtime configuration and options.
 - [Config](config.md): Configuration options.
 - [Errors](errors.md): Error types and handling.
 - [Constants](constants.md): Global constants.
 - [Channels](channels.md): Message passing and channels.
+
+!!! tip "Model Context Protocol (MCP) support"
+
+    To use MCP tools in your LangGraph application, check out [`langchain-mcp-adapters`](../langchain_mcp_adapters/index.md).
 
 ## :material-package-check:{ .lg .middle } Prebuilt components
 
@@ -35,4 +40,3 @@ Higher-level abstractions for common workflows, agents, and other patterns.
 - [Agents](agents.md): Built-in agent patterns.
 - [Supervisor](supervisor.md): Orchestration and delegation.
 - [Swarm](swarm.md): Multi-agent collaboration.
-- [MCP Adapters](mcp.md): Integrations with external systems.

@@ -50,15 +50,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain FireCrawlLoader integration lives in the `@langchain/community` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/community @langchain/core @mendable/firecrawl-js@0.0.36
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/community @langchain/core @mendable/firecrawl-js@0.0.36
 ```
+```bash yarn
+yarn add @langchain/community @langchain/core @mendable/firecrawl-js@0.0.36
+```
+```bash pnpm
+pnpm add @langchain/community @langchain/core @mendable/firecrawl-js@0.0.36
+```
+</CodeGroup>
 
 ## Instantiation
 

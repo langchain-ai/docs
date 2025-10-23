@@ -1,0 +1,133 @@
+---
+title: BasetenEmbeddings
+---
+
+This will help you get started with Baseten embedding models using LangChain. For detailed documentation on `BasetenEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/baseten/embeddings/langchain_baseten.embeddings.BasetenEmbeddings.html).
+
+## Overview
+
+Baseten provides inference designed for production applications. Built on the Baseten Inference Stack, these APIs deliver enterprise-grade performance and reliability for leading open-source or custom models: https://www.baseten.co/library/.
+
+### Integration details
+
+<ItemTable category="text_embedding" item="Baseten" />
+
+## Setup
+
+To access Baseten embedding models you'll need to create a Baseten account, get an API key, and install the `langchain-baseten` integration package.
+
+**Baseten embeddings are only available as dedicated models.** You must deploy an embedding model from the [Baseten model library](https://www.baseten.co/library/tag/embedding) before using this integration.
+
+The embeddings functionality uses Baseten's [Performance Client](https://www.baseten.co/blog/introducing-baseten-embeddings-inference-bei/) for optimized performance, which is automatically included as a dependency.
+
+### Credentials
+
+Head to [https://app.baseten.co](https://app.baseten.co) to sign up to Baseten and generate an API key. Once you've done this set the BASETEN_API_KEY environment variable:
+
+```python
+import getpass
+import os
+
+if not os.getenv("BASETEN_API_KEY"):
+    os.environ["BASETEN_API_KEY"] = getpass.getpass("Enter your Baseten API key: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+
+```python
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain Baseten integration lives in the `langchain-baseten` package:
+
+```python
+pip install -qU langchain-baseten
+```
+
+## Instantiation
+
+Now we can instantiate our embeddings object using your deployed model's URL:
+
+```python
+from langchain_baseten import BasetenEmbeddings
+
+embeddings = BasetenEmbeddings(
+    model_url="https://model-<id>.api.baseten.co/environments/production/sync",  # Your model URL
+    api_key="your-api-key",  # Or set BASETEN_API_KEY env var
+)
+```
+
+## Indexing and Retrieval
+
+Embedding models are often used in retrieval-augmented generation (RAG) flows, both as part of indexing data as well as later retrieving it. For more detailed instructions, please see our [RAG tutorials](/oss/langchain/rag).
+
+Below, see how to index and retrieve data using the `embeddings` object we initialized above. In this example, we will index and retrieve a sample document in the `InMemoryVectorStore`.
+
+```python
+# Create a vector store with a sample text
+from langchain_core.vectorstores import InMemoryVectorStore
+
+text = "LangChain is the framework for building context-aware reasoning applications"
+
+vectorstore = InMemoryVectorStore.from_texts(
+    [text],
+    embedding=embeddings,
+)
+
+# Use the vectorstore as a retriever
+retriever = vectorstore.as_retriever()
+
+# Retrieve the most similar text
+retrieved_documents = retriever.invoke("What is LangChain?")
+
+# show the retrieved document's content
+retrieved_documents[0].page_content
+```
+
+```output
+'LangChain is the framework for building context-aware reasoning applications'
+```
+
+## Direct Usage
+
+Under the hood, the vectorstore and retriever implementations are calling `embeddings.embed_documents(...)` and `embeddings.embed_query(...)` to create embeddings for the text(s) used in `from_texts` and retrieval `invoke` operations, respectively.
+
+You can directly call these methods to get embeddings for your own use cases.
+
+### Embed single texts
+
+You can embed single texts or documents with `embed_query`:
+
+```python
+single_vector = embeddings.embed_query(text)
+print(str(single_vector)[:100])  # Show the first 100 characters of the vector
+```
+
+```output
+[0.013201533816754818, 0.02222288027405739, -0.036066457629203796, 0.027374643832445145, -0.01692997
+```
+
+### Embed multiple texts
+
+You can embed multiple texts with `embed_documents`:
+
+```python
+text2 = (
+    "LangGraph is a library for building stateful, multi-actor applications with LLMs"
+)
+two_vectors = embeddings.embed_documents([text, text2])
+for vector in two_vectors:
+    print(str(vector)[:100])  # Show the first 100 characters of the vector
+```
+
+```output
+[0.013201533816754818, 0.02222288027405739, -0.036066457629203796, 0.027374643832445145, -0.01692997
+[0.018247194588184357, 0.007369577884674072, -0.005529594141989946, 0.022589316591620445, -0.0699259
+```
+
+## API Reference
+
+For detailed documentation on `BasetenEmbeddings` features and configuration options, please refer to the [API reference](https://python.langchain.com/api_reference/baseten/embeddings/langchain_baseten.embeddings.BasetenEmbeddings.html).

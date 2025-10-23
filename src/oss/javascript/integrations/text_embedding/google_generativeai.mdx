@@ -37,14 +37,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain `GoogleGenerativeAIEmbeddings` integration lives in the `@langchain/google-genai` package. You may also wish to install the official SDK:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/google-genai @langchain/core @google/generative-ai
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install @langchain/google-genai @langchain/core @google/generative-ai
 ```
+```bash yarn
+yarn add @langchain/google-genai @langchain/core @google/generative-ai
+```
+```bash pnpm
+pnpm add @langchain/google-genai @langchain/core @google/generative-ai
+```
+</CodeGroup>
 
 ## Instantiation
 

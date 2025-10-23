@@ -1,29 +1,15 @@
 # LangChain's unified documentation overview
 
-This repository encompasses the comprehensive documentation for LangChain's products and services, all hosted on the Mintlify platform. The documentation is divided into sections for each product. This is a shared set of guidelines to ensure consistency and quality across all content.
+This repository encompasses the comprehensive documentation for LangChain's products and services, hosted on the Mintlify platform. The documentation is divided into sections for each product. This is a shared set of guidelines to ensure consistency and quality across all content.
 
-## Folder structure
+## Scope
 
-All documentation lives in the `src/` folder, with the following structure:
+**These instructions apply to manually authored documentation only. They do NOT apply to:**
 
-- `/oss`: Documentation for the open-source LangChain and LangGraph framework
-    - `/python`: Python-specific integrations and release notes
-    - `/javascript`: JS/TS-specific integrations and release notes
-    - `/langchain`: Docs on core components, advanced usage, and production usage of LangChain
-    - `/langgraph`: Docs on capabilities, production usage, and APIs in LangGraph
-    - `/reference`: Links out to reference docs for both LangChain and LangGraph
-    - `/contributing`: Guidelines on contributing to the docs, codebase, and submit integrations
-    - `/images`: Shared images used across OSS docs
-    - `/concepts`: Shared concepts used across OSS docs
-    - The root contains product/language agnostic meta-info such as our versioning & release policy and the releases page.
-- `/langsmith`: Documentation for LangSmith, including quickstarts, observability, evaluation, prompt engineering, guides on building & deploying using the platform, management & administration, and reference docs.
-- `/labs`: Home to LangChain's experimental AI products, including deep agents, open SWE, and Open Agent Platform
-- `/images`: Shared images used across all docs
-- `/snippets`: Shared code snippets used across all docs
+- Files in `**/reference/**` directories (auto-generated API reference documentation)
+- Build artifacts and generated files
 
-## Libraries and frameworks
-
-Documentation is written for Mintlify's MDX syntax and uses Mintlify components. For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
+For reference documentation, see `.github/instructions/reference-docs.instructions.md`.
 
 ## Working relationship
 
@@ -63,10 +49,11 @@ If the trailing `/index` (no extension included) is omitted, the Mintlify parser
 ## Frontmatter requirements for pages
 
 - title: Clear, descriptive, concise page title
+- description: Concise summary for SEO/navigation
 
 ## Custom code language fences
 
-We have implemented custom code language fences for Python and Javascript. They are used to tag content that is specific to that language. Use either `:::python` or `:::js` to tag content that is specific to that language. Both are closed with the `:::` fence.
+We have implemented custom code language fences for Python and JavaScript/TypeScript. They are used to tag content that is specific to that language. Use either `:::python` or `:::js` to tag content that is specific to that language. Both are closed with the `:::` fence.
 
 If any code fences like this exist on the code page, then two outputs (one for each language) will be created. For example, if this syntax is on the page in `/concepts/foo.mdx`, two pages will be created at `/python/concepts/foo.mdx` and `/javascript/concepts/foo.mdx`.
 
@@ -96,4 +83,6 @@ In general, follow the [Google Developer Documentation Style Guide](https://deve
 - Do not review code blocks (denoted by ```), as they are often not full snippets
 - Do not include untested code examples
 - Do not make assumptions - always ask for clarification
+- Do not include localization in relative links (e.g., `/python/` or `/javascript/`) - these are resolved automatically by the build pipeline
 
+For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
