@@ -104,11 +104,15 @@ CROSS_REFERENCE_PATTERN = re.compile(
         (?P<title>[^\]]+)   # Custom title - one or more non-bracket characters
         \]                  # Closing bracket for title
         \[                  # Opening bracket for link name
-        (?P<link_name_with_title>[^\]]+)  # Link name - non-bracket chars
+        (?P<backtick_with_title>`)?  # Optional backtick before link name
+        (?P<link_name_with_title>[^`\]]+)  # Link name - non-backtick/bracket chars
+        (?(backtick_with_title)`|)  # Closing backtick if opening backtick present
         \]                  # Closing bracket for link name
         |                   # OR
         @\[                 # @ symbol followed by opening bracket
-        (?P<link_name>[^\]]+)   # Link name - one or more non-bracket characters
+        (?P<backtick>`)?    # Optional backtick before link name
+        (?P<link_name>[^`\]]+)   # Link name - non-backtick/bracket characters
+        (?(backtick)`|)     # Closing backtick if opening backtick present
         \]                  # Closing bracket
     )
     """,
@@ -128,11 +132,17 @@ def _replace_cross_references_in_line(
         if title is not None:
             # This is @[title][ref] format
             link_name = match.group("link_name_with_title")
+            has_backticks = match.group("backtick_with_title") is not None
             custom_title = title
         else:
             # This is @[ref] format
             link_name = match.group("link_name")
+            has_backticks = match.group("backtick") is not None
             custom_title = None
+
+        # If no custom title and backticks are present, add them to the title
+        if custom_title is None and has_backticks:
+            custom_title = f"`{link_name}`"
 
         transformed = _transform_link(
             link_name, scope, file_path, line_number, custom_title

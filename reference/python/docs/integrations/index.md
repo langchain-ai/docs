@@ -4,7 +4,12 @@ hide:
   - toc
 ---
 
-Welcome! These pages include reference documentation for all `langchain-x` Python packages.
+Welcome! These pages include reference documentation for all `langchain-*` Python integration packages.
+
+To learn more about integrations in LangChain, visit the [Integrations overview](https://docs.langchain.com/oss/python/integrations/providers/overview).
+
+!!! tip "Model Context Protocol (MCP) support"
+    To use MCP tools within LangChain and LangGraph applications, refer to [`langchain-mcp-adapters`](../langchain_mcp_adapters/index.md).
 
 ## Popular providers
 
@@ -24,7 +29,7 @@ Welcome! These pages include reference documentation for all `langchain-x` Pytho
 
     Interact with Claude (Anthropic) APIs.
 
-    [:octicons-arrow-right-24: Reference](./langchain_anthropic.md)
+    [:octicons-arrow-right-24: Reference](./langchain_anthropic/index.md)
 
 - :simple-googlegemini:{ .lg .middle } __`langchain-google-genai`__
 
@@ -76,7 +81,10 @@ Welcome! These pages include reference documentation for all `langchain-x` Pytho
 
 </div>
 
-All providers are listed in the section navigation (left sidebar).
+Other providers are listed in the section navigation (left sidebar).
 
-!!! note
-    For integrations not listed on this site, please refer to their respective repositories.
+!!! question ""I don't see the integration I'm looking for?""
+    LangChain has hundreds of integrations, but not all are documented on this site. If you don't see the integration you're looking for, refer to their [provider page in the LangChain docs](https://docs.langchain.com/oss/python/integrations/providers/all_providers) or check their respective GitHub repository for more information.
+
+!!! note "Create new integrations"
+    For information on contributing new integrations, see [the guide](https://docs.langchain.com/oss/python/contributing/integrations-langchain).

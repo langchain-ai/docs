@@ -3,57 +3,43 @@ title: Configure threads
 sidebarTitle: Threads
 ---
 
-<Tip>
-**Recommended Reading**
-
-Before diving into this content, it might be helpful to read the following:
-
-- [Add metadata and tags to traces](./add-metadata-tags)
-
-</Tip>
-
 Many LLM applications have a chatbot-like interface in which the user and the LLM application engage in a multi-turn conversation. In order to track these conversations, you can use the `Threads` feature in LangSmith.
 
 ## Group traces into threads
 
 A `Thread` is a sequence of traces representing a single conversation. Each response is represented as its own trace, but these traces are linked together by being part of the same thread.
 
-To associate traces together, you need to pass in a special `metadata` key where the value is the unique identifier for that thread.
-
-The key value is the unique identifier for that conversation.
-The key name should be one of:
+To associate traces together, you need to pass in a special `metadata` key where the value is the unique identifier for that thread. The key name should be one of:
 
 - `session_id`
 - `thread_id`
 - `conversation_id`.
 
-The value can be any string you want, but we recommend using UUIDs, such as `f47ac10b-58cc-4372-a567-0e02b2c3d479`.
+The value can be any string you want, but we recommend using UUIDs, such as `f47ac10b-58cc-4372-a567-0e02b2c3d479`. Check out [this guide](./add-metadata-tags) for instructions on adding metadata to your traces.
 
-### Code example
+### Example
 
-This example demonstrates how to log and retrieve conversation history from LangSmith to maintain long-running chats.
-
-You can [add metadata to your traces](./add-metadata-tags) in LangSmith in a variety of ways, this code will show how to do so dynamically, but read the
-previously linked guide to learn about all the ways you can add thread identifier metadata to your traces.
+This example demonstrates how to log and retrieve conversation history using a structured message format to maintain long-running chats.
 
 <CodeGroup>
 
 ```python Python
+import os
+from typing import List, Dict, Any, Optional
+
 import openai
-from langsmith import traceable
-from langsmith import Client
+from langsmith import traceable, Client
 import langsmith as ls
 from langsmith.wrappers import wrap_openai
 
+# Initialize clients
 client = wrap_openai(openai.Client())
 langsmith_client = Client()
 
-# Config used for this example
-langsmith_project = "project-with-threads"
-
-session_id = "thread-id-1"
-
-langsmith_extra={"project_name": langsmith_project, "metadata":{"session_id": session_id}}
+# Configuration
+LANGSMITH_PROJECT = "project-with-threads"
+THREAD_ID = "thread-id-1"
+langsmith_extra={"project_name": LANGSMITH_PROJECT, "metadata":{"session_id": THREAD_ID}}
 
 # gets a history of all LLM calls in the thread to construct conversation history
 def get_thread_history(thread_id: str, project_name: str):
@@ -64,151 +50,302 @@ def get_thread_history(thread_id: str, project_name: str):
 
     # Sort by start time to get the most recent interaction
     runs = sorted(runs, key=lambda run: run.start_time, reverse=True)
-    # The current state of the conversation
-    return runs[0].inputs['messages'] + [runs[0].outputs['choices'][0]['message']]
 
-# if an existing conversation is continued, this function looks up the current run's metadata to get the session_id, calls get_thread_history, and appends the new user question before making a call to the chat model
+    # Reconstruct the conversation state
+    latest_run = runs[0]
+    return latest_run.inputs['messages'] + [latest_run.outputs['choices'][0]['message']]
+
+
 @traceable(name="Chat Bot")
-def chat_pipeline(question: str, get_chat_history: bool = False):
+def chat_pipeline(messages: list, get_chat_history: bool = False):
     # Whether to continue an existing thread or start a new one
     if get_chat_history:
         run_tree = ls.get_current_run_tree()
-        messages = get_thread_history(run_tree.extra["metadata"]["session_id"],run_tree.session_name) + [{"role": "user", "content": question}]
+        # Get existing conversation history and append new messages
+        history_messages = get_thread_history(run_tree.extra["metadata"]["session_id"], run_tree.session_name)
+        all_messages = history_messages + messages
+        # Include the complete conversation in the input for tracing
+        input_messages = all_messages
     else:
-        messages = [{"role": "user", "content": question}]
+        all_messages = messages
+        input_messages = messages
 
     # Invoke the model
     chat_completion = client.chat.completions.create(
-        model="gpt-4o-mini", messages=messages
+        model="gpt-4o-mini", messages=all_messages
     )
-    return chat_completion.choices[0].message.content
 
-# Start the conversation
-chat_pipeline("Hi, my name is Bob", langsmith_extra=langsmith_extra)
+    # Return the complete conversation including input and response
+    response_message = chat_completion.choices[0].message
+    return {
+        "messages": input_messages + [response_message]
+    }
+
+# Format message
+messages = [
+    {
+        "content": "Hi, my name is Sally",
+        "role": "user"
+    }
+]
+get_chat_history = False
+
+# Call the chat pipeline
+result = chat_pipeline(messages, get_chat_history, langsmith_extra=langsmith_extra)
 ```
 
 ```typescript TypeScript
-import OpenAI from "openai";
-import { traceable, getCurrentRunTree } from "langsmith/traceable";
-import { Client } from "langsmith";
-import { wrapOpenAI } from "langsmith/wrappers";
+import 'dotenv/config';
+import OpenAI from 'openai';
+import { traceable, getCurrentRunTree } from 'langsmith/traceable';
+import { Client } from 'langsmith';
+import { wrapOpenAI } from 'langsmith/wrappers';
 
-// Config used for this example
-const langsmithProject = "project-with-threads";
-const threadId = "thread-id-1";
-
-const client = wrapOpenAI(new OpenAI(), {
-  project_name: langsmithProject,
-  metadata: { session_id: threadId }
-});
+// Initialize clients
+const openai = new OpenAI();
+const client = wrapOpenAI(openai);
 const langsmithClient = new Client();
 
-async function getThreadHistory(threadId: string, projectName: string) {
+// Configuration
+const LANGSMITH_PROJECT = "project-with-threads";
+const THREAD_ID = "thread-id-1";
+const langsmithExtra = {
+  project_name: LANGSMITH_PROJECT,
+  metadata: { session_id: THREAD_ID }
+};
+
+// Message type definition
+interface Message {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+interface ChatResponse {
+  messages: Message[];
+}
+
+interface ChatInput {
+  get_chat_history: boolean;
+  messages: Message[];
+}
+
+// gets a history of all LLM calls in the thread to construct conversation history
+async function getThreadHistory(threadId: string, projectName: string): Promise<Message[]> {
   // Filter runs by the specific thread and project
   const filterString = `and(in(metadata_key, ["session_id","conversation_id","thread_id"]), eq(metadata_value, "${threadId}"))`;
 
   // Only grab the LLM runs
-  const runs = langsmithClient.listRuns({
+  const runs: any[] = [];
+  for await (const run of langsmithClient.listRuns({
     projectName: projectName,
     filter: filterString,
     runType: "llm"
-  });
+  })) {
+    if (run.run_type === "llm") {
+      runs.push(run);
+    }
+  }
 
   // Sort by start time to get the most recent interaction
-  const runsArray = [];
-  for await (const run of runs) {
-    runsArray.push(run);
+  runs.sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+
+  // Check if we have any runs
+  if (runs.length === 0) {
+    return [];
   }
-  const sortedRuns = runsArray.sort((a, b) =>
-    new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
-  );
 
   // The current state of the conversation
-  return [
-    ...sortedRuns[0].inputs.messages,
-    sortedRuns[0].outputs.choices[0].message
-  ];
+  const latestRun = runs[0];
+  const inputMessages = latestRun.inputs.messages as Message[];
+  const outputMessage = latestRun.outputs.choices[0].message as Message;
+
+  return [...inputMessages, outputMessage];
 }
 
-const chatPipeline = traceable(
-  async (
-    question: string,
-    options: {
-      getChatHistory?: boolean;
-    } = {}
-  ) => {
-    const {
-      getChatHistory = false,
-    } = options;
+// Updated chat pipeline that accepts JSON input format
+const chatPipeline = traceable(async (input: ChatInput): Promise<ChatResponse> => {
+  const { messages, get_chat_history } = input;
+  let allMessages: Message[];
+  let inputMessages: Message[];
 
-    let messages = [];
-    // Whether to continue an existing thread or start a new one
-    if (getChatHistory) {
-      const runTree = await getCurrentRunTree();
-      const historicalMessages = await getThreadHistory(
-        runTree.extra.metadata.session_id,
-        runTree.project_name
-      );
-      messages = [
-        ...historicalMessages,
-        { role:"user", content: question }
-      ];
-    } else {
-      messages = [{ role:"user", content: question }];
-    }
-
-    // Invoke the model
-    const chatCompletion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: messages
-    });
-    return chatCompletion.choices[0].message.content;
-  },
-  {
-    name: "Chat Bot",
-    project_name: langsmithProject,
-    metadata: { session_id: threadId }
+  // Whether to continue an existing thread or start a new one
+  if (get_chat_history) {
+    const runTree = getCurrentRunTree();
+    // Get existing conversation history and append new messages
+    const sessionId = runTree.extra?.metadata?.session_id || THREAD_ID;
+    const historyMessages = await getThreadHistory(
+      sessionId,
+      runTree.project_name
+    );
+    allMessages = historyMessages.concat(messages);
+    // Include the complete conversation in the input for tracing
+    inputMessages = allMessages;
+  } else {
+    allMessages = messages;
+    inputMessages = messages;
   }
-);
 
-// Start the conversation
-await chatPipeline("Hi, my name is Bob");
+  // Invoke the model
+  const chatCompletion = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: allMessages
+  });
+
+  // Return the complete conversation including input and response
+  const responseMessage = chatCompletion.choices[0].message as Message;
+  return {
+    messages: [...inputMessages, responseMessage]
+  };
+}, { name: "Chat Bot" });
+
+// Example input in the requested JSON format
+const input: ChatInput = {
+  get_chat_history: false,
+  messages: [
+    {
+      content: "Hi, my name is Sally",
+      role: "user"
+    }
+  ]
+};
+
+// Call the chat pipeline
+const result = await chatPipeline(input);
 ```
 
 </CodeGroup>
 
-After waiting a few seconds, you can make the following calls to continue the conversation. By passing `getChatHistory: true`,
+After waiting a few seconds, you can make the following calls to continue the conversation. By passing `get_chat_history=True,`/`getChatHistory: true`,
 you can continue the conversation from where it left off. This means that the LLM will receive the entire message history and respond to it,
 instead of just responding to the latest message.
 
 <CodeGroup>
 
 ```python Python
-# Continue the conversation (WAIT A FEW SECONDS BEFORE RUNNING THIS SO THE FIRST TRACE CAN BE INGESTED)
-chat_pipeline("What is my name?", get_chat_history=True, langsmith_extra=langsmith_extra)
+# Continue the conversation.
+messages = [
+    {
+        "content": "What is my name?",
+        "role": "user"
+    }
+]
+get_chat_history = True
 
-# Keep the conversation going (WAIT A FEW SECONDS BEFORE RUNNING THIS SO THE PREVIOUS TRACE CAN BE INGESTED)
-chat_pipeline("What was the first message I sent you", get_chat_history=True, langsmith_extra=langsmith_extra)
+chat_pipeline(messages, get_chat_history, langsmith_extra=langsmith_extra)
 ```
 
 ```typescript TypeScript
-// Continue the conversation (WAIT A FEW SECONDS BEFORE RUNNING THIS SO THE FIRST TRACE CAN BE INGESTED)
-await chatPipeline("What is my name?", { getChatHistory: true });
+// Continue the conversation.
+const input: ChatInput = {
+  get_chat_history: true,
+  messages: [
+    {
+      content: "What is my name?",
+      role: "user"
+    }
+  ]
+};
 
-// Keep the conversation going (WAIT A FEW SECONDS BEFORE RUNNING THIS SO THE PREVIOUS TRACE CAN BE INGESTED)
-await chatPipeline("What was the first message I sent you", { getChatHistory: true });
+await chatPipeline(input);
+```
+</CodeGroup>
+
+Keep the conversation going. Since past messages are included, the LLM will remember the conversation.
+
+<CodeGroup>
+
+```python Python
+# Continue the conversation.
+messages = [
+    {
+        "content": "What was the first message I sent you?",
+        "role": "user"
+    }
+]
+get_chat_history = True
+
+chat_pipeline(messages, get_chat_history, langsmith_extra=langsmith_extra)
+```
+
+```typescript TypeScript
+// Continue the conversation.
+const input: ChatInput = {
+  get_chat_history: true,
+  messages: [
+    {
+      content: "What was the first message I sent you?",
+      role: "user"
+    }
+  ]
+};
+
+await chatPipeline(input);
 ```
 
 </CodeGroup>
 
 ## View threads
 
-You can view threads by clicking on the `Threads` tab in any project details page. You will then see a list of all threads, sorted by the most recent activity.
+You can view threads by clicking on the **Threads** tab in any project details page. You will then see a list of all threads, sorted by the most recent activity.
 
-![Thread Tab](/langsmith/images/convo-tab.png)
+<div style={{ textAlign: 'center' }}>
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/threads-tab-light.png"
+    alt="LangSmith UI showing the threads table."
+/>
 
-You can then click into a particular thread. This will open the history for a particular thread. If your threads are formatted as chat messages, you will a chatbot-like UI where you can see a history of inputs and outputs.
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/threads-tab-dark.png"
+    alt="LangSmith UI showing the threads table."
+/>
+</div>
 
-![Conversation](/langsmith/images/convo.png)
+
+### View a thread
+
+You can then click into a particular thread. This will open the history for a particular thread.
+
+<div style={{ textAlign: 'center' }}>
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/thread-overview-light.png"
+    alt="LangSmith UI showing the threads table."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/thread-overview-dark.png"
+    alt="LangSmith UI showing the threads table."
+/>
+</div>
+
+Threads can be viewed in two different ways:
+
+- [Thread overview](/langsmith/threads#thread-overview)
+- [Trace view](/langsmith/threads#trace-view)
+
+You can use the buttons at the top of the page to switch between the two views or use the keyboard shortcut `T` to toggle between the two views.
+
+#### Thread overview
+
+The thread overview page shows you a chatbot-like UI where you can see the inputs and outputs for each turn of the conversation. You can configure which fields in the inputs and outputs are displayed in the overview, or show multiple fields by clicking the **Configure** button.
+
+The JSON path for the inputs and outputs supports negative indexing, so you can use `-1` to access the last element of an array. For example, `inputs.messages[-1].content` will access the last message in the `messages` array.
+
+
+#### Trace view
+
+The trace view here is similar to the trace view when looking at a single run, except that you have easy access to all the runs for each turn in the thread.
+
+### View feedback
+
+When viewing a thread, across the top of the page you will see a section called `Feedback`. This is where you can see the feedback for each of the runs that make up the thread. This feedback is aggregated, so if you evaluate each run of a thread for the same criteria, you will see the average score across all the runs displayed. You can also see [thread level feedback](/langsmith/online-evaluations#configure-multi-turn-online-evaluators) left here.
+
+### Save thread level filter
+
+Similar to saving filters at the project level, you can also save commonly used filters at the thread level. To save filters on the threads table, set a filter using the filters button and then click the **Save filter** button.
+
 
 You can open up the trace or annotate the trace in a side panel by clicking on `Annotate` and `Open trace`, respectively.

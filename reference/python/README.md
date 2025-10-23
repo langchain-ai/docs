@@ -10,12 +10,31 @@ The `docs/` directory contains the markdown files for the site, with the main en
 
 ## Contributing
 
-As these docs are built from the source code, the best way to contribute is to make changes in the source code itself. This can include:
+As these docs are built from the source code, the best way to contribute is to **make changes in the source code** itself. This can include:
 
 - Improving docstrings
 - Adding missing docstrings
 - Fixing typos
 - etc.
+
+You will notice that at the top of each page are two icons: one to view the page source, and the other to edit the page. The "view source" icon takes you to the markdown file for that page, while the "edit page" icon takes you to the relevant source code file in GitHub. Use these links to help you navigate to the right place to make your contributions.
+
+---
+
+## Cross-reference in your project
+
+If you maintain a project that depends on LangChain or LangGraph and would like to reference classes, methods, functions, and more from these docs, you can do so! These pages include an `objects.inv` file that certain docs platforms, such as MkDocs, can use to automatically create links to these docs.
+
+To reference these docs in your project, add the following to your `mkdocs.yml` file:
+
+```yaml
+mkdocstrings:
+handlers:
+    python:
+    import:
+        - https://reference.langchain.com/python/objects.inv
+        - ... # any other inventories you want to include
+```
 
 ---
 
@@ -24,16 +43,16 @@ As these docs are built from the source code, the best way to contribute is to m
 This site is currently being migrated from a previous Sphinx-based implementation, so there are still some rough edges to be smoothed out. Here are some known issues and potential improvements:
 
 - [ ] For methods that are from base classes, indicate it is inherited from such and link to the base class
+- [ ] Exclude `langchain-classic` pages from search results?
 - [ ] [Backlinks](https://mkdocstrings.github.io/python/usage/configuration/general/#backlinks)
 - [ ] [More xref](https://github.com/analog-garage/mkdocstrings-python-xref)
 - [ ] [Modernize annotations](https://mkdocstrings.github.io/python/usage/configuration/signatures/#modernize_annotations)
 - [ ] [Inheritance diagrams](https://mkdocstrings.github.io/python/usage/configuration/general/#show_inheritance_diagram)
 - [ ] Consider using [inherited docstrings](https://mkdocstrings.github.io/griffe/extensions/official/inherited-docstrings/)
-- [ ] Pydantic object refs preloading so that we link to them? Should find their tree and load it in (like we did for old LC)
+- [ ] Fix TOC shadow overflow (started in `reference/python/docs/stylesheets/toc.css`) but was funky
 - [ ] Post-processing step to link out to imports from code blocks
   - [ ] Maybe there's a plugin?
 - [ ] Fix `navigation.path` feature/plugin in `mkdocs.yml` not working
-- [ ] Resolve Griffe errors
 - [ ] Set up CI to fail on unexpected Griffe warnings
 - [ ] "Module last updated" auto-generation for module pages using source file commit timestamps or the MkDocs plugin [git-revision-date-localized](https://github.com/timvink/mkdocs-git-revision-date-localized-plugin)
 - [ ] Fix search magnifying glass icon color in dark mode
@@ -99,7 +118,7 @@ make build
 **How it works:** The `make prod-install` command:
 
 1. Restores `pyproject.toml` to use git sources
-2. Installs all packages from git with `uv sync --link-mode=copy`
+2. Installs all packages from git with `uv sync`
 
 ### Manual Configuration Switching
 
@@ -138,7 +157,6 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
   ├── langchain-elastic/
   ├── langchain-google/
   ├── langchain-milvus/
-  ├── langchain-mongodb/
   ├── langchain-neo4j/
   ├── langchain-nvidia/
   ├── langchain-pinecone/
@@ -146,7 +164,7 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
   ├── langchain-redis/
   ├── langchain-sema4/
   ├── langchain-snowflake/
-  ├── langchain-tavily/
+  ├── langchain-tavily/      # (External org)
   ├── langchain-together/
   ├── langchain-unstructured/
   ├── langchain-upstage/
@@ -155,5 +173,232 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
   └── langgraph-swarm-py/
 ```
 
+`langchain-mongodb` is not included as it is maintained and hosted separately by the MongoDB team.
+
 If you only need to work on specific packages, you can comment out the others in `pyproject.dev.toml`.
+
+---
+
+## MkDocs/mkdocstrings Python Cross-Reference Linking Syntax
+
+### Basic Syntax
+
+The general format for cross-references in mkdocstrings is:
+
+```markdown
+[display text][python.path.to.object]
+```
+
+If you want the object name as the display text, use backticks:
+
+```markdown
+[`object_name`][python.path.to.object]
+```
+
+### Linking to Different Python Objects
+
+#### Modules
+
+```markdown
+[`langchain.agents`][langchain.agents]
+
+# or
+
+[agents module][langchain.agents]
+```
+
+#### Classes
+
+```markdown
+[`ChatOpenAI`][langchain_openai.ChatOpenAI]
+
+# or
+
+[the ChatOpenAI class][langchain_openai.ChatOpenAI]
+```
+
+#### Functions
+
+```markdown
+[`init_chat_model`][langchain.chat_models.init_chat_model]
+
+# or
+
+[initialization function][langchain.chat_models.init_chat_model]
+```
+
+#### Methods
+
+```markdown
+[`invoke`][langchain_openai.ChatOpenAI.invoke]
+
+# or
+
+[the invoke method][langchain_openai.ChatOpenAI.invoke]
+```
+
+#### Class Attributes
+
+```markdown
+[`temperature`][langchain_openai.ChatOpenAI.temperature]
+
+# or
+
+[the temperature attribute][langchain_openai.ChatOpenAI.temperature]
+```
+
+#### Function/Method Parameters
+
+**Note:** Parameter linking requires the `parameter_headings` option to be enabled in the `mkdocstrings` config (in `mkdocs.yml`). This generates permalinks and TOC entries for each parameter, so don't disable it.
+
+Use `(parameter_name)` syntax to link to specific parameters:
+
+```markdown
+[`model_provider`][langchain.chat_models.init_chat_model(model_provider)]
+
+# or
+
+[the model_provider parameter][langchain.chat_models.init_chat_model(model_provider)]
+```
+
+For method parameters:
+
+```markdown
+[`max_tokens`][langchain_openai.ChatOpenAI.invoke(max_tokens)]
+```
+
+For class `__init__` parameters (when using `merge_init_into_class`):
+
+```markdown
+[`temperature`][langchain_openai.ChatOpenAI(temperature)]
+```
+
+For variadic parameters:
+
+```markdown
+[`*args`][package.module.function(*args)]
+[`**kwargs`][package.module.function(**kwargs)]
+```
+
+#### Return Values
+
+Not directly linkable, but you can link to the return type class:
+
+```markdown
+Returns a [`ChatResult`][langchain_core.outputs.ChatResult] object.
+```
+
+#### Nested Classes
+
+```markdown
+[`Config`][langchain_core.runnables.Runnable.Config]
+```
+
+### Advanced Patterns
+
+#### Linking Within Same Module
+
+If you're documenting within the same module, you can use relative paths:
+
+```markdown
+See also [`.other_method`][.other_method]
+```
+
+#### Linking to Exceptions
+
+```markdown
+Raises [`ValueError`][ValueError] if input is invalid.
+Raises [`CustomError`][my_package.exceptions.CustomError]
+```
+
+#### Linking to Type Aliases
+
+```markdown
+[`RunnableConfig`][langchain_core.runnables.config.RunnableConfig]
+```
+
+#### Multiple Links in Args Documentation
+
+```python
+def create_agent(
+    model: BaseChatModel,
+    tools: Sequence[BaseTool],
+) -> AgentExecutor:
+    """
+    Create an agent executor.
+
+    Args:
+        model: A [`BaseChatModel`][langchain_core.language_models.BaseChatModel]
+            instance. You can use [`init_chat_model`][langchain.chat_models.init_chat_model]
+            to initialize from a string identifier (see the
+            [`model_provider`][langchain.chat_models.init_chat_model(model_provider)]
+            parameter for available providers).
+        tools: A sequence of [`BaseTool`][langchain_core.tools.BaseTool] instances.
+            Use the [`@tool`][langchain_core.tools.tool] decorator to create tools.
+
+    Returns:
+        An [`AgentExecutor`][langchain.agents.AgentExecutor] instance.
+    """
+```
+
+### Best Practices
+
+#### 1. Use Backticks for Code Identifiers
+
+```markdown
+✅ [`init_chat_model`][langchain.chat_models.init_chat_model]
+❌ [init_chat_model][langchain.chat_models.init_chat_model]
+```
+
+#### 2. Use Full Paths for Clarity
+
+```markdown
+✅ [`BaseChatModel`][langchain_core.language_models.BaseChatModel]
+❌ [`BaseChatModel`][BaseChatModel]  # May not resolve correctly
+```
+
+#### 3. Link to Public APIs Only
+
+Only link to public, exported APIs that users should interact with. Avoid linking to internal implementation details (e.g., objects prefixed with `_`).
+
+#### 4. Use Descriptive Text for Complex References
+
+```markdown
+✅ See the [`model_provider`][langchain.chat_models.init_chat_model(model_provider)]
+   parameter for available providers.
+❌ See [`model_provider`][langchain.chat_models.init_chat_model(model_provider)].
+```
+
+#### 5. Verify Links Build Correctly
+
+Build and manually check the generated HTML to ensure links resolve correctly.
+
+### Quick Reference Table
+
+| Object Type | Syntax | Example |
+|------------|--------|---------|
+| Module | `[text][module.path]` | ``[`agents`][langchain.agents]`` |
+| Class | `[text][module.Class]` | ``[`ChatOpenAI`][langchain_openai.ChatOpenAI]`` |
+| Function | `[text][module.function]` | ``[`init_chat_model`][langchain.chat_models.init_chat_model]`` |
+| Method | `[text][module.Class.method]` | ``[`invoke`][langchain_openai.ChatOpenAI.invoke]`` |
+| Attribute | `[text][module.Class.attr]` | ``[`temperature`][langchain_openai.ChatOpenAI.temperature]`` |
+| Function Param | `[text][module.function(param)]` | ``[`model_provider`][langchain.chat_models.init_chat_model(model_provider)]`` |
+| Method Param | `[text][module.Class.method(param)]` | ``[`max_tokens`][langchain_openai.ChatOpenAI.invoke(max_tokens)]`` |
+| Class Param | `[text][module.Class(param)]` | ``[`temperature`][langchain_openai.ChatOpenAI(temperature)]`` |
+
+### Testing Links
+
+To test if a link will work:
+
+1. Check the object is in `__init__.py` exports
+2. Verify the import path: `from module.path import Object`
+3. Build docs with `--strict` mode
+4. Check the generated HTML for broken links
+
+```bash
+mkdocs build --strict
+mkdocs serve  # Preview at http://127.0.0.1:8000/
+```
+
+This syntax works with the `mkdocstrings` plugin for MkDocs using the Python handler. Adjust paths according to your package structure and exports.
 

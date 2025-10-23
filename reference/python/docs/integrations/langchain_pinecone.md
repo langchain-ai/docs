@@ -8,4 +8,5 @@ title: Pinecone - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-pinecone)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-pinecone)](https://pypistats.org/packages/langchain-pinecone)
 
-This package ref has not yet been migrated to v1. See the [old ref](https://python.langchain.com/api_reference/pinecone/index.html).
+!!! note
+    This package ref has not yet been fully migrated to v1.
