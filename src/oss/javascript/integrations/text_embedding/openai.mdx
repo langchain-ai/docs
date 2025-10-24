@@ -35,14 +35,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain OpenAIEmbeddings integration lives in the `@langchain/openai` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/openai @langchain/core
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install @langchain/openai @langchain/core
 ```
+```bash yarn
+yarn add @langchain/openai @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/openai @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

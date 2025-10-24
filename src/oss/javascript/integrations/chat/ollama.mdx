@@ -45,15 +45,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain ChatOllama integration lives in the `@langchain/ollama` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/ollama @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/ollama @langchain/core
 ```
+```bash yarn
+yarn add @langchain/ollama @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/ollama @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

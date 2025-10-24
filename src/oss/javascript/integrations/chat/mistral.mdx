@@ -45,15 +45,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain ChatMistralAI integration lives in the `@langchain/mistralai` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-@langchain/mistralai @langchain/core
-</Npm2Yarn>
-
+<CodeGroup>
+```bash npm
+npm install @langchain/mistralai @langchain/core
 ```
+```bash yarn
+yarn add @langchain/mistralai @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/mistralai @langchain/core
+```
+</CodeGroup>
 
 ## Instantiation
 

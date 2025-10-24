@@ -134,38 +134,40 @@ Example custom middleware:
 
 ```python expandable
 from dataclasses import dataclass
+from typing import Callable
+
+from langchain_openai import ChatOpenAI
 
 from langchain.agents.middleware import (
     AgentMiddleware,
-    ModelRequest,
-    ModelRequestHandler
+    ModelRequest
 )
-from langchain.messages import AIMessage
+from langchain.agents.middleware.types import ModelResponse
 
 @dataclass
 class Context:
     user_expertise: str = "beginner"
 
-class ExpertiseBasedToolMiddleware(Middleware):
+class ExpertiseBasedToolMiddleware(AgentMiddleware):
     def wrap_model_call(
         self,
         request: ModelRequest,
-        handler: ModelRequestHandler
-    ) -> AIMessage:
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
         user_level = request.runtime.context.user_expertise
 
         if user_level == "expert":
             # More powerful model
-            model = "openai:gpt-5"
+            model = ChatOpenAI(model="openai:gpt-5")
             tools = [advanced_search, data_analysis]
         else:
             # Less powerful model
-            model = "openai:gpt-5-nano"
+            model = ChatOpenAI(model="openai:gpt-5-nano")
             tools = [simple_search, basic_calculator]
 
-        return handler(
-            request.replace(model=model, tools=tools)
-        )
+        request.model = model
+        request.tools = tools
+        return handler(request)
 
 agent = create_agent(
     model="anthropic:claude-sonnet-4-5",
@@ -325,6 +327,7 @@ Legacy functionality has moved to [`langchain-classic`](https://pypi.org/project
 **What's in `langchain-classic`:**
 
 - Legacy chains and chain implementations
+- Retrievers (e.g. `MultiQueryRetriever` or anything from the previous `langchain.retrievers` module)
 - The indexing API
 - The hub module (for managing prompts programmatically)
 - [`langchain-community`](https://pypi.org/project/langchain-community) exports
@@ -350,6 +353,9 @@ from langchain_classic import ...  # [!code ++]
 
 from langchain.chains import ...  # [!code --]
 from langchain_classic.chains import ...  # [!code ++]
+
+from langchain.retrievers import ...  # [!code --]
+from langchain_classic.retrievers import ...  # [!code ++]
 
 from langchain import hub  # [!code --]
 from langchain_classic import hub  # [!code ++]

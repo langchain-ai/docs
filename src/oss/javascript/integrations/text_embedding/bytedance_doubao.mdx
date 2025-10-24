@@ -31,14 +31,17 @@ If you want to get automated tracing of your model calls you can also set your [
 
 The LangChain ByteDanceDoubaoEmbeddings integration lives in the `@langchain/community` package:
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  @langchain/community
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install @langchain/community
 ```
+```bash yarn
+yarn add @langchain/community
+```
+```bash pnpm
+pnpm add @langchain/community
+```
+</CodeGroup>
 
 ## Instantiation
 
