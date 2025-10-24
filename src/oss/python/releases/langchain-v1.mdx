@@ -134,38 +134,40 @@ Example custom middleware:
 
 ```python expandable
 from dataclasses import dataclass
+from typing import Callable
+
+from langchain_openai import ChatOpenAI
 
 from langchain.agents.middleware import (
     AgentMiddleware,
-    ModelRequest,
-    ModelRequestHandler
+    ModelRequest
 )
-from langchain.messages import AIMessage
+from langchain.agents.middleware.types import ModelResponse
 
 @dataclass
 class Context:
     user_expertise: str = "beginner"
 
-class ExpertiseBasedToolMiddleware(Middleware):
+class ExpertiseBasedToolMiddleware(AgentMiddleware):
     def wrap_model_call(
         self,
         request: ModelRequest,
-        handler: ModelRequestHandler
-    ) -> AIMessage:
+        handler: Callable[[ModelRequest], ModelResponse]
+    ) -> ModelResponse:
         user_level = request.runtime.context.user_expertise
 
         if user_level == "expert":
             # More powerful model
-            model = "openai:gpt-5"
+            model = ChatOpenAI(model="openai:gpt-5")
             tools = [advanced_search, data_analysis]
         else:
             # Less powerful model
-            model = "openai:gpt-5-nano"
+            model = ChatOpenAI(model="openai:gpt-5-nano")
             tools = [simple_search, basic_calculator]
 
-        return handler(
-            request.replace(model=model, tools=tools)
-        )
+        request.model = model
+        request.tools = tools
+        return handler(request)
 
 agent = create_agent(
     model="anthropic:claude-sonnet-4-5",
