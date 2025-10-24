@@ -1,4 +1,4 @@
-# Chat Models
+# Chat models
 
 ::: langchain.chat_models
     options:

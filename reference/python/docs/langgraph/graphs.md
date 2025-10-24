@@ -1,5 +1,3 @@
-# Graph Definitions
-
 ::: langgraph.graph.state.StateGraph
     options:
       show_if_no_docstring: true

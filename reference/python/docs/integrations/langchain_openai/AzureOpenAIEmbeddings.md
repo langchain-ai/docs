@@ -1,5 +1,5 @@
 ---
-title: AzureOpenAIEmbeddings - LangChain Integration Reference
+title: AzureOpenAIEmbeddings
 ---
 
 # :material-microsoft-azure:{ .lg .middle } `AzureOpenAIEmbeddings`

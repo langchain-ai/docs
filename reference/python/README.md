@@ -402,3 +402,156 @@ mkdocs serve  # Preview at http://127.0.0.1:8000/
 
 This syntax works with the `mkdocstrings` plugin for MkDocs using the Python handler. Adjust paths according to your package structure and exports.
 
+---
+
+## Page Titles: Navigation, Frontmatter, and H1 Headings
+
+MkDocs uses multiple sources for page titles, each serving a different purpose. Here's how to understand how they interact:
+
+### Three Types of Titles
+
+#### 1. Navigation Title (in `mkdocs.yml`)
+
+Defined in the `nav` section of `mkdocs.yml`:
+
+```yaml
+nav:
+  - Deployment:
+    - SDK: langsmith/deployment/sdk.md
+```
+
+- **Purpose**: Label in the sidebar navigation
+- **Usage**: `page.title` in templates (see below)
+- **Scope**: Navigation menu
+
+#### 2. Frontmatter Title (in the `.md` file)
+
+Defined in YAML frontmatter at the top of each markdown file:
+
+```markdown
+---
+title: LangSmith Deployment SDK
+---
+```
+
+- **Purpose**: SEO metadata, HTML `<title>` tag
+- **Usage**: `page.meta.title` in templates (see below)
+- **Scope**: Browser tab, search engines, social sharing
+
+#### 3. H1 Heading (in the `.md` file)
+
+The first `#` heading in the markdown content:
+
+```markdown
+# LangSmith Deployment SDK reference
+```
+
+- **Purpose**: Page heading visible to users
+- **Usage**: Rendered as `<h1>` in the page content!
+- **Scope**: Main page content area
+
+### How They Interact
+
+Using the `langsmith/deployment/sdk.md` file as an example:
+
+```yaml
+# In mkdocs.yml
+nav:
+  - Deployment:
+    - SDK: langsmith/deployment/sdk.md
+```
+
+```markdown
+# In langsmith/deployment/sdk.md
+---
+title: LangSmith Deployment SDK
+---
+
+# LangSmith Deployment SDK reference
+```
+
+**Result:**
+
+- **Navigation sidebar**: Shows "SDK" (from nav)
+- **Browser tab/HTML `<title>`**: Shows "LangSmith Deployment SDK | LangChain Reference" (from frontmatter + site name)
+- **Page heading**: Shows "LangSmith Deployment SDK reference" (from H1)
+
+### HTML `<title>` Tag Priority
+
+The HTML `<title>` tag (what appears in browser tabs) follows this priority system in `overrides/main.html`:
+
+1. **If `page.meta.title` exists** (from YAML frontmatter):
+2.
+   ```html
+   <title>{{ page.meta.title }} | {{ config.site_name }}</title>
+   ```
+   Example: `LangSmith Deployment SDK | LangChain Reference`
+
+3. **Else if `page.title` exists** (from nav or inferred from filename):
+4.
+   ```html
+   <title>{{ page.title | striptags }} | {{ config.site_name }}</title>
+   ```
+   Example: `SDK | LangChain Reference`
+
+5. **Otherwise** (homepage fallback):
+6.
+   ```html
+   <title>{{ config.site_name }}</title>
+   ```
+   Example: `LangChain Reference`
+
+### Best Practices
+
+```yaml
+# mkdocs.yml - short, concise navigation label
+nav:
+  - Deployment:
+    - SDK: langsmith/deployment/sdk.md
+```
+
+```markdown
+# File: langsmith/deployment/sdk.md
+---
+title: LangSmith Deployment SDK  # SEO-friendly, descriptive
+---
+
+# LangSmith Deployment SDK reference  # Clear page heading
+```
+
+**Why?**
+
+- **Nav title ("SDK")**: Short and scannable in sidebar
+- **Frontmatter title ("LangSmith Deployment SDK")**: Descriptive for SEO and browser tabs
+- **H1 heading ("LangSmith Deployment SDK reference")**: Clear context when viewing the page
+
+**Don't make nav titles too long:**
+
+```yaml
+nav:
+  - Deployment:
+    # ❌ Too verbose for navigation
+    - LangSmith Deployment SDK Reference Documentation: langsmith/deployment/sdk.md
+```
+
+If the H1 is identical to the nav title, consider omitting it from the `.md` file to avoid redundancy. The nav title will render as the H1 automatically.
+
+Similarly, if two pages have the same nav title, differentiate them with distinct frontmatter titles for SEO. Defer to the core LangChain packages as canonical. For instance,:
+
+- `langchain/agents/`
+- `langgraph/agents/`
+
+Each would share the same nav title "Agents". To differentiate, use a frontmatter title "Agents (LangGraph)". The LangChain page would use "Agents" as the frontmatter title since it's the primary source.
+
+If you wish for both the page heading and browser title to be different from the nav title, set both the frontmatter title and H1 accordingly, e.g.:
+
+```markdown
+# File: langchain_classic/chat_models.md
+---
+title: Chat models (Classic)
+---
+
+# Chat models (Classic)
+```
+
+---

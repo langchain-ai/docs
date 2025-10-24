@@ -1,5 +1,3 @@
-# Tools
-
 ::: langchain.tools.tool
 ::: langchain.tools.BaseTool
     options:

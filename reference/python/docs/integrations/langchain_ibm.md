@@ -1,5 +1,5 @@
 ---
-title: IBM - LangChain Integration Reference
+title: IBM
 ---
 
 # `langchain-ibm`

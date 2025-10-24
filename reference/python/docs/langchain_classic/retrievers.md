@@ -1,4 +1,8 @@
-# Retrievers
+---
+title: Retrievers (Classic)
+---
+
+# Retrievers (Classic)
 
 --8<-- "langchain-classic-warning.md"
 

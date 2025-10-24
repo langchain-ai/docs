@@ -1,5 +1,3 @@
-# Messages
-
 ::: langchain.messages
     options:
       summary: true

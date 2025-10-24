@@ -1,5 +1,5 @@
 ---
-title: LangSmith SDK - LangChain Reference
+title: LangSmith SDK
 ---
 
 Welcome to the LangSmith Python SDK reference docs! These pages detail the core interfaces you will use when building with LangSmith's Observability and Evaluations tools.

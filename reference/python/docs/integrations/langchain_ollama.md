@@ -1,5 +1,5 @@
 ---
-title: Ollama - LangChain Integration Reference
+title: Ollama
 ---
 
 # :simple-ollama:{ .lg .middle } `langchain-ollama`

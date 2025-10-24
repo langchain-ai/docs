@@ -1,5 +1,5 @@
 ---
-title: DeepSeek - LangChain Integration Reference
+title: DeepSeek
 ---
 
 # `langchain-deepseek`

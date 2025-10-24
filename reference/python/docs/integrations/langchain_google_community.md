@@ -1,5 +1,5 @@
 ---
-title: Google (Community) - LangChain Integration Reference
+title: Google (Community)
 ---
 
 # `langchain-google-community`

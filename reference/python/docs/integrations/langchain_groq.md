@@ -1,5 +1,5 @@
 ---
-title: Groq - LangChain Integration Reference
+title: Groq
 ---
 
 # `langchain-groq`

@@ -1,5 +1,5 @@
 ---
-title: Google (GenAI) - LangChain Integration Reference
+title: Google (GenAI)
 ---
 
 # :simple-googlegemini:{ .lg .middle } `langchain-google-genai`

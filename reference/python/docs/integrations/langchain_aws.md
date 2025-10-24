@@ -1,5 +1,5 @@
 ---
-title: AWS - LangChain Integration Reference
+title: AWS
 ---
 
 # :material-aws:{ .lg .middle } `langchain-aws`

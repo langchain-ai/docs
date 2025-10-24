@@ -1,5 +1,5 @@
 ---
-title: Elasticsearch - LangChain Integration Reference
+title: Elasticsearch
 ---
 
 # :simple-elasticsearch:{ .lg .middle } `langchain-elasticsearch`

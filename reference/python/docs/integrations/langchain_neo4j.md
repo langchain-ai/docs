@@ -1,5 +1,5 @@
 ---
-title: Neo4J - LangChain Integration Reference
+title: Neo4J
 ---
 
 # :simple-neo4j:{ .lg .middle } `langchain-neo4j`

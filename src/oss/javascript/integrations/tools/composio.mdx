@@ -1,0 +1,527 @@
+---
+title: Composio
+description: Access 500+ tools and integrations through Composio's unified API platform for AI agents, with OAuth handling, event-driven workflows, and multi-user support.
+---
+
+[Composio](https://composio.dev) is an integration platform that provides access to 500+ tools across popular applications like GitHub, Slack, Notion, and more. It enables AI agents to interact with external services through a unified API, handling authentication, permissions, and event-driven workflows.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [Python support](/oss/integrations/tools/composio) | Version |
+|:---|:---|:---:|:---:|:---:|
+| Composio | [@composio/langchain](https://www.npmjs.com/package/@composio/langchain) | ❌ | ✅ | ![npm version](https://img.shields.io/npm/v/@composio/langchain?style=flat-square&label=%20) |
+
+### Tool features
+
+- **500+ Tool Access**: Pre-built integrations for GitHub, Slack, Gmail, Jira, Notion, and more
+- **Authentication Management**: Handles OAuth flows, API keys, and authentication state
+- **Event-Driven Workflows**: Trigger agents based on external events (new Slack messages, GitHub issues, etc.)
+- **Fine-Grained Permissions**: Control tool access and data exposure per user
+- **Custom Tool Support**: Add proprietary APIs and internal tools
+
+## Setup
+
+The integration lives in the `@composio/langchain` package.
+
+```bash
+npm install @composio/langchain @composio/core
+```
+
+Or using other package managers:
+
+```bash
+yarn add @composio/langchain @composio/core
+# or
+pnpm add @composio/langchain @composio/core
+```
+
+### Credentials
+
+You'll need a Composio API key. Sign up for free at [composio.dev](https://composio.dev) to get your API key.
+
+```typescript Set API key
+import * as dotenv from 'dotenv';
+dotenv.config();
+
+// Set your Composio API key
+process.env.COMPOSIO_API_KEY = 'your_api_key_here';
+```
+
+It's also helpful to set up [LangSmith](https://docs.smith.langchain.com/) for tracing:
+
+```typescript Enable tracing
+// process.env.LANGSMITH_API_KEY = 'your_langsmith_key';
+// process.env.LANGSMITH_TRACING = 'true';
+```
+
+## Instantiation
+
+Initialize Composio with the LangChain provider and get tools from specific toolkits. Each toolkit represents a service (e.g., GitHub, Slack) with multiple tools (actions you can perform).
+
+```typescript Initialize Composio
+import { Composio } from '@composio/core';
+import { LangchainProvider } from '@composio/langchain';
+
+// Initialize Composio with LangChain provider
+const composio = new Composio({
+    apiKey: process.env.COMPOSIO_API_KEY,
+    provider: new LangchainProvider(),
+});
+
+// Get tools from specific toolkits
+const tools = await composio.tools.get('default', 'GITHUB');
+
+console.log(`Loaded ${tools.length} tools from GitHub toolkit`);
+```
+
+### Available toolkits
+
+Composio provides toolkits for various services:
+
+**Productivity**: GitHub, Slack, Gmail, Jira, Notion, Asana, Trello, ClickUp
+**Communication**: Discord, Telegram, WhatsApp, Microsoft Teams
+**Development**: GitLab, Bitbucket, Linear, Sentry
+**Data & Analytics**: Google Sheets, Airtable, HubSpot, Salesforce
+**And 100+ more...**
+
+## Invocation
+
+### Get tools from multiple toolkits
+
+You can load tools from multiple services:
+
+```typescript
+// Get tools from multiple toolkits
+const tools = await composio.tools.get('default', ['GITHUB', 'SLACK', 'GMAIL']);
+```
+
+### Get specific tools
+
+Instead of entire toolkits, you can load specific tools:
+
+```typescript
+// Get specific tools by name
+const tools = await composio.tools.get('default', {
+    tools: ['GITHUB_CREATE_ISSUE', 'SLACK_SEND_MESSAGE']
+});
+```
+
+### User-specific tools
+
+Composio supports multi-user scenarios with user-specific authentication:
+
+```typescript
+// Get tools for a specific user
+// This user must have authenticated their accounts first
+const tools = await composio.tools.get('user_123', 'GITHUB');
+```
+
+## Use within an agent
+
+Here's a complete example using Composio tools with a LangGraph agent to interact with HackerNews:
+
+```typescript
+import { ChatOpenAI } from '@langchain/openai';
+import { HumanMessage, AIMessage } from '@langchain/core/messages';
+import { ToolNode } from '@langchain/langgraph/prebuilt';
+import { StateGraph, MessagesAnnotation } from '@langchain/langgraph';
+import { Composio } from '@composio/core';
+import { LangchainProvider } from '@composio/langchain';
+
+// Initialize Composio
+const composio = new Composio({
+    apiKey: process.env.COMPOSIO_API_KEY,
+    provider: new LangchainProvider(),
+});
+
+// Fetch the tools
+console.log('🔄 Fetching the tools...');
+const tools = await composio.tools.get('default', 'HACKERNEWS_GET_USER');
+
+// Define the tools for the agent to use
+const toolNode = new ToolNode(tools);
+
+// Create a model and give it access to the tools
+const model = new ChatOpenAI({
+    model: 'gpt-5',
+}).bindTools(tools);
+
+// Define the function that determines whether to continue or not
+function shouldContinue({ messages }: typeof MessagesAnnotation.State) {
+    const lastMessage = messages[messages.length - 1] as AIMessage;
+
+    // If the LLM makes a tool call, then we route to the "tools" node
+    if (lastMessage.tool_calls?.length) {
+        return 'tools';
+    }
+
+    // Otherwise, we stop (reply to the user)
+    return '__end__';
+}
+
+// Define the function that calls the model
+async function callModel(state: typeof MessagesAnnotation.State) {
+    console.log('🔄 Calling the model...');
+    const response = await model.invoke(state.messages);
+    return { messages: [response] };
+}
+
+// Define a new graph
+const workflow = new StateGraph(MessagesAnnotation)
+    .addNode('agent', callModel)
+    .addEdge('__start__', 'agent')
+    .addNode('tools', toolNode)
+    .addEdge('tools', 'agent')
+    .addConditionalEdges('agent', shouldContinue);
+
+// Compile the graph
+const app = workflow.compile();
+
+// Use the agent
+const finalState = await app.invoke({
+    messages: [new HumanMessage('Find the details of the user `pg` on HackerNews')]
+});
+
+console.log('✅ Message received from the model');
+console.log(finalState.messages[finalState.messages.length - 1].content);
+
+// Continue the conversation
+const nextState = await app.invoke({
+    messages: [...finalState.messages, new HumanMessage('what about haxzie')]
+});
+
+console.log('✅ Message received from the model');
+console.log(nextState.messages[nextState.messages.length - 1].content);
+```
+
+### Using with GitHub toolkit
+
+Here's an example that stars a GitHub repository:
+
+```typescript
+import { ChatOpenAI } from '@langchain/openai';
+import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { Composio } from '@composio/core';
+import { LangchainProvider } from '@composio/langchain';
+
+// Initialize Composio
+const composio = new Composio({
+    apiKey: process.env.COMPOSIO_API_KEY,
+    provider: new LangchainProvider(),
+});
+
+// Get GitHub tools
+const tools = await composio.tools.get('default', 'GITHUB');
+
+// Create model
+const model = new ChatOpenAI({
+    model: 'gpt-5',
+});
+
+// Create agent
+const agent = createReactAgent({
+    llm: model,
+    tools: tools,
+});
+
+// Execute task
+const result = await agent.invoke({
+    messages: [
+        {
+            role: 'user',
+            content: 'Star the repository composiohq/composio on GitHub'
+        }
+    ]
+});
+
+console.log(result.messages[result.messages.length - 1].content);
+```
+
+## Authentication setup
+
+Before using tools that require authentication, users need to connect their accounts:
+
+```typescript
+import { Composio } from '@composio/core';
+
+const composio = new Composio({
+    apiKey: process.env.COMPOSIO_API_KEY
+});
+
+// Get authentication URL for a user
+const authConnection = await composio.integrations.create({
+    userId: 'user_123',
+    integration: 'github'
+});
+
+console.log(`Authenticate at: ${authConnection.redirectUrl}`);
+
+// After authentication, the user's connected account will be available
+// and tools will work with their credentials
+```
+
+## Multi-user scenarios
+
+For applications with multiple users:
+
+```typescript
+// Each user authenticates their own accounts
+const toolsUser1 = await composio.tools.get('user_1', 'GITHUB');
+const toolsUser2 = await composio.tools.get('user_2', 'GITHUB');
+
+// Tools will use the respective user's credentials
+// User 1's agent will act on User 1's GitHub account
+const agent1 = createAgent(model, toolsUser1);
+
+// User 2's agent will act on User 2's GitHub account
+const agent2 = createAgent(model, toolsUser2);
+```
+
+## Event-driven workflows
+
+Composio supports triggering agents based on external events. When events occur in connected apps (like new GitHub commits or Slack messages), triggers automatically send structured payloads to your application.
+
+### Creating a trigger
+
+First, create a trigger for the events you want to monitor:
+
+```typescript
+import { Composio } from '@composio/core';
+
+const composio = new Composio({ apiKey: 'your_api_key' });
+const userId = 'user_123';
+
+// Check what configuration is required for the trigger
+const triggerType = await composio.triggers.getType('GITHUB_COMMIT_EVENT');
+console.log(triggerType.config);
+
+// Create trigger with required configuration
+const trigger = await composio.triggers.create(
+    userId,
+    'GITHUB_COMMIT_EVENT',
+    {
+        triggerConfig: {
+            owner: 'composiohq',
+            repo: 'composio'
+        }
+    }
+);
+
+console.log(`Trigger created: ${trigger.triggerId}`);
+```
+
+### Subscribing to triggers (Development)
+
+For local development and prototyping, you can subscribe directly to triggers:
+
+```typescript
+import { Composio } from '@composio/core';
+
+const composio = new Composio({ apiKey: 'your_api_key' });
+
+// Subscribe to trigger events
+composio.triggers.subscribe(
+    (data) => {
+        console.log(`New commit detected:`, data);
+        // Process the event with your agent
+        // ... invoke your agent with the task
+    },
+    {
+        triggerId: 'your_trigger_id',
+        // You can also filter by:
+        // userId: 'user@acme.com',
+        // toolkits: ['github', 'slack'],
+        // triggerSlug: ["GITHUB_COMMIT_EVENT"],
+        // authConfigId: "ac_1234567890"
+    }
+);
+
+// Note: For production, use webhooks instead
+```
+
+### Type-safe trigger handling
+
+For better type safety, define payload types:
+
+```typescript
+import { TriggerEvent } from '@composio/core';
+
+// Define type-safe payload
+export type GitHubStarAddedEventPayload = {
+    action: 'created';
+    repository_id: number;
+    repository_name: string;
+    repository_url: string;
+    starred_at: string;
+    starred_by: string;
+};
+
+// Type-safe handler
+function handleGitHubStarAddedEvent(event: TriggerEvent<GitHubStarAddedEventPayload>) {
+    console.log(`⭐ ${event.data.repository_name} starred by ${event.data.starred_by}`);
+}
+```
+
+### Webhooks (Production)
+
+For production, configure webhooks in the [Composio dashboard](https://platform.composio.dev/settings/events):
+
+```typescript
+import type { NextApiRequest, NextApiResponse } from 'next';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    try {
+        const payload = req.body;
+
+        console.log('Received trigger event:', payload);
+
+        // Process the event with your agent
+        if (payload.triggerSlug === 'GITHUB_COMMIT_EVENT') {
+            const commitData = payload.payload;
+            // ... invoke your agent with commitData
+        }
+
+        res.status(200).json({ status: 'success' });
+    } catch (error) {
+        console.error('Error processing webhook:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+}
+```
+
+For more details, see the [Composio Triggers documentation](https://docs.composio.dev/docs/using-triggers)
+
+## Advanced features
+
+### Custom tools
+
+Composio allows you to create custom tools that can be used alongside built-in tools. There are two types:
+
+#### Standalone tools
+
+Simple tools that don't require authentication:
+
+```typescript
+import { Composio } from '@composio/core';
+import { z } from 'zod';
+
+const composio = new Composio({
+    apiKey: process.env.COMPOSIO_API_KEY
+});
+
+const tool = await composio.tools.createCustomTool({
+    slug: 'CALCULATE_SQUARE',
+    name: 'Calculate Square',
+    description: 'Calculates the square of a number',
+    inputParams: z.object({
+        number: z.number().describe('The number to calculate the square of'),
+    }),
+    execute: async input => {
+        const { number } = input;
+        return {
+            data: { result: number * number },
+            error: null,
+            successful: true,
+        };
+    },
+});
+
+// Use with your agent
+const allTools = [...tools, tool];
+```
+
+#### Toolkit-based tools
+
+Tools that require authentication and can use toolkit credentials:
+
+```typescript
+import { Composio } from '@composio/core';
+import { z } from 'zod';
+
+const composio = new Composio({
+    apiKey: process.env.COMPOSIO_API_KEY
+});
+
+const tool = await composio.tools.createCustomTool({
+    slug: 'GITHUB_STAR_COMPOSIOHQ_REPOSITORY',
+    name: 'Github star composio repositories',
+    toolkitSlug: 'github',
+    description: 'Star any specified repo of `composiohq` user',
+    inputParams: z.object({
+        repository: z.string().describe('The repository to star'),
+        page: z.number().optional().describe('Pagination page number'),
+        customHeader: z.string().optional().describe('Custom header'),
+    }),
+    execute: async (input, connectionConfig, executeToolRequest) => {
+        // This method makes authenticated requests to the relevant API
+        // Composio will automatically inject the baseURL
+        const result = await executeToolRequest({
+            endpoint: `/user/starred/composiohq/${input.repository}`,
+            method: 'PUT',
+            body: {},
+            // Add custom headers or query parameters
+            parameters: [
+                // Add query parameters
+                {
+                    name: 'page',
+                    value: input.page?.toString() || '1',
+                    in: 'query',
+                },
+                // Add custom headers
+                {
+                    name: 'x-custom-header',
+                    value: input.customHeader || 'default-value',
+                    in: 'header',
+                },
+            ],
+        });
+        return result;
+    },
+});
+```
+
+Execute custom tools:
+
+```typescript
+import { Composio } from '@composio/core';
+
+const composio = new Composio({
+    apiKey: process.env.COMPOSIO_API_KEY
+});
+
+const result = await composio.tools.execute('TOOL_SLUG', {
+    arguments: {
+        // Tool input parameters
+    },
+    userId: 'user-id',
+    connectedAccountId: 'optional-account-id', // Required for toolkit-based tools
+});
+```
+
+For more details, see the [Composio Custom Tools documentation](https://docs.composio.dev/docs/custom-tools)
+
+### Fine-grained permissions
+
+Control what actions tools can perform:
+
+```typescript
+// Get tools with specific permissions
+const tools = await composio.tools.get('default', 'GITHUB', {
+    // Limit to read-only operations
+    permissions: ['read']
+});
+```
+
+## API reference
+
+For detailed documentation of all Composio features and configurations, visit:
+- [Composio Documentation](https://docs.composio.dev)
+- [LangChain Provider Guide](https://docs.composio.dev/providers/langchain)
+- [Available Tools & Actions](https://docs.composio.dev/toolkits/introduction)
+

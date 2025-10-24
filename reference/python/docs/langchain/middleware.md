@@ -1,5 +1,3 @@
-# Middleware
-
 <!-- `group_by_category false to allow custom ordering -->
 ::: langchain.agents.middleware
     options:

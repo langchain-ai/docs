@@ -1,5 +1,3 @@
-# Agents
-
 <!-- Intentionally want to highlight `create_agent` on this page first -->
 <!-- (`group_by_category orders `AgentState` (a class) before functions) -->
 ::: langchain.agents

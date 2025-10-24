@@ -1,5 +1,5 @@
 ---
-title: OpenAI (Legacy LLM) - LangChain Integration Reference
+title: OpenAI (Legacy LLM)
 ---
 
 # :fontawesome-brands-openai:{ .lg .middle } `OpenAI` (Legacy LLM)

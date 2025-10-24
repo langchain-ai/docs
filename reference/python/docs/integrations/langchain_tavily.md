@@ -1,5 +1,5 @@
 ---
-title: Tavily - LangChain Integration Reference
+title: Tavily
 ---
 
 # `langchain-tavily`

@@ -1,5 +1,3 @@
-# Types
-
 ::: langgraph.types
     options:
       members:

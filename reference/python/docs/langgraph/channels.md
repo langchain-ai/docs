@@ -1,5 +1,3 @@
-# Channels
-
 ::: langgraph.channels.base
     options:
       members:

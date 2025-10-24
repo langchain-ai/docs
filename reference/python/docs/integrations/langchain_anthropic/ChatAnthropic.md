@@ -1,5 +1,5 @@
 ---
-title: ChatAnthropic - LangChain Integration Reference
+title: ChatAnthropic
 ---
 
 # :simple-claude:{ .lg .middle } `ChatAnthropic`

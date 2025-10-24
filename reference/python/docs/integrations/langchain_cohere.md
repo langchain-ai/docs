@@ -1,5 +1,5 @@
 ---
-title: Cohere - LangChain Integration Reference
+title: Cohere
 ---
 
 # `langchain-cohere`

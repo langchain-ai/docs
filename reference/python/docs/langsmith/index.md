@@ -1,5 +1,5 @@
 ---
-title: LangSmith overview - LangChain Reference
+title: LangSmith overview
 hide:
   - toc
 ---

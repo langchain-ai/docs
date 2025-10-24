@@ -1,5 +1,3 @@
-# Runtime
-
 ::: langgraph.runtime.Runtime
     options:
       members:

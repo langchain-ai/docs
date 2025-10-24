@@ -1,5 +1,5 @@
 ---
-title: Fireworks - LangChain Integration Reference
+title: Fireworks
 ---
 
 # `langchain-fireworks`

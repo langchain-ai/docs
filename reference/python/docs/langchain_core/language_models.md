@@ -1,5 +1,3 @@
-# Language Models
-
 <!-- `members: []` in order to show module docstring -->
 ::: langchain_core.language_models
     options:
@@ -7,6 +5,7 @@
 ::: langchain_core.language_models.chat_models
     options:
       parameter_headings: true
+      show_inheritance_diagram: true
       members:
         - BaseChatModel
 ::: langchain_core.messages

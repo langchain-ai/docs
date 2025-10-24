@@ -1,5 +1,5 @@
 ---
-title: Db2 - LangChain Integration Reference
+title: Db2
 ---
 
 # `langchain-db2`

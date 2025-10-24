@@ -1,5 +1,5 @@
 ---
-title: HuggingFace - LangChain Integration Reference
+title: HuggingFace
 ---
 
 # :simple-huggingface:{ .lg .middle } `langchain-huggingface`

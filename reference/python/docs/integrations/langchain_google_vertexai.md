@@ -1,5 +1,5 @@
 ---
-title: Google (VertexAI) - LangChain Integration Reference
+title: Google (VertexAI)
 ---
 
 # :simple-googlecloud:{ .lg .middle } `langchain-google-vertexai`

@@ -1,4 +1,8 @@
-# Callbacks
+---
+title: Callbacks (Classic)
+---
+
+# Callbacks (Classic)
 
 --8<-- "langchain-classic-warning.md"
 

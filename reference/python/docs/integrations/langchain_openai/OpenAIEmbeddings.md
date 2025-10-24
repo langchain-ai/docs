@@ -1,5 +1,5 @@
 ---
-title: OpenAIEmbeddings - LangChain Integration Reference
+title: OpenAIEmbeddings
 ---
 
 # :fontawesome-brands-openai:{ .lg .middle } `OpenAIEmbeddings`

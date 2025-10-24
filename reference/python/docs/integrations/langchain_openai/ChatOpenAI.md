@@ -1,5 +1,5 @@
 ---
-title: ChatOpenAI - LangChain Integration Reference
+title: ChatOpenAI
 ---
 
 # :fontawesome-brands-openai:{ .lg .middle } `ChatOpenAI`
