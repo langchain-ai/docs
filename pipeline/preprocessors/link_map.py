@@ -250,7 +250,7 @@ LINK_MAPS: list[LinkMap] = [
         "host": "https://reference.langchain.com/javascript/",
         "scope": "js",
         "links": {
-            "Runtime": "interfaces/_langchain_langgraph.index.Runtime.html",
+            "Runtime": "modules/langgraph.index.Runtime.html",
             "tool": "functions/_langchain_core.tools.tool.html",
             "ToolNode": "classes/langchain.index.ToolNode.html",
             "UsageMetadata": "types/_langchain_core.messages.UsageMetadata.html",
