@@ -220,7 +220,7 @@ const SOURCES: Source[] = [
       },
       {
         package: "@langchain/langgraph",
-        path: "libs/langgraph",
+        path: "libs/langgraph-core",
         repo: "langchain-ai/langgraphjs",
         branch: "main",
       },
