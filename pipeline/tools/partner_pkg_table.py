@@ -161,7 +161,7 @@ def package_row(p: dict) -> str:
         f"| {provider} "
         f"| [`{p['name']}`]({p['package_url']}) "
         f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://static.pepy.tech/badge/{p["name"]}/month" alt="Downloads per month" noZoom class="rounded not-prose" /></a> '  # noqa: E501
-        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
+        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
         f"| {js} |"
     )
 

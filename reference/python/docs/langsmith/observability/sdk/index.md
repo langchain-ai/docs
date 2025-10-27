@@ -2,7 +2,13 @@
 title: LangSmith SDK
 ---
 
+[![PyPI - Version](https://img.shields.io/pypi/v/langsmith?label=%20)](https://pypi.org/project/langsmith/#history)
+[![PyPI - License](https://img.shields.io/pypi/l/langsmith)](https://opensource.org/licenses/MIT)
+[![PyPI - Downloads](https://img.shields.io/pepy/dt/langsmith)](https://pypistats.org/packages/langsmith)
+
 Welcome to the LangSmith Python SDK reference docs! These pages detail the core interfaces you will use when building with LangSmith's Observability and Evaluations tools.
+
+For user guides, tutorials, and conceptual overviews, please visit the [LangSmith documentation](https://docs.langchain.com/langsmith/home).
 
 --8<-- "wip.md"
 
@@ -13,8 +19,7 @@ Welcome to the LangSmith Python SDK reference docs! These pages detail the core 
 | [`Client`](client.md) | Synchronous client for interacting with the LangSmith API. |
 | [`AsyncClient`](async_client.md) | Asynchronous client for interacting with the LangSmith API. |
 | [`traceable`](run_helpers.md) | Wrapper/decorator for tracing any function. |
-| [`evaluate`](evaluation.md) | Evaluate a function or model on a dataset. |
-| [`RunTree`](run_trees.md) | Tree structure representing a run and its nested runs. |
+| [`@pytest.mark.langsmith`](testing.md) | LangSmith `pytest` integration. |
 | [`wrap_openai`](wrappers.md) | Wrapper for OpenAI client, adds LangSmith tracing. |
 | [`wrap_anthropic`](wrappers.md) | Wrapper for Anthropic client, adds LangSmith tracing. |
 

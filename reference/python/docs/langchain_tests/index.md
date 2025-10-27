@@ -1,3 +1,7 @@
+---
+title: Standard Tests
+---
+
 # :material-test-tube:{ .lg .middle } `langchain-tests`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain-tests?label=%20)](https://pypi.org/project/langchain-tests/#history)

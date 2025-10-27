@@ -9,9 +9,8 @@
 
 > [!IMPORTANT]
 >
-> * The LangSmith API and [SDK](https://github.com/langchain-ai/langsmith-sdk) references are not yet consolidated to this repo. Visit their documentation:
+> * The LangSmith API and [SDK](https://github.com/langchain-ai/langsmith-sdk) references are not yet fully consolidated to this repo. Visit their documentation:
 >   * [`HTTP API Reference`](https://api.smith.langchain.com/redoc)
->   * [`Python SDK reference`](https://docs.smith.langchain.com/reference/python/reference)
 >   * [`JavaScript/TypeScript SDK reference`](https://docs.smith.langchain.com/reference/js)
 
 ---
@@ -156,6 +155,7 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 ### File formats
 
 * **Markdown files** (`.md`, `.mdx`) - Standard documentation content
+* **Snippets** (`src/snippets/`) - Reusable MDX content that can be imported into multiple pages. **Important:** Snippets undergo special link preprocessing. When writing links in snippets, be careful about path segments.
 * **Jupyter notebooks** (`.ipynb`) - Converted to markdown during build, though **these are not recommended for new content!** Your PR will likely be rejected if you attempt to add a Jupyter notebook unless asked to by a maintainer.
 * **Assets** - Images and other files are copied to the build directory
 

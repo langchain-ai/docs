@@ -1,3 +1,7 @@
+---
+title: LangChain Classic home
+---
+
 # :fontawesome-solid-building-columns:{ .lg .middle } `langchain-classic`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain-classic?label=%20)](https://pypi.org/project/langchain-classic/#history)
