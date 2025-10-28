@@ -18,12 +18,6 @@ You can find information about OpenAI's latest models, their costs, context wind
     `ChatOpenAI` is fully compatible with OpenAI's (legacy) [Chat Completions API](https://platform.openai.com/docs/guides/completions). If you are looking to connect to other model providers that support the Chat Completions API, you can do so – see [instructions](/oss/integrations/chat#chat-completions-api).
 </Note>
 
-<Info>
-    **OpenAI models hosted on Azure**
-
-    Note that certain OpenAI models can also be accessed via the [Microsoft Azure platform](https://azure.microsoft.com/en-us/products/ai-foundry/models/openai/). To use the Azure OpenAI service use the [`AzureChatOpenAI`](/oss/integrations/chat/azure_chat_openai/) integration.
-</Info>
-
 ## Overview
 
 ### Integration details
@@ -87,7 +81,7 @@ llm = ChatOpenAI(
     # timeout=None,
     # reasoning_effort="low",
     # max_retries=2,
-    # api_key="...",  # if you prefer to pass api key in directly instaed of using env vars
+    # api_key="...",  # if you prefer to pass api key in directly instead of using env vars
     # base_url="...",
     # organization="...",
     # other params...
@@ -135,6 +129,101 @@ from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(model="gpt-4.1-mini", stream_usage=True)  # [!code highlight]
 ```
+
+## Using with Azure OpenAI
+
+<Info>
+    **Azure OpenAI v1 API support**
+
+    As of `langchain-openai>=1.0.1`, `ChatOpenAI` can be used directly with Azure OpenAI endpoints using the new [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python#next-generation-api-1). This provides a unified way to use OpenAI models whether hosted on OpenAI or Azure.
+
+    For the traditional Azure-specific implementation, continue to use [`AzureChatOpenAI`](/oss/integrations/chat/azure_chat_openai/).
+</Info>
+
+<Accordion title="Using Azure OpenAI v1 API with API Key">
+
+To use `ChatOpenAI` with Azure OpenAI, set the `base_url` to your Azure endpoint with `/openai/v1/` appended:
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-5-mini",  # Your Azure deployment name
+    base_url="https://{your-resource-name}.openai.azure.com/openai/v1/",
+    api_key="your-azure-api-key"
+)
+
+response = llm.invoke("Hello, how are you?")
+print(response.content)
+```
+</Accordion>
+
+<Accordion title="Using Azure OpenAI with Microsoft Entra ID">
+
+The v1 API adds native support for [Microsoft Entra ID](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/managed-identity) (formerly Azure AD) authentication with automatic token refresh. Pass a token provider callable to the `api_key` parameter:
+
+```python
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from langchain_openai import ChatOpenAI
+
+# Create a token provider that handles automatic refresh
+token_provider = get_bearer_token_provider(
+    DefaultAzureCredential(),
+    "https://cognitiveservices.azure.com/.default"
+)
+
+llm = ChatOpenAI(
+    model="gpt-5-mini",  # Your Azure deployment name
+    base_url="https://{your-resource-name}.openai.azure.com/openai/v1/",
+    api_key=token_provider  # Callable that handles token refresh
+)
+
+# Use the model as normal
+messages = [
+    ("system", "You are a helpful assistant."),
+    ("human", "Translate 'I love programming' to French.")
+]
+response = llm.invoke(messages)
+print(response.content)
+```
+
+The token provider is a callable that automatically retrieves and refreshes authentication tokens, eliminating the need to manually manage token expiration.
+
+<Tip>
+**Installation requirements**
+
+To use Microsoft Entra ID authentication, install the Azure Identity library:
+
+```bash
+pip install azure-identity
+```
+
+</Tip>
+
+You can also pass a token provider callable to the `api_key` parameter when using
+asynchronous functions. You must import DefaultAzureCredential from `azure.identity.aio`:
+
+
+```python
+from azure.identity.aio import DefaultAzureCredential
+from langchain_openai import ChatOpenAI
+
+credential = DefaultAzureCredential()
+
+llm_async = ChatOpenAI(
+    model="gpt-5-nano",
+    api_key=credential
+)
+
+# Use async methods when using async callable
+response = await llm_async.ainvoke("Hello!")
+```
+
+<Note>
+When using an async callable for the API key, you must use async methods (`ainvoke`, `astream`, etc.). Sync methods will raise an error.
+</Note>
+
+</Accordion>
 
 ## Tool calling
 
