@@ -1,3 +1,7 @@
+---
+title: Text Splitters
+---
+
 # :material-format-text:{ .lg .middle } `langchain-text-splitters`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain-text-splitters?label=%20)](https://pypi.org/project/langchain-text-splitters/#history)

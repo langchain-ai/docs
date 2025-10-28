@@ -826,7 +826,12 @@ class DocumentationBuilder:
 
             # Convert /oss/ links to relative paths that work from any language context
             def convert_oss_link(match: re.Match) -> str:
-                """Convert /oss/ links to language-agnostic relative paths."""
+                """Convert /oss/ links to language-agnostic relative paths.
+
+                IMPORTANT: the conversion creates relative paths that resolve from the
+                parent page's directory.
+                - /oss/providers/groq → ../providers/groq
+                """
                 pre = match.group(1)  # Everything before the URL
                 url = match.group(2)  # The URL
                 post = match.group(3)  # Everything after the URL
