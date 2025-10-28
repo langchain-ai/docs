@@ -426,7 +426,9 @@ function pullRemote(remote: Remote, latestSha: string) {
   const target = remotePath(remote);
   const url = `https://github.com/${remote.repo}/archive/refs/heads/${branch}.tar.gz`;
   console.info(`Fetching remote tarball ${remote.repo}/${branch}`);
-  exec(["rm -rf", target]);
+  if (fs.existsSync(target)) {
+    fs.rmSync(target, { recursive: true, force: true });
+  }
   exec(["mkdir -p", target]);
   exec([`curl -L -s`, url, `| tar -xz --strip-components=1 -C`, target]);
   const shaFile = path.join(target, ".sha");
