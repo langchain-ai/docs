@@ -31,5 +31,6 @@
         - FileContentBlock
         - NonStandardContentBlock
         - trim_messages
-
-<!-- TODO once exported - UsageMetadata -->
+        - UsageMetadata
+        - InputTokenDetails
+        - OutputTokenDetails
