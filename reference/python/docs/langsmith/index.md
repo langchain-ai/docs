@@ -28,4 +28,10 @@ Welcome to the LangSmith reference documentation!
 
     [:octicons-arrow-right-24: Reference](./deployment/remote_graph.md)
 
+- __LangSmith REST API__
+
+    ---
+
+    [:octicons-arrow-right-24: Reference](https://api.smith.langchain.com/redoc)
+
 </div>
