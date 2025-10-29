@@ -1,0 +1,555 @@
+---
+title: Manage user context with Store
+description: Learn how to load user preferences from LangGraph Store and use them as static runtime context in agents
+---
+
+## Overview
+
+When building agents, you often need to manage user-specific settings like language preferences, timezone, or communication style. These settings should be:
+
+- **Persistent** across conversations (stored in a database)
+- **Immutable** during a single agent run (static context)
+- **Easily accessible** in middleware and tools
+
+This guide shows how to combine [LangGraph Store](/oss/langgraph/persistence#memory-store) (for persistence) with [static runtime context](/oss/concepts/context) (for immutability) to manage user preferences effectively.
+
+## When to use this pattern
+
+Use this pattern when you need to:
+
+- Store user preferences that don't change during a conversation (language, timezone, etc.)
+- Access these preferences in middleware (for dynamic prompts)
+- Load preferences once at the start of a run (not repeatedly)
+- Keep user settings separate from conversation state
+
+For settings that change during a conversation, use [short-term memory](/oss/langchain/short-term-memory) instead.
+
+## Basic pattern
+
+:::python
+```python
+from dataclasses import dataclass
+
+from langchain.agents import create_agent
+from langgraph.store.memory import InMemoryStore
+
+@dataclass
+class UserContext:
+    user_id: str
+    preferred_language: str = "English"
+    timezone: str = "UTC"
+    communication_style: str = "casual"
+
+store = InMemoryStore()
+store.put(
+    ("user_preferences",),
+    "user_123",
+    {
+        "preferred_language": "Korean",
+        "timezone": "Asia/Seoul",
+        "communication_style": "formal",
+    },
+)
+
+def load_user_context(user_id: str, store: InMemoryStore) -> UserContext:
+    memory = store.get(("user_preferences",), user_id)
+    if memory:
+        return UserContext(user_id=user_id, **memory.value)
+    return UserContext(user_id=user_id)
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5",
+    tools=[...],
+    context_schema=UserContext,
+    store=store,
+)
+
+context = load_user_context("user_123", store)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What's the weather today?"}]},
+    context=context
+)
+```
+
+:::
+
+:::js
+```typescript
+import { z } from "zod";
+import { createAgent } from "langchain";
+import { InMemoryStore } from "@langchain/langgraph";
+
+const UserContext = z.object({
+  userId: z.string(),
+  preferredLanguage: z.string().default("English"),
+  timezone: z.string().default("UTC"),
+  communicationStyle: z.string().default("casual"),
+});
+
+type UserContextType = z.infer<typeof UserContext>;
+
+const store = new InMemoryStore();
+await store.put(
+  ["user_preferences"],
+  "user_123",
+  {
+    preferredLanguage: "Korean",
+    timezone: "Asia/Seoul",
+    communicationStyle: "formal",
+  }
+);
+
+async function loadUserContext(
+  userId: string,
+  store: InMemoryStore
+): Promise<UserContextType> {
+  const memory = await store.get(["user_preferences"], userId);
+  if (memory) {
+    return UserContext.parse({ userId, ...memory.value });
+  }
+  return UserContext.parse({ userId });
+}
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-5",
+  tools: [],
+  contextSchema: UserContext,
+  store,
+});
+
+const context = await loadUserContext("user_123", store);
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "What's the weather today?" }] },
+  { context }
+);
+```
+
+:::
+
+## Access context in middleware
+
+The most common use case is accessing user preferences in middleware to customize agent behavior.
+
+:::python
+```python Using context in middleware
+from dataclasses import dataclass
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import dynamic_prompt, ModelRequest
+from langgraph.store.memory import InMemoryStore
+
+
+@dataclass
+class UserContext:
+    user_id: str
+    preferred_language: str = "English"
+    timezone: str = "UTC"
+    communication_style: str = "casual"
+
+
+@dynamic_prompt
+def personalized_system_prompt(request: ModelRequest) -> str:
+    """Generate a system prompt based on user preferences."""
+    context = request.runtime.context  # [!code highlight]
+
+    prompt = f"""You are a helpful assistant.
+
+Communication guidelines:
+- Respond in {context.preferred_language}
+- User's timezone is {context.timezone}
+- Use {context.communication_style} tone
+"""
+    return prompt
+
+
+store = InMemoryStore()
+store.put(
+    ("user_preferences",),
+    "user_123",
+    {
+        "preferred_language": "Korean",
+        "timezone": "Asia/Seoul",
+        "communication_style": "formal",
+    },
+)
+
+
+def load_user_context(user_id: str, store: InMemoryStore) -> UserContext:
+    memory = store.get(("user_preferences",), user_id)
+    if memory:
+        return UserContext(user_id=user_id, **memory.value)
+    return UserContext(user_id=user_id)
+
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5",
+    tools=[...],
+    middleware=[personalized_system_prompt],  # [!code highlight]
+    context_schema=UserContext,
+    store=store,
+)
+
+context = load_user_context("user_123", store)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What time is it?"}]}, context=context
+)
+# The agent will respond in Korean, considering the user's timezone
+```
+
+:::
+
+:::js
+```typescript Using context in middleware
+import { z } from "zod";
+import { createAgent, dynamic_prompt } from "langchain";
+import { InMemoryStore } from "@langchain/langgraph";
+import type { ModelRequest } from "langchain";
+
+const UserContext = z.object({
+  userId: z.string(),
+  preferredLanguage: z.string().default("English"),
+  timezone: z.string().default("UTC"),
+  communicationStyle: z.string().default("casual"),
+});
+
+type UserContextType = z.infer<typeof UserContext>;
+
+const personalizedSystemPrompt = dynamic_prompt((request: ModelRequest) => {
+  const context = request.runtime.context; // [!code highlight]
+
+  return `You are a helpful assistant.
+
+Communication guidelines:
+- Respond in ${context.preferredLanguage}
+- User's timezone is ${context.timezone}
+- Use ${context.communicationStyle} tone
+`;
+});
+
+const store = new InMemoryStore();
+await store.put(["user_preferences"], "user_123", {
+  preferredLanguage: "Korean",
+  timezone: "Asia/Seoul",
+  communicationStyle: "formal",
+});
+
+async function loadUserContext(
+  userId: string,
+  store: InMemoryStore
+): Promise<UserContextType> {
+  const memory = await store.get(["user_preferences"], userId);
+  if (memory) {
+    return UserContext.parse({ userId, ...memory.value });
+  }
+  return UserContext.parse({ userId });
+}
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-5",
+  tools: [],
+  middleware: [personalizedSystemPrompt], // [!code highlight]
+  contextSchema: UserContext,
+  store,
+});
+
+const context = await loadUserContext("user_123", store);
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "What time is it?" }] },
+  { context }
+);
+// The agent will respond in Korean, considering the user's timezone
+```
+
+:::
+
+## Update user preferences
+
+User preferences may need to be updated during the application lifecycle (e.g., when a user changes their language preference).
+
+:::python
+```python Updating preferences
+from dataclasses import dataclass, asdict
+
+from langgraph.store.memory import InMemoryStore
+
+
+@dataclass
+class UserContext:
+    user_id: str
+    preferred_language: str = "English"
+    timezone: str = "UTC"
+    communication_style: str = "casual"
+
+
+def update_user_preferences(
+    user_id: str, store: InMemoryStore, **updates
+) -> UserContext:
+    """Update specific user preference fields."""
+    existing = store.get(("user_preferences",), user_id)
+
+    if existing:
+        updated_data = {**existing.value, **updates}
+    else:
+        updated_data = updates
+
+    store.put(("user_preferences",), user_id, updated_data) # [!code highlight]
+
+    return UserContext(user_id=user_id, **updated_data)
+
+
+store = InMemoryStore()
+store.put(
+    ("user_preferences",),
+    "user_123",
+    {
+        "preferred_language": "English",
+        "timezone": "America/New_York",
+        "communication_style": "casual",
+    },
+)
+
+updated_context = update_user_preferences(
+    "user_123", store, preferred_language="Spanish"  # [!code highlight]
+)
+# Result: preferred_language="Spanish", timezone="America/New_York", communication_style="casual"
+```
+
+:::
+
+:::js
+```typescript Updating preferences
+import { z } from "zod";
+import { InMemoryStore } from "@langchain/langgraph";
+
+const UserContext = z.object({
+  userId: z.string(),
+  preferredLanguage: z.string().default("English"),
+  timezone: z.string().default("UTC"),
+  communicationStyle: z.string().default("casual"),
+});
+
+type UserContextType = z.infer<typeof UserContext>;
+
+async function updateUserPreferences(
+  userId: string,
+  store: InMemoryStore,
+  updates: Partial<Omit<UserContextType, "userId">>
+): Promise<UserContextType> {
+  const existing = await store.get(["user_preferences"], userId);
+
+  let updatedData: any;
+  if (existing) {
+    updatedData = { ...existing.value, ...updates };
+  } else {
+    updatedData = updates;
+  }
+
+  await store.put(["user_preferences"], userId, updatedData); // [!code highlight]
+
+  return UserContext.parse({ userId, ...updatedData });
+}
+
+const store = new InMemoryStore();
+await store.put(["user_preferences"], "user_123", {
+  preferredLanguage: "English",
+  timezone: "America/New_York",
+  communicationStyle: "casual",
+});
+
+const updatedContext = await updateUserPreferences(
+  "user_123",
+  store,
+  { preferredLanguage: "Spanish" } // [!code highlight]
+);
+// Result: preferredLanguage="Spanish", timezone="America/New_York", communicationStyle="casual"
+```
+
+:::
+
+## Advanced: Dynamic fields
+
+If you need to support dynamic fields that aren't known at design time, use an `extra` dictionary field.
+
+:::python
+```python Supporting dynamic fields
+from dataclasses import dataclass, field
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import dynamic_prompt, ModelRequest
+from langgraph.store.memory import InMemoryStore
+
+
+@dataclass
+class UserContext:
+    user_id: str
+    preferred_language: str = "English"
+    timezone: str = "UTC"
+    extra: dict[str, any] = field(default_factory=dict)  # [!code highlight]
+
+
+store = InMemoryStore()
+store.put(
+    ("user_preferences",),
+    "user_123",
+    {
+        "preferred_language": "Korean",
+        "timezone": "Asia/Seoul",
+        "extra": {  # [!code highlight]
+            "notification_preference": "email",
+            "theme": "dark",
+            "accessibility_mode": True,
+        },
+    },
+)
+
+
+@dynamic_prompt
+def personalized_prompt(request: ModelRequest) -> str:
+    context = request.runtime.context
+    theme = context.extra.get("theme", "light")  # [!code highlight]
+    accessibility = context.extra.get("accessibility_mode", False)  # [!code highlight]
+
+    prompt = f"Language: {context.preferred_language}\n"
+    if accessibility:
+        prompt += "Note: User has accessibility mode enabled.\n"
+
+    return prompt
+
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5",
+    tools=[...],
+    middleware=[personalized_prompt],
+    context_schema=UserContext,
+    store=store,
+)
+```
+
+:::
+
+:::js
+```typescript Supporting dynamic fields
+import { z } from "zod";
+import { createAgent, dynamic_prompt } from "langchain";
+import { InMemoryStore } from "@langchain/langgraph";
+import type { ModelRequest } from "langchain";
+
+const UserContext = z.object({
+  userId: z.string(),
+  preferredLanguage: z.string().default("English"),
+  timezone: z.string().default("UTC"),
+  extra: z.record(z.any()).default({}), // [!code highlight]
+});
+
+type UserContextType = z.infer<typeof UserContext>;
+
+const store = new InMemoryStore();
+await store.put(["user_preferences"], "user_123", {
+  preferredLanguage: "Korean",
+  timezone: "Asia/Seoul",
+  extra: { // [!code highlight]
+    notificationPreference: "email",
+    theme: "dark",
+    accessibilityMode: true,
+  },
+});
+
+const personalizedPrompt = dynamic_prompt((request: ModelRequest) => {
+  const context = request.runtime.context;
+  const theme = context.extra?.theme || "light"; // [!code highlight]
+  const accessibility = context.extra?.accessibilityMode || false; // [!code highlight]
+
+  let prompt = `Language: ${context.preferredLanguage}\n`;
+  if (accessibility) {
+    prompt += "Note: User has accessibility mode enabled.\n";
+  }
+
+  return prompt;
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-5",
+  tools: [],
+  middleware: [personalizedPrompt],
+  contextSchema: UserContext,
+  store,
+});
+```
+
+:::
+
+## Best practices
+
+### 1. Separate required from optional preferences
+
+For settings that are always needed, include them as explicit fields. For optional settings, use the `extra` dictionary or tools.
+
+### 2. Cache context loading
+
+If you're making many agent invocations, consider caching the loaded context:
+
+:::python
+```python Caching context
+from functools import lru_cache
+
+from langgraph.store.memory import InMemoryStore
+
+
+@lru_cache(maxsize=1000)
+def load_user_context_cached(user_id: str, store_id: str) -> UserContext:
+    """Load context with caching.
+
+    Note: store_id should be a unique identifier for the store instance.
+    """
+    store = get_store_by_id(store_id)
+    memory = store.get(("user_preferences",), user_id)
+    if memory:
+        return UserContext(user_id=user_id, **memory.value)
+    return UserContext(user_id=user_id)
+
+
+def update_and_invalidate(user_id: str, store: InMemoryStore, **updates):
+    update_user_preferences(user_id, store, **updates)
+    load_user_context_cached.cache_clear()
+```
+
+:::
+
+### 3. Validate preferences on load
+
+Ensure stored preferences match your schema:
+
+:::python
+```python Validating preferences
+from dataclasses import dataclass
+
+from langgraph.store.memory import InMemoryStore
+
+
+@dataclass
+class UserContext:
+    user_id: str
+    preferred_language: str = "English"
+    timezone: str = "UTC"
+
+
+def load_user_context_safe(user_id: str, store: InMemoryStore) -> UserContext:
+    """Load context with validation."""
+    memory = store.get(("user_preferences",), user_id)
+    if memory:
+        try:
+            return UserContext(user_id=user_id, **memory.value)
+        except TypeError as e:
+            print(f"Invalid preferences for user {user_id}: {e}")
+            return UserContext(user_id=user_id)
+    return UserContext(user_id=user_id)
+```
+
+:::
+
+## Related resources
+
+- [Static runtime context](/oss/concepts/context) - Core concept documentation
+- [Long-term memory](/oss/langchain/long-term-memory) - Storing and retrieving memories
+- [Middleware](/oss/langchain/middleware) - Customizing agent execution
+- [LangGraph Store](/oss/langgraph/persistence#memory-store) - Persistence layer
