@@ -126,6 +126,7 @@ LINK_MAPS: list[LinkMap] = [
             "trim_messages": "langchain/messages/#langchain.messages.trim_messages",
             "UsageMetadata": "langchain/messages/#langchain.messages.UsageMetadata",
             "InputTokenDetails": "langchain/messages/#langchain.messages.InputTokenDetails",
+            "MessageLikeRepresentation": "langchain/messages/#langchain.messages.MessageLikeRepresentation",
             # Content blocks
             "BaseMessage": "langchain_core/language_models/#langchain_core.messages.BaseMessage",
             "BaseMessage(content)": "langchain_core/language_models/#langchain_core.messages.BaseMessage.content",
