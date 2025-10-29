@@ -2,6 +2,7 @@
 <!-- (`group_by_category orders `AgentState` (a class) before functions) -->
 ::: langchain.agents
     options:
+      summary: false
       group_by_category: false
       parameter_headings: true
       members:
