@@ -446,6 +446,58 @@ const State = z.object({
 ```
 :::
 
+:::python
+### Bypass reducers with `Overwrite`
+
+In some cases, you may want to bypass a reducer and directly overwrite a state value. LangGraph provides the [`Overwrite`](https://reference.langchain.com/python/langgraph/types/) type for this purpose. When a node returns a value wrapped with `Overwrite`, the reducer is bypassed and the channel is set directly to that value.
+
+This is useful when you want to reset or replace accumulated state rather than merge it with existing values.
+
+```python
+from langgraph.graph import StateGraph, START, END
+from langgraph.types import Overwrite
+from typing_extensions import Annotated, TypedDict
+import operator
+
+class State(TypedDict):
+    messages: Annotated[list, operator.add]
+
+def add_message(state: State):
+    return {"messages": ["first message"]}
+
+def replace_messages(state: State):
+    # Bypass the reducer and replace the entire messages list
+    return {"messages": Overwrite(["replacement message"])}
+
+builder = StateGraph(State)
+builder.add_node("add_message", add_message)
+builder.add_node("replace_messages", replace_messages)
+builder.add_edge(START, "add_message")
+builder.add_edge("add_message", "replace_messages")
+builder.add_edge("replace_messages", END)
+
+graph = builder.compile()
+
+result = graph.invoke({"messages": ["initial"]})
+print(result["messages"])
+```
+
+```
+['replacement message']
+```
+
+You can also use JSON format with the special key `"__overwrite__"`:
+
+```python
+def replace_messages(state: State):
+    return {"messages": {"__overwrite__": ["replacement message"]}}
+```
+
+<Warning>
+When nodes execute in parallel, only one node can use `Overwrite` on the same state key in a given super-step. If multiple nodes attempt to overwrite the same key in the same super-step, an `InvalidUpdateError` will be raised.
+</Warning>
+:::
+
 ### Define input and output schemas
 
 By default, `StateGraph` operates with a single schema, and all nodes are expected to communicate using that schema. However, it's also possible to define distinct input and output schemas for a graph.
