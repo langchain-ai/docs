@@ -1,0 +1,168 @@
+---
+title: Custom output rendering
+sidebarTitle: Custom output rendering
+---
+
+This page describes how to use custom output rendering to visualize outputs from [_experiments_](/langsmith/evaluation-concepts#experiment) using your own custom HTML pages.
+
+You'll learn how to:
+
+- **[Configure custom rendering](#configure-custom-output-rendering)** in the LangSmith UI or via the API.
+- **[Build a custom renderer](#build-a-custom-renderer)** to display output data.
+- **[Understand where custom rendering appears](#where-custom-rendering-appears)** in LangSmith.
+
+## Overview
+
+By default, LangSmith displays outputs in a standard JSON format. With custom output rendering, you can replace this default view with your own HTML page that receives the output data via the postMessage API and renders it however you choose.
+
+This is particularly useful for:
+
+- **Domain-specific formatting**: Display medical records, legal documents, or other specialized data types in their native format.
+- **Custom visualizations**: Create charts, graphs, or diagrams from numeric or structured output data.
+
+Custom rendering is configured per-[_dataset_](/langsmith/evaluation-concepts#datasets).
+
+## Prerequisites
+
+<Check>
+- A LangSmith dataset
+- A web page that can receive postMessage events (can be hosted anywhere or run locally)
+- Basic knowledge of HTML/JavaScript and the postMessage API
+</Check>
+
+## Configure custom output rendering
+
+### In the LangSmith UI
+
+To configure custom output rendering for a dataset:
+
+![Dataset page with three-dot menu showing Custom Output Rendering option](/langsmith/images/custom-output-rendering-menu.png)
+
+1. Navigate to your dataset in the **Datasets & Experiments** page.
+2. Click **⋮** (three-dot menu) in the top right corner.
+3. Select **Custom Output Rendering**.
+4. Toggle **Enable custom output rendering**.
+5. Enter the webpage URL in the **URL** field.
+6. Click **Save**.
+
+![Custom Output Rendering modal with fields filled in](/langsmith/images/custom-output-rendering-modal.png)
+
+### Via the API
+
+You can also configure custom rendering programmatically by updating the dataset metadata:
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+
+client = Client()
+
+# Update dataset metadata with iframe config
+client.update_dataset(
+    dataset_id="your-dataset-id",
+    metadata={
+        "iframe_config": {
+            "enabled": True,
+            "url": "https://your-domain.com/output-renderer.html"
+        }
+    }
+)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+// Update dataset metadata with iframe config
+await client.updateDataset("your-dataset-id", {
+  metadata: {
+    iframe_config: {
+      enabled: true,
+      url: "https://your-domain.com/output-renderer.html"
+    }
+  }
+});
+```
+</CodeGroup>
+
+## Build a custom renderer
+
+### Understand the message format
+
+Your HTML page will receive output data via the [postMessage API](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage). LangSmith sends messages with the following structure:
+
+```typescript
+{
+  type: "output" | "reference",
+  data: {
+    // The outputs (actual output or reference output)
+    // Structure varies based on your application
+  },
+  metadata: {
+    inputs: {
+      // The inputs that generated this output
+      // Structure varies based on your application
+    }
+  }
+}
+```
+
+- `type`: Indicates whether this is an actual output (`"output"`) or a reference output (`"reference"`).
+- `data`: The output data itself.
+- `metadata.inputs`: The input data that generated this output, provided for context.
+
+<Note>
+**Message delivery timing**: LangSmith uses an exponential backoff retry mechanism to ensure your page receives the data even if it loads slowly. Messages are sent up to 6 times with increasing delays (100ms, 200ms, 400ms, 800ms, 1600ms, 3200ms).
+</Note>
+
+### Example implementation
+
+This example listens for incoming postMessage events and displays them on the page. Each message is numbered and formatted as JSON, making it easy to inspect the data structure LangSmith sends to your renderer.
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>PostMessage Echo</title>
+    <link rel="stylesheet" href="https://unpkg.com/sakura.css/css/sakura.css" />
+  </head>
+  <body>
+    <h1>PostMessage Messages</h1>
+    <div id="messages"></div>
+    <script>
+      let count = 0;
+      window.addEventListener("message", (event) => {
+        count++;
+        const header = document.createElement("h3");
+        header.appendChild(document.createTextNode(`Message ${count}`));
+        const code = document.createElement("code");
+        code.appendChild(
+          document.createTextNode(JSON.stringify(event.data, null, 2))
+        );
+        const pre = document.createElement("pre");
+        pre.appendChild(code);
+        document.getElementById("messages").appendChild(header);
+        document.getElementById("messages").appendChild(pre);
+      });
+    </script>
+  </body>
+</html>
+```
+
+## Where custom rendering appears
+
+When enabled, your custom rendering will replace the default output view in:
+
+- **Experiment comparison view**: When comparing outputs across multiple experiments:
+
+![Experiment comparison view showing custom rendering](/langsmith/images/custom-output-rendering-experiment-comparison.png)
+
+- **Run detail panes**: When viewing runs that are associated with a dataset:
+
+![Run detail pane showing custom rendering](/langsmith/images/custom-output-rendering-run-details.png)
+
+- **Annotation queues**: When experiments are added to annotation queues for review:
+
+![Annotation queue showing custom rendering](/langsmith/images/custom-output-rendering-annotation-queue.png)
