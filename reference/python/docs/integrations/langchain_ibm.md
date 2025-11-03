@@ -8,6 +8,4 @@ title: IBM
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-ibm)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-ibm)](https://pypistats.org/packages/langchain-ibm)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
-
+::: langchain_ibm
