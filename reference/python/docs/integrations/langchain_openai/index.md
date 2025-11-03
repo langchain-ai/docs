@@ -1,5 +1,5 @@
 ---
-title: OpenAI - LangChain Integration Reference
+title: OpenAI
 ---
 
 # :fontawesome-brands-openai:{ .lg .middle } `langchain-openai`

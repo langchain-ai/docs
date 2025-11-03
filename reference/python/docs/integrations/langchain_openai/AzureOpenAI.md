@@ -1,5 +1,5 @@
 ---
-title: AzureOpenAI (Legacy LLM) - LangChain Integration Reference
+title: AzureOpenAI (Legacy LLM)
 ---
 
 # :material-microsoft-azure:{ .lg .middle } `AzureOpenAI` (Legacy LLM)

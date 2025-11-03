@@ -57,6 +57,12 @@ embeddings = OpenAIEmbeddings(
 )
 ```
 
+<Info>
+    **Azure OpenAI v1 API support**
+
+    As of `langchain-openai>=1.0.1`, `OpenAIEmbeddings` can be used directly with Azure OpenAI endpoints using the new [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python#next-generation-api-1), including support for Microsoft Entra ID authentication. See the [Using with Azure OpenAI](#using-with-azure-openai) section below for details.
+</Info>
+
 ## Indexing and Retrieval
 
 Embedding models are often used in retrieval-augmented generation (RAG) flows, both as part of indexing data as well as later retrieving it. For more detailed instructions, please see our [RAG tutorials](/oss/langchain/rag).
@@ -124,6 +130,95 @@ for vector in two_vectors:
 [-0.019260549917817116, 0.0037612367887049913, -0.03291035071015358, 0.003757466096431017, 0.0082049
 [-0.010181212797760963, 0.023419594392180443, -0.04215526953339577, -0.001532090245746076, -0.023573
 ```
+
+## Using with Azure OpenAI
+
+<Info>
+    **Azure OpenAI v1 API support**
+
+    As of `langchain-openai>=1.0.1`, `OpenAIEmbeddings` can be used directly with Azure OpenAI endpoints using the new [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python#next-generation-api-1). This provides a unified way to use OpenAI embeddings whether hosted on OpenAI or Azure.
+
+    For the traditional Azure-specific implementation, continue to use [`AzureOpenAIEmbeddings`](/oss/integrations/text_embedding/azure_openai).
+</Info>
+
+### Using Azure OpenAI v1 API with API Key
+
+To use `OpenAIEmbeddings` with Azure OpenAI, set the `base_url` to your Azure endpoint with `/openai/v1/` appended:
+
+```python
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-large",  # Your Azure deployment name
+    base_url="https://{your-resource-name}.openai.azure.com/openai/v1/",
+    api_key="your-azure-api-key"
+)
+
+# Use as normal
+vector = embeddings.embed_query("Hello world")
+```
+
+### Using Azure OpenAI with Microsoft Entra ID
+
+The v1 API adds native support for [Microsoft Entra ID](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/managed-identity) authentication with automatic token refresh. Pass a token provider callable to the `api_key` parameter:
+
+```python
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from langchain_openai import OpenAIEmbeddings
+
+# Create a token provider that handles automatic refresh
+token_provider = get_bearer_token_provider(
+    DefaultAzureCredential(),
+    "https://cognitiveservices.azure.com/.default"
+)
+
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-large",  # Your Azure deployment name
+    base_url="https://{your-resource-name}.openai.azure.com/openai/v1/",
+    api_key=token_provider  # Callable that handles token refresh
+)
+
+# Use as normal
+vectors = embeddings.embed_documents(["Hello", "World"])
+```
+
+<Tip>
+**Installation requirements**
+
+To use Microsoft Entra ID authentication, install the Azure Identity library:
+
+```bash
+pip install azure-identity
+```
+
+</Tip>
+
+You can also pass a token provider callable to the `api_key` parameter when using
+asynchronous functions. You must import DefaultAzureCredential from `azure.identity.aio`:
+
+:::python
+
+```python
+from azure.identity.aio import DefaultAzureCredential
+from langchain_openai import OpenAIEmbeddings
+
+credential = DefaultAzureCredential()
+
+embeddings_async = OpenAIEmbeddings(
+    model="text-embedding-3-large",
+    api_key=credential
+)
+
+# Use async methods when using async callable
+vectors = await embeddings_async.aembed_documents(["Hello", "World"])
+
+```
+
+:::
+
+<Note>
+When using an async callable for the API key, you must use async methods (`aembed_query`, `aembed_documents`). Sync methods will raise an error.
+</Note>
 
 ## API reference
 

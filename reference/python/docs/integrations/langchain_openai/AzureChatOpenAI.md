@@ -1,5 +1,5 @@
 ---
-title: AzureChatOpenAI - LangChain Integration Reference
+title: AzureChatOpenAI
 ---
 
 # :material-microsoft-azure:{ .lg .middle } `AzureChatOpenAI`

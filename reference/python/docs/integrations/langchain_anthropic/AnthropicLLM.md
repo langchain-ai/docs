@@ -1,5 +1,5 @@
 ---
-title: AnthropicLLM (Legacy LLM) - LangChain Integration Reference
+title: AnthropicLLM (Legacy LLM)
 ---
 
 # :simple-claude:{ .lg .middle } `AnthropicLLM` (Legacy LLM)

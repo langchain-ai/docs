@@ -161,7 +161,7 @@ def package_row(p: dict) -> str:
         f"| {provider} "
         f"| [`{p['name']}`]({p['package_url']}) "
         f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://static.pepy.tech/badge/{p["name"]}/month" alt="Downloads per month" noZoom class="rounded not-prose" /></a> '  # noqa: E501
-        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
+        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
         f"| {js} |"
     )
 
@@ -179,7 +179,7 @@ def doc() -> str:
 ---
 title: Integration packages
 sidebarTitle: Overview
-mode: wide
+mode: "wide"
 ---
 {{/* File generated automatically by pipeline/tools/partner_pkg_table.py */}}
 {{/* Do not manually edit */}}
@@ -187,15 +187,9 @@ mode: wide
 LangChain Python offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
 
 <Columns cols={{3}}>
-    <Card title="Chat models" icon="message" href="/oss/integrations/chat">
-        Set up your project with our quickstart guide.
-    </Card>
-    <Card title="Embedding models" icon="layer-group" href="/oss/integrations/text_embedding">
-        Explore endpoints, parameters, and examples for your API.
-    </Card>
-    <Card title="Tools and toolkits" icon="screwdriver-wrench" href="/oss/integrations/tools">
-        Explore endpoints, parameters, and examples for your API.
-    </Card>
+    <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />
+    <Card title="Embedding models" icon="layer-group" href="/oss/integrations/text_embedding" arrow />
+    <Card title="Tools and toolkits" icon="screwdriver-wrench" href="/oss/integrations/tools" arrow />
 </Columns>
 
 To see a full list of integrations by component type, refer to the categories in the sidebar.

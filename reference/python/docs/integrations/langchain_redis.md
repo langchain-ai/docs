@@ -1,5 +1,5 @@
 ---
-title: Redis - LangChain Integration Reference
+title: Redis
 ---
 
 # :simple-redis:{ .lg .middle } `langchain-redis`
@@ -8,4 +8,5 @@ title: Redis - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-redis)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-redis)](https://pypistats.org/packages/langchain-redis)
 
-This package ref has not yet been migrated to v1.
+!!! note
+    This package ref has not yet been fully migrated to v1.

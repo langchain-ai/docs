@@ -1,5 +1,5 @@
 ---
-title: MistralAI - LangChain Integration Reference
+title: MistralAI
 ---
 
 # :simple-mistralai:{ .lg .middle } `langchain-mistralai`
@@ -8,4 +8,7 @@ title: MistralAI - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-mistralai)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-mistralai)](https://pypistats.org/packages/langchain-mistralai)
 
-This package ref has not yet been migrated to v1.
+!!! note
+    This package ref has not yet been fully migrated to v1.
+
+::: langchain_mistralai

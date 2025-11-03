@@ -1,4 +1,8 @@
-# :fontawesome-solid-building-columns:{ .lg .middle } `langchain_classic`
+---
+title: LangChain Classic home
+---
+
+# :fontawesome-solid-building-columns:{ .lg .middle } `langchain-classic`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain-classic?label=%20)](https://pypi.org/project/langchain-classic/#history)
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-classic)](https://opensource.org/licenses/MIT)
@@ -6,6 +10,4 @@
 
 Reference documentation for the [`langchain-classic`](https://pypi.org/project/langchain-classic/) package.
 
-Coming soon.
-
-<!-- Use the left sidebar to navigate the different modules and classes within the package. -->
+--8<-- "wip.md"

@@ -20,14 +20,17 @@ To use the `AzionVectorStore` vector store, you will need to install the `@langc
 
 This guide will also use [OpenAI embeddings](/oss/integrations/text_embedding/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/integrations/text_embedding) if you wish.
 
-```{=mdx}
-import IntegrationInstallTooltip from "@mdx_components/integration_install_tooltip.mdx";
-<IntegrationInstallTooltip></IntegrationInstallTooltip>
-
-<Npm2Yarn>
-  azion @langchain/openai @langchain/community
-</Npm2Yarn>
+<CodeGroup>
+```bash npm
+npm install azion @langchain/openai @langchain/community
 ```
+```bash yarn
+yarn add azion @langchain/openai @langchain/community
+```
+```bash pnpm
+pnpm add azion @langchain/openai @langchain/community
+```
+</CodeGroup>
 
 ### Credentials
 

@@ -1,0 +1,1 @@
+::: langsmith.pytest_plugin
