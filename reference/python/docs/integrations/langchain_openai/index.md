@@ -31,7 +31,7 @@ title: OpenAI
 
     [:octicons-arrow-right-24: Reference](./AzureChatOpenAI.md)
 
-- :material-message-text:{ .lg .middle } __`OpenAI`__
+- :fontawesome-solid-i-cursor:{ .lg .middle } __`OpenAI`__
 
     ---
 
@@ -39,7 +39,7 @@ title: OpenAI
 
     [:octicons-arrow-right-24: Reference](./OpenAI.md)
 
-- :material-message-text:{ .lg .middle } __`AzureOpenAI`__
+- :fontawesome-solid-i-cursor:{ .lg .middle } __`AzureOpenAI`__
 
     ---
 
@@ -47,7 +47,7 @@ title: OpenAI
 
     [:octicons-arrow-right-24: Reference](./AzureChatOpenAI.md)
 
-- :material-message-text:{ .lg .middle } __`OpenAIEmbeddings`__
+- :fontawesome-solid-layer-group:{ .lg .middle } __`OpenAIEmbeddings`__
 
     ---
 
@@ -55,7 +55,7 @@ title: OpenAI
 
     [:octicons-arrow-right-24: Reference](./OpenAIEmbeddings.md)
 
-- :material-message-text:{ .lg .middle } __`OpenAIEmbeddings`__
+- :fontawesome-solid-layer-group:{ .lg .middle } __`AzureOpenAIEmbeddings`__
 
     ---
 
