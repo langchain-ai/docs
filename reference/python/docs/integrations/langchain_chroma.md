@@ -8,7 +8,7 @@ title: Chroma
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-chroma)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-chroma)](https://pypistats.org/packages/langchain-chroma)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+!!! warning "Reference docs"
+    This page contains **reference documentation** for Chroma. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/chroma) for conceptual guides, tutorials, and examples on using Chroma modules.
 
 ::: langchain_chroma

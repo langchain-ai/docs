@@ -8,7 +8,10 @@ title: Azure AI
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-azure-ai)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-azure-ai)](https://pypistats.org/packages/langchain-azure-ai)
 
-<!-- ::: langchain_azure_ai.agents
+!!! warning "Reference docs"
+    This page contains **reference documentation** for `Azure AI`. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/microsoft) for conceptual guides, tutorials, and examples on using `Azure AI`.
+
+::: langchain_azure_ai.agents
 ::: langchain_azure_ai.callbacks.tracers
 ::: langchain_azure_ai.chat_message_histories
 ::: langchain_azure_ai.chat_models
@@ -21,4 +24,4 @@ title: Azure AI
         - AzureAIEmbeddingsModel
 ::: langchain_azure_ai.retrievers
 ::: langchain_azure_ai.tools
-::: langchain_azure_ai.vectorstores -->
+::: langchain_azure_ai.vectorstores
