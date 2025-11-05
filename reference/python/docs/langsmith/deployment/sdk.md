@@ -1,10 +1,10 @@
 ---
-title: LangSmith Deployment SDK - LangChain Reference
+title: LangSmith Deployment SDK
 ---
 
-# LangSmith Deployment SDK
+# LangSmith Deployment SDK reference
 
-(FKA LangGraph Platform)
+(Formerly LangGraph Platform)
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langgraph-sdk?label=%20)](https://pypi.org/project/langgraph-sdk/#history)
 [![PyPI - License](https://img.shields.io/pypi/l/langgraph-sdk)](https://opensource.org/licenses/MIT)

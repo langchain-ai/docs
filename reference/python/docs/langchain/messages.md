@@ -1,5 +1,3 @@
-# Messages
-
 ::: langchain.messages
     options:
       summary: true
@@ -33,5 +31,6 @@
         - FileContentBlock
         - NonStandardContentBlock
         - trim_messages
-
-<!-- TODO once exported - UsageMetadata -->
+        - UsageMetadata
+        - InputTokenDetails
+        - OutputTokenDetails

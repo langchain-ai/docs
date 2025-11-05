@@ -1,4 +1,6 @@
-# Agents
+---
+title: Agents (LangGraph)
+---
 
 ::: langgraph.prebuilt.chat_agent_executor
     options:

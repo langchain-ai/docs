@@ -1,5 +1,5 @@
 ---
-title: Integrations Overview - LangChain Reference
+title: Integrations overview
 hide:
   - toc
 ---

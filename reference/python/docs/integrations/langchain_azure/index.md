@@ -1,5 +1,5 @@
 ---
-title: Azure - LangChain Integration Reference
+title: Azure
 ---
 
 # :material-microsoft-azure:{ .lg .middle } Azure integrations

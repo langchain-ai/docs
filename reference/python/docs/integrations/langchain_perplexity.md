@@ -1,5 +1,5 @@
 ---
-title: Perplexity - LangChain Integration Reference
+title: Perplexity
 ---
 
 # :simple-perplexity:{ .lg .middle } `langchain-perplexity`
@@ -8,7 +8,7 @@ title: Perplexity - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-perplexity)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-perplexity)](https://pypistats.org/packages/langchain-perplexity)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+!!! warning "Reference docs"
+    This page contains **reference documentation** for Perplexity. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/perplexity) for conceptual guides, tutorials, and examples on using Perplexity modules.
 
 ::: langchain_perplexity

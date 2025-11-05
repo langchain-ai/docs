@@ -1,4 +1,8 @@
-# Output parsers
+---
+title: Output parsers (Classic)
+---
+
+# Output parsers (Classic)
 
 --8<-- "langchain-classic-warning.md"
 

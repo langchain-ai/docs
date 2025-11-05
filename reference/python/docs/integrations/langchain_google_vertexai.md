@@ -1,5 +1,5 @@
 ---
-title: Google (VertexAI) - LangChain Integration Reference
+title: Google (VertexAI)
 ---
 
 # :simple-googlecloud:{ .lg .middle } `langchain-google-vertexai`
@@ -8,7 +8,7 @@ title: Google (VertexAI) - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-google-vertexai)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-google-vertexai)](https://pypistats.org/packages/langchain-google-vertexai)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+!!! warning "Reference docs"
+    This page contains **reference documentation** for Google VertexAI. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/google) for conceptual guides, tutorials, and examples on using Google VertexAI modules.
 
 ::: langchain_google_vertexai

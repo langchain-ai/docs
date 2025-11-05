@@ -1,4 +1,8 @@
-# Runnables
+---
+title: Runnables (Classic)
+---
+
+# Runnables (Classic)
 
 --8<-- "langchain-classic-warning.md"
 

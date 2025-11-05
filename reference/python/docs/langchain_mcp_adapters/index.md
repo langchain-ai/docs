@@ -1,3 +1,7 @@
+---
+title: MCP Adapters
+---
+
 # :fontawesome-solid-down-left-and-up-right-to-center:{ .lg .middle } `langchain-mcp-adapters`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain-mcp-adapters?label=%20)](https://pypi.org/project/langchain-mcp-adapters/#history)

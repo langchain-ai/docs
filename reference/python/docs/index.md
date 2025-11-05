@@ -1,5 +1,5 @@
 ---
-title: LangChain Python Reference
+title: Home
 ---
 
 Welcome to the [LangChain](https://langchain.com) Python reference documentation!
