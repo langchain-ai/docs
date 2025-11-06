@@ -23,7 +23,7 @@ title: IBM
 
     [:octicons-arrow-right-24: Reference](./ChatWatsonx.md)
 
-- :material-message-text:{ .lg .middle } __`WatsonxLLM`__
+- :fontawesome-solid-i-cursor:{ .lg .middle } __`WatsonxLLM`__
 
     ---
 
@@ -39,7 +39,7 @@ title: IBM
 
     [:octicons-arrow-right-24: Reference](./WatsonxEmbeddings.md)
 
-- :fontawesome-solid-layer-group:{ .lg .middle } __`WatsonxRerank`__
+- :fontawesome-solid-download:{ .lg .middle } __`WatsonxRerank`__
 
     ---
 

@@ -8,7 +8,7 @@ title: DeepSeek
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-deepseek)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-deepseek)](https://pypistats.org/packages/langchain-deepseek)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+!!! warning "Reference docs"
+    This page contains **reference documentation** for DeepSeek. See [the docs](https://docs.langchain.com/oss/python/integrations/chat/deepseek) for conceptual guides, tutorials, and examples on using `ChatDeepSeek`.
 
 ::: langchain_deepseek

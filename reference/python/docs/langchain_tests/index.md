@@ -20,7 +20,7 @@ To learn how to use these, see the [guide on integrating standard tests](https:/
 
     Test components in isolation and without access to external services.
 
-    [:octicons-arrow-right-24: Reference](./unit_tests.md)
+    [:octicons-arrow-right-24: Reference](./unit_tests/index.md)
 
 - :material-lan-connect:{ .lg .middle } __Integration tests__
 
@@ -28,6 +28,6 @@ To learn how to use these, see the [guide on integrating standard tests](https:/
 
     Test components in combination with external services to ensure end-to-end functionality.
 
-    [:octicons-arrow-right-24: Reference](./integration_tests.md)
+    [:octicons-arrow-right-24: Reference](./integration_tests/index.md)
 
 </div>
