@@ -1121,6 +1121,335 @@ await graph.invoke(inputs, {
 
 :::
 
+### Accessing and handling the recursion counter
+
+:::python
+The current step counter is accessible in `config["metadata"]["langgraph_step"]` within any node, allowing for proactive recursion handling before hitting the recursion limit. This enables you to implement graceful degradation strategies within your graph logic.
+:::
+
+:::js
+The current step counter is accessible in `config.metadata.langgraph_step` within any node, allowing for proactive recursion handling before hitting the recursion limit. This enables you to implement graceful degradation strategies within your graph logic.
+:::
+
+#### How it works
+
+:::python
+
+The step counter is stored in `config["metadata"]["langgraph_step"]`. The recursion limit check follows the logic: `step > stop` where `stop = step + recursion_limit + 1`. When the limit is exceeded, LangGraph raises a `GraphRecursionError`.
+
+:::
+
+:::js
+
+The step counter is stored in `config.metadata.langgraph_step`. The recursion limit check follows the logic: `step > stop` where `stop = step + recursionLimit + 1`. When the limit is exceeded, LangGraph raises a `GraphRecursionError`.
+
+:::
+
+#### Accessing the current step counter
+
+You can access the current step counter within any node to monitor execution progress.
+
+:::python
+
+```python
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph
+
+def my_node(state: dict, config: RunnableConfig) -> dict:
+    current_step = config["metadata"]["langgraph_step"]
+    print(f"Currently on step: {current_step}")
+    return state
+```
+
+:::
+
+:::js
+
+```typescript
+import { RunnableConfig } from "@langchain/core/runnables";
+import { StateGraph } from "@langchain/langgraph";
+
+async function myNode(state: any, config: RunnableConfig): Promise<any> {
+  const currentStep = config.metadata?.langgraph_step;
+  console.log(`Currently on step: ${currentStep}`);
+  return state;
+}
+```
+
+:::
+
+#### Proactive recursion handling
+
+You can check the step counter and proactively route to a different node before hitting the limit. This allows for graceful degradation within your graph.
+
+:::python
+
+```python
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph, END
+
+def reasoning_node(state: dict, config: RunnableConfig) -> dict:
+    current_step = config["metadata"]["langgraph_step"]
+    recursion_limit = config["recursion_limit"]  # always present, defaults to 25
+
+    # Check if we're approaching the limit (e.g., 80% threshold)
+    if current_step >= recursion_limit * 0.8:
+        return {
+            **state,
+            "route_to": "fallback",
+            "reason": "Approaching recursion limit"
+        }
+
+    # Normal processing
+    return {"messages": state["messages"] + ["thinking..."]}
+
+def fallback_node(state: dict, config: RunnableConfig) -> dict:
+    """Handle cases where recursion limit is approaching"""
+    return {
+        **state,
+        "messages": state["messages"] + ["Reached complexity limit, providing best effort answer"]
+    }
+
+def route_based_on_state(state: dict) -> str:
+    if state.get("route_to") == "fallback":
+        return "fallback"
+    elif state.get("done"):
+        return END
+    return "reasoning"
+
+# Build graph
+graph = StateGraph(dict)
+graph.add_node("reasoning", reasoning_node)
+graph.add_node("fallback", fallback_node)
+graph.add_conditional_edges("reasoning", route_based_on_state)
+graph.add_edge("fallback", END)
+graph.set_entry_point("reasoning")
+
+app = graph.compile()
+```
+
+:::
+
+:::js
+
+```typescript
+import { RunnableConfig } from "@langchain/core/runnables";
+import { StateGraph, END } from "@langchain/langgraph";
+
+interface State {
+  messages: string[];
+  route_to?: string;
+  reason?: string;
+  done?: boolean;
+}
+
+async function reasoningNode(
+  state: State,
+  config: RunnableConfig
+): Promise<Partial<State>> {
+  const currentStep = config.metadata?.langgraph_step ?? 0;
+  const recursionLimit = config.recursionLimit!; // always present, defaults to 25
+
+  // Check if we're approaching the limit (e.g., 80% threshold)
+  if (currentStep >= recursionLimit * 0.8) {
+    return {
+      ...state,
+      route_to: "fallback",
+      reason: "Approaching recursion limit"
+    };
+  }
+
+  // Normal processing
+  return {
+    messages: [...state.messages, "thinking..."]
+  };
+}
+
+async function fallbackNode(
+  state: State,
+  config: RunnableConfig
+): Promise<Partial<State>> {
+  return {
+    ...state,
+    messages: [
+      ...state.messages,
+      "Reached complexity limit, providing best effort answer"
+    ]
+  };
+}
+
+function routeBasedOnState(state: State): string {
+  if (state.route_to === "fallback") {
+    return "fallback";
+  } else if (state.done) {
+    return END;
+  }
+  return "reasoning";
+}
+
+// Build graph
+const graph = new StateGraph<State>({ channels: {} })
+  .addNode("reasoning", reasoningNode)
+  .addNode("fallback", fallbackNode)
+  .addConditionalEdges("reasoning", routeBasedOnState)
+  .addEdge("fallback", END);
+
+const app = graph.compile();
+```
+
+:::
+
+#### Proactive vs reactive approaches
+
+There are two main approaches to handling recursion limits: proactive (monitoring within the graph) and reactive (catching errors externally).
+
+:::python
+
+```python
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph, END
+from langgraph.errors import GraphRecursionError
+
+# Proactive Approach (recommended)
+def agent_with_monitoring(state: dict, config: RunnableConfig) -> dict:
+    """Proactively monitor and handle recursion within the graph"""
+    current_step = config["metadata"]["langgraph_step"]
+    recursion_limit = config["recursion_limit"]
+
+    # Early detection - route to internal handling
+    if current_step >= recursion_limit - 2:  # 2 steps before limit
+        return {
+            **state,
+            "status": "recursion_limit_approaching",
+            "final_answer": "Reached iteration limit, returning partial result"
+        }
+
+    # Normal processing
+    return {"messages": state["messages"] + [f"Step {current_step}"]}
+
+# Reactive Approach (fallback)
+try:
+    result = graph.invoke(initial_state, {"recursion_limit": 10})
+except GraphRecursionError as e:
+    # Handle externally after graph execution fails
+    result = fallback_handler(initial_state)
+```
+
+:::
+
+:::js
+
+```typescript
+import { RunnableConfig } from "@langchain/core/runnables";
+import { StateGraph, END } from "@langchain/langgraph";
+import { GraphRecursionError } from "@langchain/langgraph";
+
+interface State {
+  messages: string[];
+  status?: string;
+  final_answer?: string;
+}
+
+// Proactive Approach (recommended)
+async function agentWithMonitoring(
+  state: State,
+  config: RunnableConfig
+): Promise<Partial<State>> {
+  const currentStep = config.metadata?.langgraph_step ?? 0;
+  const recursionLimit = config.recursionLimit!;
+
+  // Early detection - route to internal handling
+  if (currentStep >= recursionLimit - 2) { // 2 steps before limit
+    return {
+      ...state,
+      status: "recursion_limit_approaching",
+      final_answer: "Reached iteration limit, returning partial result"
+    };
+  }
+
+  // Normal processing
+  return {
+    messages: [...state.messages, `Step ${currentStep}`]
+  };
+}
+
+// Reactive Approach (fallback)
+try {
+  const result = await graph.invoke(initialState, { recursionLimit: 10 });
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    // Handle externally after graph execution fails
+    const result = await fallbackHandler(initialState);
+  }
+}
+```
+
+:::
+
+The key differences between these approaches are:
+
+| Approach | Detection | Handling | Control Flow |
+|----------|-----------|----------|--------------|
+| Proactive (using `langgraph_step`) | Before limit reached | Inside graph via conditional routing | Graph continues to completion node |
+| Reactive (catching `GraphRecursionError`) | After limit exceeded | Outside graph in try/catch | Graph execution terminated |
+
+**Proactive advantages:**
+
+- Graceful degradation within the graph
+- Can save intermediate state in checkpoints
+- Better user experience with partial results
+- Graph completes normally (no exception)
+
+**Reactive advantages:**
+
+- Simpler implementation
+- No need to modify graph logic
+- Centralized error handling
+
+#### Other available metadata
+
+:::python
+
+Along with `langgraph_step`, the following metadata is also available in `config["metadata"]`:
+
+```python
+def inspect_metadata(state: dict, config: RunnableConfig) -> dict:
+    metadata = config["metadata"]
+
+    print(f"Step: {metadata['langgraph_step']}")
+    print(f"Node: {metadata['langgraph_node']}")
+    print(f"Triggers: {metadata['langgraph_triggers']}")
+    print(f"Path: {metadata['langgraph_path']}")
+    print(f"Checkpoint NS: {metadata['langgraph_checkpoint_ns']}")
+
+    return state
+```
+
+:::
+
+:::js
+
+Along with `langgraph_step`, the following metadata is also available in `config.metadata`:
+
+```typescript
+async function inspectMetadata(
+  state: any,
+  config: RunnableConfig
+): Promise<any> {
+  const metadata = config.metadata;
+
+  console.log(`Step: ${metadata?.langgraph_step}`);
+  console.log(`Node: ${metadata?.langgraph_node}`);
+  console.log(`Triggers: ${metadata?.langgraph_triggers}`);
+  console.log(`Path: ${metadata?.langgraph_path}`);
+  console.log(`Checkpoint NS: ${metadata?.langgraph_checkpoint_ns}`);
+
+  return state;
+}
+```
+
+:::
+
 ## Visualization
 
 It's often nice to be able to visualize graphs, especially as they get more complex. LangGraph comes with several built-in ways to visualize graphs. See [this how-to guide](/oss/langgraph/use-graph-api#visualize-your-graph) for more info.
