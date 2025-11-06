@@ -1,5 +1,3 @@
-# Runnables
-
 ::: langchain_core.runnables.base.Runnable
 ::: langchain_core.runnables.base.RunnableBinding
 ::: langchain_core.runnables.base.RunnableGenerator

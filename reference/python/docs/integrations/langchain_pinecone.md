@@ -1,5 +1,5 @@
 ---
-title: Pinecone - LangChain Integration Reference
+title: Pinecone
 ---
 
 # `langchain-pinecone`

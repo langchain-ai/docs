@@ -1,5 +1,3 @@
-# Checkpointers
-
 ::: langgraph.checkpoint.base
     options:
       members:

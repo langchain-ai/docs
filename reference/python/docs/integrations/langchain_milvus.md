@@ -1,5 +1,5 @@
 ---
-title: Milvus - LangChain Integration Reference
+title: Milvus
 ---
 
 # :simple-milvus:{ .lg .middle } `langchain-milvus`
@@ -8,6 +8,7 @@ title: Milvus - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-milvus)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-milvus)](https://pypistats.org/packages/langchain-milvus)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+!!! warning "Reference docs"
+    This page contains **reference documentation** for Milvus. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/milvus) for conceptual guides, tutorials, and examples on using Milvus modules.
 
+::: langchain_milvus
