@@ -68,9 +68,9 @@ The first thing you do when you define a graph is define the `State` of the grap
 ### Schema
 
 :::python
-The main documented way to specify the schema of a graph is by using a [`TypedDict`](https://docs.python.org/3/library/typing.html#typing.TypedDict). If you want to provide default values in your state, use a [`dataclass`](https://docs.python.org/3/library/dataclasses.html). We also support using a Pydantic [BaseModel](/oss/langgraph/graph-api.md#use-pydantic-models-for-graph-state) as your graph state if you want recursive data validation (though note that pydantic is less performant than a `TypedDict` or `dataclass`).
+The main documented way to specify the schema of a graph is by using a [`TypedDict`](https://docs.python.org/3/library/typing.html#typing.TypedDict). If you want to provide default values in your state, use a [`dataclass`](https://docs.python.org/3/library/dataclasses.html). We also support using a Pydantic [BaseModel](/oss/langgraph/use-graph-api#use-pydantic-models-for-graph-state) as your graph state if you want recursive data validation (though note that pydantic is less performant than a `TypedDict` or `dataclass`).
 
-By default, the graph will have the same input and output schemas. If you want to change this, you can also specify explicit input and output schemas directly. This is useful when you have a lot of keys, and some are explicitly for input and others for output. See the [guide here](/oss/langgraph/graph-api.md#define-input-and-output-schemas) for how to use.
+By default, the graph will have the same input and output schemas. If you want to change this, you can also specify explicit input and output schemas directly. This is useful when you have a lot of keys, and some are explicitly for input and others for output. See the [guide here](/oss/langgraph/use-graph-api#define-input-and-output-schemas) for how to use.
 :::
 
 :::js
@@ -285,6 +285,13 @@ const State = z.object({
 ```
 
 In this example, we've used [Zod 4 registries](https://zod.dev/metadata) to specify a reducer function for the second key (`bar`). Note that the first key remains unchanged. Let's assume the input to the graph is `{ foo: 1, bar: ["hi"] }`. Let's then assume the first `Node` returns `{ foo: 2 }`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{ foo: 2, bar: ["hi"] }`. If the second node returns `{ bar: ["bye"] }` then the `State` would then be `{ foo: 2, bar: ["hi", "bye"] }`. Notice here that the `bar` key is updated by adding the two arrays together.
+:::
+
+:::python
+#### Overwrite
+<Tip>
+In some cases, you may want to bypass a reducer and directly overwrite a state value. LangGraph provides the [`Overwrite`](https://reference.langchain.com/python/langgraph/types/) type for this purpose. [Learn how to use `Overwrite` here](/oss/langgraph/use-graph-api#bypass-reducers-with-overwrite).
+</Tip>
 :::
 
 ### Working with Messages in Graph State
@@ -887,7 +894,7 @@ When returning @[`Command`] in your node functions, you must add return type ann
 
 </Note>
 
-Check out this [how-to guide](/oss/langgraph/graph-api.md#combine-control-flow-and-state-updates-with-command) for an end-to-end example of how to use @[`Command`].
+Check out this [how-to guide](/oss/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command) for an end-to-end example of how to use @[`Command`].
 
 ### When should I use Command instead of conditional edges?
 
@@ -913,7 +920,7 @@ def my_node(state: State) -> Command[Literal["other_subgraph"]]:
 Setting `graph` to `Command.PARENT` will navigate to the closest parent graph.
 
 
-When you send updates from a subgraph node to a parent graph node for a key that's shared by both parent and subgraph [state schemas](#schema), you **must** define a [reducer](#reducers) for the key you're updating in the parent graph state. See this [example](/oss/langgraph/graph-api.md#navigate-to-a-node-in-a-parent-graph).
+When you send updates from a subgraph node to a parent graph node for a key that's shared by both parent and subgraph [state schemas](#schema), you **must** define a [reducer](#reducers) for the key you're updating in the parent graph state. See this [example](/oss/langgraph/use-graph-api#navigate-to-a-node-in-a-parent-graph).
 
 </Note>
 
@@ -971,13 +978,13 @@ When you send updates from a subgraph node to a parent graph node for a key that
 
 This is particularly useful when implementing [multi-agent handoffs](/oss/langchain/multi-agent#handoffs).
 
-Check out [this guide](/oss/langgraph/graph-api.md#navigate-to-a-node-in-a-parent-graph) for detail.
+Check out [this guide](/oss/langgraph/use-graph-api#navigate-to-a-node-in-a-parent-graph) for detail.
 
 ### Using inside tools
 
 A common use case is updating graph state from inside a tool. For example, in a customer support application you might want to look up customer information based on their account number or ID in the beginning of the conversation.
 
-Refer to [this guide](/oss/langgraph/graph-api.md#use-inside-tools) for detail.
+Refer to [this guide](/oss/langgraph/use-graph-api#use-inside-tools) for detail.
 
 ### Human-in-the-loop
 
@@ -1114,6 +1121,335 @@ await graph.invoke(inputs, {
 
 :::
 
+### Accessing and handling the recursion counter
+
+:::python
+The current step counter is accessible in `config["metadata"]["langgraph_step"]` within any node, allowing for proactive recursion handling before hitting the recursion limit. This enables you to implement graceful degradation strategies within your graph logic.
+:::
+
+:::js
+The current step counter is accessible in `config.metadata.langgraph_step` within any node, allowing for proactive recursion handling before hitting the recursion limit. This enables you to implement graceful degradation strategies within your graph logic.
+:::
+
+#### How it works
+
+:::python
+
+The step counter is stored in `config["metadata"]["langgraph_step"]`. The recursion limit check follows the logic: `step > stop` where `stop = step + recursion_limit + 1`. When the limit is exceeded, LangGraph raises a `GraphRecursionError`.
+
+:::
+
+:::js
+
+The step counter is stored in `config.metadata.langgraph_step`. The recursion limit check follows the logic: `step > stop` where `stop = step + recursionLimit + 1`. When the limit is exceeded, LangGraph raises a `GraphRecursionError`.
+
+:::
+
+#### Accessing the current step counter
+
+You can access the current step counter within any node to monitor execution progress.
+
+:::python
+
+```python
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph
+
+def my_node(state: dict, config: RunnableConfig) -> dict:
+    current_step = config["metadata"]["langgraph_step"]
+    print(f"Currently on step: {current_step}")
+    return state
+```
+
+:::
+
+:::js
+
+```typescript
+import { RunnableConfig } from "@langchain/core/runnables";
+import { StateGraph } from "@langchain/langgraph";
+
+async function myNode(state: any, config: RunnableConfig): Promise<any> {
+  const currentStep = config.metadata?.langgraph_step;
+  console.log(`Currently on step: ${currentStep}`);
+  return state;
+}
+```
+
+:::
+
+#### Proactive recursion handling
+
+You can check the step counter and proactively route to a different node before hitting the limit. This allows for graceful degradation within your graph.
+
+:::python
+
+```python
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph, END
+
+def reasoning_node(state: dict, config: RunnableConfig) -> dict:
+    current_step = config["metadata"]["langgraph_step"]
+    recursion_limit = config["recursion_limit"]  # always present, defaults to 25
+
+    # Check if we're approaching the limit (e.g., 80% threshold)
+    if current_step >= recursion_limit * 0.8:
+        return {
+            **state,
+            "route_to": "fallback",
+            "reason": "Approaching recursion limit"
+        }
+
+    # Normal processing
+    return {"messages": state["messages"] + ["thinking..."]}
+
+def fallback_node(state: dict, config: RunnableConfig) -> dict:
+    """Handle cases where recursion limit is approaching"""
+    return {
+        **state,
+        "messages": state["messages"] + ["Reached complexity limit, providing best effort answer"]
+    }
+
+def route_based_on_state(state: dict) -> str:
+    if state.get("route_to") == "fallback":
+        return "fallback"
+    elif state.get("done"):
+        return END
+    return "reasoning"
+
+# Build graph
+graph = StateGraph(dict)
+graph.add_node("reasoning", reasoning_node)
+graph.add_node("fallback", fallback_node)
+graph.add_conditional_edges("reasoning", route_based_on_state)
+graph.add_edge("fallback", END)
+graph.set_entry_point("reasoning")
+
+app = graph.compile()
+```
+
+:::
+
+:::js
+
+```typescript
+import { RunnableConfig } from "@langchain/core/runnables";
+import { StateGraph, END } from "@langchain/langgraph";
+
+interface State {
+  messages: string[];
+  route_to?: string;
+  reason?: string;
+  done?: boolean;
+}
+
+async function reasoningNode(
+  state: State,
+  config: RunnableConfig
+): Promise<Partial<State>> {
+  const currentStep = config.metadata?.langgraph_step ?? 0;
+  const recursionLimit = config.recursionLimit!; // always present, defaults to 25
+
+  // Check if we're approaching the limit (e.g., 80% threshold)
+  if (currentStep >= recursionLimit * 0.8) {
+    return {
+      ...state,
+      route_to: "fallback",
+      reason: "Approaching recursion limit"
+    };
+  }
+
+  // Normal processing
+  return {
+    messages: [...state.messages, "thinking..."]
+  };
+}
+
+async function fallbackNode(
+  state: State,
+  config: RunnableConfig
+): Promise<Partial<State>> {
+  return {
+    ...state,
+    messages: [
+      ...state.messages,
+      "Reached complexity limit, providing best effort answer"
+    ]
+  };
+}
+
+function routeBasedOnState(state: State): string {
+  if (state.route_to === "fallback") {
+    return "fallback";
+  } else if (state.done) {
+    return END;
+  }
+  return "reasoning";
+}
+
+// Build graph
+const graph = new StateGraph<State>({ channels: {} })
+  .addNode("reasoning", reasoningNode)
+  .addNode("fallback", fallbackNode)
+  .addConditionalEdges("reasoning", routeBasedOnState)
+  .addEdge("fallback", END);
+
+const app = graph.compile();
+```
+
+:::
+
+#### Proactive vs reactive approaches
+
+There are two main approaches to handling recursion limits: proactive (monitoring within the graph) and reactive (catching errors externally).
+
+:::python
+
+```python
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph, END
+from langgraph.errors import GraphRecursionError
+
+# Proactive Approach (recommended)
+def agent_with_monitoring(state: dict, config: RunnableConfig) -> dict:
+    """Proactively monitor and handle recursion within the graph"""
+    current_step = config["metadata"]["langgraph_step"]
+    recursion_limit = config["recursion_limit"]
+
+    # Early detection - route to internal handling
+    if current_step >= recursion_limit - 2:  # 2 steps before limit
+        return {
+            **state,
+            "status": "recursion_limit_approaching",
+            "final_answer": "Reached iteration limit, returning partial result"
+        }
+
+    # Normal processing
+    return {"messages": state["messages"] + [f"Step {current_step}"]}
+
+# Reactive Approach (fallback)
+try:
+    result = graph.invoke(initial_state, {"recursion_limit": 10})
+except GraphRecursionError as e:
+    # Handle externally after graph execution fails
+    result = fallback_handler(initial_state)
+```
+
+:::
+
+:::js
+
+```typescript
+import { RunnableConfig } from "@langchain/core/runnables";
+import { StateGraph, END } from "@langchain/langgraph";
+import { GraphRecursionError } from "@langchain/langgraph";
+
+interface State {
+  messages: string[];
+  status?: string;
+  final_answer?: string;
+}
+
+// Proactive Approach (recommended)
+async function agentWithMonitoring(
+  state: State,
+  config: RunnableConfig
+): Promise<Partial<State>> {
+  const currentStep = config.metadata?.langgraph_step ?? 0;
+  const recursionLimit = config.recursionLimit!;
+
+  // Early detection - route to internal handling
+  if (currentStep >= recursionLimit - 2) { // 2 steps before limit
+    return {
+      ...state,
+      status: "recursion_limit_approaching",
+      final_answer: "Reached iteration limit, returning partial result"
+    };
+  }
+
+  // Normal processing
+  return {
+    messages: [...state.messages, `Step ${currentStep}`]
+  };
+}
+
+// Reactive Approach (fallback)
+try {
+  const result = await graph.invoke(initialState, { recursionLimit: 10 });
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    // Handle externally after graph execution fails
+    const result = await fallbackHandler(initialState);
+  }
+}
+```
+
+:::
+
+The key differences between these approaches are:
+
+| Approach | Detection | Handling | Control Flow |
+|----------|-----------|----------|--------------|
+| Proactive (using `langgraph_step`) | Before limit reached | Inside graph via conditional routing | Graph continues to completion node |
+| Reactive (catching `GraphRecursionError`) | After limit exceeded | Outside graph in try/catch | Graph execution terminated |
+
+**Proactive advantages:**
+
+- Graceful degradation within the graph
+- Can save intermediate state in checkpoints
+- Better user experience with partial results
+- Graph completes normally (no exception)
+
+**Reactive advantages:**
+
+- Simpler implementation
+- No need to modify graph logic
+- Centralized error handling
+
+#### Other available metadata
+
+:::python
+
+Along with `langgraph_step`, the following metadata is also available in `config["metadata"]`:
+
+```python
+def inspect_metadata(state: dict, config: RunnableConfig) -> dict:
+    metadata = config["metadata"]
+
+    print(f"Step: {metadata['langgraph_step']}")
+    print(f"Node: {metadata['langgraph_node']}")
+    print(f"Triggers: {metadata['langgraph_triggers']}")
+    print(f"Path: {metadata['langgraph_path']}")
+    print(f"Checkpoint NS: {metadata['langgraph_checkpoint_ns']}")
+
+    return state
+```
+
+:::
+
+:::js
+
+Along with `langgraph_step`, the following metadata is also available in `config.metadata`:
+
+```typescript
+async function inspectMetadata(
+  state: any,
+  config: RunnableConfig
+): Promise<any> {
+  const metadata = config.metadata;
+
+  console.log(`Step: ${metadata?.langgraph_step}`);
+  console.log(`Node: ${metadata?.langgraph_node}`);
+  console.log(`Triggers: ${metadata?.langgraph_triggers}`);
+  console.log(`Path: ${metadata?.langgraph_path}`);
+  console.log(`Checkpoint NS: ${metadata?.langgraph_checkpoint_ns}`);
+
+  return state;
+}
+```
+
+:::
+
 ## Visualization
 
-It's often nice to be able to visualize graphs, especially as they get more complex. LangGraph comes with several built-in ways to visualize graphs. See [this how-to guide](/oss/langgraph/graph-api.md#visualize-your-graph) for more info.
+It's often nice to be able to visualize graphs, especially as they get more complex. LangGraph comes with several built-in ways to visualize graphs. See [this how-to guide](/oss/langgraph/use-graph-api#visualize-your-graph) for more info.
