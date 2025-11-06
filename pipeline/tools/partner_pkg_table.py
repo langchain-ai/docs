@@ -26,6 +26,7 @@ IGNORE_PKG = {
     "langchain-community",
     "langchain-experimental",
     "langchain-mcp-adapters",
+    "langchain-model-profiles",
 }
 
 # Minimum downloads threshold for inclusion (bypassed for highlighted packages)
@@ -161,7 +162,7 @@ def package_row(p: dict) -> str:
         f"| {provider} "
         f"| [`{p['name']}`]({p['package_url']}) "
         f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://static.pepy.tech/badge/{p["name"]}/month" alt="Downloads per month" noZoom class="rounded not-prose" /></a> '  # noqa: E501
-        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
+        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
         f"| {js} |"
     )
 
@@ -202,8 +203,10 @@ To see a full list of integrations by component type, refer to the categories in
 
 [See all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
 
+Community integrations can be found in [`langchain-community`](https://github.com/langchain-ai/langchain-community).
+
 <Info>
-    If you'd like to contribute an integration, see [our contributing guide](/oss/contributing).
+    If you'd like to contribute an integration, see the [contributing guide](/oss/contributing).
 </Info>
 
 """  # noqa: E501

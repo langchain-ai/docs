@@ -124,7 +124,9 @@ LINK_MAPS: list[LinkMap] = [
             "SystemMessage": "langchain/messages/#langchain.messages.SystemMessage",
             "HumanMessage": "langchain/messages/#langchain.messages.HumanMessage",
             "trim_messages": "langchain/messages/#langchain.messages.trim_messages",
-            "UsageMetadata": "langchain/messages/#langchain.messages.AIMessage.usage_metadata",
+            "UsageMetadata": "langchain/messages/#langchain.messages.UsageMetadata",
+            "InputTokenDetails": "langchain/messages/#langchain.messages.InputTokenDetails",
+            "MessageLikeRepresentation": "langchain/messages/#langchain.messages.MessageLikeRepresentation",
             # Content blocks
             "BaseMessage": "langchain_core/language_models/#langchain_core.messages.BaseMessage",
             "BaseMessage(content)": "langchain_core/language_models/#langchain_core.messages.BaseMessage.content",
@@ -250,7 +252,7 @@ LINK_MAPS: list[LinkMap] = [
         "host": "https://reference.langchain.com/javascript/",
         "scope": "js",
         "links": {
-            "Runtime": "interfaces/_langchain_langgraph.index.Runtime.html",
+            "Runtime": "modules/langgraph.index.Runtime.html",
             "tool": "functions/_langchain_core.tools.tool.html",
             "ToolNode": "classes/langchain.index.ToolNode.html",
             "UsageMetadata": "types/_langchain_core.messages.UsageMetadata.html",

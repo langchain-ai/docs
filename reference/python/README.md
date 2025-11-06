@@ -42,25 +42,16 @@ handlers:
 
 This site is currently being migrated from a previous Sphinx-based implementation, so there are still some rough edges to be smoothed out. Here are some known issues and potential improvements:
 
-- [ ] For methods that are from base classes, indicate it is inherited from such and link to the base class
-- [ ] Exclude `langchain-classic` pages from search results?
 - [ ] [Backlinks](https://mkdocstrings.github.io/python/usage/configuration/general/#backlinks)
 - [ ] [More xref](https://github.com/analog-garage/mkdocstrings-python-xref)
 - [ ] [Modernize annotations](https://mkdocstrings.github.io/python/usage/configuration/signatures/#modernize_annotations)
-- [ ] [Inheritance diagrams](https://mkdocstrings.github.io/python/usage/configuration/general/#show_inheritance_diagram)
+  - [ ] ???
 - [ ] Consider using [inherited docstrings](https://mkdocstrings.github.io/griffe/extensions/official/inherited-docstrings/)
 - [ ] Fix TOC shadow overflow (started in `reference/python/docs/stylesheets/toc.css`) but was funky
-- [ ] Post-processing step to link out to imports from code blocks
-  - [ ] Maybe there's a plugin?
 - [ ] Fix `navigation.path` feature/plugin in `mkdocs.yml` not working
-- [ ] Set up CI to fail on unexpected Griffe warnings
+  - [ ] ???
 - [ ] "Module last updated" auto-generation for module pages using source file commit timestamps or the MkDocs plugin [git-revision-date-localized](https://github.com/timvink/mkdocs-git-revision-date-localized-plugin)
 - [ ] Fix search magnifying glass icon color in dark mode
-- [ ] Copy page support (need to add a post-processing step to generate markdown files to serve alongside the API reference docs)
-- [ ] Language switcher (JS/TS)
-- [ ] [Social cards](https://squidfunk.github.io/mkdocs-material/setup/setting-up-social-cards/)
-- [ ] [Google Analytics](https://mrkeo.github.io/setup/setting-up-site-analytics)
-- [ ] [Versioning?](https://mrkeo.github.io/setup/setting-up-versioning)
 - [ ] [Show keyboard shortcut in search window](https://github.com/squidfunk/mkdocs-material/issues/2574#issuecomment-821979698) - also add cmd + k to match Mintlify
 
 ---

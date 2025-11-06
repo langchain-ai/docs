@@ -3,51 +3,70 @@ title: Long-term memory
 description: Learn how to extend deep agents with persistent memory across threads
 ---
 
-Deep agents come with a local filesystem to offload memory. This filesystem is stored in state and is therefore **transient to a single thread**—files are lost when the conversation ends.
+Deep agents come with a local filesystem to offload memory. By default, this filesystem is stored in agent state and is **transient to a single thread**—files are lost when the conversation ends.
 
-You can extend deep agents with **long-term memory** by providing a LangGraph `Store` and setting `use_longterm_memory=True`. This enables persistent storage that survives across threads and conversations.
+You can extend deep agents with **long-term memory** by using a **CompositeBackend** that routes specific paths to persistent storage. This enables hybrid storage where some files persist across threads while others remain ephemeral.
 
 ## Setup
+
+Configure long-term memory by using a `CompositeBackend` that routes the `/memories/` path to a `StoreBackend`:
 
 :::python
 ```python
 from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langgraph.store.memory import InMemoryStore
 
-store = InMemoryStore()  # Or any other Store object
+def make_backend(runtime):
+    return CompositeBackend(
+        default=StateBackend(runtime),  # Ephemeral storage
+        routes={
+            "/memories/": StoreBackend(runtime)  # Persistent storage
+        }
+    )
+
 agent = create_deep_agent(
-    store=store,
-    use_longterm_memory=True
+    store=InMemoryStore(),  # Required for StoreBackend
+    backend=make_backend
 )
 ```
 :::
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { createDeepAgent } from "deepagents";
+import { CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph-checkpoint";
+
+const agent = createDeepAgent({
+  store: new InMemoryStore(),  // Required for StoreBackend
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),  // Ephemeral storage
+    { "/memories/": new StoreBackend(config) }  // Persistent storage
+  ),
+});
 ```
 :::
 
 ## How it works
 
-When long-term memory is enabled, deep agents maintain **two separate filesystems**:
+When using `CompositeBackend`, deep agents maintain **two separate filesystems**:
 
 ### 1. Short-term (transient) filesystem
-- Stored in the agent's state
+- Stored in the agent's state (via `StateBackend`)
 - Persists only within a single thread
 - Files are lost when the thread ends
-- Accessed through standard paths: `/notes.txt`
+- Accessed through standard paths: `/notes.txt`, `/workspace/draft.md`
 
 ### 2. Long-term (persistent) filesystem
-- Stored in a LangGraph Store
+- Stored in a LangGraph Store (via `StoreBackend`)
 - Persists across all threads and conversations
-- Files survive indefinitely
-- Accessed through the special prefix: `/memories/notes.txt`
+- Survives agent restarts
+- Accessed through paths prefixed with `/memories/`: `/memories/preferences.txt`
 
-## The /memories/ path convention
+### Path routing
 
-**The key to long-term memory is the `/memories/` path prefix:**
-
+The `CompositeBackend` routes file operations based on path prefixes:
 - Files with paths starting with `/memories/` are stored in the Store (persistent)
 - Files without this prefix remain in transient state
 - All filesystem tools (`ls`, `read_file`, `write_file`, `edit_file`) work with both
@@ -68,7 +87,15 @@ agent.invoke({
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+// Transient file (lost after thread ends)
+await agent.invoke({
+  messages: [{ role: "user", content: "Write draft to /draft.txt" }],
+});
+
+// Persistent file (survives across threads)
+await agent.invoke({
+  messages: [{ role: "user", content: "Save final report to /memories/report.txt" }],
+});
 ```
 :::
 
@@ -97,7 +124,20 @@ agent.invoke({
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { v4 as uuidv4 } from "uuid";
+
+// Thread 1: Write to long-term memory
+const config1 = { configurable: { thread_id: uuidv4() } };
+await agent.invoke({
+  messages: [{ role: "user", content: "Save my preferences to /memories/preferences.txt" }],
+}, config1);
+
+// Thread 2: Read from long-term memory (different conversation!)
+const config2 = { configurable: { thread_id: uuidv4() } };
+await agent.invoke({
+  messages: [{ role: "user", content: "What are my preferences?" }],
+}, config2);
+// Agent can read /memories/preferences.txt from the first thread
 ```
 :::
 
@@ -110,8 +150,11 @@ Store user preferences that persist across sessions:
 :::python
 ```python
 agent = create_deep_agent(
-    store=store,
-    use_longterm_memory=True,
+    store=InMemoryStore(),
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={"/memories/": StoreBackend(rt)}
+    ),
     system_prompt="""When users tell you their preferences, save them to
     /memories/user_preferences.txt so you remember them in future conversations."""
 )
@@ -120,7 +163,14 @@ agent = create_deep_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+const agent = createDeepAgent({
+  store: new InMemoryStore(),
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    { "/memories/": new StoreBackend(config) }
+  ),
+  systemPrompt: `When users tell you their preferences, save them to /memories/user_preferences.txt so you remember them in future conversations.`,
+});
 ```
 :::
 
@@ -131,8 +181,11 @@ An agent can update its own instructions based on feedback:
 :::python
 ```python
 agent = create_deep_agent(
-    store=store,
-    use_longterm_memory=True,
+    store=InMemoryStore(),
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={"/memories/": StoreBackend(rt)}
+    ),
     system_prompt="""You have a file at /memories/instructions.txt with additional
     instructions and preferences.
 
@@ -146,7 +199,18 @@ agent = create_deep_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+const agent = createDeepAgent({
+  store: new InMemoryStore(),
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    { "/memories/": new StoreBackend(config) }
+  ),
+  systemPrompt: `You have a file at /memories/instructions.txt with additional instructions and preferences.
+
+  Read this file at the start of conversations to understand user preferences.
+
+  When users provide feedback like "please always do X" or "I prefer Y", update /memories/instructions.txt using the edit_file tool.`,
+});
 ```
 :::
 
@@ -173,7 +237,16 @@ agent.invoke({
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+// Conversation 1: Learn about a project
+await agent.invoke({
+  messages: [{ role: "user", content: "We're building a web app with React. Save project notes." }],
+});
+
+// Conversation 2: Use that knowledge
+await agent.invoke({
+  messages: [{ role: "user", content: "What framework are we using?" }],
+});
+// Agent reads /memories/project_notes.txt from previous conversation
 ```
 :::
 
@@ -184,8 +257,11 @@ Maintain research state across sessions:
 :::python
 ```python
 research_agent = create_deep_agent(
-    store=store,
-    use_longterm_memory=True,
+    store=InMemoryStore(),
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={"/memories/": StoreBackend(rt)}
+    ),
     system_prompt="""You are a research assistant.
 
     Save your research progress to /memories/research/:
@@ -200,7 +276,21 @@ research_agent = create_deep_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+const researchAgent = createDeepAgent({
+  store: new InMemoryStore(),
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    { "/memories/": new StoreBackend(config) }
+  ),
+  systemPrompt: `You are a research assistant.
+
+  Save your research progress to /memories/research/:
+  - /memories/research/sources.txt - List of sources found
+  - /memories/research/notes.txt - Key findings and notes
+  - /memories/research/report.md - Final report draft
+
+  This allows research to continue across multiple sessions.`,
+});
 ```
 :::
 
@@ -217,13 +307,29 @@ Good for testing and development, but data is lost on restart:
 from langgraph.store.memory import InMemoryStore
 
 store = InMemoryStore()
-agent = create_deep_agent(store=store, use_longterm_memory=True)
+agent = create_deep_agent(
+    store=store,
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={"/memories/": StoreBackend(rt)}
+    )
+)
 ```
 :::
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { InMemoryStore } from "@langchain/langgraph-checkpoint";
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const store = new InMemoryStore();
+const agent = createDeepAgent({
+  store,
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    { "/memories/": new StoreBackend(config) }
+  ),
+});
 ```
 :::
 
@@ -237,13 +343,31 @@ from langgraph.store.postgres import PostgresStore
 import os
 
 store = PostgresStore(connection_string=os.environ["DATABASE_URL"])
-agent = create_deep_agent(store=store, use_longterm_memory=True)
+agent = create_deep_agent(
+    store=store,
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={"/memories/": StoreBackend(rt)}
+    )
+)
 ```
 :::
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres";
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const store = new PostgresStore({
+  connectionString: process.env.DATABASE_URL,
+});
+const agent = createDeepAgent({
+  store,
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    { "/memories/": new StoreBackend(config) }
+  ),
+});
 ```
 :::
 
@@ -251,125 +375,32 @@ agent = create_deep_agent(store=store, use_longterm_memory=True)
 
 ### Use descriptive paths
 
-Organize long-term files with clear, hierarchical paths:
+Organize persistent files with clear paths:
 
-:::python
-```python
-# ✅ Good: Organized and descriptive
-/memories/user_preferences/language.txt
-/memories/projects/project_alpha/status.txt
-/memories/research/quantum_computing/sources.txt
-
-# ❌ Bad: Generic and unorganized
-/memories/temp.txt
-/memories/data.txt
-/memories/file1.txt
 ```
-:::
-
-### Document what gets persisted
-
-In system prompts, clarify when to use long-term vs short-term storage:
-
-:::python
-```python
-system_prompt="""You have access to two types of storage:
-
-SHORT-TERM (paths without /memories/):
-- Current conversation notes
-- Temporary scratch work
-- Draft documents
-
-LONG-TERM (paths starting with /memories/):
-- User preferences and settings
-- Completed reports and documents
-- Knowledge that should persist across conversations
-- Project state and progress
-
-Always use /memories/ for information that should survive beyond this conversation."""
+/memories/user_preferences.txt
+/memories/research/topic_a/sources.txt
+/memories/research/topic_a/notes.txt
+/memories/project/requirements.md
 ```
-:::
 
-### Isolate storage by assistant ID
+### Document the memory structure
 
-For multi-tenant applications, provide an `assistant_id` to isolate storage:
+Tell the agent what's stored where in your system prompt:
 
-:::python
-```python
-config = {
-    "configurable": {
-        "thread_id": "thread-123",
-    },
-    "metadata": {
-        "assistant_id": "user-456"  # Namespace isolation
-    }
-}
-
-agent.invoke({"messages": [...]}, config=config)
 ```
-:::
-
-Each assistant gets its own namespace in the Store, preventing cross-contamination.
-
-### Use persistent stores in production
-
-:::python
-```python
-# ❌ Development only - data lost on restart
-store = InMemoryStore()
-
-# ✅ Production - data persists
-from langgraph.store.postgres import PostgresStore
-store = PostgresStore(connection_string=os.environ["DATABASE_URL"])
+Your persistent memory structure:
+- /memories/preferences.txt: User preferences and settings
+- /memories/context/: Long-term context about the user
+- /memories/knowledge/: Facts and information learned over time
 ```
-:::
 
-## Listing files
+### Prune old data
 
-The `ls` tool shows files from both filesystems:
+Implement periodic cleanup of outdated persistent files to keep storage manageable.
 
-:::python
-```python
-agent.invoke({
-    "messages": [{"role": "user", "content": "List all files"}]
-})
+### Choose the right storage
 
-# Example output:
-# Transient files:
-# - /draft.txt
-# - /temp_notes.txt
-#
-# Long-term files:
-# - /memories/user_preferences.txt
-# - /memories/project_status.txt
-```
-:::
-
-Files from the Store are prefixed with `/memories/` in listings.
-
-## Limitations
-
-### Store is required
-
-You must provide a Store when enabling long-term memory:
-
-:::python
-```python
-# ❌ This will error
-agent = create_deep_agent(use_longterm_memory=True)  # Missing store!
-
-# ✅ Correct
-agent = create_deep_agent(
-    use_longterm_memory=True,
-    store=InMemoryStore()
-)
-```
-:::
-
-### Agents must use correct paths
-
-The agent must learn to use the `/memories/` prefix for persistence. The system prompt teaches this, but the agent must follow the instructions.
-
-### No automatic cleanup
-
-Long-term files persist indefinitely. There's no built-in TTL or automatic cleanup. You'll need to implement cleanup strategies if needed.
+- **Development**: Use `InMemoryStore` for quick iteration
+- **Production**: Use `PostgresStore` or other persistent stores
+- **Multi-tenant**: Consider using assistant_id-based namespacing in your store
