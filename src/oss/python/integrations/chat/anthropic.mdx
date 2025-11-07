@@ -2,7 +2,7 @@
 title: ChatAnthropic
 ---
 
-This guide provides a quick overview for getting started with Anthropic (Claude) [chat models](/oss/langchain/models).
+This guide provides a quick overview for getting started with Claude [chat models](/oss/langchain/models).
 
 You can find information about Anthropic's latest models, their costs, context windows, and supported input types in the [Claude](https://docs.claude.com/en/docs/about-claude/models/overview) docs.
 
@@ -49,7 +49,7 @@ To access Anthropic (Claude) models you'll need to install the `langchain-anthro
 
 ### Credentials
 
-Head to [console.anthropic.com/](https://console.anthropic.com/) to sign up for Anthropic and generate an API key. Once you've done this set the `ANTHROPIC_API_KEY` environment variable:
+Head to [console.anthropic.com/](https://console.anthropic.com) to sign up for Anthropic and generate an API key. Once you've done this set the `ANTHROPIC_API_KEY` environment variable:
 
 ```python
 import getpass
@@ -145,28 +145,14 @@ response.content
   'type': 'tool_use'}]
 ```
 
-Using `content_blocks` will render the content in a standard format that is
-consistent across providers:
+Using `content_blocks` will render the content in a standard format that is consistent across other model providers:
 
 ```python
 response.content_blocks
 ```
 
-```output
-[{'type': 'text',
-  'text': "I'll help you compare the temperatures of Los Angeles and New York by checking their current weather. I'll retrieve the weather for both cities."},
- {'type': 'tool_call',
-  'name': 'get_weather',
-  'args': {'location': 'Los Angeles, CA'},
-  'id': 'toolu_01CkMaXrgmsNjTso7so94RJq'},
- {'type': 'tool_call',
-  'name': 'get_weather',
-  'args': {'location': 'New York, NY'},
-  'id': 'toolu_01SKaTBk9wHjsBTw5mrPVSQf'}]
-```
-
 You can also access tool calls specifically in a standard format using the
-`.tool_calls` attribute:
+`tool_calls` attribute:
 
 ```python
 ai_msg.tool_calls
@@ -187,16 +173,16 @@ Claude supports image and PDF inputs as content blocks, both in Anthropic's nati
 
 ### Files API
 
-Claude also supports interactions with files through its managed [Files API](https://docs.claude.com/en/docs/build-with-claude/files). See examples below.
+In addition to base64 data, Claude supports interactions with files through its managed [Files API](https://docs.claude.com/en/docs/build-with-claude/files).
 
-The Files API can also be used to upload files to a container for use with Claude's built-in code-execution tools. See the [code execution](#code-execution) section below, for details.
+The Files API can be used to upload files to a container for use with Claude's built-in code-execution tools. See the [code execution](#code-execution) section below, for details.
 
-<Accordion title="Images">
+<Accordion title="Upload images">
 
 ```python
-# Upload image
-
 import anthropic
+from langchain_anthropic import ChatAnthropic
+
 
 client = anthropic.Anthropic()
 file = client.beta.files.upload(
@@ -207,8 +193,6 @@ image_file_id = file.id
 
 
 # Run inference
-from langchain_anthropic import ChatAnthropic
-
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
     betas=["files-api-2025-04-14"],
@@ -232,12 +216,12 @@ model.invoke([input_message])
 
 </Accordion>
 
-<Accordion title="PDFs">
+<Accordion title="Upload PDFs">
 
 ```python
-# Upload document
-
 import anthropic
+from langchain_anthropic import ChatAnthropic
+
 
 client = anthropic.Anthropic()
 file = client.beta.files.upload(
@@ -247,8 +231,6 @@ pdf_file_id = file.id
 
 
 # Run inference
-from langchain_anthropic import ChatAnthropic
-
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
     betas=["files-api-2025-04-14"],
@@ -270,15 +252,16 @@ model.invoke([input_message])
 
 Some Claude models support an [extended thinking](https://docs.claude.com/en/docs/build-with-claude/extended-thinking) feature, which will output the step-by-step reasoning process that led to its final answer.
 
-See applicable models in the Anthropic guide [here](https://docs.claude.com/en/docs/build-with-claude/extended-thinking).
+See compatible models in the [Claude documentation](https://docs.claude.com/en/docs/build-with-claude/extended-thinking#supported-models).
 
-To use extended thinking, specify the `thinking` parameter when initializing @[`ChatAnthropic`]. It can also be passed in as a `kwarg` during invocation.
+To use extended thinking, specify the `thinking` parameter when initializing @[`ChatAnthropic`]. If needed, it can also be passed in as a parameter during invocation.
 
 You will need to specify a token budget to use this feature. See usage example below:
 
-```python
-import json
+<CodeGroup>
 
+```python Init param
+import json
 from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
@@ -291,6 +274,22 @@ response = model.invoke("What is the cube root of 50.653?")
 print(json.dumps(response.content_blocks, indent=2))
 ```
 
+```python Invocation param
+import json
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+response = model.invoke(
+    "What is the cube root of 50.653?",
+    max_tokens=5000,
+    thinking={"type": "enabled", "budget_tokens": 2000}
+)
+print(json.dumps(response.content_blocks, indent=2))
+```
+
+</CodeGroup>
+
 ```output
 [
   {
@@ -299,8 +298,8 @@ print(json.dumps(response.content_blocks, indent=2))
     "extras": {"signature": "ErUBCkYIBxgCIkB0UjV..."}
   },
   {
-    "text": "The cube root of 50.653 is approximately 3.6998.\n\nTo verify: 3.6998\u00b3 = 50.6530, which is very close to our original number.",
     "type": "text"
+    "text": "The cube root of 50.653 is approximately 3.6998.\n\nTo verify: 3.6998\u00b3 = 50.6530, which is very close to our original number.",
   }
 ]
 ```
@@ -313,9 +312,10 @@ To enable caching on an element of a prompt, mark its associated content block u
 
 ### Messages
 
-```python
+```python expandable
 import requests
 from langchain_anthropic import ChatAnthropic
+
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
@@ -367,7 +367,7 @@ Second:
 <Tip>
 **Extended caching**
 
-    The cache lifetime is 5 minutes by default. If this is too short, you can apply one hour caching by enabling the `"extended-cache-ttl-2025-04-11"` beta header:
+    The cache lifetime is 5 minutes by default. If this is too short, you can apply one hour caching by enabling the `"extended-cache-ttl-2025-04-11"` beta header and specifying `"cache_control": {"type": "ephemeral", "ttl": "1h"}`:
 
     ```python
     model = ChatAnthropic(
@@ -375,7 +375,6 @@ Second:
         betas=["extended-cache-ttl-2025-04-11"],  # [!code highlight]
     )
     ```
-    and specifying `"cache_control": {"type": "ephemeral", "ttl": "1h"}`.
 
     Details of cached token counts will be included on the @[`InputTokenDetails`] of response's @[`usage_metadata`][UsageMetadata]:
 
@@ -383,7 +382,7 @@ Second:
     response = model.invoke(messages)
     response.usage_metadata
     ```
-    ```
+    ```json
     {
         "input_tokens": 1500,
         "output_tokens": 200,
@@ -405,10 +404,12 @@ Second:
 from langchain_anthropic import convert_to_anthropic_tool
 from langchain.tools import tool
 
+
 # For demonstration purposes, we artificially expand the
 # tool description.
 description = (
-    f"Get the weather at a location. By the way, check out this readme: {readme}"
+    "Get the weather at a location. "
+    f"By the way, check out this readme: {readme}"
 )
 
 
@@ -449,14 +450,15 @@ Prompt caching can be used in [multi-turn conversations](https://docs.claude.com
 
 We can enable incremental caching by marking the final message with `cache_control`. Claude will automatically use the longest previously-cached prefix for follow-up messages.
 
-Below, we implement a simple chatbot that incorporates this feature. We follow the LangChain [chatbot tutorial](/oss/langchain/quickstart), but add a custom [reducer](/oss/langgraph/graph-api#reducers) that automatically marks the last content block in each user message with `cache_control`. See below:
+Below, we implement a simple chatbot that incorporates this feature. We follow the LangChain [chatbot tutorial](/oss/langchain/quickstart), but add a custom [reducer](/oss/langgraph/graph-api#reducers) that automatically marks the last content block in each user message with `cache_control`:
 
-```python
+```python expandable
 import requests
 from langchain_anthropic import ChatAnthropic
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, StateGraph, add_messages
 from typing_extensions import Annotated, TypedDict
+
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
@@ -609,7 +611,7 @@ Total tokens: 408
 
 ## Citations
 
-Anthropic supports a [citations](https://docs.claude.com/en/docs/build-with-claude/citations) feature that lets Claude attach context to its answers based on source documents supplied by the user. When [document](https://docs.claude.com/en/docs/build-with-claude/citations#document-types) or `search result` content blocks with `"citations": {"enabled": True}` are included in a query, Claude may generate citations in its response.
+Anthropic supports a [citations](https://docs.claude.com/en/docs/build-with-claude/citations) feature that lets Claude attach context to its answers based on source documents supplied by the user. When [document](https://docs.claude.com/en/docs/build-with-claude/citations#document-types) or `search_result` content blocks with `"citations": {"enabled": True}` are included in a query, Claude may generate citations in its response.
 
 ### Simple example
 
@@ -666,10 +668,6 @@ response.content
 ```
 
 ### In tool results (agentic RAG)
-
-<Info>
-    **Requires `langchain-anthropic>=0.3.17`**
-</Info>
 
 Claude supports a [search_result](https://docs.claude.com/en/docs/build-with-claude/search-results) content block representing citable results from queries against a knowledge base or other custom source. These content blocks can be passed to claude both top-line (as in the above example) and within a tool result. This allows Claude to cite elements of its response using the result of a tool call.
 
@@ -806,9 +804,9 @@ async for step in agent.astream(
 
 ### Using with text splitters
 
-Anthropic also lets you specify your own splits using [custom document](https://docs.claude.com/en/docs/build-with-claude/citations#custom-content-documents) types. LangChain [text splitters](/oss/integrations/splitters/) can be used to generate meaningful splits for this purpose. See the below example, where we split the LangChain README (a markdown document) and pass it to Claude as context:
+Anthropic also lets you specify your own splits using [custom document](https://docs.claude.com/en/docs/build-with-claude/citations#custom-content-documents) types. LangChain [text splitters](/oss/integrations/splitters/) can be used to generate meaningful splits for this purpose. See the below example, where we split the LangChain `README.md` (a markdown document) and pass it to Claude as context:
 
-```python
+```python expandable
 import requests
 from langchain_anthropic import ChatAnthropic
 from langchain_text_splitters import MarkdownTextSplitter
@@ -856,7 +854,7 @@ response = model.invoke([message])
 
 Anthropic supports a context editing feature that will automatically manage the model's context window (e.g., by clearing tool results).
 
-See [Anthropic documentation](https://docs.claude.com/en/docs/build-with-claude/context-editing) for details and configuration options.
+See the [Claude documentation](https://docs.claude.com/en/docs/build-with-claude/context-editing) for details and configuration options.
 
 <Info>
     **Context management is supported since `langchain-anthropic>=0.3.21`**
@@ -864,6 +862,7 @@ See [Anthropic documentation](https://docs.claude.com/en/docs/build-with-claude/
 
 ```python
 from langchain_anthropic import ChatAnthropic
+
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
@@ -876,7 +875,7 @@ response = model_with_tools.invoke("Search for recent developments in AI")
 
 ## Built-in tools
 
-Anthropic supports a variety of [built-in tools](https://docs.claude.com/en/docs/agents-and-tools/tool-use/text-editor-tool), which can be bound to the model in the [usual way](/oss/langchain/tools/). Claude will generate tool calls adhering to its internal schema for the tool:
+Anthropic supports a variety of [built-in tools](https://docs.claude.com/en/docs/agents-and-tools/tool-use/text-editor-tool), which can be bound to the model in the [usual way](/oss/langchain/tools/). Claude will generate tool calls adhering to its internal schema for the tool.
 
 ### Web search
 
@@ -901,9 +900,9 @@ response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?
 
 Claude can use a [web fetching tool](https://docs.claude.com/en/docs/agents-and-tools/tool-use/web-fetch-tool) to run searches and ground its responses with citations.
 
+```python
 from langchain_anthropic import ChatAnthropic
 
-```python
 model = ChatAnthropic(
     model="claude-haiku-4-5-20251001",
     betas=["web-fetch-2025-09-10"],  # Enable web fetch beta
@@ -929,6 +928,10 @@ Claude can use a [code execution tool](https://docs.claude.com/en/docs/agents-an
     **Code execution is supported since `langchain-anthropic>=0.3.14`**
 </Info>
 
+<Note>
+    The code sandbox does not have internet access, thus you may only use packages that are pre-installed in the environment. See the [Claude docs](https://docs.claude.com/en/docs/agents-and-tools/tool-use/code-execution-tool#networking-and-security) for more info.
+</Note>
+
 ```python
 from langchain_anthropic import ChatAnthropic
 
@@ -950,9 +953,9 @@ response = model_with_tools.invoke(
 Using the Files API, Claude can write code to access files for data analysis and other purposes. See example below:
 
 ```python
-# Upload file
-
 import anthropic
+from langchain_anthropic import ChatAnthropic
+
 
 client = anthropic.Anthropic()
 file = client.beta.files.upload(
@@ -962,8 +965,6 @@ file_id = file.id
 
 
 # Run inference
-from langchain_anthropic import ChatAnthropic
-
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
     betas=["code-execution-2025-05-22"],
@@ -1093,6 +1094,8 @@ I'd be happy to help you fix the syntax error in your primes.py file. First, let
   'id': 'toolu_01VdNgt1YV7kGfj9LFLm6HyQ',
   'type': 'tool_call'}]
 ```
+
+---
 
 ## API reference
 

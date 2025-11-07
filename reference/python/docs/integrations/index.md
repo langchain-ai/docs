@@ -37,7 +37,7 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
     Access Google Gemini models via the Google Gen AI SDK.
 
-    [:octicons-arrow-right-24: Reference](./langchain_google_genai.md)
+    [:octicons-arrow-right-24: Reference](./langchain_google_genai/index.md)
 
 - :simple-googlecloud:{ .lg .middle } __`langchain-google-vertexai`__
 
@@ -45,7 +45,7 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
     Use Google's Vertex AI model platform.
 
-    [:octicons-arrow-right-24: Reference](./langchain_google_vertexai.md)
+    [:octicons-arrow-right-24: Reference](./langchain_google_vertexai/index.md)
 
 - :material-aws:{ .lg .middle } __`langchain-aws`__
 
