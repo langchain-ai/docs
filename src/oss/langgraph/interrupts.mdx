@@ -542,16 +542,20 @@ This approach is useful when you want the approval logic to live with the tool i
     ```python
     import sqlite3
     from typing import TypedDict
-
+    
     from langchain.tools import tool
-    from langchain_anthropic import ChatAnthropic
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import ToolMessage, BaseMessage
     from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.checkpoint.memory import MemorySaver
     from langgraph.graph import StateGraph, START, END
     from langgraph.types import Command, interrupt
-
+    from langgraph.prebuilt import tools_condition, ToolNode
+    from langgraph.graph.message import add_messages
+    from typing import Annotated, Sequence
 
     class AgentState(TypedDict):
-        messages: list[dict]
+        messages: Annotated[Sequence[BaseMessage], add_messages]
 
 
     @tool
@@ -587,14 +591,30 @@ This approach is useful when you want the approval logic to live with the tool i
         result = model.invoke(state["messages"])
         return {"messages": state["messages"] + [result]}
 
+    def router(state: AgentState):
+        if tools_condition(state) == "__end__":
+            return "__end__"
+        return "tool_execution"
+
+    tool_execution= ToolNode(tools=[send_email])
 
     builder = StateGraph(AgentState)
     builder.add_node("agent", agent_node)
+    builder.add_node("tool_execution", tool_execution)
     builder.add_edge(START, "agent")
-    builder.add_edge("agent", END)
+    builder.add_conditional_edges(
+        "agent",
+        router,
+        {
+            "__end__": END,
+            "tool_execution": "tool_execution"
+        }
+    )
+    builder.add_edge("tool_execution", "agent")
+    
+    checkpointer = SqliteSaver(sqlite3.connect("tool-approval2.db", check_same_thread= False))
 
-    checkpointer = SqliteSaver(sqlite3.connect("tool-approval.db"))
-    graph = builder.compile(checkpointer=checkpointer)
+    graph= builder.compile(checkpointer= checkpointer)
 
     config = {"configurable": {"thread_id": "email-workflow"}}
     initial = graph.invoke(
