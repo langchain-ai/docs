@@ -115,7 +115,7 @@ pip install langgraph-checkpoint-cosmosdb
 ```
 
 ```python
-from langchain.agents import create_agent
+from langgraph.graph import StateGraph, MessagesState, START
 from langgraph_checkpoint_cosmosdb import CosmosDBSaver  # [!code highlight]
 import os
 
@@ -124,16 +124,16 @@ os.environ["COSMOSDB_ENDPOINT"] = "your_cosmosdb_endpoint"
 os.environ["COSMOSDB_KEY"] = "your_cosmosdb_key"
 
 # Database and Container are created if they don't exist
-with CosmosDBSaver(  # [!code highlight]
+checkpointer = CosmosDBSaver(  # [!code highlight]
     database_name="your_database",  # [!code highlight]
     container_name="your_container"  # [!code highlight]
-) as checkpointer:  # [!code highlight]
+)  # [!code highlight]
 
-    agent = create_agent(
-        "gpt-5",
-        [get_user_info],
-        checkpointer=checkpointer,  # [!code highlight]
-    )
+# Build your graph with the checkpointer
+builder = StateGraph(MessagesState)
+builder.add_node("call_model", call_model)
+builder.add_edge(START, "call_model")
+graph = builder.compile(checkpointer=checkpointer)  # [!code highlight]
 ```
 
 :::
@@ -712,7 +712,7 @@ def update_user_info(
     runtime: ToolRuntime[CustomContext, CustomState],
 ) -> Command:
     """Look up and update user info."""
-    user_id = runtime.context.user_id 
+    user_id = runtime.context.user_id
     name = "John Smith" if user_id == "user_123" else "Unknown user"
     return Command(update={  # [!code highlight]
         "user_name": name,
@@ -737,7 +737,7 @@ agent = create_agent(
     model="gpt-5-nano",
     tools=[update_user_info, greet],
     state_schema=CustomState, # [!code highlight]
-    context_schema=CustomContext,  
+    context_schema=CustomContext,
 )
 
 agent.invoke(
