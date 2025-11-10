@@ -26,6 +26,7 @@ IGNORE_PKG = {
     "langchain-community",
     "langchain-experimental",
     "langchain-mcp-adapters",
+    "langchain-model-profiles",
 }
 
 # Minimum downloads threshold for inclusion (bypassed for highlighted packages)
@@ -168,7 +169,7 @@ def package_row(p: dict) -> str:
 
 def table() -> str:
     """Generate the full markdown table for all packages."""
-    header = """| Provider | Package API reference | Downloads | Latest version | <Tooltip tip="Whether an equivalent version exists in the TypeScript version of LangChain. Click the checkmark to visit the respective package.">JS/TS support</Tooltip> |
+    header = """| Provider | Package | Downloads | Latest version | <Tooltip tip="Whether an equivalent version exists in the TypeScript version of LangChain. Click the checkmark to visit the respective package.">JS/TS support</Tooltip> |
 | :--- | :--- | :--- | :--- | :--- |
 """  # noqa: E501
     return header + "\n".join(package_row(p) for p in PACKAGES_SORTED)
@@ -202,8 +203,10 @@ To see a full list of integrations by component type, refer to the categories in
 
 [See all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
 
+Community integrations can be found in [`langchain-community`](https://github.com/langchain-ai/langchain-community).
+
 <Info>
-    If you'd like to contribute an integration, see [our contributing guide](/oss/contributing).
+    If you'd like to contribute an integration, see the [contributing guide](/oss/contributing).
 </Info>
 
 """  # noqa: E501

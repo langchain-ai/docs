@@ -16,7 +16,7 @@ Middleware is composable—you can add as many or as few middleware to an agent 
 
 The following sections explain what each middleware provides.
 
-## Planning middleware
+## To-do list middleware
 
 Planning is integral to solving complex problems. If you've used Claude Code recently, you'll notice how it writes out a to-do list before tackling complex, multi-part tasks. You'll also notice how it can adapt and update this to-do list on the fly as more information comes in.
 
@@ -43,7 +43,19 @@ agent = create_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { createAgent, todoListMiddleware } from "langchain";
+
+// todoListMiddleware is included by default in createDeepAgent
+// You can customize it if building a custom agent
+const agent = createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  middleware: [
+    todoListMiddleware({
+      // Optional: Custom addition to the system prompt
+      systemPrompt: "Use the write_todos tool to...",
+    }),
+  ],
+});
 ```
 :::
 
@@ -58,6 +70,7 @@ Context engineering is a main challenge in building effective agents. This is pa
 - **write_file**: Write a new file to the filesystem
 - **edit_file**: Edit an existing file in the filesystem
 
+:::python
 ```python
 from langchain.agents import create_agent
 from deepagents.middleware.filesystem import FilesystemMiddleware
@@ -68,35 +81,8 @@ agent = create_agent(
     model="claude-sonnet-4-5-20250929",
     middleware=[
         FilesystemMiddleware(
-            long_term_memory=False,  # Enables access to long-term memory, defaults to False. You must attach a store to use long-term memory.
+            backend=None,  # Optional: custom backend (defaults to StateBackend)
             system_prompt="Write to the filesystem when...",  # Optional custom addition to the system prompt
-            custom_tool_descriptions={
-                "ls": "Use the ls tool when...",
-                "read_file": "Use the read_file tool to..."
-            }  # Optional: Custom descriptions for filesystem tools
-        ),
-    ],
-)
-```
-
-### Short-term vs. long-term filesystem
-
-By default, these tools write to a local "filesystem" in your graph state. If you provide a `Store` object to your agent runtime, you can also enable saving to long-term memory, which persists **across** different threads of your agent.
-
-:::python
-```python
-from langchain.agents import create_agent
-from deepagents.middleware import FilesystemMiddleware
-from langgraph.store.memory import InMemoryStore
-
-store = InMemoryStore()
-
-agent = create_agent(
-    model="claude-sonnet-4-5-20250929",
-    store=store,
-    middleware=[
-        FilesystemMiddleware(
-            long_term_memory=True,
             custom_tool_descriptions={
                 "ls": "Use the ls tool when...",
                 "read_file": "Use the read_file tool to..."
@@ -109,11 +95,88 @@ agent = create_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { createAgent } from "langchain";
+import { createFilesystemMiddleware } from "deepagents";
+
+// FilesystemMiddleware is included by default in createDeepAgent
+// You can customize it if building a custom agent
+const agent = createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  middleware: [
+    createFilesystemMiddleware({
+      backend: undefined,  // Optional: custom backend (defaults to StateBackend)
+      systemPrompt: "Write to the filesystem when...",  // Optional custom system prompt override
+      customToolDescriptions: {
+        ls: "Use the ls tool when...",
+        read_file: "Use the read_file tool to...",
+      },  // Optional: Custom descriptions for filesystem tools
+    }),
+  ],
+});
 ```
 :::
 
-If you enable `use_longterm_memory=True` and provide a `Store` in your agent runtime, then any files prefixed with **/memories/** are saved to the long-term memory store. Note that any agents deployed on LangGraph Platform are automatically provided with a long-term memory store.
+### Short-term vs. long-term filesystem
+
+By default, these tools write to a local "filesystem" in your graph state. To enable persistent storage across threads, configure a `CompositeBackend` that routes specific paths (like `/memories/`) to a `StoreBackend`.
+
+:::python
+```python
+from langchain.agents import create_agent
+from deepagents.middleware import FilesystemMiddleware
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from langgraph.store.memory import InMemoryStore
+
+store = InMemoryStore()
+
+agent = create_agent(
+    model="claude-sonnet-4-5-20250929",
+    store=store,
+    middleware=[
+        FilesystemMiddleware(
+            backend=lambda rt: CompositeBackend(
+                default=StateBackend(rt),
+                routes={"/memories/": StoreBackend(rt)}
+            ),
+            custom_tool_descriptions={
+                "ls": "Use the ls tool when...",
+                "read_file": "Use the read_file tool to..."
+            }  # Optional: Custom descriptions for filesystem tools
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent } from "langchain";
+import { createFilesystemMiddleware, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph-checkpoint";
+
+const store = new InMemoryStore();
+
+const agent = createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  store,
+  middleware: [
+    createFilesystemMiddleware({
+      backend: (config) => new CompositeBackend(
+        new StateBackend(config),
+        { "/memories/": new StoreBackend(config) }
+      ),
+      systemPrompt: "Write to the filesystem when...", // Optional custom system prompt override
+      customToolDescriptions: {
+        ls: "Use the ls tool when...",
+        read_file: "Use the read_file tool to...",
+      }, // Optional: Custom descriptions for filesystem tools
+    }),
+  ],
+});
+```
+:::
+
+When you configure a `CompositeBackend` with a `StoreBackend` for `/memories/`, any files prefixed with **/memories/** are saved to persistent storage and survive across different threads. Files without this prefix remain in ephemeral state storage.
 
 ## Subagent middleware
 
@@ -121,6 +184,7 @@ Handing off tasks to subagents isolates context, keeping the main (supervisor) a
 
 The subagents middleware allows you to supply subagents through a `task` tool.
 
+:::python
 ```python
 from langchain_core.tools import tool
 from langchain.agents import create_agent
@@ -144,7 +208,7 @@ agent = create_agent(
                     "description": "This subagent can get weather in cities.",
                     "system_prompt": "Use the get_weather tool to get the weather in a city.",
                     "tools": [get_weather],
-                    "model": "gpt-4.1",
+                    "model": "gpt-4o",
                     "middleware": [],
                 }
             ],
@@ -152,6 +216,49 @@ agent = create_agent(
     ],
 )
 ```
+:::
+
+:::js
+```typescript
+import { tool } from "langchain";
+import { createAgent } from "langchain";
+import { createSubAgentMiddleware } from "deepagents";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }: { city: string }) => {
+    return `The weather in ${city} is sunny.`;
+  },
+  {
+    name: "get_weather",
+    description: "Get the weather in a city.",
+    schema: z.object({
+      city: z.string(),
+    }),
+  },
+);
+
+const agent = createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  middleware: [
+    createSubAgentMiddleware({
+      defaultModel: "claude-sonnet-4-5-20250929",
+      defaultTools: [],
+      subagents: [
+        {
+          name: "weather",
+          description: "This subagent can get weather in cities.",
+          systemPrompt: "Use the get_weather tool to get the weather in a city.",
+          tools: [getWeather],
+          model: "gpt-4o",
+          middleware: [],
+        },
+      ],
+    }),
+  ],
+});
+```
+:::
 
 A subagent is defined with a **name**, **description**, **system prompt**, and **tools**. You can also provide a subagent with a custom **model**, or with additional **middleware**. This can be particularly useful when you want to give the subagent an additional state key to share with the main agent.
 
@@ -194,7 +301,42 @@ agent = create_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { tool, createAgent } from "langchain";
+import { createSubAgentMiddleware, type SubAgent } from "deepagents";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }: { city: string }) => {
+    return `The weather in ${city} is sunny.`;
+  },
+  {
+    name: "get_weather",
+    description: "Get the weather in a city.",
+    schema: z.object({
+      city: z.string(),
+    }),
+  },
+);
+
+const weatherSubagent: SubAgent = {
+  name: "weather",
+  description: "This subagent can get weather in cities.",
+  systemPrompt: "Use the get_weather tool to get the weather in a city.",
+  tools: [getWeather],
+  model: "gpt-4o",
+  middleware: [],
+};
+
+const agent = createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  middleware: [
+    createSubAgentMiddleware({
+      defaultModel: "claude-sonnet-4-5-20250929",
+      defaultTools: [],
+      subagents: [weatherSubagent],
+    }),
+  ],
+});
 ```
 :::
 

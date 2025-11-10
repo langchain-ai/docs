@@ -37,7 +37,7 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
     Access Google Gemini models via the Google Gen AI SDK.
 
-    [:octicons-arrow-right-24: Reference](./langchain_google_genai.md)
+    [:octicons-arrow-right-24: Reference](./langchain_google_genai/index.md)
 
 - :simple-googlecloud:{ .lg .middle } __`langchain-google-vertexai`__
 
@@ -45,7 +45,7 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
     Use Google's Vertex AI model platform.
 
-    [:octicons-arrow-right-24: Reference](./langchain_google_vertexai.md)
+    [:octicons-arrow-right-24: Reference](./langchain_google_vertexai/index.md)
 
 - :material-aws:{ .lg .middle } __`langchain-aws`__
 
@@ -81,10 +81,10 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
 </div>
 
-Other providers are listed in the section navigation (left sidebar).
+Other providers, including `langchain-community`, are listed in the section navigation (left sidebar).
 
-!!! question ""I don't see the integration I'm looking for?""
-    LangChain has hundreds of integrations, but not all are documented on this site. If you don't see the integration you're looking for, refer to their [provider page in the LangChain docs](https://docs.langchain.com/oss/python/integrations/providers/all_providers) or check their respective GitHub repository for more information.
+!!! question ""I don't see the integration I'm looking for""
+    LangChain has hundreds of integrations, but not all are documented on this site. If you don't see the integration you're looking for, refer to their [provider page in the LangChain docs](https://docs.langchain.com/oss/python/integrations/providers/all_providers). Furthermore, many community maintained integrations are available in the [`langchain-community`](./langchain_community/index.md) package.
 
 !!! note "Create new integrations"
     For information on contributing new integrations, see [the guide](https://docs.langchain.com/oss/python/contributing/integrations-langchain).
