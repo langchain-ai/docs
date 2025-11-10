@@ -79,17 +79,36 @@ LINK_MAPS: list[LinkMap] = [
             # Integrations
             # langchain-openai
             "langchain-openai": "integrations/langchain_openai",
-            "BaseChatOpenAI": "integrations/langchain_openai/BaseChatOpenAI/",
-            "ChatOpenAI": "integrations/langchain_openai/ChatOpenAI/",
-            "AzureChatOpenAI": "integrations/langchain_openai/AzureChatOpenAI/",
-            "OpenAI": "integrations/langchain_openai/OpenAI/",
-            "AzureOpenAI": "integrations/langchain_openai/AzureOpenAI/",
-            "OpenAIEmbeddings": "integrations/langchain_openai/OpenAIEmbeddings/",
-            "AzureOpenAIEmbeddings": "integrations/langchain_openai/AzureOpenAIEmbeddings/",
+            "BaseChatOpenAI": "integrations/langchain_openai/BaseChatOpenAI",
+            "ChatOpenAI": "integrations/langchain_openai/ChatOpenAI",
+            "AzureChatOpenAI": "integrations/langchain_openai/AzureChatOpenAI",
+            "OpenAI": "integrations/langchain_openai/OpenAI",
+            "AzureOpenAI": "integrations/langchain_openai/AzureOpenAI",
+            "OpenAIEmbeddings": "integrations/langchain_openai/OpenAIEmbeddings",
+            "AzureOpenAIEmbeddings": "integrations/langchain_openai/AzureOpenAIEmbeddings",
             # langchain-anthropic
             "langchain-anthropic": "integrations/langchain_anthropic",
-            "ChatAnthropic": "integrations/langchain_anthropic/ChatAnthropic/",
-            "AnthropicLLM": "integrations/langchain_anthropic/AnthropicLLM/",
+            "ChatAnthropic": "integrations/langchain_anthropic/ChatAnthropic",
+            "AnthropicLLM": "integrations/langchain_anthropic/AnthropicLLM",
+            # langchain-google
+            "langchain-google": "integrations/langchain_google",
+            "langchain-google-genai": "integrations/langchain_google_genai",
+            "ChatGoogleGenerativeAI": "integrations/langchain_google_genai/#langchain_google_genai.ChatGoogleGenerativeAI",
+            "langchain-google-vertexai": "integrations/langchain_google_vertexai",
+            "ChatVertexAI": "integrations/langchain_google_vertexai/#langchain_google_vertexai.ChatVertexAI",
+            "langchain-google-community": "integrations/langchain_google_community/",
+            # langchain-ollama
+            "langchain-ollama": "integrations/langchain_ollama",
+            "ChatOllama": "integrations/langchain_ollama/#langchain_ollama.ChatOllama",
+            # langchain-xai
+            "langchain-xai": "integrations/langchain_xai",
+            "ChatXAI": "integrations/langchain_xai/#langchain_xai.ChatXAI",
+            # langchain-groq
+            "langchain-groq": "integrations/langchain_groq",
+            "ChatGroq": "integrations/langchain_groq/#langchain_groq.ChatGroq",
+            # langchain-deepseek
+            "langchain-deepseek": "integrations/langchain_deepseek",
+            "ChatDeepSeek": "integrations/langchain_deepseek/#langchain_deepseek.ChatDeepSeek",
             # Models
             "init_chat_model": "langchain/models/#langchain.chat_models.init_chat_model",
             "init_chat_model(model)": "langchain/models/#langchain.chat_models.init_chat_model(model)",
