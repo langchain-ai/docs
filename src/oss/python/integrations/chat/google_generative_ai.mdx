@@ -260,6 +260,7 @@ You can equip the model with tools to call.
 
 ```python
 from langchain.tools import tool
+from langchain.messages import HumanMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 
@@ -269,33 +270,33 @@ def get_weather(location: str) -> str:
     return "It's sunny."
 
 
-# Initialize the model and bind the tool
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
-llm_with_tools = llm.bind_tools([get_weather])
+# Initialize and bind (potentially multiple) tools to the model
+model_with_tools = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite").bind_tools([get_weather])
 
-# Invoke the model with a query that should trigger the tool
-query = "What's the weather in San Francisco?"
-ai_msg = llm_with_tools.invoke(query)
+# Step 1: Model generates tool calls
+messages = [HumanMessage("What's the weather in Boston?")]
+ai_msg = model_with_tools.invoke(messages)
+messages.append(ai_msg)
 
 # Check the tool calls in the response
 print(ai_msg.tool_calls)
 
-# Example tool call message would be needed here if you were actually running the tool
-from langchain.messages import ToolMessage
+# Step 2: Execute tools and collect results
+for tool_call in ai_msg.tool_calls:
+    # Execute the tool with the generated arguments
+    tool_result = get_weather.invoke(tool_call)
+    messages.append(tool_result)
 
-tool_message = ToolMessage(
-    content=get_weather(*ai_msg.tool_calls[0]["args"]),
-    tool_call_id=ai_msg.tool_calls[0]["id"],
-)
-llm_with_tools.invoke([ai_msg, tool_message])  # Example of passing tool result back
+# Step 3: Pass results back to model for final response
+final_response = model_with_tools.invoke(messages)
 ```
 
 ```output
-[{'name': 'get_weather', 'args': {'location': 'San Francisco'}, 'id': 'a6248087-74c5-4b7c-9250-f335e642927c', 'type': 'tool_call'}]
+[{'name': 'get_weather', 'args': {'location': 'Boston'}, 'id': 'fb91e46d-e3f7-445b-a62f-50ae024bcdac', 'type': 'tool_call'}]
 ```
 
 ```output
-AIMessage(content="OK. It's sunny in San Francisco.", additional_kwargs={}, response_metadata={'prompt_feedback': {'block_reason': 0, 'safety_ratings': []}, 'finish_reason': 'STOP', 'model_name': 'gemini-2.5-flash-lite', 'safety_ratings': []}, id='run-ac5bb52c-e244-4c72-9fbc-fb2a9cd7a72e-0', usage_metadata={'input_tokens': 29, 'output_tokens': 11, 'total_tokens': 40, 'input_token_details': {'cache_read': 0}})
+AIMessage(content='The weather in Boston is sunny.', additional_kwargs={}, response_metadata={'prompt_feedback': {'block_reason': 0, 'safety_ratings': []}, 'finish_reason': 'STOP', 'model_name': 'gemini-2.5-flash-lite', 'safety_ratings': [], 'model_provider': 'google_genai'}, id='lc_run--3fb38729-285b-4b43-aa3e-499cbc910544-0', usage_metadata={'input_tokens': 83, 'output_tokens': 7, 'total_tokens': 90, 'input_token_details': {'cache_read': 0}})
 ```
 
 ## Structured output
