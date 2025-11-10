@@ -546,3 +546,49 @@ title: Chat models (Classic)
 ```
 
 ---
+
+## In-code documentation
+
+### Language and style
+
+> [!NOTE]
+> Use [Google-style docstrings](https://google.github.io/styleguide/pyguide.html) with complete type hints for all public functions.
+
+Follow these standards for all documentation:
+
+- **Voice**: Use second person ("you") for instructions
+- **Tense**: Use active voice and present tense
+- **Clarity**: Write clear, direct language for technical audiences
+- **Consistency**: Use consistent terminology throughout
+- **Conciseness**: Keep sentences concise while providing necessary context
+
+### Code examples
+
+> [!WARNING]
+> Always test code examples before publishing. Never include real API keys or secrets.
+
+Requirements for code examples:
+
+- **Completeness**: Include complete, runnable examples that users can copy and execute without errors
+- **Realism**: Use realistic data instead of placeholder values like "foo" or "example"
+- **Error handling**: Show proper error handling and edge case management
+- **Documentation**: Add explanatory comments for complex logic
+
+Example of a well-documented function:
+
+```python
+def filter_unknown_users(users: list[str], known_users: set[str]) -> list[str]:
+    """Filter out users that are not in the known users set.
+
+    Args:
+        users: List of user identifiers to filter.
+        known_users: Set of known/valid user identifiers.
+
+    Returns:
+        List of users that are not in the known_users set.
+
+    Raises:
+        ValueError: If users list contains invalid identifiers.
+    """
+    return [user for user in users if user not in known_users]
+```
