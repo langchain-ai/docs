@@ -1,3 +1,7 @@
+!!! warning "Reference docs"
+
+    This page contains **reference documentation** for Agents. See [the docs](https://docs.langchain.com/oss/python/langchain/agents) for conceptual guides, tutorials, and examples on using Agents.
+
 <!-- Intentionally want to highlight `create_agent` on this page first -->
 <!-- (`group_by_category orders `AgentState` (a class) before functions) -->
 ::: langchain.agents

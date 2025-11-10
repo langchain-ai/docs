@@ -36,7 +36,6 @@ LINK_MAPS: list[LinkMap] = [
             "system_prompt": "langchain/agents/#langchain.agents.create_agent(system_prompt)",
             "AgentState": "langchain/agents/#langchain.agents.AgentState",
             "ModelRequest": "langchain/middleware/#langchain.agents.middleware.ModelRequest",
-            "ModelRequest(response_format)": "langchain/middleware/#langchain.agents.middleware.ModelRequest(response_format)",
             "@dynamic_prompt": "langchain/middleware/#langchain.agents.middleware.dynamic_prompt",
             "@before_model": "langchain/middleware/#langchain.agents.middleware.before_model",
             "@after_model": "langchain/middleware/#langchain.agents.middleware.after_model",
@@ -93,7 +92,7 @@ LINK_MAPS: list[LinkMap] = [
             "AnthropicLLM": "integrations/langchain_anthropic/AnthropicLLM/",
             # Models
             "init_chat_model": "langchain/models/#langchain.chat_models.init_chat_model",
-            "init_chat_model(model_provider)": "langchain/models/#langchain.chat_models.init_chat_model(model_provider)",
+            "init_chat_model(model)": "langchain/models/#langchain.chat_models.init_chat_model(model)",
             "BaseChatModel": "langchain_core/language_models/#langchain_core.language_models.chat_models.BaseChatModel",
             "BaseChatModel.invoke": "langchain_core/language_models/#langchain_core.language_models.chat_models.BaseChatModel.invoke",
             "BaseChatModel.stream": "langchain_core/language_models/#langchain_core.language_models.chat_models.BaseChatModel.stream",
