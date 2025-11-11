@@ -216,7 +216,7 @@ print(f"Response for video: {response.content}")
 
 ### Image generation
 
-Certain models (such as `gemini-2.5-flash-image`) can generate text and images inline. You need to specify the desired `response_modalities`.
+Certain models (such as `gemini-2.5-flash-image`) can generate text and images inline.
 
 See more information on the [Gemini API docs](https://ai.google.dev/gemini-api/docs/image-generation) for details.
 
@@ -252,6 +252,28 @@ def _get_image_base64(response: AIMessage) -> None:
 
 image_base64 = _get_image_base64(response)
 display(Image(data=base64.b64decode(image_base64), width=300))
+```
+
+### Audio generation
+
+Certain models (such as `gemini-2.5-flash-preview-tts`) can generate audio files.
+
+See more information on the [Gemini API docs](https://ai.google.dev/gemini-api/docs/speech-generation) for details.
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-tts")
+
+response = llm.invoke(
+    "Please say The quick brown fox jumps over the lazy dog",
+    generation_config=dict(response_modalities=["AUDIO"]),
+)
+
+# Base64 encoded binary data of the audio
+wav_data = response.additional_kwargs.get("audio")
+with open("output.wav", "wb") as f:
+    f.write(wav_data)
 ```
 
 ## Tool calling
@@ -301,39 +323,37 @@ AIMessage(content='The weather in Boston is sunny.', additional_kwargs={}, respo
 
 ## Structured output
 
-Force the model to respond with a specific structure using Pydantic models.
+Force the model to respond with a specific structure. See the [Gemini API docs](https://ai.google.dev/gemini-api/docs/structured-output) for more info.
 
 ```python
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel
+from typing import Literal
 
 
-# Define the desired structure
-class Person(BaseModel):
-    """Information about a person."""
-
-    name: str = Field(..., description="The person's name")
-    height_m: float = Field(..., description="The person's height in meters")
+class Feedback(BaseModel):
+    sentiment: Literal["positive", "neutral", "negative"]
+    summary: str
 
 
-# Initialize the model
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
-
-# Method 1: Default function calling approach
-structured_llm_default = llm.with_structured_output(Person)
-
-# Method 2: Native JSON schema for better reliability (recommended)
-structured_llm_json = llm.with_structured_output(Person, method="json_schema")
-
-# Invoke the model with a query asking for structured information
-result = structured_llm_json.invoke(
-    "Who was the 16th president of the USA, and how tall was he in meters?"
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro")
+structured_llm = llm.with_structured_output(
+    schema=Feedback.model_json_schema(), method="json_schema"
 )
-print(result)
+
+response = structured_llm.invoke("The new UI is great!")
+response["sentiment"]  # "positive"
+response["summary"]  # "The user expresses positive..."
 ```
 
-```output
-name='Abraham Lincoln' height_m=1.93
+For streaming structured output, merge dictionaries instead of using `+=`:
+
+```python
+stream = structured_llm.stream("The interface is intuitive and beautiful!")
+full = next(stream)
+for chunk in stream:
+    full.update(chunk)  # Merge dictionaries
+print(full)  # Complete structured response
 ```
 
 ### Structured output methods
@@ -413,6 +433,25 @@ Executable code: print(2*2)
 Code execution result: 4
 
 2*2 is 4.
+```
+
+## Thinking Support
+
+See the [Gemini API docs](https://ai.google.dev/gemini-api/docs/thinking) for more info.
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(
+    model="models/gemini-2.5-flash",
+    thinking_budget=1024
+)
+
+response = llm.invoke("How many O's are in Google? How did you verify your answer?")
+reasoning_score = response.usage_metadata["output_token_details"]["reasoning"]
+
+print("Response:", response.content)
+print("Reasoning tokens used:", reasoning_score)
 ```
 
 ## Safety settings
