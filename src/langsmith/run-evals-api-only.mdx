@@ -3,18 +3,17 @@ title: How to use the REST API
 sidebarTitle: With the API
 ---
 
-It is highly recommended to run evals with either the Python or TypeScript SDKs. The SDKs have many optimizations and features that enhance the performance and reliability of your evals.
-However, if you are unable to use the SDKs, either because you are using a different language or because you are running in a restricted environment, you can use the REST API directly.
+The [Python](https://reference.langchain.com/python/langsmith/) and [TypeScript](https://reference.langchain.com/javascript/modules/langsmith.html) SDKs are the recommended way to run [evaluations](/langsmith/evaluation-concepts) in LangSmith. They include optimizations and features that enhance performance and reliability.
 
-This guide will show you how to run evals using the REST API, using the `requests` library in Python as an example. However, the same principles apply to any language.
+If you cannot use the SDKs—for example, if you are working in a different language or a restricted environment—you can use the REST API directly. This guide demonstrates how to run evaluations using the [REST API](https://api.smith.langchain.com/redoc) with Python's [`requests`](https://requests.readthedocs.io/) library, but the same principles apply to any language.
 
 Before diving into this content, it might be helpful to read the following:
-- [Evaluate LLM applications](/langsmith/evaluate-llm-application)
-- [LangSmith API Reference](https://api.smith.langchain.com/redoc)
+- [Evaluate LLM applications](/langsmith/evaluate-llm-application).
+- [LangSmith API Reference](https://api.smith.langchain.com/redoc): Complete API documentation for all endpoints used in this guide.
 
 ## Create a dataset
 
-Here, we are using the python SDK for convenience. You can also use the API directly use the UI, see [this guide](/langsmith/manage-datasets-in-application) for more information.
+For this example, we use the Python SDK to create a [dataset](/langsmith/evaluation-concepts#datasets) quickly. To create datasets via the API or UI instead, refer to [Managing datasets](/langsmith/manage-datasets-in-application).
 
 ```python
 import os
@@ -63,11 +62,18 @@ client.create_examples(dataset_id=dataset.id, examples=examples)
 
 ## Run a single experiment
 
-First, pull all of the examples you'd want to use in your experiment.
+To run an experiment via the API, you'll need to:
+
+1. Fetch the examples from your dataset.
+1. Create an experiment (also called a "session" in the API).
+1. For each example, create runs that reference both the example and the experiment.
+1. Close the experiment by setting its `end_time`.
+
+First, pull all of the examples you'd want to use in your experiment using the `/examples` endpoint:
 
 ```python
 #  Pick a dataset id. In this case, we are using the dataset we created above.
-#  Spec: https://api.smith.langchain.com/redoc#tag/examples/operation/delete_example_api_v1_examples__example_id__delete
+#  API Reference: https://api.smith.langchain.com/redoc#tag/examples/operation/read_examples_api_v1_examples_get
 dataset_id = dataset.id
 params = { "dataset": dataset_id }
 
@@ -80,7 +86,11 @@ resp = requests.get(
 examples = resp.json()
 ```
 
-Next, we'll define a method that will create a run for a single example.
+Next, define a function that will run your model on a single example and log the results to LangSmith. When using the API directly, you're responsible for:
+
+- Creating run objects via POST to `/runs` with `reference_example_id` and `session_id` set.
+- Tracking parent-child relationships between runs (e.g., a parent "chain" run containing a child "llm" run).
+- Updating runs with outputs via PATCH to `/runs/{run_id}`.
 
 ```python
 os.environ["OPENAI_API_KEY"] = "sk-..."
@@ -90,7 +100,9 @@ def run_completion_on_example(example, model_name, experiment_id):
     # We are using the OpenAI API here, but you can use any model you like
 
     def _post_run(run_id, name, run_type, inputs, parent_id=None):
-        """Function to post a new run to the API."""
+        """Function to post a new run to the API.
+        API Reference: https://api.smith.langchain.com/redoc#tag/run/operation/create_run_api_v1_runs_post
+        """
         data = {
             "id": run_id.hex,
             "name": name,
@@ -110,7 +122,9 @@ def run_completion_on_example(example, model_name, experiment_id):
         resp.raise_for_status()
 
     def _patch_run(run_id, outputs):
-        """Function to patch a run with outputs."""
+        """Function to patch a run with outputs.
+        API Reference: https://api.smith.langchain.com/redoc#tag/run/operation/update_run_api_v1_runs__run_id__patch
+        """
         resp = requests.patch(
             f"https://api.smith.langchain.com/api/v1/runs/{run_id}",
             json={
@@ -157,12 +171,12 @@ def run_completion_on_example(example, model_name, experiment_id):
     _patch_run(parent_run_id, {"label": output_text})
 ```
 
-We are going to run completions on all examples using two models: gpt-3.5-turbo and gpt-4o-mini.
+Now create the experiments and run completions on all examples. In the API, an "experiment" is represented as a session (or "tracer session") that references a dataset via `reference_dataset_id`. The key difference from regular tracing is that runs in an experiment must have a `reference_example_id` that links each run to a specific example in the dataset.
 
 ```python
 #  Create a new experiment using the /sessions endpoint
 #  An experiment is a collection of runs with a reference to the dataset used
-#  Spec: https://api.smith.langchain.com/redoc#tag/tracer-sessions/operation/create_tracer_session_api_v1_sessions_post
+#  API Reference: https://api.smith.langchain.com/redoc#tag/tracer-sessions/operation/create_tracer_session_api_v1_sessions_post
 
 model_names = ("gpt-3.5-turbo", "gpt-4o-mini")
 experiment_ids = []
@@ -196,6 +210,64 @@ for model_name in model_names:
     )
 ```
 
+### Add evaluation feedback
+
+After running your [experiments](/langsmith/evaluation-concepts#experiment), you'll typically want to evaluate the results by adding feedback scores. This allows you to track metrics like correctness, accuracy, or any custom evaluation criteria.
+
+In this example, the evaluation checks if each model's output matches the expected label in the dataset. The code posts a "correctness" score (1.0 for correct, 0.0 for incorrect) to track how accurately each model classifies toxic vs. non-toxic text.
+
+The following code adds feedback to the runs from the [single experiment example](#run-a-single-experiment):
+
+```python
+# Fetch the runs from one of the experiments
+# API Reference: https://api.smith.langchain.com/redoc#tag/run/operation/query_runs_api_v1_runs_query_post
+experiment_id = experiment_ids[0]  # Evaluate the first experiment
+
+runs_resp = requests.post(
+    "https://api.smith.langchain.com/api/v1/runs/query",
+    headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
+    json={
+        "session": [experiment_id],
+        "is_root": True,  # Only fetch root runs
+        "select": ["id", "reference_example_id", "outputs"],
+    }
+)
+
+runs = runs_resp.json()["runs"]
+
+# Evaluate each run by comparing outputs to expected values
+for run in runs:
+    # Get the expected output from the original example
+    example_id = run["reference_example_id"]
+    expected_output = next(
+        ex["outputs"]["label"]
+        for ex in examples
+        if ex["id"] == example_id
+    )
+
+    # Compare the model output to the expected output
+    actual_output = run["outputs"].get("label", "")
+    is_correct = expected_output.lower() == actual_output.lower()
+
+    # Post feedback score
+    # API Reference: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post
+    feedback = {
+        "run_id": str(run["id"]),
+        "key": "correctness",  # The name of your evaluation metric
+        "score": 1.0 if is_correct else 0.0,
+        "comment": f"Expected: {expected_output}, Got: {actual_output}",  # Optional
+    }
+
+    resp = requests.post(
+        "https://api.smith.langchain.com/api/v1/feedback",
+        json=feedback,
+        headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]}
+    )
+    resp.raise_for_status()
+```
+
+You can add multiple feedback scores with different keys to track various metrics. For example, you might add both a "correctness" score and a "toxicity_detected" score.
+
 ## Run a pairwise experiment
 
 Next, we'll demonstrate how to run a pairwise experiment. In a pairwise experiment, you compare two examples against each other.
@@ -204,7 +276,7 @@ For more information, check out [this guide](/langsmith/evaluate-pairwise).
 
 ```python
 #  A comparative experiment allows you to provide a preferential ranking on the outputs of two or more experiments
-#  Spec: https://api.smith.langchain.com/redoc#tag/datasets/operation/create_comparative_experiment_api_v1_datasets_comparative_post
+#  API Reference: https://api.smith.langchain.com/redoc#tag/datasets/operation/create_comparative_experiment_api_v1_datasets_comparative_post
 resp = requests.post(
     "https://api.smith.langchain.com/api/v1/datasets/comparative",
     json={
@@ -237,7 +309,7 @@ experiment_ids = [info["id"] for info in comparative_experiment["experiments_inf
 from collections import defaultdict
 example_id_to_runs_map = defaultdict(list)
 
-#  Spec: https://api.smith.langchain.com/redoc#tag/run/operation/query_runs_api_v1_runs_query_post
+#  API Reference: https://api.smith.langchain.com/redoc#tag/run/operation/query_runs_api_v1_runs_query_post
 runs = requests.post(
     f"https://api.smith.langchain.com/api/v1/runs/query",
     headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
@@ -259,7 +331,7 @@ for example_id, runs in example_id_to_runs_map.items():
     feedback_group_id = uuid4()
 
     # Post a feedback score for each run, with the first run being the preferred one
-    # Spec: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post
+    # API Reference: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post
     # We'll use the feedback group ID to associate the feedback scores with the same group
     for i, run in enumerate(runs):
         print(f"Run ID: {run['id']}")
