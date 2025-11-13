@@ -12,13 +12,13 @@ Provider-specific middleware for Anthropic's Claude models:
 
 | CLASS | DESCRIPTION |
 | ----- | ----------- |
-| [`AnthropicPromptCachingMiddleware`](./#langchain_anthropic.middleware.AnthropicPromptCachingMiddleware) | Reduce costs by caching repetitive prompt prefixes |
-| [`ClaudeBashToolMiddleware`](./#langchain_anthropic.middleware.ClaudeBashToolMiddleware) | Execute Claude's native bash tool with local command execution |
-| [`StateClaudeTextEditorMiddleware`](./#langchain_anthropic.middleware.StateClaudeTextEditorMiddleware) | Provide Claude's text editor tool for state-based file editing |
-| [`FilesystemClaudeTextEditorMiddleware`](./#langchain_anthropic.middleware.FilesystemClaudeTextEditorMiddleware) | Provide Claude's text editor tool for filesystem-based file editing |
-| [`StateClaudeMemoryMiddleware`](./#langchain_anthropic.middleware.StateClaudeMemoryMiddleware) | Provide Claude's memory tool for state-based persistent agent memory |
-| [`FilesystemClaudeMemoryMiddleware`](./#langchain_anthropic.middleware.FilesystemClaudeMemoryMiddleware) | Provide Claude's memory tool for filesystem-based persistent agent memory |
-| [`StateFileSearchMiddleware`](./#langchain_anthropic.middleware.StateFileSearchMiddleware) | Search tools for state-based file systems |
+| [`AnthropicPromptCachingMiddleware`](#langchain_anthropic.middleware.AnthropicPromptCachingMiddleware) | Reduce costs by caching repetitive prompt prefixes |
+| [`ClaudeBashToolMiddleware`](#langchain_anthropic.middleware.ClaudeBashToolMiddleware) | Execute Claude's native bash tool with local command execution |
+| [`StateClaudeTextEditorMiddleware`](#langchain_anthropic.middleware.StateClaudeTextEditorMiddleware) | Provide Claude's text editor tool for state-based file editing |
+| [`FilesystemClaudeTextEditorMiddleware`](#langchain_anthropic.middleware.FilesystemClaudeTextEditorMiddleware) | Provide Claude's text editor tool for filesystem-based file editing |
+| [`StateClaudeMemoryMiddleware`](#langchain_anthropic.middleware.StateClaudeMemoryMiddleware) | Provide Claude's memory tool for state-based persistent agent memory |
+| [`FilesystemClaudeMemoryMiddleware`](#langchain_anthropic.middleware.FilesystemClaudeMemoryMiddleware) | Provide Claude's memory tool for filesystem-based persistent agent memory |
+| [`StateFileSearchMiddleware`](#langchain_anthropic.middleware.StateFileSearchMiddleware) | Search tools for state-based file systems |
 
 <!-- Configuration notes:
 - summary: false - Using custom tables above instead of auto-generated summaries

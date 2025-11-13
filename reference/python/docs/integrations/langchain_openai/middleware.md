@@ -12,7 +12,7 @@ Provider-specific middleware for OpenAI models:
 
 | CLASS | DESCRIPTION |
 | ----- | ----------- |
-| [`OpenAIModerationMiddleware`](./#langchain_openai.middleware.OpenAIModerationMiddleware) | Moderate agent traffic using OpenAI's moderation endpoint |
+| [`OpenAIModerationMiddleware`](#langchain_openai.middleware.OpenAIModerationMiddleware) | Moderate agent traffic using OpenAI's moderation endpoint |
 
 <!-- Configuration notes:
 - summary: false - Using custom tables above instead of auto-generated summaries
