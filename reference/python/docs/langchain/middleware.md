@@ -19,6 +19,8 @@ LangChain provides prebuilt middleware for common agent use cases:
 | [`ToolRetryMiddleware`](./#langchain.agents.middleware.ToolRetryMiddleware) | Automatically retry failed tool calls with exponential backoff |
 | [`LLMToolEmulator`](./#langchain.agents.middleware.LLMToolEmulator) | Emulate tool execution using LLM for testing purposes |
 | [`ContextEditingMiddleware`](./#langchain.agents.middleware.ContextEditingMiddleware) | Manage conversation context by trimming or clearing tool uses |
+| [`ShellToolMiddleware`](./#langchain.agents.middleware.ShellToolMiddleware) | Expose a persistent shell session to agents for command execution |
+| [`FilesystemFileSearchMiddleware`](./#langchain.agents.middleware.FilesystemFileSearchMiddleware) | Provide Glob and Grep search tools over filesystem files |
 | [`AgentMiddleware`](./#langchain.agents.middleware.AgentMiddleware) | Base middleware class for creating custom middleware |
 
 ## Decorators
@@ -74,6 +76,8 @@ Core types for building middleware:
         - ToolRetryMiddleware
         - LLMToolEmulator
         - ContextEditingMiddleware
+        - ShellToolMiddleware
+        - FilesystemFileSearchMiddleware
         - AgentMiddleware
         - before_agent
         - before_model
@@ -140,6 +144,16 @@ Core types for building middleware:
       filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.ContextEditingMiddleware
+    options:
+      show_bases: false
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.ShellToolMiddleware
+    options:
+      show_bases: false
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.FilesystemFileSearchMiddleware
     options:
       show_bases: false
       filters: ["^__init__$"]
