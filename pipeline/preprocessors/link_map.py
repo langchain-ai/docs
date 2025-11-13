@@ -105,8 +105,10 @@ LINK_MAPS: list[LinkMap] = [
             "AgentState": "langchain/agents/#langchain.agents.AgentState",
             "ModelRequest": "langchain/middleware/#langchain.agents.middleware.ModelRequest",
             "@dynamic_prompt": "langchain/middleware/#langchain.agents.middleware.dynamic_prompt",
+            "@before_agent": "langchain/middleware/#langchain.agents.middleware.before_agent",
             "@before_model": "langchain/middleware/#langchain.agents.middleware.before_model",
             "@after_model": "langchain/middleware/#langchain.agents.middleware.after_model",
+            "@after_agent": "langchain/middleware/#langchain.agents.middleware.after_agent",
             "@wrap_tool_call": "langchain/middleware/#langchain.agents.middleware.wrap_tool_call",
             "@wrap_model_call": "langchain/middleware/#langchain.agents.middleware.wrap_model_call",
             # Middleware
