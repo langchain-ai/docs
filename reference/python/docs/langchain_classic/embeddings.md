@@ -1,4 +1,8 @@
-# Embeddings
+---
+title: Embeddings (Classic)
+---
+
+# Embeddings (Classic)
 
 --8<-- "langchain-classic-warning.md"
 

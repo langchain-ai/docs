@@ -1,3 +1,5 @@
-# Utilities
+---
+title: Utilities (LangSmith)
+---
 
 ::: langsmith.utils

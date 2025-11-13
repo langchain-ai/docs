@@ -1,5 +1,5 @@
 ---
-title: BaseChatOpenAI - LangChain Integration Reference
+title: BaseChatOpenAI
 ---
 
 # :fontawesome-brands-openai:{ .lg .middle } `BaseChatOpenAI`

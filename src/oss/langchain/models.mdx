@@ -10,7 +10,7 @@ import ChatModelTabsJS from '/snippets/chat-model-tabs-js.mdx';
 In addition to text generation, many models support:
 
 * <Icon icon="hammer" size={16} /> [Tool calling](#tool-calling) - calling external tools (like databases queries or API calls) and use results in their responses.
-* <Icon icon="shapes" size={16} /> [Structured output](#structured-outputs) - where the model's response is constrained to follow a defined format.
+* <Icon icon="shapes" size={16} /> [Structured output](#structured-output) - where the model's response is constrained to follow a defined format.
 * <Icon icon="image" size={16} /> [Multimodality](#multimodal) - process and return data other than text, such as images, audio, and video.
 * <Icon icon="brain" size={16} /> [Reasoning](#reasoning) - models perform multi-step reasoning to arrive at a conclusion.
 
@@ -21,7 +21,7 @@ The quality and capabilities of the model you choose directly impact your agent'
 LangChain's standard model interfaces give you access to many different provider integrations, which makes it easy to experiment with and switch between models to find the best fit for your case.
 
 <Info>
-    For provider-specific integration information and capabilities, see the provider's [integration page](/oss/integrations/providers/overview).
+    For provider-specific integration information and capabilities, see the provider's [chat model page](/oss/integrations/chat).
 </Info>
 
 ## Basic usage
@@ -36,7 +36,7 @@ The same model interface works in both contexts, which gives you the flexibility
 ### Initialize a model
 
 :::python
-The easiest way to get started with a standalone model in LangChain is to use @[`init_chat_model`] to initialize one from a [provider](/oss/integrations/providers/overview) of your choice (examples below):
+The easiest way to get started with a standalone model in LangChain is to use @[`init_chat_model`] to initialize one from a [chat model provider](/oss/integrations/chat) of your choice (examples below):
 
 <ChatModelTabsPy />
 ```python
@@ -123,7 +123,7 @@ Using @[`init_chat_model`], pass these parameters as inline <Tooltip tip="Arbitr
 
 ```python Initialize using model parameters
 model = init_chat_model(
-    "anthropic:claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
     # Kwargs passed to the model:
     temperature=0.7,
     timeout=30,
@@ -136,7 +136,7 @@ Using `initChatModel`, pass these parameters as inline parameters:
 
 ```typescript Initialize using model parameters
 const model = await initChatModel(
-    "anthropic:claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
     { temperature: 0.7, timeout: 30, max_tokens: 1000 }
 )
 ```
@@ -523,12 +523,64 @@ Models can request to call tools that perform tasks such as fetching data from a
     You may hear the term "function calling". We use this interchangeably with "tool calling".
 </Note>
 
+Here's the basic tool calling flow between a user and a model:
+
 :::python
-To make tools that you have defined available for use by a model, you must bind them using @[`bind_tools()`][BaseChatModel.bind_tools]. In subsequent invocations, the model can choose to call any of the bound tools as needed.
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant M as Model
+    participant T as Tools
+
+    U->>M: "What's the weather in SF and NYC?"
+    M->>M: Analyze request & decide tools needed
+
+    par Parallel Tool Calls
+        M->>T: get_weather("San Francisco")
+        M->>T: get_weather("New York")
+    end
+
+    par Tool Execution
+        T-->>M: SF weather data
+        T-->>M: NYC weather data
+    end
+
+    M->>M: Process results & generate response
+    M->>U: "SF: 72°F sunny, NYC: 68°F cloudy"
+```
 :::
 
 :::js
-To make tools that you have defined available for use by a model, you must bind them using @[`bindTools()`][BaseChatModel.bindTools]. In subsequent invocations, the model can choose to call any of the bound tools as needed.
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant M as Model
+    participant T as Tools
+
+    U->>M: "What's the weather in SF and NYC?"
+    M->>M: Analyze request & decide tools needed
+
+    par Parallel Tool Calls
+        M->>T: getWeather("San Francisco")
+        M->>T: getWeather("New York")
+    end
+
+    par Tool Execution
+        T-->>M: SF weather data
+        T-->>M: NYC weather data
+    end
+
+    M->>M: Process results & generate response
+    M->>U: "SF: 72°F sunny, NYC: 68°F cloudy"
+```
+:::
+
+:::python
+To make tools that you have defined available for use by a model, you must bind them using @[`bind_tools`][BaseChatModel.bind_tools]. In subsequent invocations, the model can choose to call any of the bound tools as needed.
+:::
+
+:::js
+To make tools that you have defined available for use by a model, you must bind them using @[`bindTools`][BaseChatModel.bindTools]. In subsequent invocations, the model can choose to call any of the bound tools as needed.
 :::
 
 Some model providers offer built-in tools that can be enabled via model or invocation parameters (e.g. [`ChatOpenAI`](/oss/integrations/chat/openai), [`ChatAnthropic`](/oss/integrations/chat/anthropic)). Check the respective [provider reference](/oss/integrations/providers/overview) for details.
@@ -587,7 +639,7 @@ for (const tool_call of toolCalls) {
 ```
 :::
 
-When binding user-defined tools, the model's response includes a **request** to execute a tool. When using a model separately from an [agent](/oss/langchain/agents), it is up to you to perform the requested action and return the result back to the model for use in subsequent reasoning. Note that when using an [agent](/oss/langchain/agents), the agent loop will handle the tool execution loop for you.
+When binding user-defined tools, the model's response includes a **request** to execute a tool. When using a model separately from an [agent](/oss/langchain/agents), it is up to you to execute the requested tool and return the result back to the model for use in subsequent reasoning. When using an [agent](/oss/langchain/agents), the agent loop will handle the tool execution loop for you.
 
 Below, we show some common ways you can use tool calling.
 
@@ -837,9 +889,9 @@ Below, we show some common ways you can use tool calling.
 
 ---
 
-## Structured outputs
+## Structured output
 
-Models can be requested to provide their response in a format matching a given schema. This is useful for ensuring the output can be easily parsed and used in subsequent processing. LangChain supports multiple schema types and methods for enforcing structured outputs.
+Models can be requested to provide their response in a format matching a given schema. This is useful for ensuring the output can be easily parsed and used in subsequent processing. LangChain supports multiple schema types and methods for enforcing structured output.
 
 :::python
 <Tabs>
@@ -991,12 +1043,12 @@ Models can be requested to provide their response in a format matching a given s
 
 :::python
 <Note>
-    **Key considerations for structured outputs:**
+    **Key considerations for structured output:**
 
     - **Method parameter**: Some providers support different methods (`'json_schema'`, `'function_calling'`, `'json_mode'`)
         - `'json_schema'` typically refers to dedicated structured output features offered by a provider
         - `'function_calling'` derives structured output by forcing a [tool call](#tool-calling) following the given schema
-        - `'json_mode'` is a precursor to `'json_schema'` offered by some providers- it generates valid json, but the schema must be described in the prompt
+        - `'json_mode'` is a precursor to `'json_schema'` offered by some providers - it generates valid json, but the schema must be described in the prompt
     - **Include raw**: Use `include_raw=True` to get both the parsed output and the raw AI message
     - **Validation**: Pydantic models provide automatic validation, while `TypedDict` and JSON Schema require manual validation
 </Note>
@@ -1004,7 +1056,7 @@ Models can be requested to provide their response in a format matching a given s
 
 :::js
 <Note>
-    **Key considerations for structured outputs:**
+    **Key considerations for structured output:**
 
     - **Method parameter**: Some providers support different methods (`'jsonSchema'`, `'functionCalling'`, `'jsonMode'`)
     - **Include raw**: Use @[`includeRaw: true`][BaseChatModel.with_structured_output(include_raw)] to get both the parsed output and the raw @[`AIMessage`]
@@ -1250,7 +1302,7 @@ If a model invokes a tool server-side, the content of the response message will 
 ```python Invoke with server-side tool use
 from langchain.chat_models import init_chat_model
 
-model = init_chat_model("openai:gpt-4.1-mini")
+model = init_chat_model("gpt-4.1-mini")
 
 tool = {"type": "web_search"}
 model_with_tools = model.bind_tools([tool])
@@ -1294,7 +1346,7 @@ response.content_blocks
 ```typescript
 import { initChatModel } from "langchain";
 
-const model = await initChatModel("openai:gpt-4.1-mini");
+const model = await initChatModel("gpt-4.1-mini");
 const modelWithTools = model.bindTools([{ type: "web_search" }])
 
 const message = await modelWithTools.invoke("What was a positive news story from today?");
@@ -1442,8 +1494,8 @@ You can track aggregate token counts across models in an application using eithe
         from langchain.chat_models import init_chat_model
         from langchain_core.callbacks import UsageMetadataCallbackHandler
 
-        model_1 = init_chat_model(model="openai:gpt-4o-mini")
-        model_2 = init_chat_model(model="anthropic:claude-3-5-haiku-latest")
+        model_1 = init_chat_model(model="gpt-4o-mini")
+        model_2 = init_chat_model(model="claude-haiku-4-5-20251001")
 
         callback = UsageMetadataCallbackHandler()
         result_1 = model_1.invoke("Hello", config={"callbacks": [callback]})
@@ -1459,7 +1511,7 @@ You can track aggregate token counts across models in an application using eithe
                 'input_token_details': {'audio': 0, 'cache_read': 0},
                 'output_token_details': {'audio': 0, 'reasoning': 0}
             },
-            'claude-3-5-haiku-20241022': {
+            'claude-haiku-4-5-20251001': {
                 'input_tokens': 8,
                 'output_tokens': 21,
                 'total_tokens': 29,
@@ -1473,8 +1525,8 @@ You can track aggregate token counts across models in an application using eithe
         from langchain.chat_models import init_chat_model
         from langchain_core.callbacks import get_usage_metadata_callback
 
-        model_1 = init_chat_model(model="openai:gpt-4o-mini")
-        model_2 = init_chat_model(model="anthropic:claude-3-5-haiku-latest")
+        model_1 = init_chat_model(model="gpt-4o-mini")
+        model_2 = init_chat_model(model="claude-haiku-4-5-20251001")
 
         with get_usage_metadata_callback() as cb:
             model_1.invoke("Hello")
@@ -1490,7 +1542,7 @@ You can track aggregate token counts across models in an application using eithe
                 'input_token_details': {'audio': 0, 'cache_read': 0},
                 'output_token_details': {'audio': 0, 'reasoning': 0}
             },
-            'claude-3-5-haiku-20241022': {
+            'claude-haiku-4-5-20251001': {
                 'input_tokens': 8,
                 'output_tokens': 21,
                 'total_tokens': 29,
@@ -1624,7 +1676,7 @@ configurable_model.invoke(
 )
 configurable_model.invoke(
     "what's your name",
-    config={"configurable": {"model": "claude-sonnet-4-5"}},  # Run with Claude
+    config={"configurable": {"model": "claude-sonnet-4-5-20250929"}},  # Run with Claude
 )
 ```
 
@@ -1645,7 +1697,7 @@ configurable_model.invoke(
         "what's your name",
         config={
             "configurable": {
-                "first_model": "claude-sonnet-4-5",
+                "first_model": "claude-sonnet-4-5-20250929",
                 "first_temperature": 0.5,
                 "first_max_tokens": 100,
             }
@@ -1699,7 +1751,7 @@ configurable_model.invoke(
     ```python
     model_with_tools.invoke(
         "what's bigger in 2024 LA or NYC",
-            config={"configurable": {"model": "claude-sonnet-4-5"}},
+        config={"configurable": {"model": "claude-sonnet-4-5-20250929"}},
     ).tool_calls
     ```
     ```

@@ -42,25 +42,16 @@ handlers:
 
 This site is currently being migrated from a previous Sphinx-based implementation, so there are still some rough edges to be smoothed out. Here are some known issues and potential improvements:
 
-- [ ] For methods that are from base classes, indicate it is inherited from such and link to the base class
-- [ ] Exclude `langchain-classic` pages from search results?
 - [ ] [Backlinks](https://mkdocstrings.github.io/python/usage/configuration/general/#backlinks)
 - [ ] [More xref](https://github.com/analog-garage/mkdocstrings-python-xref)
 - [ ] [Modernize annotations](https://mkdocstrings.github.io/python/usage/configuration/signatures/#modernize_annotations)
-- [ ] [Inheritance diagrams](https://mkdocstrings.github.io/python/usage/configuration/general/#show_inheritance_diagram)
+  - [ ] ???
 - [ ] Consider using [inherited docstrings](https://mkdocstrings.github.io/griffe/extensions/official/inherited-docstrings/)
 - [ ] Fix TOC shadow overflow (started in `reference/python/docs/stylesheets/toc.css`) but was funky
-- [ ] Post-processing step to link out to imports from code blocks
-  - [ ] Maybe there's a plugin?
 - [ ] Fix `navigation.path` feature/plugin in `mkdocs.yml` not working
-- [ ] Set up CI to fail on unexpected Griffe warnings
+  - [ ] ???
 - [ ] "Module last updated" auto-generation for module pages using source file commit timestamps or the MkDocs plugin [git-revision-date-localized](https://github.com/timvink/mkdocs-git-revision-date-localized-plugin)
 - [ ] Fix search magnifying glass icon color in dark mode
-- [ ] Copy page support (need to add a post-processing step to generate markdown files to serve alongside the API reference docs)
-- [ ] Language switcher (JS/TS)
-- [ ] [Social cards](https://squidfunk.github.io/mkdocs-material/setup/setting-up-social-cards/)
-- [ ] [Google Analytics](https://mrkeo.github.io/setup/setting-up-site-analytics)
-- [ ] [Versioning?](https://mrkeo.github.io/setup/setting-up-versioning)
 - [ ] [Show keyboard shortcut in search window](https://github.com/squidfunk/mkdocs-material/issues/2574#issuecomment-821979698) - also add cmd + k to match Mintlify
 
 ---
@@ -402,3 +393,202 @@ mkdocs serve  # Preview at http://127.0.0.1:8000/
 
 This syntax works with the `mkdocstrings` plugin for MkDocs using the Python handler. Adjust paths according to your package structure and exports.
 
+---
+
+## Page Titles: Navigation, Frontmatter, and H1 Headings
+
+MkDocs uses multiple sources for page titles, each serving a different purpose. Here's how to understand how they interact:
+
+### Three Types of Titles
+
+#### 1. Navigation Title (in `mkdocs.yml`)
+
+Defined in the `nav` section of `mkdocs.yml`:
+
+```yaml
+nav:
+  - Deployment:
+    - SDK: langsmith/deployment/sdk.md
+```
+
+- **Purpose**: Label in the sidebar navigation
+- **Usage**: `page.title` in templates (see below)
+- **Scope**: Navigation menu
+
+#### 2. Frontmatter Title (in the `.md` file)
+
+Defined in YAML frontmatter at the top of each markdown file:
+
+```markdown
+---
+title: LangSmith Deployment SDK
+---
+```
+
+- **Purpose**: SEO metadata, HTML `<title>` tag
+- **Usage**: `page.meta.title` in templates (see below)
+- **Scope**: Browser tab, search engines, social sharing
+
+#### 3. H1 Heading (in the `.md` file)
+
+The first `#` heading in the markdown content:
+
+```markdown
+# LangSmith Deployment SDK reference
+```
+
+- **Purpose**: Page heading visible to users
+- **Usage**: Rendered as `<h1>` in the page content!
+- **Scope**: Main page content area
+
+### How They Interact
+
+Using the `langsmith/deployment/sdk.md` file as an example:
+
+```yaml
+# In mkdocs.yml
+nav:
+  - Deployment:
+    - SDK: langsmith/deployment/sdk.md
+```
+
+```markdown
+# In langsmith/deployment/sdk.md
+---
+title: LangSmith Deployment SDK
+---
+
+# LangSmith Deployment SDK reference
+```
+
+**Result:**
+
+- **Navigation sidebar**: Shows "SDK" (from nav)
+- **Browser tab/HTML `<title>`**: Shows "LangSmith Deployment SDK | LangChain Reference" (from frontmatter + site name)
+- **Page heading**: Shows "LangSmith Deployment SDK reference" (from H1)
+
+### HTML `<title>` Tag Priority
+
+The HTML `<title>` tag (what appears in browser tabs) follows this priority system in `overrides/main.html`:
+
+1. **If `page.meta.title` exists** (from YAML frontmatter):
+2.
+   ```html
+   <title>{{ page.meta.title }} | {{ config.site_name }}</title>
+   ```
+   Example: `LangSmith Deployment SDK | LangChain Reference`
+
+3. **Else if `page.title` exists** (from nav or inferred from filename):
+4.
+   ```html
+   <title>{{ page.title | striptags }} | {{ config.site_name }}</title>
+   ```
+   Example: `SDK | LangChain Reference`
+
+5. **Otherwise** (homepage fallback):
+6.
+   ```html
+   <title>{{ config.site_name }}</title>
+   ```
+   Example: `LangChain Reference`
+
+### Best Practices
+
+```yaml
+# mkdocs.yml - short, concise navigation label
+nav:
+  - Deployment:
+    - SDK: langsmith/deployment/sdk.md
+```
+
+```markdown
+# File: langsmith/deployment/sdk.md
+---
+title: LangSmith Deployment SDK  # SEO-friendly, descriptive
+---
+
+# LangSmith Deployment SDK reference  # Clear page heading
+```
+
+**Why?**
+
+- **Nav title ("SDK")**: Short and scannable in sidebar
+- **Frontmatter title ("LangSmith Deployment SDK")**: Descriptive for SEO and browser tabs
+- **H1 heading ("LangSmith Deployment SDK reference")**: Clear context when viewing the page
+
+**Don't make nav titles too long:**
+
+```yaml
+nav:
+  - Deployment:
+    # ❌ Too verbose for navigation
+    - LangSmith Deployment SDK Reference Documentation: langsmith/deployment/sdk.md
+```
+
+If the H1 is identical to the nav title, consider omitting it from the `.md` file to avoid redundancy. The nav title will render as the H1 automatically.
+
+Similarly, if two pages have the same nav title, differentiate them with distinct frontmatter titles for SEO. Defer to the core LangChain packages as canonical. For instance,:
+
+- `langchain/agents/`
+- `langgraph/agents/`
+
+Each would share the same nav title "Agents". To differentiate, use a frontmatter title "Agents (LangGraph)". The LangChain page would use "Agents" as the frontmatter title since it's the primary source.
+
+If you wish for both the page heading and browser title to be different from the nav title, set both the frontmatter title and H1 accordingly, e.g.:
+
+```markdown
+# File: langchain_classic/chat_models.md
+---
+title: Chat models (Classic)
+---
+
+# Chat models (Classic)
+```
+
+---
+
+## In-code documentation
+
+### Language and style
+
+> [!NOTE]
+> Use [Google-style docstrings](https://google.github.io/styleguide/pyguide.html) with complete type hints for all public functions.
+
+Follow these standards for all documentation:
+
+- **Voice**: Use second person ("you") for instructions
+- **Tense**: Use active voice and present tense
+- **Clarity**: Write clear, direct language for technical audiences
+- **Consistency**: Use consistent terminology throughout
+- **Conciseness**: Keep sentences concise while providing necessary context
+
+### Code examples
+
+> [!WARNING]
+> Always test code examples before publishing. Never include real API keys or secrets.
+
+Requirements for code examples:
+
+- **Completeness**: Include complete, runnable examples that users can copy and execute without errors
+- **Realism**: Use realistic data instead of placeholder values like "foo" or "example"
+- **Error handling**: Show proper error handling and edge case management
+- **Documentation**: Add explanatory comments for complex logic
+
+Example of a well-documented function:
+
+```python
+def filter_unknown_users(users: list[str], known_users: set[str]) -> list[str]:
+    """Filter out users that are not in the known users set.
+
+    Args:
+        users: List of user identifiers to filter.
+        known_users: Set of known/valid user identifiers.
+
+    Returns:
+        List of users that are not in the known_users set.
+
+    Raises:
+        ValueError: If users list contains invalid identifiers.
+    """
+    return [user for user in users if user not in known_users]
+```

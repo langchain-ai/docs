@@ -1,5 +1,5 @@
 ---
-title: SQL Server - LangChain Integration Reference
+title: SQL Server
 ---
 
 # :simple-sqlite:{ .lg .middle } `langchain-sqlserver`

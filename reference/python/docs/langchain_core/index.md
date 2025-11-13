@@ -1,3 +1,7 @@
+---
+title: LangChain Core home
+---
+
 # :material-atom:{ .lg .middle } `langchain-core`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain-core?label=%20)](https://pypi.org/project/langchain-core/#history)

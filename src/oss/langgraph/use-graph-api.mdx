@@ -35,7 +35,8 @@ npm install @langchain/langgraph
 
 <Tip>
 **Set up LangSmith for better debugging**
-Sign up for [LangSmith](https://smith.langchain.com) to quickly spot issues and improve the performance of your LangGraph projects. LangSmith lets you use trace data to debug, test, and monitor your LLM apps built with LangGraph — read more about how to get started in the [docs](https://docs.smith.langchain.com).
+
+Sign up for [LangSmith](https://smith.langchain.com) to quickly spot issues and improve the performance of your LangGraph projects. LangSmith lets you use trace data to debug, test, and monitor your LLM apps built with LangGraph — read more about how to get started in the [docs](/langsmith/observability).
 </Tip>
 
 ## Define and update state
@@ -126,7 +127,7 @@ Nodes should return updates to the state directly, instead of mutating the state
 </Warning>
 
 :::python
-Let's next define a simple graph containing this node. We use [StateGraph](/oss/langgraph/graph-api#stategraph) to define a graph that operates on this state. We then use [add_node](/oss/langgraph/graph-api#nodes) populate our graph.
+Let's next define a simple graph containing this node. We use [`StateGraph`](/oss/langgraph/graph-api#stategraph) to define a graph that operates on this state. We then use [`add_node`](/oss/langgraph/graph-api#nodes) populate our graph.
 
 ```python
 from langgraph.graph import StateGraph
@@ -139,7 +140,7 @@ graph = builder.compile()
 :::
 
 :::js
-Let's next define a simple graph containing this node. We use [StateGraph](/oss/langgraph/graph-api#stategraph) to define a graph that operates on this state. We then use [addNode](/oss/langgraph/graph-api#nodes) populate our graph.
+Let's next define a simple graph containing this node. We use [`StateGraph`](/oss/langgraph/graph-api#stategraph) to define a graph that operates on this state. We then use [`addNode`](/oss/langgraph/graph-api#nodes) populate our graph.
 
 ```typescript
 import { StateGraph } from "@langchain/langgraph";
@@ -347,7 +348,7 @@ In practice, there are additional considerations for updating lists of messages:
 * We may want to accept short-hands for [message formats](/oss/langgraph/graph-api#using-messages-in-your-graph), such as [OpenAI format](https://python.langchain.com/docs/concepts/messages/#openai-format).
 
 :::python
-LangGraph includes a built-in reducer `add_messages` that handles these considerations:
+LangGraph includes a built-in reducer @[`add_messages`] that handles these considerations:
 
 ```python
 from langgraph.graph.message import add_messages
@@ -444,6 +445,58 @@ const State = z.object({
   extraField: z.number(),
 });
 ```
+:::
+
+:::python
+### Bypass reducers with `Overwrite`
+
+In some cases, you may want to bypass a reducer and directly overwrite a state value. LangGraph provides the [`Overwrite`](https://reference.langchain.com/python/langgraph/types/) type for this purpose. When a node returns a value wrapped with `Overwrite`, the reducer is bypassed and the channel is set directly to that value.
+
+This is useful when you want to reset or replace accumulated state rather than merge it with existing values.
+
+```python
+from langgraph.graph import StateGraph, START, END
+from langgraph.types import Overwrite
+from typing_extensions import Annotated, TypedDict
+import operator
+
+class State(TypedDict):
+    messages: Annotated[list, operator.add]
+
+def add_message(state: State):
+    return {"messages": ["first message"]}
+
+def replace_messages(state: State):
+    # Bypass the reducer and replace the entire messages list
+    return {"messages": Overwrite(["replacement message"])}
+
+builder = StateGraph(State)
+builder.add_node("add_message", add_message)
+builder.add_node("replace_messages", replace_messages)
+builder.add_edge(START, "add_message")
+builder.add_edge("add_message", "replace_messages")
+builder.add_edge("replace_messages", END)
+
+graph = builder.compile()
+
+result = graph.invoke({"messages": ["initial"]})
+print(result["messages"])
+```
+
+```
+['replacement message']
+```
+
+You can also use JSON format with the special key `"__overwrite__"`:
+
+```python
+def replace_messages(state: State):
+    return {"messages": {"__overwrite__": ["replacement message"]}}
+```
+
+<Warning>
+When nodes execute in parallel, only one node can use `Overwrite` on the same state key in a given super-step. If multiple nodes attempt to overwrite the same key in the same super-step, an `InvalidUpdateError` will be raised.
+</Warning>
 :::
 
 ### Define input and output schemas
@@ -595,14 +648,14 @@ print(f"Output of graph invocation: {response}")
 
 ```
 Entered node `node_1`:
-    ut: {'a': 'set at start'}.
-    urned: {'private_data': 'set by node_1'}
+    Input: {'a': 'set at start'}.
+    Returned: {'private_data': 'set by node_1'}
 Entered node `node_2`:
-    ut: {'private_data': 'set by node_1'}.
-    urned: {'a': 'set by node_2'}
+    Input: {'private_data': 'set by node_1'}.
+    Returned: {'a': 'set by node_2'}
 Entered node `node_3`:
-    ut: {'a': 'set by node_2'}.
-    urned: {'a': 'set by node_3'}
+    Input: {'a': 'set by node_2'}.
+    Returned: {'a': 'set by node_3'}
 
 Output of graph invocation: {'a': 'set by node_3'}
 ```
@@ -698,7 +751,7 @@ Here, we'll see how a [Pydantic BaseModel](https://docs.pydantic.dev/latest/api/
 <Note>
 **Known Limitations**
 * Currently, the output of the graph will **NOT** be an instance of a pydantic model.
-* Run-time validation only occurs on inputs into nodes, not on the outputs.
+* Run-time validation only occurs on inputs to the first node in the graph, not on subsequent nodes or outputs.
 * The validation error trace from pydantic does not show which node the error arises in.
 * Pydantic's recursive validation can be slow. For performance-sensitive applications, you may want to consider using a `dataclass` instead.
 </Note>
@@ -1006,8 +1059,8 @@ console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [
       model_provider: str = "anthropic"
 
   MODELS = {
-      "anthropic": init_chat_model("anthropic:claude-3-5-haiku-latest"),
-      "openai": init_chat_model("openai:gpt-4.1-mini"),
+      "anthropic": init_chat_model("claude-haiku-4-5-20251001"),
+      "openai": init_chat_model("gpt-4.1-mini"),
   }
 
   def call_model(state: MessagesState, runtime: Runtime[ContextSchema]):
@@ -1034,7 +1087,7 @@ console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [
   ```
 
   ```
-  claude-3-5-haiku-20241022
+  claude-haiku-4-5-20251001
   gpt-4.1-mini-2025-04-14
   ```
   :::
@@ -1062,7 +1115,7 @@ console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [
   });
 
   const MODELS = {
-    anthropic: new ChatAnthropic({ model: "claude-3-5-haiku-latest" }),
+    anthropic: new ChatAnthropic({ model: "claude-haiku-4-5-20251001" }),
     openai: new ChatOpenAI({ model: "gpt-4o-mini" }),
   };
 
@@ -1092,7 +1145,7 @@ console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [
   ```
 
   ```
-  claude-3-5-haiku-20241022
+  claude-haiku-4-5-20251001
   gpt-4o-mini-2024-07-18
   ```
   :::
@@ -1116,8 +1169,8 @@ console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [
       system_message: str | None = None
 
   MODELS = {
-      "anthropic": init_chat_model("anthropic:claude-3-5-haiku-latest"),
-      "openai": init_chat_model("openai:gpt-4.1-mini"),
+      "anthropic": init_chat_model("claude-haiku-4-5-20251001"),
+      "openai": init_chat_model("gpt-4.1-mini"),
   }
 
   def call_model(state: MessagesState, runtime: Runtime[ContextSchema]):
@@ -1175,7 +1228,7 @@ console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [
   });
 
   const MODELS = {
-    anthropic: new ChatAnthropic({ model: "claude-3-5-haiku-latest" }),
+    anthropic: new ChatAnthropic({ model: "claude-haiku-4-5-20251001" }),
     openai: new ChatOpenAI({ model: "gpt-4o-mini" }),
   };
 
@@ -1227,7 +1280,7 @@ console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [
 There are many use cases where you may wish for your node to have a custom retry policy, for example if you are calling an API, querying a database, or calling an LLM, etc. LangGraph lets you add retry policies to nodes.
 
 :::python
-To configure a retry policy, pass the `retry_policy` parameter to the [add_node](https://langchain-ai.github.io/langgraph/reference/graphs/#langgraph.graph.state.StateGraph.add_node). The `retry_policy` parameter takes in a `RetryPolicy` named tuple object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
+To configure a retry policy, pass the `retry_policy` parameter to the @[`add_node`]. The `retry_policy` parameter takes in a `RetryPolicy` named tuple object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
 
 ```python
 from langgraph.types import RetryPolicy
@@ -1258,7 +1311,7 @@ In addition, for exceptions from popular http request libraries such as `request
 :::
 
 :::js
-To configure a retry policy, pass the `retryPolicy` parameter to the [addNode](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.Graph.html#addnode). The `retryPolicy` parameter takes in a `RetryPolicy` object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
+To configure a retry policy, pass the `retryPolicy` parameter to the [`addNode`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.Graph.html#addnode). The `retryPolicy` parameter takes in a `RetryPolicy` object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
 
 ```typescript
 import { RetryPolicy } from "@langchain/langgraph";
@@ -1289,7 +1342,7 @@ By default, the retry policy retries on any exception except for the following:
   from langchain.messages import AIMessage
 
   db = SQLDatabase.from_uri("sqlite:///:memory:")
-  model = init_chat_model("anthropic:claude-3-5-haiku-latest")
+  model = init_chat_model("claude-haiku-4-5-20251001")
 
   def query_database(state: MessagesState):
       query_result = db.run("SELECT * FROM Artist LIMIT 10;")
@@ -1377,7 +1430,7 @@ By default, the retry policy retries on any exception except for the following:
 
 Node caching is useful in cases where you want to avoid repeating operations, like when doing something expensive (either in terms of time or cost). LangGraph lets you add individualized caching policies to nodes in a graph.
 
-To configure a cache policy, pass the `cache_policy` parameter to the [add_node](https://langchain-ai.github.io/langgraph/reference/graphs.md#langgraph.graph.state.StateGraph.add_node) function. In the following example, a [`CachePolicy`](https://langchain-ai.github.io/langgraph/reference/types/?h=cachepolicy#langgraph.types.CachePolicy) object is instantiated with a time to live of 120 seconds and the default `key_func` generator. Then it is associated with a node:
+To configure a cache policy, pass the `cache_policy` parameter to the @[`add_node`] function. In the following example, a @[`CachePolicy`] object is instantiated with a time to live of 120 seconds and the default `key_func` generator. Then it is associated with a node:
 
 ```python
 from langgraph.types import CachePolicy
@@ -1411,7 +1464,7 @@ Here we demonstrate how to construct a simple sequence of steps. We will show:
 2. Built-in short-hand for constructing similar graphs.
 
 :::python
-To add a sequence of nodes, we use the `.add_node` and `.add_edge` methods of our [graph](/oss/langgraph/graph-api#stategraph):
+To add a sequence of nodes, we use the @[`add_node`] and @[`add_edge`] methods of our [graph](/oss/langgraph/graph-api#stategraph):
 
 ```python
 from langgraph.graph import START, StateGraph
@@ -1539,7 +1592,7 @@ By default, this will **overwrite** the value of the corresponding key. You can 
 Finally, we define the graph. We use [StateGraph](/oss/langgraph/graph-api#stategraph) to define a graph that operates on this state.
 
 :::python
-We will then use [add_node](/oss/langgraph/graph-api#messagesstate) and [add_edge](/oss/langgraph/graph-api#edges) to populate our graph and define its control flow.
+We will then use [`add_node`](/oss/langgraph/graph-api#messagesstate) and [`add_edge`](/oss/langgraph/graph-api#edges) to populate our graph and define its control flow.
 
 ```python
 from langgraph.graph import START, StateGraph
@@ -1578,7 +1631,7 @@ const graph = new StateGraph(State)
 :::python
 <Tip>
 **Specifying custom names**
-You can specify custom names for nodes using `.add_node`:
+You can specify custom names for nodes using @[`add_node`]:
 
 ```python
 builder.add_node("my_node", step_1)
@@ -1602,7 +1655,7 @@ const graph = new StateGraph(State)
 Note that:
 
 :::python
-* `.add_edge` takes the names of nodes, which for functions defaults to `node.__name__`.
+* @[`add_edge`] takes the names of nodes, which for functions defaults to `node.__name__`.
 * We must specify the entry point of the graph. For this we add an edge with the [START node](/oss/langgraph/graph-api#start-node).
 * The graph halts when there are no more nodes to execute.
 
@@ -1968,7 +2021,7 @@ In the above example, nodes `"b"` and `"c"` are executed concurrently in the sam
 ### Conditional branching
 
 :::python
-If your fan-out should vary at runtime based on the state, you can use [add_conditional_edges](https://langchain-ai.github.io/langgraph/reference/graphs.md#langgraph.graph.StateGraph.add_conditional_edges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
+If your fan-out should vary at runtime based on the state, you can use @[`add_conditional_edges`] to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
 
 ```python
 import operator
@@ -2033,7 +2086,7 @@ Adding "C" to ['A']
 :::
 
 :::js
-If your fan-out should vary at runtime based on the state, you can use [addConditionalEdges](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addconditionaledges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
+If your fan-out should vary at runtime based on the state, you can use [`addConditionalEdges`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addconditionaledges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
 
 ```typescript
 import { StateGraph, START, END } from "@langchain/langgraph";
@@ -2116,9 +2169,9 @@ Your conditional edges can route to multiple destination nodes. For example:
 :::python
 ```python
 def route_bc_or_cd(state: State) -> Sequence[str]:
-if state["which"] == "cd":
-return ["c", "d"]
-return ["b", "c"]
+    if state["which"] == "cd":
+        return ["c", "d"]
+    return ["b", "c"]
 ```
 :::
 
@@ -3155,7 +3208,7 @@ const lookupUserInfo = tool(
 You MUST include `messages` (or any state key used for the message history) in `Command.update` when returning @[`Command`] from a tool and the list of messages in `messages` MUST contain a `ToolMessage`. This is necessary for the resulting message history to be valid (LLM providers require AI messages with tool calls to be followed by the tool result messages).
 </Warning>
 
-If you are using tools that update state via @[`Command`], we recommend using prebuilt [`ToolNode`](https://langchain-ai.github.io/langgraph/reference/agents/#langgraph.prebuilt.tool_node.ToolNode) which automatically handles tools returning @[`Command`] objects and propagates them to the graph state. If you're writing a custom node that calls tools, you would need to manually propagate @[`Command`] objects returned by the tools as the update from the node.
+If you are using tools that update state via @[`Command`], we recommend using prebuilt @[`ToolNode`] which automatically handles tools returning @[`Command`] objects and propagates them to the graph state. If you're writing a custom node that calls tools, you would need to manually propagate @[`Command`] objects returned by the tools as the update from the node.
 
 ## Visualize your graph
 

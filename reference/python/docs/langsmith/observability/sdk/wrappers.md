@@ -1,3 +1,5 @@
-# Wrappers
+---
+title: Wrappers (LangSmith)
+---
 
 ::: langsmith.wrappers

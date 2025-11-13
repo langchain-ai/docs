@@ -1,5 +1,5 @@
 ---
-title: Upstage - LangChain Integration Reference
+title: Upstage
 ---
 
 # `langchain-upstage`

@@ -1,5 +1,5 @@
 ---
-title: Unstructured - LangChain Integration Reference
+title: Unstructured
 ---
 
 # `langchain-unstructured`

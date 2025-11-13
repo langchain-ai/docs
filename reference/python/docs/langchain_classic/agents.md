@@ -1,4 +1,8 @@
-# Agents
+---
+title: Agents (Classic)
+---
+
+# Agents (Classic)
 
 --8<-- "langchain-classic-warning.md"
 

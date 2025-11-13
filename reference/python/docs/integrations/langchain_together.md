@@ -1,5 +1,5 @@
 ---
-title: Together - LangChain Integration Reference
+title: Together
 ---
 
 # `langchain-together`

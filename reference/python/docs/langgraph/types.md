@@ -1,5 +1,3 @@
-# Types
-
 ::: langgraph.types
     options:
       members:
@@ -13,4 +11,5 @@
         - StateSnapshot
         - Send
         - Command
+        - Overwrite
         - interrupt

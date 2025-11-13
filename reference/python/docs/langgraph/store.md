@@ -1,4 +1,6 @@
-# Storage
+---
+title: Storage (LangGraph)
+---
 
 ::: langgraph.store.base
 

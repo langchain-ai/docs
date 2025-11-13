@@ -1,5 +1,5 @@
 ---
-title: Deep Agents Overview - LangChain Reference
+title: Deep Agents overview
 ---
 
 [![PyPI - Version](https://img.shields.io/pypi/v/deepagents?label=%20)](https://pypi.org/project/deepagents/#history)

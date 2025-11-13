@@ -1,5 +1,3 @@
-# Callbacks
-
 ::: langchain_core.callbacks.base.AsyncCallbackHandler
 ::: langchain_core.callbacks.base.BaseCallbackHandler
 ::: langchain_core.callbacks.manager.AsyncCallbackManager

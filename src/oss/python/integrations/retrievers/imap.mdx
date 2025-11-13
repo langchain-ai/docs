@@ -1,0 +1,276 @@
+---
+title: Imap
+---
+
+# ImapRetriever
+
+This guide will help you get started with the IMAP [retriever](/oss/integrations/retrievers). The `ImapRetriever` enables search and retrieval of emails from IMAP servers as LangChain `Document` objects.
+
+## Integration details
+
+| Retriever | Source | Package |
+| :--- | :--- | :---: |
+| ImapRetriever | IMAP Email Servers | langchain-imap |
+
+## Setup
+
+### Installation
+
+The `ImapRetriever` lives in the `langchain-imap` package:
+
+```bash
+pip install -U langchain-imap
+```
+
+For full document processing (DOCX, PPTX, etc.) with docling (not tested):
+
+```bash
+pip install "langchain-imap[docling]"
+```
+
+### Test Environment Setup (Optional)
+
+For testing purposes, you can set up a local IMAP server using GreenMail:
+
+```python
+from pathlib import Path
+import subprocess
+import os
+
+preload_dir = Path(os.getcwd()).parent / "tests" / "fixtures" / "preload"
+log_path = Path(os.getcwd()).parent / "tests" / "container.log"
+
+# GreenMail configuration
+env_vars = {
+    "GREENMAIL_OPTS": " ".join([
+        "-Dgreenmail.setup.test.all",
+        "-Dgreenmail.users=test:test123@localhost",
+        "-Dgreenmail.users.login=local_part",
+        "-Dgreenmail.preload.dir=/preload",
+        "-Dgreenmail.verbose",
+        "-Dgreenmail.hostname=0.0.0.0"
+    ])
+}
+
+# Start GreenMail container
+container_name = "langchain-imap-test"
+cmd = [
+    "podman", "run", "--rm", "-d",
+    "--name", container_name,
+    "-e", f"GREENMAIL_OPTS={env_vars['GREENMAIL_OPTS']}",
+    "-v", f"{preload_dir}:/preload:ro,Z",
+    "-p", "3143:3143",
+    "-p", "3993:3993",
+    "-p", "8080:8080",
+    "--log-driver", "k8s-file",
+    "--log-opt", f"path={log_path.absolute()}",
+    "docker.io/greenmail/standalone:2.1.5",
+]
+
+result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+```
+
+## Instantiation
+
+To use the `ImapRetriever`, you need to configure it with your IMAP server details using `ImapConfig`:
+
+```python
+from langchain_imap import ImapConfig, ImapRetriever
+
+config = ImapConfig(
+    host="imap.gmail.com",
+    port=993,
+    user="your-email@gmail.com",
+    password="your-app-password",  # Use app password for Gmail
+    ssl_mode="ssl",
+)
+
+retriever = ImapRetriever(config=config, k=10)
+```
+
+For the test environment:
+
+```python
+from langchain_imap import ImapRetriever, ImapConfig
+
+config = ImapConfig(
+    host="localhost",
+    port=3143,
+    user="test",
+    password="test123",
+    ssl_mode="plain",
+    verify_cert=False,
+)
+
+retriever = ImapRetriever(
+    config=config,
+    k=50
+)
+```
+
+### Configuration Options
+
+- **auth_method**: Authentication method (default: "login")
+- **ssl_mode**: SSL mode - "ssl" (default), "starttls", or "plain"
+- **verify_cert**: Set to `False` for self-signed certificates (not recommended for production)
+- **k**: Number of documents to retrieve
+
+## Usage
+
+### Basic Search
+
+Search emails using IMAP syntax:
+
+```python
+# Search all emails
+query = 'ALL'
+docs = retriever.invoke(query)
+
+# Search by subject
+query = 'SUBJECT "URGENT"'
+docs = retriever.invoke(query)
+
+# Search by sender
+docs = retriever.invoke('FROM "john@example.com"')
+
+# Search by date
+docs = retriever.invoke('SENTSINCE "01-Oct-2024"')
+
+# Combine criteria
+docs = retriever.invoke('FROM "boss@company.com" SUBJECT "urgent"')
+
+for doc in docs:
+    print(doc.page_content)  # Formatted email content
+```
+
+### Attachment Handling
+
+The retriever supports three modes for handling email attachments:
+
+- `"names_only"` (default): List attachment names only
+- `"text_extract"`: Extract text from PDFs and plain text attachments
+- `"full_content"`: Full extraction using docling from office documents (requires `[docling]` extra)
+
+```python
+retriever = ImapRetriever(
+    config=config,
+    k=10,
+    attachment_mode="text_extract"
+)
+```
+
+## Use within a chain
+
+Like other retrievers, `ImapRetriever` can be incorporated into LLM applications via chains. Here's a complete example that uses an LLM to generate IMAP queries and answer questions based on email content:
+
+```python
+import os
+from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_imap import ImapRetriever, ImapConfig
+
+# Setup LLM (example using OpenRouter)
+llm = ChatOpenAI(
+    model="google/gemini-2.5-flash",
+    temperature=0,
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
+    openai_api_base="https://openrouter.ai/api/v1"
+)
+
+# IMAP query generation prompt
+query_prompt = ChatPromptTemplate.from_template(
+    """Convert the following user question into an IMAP search query.
+
+IMAP query syntax examples:
+- 'FROM "john@example.com"' - emails from specific sender
+- 'SUBJECT "project update"' - emails with specific subject
+- 'SENTSINCE "01-Oct-2024"' - emails since specific date
+- 'BODY "meeting"' - emails containing specific word in body
+- 'FROM "boss@company.com" SUBJECT "urgent"' - combine criteria
+
+IMPORTANT: Include only VALID imap command in output.
+IMPORTANT: Do not include any other text in output.
+
+User Question: {question}
+
+IMAP Query:"""
+)
+
+# Answer generation prompt
+answer_prompt = ChatPromptTemplate.from_template(
+    """Answer the question based only on the context provided from emails.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+)
+
+# IMAP retriever configuration
+config = ImapConfig(
+    host="localhost",
+    port=3993,
+    user="test",
+    password="test123",
+    ssl_mode="ssl",
+    auth_method="login",
+    verify_cert=False,
+)
+
+retriever = ImapRetriever(
+    config=config,
+    k=5,
+    attachment_mode="names_only"
+)
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+# Create the chain
+query_chain = query_prompt | llm | StrOutputParser()
+
+def generate_imap_query(question):
+    return query_chain.invoke({"question": question})
+
+def search_emails(query):
+    return retriever.invoke(query)
+
+full_chain = (
+    {
+        "question": lambda x: x,
+        "imap_query": lambda x: generate_imap_query(x)
+    }
+    | RunnablePassthrough.assign(
+        context=lambda x: format_docs(search_emails(x["imap_query"]))
+    )
+    | answer_prompt
+    | llm
+    | StrOutputParser()
+)
+
+# Use the chain
+TODO = full_chain.invoke("Please make a TODO based on the e-mails having URGENT in subject")
+print(TODO)
+```
+
+### Cleanup Test Environment
+
+If you're using the GreenMail test container, clean it up after testing:
+
+```python
+cmd = ["podman", "rm", "--force", "langchain-imap-test"]
+result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+```
+
+---
+
+## API reference
+
+For more information, see:
+- [GitHub Repository](https://github.com/jfouret/langchain-imap)
+- [Package Documentation](https://github.com/jfouret/langchain-imap/blob/main/README.md)
+- [Usage Examples](https://github.com/jfouret/langchain-imap/blob/main/docs/retrievers.ipynb)

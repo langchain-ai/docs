@@ -1,5 +1,5 @@
 ---
-title: Neo4J - LangChain Integration Reference
+title: Neo4J
 ---
 
 # :simple-neo4j:{ .lg .middle } `langchain-neo4j`
@@ -8,5 +8,7 @@ title: Neo4J - LangChain Integration Reference
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-neo4j)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-neo4j)](https://pypistats.org/packages/langchain-neo4j)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+!!! warning "Reference docs"
+    This page contains **reference documentation** for Neo4j. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/neo4j) for conceptual guides, tutorials, and examples on using Neo4j modules.
+
+::: langchain_neo4j

@@ -1,4 +1,6 @@
-## Caching
+---
+title: Caching (LangGraph)
+---
 
 ::: langgraph.cache.base
 ::: langgraph.cache.memory

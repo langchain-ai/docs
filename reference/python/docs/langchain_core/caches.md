@@ -1,5 +1,3 @@
-# Caches
-
 ::: langchain_core.caches
     options:
       members:

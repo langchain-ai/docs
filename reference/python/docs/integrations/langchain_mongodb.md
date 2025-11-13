@@ -1,5 +1,5 @@
 ---
-title: MongoDB - LangChain Integration Reference
+title: MongoDB
 ---
 
 # :simple-mongodb:{ .lg .middle } `langchain-mongodb`

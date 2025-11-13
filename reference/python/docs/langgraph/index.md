@@ -1,5 +1,5 @@
 ---
-title: LangGraph Overview - LangChain Reference
+title: LangGraph overview
 hide:
   - toc
 ---

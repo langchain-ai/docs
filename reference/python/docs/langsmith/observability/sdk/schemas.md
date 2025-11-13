@@ -1,3 +1,5 @@
-# Schemas
+---
+title: Schemas (LangSmith)
+---
 
 ::: langsmith.schemas

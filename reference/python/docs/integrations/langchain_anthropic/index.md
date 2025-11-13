@@ -1,5 +1,5 @@
 ---
-title: Anthropic - LangChain Integration Reference
+title: Anthropic
 ---
 
 # :simple-claude:{ .lg .middle } `langchain-anthropic`

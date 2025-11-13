@@ -1,7 +1,5 @@
 ---
-title: Middleware
+title: Middleware (LangSmith)
 ---
-
-# Middleware
 
 ::: langsmith.middleware

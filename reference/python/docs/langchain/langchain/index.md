@@ -1,3 +1,7 @@
+---
+title: LangChain home
+---
+
 # :simple-langchain:{ .lg .middle } `langchain`
 
 [![PyPI - Version](https://img.shields.io/pypi/v/langchain?label=%20)](https://pypi.org/project/langchain/#history)
