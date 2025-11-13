@@ -53,55 +53,24 @@ Core types for building middleware:
 <!-- Configuration notes:
 - summary: false - Using custom tables above instead of auto-generated summaries
 - group_by_category: false - Custom ordering via explicit members list
-- filters: Show only __init__ for middleware classes; all members for other types
+- members: Show only __init__ (and state_schema where relevant) for middleware classes; all members for other types
 - inherited_members: false - Hide inherited members by default
 - show_if_no_docstring: true - Show members even without docstrings
 -->
 
-::: langchain.agents.middleware
-    options:
-      summary: false
-      group_by_category: false
-      inherited_members: false
-      show_if_no_docstring: true
-      members:
-        - SummarizationMiddleware
-        - HumanInTheLoopMiddleware
-        - ModelCallLimitMiddleware
-        - ToolCallLimitMiddleware
-        - ModelFallbackMiddleware
-        - PIIMiddleware
-        - TodoListMiddleware
-        - LLMToolSelectorMiddleware
-        - ToolRetryMiddleware
-        - LLMToolEmulator
-        - ContextEditingMiddleware
-        - ShellToolMiddleware
-        - FilesystemFileSearchMiddleware
-        - AgentMiddleware
-        - before_agent
-        - before_model
-        - after_model
-        - after_agent
-        - wrap_model_call
-        - wrap_tool_call
-        - dynamic_prompt
-        - hook_config
-        - AgentState
-        - ModelRequest
-        - ModelResponse
-        - ClearToolUsesEdit
-        - InterruptOnConfig
+<!-- Module-level documentation removed to avoid duplicates - using explicit class blocks below -->
 
 ::: langchain.agents.middleware.SummarizationMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.HumanInTheLoopMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.ModelCallLimitMiddleware
     options:
@@ -116,12 +85,14 @@ Core types for building middleware:
 ::: langchain.agents.middleware.ModelFallbackMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.PIIMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.TodoListMiddleware
     options:
@@ -131,29 +102,35 @@ Core types for building middleware:
 ::: langchain.agents.middleware.LLMToolSelectorMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.ToolRetryMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.LLMToolEmulator
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.ContextEditingMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.ShellToolMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain.agents.middleware.FilesystemFileSearchMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__

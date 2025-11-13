@@ -23,57 +23,51 @@ Provider-specific middleware for Anthropic's Claude models:
 <!-- Configuration notes:
 - summary: false - Using custom tables above instead of auto-generated summaries
 - group_by_category: false - Custom ordering via explicit members list
-- filters: Show only __init__ for middleware classes
+- members: Show only __init__ for middleware classes
 - inherited_members: false - Hide inherited members by default
 - show_if_no_docstring: true - Show members even without docstrings
 -->
 
-::: langchain_anthropic.middleware
-    options:
-      summary: false
-      group_by_category: false
-      inherited_members: false
-      show_if_no_docstring: true
-      members:
-        - AnthropicPromptCachingMiddleware
-        - ClaudeBashToolMiddleware
-        - StateClaudeTextEditorMiddleware
-        - FilesystemClaudeTextEditorMiddleware
-        - StateClaudeMemoryMiddleware
-        - FilesystemClaudeMemoryMiddleware
-        - StateFileSearchMiddleware
+<!-- Module-level documentation removed to avoid duplicates - using explicit class blocks below -->
 
 ::: langchain_anthropic.middleware.AnthropicPromptCachingMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain_anthropic.middleware.ClaudeBashToolMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain_anthropic.middleware.StateClaudeTextEditorMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain_anthropic.middleware.FilesystemClaudeTextEditorMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain_anthropic.middleware.StateClaudeMemoryMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain_anthropic.middleware.FilesystemClaudeMemoryMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
 
 ::: langchain_anthropic.middleware.StateFileSearchMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__

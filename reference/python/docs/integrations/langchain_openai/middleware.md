@@ -17,21 +17,15 @@ Provider-specific middleware for OpenAI models:
 <!-- Configuration notes:
 - summary: false - Using custom tables above instead of auto-generated summaries
 - group_by_category: false - Custom ordering via explicit members list
-- filters: Show only __init__ for middleware classes
+- members: Show only __init__ for middleware classes
 - inherited_members: false - Hide inherited members by default
 - show_if_no_docstring: true - Show members even without docstrings
 -->
 
-::: langchain_openai.middleware
-    options:
-      summary: false
-      group_by_category: false
-      inherited_members: false
-      show_if_no_docstring: true
-      members:
-        - OpenAIModerationMiddleware
+<!-- Module-level documentation removed to avoid duplicates - using explicit class blocks below -->
 
 ::: langchain_openai.middleware.OpenAIModerationMiddleware
     options:
       show_bases: false
-      filters: ["^__init__$"]
+      members:
+        - __init__
