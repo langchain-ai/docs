@@ -6,20 +6,20 @@
 
 LangChain provides prebuilt middleware for common agent use cases:
 
-| CLASS | CATEGORY | DESCRIPTION |
-| ----- | -------- | ----------- |
-| [`SummarizationMiddleware`](./#langchain.agents.middleware.SummarizationMiddleware) | Context management | Automatically summarize conversation history when approaching token limits |
-| [`HumanInTheLoopMiddleware`](./#langchain.agents.middleware.HumanInTheLoopMiddleware) | Control flow | Pause execution for human approval of tool calls |
-| [`ModelCallLimitMiddleware`](./#langchain.agents.middleware.ModelCallLimitMiddleware) | Control flow | Limit the number of model calls to prevent excessive costs |
-| [`ToolCallLimitMiddleware`](./#langchain.agents.middleware.ToolCallLimitMiddleware) | Control flow | Control tool execution by limiting call counts |
-| [`ModelFallbackMiddleware`](./#langchain.agents.middleware.ModelFallbackMiddleware) | Reliability | Automatically fallback to alternative models when primary fails |
-| [`PIIMiddleware`](./#langchain.agents.middleware.PIIMiddleware) | Security & compliance | Detect and handle Personally Identifiable Information |
-| [`TodoListMiddleware`](./#langchain.agents.middleware.TodoListMiddleware) | Task planning | Equip agents with task planning and tracking capabilities |
-| [`LLMToolSelectorMiddleware`](./#langchain.agents.middleware.LLMToolSelectorMiddleware) | Tool management | Use an LLM to select relevant tools before calling main model |
-| [`ToolRetryMiddleware`](./#langchain.agents.middleware.ToolRetryMiddleware) | Reliability | Automatically retry failed tool calls with exponential backoff |
-| [`LLMToolEmulator`](./#langchain.agents.middleware.LLMToolEmulator) | Tool management | Emulate tool execution using LLM for testing purposes |
-| [`ContextEditingMiddleware`](./#langchain.agents.middleware.ContextEditingMiddleware) | Context management | Manage conversation context by trimming or clearing tool uses |
-| [`AgentMiddleware`](./#langchain.agents.middleware.AgentMiddleware) | Base class | Base middleware class for creating custom middleware |
+| CLASS | DESCRIPTION |
+| ----- | ----------- |
+| [`SummarizationMiddleware`](./#langchain.agents.middleware.SummarizationMiddleware) | Automatically summarize conversation history when approaching token limits |
+| [`HumanInTheLoopMiddleware`](./#langchain.agents.middleware.HumanInTheLoopMiddleware) | Pause execution for human approval of tool calls |
+| [`ModelCallLimitMiddleware`](./#langchain.agents.middleware.ModelCallLimitMiddleware) | Limit the number of model calls to prevent excessive costs |
+| [`ToolCallLimitMiddleware`](./#langchain.agents.middleware.ToolCallLimitMiddleware) | Control tool execution by limiting call counts |
+| [`ModelFallbackMiddleware`](./#langchain.agents.middleware.ModelFallbackMiddleware) | Automatically fallback to alternative models when primary fails |
+| [`PIIMiddleware`](./#langchain.agents.middleware.PIIMiddleware) | Detect and handle Personally Identifiable Information |
+| [`TodoListMiddleware`](./#langchain.agents.middleware.TodoListMiddleware) | Equip agents with task planning and tracking capabilities |
+| [`LLMToolSelectorMiddleware`](./#langchain.agents.middleware.LLMToolSelectorMiddleware) | Use an LLM to select relevant tools before calling main model |
+| [`ToolRetryMiddleware`](./#langchain.agents.middleware.ToolRetryMiddleware) | Automatically retry failed tool calls with exponential backoff |
+| [`LLMToolEmulator`](./#langchain.agents.middleware.LLMToolEmulator) | Emulate tool execution using LLM for testing purposes |
+| [`ContextEditingMiddleware`](./#langchain.agents.middleware.ContextEditingMiddleware) | Manage conversation context by trimming or clearing tool uses |
+| [`AgentMiddleware`](./#langchain.agents.middleware.AgentMiddleware) | Base middleware class for creating custom middleware |
 
 ## Decorators
 
