@@ -721,26 +721,201 @@ agent = create_agent(
 
 :::js
 ```typescript
-import { createAgent, piiRedactionMiddleware } from "langchain";
+import { createAgent, piiMiddleware } from "langchain";
 
 const agent = createAgent({
   model: "gpt-4o",
   tools: [...],
   middleware: [
-    piiRedactionMiddleware({
-      piiType: "email",
-      strategy: "redact",
-      applyToInput: true,
+    piiMiddleware("email", { strategy: "redact", applyToInput: true }),
+    piiMiddleware("credit_card", { strategy: "mask", applyToInput: true }),
+  ],
+});
+```
+:::
+
+#### Custom PII types
+
+You can create custom PII types by providing a `detector` parameter. This allows you to detect patterns specific to your use case beyond the built-in types.
+
+**Three ways to create custom detectors:**
+
+1. **Regex pattern string** - Simple pattern matching
+:::js
+1. **RegExp object** - More control over regex flags
+:::
+1. **Custom function** - Complex detection logic with validation
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import PIIMiddleware
+import re
+
+
+# Method 1: Regex pattern string
+agent1 = create_agent(
+    model="gpt-4o",
+    tools=[...],
+    middleware=[
+        PIIMiddleware(
+            "api_key",
+            detector=r"sk-[a-zA-Z0-9]{32}",
+            strategy="block",
+        ),
+    ],
+)
+
+# Method 2: Compiled regex pattern
+agent2 = create_agent(
+    model="gpt-4o",
+    tools=[...],
+    middleware=[
+        PIIMiddleware(
+            "phone_number",
+            detector=re.compile(r"\+?\d{1,3}[\s.-]?\d{3,4}[\s.-]?\d{4}"),
+            strategy="mask",
+        ),
+    ],
+)
+
+# Method 3: Custom detector function
+def detect_ssn(content: str) -> list[dict[str, str | int]]:
+    """Detect SSN with validation.
+
+    Returns a list of dictionaries with 'text', 'start', and 'end' keys.
+    """
+    import re
+    matches = []
+    pattern = r"\d{3}-\d{2}-\d{4}"
+    for match in re.finditer(pattern, content):
+        ssn = match.group(0)
+        # Validate: first 3 digits shouldn't be 000, 666, or 900-999
+        first_three = int(ssn[:3])
+        if first_three not in [0, 666] and not (900 <= first_three <= 999):
+            matches.append({
+                "text": ssn,
+                "start": match.start(),
+                "end": match.end(),
+            })
+    return matches
+
+agent3 = create_agent(
+    model="gpt-4o",
+    tools=[...],
+    middleware=[
+        PIIMiddleware(
+            "ssn",
+            detector=detect_ssn,
+            strategy="hash",
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, piiMiddleware, type PIIMatch } from "langchain";
+
+// Method 1: Regex pattern string
+const agent1 = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [
+    piiMiddleware("api_key", {
+      detector: "sk-[a-zA-Z0-9]{32}",
+      strategy: "block",
     }),
-    piiRedactionMiddleware({
-      piiType: "credit_card",
+  ],
+});
+
+// Method 2: RegExp object
+const agent2 = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [
+    piiMiddleware("phone_number", {
+      detector: /\+?\d{1,3}[\s.-]?\d{3,4}[\s.-]?\d{4}/,
       strategy: "mask",
-      applyToInput: true,
+    }),
+  ],
+});
+
+// Method 3: Custom detector function
+function detectSSN(content: string): PIIMatch[] {
+  const matches: PIIMatch[] = [];
+  const pattern = /\d{3}-\d{2}-\d{4}/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    const ssn = match[0];
+    // Validate: first 3 digits shouldn't be 000, 666, or 900-999
+    const firstThree = parseInt(ssn.substring(0, 3), 10);
+    if (firstThree !== 0 && firstThree !== 666 && !(firstThree >= 900 && firstThree <= 999)) {
+      matches.push({
+        text: ssn,
+        start: match.index ?? 0,
+        end: (match.index ?? 0) + ssn.length,
+      });
+    }
+  }
+  return matches;
+}
+
+const agent3 = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [
+    piiMiddleware("ssn", {
+      detector: detectSSN,
+      strategy: "hash",
     }),
   ],
 });
 ```
 :::
+
+**Custom detector function signature:**
+
+The detector function must accept a string (content) and return matches:
+
+:::python
+Returns a list of dictionaries with `text`, `start`, and `end` keys:
+```python
+def detector(content: str) -> list[dict[str, str | int]]:
+    return [
+        {"text": "matched_text", "start": 0, "end": 12},
+        # ... more matches
+    ]
+```
+:::
+:::js
+Returns an array of `PIIMatch` objects:
+```typescript
+interface PIIMatch {
+  text: string;    // The matched text
+  start: number;   // Start index in content
+  end: number;      // End index in content
+}
+
+function detector(content: string): PIIMatch[] {
+  return [
+    { text: "matched_text", start: 0, end: 12 },
+    // ... more matches
+  ];
+}
+```
+:::
+
+<Tip>
+For custom detectors:
+
+- Use regex strings for simple patterns
+- Use RegExp objects when you need flags (e.g., case-insensitive matching)
+- Use custom functions when you need validation logic beyond pattern matching
+- Custom functions give you full control over detection logic and can implement complex validation rules
+</Tip>
 
 <Accordion title="Configuration options">
 
@@ -786,11 +961,17 @@ const agent = createAgent({
     - `'block'` - Throw error when detected
     - `'redact'` - Replace with `[REDACTED_TYPE]`
     - `'mask'` - Partially mask (e.g., `****-****-****-1234`)
-    - `'hash'` - Replace with deterministic hash
+    - `'hash'` - Replace with deterministic hash (e.g., `<email_hash:a1b2c3d4>`)
 </ParamField>
 
-<ParamField body="detector" type="RegExp">
-    Custom detector regex pattern. If not provided, uses built-in detector for the PII type.
+<ParamField body="detector" type="RegExp | string | function">
+    Custom detector. Can be:
+
+    - `RegExp` - Regex pattern for matching
+    - `string` - Regex pattern string (e.g., `"sk-[a-zA-Z0-9]{32}"`)
+    - `function` - Custom detector function `(content: string) => PIIMatch[]`
+
+    If not provided, uses built-in detector for the PII type.
 </ParamField>
 
 <ParamField body="applyToInput" type="boolean" default="true">
@@ -807,7 +988,6 @@ const agent = createAgent({
 :::
 
 </Accordion>
-
 
 ### To-do list
 
@@ -929,11 +1109,11 @@ const agent = createAgent({
 </ParamField>
 
 <ParamField body="max_tools" type="number">
-    Maximum number of tools to select. Defaults to no limit.
+    Maximum number of tools to select. If the model selects more, only the first max_tools will be used. No limit if not specified.
 </ParamField>
 
 <ParamField body="always_include" type="list[string]">
-    List of tool names to always include in the selection
+    Tool names to always include regardless of selection. These do not count against the max_tools limit.
 </ParamField>
 :::
 
@@ -942,12 +1122,16 @@ const agent = createAgent({
     Model for tool selection. Can be a model identifier string (e.g., `'openai:gpt-4o-mini'`) or a `BaseChatModel` instance. Defaults to the agent's main model.
 </ParamField>
 
+<ParamField body="systemPrompt" type="string">
+    Instructions for the selection model. Uses built-in prompt if not specified.
+</ParamField>
+
 <ParamField body="maxTools" type="number">
-    Maximum number of tools to select. Defaults to no limit.
+    Maximum number of tools to select. If the model selects more, only the first maxTools will be used. No limit if not specified.
 </ParamField>
 
 <ParamField body="alwaysInclude" type="string[]">
-    Array of tool names to always include in the selection
+    Tool names to always include regardless of selection. These do not count against the maxTools limit.
 </ParamField>
 :::
 
@@ -984,11 +1168,28 @@ agent = create_agent(
 :::
 
 :::js
-This middleware is only available in Python. For JavaScript/TypeScript, consider implementing retry logic in your tool definitions or using a wrap-style middleware.
+**API reference:** @[`toolRetryMiddleware`]
+
+```typescript
+import { createAgent, toolRetryMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [searchTool, databaseTool],
+  middleware: [
+    toolRetryMiddleware({
+      maxRetries: 3,
+      backoffFactor: 2.0,
+      initialDelayMs: 1000,
+    }),
+  ],
+});
+```
 :::
 
 <Accordion title="Configuration options">
 
+:::python
 <ParamField body="max_retries" type="number" default="2">
     Maximum number of retry attempts after the initial call (3 total attempts with default)
 </ParamField>
@@ -1023,6 +1224,44 @@ This middleware is only available in Python. For JavaScript/TypeScript, consider
 <ParamField body="jitter" type="boolean" default="true">
     Whether to add random jitter (`±25%`) to delay to avoid thundering herd
 </ParamField>
+:::
+
+:::js
+<ParamField body="maxRetries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
+</ParamField>
+
+<ParamField body="tools" type="(ClientTool | ServerTool | string)[]">
+    Optional array of tools or tool names to apply retry logic to. Can be a list of `BaseTool` instances or tool name strings. If `undefined`, applies to all tools.
+</ParamField>
+
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+</ParamField>
+
+<ParamField body="onFailure" type="'raise' | 'return_message' | ((error: Error) => string)" default="return_message">
+    Behavior when all retries are exhausted. Options:
+    - `'return_message'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure and potentially recover
+    - `'raise'` - Re-raise the exception, stopping agent execution
+    - Custom function - Function that takes the exception and returns a string for the `ToolMessage` content, allowing custom error formatting
+</ParamField>
+
+<ParamField body="backoffFactor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initialDelayMs * (backoffFactor ** retryNumber)` milliseconds. Set to `0.0` for constant delay. Must be >= 0.
+</ParamField>
+
+<ParamField body="initialDelayMs" type="number" default="1000">
+    Initial delay in milliseconds before first retry. Must be >= 0.
+</ParamField>
+
+<ParamField body="maxDelayMs" type="number" default="60000">
+    Maximum delay in milliseconds between retries (caps exponential backoff growth). Must be >= 0.
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
 
 </Accordion>
 
@@ -1030,6 +1269,7 @@ This middleware is only available in Python. For JavaScript/TypeScript, consider
 
 The middleware automatically retries failed tool calls with exponential backoff.
 
+:::python
 **Key configuration:**
 - `max_retries` - Number of retry attempts (default: 2)
 - `backoff_factor` - Multiplier for exponential backoff (default: 2.0)
@@ -1040,7 +1280,21 @@ The middleware automatically retries failed tool calls with exponential backoff.
 **Failure handling:**
 - `on_failure='return_message'` - Return error message
 - `on_failure='raise'` - Re-raise exception
-- Custom callable - Function returning error message
+- Custom function - Function returning error message
+:::
+:::js
+**Key configuration:**
+- `maxRetries` - Number of retry attempts (default: 2)
+- `backoffFactor` - Multiplier for exponential backoff (default: 2.0)
+- `initialDelayMs` - Starting delay in milliseconds (default: 1000ms)
+- `maxDelayMs` - Cap on delay growth (default: 60000ms)
+- `jitter` - Add random variation (default: true)
+
+**Failure handling:**
+- `onFailure: "return_message"` - Return error message
+- `onFailure: "raise"` - Re-raise exception
+- Custom function - Function returning error message
+:::
 
 :::python
 ```python
@@ -1064,6 +1318,84 @@ agent = create_agent(
         ),
     ],
 )
+```
+:::
+
+:::js
+```typescript
+import { createAgent, toolRetryMiddleware } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// Basic usage with default settings (2 retries, exponential backoff)
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [searchTool, databaseTool],
+  middleware: [toolRetryMiddleware()],
+});
+
+// Retry specific exceptions only
+const retry = toolRetryMiddleware({
+  maxRetries: 4,
+  retryOn: [TimeoutError, NetworkError],
+  backoffFactor: 1.5,
+});
+
+// Custom exception filtering
+function shouldRetry(error: Error): boolean {
+  // Only retry on 5xx errors
+  if (error.name === "HTTPError" && "statusCode" in error) {
+    const statusCode = (error as any).statusCode;
+    return 500 <= statusCode && statusCode < 600;
+  }
+  return false;
+}
+
+const retryWithFilter = toolRetryMiddleware({
+  maxRetries: 3,
+  retryOn: shouldRetry,
+});
+
+// Apply to specific tools with custom error handling
+const formatError = (error: Error) =>
+  "Database temporarily unavailable. Please try again later.";
+
+const retrySpecificTools = toolRetryMiddleware({
+  maxRetries: 4,
+  tools: ["search_database"],
+  onFailure: formatError,
+});
+
+// Apply to specific tools using BaseTool instances
+const searchDatabase = tool(
+  async ({ query }) => {
+    // Search implementation
+    return results;
+  },
+  {
+    name: "search_database",
+    description: "Search the database",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const retryWithToolInstance = toolRetryMiddleware({
+  maxRetries: 4,
+  tools: [searchDatabase], // Pass BaseTool instance
+});
+
+// Constant backoff (no exponential growth)
+const constantBackoff = toolRetryMiddleware({
+  maxRetries: 5,
+  backoffFactor: 0.0, // No exponential growth
+  initialDelayMs: 2000, // Always wait 2 seconds
+});
+
+// Raise exception on failure
+const strictRetry = toolRetryMiddleware({
+  maxRetries: 2,
+  onFailure: "raise", // Re-raise exception instead of returning message
+});
 ```
 :::
 
@@ -1096,29 +1428,48 @@ agent = create_agent(
 :::
 
 :::js
-This middleware is only available in Python. For JavaScript/TypeScript, consider creating mock tool implementations for testing.
+```typescript
+import { createAgent, toolEmulatorMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, searchDatabase, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware(), // Emulate all tools
+  ],
+});
+```
 :::
 
-:::python
 <Accordion title="Configuration options">
 
+:::python
 <ParamField body="tools" type="list[str | BaseTool]">
-    List of tool names (str) or BaseTool instances to emulate. If `None` (default), ALL tools will be emulated. If empty list, no tools will be emulated.
+    List of tool names (str) or BaseTool instances to emulate. If `None` (default), ALL tools will be emulated. If empty list `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
 </ParamField>
 
-<ParamField body="model" type="string | BaseChatModel" default="anthropic:claude-3-5-sonnet-latest">
-    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'openai:gpt-4o-mini'`) or a `BaseChatModel` instance. See @[`init_chat_model`][init_chat_model(model)] for more information.
+<ParamField body="model" type="string | BaseChatModel">
+    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'anthropic:claude-sonnet-4-5-20250929'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified. See @[`init_chat_model`][init_chat_model(model)] for more information.
 </ParamField>
-
-</Accordion>
 :::
 
-:::python
+:::js
+<ParamField body="tools" type="(string | ClientTool | ServerTool)[]">
+    List of tool names (string) or tool instances to emulate. If `undefined` (default), ALL tools will be emulated. If empty array `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
+</ParamField>
+
+<ParamField body="model" type="string | BaseChatModel">
+    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'anthropic:claude-sonnet-4-5-20250929'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified.
+</ParamField>
+:::
+
+</Accordion>
+
 <Accordion title="Full example">
 
 The middleware uses an LLM to generate plausible responses for tool calls instead of executing the actual tools.
 
-
+:::python
 ```python
 from langchain.agents import create_agent
 from langchain.agents.middleware import LLMToolEmulator
@@ -1136,7 +1487,7 @@ def send_email(to: str, subject: str, body: str) -> str:
     return "Email sent"
 
 
-# Emulate all tools
+# Emulate all tools (default behavior)
 agent = create_agent(
     model="gpt-4o",
     tools=[get_weather, send_email],
@@ -1150,17 +1501,85 @@ agent2 = create_agent(
     middleware=[LLMToolEmulator(tools=["get_weather"])],
 )
 
-# Use custom model
-agent3 = create_agent(
+# Use custom model for emulation
+agent4 = create_agent(
     model="gpt-4o",
     tools=[get_weather, send_email],
-    middleware=[LLMToolEmulator(model="claude-sonnet-4-5-20250929")],
+    middleware=[LLMToolEmulator(model="anthropic:claude-sonnet-4-5-20250929")],
 )
 ```
-
-</Accordion>
 :::
 
+:::js
+```typescript
+import { createAgent, toolEmulatorMiddleware, tool } from "langchain";
+import * as z from "zod";
+
+const getWeather = tool(
+  async ({ location }) => `Weather in ${location}`,
+  {
+    name: "get_weather",
+    description: "Get the current weather for a location",
+    schema: z.object({ location: z.string() }),
+  }
+);
+
+const sendEmail = tool(
+  async ({ to, subject, body }) => "Email sent",
+  {
+    name: "send_email",
+    description: "Send an email",
+    schema: z.object({
+      to: z.string(),
+      subject: z.string(),
+      body: z.string(),
+    }),
+  }
+);
+
+// Emulate all tools (default behavior)
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [toolEmulatorMiddleware()],
+});
+
+// Emulate specific tools by name
+const agent2 = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      tools: ["get_weather"],
+    }),
+  ],
+});
+
+// Emulate specific tools by passing tool instances
+const agent3 = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      tools: [getWeather],
+    }),
+  ],
+});
+
+// Use custom model for emulation
+const agent5 = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      model: "anthropic:claude-sonnet-4-5-20250929",
+    }),
+  ],
+});
+```
+:::
+
+</Accordion>
 
 ### Context editing
 
