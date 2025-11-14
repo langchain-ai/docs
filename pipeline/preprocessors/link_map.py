@@ -365,6 +365,7 @@ LINK_MAPS: list[LinkMap] = [
             "RunsClient.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
             "ClearToolUsesEdit": "classes/langchain.index.ClearToolUsesEdit.html",
             "ContextEdit": "interfaces/langchain.index.ContextEdit.html",
+            "toolRetryMiddleware": "functions/langchain.index.toolRetryMiddleware.html",
         },
     },
 ]

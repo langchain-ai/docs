@@ -1359,11 +1359,28 @@ agent = create_agent(
 :::
 
 :::js
-This middleware is only available in Python. For JavaScript/TypeScript, consider implementing retry logic in your tool definitions or using a wrap-style middleware.
+**API reference:** @[`toolRetryMiddleware`]
+
+```typescript
+import { createAgent, toolRetryMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [searchTool, databaseTool],
+  middleware: [
+    toolRetryMiddleware({
+      maxRetries: 3,
+      backoffFactor: 2.0,
+      initialDelayMs: 1000,
+    }),
+  ],
+});
+```
 :::
 
 <Accordion title="Configuration options">
 
+:::python
 <ParamField body="max_retries" type="number" default="2">
     Maximum number of retry attempts after the initial call (3 total attempts with default)
 </ParamField>
@@ -1398,6 +1415,44 @@ This middleware is only available in Python. For JavaScript/TypeScript, consider
 <ParamField body="jitter" type="boolean" default="true">
     Whether to add random jitter (`±25%`) to delay to avoid thundering herd
 </ParamField>
+:::
+
+:::js
+<ParamField body="maxRetries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
+</ParamField>
+
+<ParamField body="tools" type="(ClientTool | ServerTool | string)[]">
+    Optional array of tools or tool names to apply retry logic to. Can be a list of `BaseTool` instances or tool name strings. If `undefined`, applies to all tools.
+</ParamField>
+
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+</ParamField>
+
+<ParamField body="onFailure" type="'raise' | 'return_message' | ((error: Error) => string)" default="return_message">
+    Behavior when all retries are exhausted. Options:
+    - `'return_message'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure and potentially recover
+    - `'raise'` - Re-raise the exception, stopping agent execution
+    - Custom function - Function that takes the exception and returns a string for the `ToolMessage` content, allowing custom error formatting
+</ParamField>
+
+<ParamField body="backoffFactor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initialDelayMs * (backoffFactor ** retryNumber)` milliseconds. Set to `0.0` for constant delay. Must be >= 0.
+</ParamField>
+
+<ParamField body="initialDelayMs" type="number" default="1000">
+    Initial delay in milliseconds before first retry. Must be >= 0.
+</ParamField>
+
+<ParamField body="maxDelayMs" type="number" default="60000">
+    Maximum delay in milliseconds between retries (caps exponential backoff growth). Must be >= 0.
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
 
 </Accordion>
 
@@ -1405,6 +1460,7 @@ This middleware is only available in Python. For JavaScript/TypeScript, consider
 
 The middleware automatically retries failed tool calls with exponential backoff.
 
+:::python
 **Key configuration:**
 - `max_retries` - Number of retry attempts (default: 2)
 - `backoff_factor` - Multiplier for exponential backoff (default: 2.0)
@@ -1415,7 +1471,21 @@ The middleware automatically retries failed tool calls with exponential backoff.
 **Failure handling:**
 - `on_failure='return_message'` - Return error message
 - `on_failure='raise'` - Re-raise exception
-- Custom callable - Function returning error message
+- Custom function - Function returning error message
+:::
+:::js
+**Key configuration:**
+- `maxRetries` - Number of retry attempts (default: 2)
+- `backoffFactor` - Multiplier for exponential backoff (default: 2.0)
+- `initialDelayMs` - Starting delay in milliseconds (default: 1000ms)
+- `maxDelayMs` - Cap on delay growth (default: 60000ms)
+- `jitter` - Add random variation (default: true)
+
+**Failure handling:**
+- `onFailure: "return_message"` - Return error message
+- `onFailure: "raise"` - Re-raise exception
+- Custom function - Function returning error message
+:::
 
 :::python
 ```python
@@ -1439,6 +1509,84 @@ agent = create_agent(
         ),
     ],
 )
+```
+:::
+
+:::js
+```typescript
+import { createAgent, toolRetryMiddleware } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// Basic usage with default settings (2 retries, exponential backoff)
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [searchTool, databaseTool],
+  middleware: [toolRetryMiddleware()],
+});
+
+// Retry specific exceptions only
+const retry = toolRetryMiddleware({
+  maxRetries: 4,
+  retryOn: [TimeoutError, NetworkError],
+  backoffFactor: 1.5,
+});
+
+// Custom exception filtering
+function shouldRetry(error: Error): boolean {
+  // Only retry on 5xx errors
+  if (error.name === "HTTPError" && "statusCode" in error) {
+    const statusCode = (error as any).statusCode;
+    return 500 <= statusCode && statusCode < 600;
+  }
+  return false;
+}
+
+const retryWithFilter = toolRetryMiddleware({
+  maxRetries: 3,
+  retryOn: shouldRetry,
+});
+
+// Apply to specific tools with custom error handling
+const formatError = (error: Error) =>
+  "Database temporarily unavailable. Please try again later.";
+
+const retrySpecificTools = toolRetryMiddleware({
+  maxRetries: 4,
+  tools: ["search_database"],
+  onFailure: formatError,
+});
+
+// Apply to specific tools using BaseTool instances
+const searchDatabase = tool(
+  async ({ query }) => {
+    // Search implementation
+    return results;
+  },
+  {
+    name: "search_database",
+    description: "Search the database",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const retryWithToolInstance = toolRetryMiddleware({
+  maxRetries: 4,
+  tools: [searchDatabase], // Pass BaseTool instance
+});
+
+// Constant backoff (no exponential growth)
+const constantBackoff = toolRetryMiddleware({
+  maxRetries: 5,
+  backoffFactor: 0.0, // No exponential growth
+  initialDelayMs: 2000, // Always wait 2 seconds
+});
+
+// Raise exception on failure
+const strictRetry = toolRetryMiddleware({
+  maxRetries: 2,
+  onFailure: "raise", // Re-raise exception instead of returning message
+});
 ```
 :::
 
