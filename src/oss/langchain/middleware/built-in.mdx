@@ -792,26 +792,201 @@ agent = create_agent(
 
 :::js
 ```typescript
-import { createAgent, piiRedactionMiddleware } from "langchain";
+import { createAgent, piiMiddleware } from "langchain";
 
 const agent = createAgent({
   model: "gpt-4o",
   tools: [...],
   middleware: [
-    piiRedactionMiddleware({
-      piiType: "email",
-      strategy: "redact",
-      applyToInput: true,
+    piiMiddleware("email", { strategy: "redact", applyToInput: true }),
+    piiMiddleware("credit_card", { strategy: "mask", applyToInput: true }),
+  ],
+});
+```
+:::
+
+#### Custom PII types
+
+You can create custom PII types by providing a `detector` parameter. This allows you to detect patterns specific to your use case beyond the built-in types.
+
+**Three ways to create custom detectors:**
+
+1. **Regex pattern string** - Simple pattern matching
+:::js
+1. **RegExp object** - More control over regex flags
+:::
+1. **Custom function** - Complex detection logic with validation
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import PIIMiddleware
+import re
+
+
+# Method 1: Regex pattern string
+agent1 = create_agent(
+    model="gpt-4o",
+    tools=[...],
+    middleware=[
+        PIIMiddleware(
+            "api_key",
+            detector=r"sk-[a-zA-Z0-9]{32}",
+            strategy="block",
+        ),
+    ],
+)
+
+# Method 2: Compiled regex pattern
+agent2 = create_agent(
+    model="gpt-4o",
+    tools=[...],
+    middleware=[
+        PIIMiddleware(
+            "phone_number",
+            detector=re.compile(r"\+?\d{1,3}[\s.-]?\d{3,4}[\s.-]?\d{4}"),
+            strategy="mask",
+        ),
+    ],
+)
+
+# Method 3: Custom detector function
+def detect_ssn(content: str) -> list[dict[str, str | int]]:
+    """Detect SSN with validation.
+
+    Returns a list of dictionaries with 'text', 'start', and 'end' keys.
+    """
+    import re
+    matches = []
+    pattern = r"\d{3}-\d{2}-\d{4}"
+    for match in re.finditer(pattern, content):
+        ssn = match.group(0)
+        # Validate: first 3 digits shouldn't be 000, 666, or 900-999
+        first_three = int(ssn[:3])
+        if first_three not in [0, 666] and not (900 <= first_three <= 999):
+            matches.append({
+                "text": ssn,
+                "start": match.start(),
+                "end": match.end(),
+            })
+    return matches
+
+agent3 = create_agent(
+    model="gpt-4o",
+    tools=[...],
+    middleware=[
+        PIIMiddleware(
+            "ssn",
+            detector=detect_ssn,
+            strategy="hash",
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, piiMiddleware, type PIIMatch } from "langchain";
+
+// Method 1: Regex pattern string
+const agent1 = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [
+    piiMiddleware("api_key", {
+      detector: "sk-[a-zA-Z0-9]{32}",
+      strategy: "block",
     }),
-    piiRedactionMiddleware({
-      piiType: "credit_card",
+  ],
+});
+
+// Method 2: RegExp object
+const agent2 = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [
+    piiMiddleware("phone_number", {
+      detector: /\+?\d{1,3}[\s.-]?\d{3,4}[\s.-]?\d{4}/,
       strategy: "mask",
-      applyToInput: true,
+    }),
+  ],
+});
+
+// Method 3: Custom detector function
+function detectSSN(content: string): PIIMatch[] {
+  const matches: PIIMatch[] = [];
+  const pattern = /\d{3}-\d{2}-\d{4}/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(content)) !== null) {
+    const ssn = match[0];
+    // Validate: first 3 digits shouldn't be 000, 666, or 900-999
+    const firstThree = parseInt(ssn.substring(0, 3), 10);
+    if (firstThree !== 0 && firstThree !== 666 && !(firstThree >= 900 && firstThree <= 999)) {
+      matches.push({
+        text: ssn,
+        start: match.index ?? 0,
+        end: (match.index ?? 0) + ssn.length,
+      });
+    }
+  }
+  return matches;
+}
+
+const agent3 = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [
+    piiMiddleware("ssn", {
+      detector: detectSSN,
+      strategy: "hash",
     }),
   ],
 });
 ```
 :::
+
+**Custom detector function signature:**
+
+The detector function must accept a string (content) and return matches:
+
+:::python
+Returns a list of dictionaries with `text`, `start`, and `end` keys:
+```python
+def detector(content: str) -> list[dict[str, str | int]]:
+    return [
+        {"text": "matched_text", "start": 0, "end": 12},
+        # ... more matches
+    ]
+```
+:::
+:::js
+Returns an array of `PIIMatch` objects:
+```typescript
+interface PIIMatch {
+  text: string;    // The matched text
+  start: number;   // Start index in content
+  end: number;      // End index in content
+}
+
+function detector(content: string): PIIMatch[] {
+  return [
+    { text: "matched_text", start: 0, end: 12 },
+    // ... more matches
+  ];
+}
+```
+:::
+
+<Tip>
+For custom detectors:
+
+- Use regex strings for simple patterns
+- Use RegExp objects when you need flags (e.g., case-insensitive matching)
+- Use custom functions when you need validation logic beyond pattern matching
+- Custom functions give you full control over detection logic and can implement complex validation rules
+</Tip>
 
 <Accordion title="Configuration options">
 
@@ -857,11 +1032,17 @@ const agent = createAgent({
     - `'block'` - Throw error when detected
     - `'redact'` - Replace with `[REDACTED_TYPE]`
     - `'mask'` - Partially mask (e.g., `****-****-****-1234`)
-    - `'hash'` - Replace with deterministic hash
+    - `'hash'` - Replace with deterministic hash (e.g., `<email_hash:a1b2c3d4>`)
 </ParamField>
 
-<ParamField body="detector" type="RegExp">
-    Custom detector regex pattern. If not provided, uses built-in detector for the PII type.
+<ParamField body="detector" type="RegExp | string | function">
+    Custom detector. Can be:
+
+    - `RegExp` - Regex pattern for matching
+    - `string` - Regex pattern string (e.g., `"sk-[a-zA-Z0-9]{32}"`)
+    - `function` - Custom detector function `(content: string) => PIIMatch[]`
+
+    If not provided, uses built-in detector for the PII type.
 </ParamField>
 
 <ParamField body="applyToInput" type="boolean" default="true">
@@ -878,60 +1059,6 @@ const agent = createAgent({
 :::
 
 </Accordion>
-
-<Accordion title="Full example">
-
-The middleware supports detecting built-in PII types (`email`, `credit_card`, `ip`, `mac_address`, `url`) or custom types with regex patterns.
-
-**Detection strategies:**
-- `'block'` - Raise exception when detected
-- `'redact'` - Replace with `[REDACTED_TYPE]`
-- `'mask'` - Partially mask (e.g., `****-****-****-1234`)
-- `'hash'` - Replace with deterministic hash
-
-**Application scope:**
-- `apply_to_input` - Check user messages before model call
-- `apply_to_output` - Check AI messages after model call
-- `apply_to_tool_results` - Check tool result messages after execution
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import PIIMiddleware
-
-
-agent = create_agent(
-    model="gpt-4o",
-    tools=[database_tool, email_tool],
-    middleware=[
-        PIIMiddleware("email", strategy="redact", apply_to_input=True),
-        PIIMiddleware("credit_card", strategy="mask", apply_to_input=True),
-        PIIMiddleware("api_key", detector=r"sk-[a-zA-Z0-9]{32}", strategy="block"),
-        PIIMiddleware("ssn", detector=r"\d{3}-\d{2}-\d{4}", strategy="hash", apply_to_tool_results=True),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, piiRedactionMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-4o",
-  tools: [databaseTool, emailTool],
-  middleware: [
-    piiRedactionMiddleware({ piiType: "email", strategy: "redact", applyToInput: true }),
-    piiRedactionMiddleware({ piiType: "credit_card", strategy: "mask", applyToInput: true }),
-    piiRedactionMiddleware({ piiType: "api_key", detector: /sk-[a-zA-Z0-9]{32}/, strategy: "block" }),
-    piiRedactionMiddleware({ piiType: "ssn", detector: /\d{3}-\d{2}-\d{4}/, strategy: "hash", applyToToolResults: true }),
-  ],
-});
-```
-:::
-
-</Accordion>
-
 
 ### To-do list
 
