@@ -1,0 +1,230 @@
+# Reindexer
+
+>[Reindexer](https://github.com/Restream/reindexer) is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
+
+This notebook shows how to use the Reindexer vector store with LangChain.
+
+## Installation and Setup
+
+```bash
+%pip install -qU pyreindexer langchain-community langchain_huggingface sentence_transformers
+```
+
+## Basic Usage
+
+```python
+from langchain_community.vectorstores import ReindexerVectorStore
+from langchain_core.embeddings import FakeEmbeddings
+from langchain_core.documents import Document
+```
+
+```python
+# Use HuggingFace embeddings (works locally, no API key required)
+#embeddings = HuggingFaceEmbeddings(
+#    model_name="sentence-transformers/all-MiniLM-L6-v2"
+#)
+
+# Initialize embeddings (FakeEmbeddings doesn't require API keys)
+# For production, use OpenAIEmbeddings, HuggingFaceEmbeddings, or other real embeddings
+embeddings = FakeEmbeddings(size=1024)
+
+# Create vector store
+vector_store = ReindexerVectorStore(
+    embedding=embeddings,
+    rx_connector_config={"dsn": "builtin://"}, # memory load
+    rx_namespace="langchain_docs",
+)
+```
+
+### OpenAI Embeddings (requires API key)
+
+```python
+from langchain_openai import OpenAIEmbeddings
+
+# Requires OPENAI_API_KEY environment variable
+openai_embeddings = OpenAIEmbeddings()
+
+openai_vector_store = ReindexerVectorStore(
+    embedding=openai_embeddings,
+    rx_connector_config={"dsn": "builtin:///tmp/openai_db"},
+)
+```
+
+## Connection Options
+
+Reindexer supports different connection types:
+
+- **In-memory builtin**: In-memory database (default)
+  ```python
+  rx_connector_config={"dsn": "builtin:///tmp/my_db"}
+  ```
+
+- **By-path builtin**: by-path database
+  ```python
+  rx_connector_config={"dsn": "builtin:///tmp/pyrx"}
+  ```
+
+- **By-auto-path builtin**: By-auto-path database at the level of the running file
+  ```python
+  rx_connector_config={"dsn": "builtin:///"}
+  ```
+
+For more information, see [Reindexer Documentation](https://github.com/Restream/reindexer).
+
+## Adding Documents
+
+```python
+documents = [
+    Document(
+        page_content="LangChain is a framework for developing applications powered by language models.",
+        metadata={"topic": "framework", "year": 2023},
+    ),
+    Document(
+        page_content="Reindexer is an embeddable, in-memory, document-oriented database.",
+        metadata={"topic": "database", "year": 2024},
+    ),
+    Document(
+        page_content="Vector stores enable semantic search over documents using embeddings.",
+        metadata={"topic": "vector_search", "year": 2024},
+    ),
+]
+
+# Add documents to the vector store
+ids = vector_store.add_documents(documents)
+print(f"Added {len(ids)} documents with IDs: {ids}")
+```
+
+## Similarity Search
+
+```python
+# Search for similar documents
+query = "What is LangChain?"
+results = vector_store.similarity_search(query, k=2)
+
+for i, doc in enumerate(results, 1):
+    print(f"\nResult {i}:")
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}")
+```
+
+## Similarity Search with Scores
+
+```python
+# Search with similarity scores
+results_with_scores = vector_store.similarity_search_with_score(query, k=2)
+
+for doc, score in results_with_scores:
+    print(f"\nScore: {score:.4f}")
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}")
+```
+
+## Search with Metadata Filtering
+
+```python
+# Search with metadata filter
+filtered_results = vector_store.similarity_search(
+    query, k=2, filter={"topic": "database"}
+)
+
+for doc in filtered_results:
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}\n")
+```
+
+## Maximal Marginal Relevance (MMR) Search
+
+```python
+# MMR search for diverse results
+mmr_results = vector_store.max_marginal_relevance_search(
+    query="framework", k=2, fetch_k=3, lambda_mult=0.5
+)
+
+for doc in mmr_results:
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}\n")
+```
+
+## Using as a Retriever
+
+```python
+# Create a retriever from the vector store
+retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+
+# Use the retriever
+docs = retriever.invoke("What is a vector store?")
+for doc in docs:
+    print(f"Content: {doc.page_content}\n")
+```
+
+## Advanced Configuration
+
+```python
+# Create vector store with custom HNSW parameters
+custom_vector_store = ReindexerVectorStore(
+    embedding=FakeEmbeddings(size=1024),  # Use same embedding size
+    m=32,  # More connections for better recall
+    ef_construction=400,  # Larger candidate list during construction
+    multithreading=1,  # Enable multithreaded index construction (0 disables)
+    rx_connector_config={"dsn": "builtin:///tmp/custom_db"},
+    rx_namespace="custom_namespace",
+)
+```
+
+## Save and Load Configuration
+
+- `builtin://` сохраняет данные только в оперативной памяти; используйте `save_local()` для экспорта в файл `reindexer_memory_dump.json` и `load_local()` для восстановления.
+- `builtin:///` автоматически создаёт директорию в каталоге запуска скрипта (`reindexer_storage/<namespace>`) и позволяет Reindexer самому управлять файлами.
+- Можно указать собственный путь после `builtin:///absolute/path`, чтобы загрузить данные, подготовленные в другом окружении.
+
+```python
+# Save vector store configuration
+vector_store.save_local("./reindexer_config")
+```
+
+```python
+# Load vector store configuration
+loaded_store = ReindexerVectorStore.load_local(
+    "./reindexer_config", embedding=FakeEmbeddings(size=1024)
+)
+```
+
+```python
+# Search for similar documents
+query = "What is LangChain?"
+results = loaded_store.similarity_search(query, k=2)
+
+for i, doc in enumerate(results, 1):
+    print(f"\nResult {i}:")
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}")
+```
+
+## Using with Real Embeddings
+
+For production use, you can use real embedding models. Here are some examples:
+
+### HuggingFace Embeddings
+
+```python
+# Install HuggingFace embeddings: %pip install langchain-huggingface sentence-transformers
+
+from langchain_huggingface import HuggingFaceEmbeddings
+
+# Use HuggingFace embeddings (works locally, no API key required)
+hf_embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
+
+hf_vector_store = ReindexerVectorStore(
+    embedding=hf_embeddings,
+    rx_connector_config={"dsn": "builtin:///tmp/hf_db"},
+)
+
+# Add documents
+hf_vector_store.add_documents(documents)
+
+# Search
+results = hf_vector_store.similarity_search("What is LangChain?", k=1)
+print(results[0].page_content)
+```
