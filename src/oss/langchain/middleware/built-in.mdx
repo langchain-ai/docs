@@ -9,6 +9,8 @@ LangChain provides prebuilt middleware for common use cases. Each middleware is 
 
 The following middleware work with any LLM provider:
 
+:::python
+
 | Middleware | Description |
 |------------|-------------|
 | [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
@@ -20,8 +22,30 @@ The following middleware work with any LLM provider:
 | [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
 | [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
 | [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
-| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using anLLM for testing purposes. |
+| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+| [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
+| [File search](#file-search) | Provide Glob and Grep search tools over filesystem files. |
+
+:::
+
+:::js
+
+| Middleware | Description |
+|------------|-------------|
+| [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
+| [Human-in-the-loop](#human-in-the-loop) | Pause execution for human approval of tool calls. |
+| [Model call limit](#model-call-limit) | Limit the number of model calls to prevent excessive costs. |
+| [Tool call limit](#tool-call-limit) | Control tool execution by limiting call counts. |
+| [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
+| [PII detection](#pii-detection) | Detect and handle Personally Identifiable Information (PII). |
+| [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
+| [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
+| [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
+| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
+| [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+
+:::
 
 ### Summarization
 
@@ -438,57 +462,6 @@ const agent = createAgent({
 
 </Accordion>
 
-<Accordion title="Full example">
-
-The middleware tracks model calls across two scopes:
-- **Thread limit** - Max calls across all runs in a conversation thread (requires checkpointer)
-- **Run limit** - Max calls per single invocation (resets each turn)
-
-Exit behaviors:
-- `'end'` - Graceful termination (default)
-- `'error'` - Raise/throw exception
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware
-from langgraph.checkpoint.memory import InMemorySaver
-
-agent = create_agent(
-    model="gpt-4o",
-    tools=[search_tool, calculator_tool],
-    checkpointer=InMemorySaver(),
-    middleware=[
-        ModelCallLimitMiddleware(
-            thread_limit=10,
-            run_limit=5,
-            exit_behavior="end",
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, modelCallLimitMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-4o",
-  tools: [searchTool, calculatorTool],
-  middleware: [
-    modelCallLimitMiddleware({
-      threadLimit: 10,
-      runLimit: 5,
-      exitBehavior: "end",
-    }),
-  ],
-});
-```
-:::
-
-</Accordion>
-
 
 ### Tool call limit
 
@@ -715,50 +688,6 @@ The middleware accepts a variable number of string arguments representing fallba
   )
   ```
 </ParamField>
-:::
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware tries fallback models in order when the primary model fails.
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ModelFallbackMiddleware
-
-
-agent = create_agent(
-    model="gpt-4o",  # Primary model
-    tools=[search_tool, calculator_tool],
-    middleware=[
-        ModelFallbackMiddleware(
-            "gpt-4o-mini",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-haiku-20240307",
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, modelFallbackMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-4o",
-  tools: [searchTool, calculatorTool],
-  middleware: [
-    modelFallbackMiddleware(
-      "gpt-4o-mini",
-      "claude-3-5-sonnet-20241022",
-      "claude-3-haiku-20240307"
-    ),
-  ],
-});
-```
 :::
 
 </Accordion>
@@ -1116,77 +1045,6 @@ No configuration options available (uses defaults).
 
 </Accordion>
 
-<Accordion title="Full example">
-
-Just as humans are more effective when they write down and track tasks, agents benefit from structured task management to break down complex problems.
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import TodoListMiddleware
-from langchain_core.messages import HumanMessage
-from langchain_core.tools import tool
-
-
-@tool
-def read_file(file_path: str) -> str:
-    """Read contents of a file."""
-    with open(file_path) as f:
-        return f.read()
-
-
-@tool
-def write_file(file_path: str, content: str) -> str:
-    """Write content to a file."""
-    with open(file_path, 'w') as f:
-        f.write(content)
-    return f"Wrote {len(content)} characters to {file_path}"
-
-
-agent = create_agent(
-    model="gpt-4o",
-    tools=[read_file, write_file],
-    middleware=[TodoListMiddleware()],
-)
-
-result = agent.invoke({
-    "messages": [HumanMessage("Refactor the authentication module")]
-})
-
-print(result["todos"])  # Track progress
-```
-:::
-
-:::js
-```typescript
-import { createAgent, HumanMessage, todoListMiddleware, tool } from "langchain";
-import * as z from "zod";
-
-const readFile = tool(
-  async ({ filePath }) => "file contents",
-  {
-    name: "read_file",
-    description: "Read contents of a file",
-    schema: z.object({ filePath: z.string() }),
-  }
-);
-
-const agent = createAgent({
-  model: "gpt-4o",
-  tools: [readFile],
-  middleware: [todoListMiddleware()] as const,
-});
-
-const result = await agent.invoke({
-  messages: [new HumanMessage("Refactor the authentication module")],
-});
-
-console.log(result.todos);
-```
-:::
-
-</Accordion>
-
 
 ### LLM tool selector
 
@@ -1275,55 +1133,6 @@ const agent = createAgent({
 <ParamField body="alwaysInclude" type="string[]">
     Tool names to always include regardless of selection. These do not count against the maxTools limit.
 </ParamField>
-:::
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware uses a (typically cheaper) LLM to analyze the user's query and select the most relevant subset of tools.
-
-**Benefits:**
-- **Shorter prompts** - Reduce complexity by exposing only relevant tools
-- **Better accuracy** - Models choose correctly from fewer options
-- **Cost savings** - Use cheaper model for selection
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import LLMToolSelectorMiddleware
-
-
-agent = create_agent(
-    model="gpt-4o",
-    tools=[search_web, query_database, send_email, get_weather, ...],
-    middleware=[
-        LLMToolSelectorMiddleware(
-            model="gpt-4o-mini",
-            max_tools=3,
-            always_include=["search_web"],
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, llmToolSelectorMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-4o",
-  tools: [searchWeb, queryDatabase, sendEmail, getWeather, ...],
-  middleware: [
-    llmToolSelectorMiddleware({
-      model: "gpt-4o-mini",
-      maxTools: 3,
-      alwaysInclude: ["search_web"],
-    }),
-  ],
-});
-```
 :::
 
 </Accordion>
@@ -1774,11 +1583,11 @@ const agent5 = createAgent({
 
 ### Context editing
 
-Manage conversation context by trimming, summarizing, or clearing tool uses. Context editing is useful for the following:
+Manage conversation context by clearing older tool call outputs when token limits are reached, while preserving recent results. This helps keep context windows manageable in long conversations with many tool calls. Context editing is useful for the following:
 
-- Long conversations that need periodic context cleanup.
-- Removing failed tool attempts from context.
-- Custom context management strategies.
+- Long conversations with many tool calls that exceed token limits
+- Reducing token costs by removing older tool outputs that are no longer relevant
+- Maintaining only the most recent N tool results in context
 
 :::python
 **API reference:** @[`ContextEditingMiddleware`], @[`ClearToolUsesEdit`]
@@ -1959,6 +1768,240 @@ const agent = createAgent({
 
 </Accordion>
 
+
+:::python
+### Shell tool
+
+Expose a persistent shell session to agents for command execution. Shell tool middleware is useful for the following:
+
+- Agents that need to execute system commands
+- Development and deployment automation tasks
+- Testing and validation workflows
+- File system operations and script execution
+
+<Warning>
+    **Security consideration**: Use appropriate execution policies (`HostExecutionPolicy`, `DockerExecutionPolicy`, or `CodexSandboxExecutionPolicy`) to match your deployment's security requirements.
+</Warning>
+
+<Note>
+    **Limitation**: Persistent shell sessions do not currently work with interrupts (human-in-the-loop). We anticipate adding support for this in the future.
+</Note>
+
+**API reference:** @[`ShellToolMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    ShellToolMiddleware,
+    HostExecutionPolicy,
+)
+
+agent = create_agent(
+    model="gpt-4o",
+    tools=[search_tool],
+    middleware=[
+        ShellToolMiddleware(
+            workspace_root="/workspace",
+            execution_policy=HostExecutionPolicy(),
+        ),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="workspace_root" type="str | Path | None">
+    Base directory for the shell session. If omitted, a temporary directory is created when the agent starts and removed when it ends.
+</ParamField>
+
+<ParamField body="startup_commands" type="tuple[str, ...] | list[str] | str | None">
+    Optional commands executed sequentially after the session starts
+</ParamField>
+
+<ParamField body="shutdown_commands" type="tuple[str, ...] | list[str] | str | None">
+    Optional commands executed before the session shuts down
+</ParamField>
+
+<ParamField body="execution_policy" type="BaseExecutionPolicy | None">
+    Execution policy controlling timeouts, output limits, and resource configuration. Options:
+
+    - `HostExecutionPolicy` - Full host access (default); best for trusted environments where the agent already runs inside a container or VM
+    - `DockerExecutionPolicy` - Launches a separate Docker container for each agent run, providing harder isolation
+    - `CodexSandboxExecutionPolicy` - Reuses the Codex CLI sandbox for additional syscall/filesystem restrictions
+</ParamField>
+
+<ParamField body="redaction_rules" type="tuple[RedactionRule, ...] | list[RedactionRule] | None">
+    Optional redaction rules to sanitize command output before returning it to the model
+</ParamField>
+
+<ParamField body="tool_description" type="str | None">
+    Optional override for the registered shell tool description
+</ParamField>
+
+<ParamField body="shell_command" type="Sequence[str] | str | None">
+    Optional shell executable (string) or argument sequence used to launch the persistent session. Defaults to `/bin/bash`.
+</ParamField>
+
+<ParamField body="env" type="Mapping[str, Any] | None">
+    Optional environment variables to supply to the shell session. Values are coerced to strings before command execution.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware provides a single persistent shell session that agents can use to execute commands sequentially.
+
+**Execution policies:**
+- `HostExecutionPolicy` (default) - Native execution with full host access
+- `DockerExecutionPolicy` - Isolated Docker container execution
+- `CodexSandboxExecutionPolicy` - Sandboxed execution via Codex CLI
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    ShellToolMiddleware,
+    HostExecutionPolicy,
+    DockerExecutionPolicy,
+    RedactionRule,
+)
+
+
+# Basic shell tool with host execution
+agent = create_agent(
+    model="gpt-4o",
+    tools=[search_tool],
+    middleware=[
+        ShellToolMiddleware(
+            workspace_root="/workspace",
+            execution_policy=HostExecutionPolicy(),
+        ),
+    ],
+)
+
+# Docker isolation with startup commands
+agent_docker = create_agent(
+    model="gpt-4o",
+    tools=[],
+    middleware=[
+        ShellToolMiddleware(
+            workspace_root="/workspace",
+            startup_commands=["pip install requests", "export PYTHONPATH=/workspace"],
+            execution_policy=DockerExecutionPolicy(
+                image="python:3.11-slim",
+                command_timeout=60.0,
+            ),
+        ),
+    ],
+)
+
+# With output redaction
+agent_redacted = create_agent(
+    model="gpt-4o",
+    tools=[],
+    middleware=[
+        ShellToolMiddleware(
+            workspace_root="/workspace",
+            redaction_rules=[
+                RedactionRule(pii_type="api_key", detector=r"sk-[a-zA-Z0-9]{32}"),
+            ],
+        ),
+    ],
+)
+```
+
+</Accordion>
+
+
+### File search
+
+Provide Glob and Grep search tools over filesystem files. File search middleware is useful for the following:
+
+- Code exploration and analysis
+- Finding files by name patterns
+- Searching code content with regex
+- Large codebases where file discovery is needed
+
+**API reference:** @[`FilesystemFileSearchMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import FilesystemFileSearchMiddleware
+
+agent = create_agent(
+    model="gpt-4o",
+    tools=[],
+    middleware=[
+        FilesystemFileSearchMiddleware(
+            root_path="/workspace",
+            use_ripgrep=True,
+        ),
+    ],
+)
+```
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="root_path" type="str" required>
+    Root directory to search. All file operations are relative to this path.
+</ParamField>
+
+<ParamField body="use_ripgrep" type="bool" default="True">
+    Whether to use ripgrep for search. Falls back to Python regex if ripgrep is unavailable.
+</ParamField>
+
+<ParamField body="max_file_size_mb" type="int" default="10">
+    Maximum file size to search in MB. Files larger than this are skipped.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware adds two search tools to agents:
+
+**Glob tool** - Fast file pattern matching:
+- Supports patterns like `**/*.py`, `src/**/*.ts`
+- Returns matching file paths sorted by modification time
+
+**Grep tool** - Content search with regex:
+- Full regex syntax support
+- Filter by file patterns with `include` parameter
+- Three output modes: `files_with_matches`, `content`, `count`
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import FilesystemFileSearchMiddleware
+from langchain_core.messages import HumanMessage
+
+
+agent = create_agent(
+    model="gpt-4o",
+    tools=[],
+    middleware=[
+        FilesystemFileSearchMiddleware(
+            root_path="/workspace",
+            use_ripgrep=True,
+            max_file_size_mb=10,
+        ),
+    ],
+)
+
+# Agent can now use glob_search and grep_search tools
+result = agent.invoke({
+    "messages": [HumanMessage("Find all Python files containing 'async def'")]
+})
+
+# The agent will use:
+# 1. glob_search(pattern="**/*.py") to find Python files
+# 2. grep_search(pattern="async def", include="*.py") to find async functions
+```
+:::
+
+</Accordion>
+
 ## Provider-specific middleware
 
 These middleware are optimized for specific LLM providers.
@@ -1967,16 +2010,34 @@ These middleware are optimized for specific LLM providers.
 
 Middleware specifically designed for Anthropic's Claude models.
 
+:::python
+
 | Middleware | Description |
 |------------|-------------|
-| [Prompt caching](#anthropic-prompt-caching) | Reduce costs by caching repetitive prompt prefixes |
+| [Prompt caching](#prompt-caching) | Reduce costs by caching repetitive prompt prefixes |
+| [Bash tool](#bash-tool) | Execute Claude's native bash tool with local command execution |
+| [Text editor](#text-editor) | Provide Claude's text editor tool for file editing |
+| [Memory](#memory) | Provide Claude's memory tool for persistent agent memory |
+| [File search](#file-search-1) | Search tools for state-based file systems |
 
-#### Anthropic prompt caching
+:::
 
-Reduce costs by caching repetitive prompt prefixes with Anthropic models. Prompt caching is useful for the following:
-- Applications with long, repeated system prompts.
-- Agents that reuse the same context across invocations.
-- Reducing API costs for high-volume deployments.
+:::js
+
+| Middleware | Description |
+|------------|-------------|
+| [Prompt caching](#prompt-caching) | Reduce costs by caching repetitive prompt prefixes |
+
+:::
+
+#### Prompt caching
+
+Reduce costs and latency by caching static or repetitive prompt content (like system prompts, tool definitions, and conversation history) on Anthropic's servers. This middleware implements a **conversational caching strategy** that places cache breakpoints after the most recent message, allowing the entire conversation history (including the latest user message) to be cached and reused in subsequent API calls. Prompt caching is useful for the following:
+
+- Applications with long, static system prompts that don't change between requests
+- Agents with many tool definitions that remain constant across invocations
+- Conversations where early message history is reused across multiple turns
+- High-volume deployments where reducing API costs and latency is critical
 
 <Info>
     Learn more about [Anthropic prompt caching](https://docs.claude.com/en/docs/build-with-claude/prompt-caching#cache-limitations) strategies and limitations.
@@ -2040,6 +2101,13 @@ const agent = createAgent({
 
 <Accordion title="Full example">
 
+The middleware caches content up to and including the latest message in each request. On subsequent requests within the TTL window (5 minutes or 1 hour), previously seen content is retrieved from cache rather than reprocessed, significantly reducing costs and latency.
+
+**How it works:**
+1. First request: System prompt, tools, and the user message "Hi, my name is Bob" are sent to the API and cached
+2. Second request: The cached content (system prompt, tools, and first message) is retrieved from cache. Only the new message "What's my name?" needs to be processed, plus the model's response from the first request
+3. This pattern continues for each turn, with each request reusing the cached conversation history
+
 :::python
 ```python
 from langchain_anthropic import ChatAnthropic
@@ -2060,10 +2128,11 @@ agent = create_agent(
     middleware=[AnthropicPromptCachingMiddleware(ttl="5m")],
 )
 
-# cache store
+# First invocation: Creates cache with system prompt, tools, and "Hi, my name is Bob"
 agent.invoke({"messages": [HumanMessage("Hi, my name is Bob")]})
 
-# cache hit, system prompt is cached
+# Second invocation: Reuses cached system prompt, tools, and previous messages
+# Only processes the new message "What's my name?" and the previous AI response
 agent.invoke({"messages": [HumanMessage("What's my name?")]})
 ```
 :::
@@ -2084,12 +2153,13 @@ const agent = createAgent({
   middleware: [anthropicPromptCachingMiddleware({ ttl: "5m" })],
 });
 
-// cache store
+// First invocation: Creates cache with system prompt, tools, and "Hi, my name is Bob"
 await agent.invoke({
   messages: [new HumanMessage("Hi, my name is Bob")]
 });
 
-// cache hit
+// Second invocation: Reuses cached system prompt, tools, and previous messages
+// Only processes the new message "What's my name?" and the previous AI response
 const result = await agent.invoke({
   messages: [new HumanMessage("What's my name?")]
 });
@@ -2098,11 +2168,531 @@ const result = await agent.invoke({
 
 </Accordion>
 
+:::python
+
+#### Bash tool
+
+Execute Claude's native `bash_20250124` tool with local command execution. The bash tool middleware is useful for the following:
+
+- Using Claude's built-in bash tool with local execution
+- Leveraging Claude's optimized bash tool interface
+- Agents that need persistent shell sessions with Anthropic models
+
+<Info>
+    This middleware wraps `ShellToolMiddleware` and exposes it as Claude's native bash tool.
+</Info>
+
+**API reference:** @[`ClaudeBashToolMiddleware`]
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import ClaudeBashToolMiddleware
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        ClaudeBashToolMiddleware(
+            workspace_root="/workspace",
+        ),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+`ClaudeBashToolMiddleware` accepts all parameters from @[`ShellToolMiddleware`], including:
+
+<ParamField body="workspace_root" type="str | Path | None">
+    Base directory for the shell session
+</ParamField>
+
+<ParamField body="startup_commands" type="tuple[str, ...] | list[str] | str | None">
+    Commands to run when the session starts
+</ParamField>
+
+<ParamField body="execution_policy" type="BaseExecutionPolicy | None">
+    Execution policy (`HostExecutionPolicy`, `DockerExecutionPolicy`, or `CodexSandboxExecutionPolicy`)
+</ParamField>
+
+<ParamField body="redaction_rules" type="tuple[RedactionRule, ...] | list[RedactionRule] | None">
+    Rules for sanitizing command output
+</ParamField>
+
+See [Shell tool](#shell-tool) for full configuration details.
+
+</Accordion>
+
+<Accordion title="Full example">
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import ClaudeBashToolMiddleware
+from langchain.agents import create_agent
+from langchain.agents.middleware import DockerExecutionPolicy
+
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        ClaudeBashToolMiddleware(
+            workspace_root="/workspace",
+            startup_commands=["pip install requests"],
+            execution_policy=DockerExecutionPolicy(
+                image="python:3.11-slim",
+            ),
+        ),
+    ],
+)
+
+# Claude can now use its native bash tool
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "List files in the workspace"}]
+})
+```
+
+</Accordion>
+
+
+#### Text editor
+
+Provide Claude's text editor tool (`text_editor_20250728`) for file creation and editing. The text editor middleware is useful for the following:
+
+- File-based agent workflows
+- Code editing and refactoring tasks
+- Multi-file project work
+- Agents that need persistent file storage
+
+<Note>
+    Available in two variants: **State-based** (files in LangGraph state) and **Filesystem-based** (files on disk).
+</Note>
+
+**API reference:** @[`StateClaudeTextEditorMiddleware`], @[`FilesystemClaudeTextEditorMiddleware`]
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import StateClaudeTextEditorMiddleware
+from langchain.agents import create_agent
+
+# State-based (files in LangGraph state)
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        StateClaudeTextEditorMiddleware(),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+**@[`StateClaudeTextEditorMiddleware`] (state-based)**
+
+<ParamField body="allowed_path_prefixes" type="Sequence[str] | None">
+    Optional list of allowed path prefixes. If specified, only paths starting with these prefixes are allowed.
+</ParamField>
+
+**@[`FilesystemClaudeTextEditorMiddleware`] (filesystem-based)**
+
+<ParamField body="root_path" type="str" required>
+    Root directory for file operations
+</ParamField>
+
+<ParamField body="allowed_prefixes" type="list[str] | None">
+    Optional list of allowed virtual path prefixes (default: `["/"]`)
+</ParamField>
+
+<ParamField body="max_file_size_mb" type="int" default="10">
+    Maximum file size in MB
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+Claude's text editor tool supports the following commands:
+- `view` - View file contents or list directory
+- `create` - Create a new file
+- `str_replace` - Replace string in file
+- `insert` - Insert text at line number
+- `delete` - Delete a file
+- `rename` - Rename/move a file
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import (
+    StateClaudeTextEditorMiddleware,
+    FilesystemClaudeTextEditorMiddleware,
+)
+from langchain.agents import create_agent
+
+
+# State-based: Files persist in LangGraph state
+agent_state = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        StateClaudeTextEditorMiddleware(
+            allowed_path_prefixes=["/project"],
+        ),
+    ],
+)
+
+# Filesystem-based: Files persist on disk
+agent_fs = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        FilesystemClaudeTextEditorMiddleware(
+            root_path="/workspace",
+            allowed_prefixes=["/src"],
+            max_file_size_mb=10,
+        ),
+    ],
+)
+```
+
+</Accordion>
+
+
+#### Memory
+
+Provide Claude's memory tool (`memory_20250818`) for persistent agent memory across conversation turns. The memory middleware is useful for the following:
+
+- Long-running agent conversations
+- Maintaining context across interruptions
+- Task progress tracking
+- Persistent agent state management
+
+<Info>
+    Claude's memory tool uses a `/memories` directory and automatically injects a system prompt encouraging the agent to check and update memory.
+</Info>
+
+**API reference:** @[`StateClaudeMemoryMiddleware`], @[`FilesystemClaudeMemoryMiddleware`]
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import StateClaudeMemoryMiddleware
+from langchain.agents import create_agent
+
+# State-based memory
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        StateClaudeMemoryMiddleware(),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+**@[`StateClaudeMemoryMiddleware`] (state-based)**
+
+<ParamField body="allowed_path_prefixes" type="Sequence[str] | None">
+    Optional list of allowed path prefixes. Defaults to `["/memories"]`.
+</ParamField>
+
+<ParamField body="system_prompt" type="str">
+    System prompt to inject. Defaults to Anthropic's recommended memory prompt that encourages the agent to check and update memory.
+</ParamField>
+
+**@[`FilesystemClaudeMemoryMiddleware`] (filesystem-based)**
+
+<ParamField body="root_path" type="str" required>
+    Root directory for file operations
+</ParamField>
+
+<ParamField body="allowed_prefixes" type="list[str] | None">
+    Optional list of allowed virtual path prefixes. Defaults to `["/memories"]`.
+</ParamField>
+
+<ParamField body="max_file_size_mb" type="int" default="10">
+    Maximum file size in MB
+</ParamField>
+
+<ParamField body="system_prompt" type="str">
+    System prompt to inject
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import (
+    StateClaudeMemoryMiddleware,
+    FilesystemClaudeMemoryMiddleware,
+)
+from langchain.agents import create_agent
+
+
+# State-based: Memory persists in LangGraph state
+agent_state = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        StateClaudeMemoryMiddleware(),
+    ],
+)
+
+# Filesystem-based: Memory persists on disk
+agent_fs = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        FilesystemClaudeMemoryMiddleware(
+            root_path="/workspace",
+        ),
+    ],
+)
+
+# The agent will automatically:
+# 1. Check /memories directory at start
+# 2. Record progress and thoughts during execution
+# 3. Update memory files as work progresses
+```
+
+</Accordion>
+
+
+#### File search
+
+Provide Glob and Grep search tools for files stored in LangGraph state. File search middleware is useful for the following:
+
+- Searching through state-based virtual file systems
+- Works with text editor and memory tools
+- Finding files by patterns
+- Content search with regex
+
+**API reference:** @[`StateFileSearchMiddleware`]
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import (
+    StateClaudeTextEditorMiddleware,
+    StateFileSearchMiddleware,
+)
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        StateClaudeTextEditorMiddleware(),
+        StateFileSearchMiddleware(),  # Search text editor files
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="state_key" type="str" default="text_editor_files">
+    State key containing files to search. Use `"text_editor_files"` for text editor files or `"memory_files"` for memory files.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware adds Glob and Grep search tools that work with state-based files.
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import (
+    StateClaudeTextEditorMiddleware,
+    StateClaudeMemoryMiddleware,
+    StateFileSearchMiddleware,
+)
+from langchain.agents import create_agent
+
+
+# Search text editor files
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        StateClaudeTextEditorMiddleware(),
+        StateFileSearchMiddleware(state_key="text_editor_files"),
+    ],
+)
+
+# Search memory files
+agent_memory = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        StateClaudeMemoryMiddleware(),
+        StateFileSearchMiddleware(state_key="memory_files"),
+    ],
+)
+```
+
+</Accordion>
+
+:::
 
 ### OpenAI
 
 Middleware specifically designed for OpenAI models.
 
-<Note>
-Coming soon! Check back for OpenAI-specific middleware optimizations.
-</Note>
+| Middleware | Description |
+|------------|-------------|
+| [Content moderation](#content-moderation) | Moderate agent traffic using OpenAI's moderation endpoint |
+
+#### Content moderation
+
+Moderate agent traffic (user input, model output, and tool results) using OpenAI's moderation endpoint to detect and handle unsafe content. Content moderation is useful for the following:
+
+- Applications requiring content safety and compliance
+- Filtering harmful, hateful, or inappropriate content
+- Customer-facing agents that need safety guardrails
+- Meeting platform moderation requirements
+
+<Info>
+    Learn more about [OpenAI's moderation models](https://platform.openai.com/docs/guides/moderation) and categories.
+</Info>
+
+:::python
+**API reference:** @[`OpenAIModerationMiddleware`]
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_openai.middleware import OpenAIModerationMiddleware
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool, database_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            model="omni-moderation-latest",
+            check_input=True,
+            check_output=True,
+            exit_behavior="end",
+        ),
+    ],
+)
+```
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="model" type="ModerationModel" default="omni-moderation-latest">
+    OpenAI moderation model to use. Options: `'omni-moderation-latest'`, `'omni-moderation-2024-09-26'`, `'text-moderation-latest'`, `'text-moderation-stable'`
+</ParamField>
+
+<ParamField body="check_input" type="bool" default="True">
+    Whether to check user input messages before the model is called
+</ParamField>
+
+<ParamField body="check_output" type="bool" default="True">
+    Whether to check model output messages after the model is called
+</ParamField>
+
+<ParamField body="check_tool_results" type="bool" default="False">
+    Whether to check tool result messages before the model is called
+</ParamField>
+
+<ParamField body="exit_behavior" type="string" default="end">
+    How to handle violations when content is flagged. Options:
+
+    - `'end'` - End agent execution immediately with a violation message
+    - `'error'` - Raise `OpenAIModerationError` exception
+    - `'replace'` - Replace the flagged content with the violation message and continue
+</ParamField>
+
+<ParamField body="violation_message" type="str | None">
+    Custom template for violation messages. Supports template variables:
+
+    - `{categories}` - Comma-separated list of flagged categories
+    - `{category_scores}` - JSON string of category scores
+    - `{original_content}` - The original flagged content
+
+    Default: `"I'm sorry, but I can't comply with that request. It was flagged for {categories}."`
+</ParamField>
+
+<ParamField body="client" type="OpenAI | None">
+    Optional pre-configured OpenAI client to reuse. If not provided, a new client will be created.
+</ParamField>
+
+<ParamField body="async_client" type="AsyncOpenAI | None">
+    Optional pre-configured AsyncOpenAI client to reuse. If not provided, a new async client will be created.
+</ParamField>
+:::
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware integrates OpenAI's moderation endpoint to check content at different stages:
+
+**Moderation stages:**
+- `check_input` - User messages before model call
+- `check_output` - AI messages after model call
+- `check_tool_results` - Tool outputs before model call
+
+**Exit behaviors:**
+- `'end'` (default) - Stop execution with violation message
+- `'error'` - Raise exception for application handling
+- `'replace'` - Replace flagged content and continue
+
+:::python
+```python
+from langchain_openai import ChatOpenAI
+from langchain_openai.middleware import OpenAIModerationMiddleware
+from langchain.agents import create_agent
+
+
+# Basic moderation
+agent = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool, customer_data_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            model="omni-moderation-latest",
+            check_input=True,
+            check_output=True,
+        ),
+    ],
+)
+
+# Strict moderation with custom message
+agent_strict = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool, customer_data_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            model="omni-moderation-latest",
+            check_input=True,
+            check_output=True,
+            check_tool_results=True,
+            exit_behavior="error",
+            violation_message=(
+                "Content policy violation detected: {categories}. "
+                "Please rephrase your request."
+            ),
+        ),
+    ],
+)
+
+# Moderation with replacement behavior
+agent_replace = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            check_input=True,
+            exit_behavior="replace",
+            violation_message="[Content removed due to safety policies]",
+        ),
+    ],
+)
+```
+:::
+
+</Accordion>
