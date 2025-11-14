@@ -9,6 +9,8 @@ LangChain provides prebuilt middleware for common use cases. Each middleware is 
 
 The following middleware work with any LLM provider:
 
+:::python
+
 | Middleware | Description |
 |------------|-------------|
 | [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
@@ -24,6 +26,26 @@ The following middleware work with any LLM provider:
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
 | [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
 | [File search](#file-search) | Provide Glob and Grep search tools over filesystem files. |
+
+:::
+
+:::js
+
+| Middleware | Description |
+|------------|-------------|
+| [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
+| [Human-in-the-loop](#human-in-the-loop) | Pause execution for human approval of tool calls. |
+| [Model call limit](#model-call-limit) | Limit the number of model calls to prevent excessive costs. |
+| [Tool call limit](#tool-call-limit) | Control tool execution by limiting call counts. |
+| [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
+| [PII detection](#pii-detection) | Detect and handle Personally Identifiable Information (PII). |
+| [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
+| [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
+| [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
+| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
+| [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+
+:::
 
 ### Summarization
 
@@ -1596,6 +1618,7 @@ const agent = createAgent({
 </Accordion>
 
 
+:::python
 ### Shell tool
 
 Expose a persistent shell session to agents for command execution. Shell tool middleware is useful for the following:
@@ -1609,7 +1632,6 @@ Expose a persistent shell session to agents for command execution. Shell tool mi
     **Security consideration**: Use appropriate execution policies (`HostExecutionPolicy`, `DockerExecutionPolicy`, or `CodexSandboxExecutionPolicy`) to match your deployment's security requirements.
 </Warning>
 
-:::python
 **API reference:** @[`ShellToolMiddleware`]
 
 ```python
@@ -1630,11 +1652,9 @@ agent = create_agent(
     ],
 )
 ```
-:::
 
 <Accordion title="Configuration options">
 
-:::python
 <ParamField body="workspace_root" type="str | Path | None">
     Base directory for the shell session. If omitted, a temporary directory is created when the agent starts and removed when it ends.
 </ParamField>
@@ -1670,7 +1690,6 @@ agent = create_agent(
 <ParamField body="env" type="Mapping[str, Any] | None">
     Optional environment variables to supply to the shell session. Values are coerced to strings before command execution.
 </ParamField>
-:::
 
 </Accordion>
 
@@ -1683,7 +1702,6 @@ The middleware provides a single persistent shell session that agents can use to
 - `DockerExecutionPolicy` - Isolated Docker container execution
 - `CodexSandboxExecutionPolicy` - Sandboxed execution via Codex CLI
 
-:::python
 ```python
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
@@ -1736,7 +1754,6 @@ agent_redacted = create_agent(
     ],
 )
 ```
-:::
 
 </Accordion>
 
@@ -1750,7 +1767,6 @@ Provide Glob and Grep search tools over filesystem files. File search middleware
 - Searching code content with regex
 - Large codebases where file discovery is needed
 
-:::python
 **API reference:** @[`FilesystemFileSearchMiddleware`]
 
 ```python
@@ -1784,7 +1800,6 @@ agent = create_agent(
 <ParamField body="max_file_size_mb" type="int" default="10">
     Maximum file size to search in MB. Files larger than this are skipped.
 </ParamField>
-:::
 
 </Accordion>
 
@@ -1801,7 +1816,6 @@ The middleware adds two search tools to agents:
 - Filter by file patterns with `include` parameter
 - Three output modes: `files_with_matches`, `content`, `count`
 
-:::python
 ```python
 from langchain.agents import create_agent
 from langchain.agents.middleware import FilesystemFileSearchMiddleware
@@ -1851,7 +1865,7 @@ Middleware specifically designed for Anthropic's Claude models.
 
 #### Prompt caching
 
-Reduce costs and latency by caching static or repetitive prompt content (like system prompts, tool definitions, and conversation history) on Anthropic's servers. When the same content appears in subsequent requests within the cache TTL, it's retrieved from cache instead of being reprocessed, significantly reducing costs. Prompt caching is useful for the following:
+Reduce costs and latency by caching static or repetitive prompt content (like system prompts, tool definitions, and conversation history) on Anthropic's servers. This middleware implements a **conversational caching strategy** that places cache breakpoints after the most recent message, allowing the entire conversation history (including the latest user message) to be cached and reused in subsequent API calls. Prompt caching is useful for the following:
 
 - Applications with long, static system prompts that don't change between requests
 - Agents with many tool definitions that remain constant across invocations
@@ -1920,6 +1934,13 @@ const agent = createAgent({
 
 <Accordion title="Full example">
 
+The middleware caches content up to and including the latest message in each request. On subsequent requests within the TTL window (5 minutes or 1 hour), previously seen content is retrieved from cache rather than reprocessed, significantly reducing costs and latency.
+
+**How it works:**
+1. First request: System prompt, tools, and the user message "Hi, my name is Bob" are sent to the API and cached
+2. Second request: The cached content (system prompt, tools, and first message) is retrieved from cache. Only the new message "What's my name?" needs to be processed, plus the model's response from the first request
+3. This pattern continues for each turn, with each request reusing the cached conversation history
+
 :::python
 ```python
 from langchain_anthropic import ChatAnthropic
@@ -1940,10 +1961,11 @@ agent = create_agent(
     middleware=[AnthropicPromptCachingMiddleware(ttl="5m")],
 )
 
-# cache store
+# First invocation: Creates cache with system prompt, tools, and "Hi, my name is Bob"
 agent.invoke({"messages": [HumanMessage("Hi, my name is Bob")]})
 
-# cache hit, system prompt is cached
+# Second invocation: Reuses cached system prompt, tools, and previous messages
+# Only processes the new message "What's my name?" and the previous AI response
 agent.invoke({"messages": [HumanMessage("What's my name?")]})
 ```
 :::
@@ -1964,12 +1986,13 @@ const agent = createAgent({
   middleware: [anthropicPromptCachingMiddleware({ ttl: "5m" })],
 });
 
-// cache store
+// First invocation: Creates cache with system prompt, tools, and "Hi, my name is Bob"
 await agent.invoke({
   messages: [new HumanMessage("Hi, my name is Bob")]
 });
 
-// cache hit
+// Second invocation: Reuses cached system prompt, tools, and previous messages
+// Only processes the new message "What's my name?" and the previous AI response
 const result = await agent.invoke({
   messages: [new HumanMessage("What's my name?")]
 });
