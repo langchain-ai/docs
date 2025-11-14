@@ -1471,29 +1471,48 @@ agent = create_agent(
 :::
 
 :::js
-This middleware is only available in Python. For JavaScript/TypeScript, consider creating mock tool implementations for testing.
+```typescript
+import { createAgent, toolEmulatorMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, searchDatabase, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware(), // Emulate all tools
+  ],
+});
+```
 :::
 
-:::python
 <Accordion title="Configuration options">
 
+:::python
 <ParamField body="tools" type="list[str | BaseTool]">
-    List of tool names (str) or BaseTool instances to emulate. If `None` (default), ALL tools will be emulated. If empty list, no tools will be emulated.
+    List of tool names (str) or BaseTool instances to emulate. If `None` (default), ALL tools will be emulated. If empty list `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
 </ParamField>
 
-<ParamField body="model" type="string | BaseChatModel" default="anthropic:claude-3-5-sonnet-latest">
-    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'openai:gpt-4o-mini'`) or a `BaseChatModel` instance. See @[`init_chat_model`][init_chat_model(model)] for more information.
+<ParamField body="model" type="string | BaseChatModel">
+    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'anthropic:claude-sonnet-4-5-20250929'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified. See @[`init_chat_model`][init_chat_model(model)] for more information.
 </ParamField>
-
-</Accordion>
 :::
 
-:::python
+:::js
+<ParamField body="tools" type="(string | ClientTool | ServerTool)[]">
+    List of tool names (string) or tool instances to emulate. If `undefined` (default), ALL tools will be emulated. If empty array `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
+</ParamField>
+
+<ParamField body="model" type="string | BaseChatModel">
+    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'anthropic:claude-sonnet-4-5-20250929'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified.
+</ParamField>
+:::
+
+</Accordion>
+
 <Accordion title="Full example">
 
 The middleware uses an LLM to generate plausible responses for tool calls instead of executing the actual tools.
 
-
+:::python
 ```python
 from langchain.agents import create_agent
 from langchain.agents.middleware import LLMToolEmulator
@@ -1511,7 +1530,7 @@ def send_email(to: str, subject: str, body: str) -> str:
     return "Email sent"
 
 
-# Emulate all tools
+# Emulate all tools (default behavior)
 agent = create_agent(
     model="gpt-4o",
     tools=[get_weather, send_email],
@@ -1525,17 +1544,85 @@ agent2 = create_agent(
     middleware=[LLMToolEmulator(tools=["get_weather"])],
 )
 
-# Use custom model
-agent3 = create_agent(
+# Use custom model for emulation
+agent4 = create_agent(
     model="gpt-4o",
     tools=[get_weather, send_email],
-    middleware=[LLMToolEmulator(model="claude-sonnet-4-5-20250929")],
+    middleware=[LLMToolEmulator(model="anthropic:claude-sonnet-4-5-20250929")],
 )
 ```
-
-</Accordion>
 :::
 
+:::js
+```typescript
+import { createAgent, toolEmulatorMiddleware, tool } from "langchain";
+import * as z from "zod";
+
+const getWeather = tool(
+  async ({ location }) => `Weather in ${location}`,
+  {
+    name: "get_weather",
+    description: "Get the current weather for a location",
+    schema: z.object({ location: z.string() }),
+  }
+);
+
+const sendEmail = tool(
+  async ({ to, subject, body }) => "Email sent",
+  {
+    name: "send_email",
+    description: "Send an email",
+    schema: z.object({
+      to: z.string(),
+      subject: z.string(),
+      body: z.string(),
+    }),
+  }
+);
+
+// Emulate all tools (default behavior)
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [toolEmulatorMiddleware()],
+});
+
+// Emulate specific tools by name
+const agent2 = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      tools: ["get_weather"],
+    }),
+  ],
+});
+
+// Emulate specific tools by passing tool instances
+const agent3 = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      tools: [getWeather],
+    }),
+  ],
+});
+
+// Use custom model for emulation
+const agent5 = createAgent({
+  model: "gpt-4o",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      model: "anthropic:claude-sonnet-4-5-20250929",
+    }),
+  ],
+});
+```
+:::
+
+</Accordion>
 
 ### Context editing
 
