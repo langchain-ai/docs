@@ -6,7 +6,7 @@
 **Type:** [Replace with: New documentation page / Update existing documentation / Fix typo/bug/link/formatting / Remove outdated content / Other]
 
 ## Related issues/PRs
-<!-- 
+<!--
 Link to related issues, feature PRs, or discussions (if applicable)
 
 To automatically close an issue when this PR is merged, use closing keywords:
@@ -33,8 +33,8 @@ Examples:
 - [ ] All code examples have been tested and work correctly
 - [ ] I have used **root relative** paths for internal links
 - [ ] I have updated navigation in `src/docs.json` if needed
-- I have gotten approval from the relevant reviewers
-- (Internal team members only / optional) I have created a preview deployment using the [Create Preview Branch workflow](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml)
+
+(Internal team members only / optional): Create a preview deployment as necessary using the [Create Preview Branch workflow](https://github.com/langchain-ai/docs/actions/workflows/create-preview-branch.yml)
 
 ## Additional notes
 <!-- Any other information that would be helpful for reviewers -->
