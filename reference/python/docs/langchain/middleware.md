@@ -50,87 +50,138 @@ Core types for building middleware:
 | [`ClearToolUsesEdit`](#langchain.agents.middleware.ClearToolUsesEdit) | Utility for clearing tool usage history from context |
 | [`InterruptOnConfig`](#langchain.agents.middleware.InterruptOnConfig) | Configuration for human-in-the-loop interruptions |
 
-<!-- Configuration notes:
-- summary: false - Using custom tables above instead of auto-generated summaries
-- group_by_category: false - Custom ordering via explicit members list
-- members: Show only __init__ (and state_schema where relevant) for middleware classes; all members for other types
-- inherited_members: false - Hide inherited members by default
-- show_if_no_docstring: true - Show members even without docstrings
--->
-
-<!-- Module-level documentation removed to avoid duplicates - using explicit class blocks below -->
+<!-- TODO: `ignore_init_summary` doesn't seem to work.  -->
 
 ::: langchain.agents.middleware.SummarizationMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.HumanInTheLoopMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.ModelCallLimitMiddleware
     options:
-      show_bases: false
-      members: ["__init__", "state_schema"]
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^(__init__|state_schema)$"]
 
 ::: langchain.agents.middleware.ToolCallLimitMiddleware
     options:
-      show_bases: false
-      members: ["__init__", "state_schema"]
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^(__init__|state_schema)$"]
 
 ::: langchain.agents.middleware.ModelFallbackMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.PIIMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.TodoListMiddleware
     options:
-      show_bases: false
-      members: ["__init__", "state_schema"]
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^(__init__|state_schema)$"]
 
 ::: langchain.agents.middleware.LLMToolSelectorMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.ToolRetryMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.LLMToolEmulator
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.ContextEditingMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.ShellToolMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain.agents.middleware.FilesystemFileSearchMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.AgentMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.before_agent
+
+::: langchain.agents.middleware.before_model
+
+::: langchain.agents.middleware.after_model
+
+::: langchain.agents.middleware.after_agent
+
+::: langchain.agents.middleware.wrap_model_call
+
+::: langchain.agents.middleware.wrap_tool_call
+
+::: langchain.agents.middleware.dynamic_prompt
+
+::: langchain.agents.middleware.hook_config
+
+::: langchain.agents.middleware.AgentState
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.ModelRequest
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.ModelResponse
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.ClearToolUsesEdit
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.InterruptOnConfig
+    options:
+      merge_init_into_class: true
