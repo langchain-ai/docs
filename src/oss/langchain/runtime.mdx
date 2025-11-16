@@ -18,6 +18,18 @@ LangGraph exposes a @[`Runtime`] object with the following information:
 2. **Store**: a @[BaseStore] instance used for [long-term memory](/oss/langchain/long-term-memory)
 3. **Stream writer**: an object used for streaming information via the `"custom"` stream mode
 
+:::python
+<Tip>
+Runtime context provides **dependency injection** for your tools and middleware. Instead of hardcoding values or using global state, you can inject runtime dependencies (like database connections, user IDs, or configuration) when invoking your agent. This makes your tools more testable, reusable, and flexible.
+</Tip>
+:::
+
+:::js
+<Tip>
+The runtime context is how you thread data through your agent. Rather than storing things in global state, you can attach values — like a database connection, user session, or configuration — to the context and access them inside tools and middleware. This keeps things stateless, testable, and reusable.
+</Tip>
+:::
+
 You can access the runtime information within [tools](#inside-tools) and [middleware](#inside-middleware).
 
 ## Access
@@ -116,14 +128,14 @@ Use the `runtime` parameter to access the @[`Runtime`] object inside a tool.
 ```ts
 import * as z from "zod";
 import { tool } from "langchain";
-import { type Runtime } from "@langchain/langgraph"; // [!code highlight]
+import { type ToolRuntime } from "@langchain/core/tools"; // [!code highlight]
 
 const contextSchema = z.object({
   userName: z.string(),
 });
 
 const fetchUserEmailPreferences = tool(
-  async (_, runtime: Runtime<z.infer<typeof contextSchema>>) => { // [!code highlight]
+  async (_, runtime: ToolRuntime<any, typeof contextSchema>) => { // [!code highlight]
     const userName = runtime.context?.userName; // [!code highlight]
     if (!userName) {
       throw new Error("userName is required");
@@ -204,7 +216,7 @@ Use the `runtime` parameter to access the @[`Runtime`] object inside middleware.
 
 ```ts
 import * as z from "zod";
-import { createAgent, createMiddleware, type AgentState, SystemMessage } from "langchain";
+import { createAgent, createMiddleware, SystemMessage } from "langchain";
 import { type Runtime } from "@langchain/langgraph"; // [!code highlight]
 
 const contextSchema = z.object({
@@ -214,7 +226,8 @@ const contextSchema = z.object({
 // Dynamic prompt middleware
 const dynamicPromptMiddleware = createMiddleware({
   name: "DynamicPrompt",
-  beforeModel: (state: AgentState, runtime: Runtime<z.infer<typeof contextSchema>>) => {  // [!code highlight]
+  contextSchema
+  beforeModel: (state, runtime: Runtime<z.infer<typeof contextSchema>>) => {  // [!code highlight]
     const userName = runtime.context?.userName;  // [!code highlight]
     if (!userName) {
       throw new Error("userName is required");
@@ -230,11 +243,12 @@ const dynamicPromptMiddleware = createMiddleware({
 // Logging middleware
 const loggingMiddleware = createMiddleware({
   name: "Logging",
-  beforeModel: (state: AgentState, runtime: Runtime<z.infer<typeof contextSchema>>) => {  // [!code highlight]
+  contextSchema,
+  beforeModel: (state, runtime) => {  // [!code highlight]
     console.log(`Processing request for user: ${runtime.context?.userName}`);  // [!code highlight]
     return;
   },
-  afterModel: (state: AgentState, runtime: Runtime<z.infer<typeof contextSchema>>) => {  // [!code highlight]
+  afterModel: (state, runtime) => {  // [!code highlight]
     console.log(`Completed request for user: ${runtime.context?.userName}`);  // [!code highlight]
     return;
   }

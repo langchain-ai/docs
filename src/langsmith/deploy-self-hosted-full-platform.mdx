@@ -75,11 +75,73 @@ As of v0.12.0, the `langgraphPlatform` option is deprecated. Use `config.deploym
       enabled: true
       langgraphPlatformLicenseKey: "YOUR_LANGGRAPH_PLATFORM_LICENSE_KEY"
 ```
-4. In your `values.yaml` file, configure the `hostBackendImage` and `operatorImage` options (if you need to mirror images)
+4. In your `values.yaml` file, configure the `hostBackendImage` and `operatorImage` options (if you need to mirror images). If you are using a private container registry that requires authentication, you must also configure `imagePullSecrets`, refer to [Configure authentication for private registries](#optional-configure-authentication-for-private-registries).
+
 5. You can also configure base templates for your agents by overriding the base templates [here](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml#L898).
 
     Your self-hosted infrastructure is now ready to create deployments.
 
+## (Optional) Configure additional data planes
+In addition to the existing data plane already created in the above steps, you can create more data planes that reside in different Kubernetes clusters or the same cluster in a different namespace.
+
+### Prerequisites
+1. Read through the cluster organization guide in the [hybrid deployment documentation](/langsmith/hybrid#listeners) to understand how to best organize this for your use case.
+2. Verify the prerequisites mentioned in the [hybrid](/langsmith/deploy-hybrid#prerequisites) section are met for the new cluster. Note that in step 5 of [this section](/langsmith/deploy-hybrid#prerequisites), you need to enable egress to your [self-hosted LangSmith instance](/langsmith/self-host-usage#configuring-the-application-you-want-to-use-with-langsmith) instead of https://api.host.langchain.com and https://api.smith.langchain.com.
+3. Run the following commands against your LangSmith Postgres instance to enable this feature. This is the [Postgres instance](/langsmith/kubernetes#validate-your-deployment%3A) that comes with your self-hosted LangSmith setup.
+```
+update organizations set config = config || '{"enable_lgp_listeners_page": true}' where id = '<org id here>';
+update tenants set config = config || '{"langgraph_remote_reconciler_enabled": true}' where id = '<workspace id here>';
+```
+Note down the workspace ID you choose as you will need this for future steps.
+
+### Deploying to a different cluster
+1. Follow steps 2-6 in the [hybrid setup guide](/langsmith/deploy-hybrid#setup). The `config.langsmithWorkspaceId` value should be set to the workspace ID you noted in the prerequisites.
+2. To deploy more than one data plane to the cluster, follow the rules listed [here](/langsmith/deploy-hybrid#configuring-additional-data-planes-in-the-same-cluster).
+
+### Deploying to a different namespace in the same cluster
+1. You will need to make some modifications to the `langsmith_config.yaml` file you created in step 3 of the [above setup instructions](/langsmith/deploy-self-hosted-full-platform#setup):
+    - Set the `operator.watchNamespaces` field to the current namespace your self-hosted LangSmith instance is running in. This is to prevent clashes with the operator that will be added as part of the new data plane.
+    - It is required to use the [Gateway API](/langsmith/self-host-ingress#option-2%3A-gateway-api) or an [Istio Gateway](/langsmith/self-host-ingress#option-3%3A-istio-gateway). Please adjust your `langsmith_config.yaml` file accordingly.
+2. Run a `helm upgrade` to update your self hosted LangSmith instance with the new config.
+3. Follow steps 2-6 in the [hybrid setup guide](/langsmith/deploy-hybrid#setup). The `config.langsmithWorkspaceId` value should be set to the workspace ID you noted in the prerequisites. Remember that `config.watchNamespaces` should be set to different namespaces than the one used by the existing data plane!
+
+## (Optional) Configure authentication for private registries
+
+If your [Agent Server deployments](/langsmith/agent-server) will use images from private container registries (e.g., AWS ECR, Azure ACR, GCP Artifact Registry, private Docker registry), configure image pull secrets. This is a one-time infrastructure configuration that allows all deployments to automatically authenticate with your private registry.
+
+**Step 1: Create a Kubernetes image pull secret**
+
+```bash
+kubectl create secret docker-registry langsmith-registry-secret \
+    --docker-server=myregistry.com \
+    --docker-username=your-username \
+    --docker-password=your-password \
+    --docker-email=your-email@example.com \
+    -n langsmith
+```
+
+Replace the values with your registry credentials:
+- `myregistry.com`: Your registry URL
+- `your-username`: Your registry username
+- `your-password`: Your registry password or access token
+- `langsmith`: The Kubernetes namespace where LangSmith is installed
+
+**Step 2: Configure the secret in your `values.yaml`**
+
+```yaml
+images:
+    imagePullSecrets:
+    - name: langsmith-registry-secret
+```
+
+**Step 3: Apply during Helm installation/upgrade**
+
+When you deploy or upgrade your LangSmith instance using Helm, this configuration will be applied. All user deployments created through the LangSmith UI will automatically inherit these registry credentials.
+
+For registry-specific authentication methods (AWS ECR, Azure ACR, GCP Artifact Registry, etc.), refer to the [Kubernetes documentation on pulling images from private registries](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/).
+
 ## Next steps
 
 Once your infrastructure is set up, you're ready to deploy applications. See the deployment guides in the [Deployment tab](/langsmith/deployments) for instructions on building and deploying your applications.
+
+
