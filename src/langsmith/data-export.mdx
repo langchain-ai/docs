@@ -180,6 +180,42 @@ The `session_id` is also known as the Tracing Project ID, which can be copied fr
 
 Use the returned `id` to reference this export in subsequent bulk export operations.
 
+#### Limiting exported fields
+
+<Note>
+Requires LangSmith Helm version >= `0.12.11` (application version >= `0.12.42`). This feature **is supported** in [scheduled bulk exports](#scheduled-exports) and [standard bulk exports](#create-an-export-job).
+</Note>
+
+You can improve bulk export speed and reduce row size by limiting which fields are included in the exported Parquet files using the `export_fields` parameter. When `export_fields` is provided, only the specified fields are exported as columns in the Parquet files. When `export_fields` is not provided, all exportable fields are included.
+
+This is particularly useful when you want to exclude larger fields like `inputs` and `outputs`.
+
+The following example creates an export job that only includes specific fields:
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "bulk_export_destination_id": "your_destination_id",
+    "session_id": "project_uuid",
+    "start_time": "2024-01-01T00:00:00Z",
+    "end_time": "2024-01-02T23:59:59Z",
+    "export_fields": ["id", "name", "run_type", "start_time", "end_time", "status", "total_tokens", "total_cost"]
+  }'
+```
+
+The `export_fields` parameter accepts an array of field names. Available fields include the [Run data format](/langsmith/run-data-format) fields as well as additional export-only fields:
+
+- `tenant_id`
+- `is_root`
+
+<Tip>
+**Performance tip**: Excluding `inputs` and `outputs` from your export can significantly improve export performance and reduce file sizes, especially for large runs. Only include these fields if you need them for your analysis.
+</Tip>
+
 ### Scheduled exports
 
 <Note>
@@ -201,6 +237,23 @@ curl --request POST \
     "start_time": "2024-01-01T00:00:00Z",
     "filter": "and(eq(run_type, \"llm\"), eq(name, \"ChatOpenAI\"), eq(input_key, \"messages.content\"), like(input_value, \"%messages.content%\"))",
     "interval_hours": 1
+  }'
+```
+
+You can also use `export_fields` with scheduled exports to limit which fields are exported:
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "bulk_export_destination_id": "your_destination_id",
+    "session_id": "project_uuid",
+    "start_time": "2024-01-01T00:00:00Z",
+    "interval_hours": 1,
+    "export_fields": ["id", "name", "run_type", "start_time", "end_time", "status", "total_tokens", "total_cost"]
   }'
 ```
 
