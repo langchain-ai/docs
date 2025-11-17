@@ -8,7 +8,7 @@ title: HuggingFace
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-huggingface)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-huggingface)](https://pypistats.org/packages/langchain-huggingface)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+!!! warning "Reference docs"
+    This page contains **reference documentation** for Hugging Face. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/huggingface) for conceptual guides, tutorials, and examples on using Hugging Face modules.
 
 ::: langchain_huggingface
