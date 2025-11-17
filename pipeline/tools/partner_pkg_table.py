@@ -26,6 +26,7 @@ IGNORE_PKG = {
     "langchain-community",
     "langchain-experimental",
     "langchain-mcp-adapters",
+    "langchain-model-profiles",
 }
 
 # Minimum downloads threshold for inclusion (bypassed for highlighted packages)
@@ -90,7 +91,7 @@ def _enrich_package(p: dict) -> dict | None:
         return None
 
     # Check if JS package exists (indicating JS support)
-    p["js_exists"] = bool(p.get("js"))
+    p["js_exists"] = bool(p.get("js")) and p.get("js") != "n/a"
 
     # Determine provider page URL
     default_provider_page = f"/oss/integrations/providers/{p['name_short']}/"
@@ -153,7 +154,13 @@ PACKAGES_SORTED = PACKAGES_SORTED[:50]
 
 def package_row(p: dict) -> str:
     """Generate a markdown table row for a package."""
-    js = f"[✅](https://www.npmjs.com/package/{p['js']})" if p["js_exists"] else "❌"
+    js_value = p.get("js")
+    if js_value and js_value != "n/a":
+        js = f"[✅](https://www.npmjs.com/package/{js_value})"
+    elif js_value == "n/a":
+        js = "N/A"
+    else:
+        js = "❌"
     link = p["provider_page"]
     title = p["name_title"]
     provider = f"[{title}]({link})" if link else title
@@ -168,7 +175,7 @@ def package_row(p: dict) -> str:
 
 def table() -> str:
     """Generate the full markdown table for all packages."""
-    header = """| Provider | Package API reference | Downloads | Latest version | <Tooltip tip="Whether an equivalent version exists in the TypeScript version of LangChain. Click the checkmark to visit the respective package.">JS/TS support</Tooltip> |
+    header = """| Provider | Package | Downloads | Latest version | <Tooltip tip="Whether an equivalent version exists in the TypeScript version of LangChain. Click the checkmark to visit the respective package.">JS/TS support</Tooltip> |
 | :--- | :--- | :--- | :--- | :--- |
 """  # noqa: E501
     return header + "\n".join(package_row(p) for p in PACKAGES_SORTED)
@@ -202,8 +209,10 @@ To see a full list of integrations by component type, refer to the categories in
 
 [See all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
 
+Community integrations can be found in [`langchain-community`](https://github.com/langchain-ai/langchain-community).
+
 <Info>
-    If you'd like to contribute an integration, see [our contributing guide](/oss/contributing).
+    If you'd like to contribute an integration, see the [contributing guide](/oss/contributing).
 </Info>
 
 """  # noqa: E501
