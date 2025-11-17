@@ -94,7 +94,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
 
 <CodeGroup>
     ```python Pydantic Model
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
     from langchain.agents import create_agent
 
 
@@ -106,7 +106,6 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
 
     agent = create_agent(
         model="gpt-5",
-        tools=tools,
         response_format=ContactInfo  # Auto-selects ProviderStrategy
     )
 
@@ -114,7 +113,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
         "messages": [{"role": "user", "content": "Extract contact info from: John Doe, john@example.com, (555) 123-4567"}]
     })
 
-    result["structured_response"]
+    print(result["structured_response"])
     # ContactInfo(name='John Doe', email='john@example.com', phone='(555) 123-4567')
     ```
 
@@ -187,7 +186,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
     agent = create_agent(
         model="gpt-5",
         tools=tools,
-        response_format=contact_info_schema  # Auto-selects ProviderStrategy
+        response_format=ProviderStrategy(contact_info_schema)
     )
 
     result = agent.invoke({
@@ -227,7 +226,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
 
     const agent = createAgent({
         model: "gpt-5",
-        tools: tools,
+        tools: [],
         responseFormat: providerStrategy(ContactInfo)
     });
 
@@ -235,7 +234,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
         messages: [{"role": "user", "content": "Extract contact info from: John Doe, john@example.com, (555) 123-4567"}]
     });
 
-    result.structuredResponse;
+    console.log(result.structuredResponse);
     // { name: "John Doe", email: "john@example.com", phone: "(555) 123-4567" }
     ```
 
@@ -255,7 +254,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
 
     const agent = createAgent({
         model: "gpt-5",
-        tools: tools,
+        tools: [],
         responseFormat: providerStrategy(contactInfoSchema)
     });
 
@@ -263,7 +262,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
         messages: [{"role": "user", "content": "Extract contact info from: John Doe, john@example.com, (555) 123-4567"}]
     });
 
-    result.structuredResponse;
+    console.log(result.structuredResponse);
     // { name: "John Doe", email: "john@example.com", phone: "(555) 123-4567" }
     ```
 </CodeGroup>
@@ -582,11 +581,11 @@ function toolStrategy<StructuredResponseT>(
 
     const agent = createAgent({
         model: "gpt-5",
-        tools: tools,
+        tools: [],
         responseFormat: toolStrategy(ProductReview)
     })
 
-    result = agent.invoke({
+    const result = await agent.invoke({
         "messages": [{"role": "user", "content": "Analyze this review: 'Great product: 5 out of 5 stars. Fast shipping, but expensive'"}]
     })
 
@@ -623,7 +622,7 @@ function toolStrategy<StructuredResponseT>(
 
     const agent = createAgent({
         model: "gpt-5",
-        tools: tools,
+        tools: [],
         responseFormat: toolStrategy(productReviewSchema)
     });
 
@@ -653,7 +652,7 @@ function toolStrategy<StructuredResponseT>(
 
     const agent = createAgent({
         model: "gpt-5",
-        tools: tools,
+        tools: [],
         responseFormat: toolStrategy([ProductReview, CustomerComplaint])
     });
 
@@ -943,6 +942,10 @@ If `handle_errors` is a tuple of exceptions, the agent will only retry (using th
 
 **Custom error handler function:**
 ```python
+
+from langchain.agents.structured_output import StructuredOutputValidationError
+from langchain.agents.structured_output import MultipleStructuredOutputsError
+
 def custom_error_handler(error: Exception) -> str:
     if isinstance(error, StructuredOutputValidationError):
         return "There was an issue with the format. Try again.
@@ -951,10 +954,28 @@ def custom_error_handler(error: Exception) -> str:
     else:
         return f"Error: {str(error)}"
 
-ToolStrategy(
-    schema=ToolStrategy(Union[ContactInfo, EventDetails]),
-    handle_errors=custom_error_handler
+
+agent = create_agent(
+    model="gpt-5",
+    tools=[],
+    response_format=ToolStrategy(
+                        schema=Union[ContactInfo, EventDetails],
+                        handle_errors=custom_error_handler
+                    )  # Default: handle_errors=True
 )
+
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Extract info: John Doe (john@email.com) is organizing Tech Conference on March 15th"}]
+})
+
+for msg in result['messages']:
+    # If message is actually a ToolMessage object (not a dict), check its class name
+    if type(msg).__name__ == "ToolMessage":
+        print(msg.content)
+    # If message is a dictionary or you want a fallback
+    elif isinstance(msg, dict) and msg.get('tool_call_id'):
+        print(msg['content'])
+
 ```
 
 On `StructuredOutputValidationError`:

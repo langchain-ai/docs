@@ -4,62 +4,184 @@
 
 ## Middleware classes
 
+LangChain provides prebuilt middleware for common agent use cases:
+
 | CLASS | DESCRIPTION |
-| -------------- | ----------- |
-| [`ContextEditingMiddleware`](./#langchain.agents.middleware.ContextEditingMiddleware) | Edit context in agent workflows |
-| [`HumanInTheLoopMiddleware`](./#langchain.agents.middleware.HumanInTheLoopMiddleware) | Enable human intervention in agent processes |
-| [`LLMToolSelectorMiddleware`](./#langchain.agents.middleware.LLMToolSelectorMiddleware) | Select tools using LLM-based logic |
-| [`LLMToolEmulator`](./#langchain.agents.middleware.LLMToolEmulator) | Emulate tool execution using LLM |
-| [`ModelCallLimitMiddleware`](./#langchain.agents.middleware.ModelCallLimitMiddleware) | Limit the number of model calls |
-| [`ModelFallbackMiddleware`](./#langchain.agents.middleware.ModelFallbackMiddleware) | Provide fallback model options |
-| [`PIIMiddleware`](./#langchain.agents.middleware.PIIMiddleware) | Handle personally identifiable information |
-| [`SummarizationMiddleware`](./#langchain.agents.middleware.SummarizationMiddleware) | Summarize content in agent workflows |
-| [`TodoListMiddleware`](./#langchain.agents.middleware.TodoListMiddleware) | Manage TODO lists in agent processes |
-| [`ToolCallLimitMiddleware`](./#langchain.agents.middleware.ToolCallLimitMiddleware) | Limit the number of tool calls |
-| [`AgentMiddleware`](./#langchain.agents.middleware.AgentMiddleware) | Base middleware class for agent operations |
+| ----- | ----------- |
+| [`SummarizationMiddleware`](#langchain.agents.middleware.SummarizationMiddleware) | Automatically summarize conversation history when approaching token limits |
+| [`HumanInTheLoopMiddleware`](#langchain.agents.middleware.HumanInTheLoopMiddleware) | Pause execution for human approval of tool calls |
+| [`ModelCallLimitMiddleware`](#langchain.agents.middleware.ModelCallLimitMiddleware) | Limit the number of model calls to prevent excessive costs |
+| [`ToolCallLimitMiddleware`](#langchain.agents.middleware.ToolCallLimitMiddleware) | Control tool execution by limiting call counts |
+| [`ModelFallbackMiddleware`](#langchain.agents.middleware.ModelFallbackMiddleware) | Automatically fallback to alternative models when primary fails |
+| [`PIIMiddleware`](#langchain.agents.middleware.PIIMiddleware) | Detect and handle Personally Identifiable Information |
+| [`TodoListMiddleware`](#langchain.agents.middleware.TodoListMiddleware) | Equip agents with task planning and tracking capabilities |
+| [`LLMToolSelectorMiddleware`](#langchain.agents.middleware.LLMToolSelectorMiddleware) | Use an LLM to select relevant tools before calling main model |
+| [`ToolRetryMiddleware`](#langchain.agents.middleware.ToolRetryMiddleware) | Automatically retry failed tool calls with exponential backoff |
+| [`LLMToolEmulator`](#langchain.agents.middleware.LLMToolEmulator) | Emulate tool execution using LLM for testing purposes |
+| [`ContextEditingMiddleware`](#langchain.agents.middleware.ContextEditingMiddleware) | Manage conversation context by trimming or clearing tool uses |
+| [`ShellToolMiddleware`](#langchain.agents.middleware.ShellToolMiddleware) | Expose a persistent shell session to agents for command execution |
+| [`FilesystemFileSearchMiddleware`](#langchain.agents.middleware.FilesystemFileSearchMiddleware) | Provide Glob and Grep search tools over filesystem files |
+| [`AgentMiddleware`](#langchain.agents.middleware.AgentMiddleware) | Base middleware class for creating custom middleware |
 
-## Components and utilities
+## Decorators
 
-The following classes and functions provide the foundation for building and managing agent middleware:
+Create custom middleware using these decorators:
 
-| COMPONENT | DESCRIPTION |
-| -------------- | ----------- |
-| [`AgentState`](./#langchain.agents.middleware.AgentState) | Represent the state of an agent |
-| [`ClearToolUsesEdit`](./#langchain.agents.middleware.ClearToolUsesEdit) | Function to clear tool usage edits |
-| [`InterruptOnConfig`](./#langchain.agents.middleware.InterruptOnConfig) | Configuration class for interruption handling |
-| [`ModelRequest`](./#langchain.agents.middleware.ModelRequest) | Represent a request to a model |
-| [`ModelResponse`](./#langchain.agents.middleware.ModelResponse) | Represent a response from a model |
-| [`before_model`](./#langchain.agents.middleware.before_model) | Function executed before model calls |
-| [`after_model`](./#langchain.agents.middleware.after_model) | Function executed after model calls |
-| [`wrap_model_call`](./#langchain.agents.middleware.wrap_model_call) | Function wrapper for model calls |
-| [`wrap_tool_call`](./#langchain.agents.middleware.wrap_tool_call) | Function wrapper for tool calls |
+| DECORATOR | DESCRIPTION |
+| --------- | ----------- |
+| [`@before_agent`](#langchain.agents.middleware.before_agent) | Execute logic before agent execution starts |
+| [`@before_model`](#langchain.agents.middleware.before_model) | Execute logic before each model call |
+| [`@after_model`](#langchain.agents.middleware.after_model) | Execute logic after each model receives a response |
+| [`@after_agent`](#langchain.agents.middleware.after_agent) | Execute logic after agent execution completes |
+| [`@wrap_model_call`](#langchain.agents.middleware.wrap_model_call) | Wrap and intercept model calls |
+| [`@wrap_tool_call`](#langchain.agents.middleware.wrap_tool_call) | Wrap and intercept tool calls |
+| [`@dynamic_prompt`](#langchain.agents.middleware.dynamic_prompt) | Generate dynamic system prompts based on request context |
+| [`@hook_config`](#langchain.agents.middleware.hook_config) | Configure hook behavior (e.g., conditional routing) |
 
-<!-- `group_by_category false to allow custom ordering -->
-<!-- `summary false since overriding above -->
-::: langchain.agents.middleware
+## Types and utilities
+
+Core types for building middleware:
+
+| TYPE | DESCRIPTION |
+| ---- | ----------- |
+| [`AgentState`](#langchain.agents.middleware.AgentState) | State container for agent execution |
+| [`ModelRequest`](#langchain.agents.middleware.ModelRequest) | Request details passed to model calls |
+| [`ModelResponse`](#langchain.agents.middleware.ModelResponse) | Response details from model calls |
+| [`ClearToolUsesEdit`](#langchain.agents.middleware.ClearToolUsesEdit) | Utility for clearing tool usage history from context |
+| [`InterruptOnConfig`](#langchain.agents.middleware.InterruptOnConfig) | Configuration for human-in-the-loop interruptions |
+
+<!-- TODO: `ignore_init_summary` doesn't seem to work.  -->
+
+::: langchain.agents.middleware.SummarizationMiddleware
     options:
-      summary: false
-      group_by_category: false
-      members:
-        - ContextEditingMiddleware
-        - HumanInTheLoopMiddleware
-        - LLMToolSelectorMiddleware
-        - LLMToolEmulator
-        - ModelCallLimitMiddleware
-        - ModelFallbackMiddleware
-        - PIIMiddleware
-        - PIIDetectionError
-        - SummarizationMiddleware
-        - TodoListMiddleware
-        - ToolCallLimitMiddleware
-        - AgentMiddleware
-        - AgentState
-        - ClearToolUsesEdit
-        - InterruptOnConfig
-        - ModelRequest
-        - ModelResponse
-        - before_model
-        - after_model
-        - wrap_model_call
-        - wrap_tool_call
-        - ModelRequest
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.HumanInTheLoopMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.ModelCallLimitMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^(__init__|state_schema)$"]
+
+::: langchain.agents.middleware.ToolCallLimitMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^(__init__|state_schema)$"]
+
+::: langchain.agents.middleware.ModelFallbackMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.PIIMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.TodoListMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^(__init__|state_schema)$"]
+
+::: langchain.agents.middleware.LLMToolSelectorMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.ToolRetryMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.LLMToolEmulator
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.ContextEditingMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.ShellToolMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.FilesystemFileSearchMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.AgentMiddleware
+    options:
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+::: langchain.agents.middleware.before_agent
+
+::: langchain.agents.middleware.before_model
+
+::: langchain.agents.middleware.after_model
+
+::: langchain.agents.middleware.after_agent
+
+::: langchain.agents.middleware.wrap_model_call
+
+::: langchain.agents.middleware.wrap_tool_call
+
+::: langchain.agents.middleware.dynamic_prompt
+
+::: langchain.agents.middleware.hook_config
+
+::: langchain.agents.middleware.AgentState
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.ModelRequest
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.ModelResponse
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.ClearToolUsesEdit
+    options:
+      merge_init_into_class: true
+
+::: langchain.agents.middleware.InterruptOnConfig
+    options:
+      merge_init_into_class: true
