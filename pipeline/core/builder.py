@@ -188,12 +188,11 @@ class DocumentationBuilder:
             # Create the callout section with Mintlify Callout component
             source_links_section = (
                 "\n\n---\n\n"
-                f'<Callout icon="pen-to-square" iconType="regular">\n'
+                '<Callout icon="pen-to-square" iconType="regular">\n'
                 f"    [Edit the source of this page on GitHub.]({edit_url})\n"
                 "</Callout>\n"
-                f'<Tip icon="terminal" iconType="regular">\n'
-                f"    [Connect these docs programmatically](/use-these-docs) to Claude, VSCode, and more via MCP for"
-                f"    real-time answers.\n"
+                '<Tip icon="terminal" iconType="regular">\n'
+                "    [Connect these docs programmatically](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
                 "</Tip>\n"
             )
 
@@ -836,7 +835,8 @@ class DocumentationBuilder:
                 url = match.group(2)  # The URL
                 post = match.group(3)  # Everything after the URL
 
-                # Only convert absolute /oss/ paths that don't contain 'images' or '/oss/python' or '/oss/javascript'
+                # Only convert absolute /oss/ paths that don't contain 'images'
+                # or '/oss/python' or '/oss/javascript'
                 if (
                     url.startswith("/oss/")
                     and "images" not in url

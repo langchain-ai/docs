@@ -111,20 +111,22 @@ import { createAgent, dynamicSystemPromptMiddleware } from "langchain";
 import * as z from "zod";
 
 const contextSchema = z.object({
-  userRole: z.enum(["expert", "beginner"]).default("user"),
+  userRole: z.enum(["expert", "beginner"]).default("beginner"),
 });
 
-const userRolePrompt = dynamicSystemPromptMiddleware((request) => { // [!code highlight]
-  const userRole = request.runtime.context.userRole;
-  const basePrompt = "You are a helpful assistant.";
+const userRolePrompt = dynamicSystemPromptMiddleware<z.infer<typeof contextSchema>>( // [!code highlight]
+    (_state, runtime) => {
+        const userRole = runtime.context.userRole;
+        const basePrompt = "You are a helpful assistant.";
 
-  if (userRole === "expert") {
-    return `${basePrompt} Provide detailed technical responses.`;
-  } else if (userRole === "beginner") {
-    return `${basePrompt} Explain concepts simply and avoid jargon.`;
-  }
-  return basePrompt; // [!code highlight]
-});
+        if (userRole === "expert") {
+            return `${basePrompt} Provide detailed technical responses.`;
+        } else if (userRole === "beginner") {
+            return `${basePrompt} Explain concepts simply and avoid jargon.`;
+        }
+        return basePrompt; // [!code highlight]
+    }
+);
 
 const agent = createAgent({
   model,
@@ -133,12 +135,16 @@ const agent = createAgent({
   contextSchema,
 });
 
-await agent.invoke({
-  messages: [new HumanMessage("Explain async programming")],
-  context: {
-    userRole: "expert",
-  },
-})
+await agent.invoke(
+    {
+        messages: [new HumanMessage("Explain async programming")]
+    },
+    {
+        configurable: {
+            userRole: "expert",
+        }
+    }
+);
 ```
 
 ```typescript v0 (old)
