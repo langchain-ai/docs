@@ -4,9 +4,7 @@ sidebarTitle: Azure
 icon: "microsoft"
 ---
 
-When running LangSmith on [Microsoft Azure](https://azure.microsoft.com/), you can set up in either [self-hosted](/langsmith/self-hosted) or [hybrid](/langsmith/hybrid) mode. In both cases, your workloads run on Azure infrastructure within your account, allowing you to use Azure managed services while maintaining control over your data and compute resources.
-
-This page provides Azure-specific architecture patterns, service recommendations, and best practices for deploying and operating LangSmith on Azure.
+When running LangSmith on [Microsoft Azure](https://azure.microsoft.com/), you can set up in either [full self-hosted](/langsmith/self-hosted) or [hybrid](/langsmith/hybrid) mode. This page provides Azure-specific architecture patterns, service recommendations, and best practices for deploying and operating LangSmith on Azure.
 
 <Note>
 LangChain provides Terraform modules specifically for Azure to help provision infrastructure for LangSmith. These modules can quickly set up AKS clusters, Azure Database for PostgreSQL, Azure Managed Redis, Blob Storage, and networking resources.
@@ -16,26 +14,16 @@ View the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tre
 
 ## Reference architecture
 
-LangSmith on Azure uses managed services to provide a scalable, secure, and resilient platform. The following architecture applies to both self-hosted and hybrid deployments:
+We recommend using Azure's managed services to provide a scalable, secure, and resilient platform. The following architecture applies to both self-hosted and hybrid deployments:
 
 ![Architecture diagram showing Azure relations to LangSmith services](/langsmith/images/azure-architecture-self-hosted.png)
 
-- **Client interfaces**: Users interact with LangSmith via a web browser or the LangChain SDK. All traffic terminates at an [Azure Load Balancer](https://azure.microsoft.com/en-us/products/load-balancer/) and is routed to the frontend (NGINX) within the [AKS](https://azure.microsoft.com/en-us/products/kubernetes-service/) cluster. API requests from SDKs are authenticated with API keys, while browser sessions use bearer tokens.
-- **Application services**: The frontend routes requests to the backend, platform backend, playground and queue workers. These services run as Kubernetes deployments. The ACE backend executes code safely in an isolated sandbox.
+- **Client interfaces**: Users interact with LangSmith via a web browser or the LangChain SDK. All traffic terminates at an [Azure Load Balancer](https://azure.microsoft.com/en-us/products/load-balancer/) and is routed to the frontend (NGINX) within the [AKS](https://azure.microsoft.com/en-us/products/kubernetes-service/) cluster before being routed to another service within the cluster if necessary.
 - **Storage services**: The platform requires persistent storage for traces, metadata and caching. On Azure the recommended services are:
     - <Icon icon="database" /> **[Azure Database for PostgreSQL (Flexible Server)](https://azure.microsoft.com/en-us/products/postgresql/)** for transactional data (e.g., runs, projects). Azure's high-availability options provision a standby replica in another zone; data is synchronously committed to both primary and standby servers.
     - <Icon icon="database" /> **[Azure Managed Redis](https://azure.microsoft.com/en-us/products/managed-redis/)** for queues and caching. Best practices include storing small values and breaking large objects into multiple keys, using pipelining to maximize throughput and ensuring the client and server reside in the same region.
-    - <Icon icon="chart-line" /> **ClickHouse** for high-volume analytics of traces. Deploy a ClickHouse cluster on AKS using the open-source operator. Ensure replication across [availability zones](https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview) for durability.
+    - <Icon icon="chart-line" /> **ClickHouse** for high-volume analytics of traces. We recommend using an [externally managed ClickHouse solution](/langsmith/self-host-external-clickhouse). If, for security or compliance reasons, that is not an option, deploy a ClickHouse cluster on AKS using the open-source operator. Ensure replication across [availability zones](https://learn.microsoft.com/en-us/azure/reliability/availability-zones-overview) for durability. Clickhouse is not required for a hybrid deployment.
     - <Icon icon="cube" /> **[Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs/)** for large artifacts. Use redundant storage configurations such as read-access geo-redundant (RA-GRS) or geo-zone-redundant (RA-GZRS) storage and design applications to read from the secondary region during an outage.
-
-### LangSmith self-hosted models
-
-You can host LangSmith on Azure using any of the three self-hosted models:
-
-- [LangSmith Observability and Evaluation](/langsmith/self-hosted#self-host-langsmith-observability-and-evaluation): Deploy the UI and API services (frontend, backend, platform backend, playground, queue workers, and ACE). Use external Azure managed services for PostgreSQL, Redis, and blob storage.
-- [Full LangSmith Platform Observability, Evaluation, and Agent Deployment](/langsmith/self-hosted#enable-langsmith-deployment): In addition to the application services, run the Agent Server [control plane](/langsmith/control-plane) and [data plane](/langsmith/data-plane) in your AKS cluster. The control plane is installed via Helm; the data plane consists of [Agent Server](/langsmith/agent-server) pods.
-- [Standalone Agent Server](/langsmith/self-hosted/standalone-server): Deploy one or a few Agent Servers on AKS or Docker with external PostgreSQL and Redis. Use optional integration with the LangSmith UI for tracing. This model offers maximum flexibility and suits microservice architectures.
-- [Hybrid](/langsmith/hybrid): Run your [data plane](/langsmith/data-plane) (Agent Servers and backing services) on Azure infrastructure while using LangChain's managed [control plane](/langsmith/control-plane) for the UI and APIs. The data plane uses the same Azure services (AKS, Azure Database for PostgreSQL, Azure Managed Redis) as the self-hosted models.
 
 ## Compute and networking on Azure
 
@@ -91,21 +79,13 @@ Choose an appropriate SKU that matches your workload; Flexible Server allows sca
 
 ### Azure Managed Redis
 
-#### Data modeling
-
-Store small values and divide large objects into multiple keys; [Azure Managed Redis](https://azure.microsoft.com/en-us/products/managed-redis/) works best with many small keys. Large requests can cause timeouts; break up the data or increase bandwidth and connection concurrency.
-
-#### Client performance
-
-Use clients that support Redis pipelining to maximize network throughput. Place the client and Redis instance in the same region to minimize latency.
-
 #### Persistence and redundancy
 
 Choose a tier that provides replication and persistence. Configure Redis persistence or data backup for durability. For high-availability, use [active geo-replication](https://learn.microsoft.com/en-us/azure/redis/how-to-active-geo-replication) or zone-redundant caches depending on the tier.
 
 ### ClickHouse on Azure
 
-ClickHouse is used for analytical workloads (traces and feedback). Deploy a ClickHouse cluster on AKS using Helm or the official operator. For resilience, replicate data across nodes and availability zones. Consider using [Azure Disks](https://azure.microsoft.com/en-us/products/storage/disks/) for local storage and mount them as StatefulSets. Alternatively, evaluate [Azure Data Explorer](https://azure.microsoft.com/en-us/products/data-explorer/) or [Azure Synapse Analytics](https://azure.microsoft.com/en-us/products/synapse-analytics/) if your enterprise policy restricts unmanaged databases.
+ClickHouse is used for analytical workloads (traces and feedback). If you cannot use an externally managed solution, deploy a ClickHouse cluster on AKS using Helm or the official operator. For resilience, replicate data across nodes and availability zones. Consider using [Azure Disks](https://azure.microsoft.com/en-us/products/storage/disks/) for local storage and mount them as StatefulSets.
 
 ### Azure Blob Storage
 
@@ -119,11 +99,7 @@ Use naming conventions that improve load balancing across partitions and plan fo
 
 #### Networking
 
-Access blob storage through [private endpoints](https://learn.microsoft.com/en-us/azure/storage/common/storage-private-endpoints) or using SAS tokens and CORS rules to enable direct client access.
-
-#### Uploads and retries
-
-Use parallel uploads for large blobs and implement exponential backoff with retry policies when you approach scalability limits. Compress data on the client to reduce bandwidth but evaluate the CPU overhead.
+Access blob storage through [private endpoints](https://learn.microsoft.com/en-us/azure/storage/common/storage-private-endpoints) or by using SAS tokens and CORS rules to enable direct client access.
 
 ## Security and access control
 
@@ -157,6 +133,8 @@ Mount secrets from Key Vault into pods using [CSI Secret Store](https://learn.mi
 
 ## Observability and monitoring
 
+Configure your LangSmith instance to [export telemetry data](/langsmith/export-backend) so you can use Azure's services to monitor it.
+
 ### Azure Monitor
 
 Use [Azure Monitor](https://azure.microsoft.com/en-us/products/monitor/) for metrics, logs, and alerting. Proactive monitoring involves configuring alerts on key signals like node CPU/memory utilization, pod status, and service latency. Azure Monitor alerts notify you when predefined thresholds are exceeded.
@@ -172,3 +150,6 @@ Install [Container Insights](https://learn.microsoft.com/en-us/azure/azure-monit
 ### Application logging
 
 Ensure LangSmith services emit logs to stdout/stderr and forward them via [Fluent Bit](https://fluentbit.io/) or the Azure Monitor agent.
+
+## Continuous integration
+- The preferred method to manage [LangSmith deployments](/langsmith/deployments) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [Azure Container Registry](https://azure.microsoft.com/en-us/products/container-registry). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.

@@ -4,9 +4,7 @@ sidebarTitle: AWS
 icon: "aws"
 ---
 
-When running LangSmith on [Amazon Web Services (AWS)](https://aws.amazon.com/), you can set up in either [self-hosted](/langsmith/self-hosted) or [hybrid](/langsmith/hybrid) mode. In both cases, your workloads run on AWS infrastructure within your account, allowing you to use AWS managed services while maintaining control over your data and compute resources.
-
-This page provides AWS-specific architecture patterns, service recommendations, and best practices for deploying and operating LangSmith on AWS.
+When running LangSmith on [Amazon Web Services (AWS)](https://aws.amazon.com/), you can set up in either [full self-hosted](/langsmith/self-hosted) or [hybrid](/langsmith/hybrid) mode. This page provides AWS-specific architecture patterns, service recommendations, and best practices for deploying and operating LangSmith on AWS.
 
 <Note>
 LangChain provides Terraform modules specifically for AWS to help provision infrastructure for LangSmith. These modules can quickly set up EKS clusters, RDS, ElastiCache, S3, and networking resources.
@@ -16,28 +14,24 @@ View the [AWS Terraform modules](https://github.com/langchain-ai/terraform/tree/
 
 ## Reference architecture
 
-LangSmith on AWS leverages managed services to provide a scalable, secure, and resilient platform. The following architecture applies to both self-hosted and hybrid and aligns with the [AWS Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/):
+We recommend leveraging AWS's managed services to provide a scalable, secure, and resilient platform. The following architecture applies to both self-hosted and hybrid and aligns with the [AWS Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/):
 
 ![Architecture diagram showing AWS relations to LangSmith services](/langsmith/images/aws-architecture-self-hosted.png)
 
 - <Icon icon="globe" /> **Ingress & networking**: Requests enter via [Amazon Application Load Balancer (ALB)](https://aws.amazon.com/elasticloadbalancing/application-load-balancer/) within your [VPC](https://aws.amazon.com/vpc/), secured using [AWS WAF](https://aws.amazon.com/waf/) and [IAM](https://aws.amazon.com/iam/)-based authentication.
-- <Icon icon="cube" /> **Frontend & backend services:** Containers run on [Amazon EKS](https://aws.amazon.com/eks/), orchestrated behind the ALB. Nginx routes requests to the LangSmith frontend, backend, and queue workers.
+- <Icon icon="cube" /> **Frontend & backend services:** Containers run on [Amazon EKS](https://aws.amazon.com/eks/), orchestrated behind the ALB. routes requests to other services within the cluster as necessary.
 - <Icon icon="database" /> **Storage & databases:**
   - [Amazon RDS for PostgreSQL](https://aws.amazon.com/rds/postgresql/): metadata, projects, users.
   - [Amazon ElastiCache (Redis)](https://aws.amazon.com/elasticache/redis/): caching and job queues.
   - ClickHouse + [Amazon EBS](https://aws.amazon.com/ebs/): analytics and trace storage.
+    - We recommend using an [externally managed ClickHouse solution](/langsmith/self-host-external-clickhouse) unless security or compliance reasons
+    prevent you from doing so.
+    - ClickHouse is not required for hybrid deployments.
   - [Amazon S3](https://aws.amazon.com/s3/): object storage for trace artifacts and telemetry.
+
 - <Icon icon="sparkles" /> **LLM integration:** Optionally proxy requests to [Amazon Bedrock](https://aws.amazon.com/bedrock/) or [Amazon SageMaker](https://aws.amazon.com/sagemaker/) for LLM inference.
-- <Icon icon="chart-line" /> **Monitoring & observability:** Integrated with [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/) and [LangSmith Beacon](/langsmith/self-host-egress) (for self-hosted telemetry opt-in).
+- <Icon icon="chart-line" /> **Monitoring & observability:** Integrate with [Amazon CloudWatch](https://aws.amazon.com/cloudwatch/)
 
-### LangSmith self-hosted models
-
-You can host LangSmith on AWS using any of the three self-hosted models:
-
-- [LangSmith Observability and Evaluation](/langsmith/self-hosted#self-host-langsmith-observability-and-evaluation): Deploy the UI and API services (frontend, backend, platform backend, playground, queue workers, and ACE). Use external AWS managed services for RDS PostgreSQL, ElastiCache, and S3.
-- [Full LangSmith Platform Observability, Evaluation, and Agent Deployment](/langsmith/self-hosted#enable-langsmith-deployment): In addition to the application services, run the Agent Server [control plane](/langsmith/control-plane) and [data plane](/langsmith/data-plane) in your EKS cluster. The control plane is installed via Helm; the data plane consists of [Agent Server](/langsmith/agent-server) pods.
-- [Standalone Agent Server](/langsmith/self-hosted/standalone-server): Deploy one or a few Agent Servers on EKS or Docker with external RDS PostgreSQL and ElastiCache. Use optional integration with the LangSmith UI for tracing. This model offers maximum flexibility and suits microservice architectures.
-- [Hybrid](/langsmith/hybrid): Run your [data plane](/langsmith/data-plane) (Agent Servers and backing services) on AWS infrastructure while using LangChain's managed [control plane](/langsmith/control-plane) for the UI and APIs. The data plane uses the same AWS services (EKS, RDS PostgreSQL, ElastiCache) as the self-hosted models.
 
 ## Compute options
 
@@ -56,7 +50,7 @@ This reference is designed to align with the six pillars of the AWS Well-Archite
 
 - Automate deployments with IaC ([CloudFormation](https://aws.amazon.com/cloudformation/) / [Terraform](https://www.terraform.io/)).
 - Use [AWS Systems Manager Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html) for configuration.
-- Continuously monitor via [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html) and LangSmith trace metrics.
+- Configure your LangSmith instance to [export telemetry data](/langsmith/export-backend) and continuously monitor via [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html).
 - The preferred method to manage [LangSmith deployments](/langsmith/deployments) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [ECR](https://aws.amazon.com/ecr/). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.
 
 ### Security
@@ -74,14 +68,12 @@ This reference is designed to align with the six pillars of the AWS Well-Archite
 
 ### Performance efficiency
 
-- Leverage [AWS Graviton](https://aws.amazon.com/ec2/graviton/) instances for optimized compute.
-- Cache hot datasets in [ElastiCache](https://aws.amazon.com/elasticache/).
+- Leverage [EC2](https://aws.amazon.com/ec2/) instances for optimized compute.
 - Use [S3 Intelligent-Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) for infrequently accessed trace data.
 
 ### Cost optimization
 
 - Right-size [EKS](https://aws.amazon.com/eks/) clusters using [Compute Savings Plans](https://aws.amazon.com/savingsplans/compute-pricing/).
-- Adopt [Spot](https://aws.amazon.com/ec2/spot/) [Fargate](https://aws.amazon.com/fargate/) tasks for non-critical workloads.
 - Monitor cost KPIs using [AWS Cost Explorer](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/) dashboards.
 
 ### Sustainability
@@ -94,7 +86,7 @@ This reference is designed to align with the six pillars of the AWS Well-Archite
 
 LangSmith can be configured for:
 
-- [PrivateLink](https://aws.amazon.com/privatelink/)-only access (no public internet exposure).
+- [PrivateLink](https://aws.amazon.com/privatelink/)-only access (no public internet exposure, besides egress necessary for billing).
 - [KMS](https://aws.amazon.com/kms/)-based encryption keys for S3, RDS, and EBS.
 - Audit logging to [CloudWatch](https://aws.amazon.com/cloudwatch/) and [AWS CloudTrail](https://aws.amazon.com/cloudtrail/).
 
