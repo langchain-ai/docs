@@ -50,6 +50,7 @@ For complex workflows, use a pre-built LangGraph graph:
 
 ## Using SubAgent
 
+:::python
 ```python
 import os
 from typing import Literal
@@ -86,6 +87,66 @@ agent = create_deep_agent(
     subagents=subagents
 )
 ```
+:::
+
+:::js
+```typescript
+import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query,
+    maxResults = 5,
+    topic = "general",
+    includeRawContent = false,
+  }: {
+    query: string;
+    maxResults?: number;
+    topic?: "general" | "news" | "finance";
+    includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+      includeRawContent,
+      topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search",
+    description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z
+        .enum(["general", "news", "finance"])
+        .optional()
+        .default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: new ChatAnthropic({model:"claude-sonnet-4-5-20250929"}),  // Optional override, defaults to main agent model
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: new ChatAnthropic({model:"claude-sonnet-4-5-20250929"}),
+  subagents: subagents,
+});
+```
+:::
 
 ## Using CompiledSubAgent
 
@@ -123,7 +184,31 @@ agent = create_deep_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { createDeepAgent, CompiledSubAgent } from "deepagents";
+import { createAgent } from "langchain";
+
+// Create a custom agent graph
+const customGraph = createAgent({
+  model: yourModel,
+  tools: specializedTools,
+  prompt: "You are a specialized agent for data analysis...",
+});
+
+// Use it as a custom subagent
+const customSubagent: CompiledSubAgent = {
+  name: "data-analyzer",
+  description: "Specialized agent for complex data analysis tasks",
+  runnable: customGraph,
+};
+
+const subagents = [customSubagent];
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-5-20250929",
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+  subagents: subagents,
+});
 ```
 :::
 
@@ -181,7 +266,24 @@ research_subagent = {
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+const researchSubagent = {
+  name: "research-agent",
+  description: "Conducts in-depth research using web search and synthesizes findings",
+  systemPrompt: `You are a thorough researcher. Your job is to:
+
+  1. Break down the research question into searchable queries
+  2. Use internet_search to find relevant information
+  3. Synthesize findings into a comprehensive but concise summary
+  4. Cite sources when making claims
+
+  Output format:
+  - Summary (2-3 paragraphs)
+  - Key findings (bullet points)
+  - Sources (with URLs)
+
+  Keep your response under 500 words to maintain clean context.`,
+  tools: [internetSearch],
+};
 ```
 :::
 
@@ -207,7 +309,17 @@ email_agent = {
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+// ✅ Good: Focused tool set
+const emailAgent = {
+  name: "email-sender",
+  tools: [sendEmail, validateEmail],  // Only email-related
+};
+
+// ❌ Bad: Too many tools
+const emailAgentBad = {
+  name: "email-sender",
+  tools: [sendEmail, webSearch, databaseQuery, fileUpload],  // Unfocused
+};
 ```
 :::
 
@@ -230,7 +342,7 @@ subagents = [
         "description": "Analyzes financial data and market trends",
         "system_prompt": "You are an expert financial analyst...",
         "tools": [get_stock_price, analyze_fundamentals],
-        "model": "openai:gpt-4o",  # Better for numerical analysis
+        "model": "openai:gpt-5",  # Better for numerical analysis
     },
 ]
 ```
@@ -238,7 +350,22 @@ subagents = [
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+const subagents = [
+  {
+    name: "contract-reviewer",
+    description: "Reviews legal documents and contracts",
+    systemPrompt: "You are an expert legal reviewer...",
+    tools: [readDocument, analyzeContract],
+    model: "claude-sonnet-4-5-20250929",  // Large context for long documents
+  },
+  {
+    name: "financial-analyst",
+    description: "Analyzes financial data and market trends",
+    systemPrompt: "You are an expert financial analyst...",
+    tools: [getStockPrice, analyzeFundamentals],
+    model: "gpt-5",  // Better for numerical analysis
+  },
+];
 ```
 :::
 
@@ -266,7 +393,19 @@ data_analyst = {
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+const dataAnalyst = {
+  systemPrompt: `Analyze the data and return:
+  1. Key insights (3-5 bullet points)
+  2. Overall confidence score
+  3. Recommended next actions
+
+  Do NOT include:
+  - Raw data
+  - Intermediate calculations
+  - Detailed tool outputs
+
+  Keep response under 300 words.`,
+};
 ```
 :::
 
@@ -311,7 +450,34 @@ agent = create_deep_agent(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { createDeepAgent } from "deepagents";
+
+const subagents = [
+  {
+    name: "data-collector",
+    description: "Gathers raw data from various sources",
+    systemPrompt: "Collect comprehensive data on the topic",
+    tools: [webSearch, apiCall, databaseQuery],
+  },
+  {
+    name: "data-analyzer",
+    description: "Analyzes collected data for insights",
+    systemPrompt: "Analyze data and extract key insights",
+    tools: [statisticalAnalysis],
+  },
+  {
+    name: "report-writer",
+    description: "Writes polished reports from analysis",
+    systemPrompt: "Create professional reports from insights",
+    tools: [formatDocument],
+  },
+];
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-5-20250929",
+  systemPrompt: "You coordinate data analysis and reporting. Use subagents for specialized tasks.",
+  subagents: subagents,
+});
 ```
 :::
 
@@ -333,6 +499,8 @@ Each subagent works with clean context focused only on its task.
 **Solutions**:
 
 1. **Make descriptions more specific:**
+
+   :::python
    ```python
    # ✅ Good
    {"name": "research-specialist", "description": "Conducts in-depth research on specific topics using web search. Use when you need detailed information that requires multiple searches."}
@@ -340,8 +508,21 @@ Each subagent works with clean context focused only on its task.
    # ❌ Bad
    {"name": "helper", "description": "helps with stuff"}
    ```
+   :::
+
+   :::js
+   ```typescript
+   // ✅ Good
+   { name: "research-specialist", description: "Conducts in-depth research on specific topics using web search. Use when you need detailed information that requires multiple searches." }
+
+   // ❌ Bad
+   { name: "helper", description: "helps with stuff" }
+   ```
+   :::
 
 2. **Instruct main agent to delegate:**
+
+   :::python
    ```python
    agent = create_deep_agent(
        system_prompt="""...your instructions...
@@ -351,6 +532,19 @@ Each subagent works with clean context focused only on its task.
        subagents=[...]
    )
    ```
+   :::
+
+   :::js
+   ```typescript
+   const agent = createDeepAgent({
+     systemPrompt: `...your instructions...
+
+     IMPORTANT: For complex tasks, delegate to your subagents using the task() tool.
+     This keeps your context clean and improves results.`,
+     subagents: [...]
+   });
+   ```
+   :::
 
 ### Context still getting bloated
 
@@ -359,6 +553,8 @@ Each subagent works with clean context focused only on its task.
 **Solutions**:
 
 1. **Instruct subagent to return concise results:**
+
+   :::python
    ```python
    system_prompt="""...
 
@@ -366,8 +562,21 @@ Each subagent works with clean context focused only on its task.
    Do NOT include raw data, intermediate search results, or detailed tool outputs.
    Your response should be under 500 words."""
    ```
+   :::
+
+   :::js
+   ```typescript
+   systemPrompt: `...
+
+   IMPORTANT: Return only the essential summary.
+   Do NOT include raw data, intermediate search results, or detailed tool outputs.
+   Your response should be under 500 words.`
+   ```
+   :::
 
 2. **Use filesystem for large data:**
+
+   :::python
    ```python
    system_prompt="""When you gather large amounts of data:
    1. Save raw data to /data/raw_results.txt
@@ -376,6 +585,18 @@ Each subagent works with clean context focused only on its task.
 
    This keeps context clean."""
    ```
+   :::
+
+   :::js
+   ```typescript
+   systemPrompt: `When you gather large amounts of data:
+   1. Save raw data to /data/raw_results.txt
+   2. Process and analyze the data
+   3. Return only the analysis summary
+
+   This keeps context clean.`
+   ```
+   :::
 
 ### Wrong subagent being selected
 
@@ -383,6 +604,7 @@ Each subagent works with clean context focused only on its task.
 
 **Solution**: Differentiate subagents clearly in descriptions:
 
+:::python
 ```python
 subagents = [
     {
@@ -395,3 +617,19 @@ subagents = [
     }
 ]
 ```
+:::
+
+:::js
+```typescript
+const subagents = [
+  {
+    name: "quick-researcher",
+    description: "For simple, quick research questions that need 1-2 searches. Use when you need basic facts or definitions.",
+  },
+  {
+    name: "deep-researcher",
+    description: "For complex, in-depth research requiring multiple searches, synthesis, and analysis. Use for comprehensive reports.",
+  }
+];
+```
+:::

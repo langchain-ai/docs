@@ -4,7 +4,7 @@ run-name: Preview by @${{ github.actor }}
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 concurrency:
@@ -17,6 +17,63 @@ permissions:
   actions: read
 
 jobs:
+  cleanup-preview-branches:
+    # Run only when PR is closed or merged
+    if: github.event.action == 'closed'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Delete preview branches for this PR
+        run: |
+          set -euo pipefail
+
+          PR_STATE="${{ github.event.pull_request.merged && 'merged' || 'closed' }}"
+          echo "[INFO] Cleaning up preview branches for $PR_STATE PR #${{ github.event.pull_request.number }}"
+
+          # Get the source branch name
+          SOURCE_BRANCH="${{ github.event.pull_request.head.ref }}"
+          echo "[INFO] Source branch: $SOURCE_BRANCH"
+
+          # Generate the safe prefix that would have been used for this branch
+          # This transforms the branch name to match the preview branch naming convention:
+          # 1. Remove all non-alphanumeric characters (tr -cd '[:alnum:]')
+          # 2. Take only the first 6 characters (cut -c1-6)
+          # Example: "feature/my-branch-123" -> "featur"
+          safe_prefix=$(echo "$SOURCE_BRANCH" | tr -cd '[:alnum:]' | cut -c1-6)
+          echo "[INFO] Looking for preview branches matching pattern: preview-${safe_prefix}-*"
+
+          # Find and delete all preview branches with this prefix
+          git fetch origin
+          BRANCHES=$(git branch -r | grep "origin/preview-${safe_prefix}-" | sed 's|origin/||' || true)
+
+          if [ -z "$BRANCHES" ]; then
+            echo "[INFO] No preview branches found for this PR"
+          else
+            echo "[INFO] Found preview branches to delete:"
+            echo "$BRANCHES"
+
+            for branch in $BRANCHES; do
+              # Safety check: ensure branch starts with 'preview-'
+              if [[ ! "$branch" =~ ^preview- ]]; then
+                echo "[ERROR] Branch '$branch' does not start with 'preview-'"
+                echo "[ERROR] Refusing to delete non-preview branch for safety"
+                exit 1
+              fi
+
+              echo "[INFO] Deleting branch: $branch"
+              git push origin --delete "$branch" || echo "[WARN] Failed to delete $branch (may already be deleted)"
+            done
+
+            echo "[SUCCESS] Cleanup complete"
+          fi
+
   create-preview:
     # This job needs to push a branch, so contents: write here only.
     permissions:
@@ -24,7 +81,8 @@ jobs:
     runs-on: ubuntu-latest
 
     # Skip for PRs from forks - they don't have write access
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'workflow_dispatch'
+    # Skip when PR is closed
+    if: (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'workflow_dispatch') && github.event.action != 'closed'
 
     # Expose the generated preview branch name for the next job
     outputs:

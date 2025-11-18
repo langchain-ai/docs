@@ -10,8 +10,6 @@ Welcome to the LangSmith Python SDK reference docs! These pages detail the core 
 
 For user guides, tutorials, and conceptual overviews, please visit the [LangSmith documentation](https://docs.langchain.com/langsmith/home).
 
---8<-- "wip.md"
-
 ## Quick Reference
 
 | Class/function | Description |
