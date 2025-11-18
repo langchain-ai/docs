@@ -368,7 +368,7 @@ class CustomState(AgentState):
 
 @tool  # [!code highlight]
 def greet(
-    runtime: ToolRuntime[CustomState]
+    runtime: ToolRuntime[None, CustomState]
 ) -> str:
     """Use this to greet the user by name."""
     user_name = runtime.state.get("user_name", "Unknown")  # [!code highlight]
@@ -492,24 +492,23 @@ This functionality has been ported to the middleware interface in v1.
 ```python v1 (new)
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
-    AgentMiddleware, ModelRequest, ModelRequestHandler
+    AgentMiddleware, ModelRequest
 )
-from langchain.messages import AIMessage
+from langchain.agents.middleware.types import ModelResponse
 from langchain_openai import ChatOpenAI
-
+from typing import Callable
 
 basic_model = ChatOpenAI(model="gpt-5-nano")
 advanced_model = ChatOpenAI(model="gpt-5")
 
 class DynamicModelMiddleware(AgentMiddleware):
 
-    def wrap_model_call(self, request: ModelRequest, handler: ModelRequestHandler) -> AIMessage:
+    def wrap_model_call(self, request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]) -> ModelResponse:
         if len(request.state.messages) > self.messages_threshold:
             model = advanced_model
         else:
             model = basic_model
-
-        return handler(request.replace(model=model))
+        return handler(request.override(model=model))
 
     def __init__(self, messages_threshold: int) -> None:
         self.messages_threshold = messages_threshold
