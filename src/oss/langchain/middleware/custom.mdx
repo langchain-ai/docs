@@ -1,0 +1,915 @@
+---
+title: Custom middleware
+---
+
+Build custom middleware by implementing hooks that run at specific points in the agent execution flow.
+
+## Hooks
+
+Middleware provides two styles of hooks to intercept agent execution:
+
+<CardGroup cols={2}>
+  <Card title="Node-style hooks" icon="share-nodes" href="#node-style-hooks">
+    Run sequentially at specific execution points.
+  </Card>
+  <Card title="Wrap-style hooks" icon="container-storage" href="#wrap-style-hooks">
+    Run around each model or tool call.
+  </Card>
+</CardGroup>
+
+### Node-style hooks
+
+Run sequentially at specific execution points. Use for logging, validation, and state updates.
+
+**Available hooks:**
+
+:::python
+- `before_agent` - Before agent starts (once per invocation)
+- `before_model` - Before each model call
+- `after_model` - After each model response
+- `after_agent` - After agent completes (once per invocation)
+:::
+
+:::js
+- `beforeAgent` - Before agent starts (once per invocation)
+- `beforeModel` - Before each model call
+- `afterModel` - After each model response
+- `afterAgent` - After agent completes (once per invocation)
+:::
+
+**Example:**
+
+:::python
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import before_model, after_model, AgentState
+from langchain.messages import AIMessage
+from langgraph.runtime import Runtime
+from typing import Any
+
+
+@before_model(can_jump_to=["end"])
+def check_message_limit(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    if len(state["messages"]) >= 50:
+        return {
+            "messages": [AIMessage("Conversation limit reached.")],
+            "jump_to": "end"
+        }
+    return None
+
+@after_model
+def log_response(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    print(f"Model returned: {state['messages'][-1].content}")
+    return None
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
+from langchain.messages import AIMessage
+from langgraph.runtime import Runtime
+from typing import Any
+
+class MessageLimitMiddleware(AgentMiddleware):
+    def __init__(self, max_messages: int = 50):
+        super().__init__()
+        self.max_messages = max_messages
+
+    @hook_config(can_jump_to=["end"])
+    def before_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+        if len(state["messages"]) == self.max_messages:
+            return {
+                "messages": [AIMessage("Conversation limit reached.")],
+                "jump_to": "end"
+            }
+        return None
+
+    def after_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+        print(f"Model returned: {state['messages'][-1].content}")
+        return None
+```
+
+</Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import { createMiddleware, AIMessage } from "langchain";
+
+const createMessageLimitMiddleware = (maxMessages: number = 50) => {
+  return createMiddleware({
+    name: "MessageLimitMiddleware",
+    beforeModel: (state) => {
+      if (state.messages.length === maxMessages) {
+        return {
+          messages: [new AIMessage("Conversation limit reached.")],
+          jumpTo: "end",
+        };
+      }
+      return;
+    },
+    afterModel: (state) => {
+      const lastMessage = state.messages[state.messages.length - 1];
+      console.log(`Model returned: ${lastMessage.content}`);
+      return;
+    },
+  });
+};
+```
+
+:::
+
+### Wrap-style hooks
+
+Intercept execution and control when the handler is called. Use for retries, caching, and transformation.
+
+You decide if the handler is called zero times (short-circuit), once (normal flow), or multiple times (retry logic).
+
+**Available hooks:**
+
+:::python
+- `wrap_model_call` - Around each model call
+- `wrap_tool_call` - Around each tool call
+:::
+
+:::js
+- `wrapModelCall` - Around each model call
+- `wrapToolCall` - Around each tool call
+:::
+
+**Example:**
+
+:::python
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from typing import Callable
+
+
+@wrap_model_call
+def retry_model(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    for attempt in range(3):
+        try:
+            return handler(request)
+        except Exception as e:
+            if attempt == 2:
+                raise
+            print(f"Retry {attempt + 1}/3 after error: {e}")
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from typing import Callable
+
+class RetryMiddleware(AgentMiddleware):
+    def __init__(self, max_retries: int = 3):
+        super().__init__()
+        self.max_retries = max_retries
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        for attempt in range(self.max_retries):
+            try:
+                return handler(request)
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    raise
+                print(f"Retry {attempt + 1}/{self.max_retries} after error: {e}")
+```
+
+</Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import { createMiddleware } from "langchain";
+
+const createRetryMiddleware = (maxRetries: number = 3) => {
+  return createMiddleware({
+    name: "RetryMiddleware",
+    wrapModelCall: (request, handler) => {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return handler(request);
+        } catch (e) {
+          if (attempt === maxRetries - 1) {
+            throw e;
+          }
+          console.log(`Retry ${attempt + 1}/${maxRetries} after error: ${e}`);
+        }
+      }
+      throw new Error("Unreachable");
+    },
+  });
+};
+```
+
+:::
+
+## Create middleware
+
+:::python
+
+You can create middleware in two ways:
+
+<CardGroup cols={2}>
+  <Card title="Decorator-based middleware" icon="at" href="#decorator-based-middleware">
+    Quick and simple for single-hook middleware. Use decorators to wrap individual functions.
+  </Card>
+  <Card title="Class-based middleware" icon="brackets-curly" href="#class-based-middleware">
+    More powerful for complex middleware with multiple hooks or configuration.
+  </Card>
+</CardGroup>
+
+### Decorator-based middleware
+
+Quick and simple for single-hook middleware. Use decorators to wrap individual functions.
+
+**Available decorators:**
+
+**Node-style:**
+- @[`@before_agent`] - Runs before agent starts (once per invocation)
+- @[`@before_model`] - Runs before each model call
+- @[`@after_model`] - Runs after each model response
+- @[`@after_agent`] - Runs after agent completes (once per invocation)
+
+**Wrap-style:**
+- @[`@wrap_model_call`] - Wraps each model call with custom logic
+- @[`@wrap_tool_call`] - Wraps each tool call with custom logic
+
+**Convenience:**
+- @[`@dynamic_prompt`] - Generates dynamic system prompts
+
+**Example:**
+
+```python
+from langchain.agents.middleware import before_model, wrap_model_call
+from langchain.agents.middleware import AgentState, ModelRequest, ModelResponse
+from langchain.agents import create_agent
+from langgraph.runtime import Runtime
+from typing import Any, Callable
+
+
+@before_model
+def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    print(f"About to call model with {len(state['messages'])} messages")
+    return None
+
+@wrap_model_call
+def retry_model(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    for attempt in range(3):
+        try:
+            return handler(request)
+        except Exception as e:
+            if attempt == 2:
+                raise
+            print(f"Retry {attempt + 1}/3 after error: {e}")
+
+agent = create_agent(
+    model="gpt-4o",
+    middleware=[log_before_model, retry_model],
+    tools=[...],
+)
+```
+
+**When to use decorators:**
+- Single hook needed
+- No complex configuration
+- Quick prototyping
+
+### Class-based middleware
+
+More powerful for complex middleware with multiple hooks or configuration. Use classes when you need to define both sync and async implementations for the same hook, or when you want to combine multiple hooks in a single middleware.
+
+**Example:**
+
+```python
+from langchain.agents.middleware import AgentMiddleware, AgentState, ModelRequest, ModelResponse
+from langgraph.runtime import Runtime
+from typing import Any, Callable
+
+class LoggingMiddleware(AgentMiddleware):
+    def before_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+        print(f"About to call model with {len(state['messages'])} messages")
+        return None
+
+    def after_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+        print(f"Model returned: {state['messages'][-1].content}")
+        return None
+
+agent = create_agent(
+    model="gpt-4o",
+    middleware=[LoggingMiddleware()],
+    tools=[...],
+)
+```
+
+**When to use classes:**
+- Defining both sync and async implementations for the same hook
+- Multiple hooks needed in a single middleware
+- Complex configuration required (e.g., configurable thresholds, custom models)
+- Reuse across projects with init-time configuration
+
+:::
+
+:::js
+
+Use the `createMiddleware` function to define custom middleware:
+
+```typescript
+import { createMiddleware } from "langchain";
+
+const loggingMiddleware = createMiddleware({
+  name: "LoggingMiddleware",
+  beforeModel: (state) => {
+    console.log(`About to call model with ${state.messages.length} messages`);
+    return;
+  },
+  afterModel: (state) => {
+    const lastMessage = state.messages[state.messages.length - 1];
+    console.log(`Model returned: ${lastMessage.content}`);
+    return;
+  },
+});
+```
+
+:::
+
+## Custom state schema
+
+Middleware can extend the agent's state with custom properties.
+
+:::python
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import AgentState, before_model, after_model
+from typing_extensions import NotRequired
+from typing import Any
+from langgraph.runtime import Runtime
+
+class CustomState(AgentState):
+    model_call_count: NotRequired[int]
+    user_id: NotRequired[str]
+
+@before_model(state_schema=CustomState, can_jump_to=["end"])
+def check_call_limit(state: CustomState, runtime: Runtime) -> dict[str, Any] | None:
+    count = state.get("model_call_count", 0)
+    if count > 10:
+        return {"jump_to": "end"}
+    return None
+
+@after_model(state_schema=CustomState)
+def increment_counter(state: CustomState, runtime: Runtime) -> dict[str, Any] | None:
+    return {"model_call_count": state.get("model_call_count", 0) + 1}
+
+agent = create_agent(
+    model="gpt-4o",
+    middleware=[check_call_limit, increment_counter],
+    tools=[...],
+)
+
+# Invoke with custom state
+result = agent.invoke({
+    "messages": [HumanMessage("Hello")],
+    "model_call_count": 0,
+    "user_id": "user-123",
+})
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents.middleware import AgentState, AgentMiddleware
+from typing_extensions import NotRequired
+from typing import Any
+
+class CustomState(AgentState):
+    model_call_count: NotRequired[int]
+    user_id: NotRequired[str]
+
+class CallCounterMiddleware(AgentMiddleware[CustomState]):
+    state_schema = CustomState
+
+    def before_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
+        count = state.get("model_call_count", 0)
+        if count > 10:
+            return {"jump_to": "end"}
+        return None
+
+    def after_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
+        return {"model_call_count": state.get("model_call_count", 0) + 1}
+
+agent = create_agent(
+    model="gpt-4o",
+    middleware=[CallCounterMiddleware()],
+    tools=[...],
+)
+
+# Invoke with custom state
+result = agent.invoke({
+    "messages": [HumanMessage("Hello")],
+    "model_call_count": 0,
+    "user_id": "user-123",
+})
+```
+
+</Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import { createMiddleware, createAgent, HumanMessage } from "langchain";
+import * as z from "zod";
+
+const callCounterMiddleware = createMiddleware({
+  name: "CallCounterMiddleware",
+  stateSchema: z.object({
+    modelCallCount: z.number().default(0),
+    userId: z.string().optional(),
+  }),
+  beforeModel: (state) => {
+    if (state.modelCallCount > 10) {
+      return { jumpTo: "end" };
+    }
+    return;
+  },
+  afterModel: (state) => {
+    return { modelCallCount: state.modelCallCount + 1 };
+  },
+});
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [callCounterMiddleware],
+});
+
+const result = await agent.invoke({
+  messages: [new HumanMessage("Hello")],
+  modelCallCount: 0,
+  userId: "user-123",
+});
+```
+
+:::
+
+## Execution order
+
+When using multiple middleware, understand how they execute:
+
+:::python
+```python
+agent = create_agent(
+    model="gpt-4o",
+    middleware=[middleware1, middleware2, middleware3],
+    tools=[...],
+)
+```
+:::
+
+:::js
+```typescript
+const agent = createAgent({
+  model: "gpt-4o",
+  middleware: [middleware1, middleware2, middleware3],
+  tools: [...],
+});
+```
+:::
+
+<Accordion title="Execution flow">
+
+**Before hooks run in order:**
+1. `middleware1.before_agent()`
+2. `middleware2.before_agent()`
+3. `middleware3.before_agent()`
+
+__Agent loop starts__
+
+4. `middleware1.before_model()`
+5. `middleware2.before_model()`
+6. `middleware3.before_model()`
+
+**Wrap hooks nest like function calls:**
+
+7. `middleware1.wrap_model_call()` → `middleware2.wrap_model_call()` → `middleware3.wrap_model_call()` → model
+
+**After hooks run in reverse order:**
+
+8. `middleware3.after_model()`
+9. `middleware2.after_model()`
+10. `middleware1.after_model()`
+
+__Agent loop ends__
+
+11. `middleware3.after_agent()`
+12. `middleware2.after_agent()`
+13. `middleware1.after_agent()`
+
+</Accordion>
+
+**Key rules:**
+- `before_*` hooks: First to last
+- `after_*` hooks: Last to first (reverse)
+- `wrap_*` hooks: Nested (first middleware wraps all others)
+
+## Agent jumps
+
+To exit early from middleware, return a dictionary with `jump_to`:
+
+**Available jump targets:**
+- `'end'`: Jump to the end of the agent execution (or the first `after_agent` hook)
+- `'tools'`: Jump to the tools node
+- `'model'`: Jump to the model node (or the first `before_model` hook)
+
+:::python
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import after_model, hook_config, AgentState
+from langchain.messages import AIMessage
+from langgraph.runtime import Runtime
+from typing import Any
+
+
+@after_model
+@hook_config(can_jump_to=["end"])
+def check_for_blocked(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    last_message = state["messages"][-1]
+    if "BLOCKED" in last_message.content:
+        return {
+            "messages": [AIMessage("I cannot respond to that request.")],
+            "jump_to": "end"
+        }
+    return None
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents.middleware import AgentMiddleware, hook_config, AgentState
+from langchain.messages import AIMessage
+from langgraph.runtime import Runtime
+from typing import Any
+
+class BlockedContentMiddleware(AgentMiddleware):
+    @hook_config(can_jump_to=["end"])
+    def after_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+        last_message = state["messages"][-1]
+        if "BLOCKED" in last_message.content:
+            return {
+                "messages": [AIMessage("I cannot respond to that request.")],
+                "jump_to": "end"
+            }
+        return None
+```
+
+</Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import { createMiddleware, AIMessage } from "langchain";
+
+const blockedContentMiddleware = createMiddleware({
+  name: "BlockedContentMiddleware",
+  afterModel: (state) => {
+    const lastMessage = state.messages[state.messages.length - 1];
+    if (lastMessage.content.includes("BLOCKED")) {
+      return {
+        messages: [new AIMessage("I cannot respond to that request.")],
+        jumpTo: "end",
+      };
+    }
+    return;
+  },
+});
+```
+
+:::
+
+## Best practices
+
+1. Keep middleware focused - each should do one thing well
+2. Handle errors gracefully - don't let middleware errors crash the agent
+3. **Use appropriate hook types**:
+    - Node-style for sequential logic (logging, validation)
+    - Wrap-style for control flow (retry, fallback, caching)
+4. Clearly document any custom state properties
+5. Unit test middleware independently before integrating
+6. Consider execution order - place critical middleware first in the list
+7. Use built-in middleware when possible
+
+## Examples
+
+### Dynamic model selection
+
+:::python
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from langchain.chat_models import init_chat_model
+from typing import Callable
+
+
+complex_model = init_chat_model("gpt-4o")
+simple_model = init_chat_model("gpt-4o-mini")
+
+@wrap_model_call
+def dynamic_model(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    # Use different model based on conversation length
+   if len(request.messages) > 10:
+       model = complex_model
+    else:
+       model = simple_model
+    return handler(request.override(model=model))
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.chat_models import init_chat_model
+from typing import Callable
+
+complex_model = init_chat_model("gpt-4o")
+simple_model = init_chat_model("gpt-4o-mini")
+
+class DynamicModelMiddleware(AgentMiddleware):
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        # Use different model based on conversation length
+        if len(request.messages) > 10:
+           model = complex_model
+        else:
+           model = simple_model
+        return handler(request.override(model=model))
+```
+
+</Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import { createMiddleware, initChatModel } from "langchain";
+
+const dynamicModelMiddleware = createMiddleware({
+  name: "DynamicModelMiddleware",
+  wrapModelCall: (request, handler) => {
+    const modifiedRequest = { ...request };
+    if (request.messages.length > 10) {
+      modifiedRequest.model = initChatModel("gpt-4o");
+    } else {
+      modifiedRequest.model = initChatModel("gpt-4o-mini");
+    }
+    return handler(modifiedRequest);
+  },
+});
+```
+
+:::
+
+### Tool call monitoring
+
+:::python
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import wrap_tool_call
+from langchain.tools.tool_node import ToolCallRequest
+from langchain.messages import ToolMessage
+from langgraph.types import Command
+from typing import Callable
+
+
+@wrap_tool_call
+def monitor_tool(
+    request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], ToolMessage | Command],
+) -> ToolMessage | Command:
+    print(f"Executing tool: {request.tool_call['name']}")
+    print(f"Arguments: {request.tool_call['args']}")
+    try:
+        result = handler(request)
+        print(f"Tool completed successfully")
+        return result
+    except Exception as e:
+        print(f"Tool failed: {e}")
+        raise
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.tools.tool_node import ToolCallRequest
+from langchain.agents.middleware import AgentMiddleware
+from langchain.messages import ToolMessage
+from langgraph.types import Command
+from typing import Callable
+
+class ToolMonitoringMiddleware(AgentMiddleware):
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    ) -> ToolMessage | Command:
+        print(f"Executing tool: {request.tool_call['name']}")
+        print(f"Arguments: {request.tool_call['args']}")
+        try:
+            result = handler(request)
+            print(f"Tool completed successfully")
+            return result
+        except Exception as e:
+            print(f"Tool failed: {e}")
+            raise
+```
+
+</Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import { createMiddleware } from "langchain";
+
+const toolMonitoringMiddleware = createMiddleware({
+  name: "ToolMonitoringMiddleware",
+  wrapToolCall: (request, handler) => {
+    console.log(`Executing tool: ${request.toolCall.name}`);
+    console.log(`Arguments: ${JSON.stringify(request.toolCall.args)}`);
+    try {
+      const result = handler(request);
+      console.log("Tool completed successfully");
+      return result;
+    } catch (e) {
+      console.log(`Tool failed: ${e}`);
+      throw e;
+    }
+  },
+});
+```
+
+:::
+
+### Dynamically selecting tools
+
+Select relevant tools at runtime to improve performance and accuracy.
+
+**Benefits:**
+- **Shorter prompts** - Reduce complexity by exposing only relevant tools
+- **Better accuracy** - Models choose correctly from fewer options
+- **Permission control** - Dynamically filter tools based on user access
+
+:::python
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from typing import Callable
+
+
+@wrap_model_call
+def select_tools(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    """Middleware to select relevant tools based on state/context."""
+    # Select a small, relevant subset of tools based on state/context
+    relevant_tools = select_relevant_tools(request.state, request.runtime)
+    return handler(request.override(tools=relevant_tools))
+
+agent = create_agent(
+    model="gpt-4o",
+    tools=all_tools,  # All available tools need to be registered upfront
+    middleware=[select_tools],
+)
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from typing import Callable
+
+
+class ToolSelectorMiddleware(AgentMiddleware):
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """Middleware to select relevant tools based on state/context."""
+        # Select a small, relevant subset of tools based on state/context
+        relevant_tools = select_relevant_tools(request.state, request.runtime)
+        return handler(request.override(tools=relevant_tools))
+
+agent = create_agent(
+    model="gpt-4o",
+    tools=all_tools,  # All available tools need to be registered upfront
+    middleware=[ToolSelectorMiddleware()],
+)
+```
+
+</Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import { createAgent, createMiddleware } from "langchain";
+
+const toolSelectorMiddleware = createMiddleware({
+  name: "ToolSelector",
+  wrapModelCall: (request, handler) => {
+    // Select a small, relevant subset of tools based on state/context
+    const relevantTools = selectRelevantTools(request.state, request.runtime);
+    const modifiedRequest = { ...request, tools: relevantTools };
+    return handler(modifiedRequest);
+  },
+});
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: allTools,
+  middleware: [toolSelectorMiddleware],
+});
+```
+
+:::
+
+## Additional resources
+
+- [Middleware API reference](https://reference.langchain.com/python/langchain/middleware/)
+- [Built-in middleware](/oss/langchain/middleware/built-in)
+- [Testing agents](/oss/langchain/test)

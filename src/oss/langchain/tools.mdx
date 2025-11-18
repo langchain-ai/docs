@@ -21,7 +21,7 @@ Some chat models (e.g., [OpenAI](/oss/integrations/chat/openai), [Anthropic](/os
 :::python
 The simplest way to create a tool is with the @[`@tool`] decorator. By default, the function's docstring becomes the tool's description that helps the model understand when to use it:
 
-```python wrap
+```python
 from langchain.tools import tool
 
 @tool
@@ -66,7 +66,7 @@ const searchDatabase = tool(
 
 By default, the tool name comes from the function name. Override it when you need something more descriptive:
 
-```python wrap
+```python
 @tool("web_search")  # Custom name
 def search(query: str) -> str:
     """Search the web for information."""
@@ -79,7 +79,7 @@ print(search.name)  # web_search
 
 Override the auto-generated tool description for clearer model guidance:
 
-```python wrap
+```python
 @tool("calculator", description="Performs arithmetic calculations. Use this for any math problems.")
 def calc(expression: str) -> str:
     """Evaluate mathematical expressions."""
@@ -91,7 +91,7 @@ def calc(expression: str) -> str:
 Define complex inputs with Pydantic models or JSON schemas:
 
 <CodeGroup>
-    ```python wrap Pydantic model
+    ```python Pydantic model
     from pydantic import BaseModel, Field
     from typing import Literal
 
@@ -117,7 +117,7 @@ Define complex inputs with Pydantic models or JSON schemas:
         return result
     ```
 
-    ```python wrap JSON Schema
+    ```python JSON Schema
     weather_schema = {
         "type": "object",
         "properties": {
@@ -144,31 +144,80 @@ Define complex inputs with Pydantic models or JSON schemas:
 
 <Info>
 **Why this matters:** Tools are most powerful when they can access agent state, runtime context, and long-term memory. This enables tools to make context-aware decisions, personalize responses, and maintain information across conversations.
+
+:::python
+Runtime context provides a way to inject dependencies (like database connections, user IDs, or configuration) into your tools at runtime, making them more testable and reusable.
+:::
+
+:::js
+The runtime context provides a structured way to supply runtime data, such as DB connections, user IDs, or config, into your tools. This avoids global state and keeps tools testable and reusable.
+:::
 </Info>
 
 :::python
 Tools can access runtime information through the `ToolRuntime` parameter, which provides:
 
-- **State** - Mutable data that flows through execution (messages, counters, custom fields)
+- **State** - Mutable data that flows through execution (e.g., messages, counters, custom fields)
 - **Context** - Immutable configuration like user IDs, session details, or application-specific configuration
 - **Store** - Persistent long-term memory across conversations
 - **Stream Writer** - Stream custom updates as tools execute
-- **Config** - RunnableConfig for the execution
+- **Config** - `RunnableConfig` for the execution
 - **Tool Call ID** - ID of the current tool call
 
-### ToolRuntime
+```mermaid
+graph LR
+    %% Runtime Context
+    subgraph "🔧 Tool Runtime Context"
+        A[Tool Call] --> B[ToolRuntime]
+        B --> C[State Access]
+        B --> D[Context Access]
+        B --> E[Store Access]
+        B --> F[Stream Writer]
+    end
+
+    %% Available Resources
+    subgraph "📊 Available Resources"
+        C --> G[Messages]
+        C --> H[Custom State]
+        D --> I[User ID]
+        D --> J[Session Info]
+        E --> K[Long-term Memory]
+        E --> L[User Preferences]
+    end
+
+    %% Tool Capabilities
+    subgraph "⚡ Enhanced Tool Capabilities"
+        M[Context-Aware Tools]
+        N[Stateful Tools]
+        O[Memory-Enabled Tools]
+        P[Streaming Tools]
+    end
+
+    %% Connections
+    G --> M
+    H --> N
+    I --> M
+    J --> M
+    K --> O
+    L --> O
+    F --> P
+```
+
+### `ToolRuntime`
 
 Use `ToolRuntime` to access all runtime information in a single parameter. Simply add `runtime: ToolRuntime` to your tool signature, and it will be automatically injected without being exposed to the LLM.
 
 <Info>
 **`ToolRuntime`**: A unified parameter that provides tools access to state, context, store, streaming, config, and tool call ID. This replaces the older pattern of using separate @[`InjectedState`], @[`InjectedStore`], @[`get_runtime`], and @[`InjectedToolCallId`] annotations.
+
+The runtime automatically provides these capabilities to your tool functions without you having to pass them explicitly or use global state.
 </Info>
 
 **Accessing state:**
 
 Tools can access the current graph state using `ToolRuntime`:
 
-```python wrap
+```python
 from langchain.tools import tool, ToolRuntime
 
 # Access the current conversation state
@@ -204,7 +253,7 @@ The `tool_runtime` parameter is hidden from the model. For the example above, th
 
 Use @[`Command`] to update the agent's state or control the graph's execution flow:
 
-```python wrap
+```python
 from langgraph.types import Command
 from langchain.messages import RemoveMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
@@ -239,7 +288,7 @@ Access immutable configuration and contextual data like user IDs, session detail
 
 Tools can access runtime context through `ToolRuntime`:
 
-```python wrap
+```python
 from dataclasses import dataclass
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
@@ -293,7 +342,7 @@ result = agent.invoke(
 :::js
 Tools can access an agent's runtime context through the `config` parameter:
 
-```ts wrap
+```ts
 import * as z from "zod"
 import { ChatOpenAI } from "@langchain/openai"
 import { createAgent } from "langchain"
@@ -337,7 +386,7 @@ Access persistent data across conversations using the store. The store is access
 
 Tools can access and update the store through `ToolRuntime`:
 
-```python wrap expandable
+```python expandable
 from typing import Any
 from langgraph.store.memory import InMemoryStore
 from langchain.agents import create_agent
@@ -386,7 +435,7 @@ agent.invoke({
 :::js
 Access persistent data across conversations using the store. The store is accessed via `config.store` and allows you to save and retrieve user-specific or application-specific data.
 
-```ts wrap expandable
+```ts expandable
 import * as z from "zod";
 import { createAgent, tool } from "langchain";
 import { InMemoryStore } from "@langchain/langgraph";
@@ -465,7 +514,7 @@ console.log(result);
 :::python
 Stream custom updates from tools as they execute using `runtime.stream_writer`. This is useful for providing real-time feedback to users about what a tool is doing.
 
-```python wrap
+```python
 from langchain.tools import tool, ToolRuntime
 
 @tool
@@ -488,7 +537,7 @@ If you use `runtime.stream_writer` inside your tool, the tool must be invoked wi
 :::js
 Stream custom updates from tools as they execute using `config.streamWriter`. This is useful for providing real-time feedback to users about what a tool is doing.
 
-```ts wrap
+```ts
 import * as z from "zod";
 import { tool } from "langchain";
 
