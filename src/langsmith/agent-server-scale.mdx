@@ -40,11 +40,43 @@ There is no upper limit to `N_JOBS_PER_WORKER`. However, queue workers are greed
 
 #### Avoid synchronous blocking operations
 
-Avoid synchronous blocking operations in your code. If required, set [`BG_JOB_ISOLATED_LOOPS`](/langsmith/env-var#bg-job-isolated-loops) to `True` to execute each run in a separate event loop and avoid blocking the main event loop.
+Avoid synchronous blocking operations in your code and prefer asynchronous operations. Long synchronous operations can block the main event loop, causing longer request and run execution times and potential timeouts.
+
+For example, consider an application that needs to sleep for 1 second. Instead of using synchronous code like this:
+```python
+import time
+
+def my_function():
+    time.sleep(1)
+```
+
+Prefer asynchronous code like this:
+```python
+import asyncio
+
+async def my_function():
+    await asyncio.sleep(1)
+```
+
+If an assistant requires synchronous blocking operations, set [`BG_JOB_ISOLATED_LOOPS`](/langsmith/env-var#bg-job-isolated-loops) to `True` to execute each run in a separate event loop.
 
 #### Minimize redundant checkpointing
 
 Minimize redundant checkpointing by setting [`durability`](/oss/langgraph/durable-execution#durability-modes) to the minimum value necessary to ensure your data is durable.
+
+The default durability mode is `"async", meaning checkpoints are written after each step asynchronously. If an assistant needs to persist only the final state of the run, `durability` can be set to `"exit"`, storing only the final state of the run. This can be set when creating the run:
+
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url=<DEPLOYMENT_URL>)
+thread = await client.threads.create()
+run = await client.runs.create(
+    thread_id=thread["thread_id"],
+    assistant_id="agent",
+    durability="exit"
+)
+```
 
 #### Self-hosted
 
