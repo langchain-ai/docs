@@ -145,10 +145,9 @@ result = agent.invoke(
 ```typescript
 import * as z from "zod";
 import { createAgent, createMiddleware } from "langchain";
-import { MessagesZodState, MemorySaver } from "@langchain/langgraph";
+import { MemorySaver } from "@langchain/langgraph";
 
 const customStateSchema = z.object({  // [!code highlight]
-    messages: MessagesZodState.shape.messages,  // [!code highlight]
     userId: z.string(),  // [!code highlight]
     preferences: z.record(z.string(), z.any()),  // [!code highlight]
 });  // [!code highlight]
@@ -162,7 +161,7 @@ const checkpointer = new MemorySaver();
 const agent = createAgent({
     model: "gpt-5",
     tools: [],
-    middleware: [stateExtensionMiddleware] as const,  // [!code highlight]
+    middleware: [stateExtensionMiddleware],  // [!code highlight]
     checkpointer,
 });
 
@@ -679,7 +678,7 @@ def update_user_info(
     runtime: ToolRuntime[CustomContext, CustomState],
 ) -> Command:
     """Look up and update user info."""
-    user_id = runtime.context.user_id 
+    user_id = runtime.context.user_id
     name = "John Smith" if user_id == "user_123" else "Unknown user"
     return Command(update={  # [!code highlight]
         "user_name": name,
@@ -697,14 +696,23 @@ def greet(
     runtime: ToolRuntime[CustomContext, CustomState]
 ) -> str:
     """Use this to greet the user once you found their info."""
-    user_name = runtime.state["user_name"]
+    user_name = runtime.state.get("user_name", None)
+    if user_name is None:
+       return Command(update={
+            "messages": [
+                ToolMessage(
+                    "Please call the 'update_user_info' tool it will get and update the user's name.",
+                    tool_call_id=runtime.tool_call_id
+                )
+            ]
+        })
     return f"Hello {user_name}!"
 
 agent = create_agent(
     model="gpt-5-nano",
     tools=[update_user_info, greet],
     state_schema=CustomState, # [!code highlight]
-    context_schema=CustomContext,  
+    context_schema=CustomContext,
 )
 
 agent.invoke(
@@ -981,8 +989,9 @@ def trim_messages(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
 
 agent = create_agent(
     model,
-    tools=tools,
+    tools=[],
     middleware=[trim_messages]
+    checkpoint=InMemorySaver()
 )
 
 config: RunnableConfig = {"configurable": {"thread_id": "1"}}
