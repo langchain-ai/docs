@@ -1,0 +1,433 @@
+---
+title: Cost tracking
+sidebarTitle: Cost tracking
+---
+
+Unlike traditional software, building agents at scale involves non-trivial costs. To help with this, LangSmith provides unified cost tracking across your entire application.
+
+LangSmith automatically captures LLM token usage and costs, and also lets you report costs for any part of your agent stack — such as tool calls, retrieval steps, or custom services. This gives you a single place to understand spend for your applications.
+
+This guide will cover [viewing costs in the LangSmith UI](#viewing-costs-in-the-langsmith-ui), [how cost tracking works](#cost-tracking), and [how to send custom cost data](#send-custom-cost-data).
+
+
+## Viewing costs in the LangSmith UI
+LangSmith provides several places in the UI where you can inspect your application’s usage and spend.
+
+### Token and cost breakdowns
+
+Token usage and costs are broken down by **Input**, **Output**, and **Other** categories. You can view this information by hovering over any cost panel in the UI. When available, each section is further categorized by subtype.
+
+- **Input**: Tokens in the prompt or request sent to the model. Subtypes include: Cache reads, token modalities (e.g., text, image).
+- **Output**: Tokens in the response from the model. Subtypes include: reasoning tokens, token modalities (e.g., text, image)
+- **Other**: Costs attributed to tool calls, retrieval steps or for any custom runs. These are further broken down by run name.
+
+**[SCREENSHOT]**
+
+### Viewing token and cost breakdowns
+
+<AccordionGroup>
+  <Accordion title="In the trace tree">
+    The trace tree provides the most detailed view of token usage and cost for a single trace.  It shows the total token usage and cost for the trace, as well as aggregated at each parent run.
+
+    Open any run inside a tracing project to view the run's trace tree.
+
+    **[SCREENSHOT]**
+  </Accordion>
+
+  <Accordion title="In the thread view">
+   The thread view displays aggregated token usage and costs across all traces within a thread. This lets you see the total token usage and cost of a multi-turn conversation and compare the spend for each individual trace in the thread.
+
+    **[SCREENSHOT]**
+  </Accordion>
+
+  <Accordion title="In project stats">
+  The project stats pane shows the total token usage and cost for all traces in a project.
+    **[SCREENSHOT]**
+  </Accordion>
+
+    <Accordion title="In dashboards">
+    Dashboards allow you to explore cost and token usage trends over time. The [prebuilt dashboard](/langsmith/dashboards/#prebuilt-dashboards) for a tracing project shows total costs, tokens and breakdowns by cost/token type.
+    **[SCREENSHOT]**
+
+    You may also configure more specific cost tracking by setting up views in [custom dashboards](https://docs.langchain.com/langsmith/dashboards#custom-dashboards).
+  </Accordion>
+</AccordionGroup>
+
+
+## Cost tracking
+
+There are two ways costs can be tracked:
+
+1. Costs for LLM calls can be **automatically derived from token counts and model prices**
+2. Cost for LLM calls or any other run type can be **manually specified as part of the run data**
+
+The approach you use will depend on what you're tracking and/or how the model pricing works:
+
+
+| Method | Run type: LLM | Run type: Other |
+|--------|---------------|-----------------|
+| **Automatically** | <ul><li>Tracing LLM calls with LangChain Python/TS</li><li>Tracing LLM calls with `@traceable` or LangSmith wrappers for OpenAI or Anthropic</li><li>For other model providers, read the [token and cost information guide](/langsmith/log-llm-trace#provide-token-and-cost-information)</li></ul> | Not applicable. In the future, we plan to support automatic cost tracking for tool calls. |
+| **Manually** | If LLM call costs are non-linear | Send costs for any run types, e.g. tool calls, retrieval steps |
+
+
+### LLM calls: Automatic cost tracking
+
+In order for LangSmith to automatically track costs, you need to provide **token counts**, the **model and provider** and the **model price**. These are automatically provided if you're using LangChain Python/TS/JS or tracing LLM calls with `@traceable` or LangSmith wrappers for OpenAI or Anthropic
+
+**1. Send token counts**
+
+If you're using other models providers that don't follow the same patterns as one of OpenAI, Anthropic or Gemini, you can read the [token and cost information guide](/langsmith/log-llm-trace#provide-token-and-cost-information) for details on the expected format for sending token counts.
+
+**2. Specify model name**
+
+LangSmith reads the LLM model name from the `ls_model_name` field in [run metadata](/langsmith/add-metadata-tags).
+
+**3. Set model prices**
+
+A model pricing map is used to map model names to their per-token prices to compute costs from token counts. LangSmith's [model pricing table](https://smith.langchain.com/settings/workspaces/models) is used for this.
+
+<Note>
+The table comes with pricing information for most OpenAI, Anthropic, and Gemini models. You can [add prices for other models](/langsmith/cost-tracking#create-a-new-model-price-entry), or [overwrite pricing for default models](/langsmith/cost-tracking#update-an-existing-model-price-entry) if you have custom pricing.
+</Note>
+
+For models that have different pricing for different token types (eg. multimodal or cached tokens), you can specify a breakdown of prices for each token type. Hovering over the `...` next to the input/output prices shows you the price breakdown by token type.
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/model-price-map-light.png"
+  alt="Model price map"
+/>
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/model-price-map-dark.png"
+  alt="Model price map"
+/>
+
+<Note>
+Please note that updates to the model pricing map are will not be reflected in the costs for traces already logged. We do not currently support backfilling model pricing changes.
+</Note>
+
+<Accordion title="Create a new or modify an existing model price entry">
+    To modify the default model prices, create a new entry with the same model, provider and match pattern as the default entry.
+
+    To create a *new entry* in the model pricing map, click on the `+ Model` button in the top right corner.
+
+    <img
+    className="block dark:hidden"
+    src="/langsmith/images/new-price-map-entry-light.png"
+    alt="New price map entry interface"
+    />
+    <img
+    className="hidden dark:block"
+    src="/langsmith/images/new-price-map-entry-dark.png"
+    alt="New price map entry interface"
+    />
+
+    Here, you can specify the following fields:
+
+    * **Model Name**: The human-readable name of the model.
+    * **Input Price**: The cost per 1M input tokens for the model. This number is multiplied by the number of tokens in the prompt to calculate the prompt cost.
+    * **Input Price Breakdown** (Optional): The breakdown of price for each different type of input token, e.g. `cache_read`, `video`, `audio`, etc.
+    * **Output Price**: The cost per 1M output tokens for the model. This number is multiplied by the number of tokens in the completion to calculate the completion cost.
+    * **Output Price Breakdown** (Optional): The breakdown of price for each different type of output token, e.g. `reasoning`, `image`, etc.
+    * **Model Activation Date** (Optional): The date from which the pricing is applicable. Only runs after this date will apply this model price.
+    * **Match Pattern**: A regex pattern to match the model name. This is used to match the value for `ls_model_name` in the run metadata.
+    * **Provider** (Optional): The provider of the model. If specified, this is matched against `ls_provider` in the run metadata.
+
+    Once you have set up the model pricing map, LangSmith will automatically calculate and aggregate the token-based costs for traces based on the token counts provided in the LLM invocations.
+</Accordion>
+
+### LLM calls: Send token counts for other model providers
+
+Many models include token counts as part of the response. You can provide token counts to LangSmith in one of two ways:
+
+1. Extract usage within your traced function and set a `usage_metadata` field on the run's metadata.
+2. Return a `usage_metadata` field in your traced function outputs.
+
+In both cases, the usage metadata you send should contain a subset of the following LangSmith-recognized fields:
+
+<Warning>
+You cannot set any fields other than the ones listed below. You do not need to include all fields.
+</Warning>
+
+```python
+class UsageMetadata(TypedDict, total=False):
+    input_tokens: int
+    """The number of tokens used for the prompt."""
+    output_tokens: int
+    """The number of tokens generated as output."""
+    total_tokens: int
+    """The total number of tokens used."""
+    input_token_details: dict[str, float]
+    """The details of the input tokens."""
+    output_token_details: dict[str, float]
+    """The details of the output tokens."""
+    input_cost: float
+    """The cost of the input tokens."""
+    output_cost: float
+    """The cost of the output tokens."""
+    total_cost: float
+    """The total cost of the tokens."""
+    input_cost_details: dict[str, float]
+    """The cost details of the input tokens."""
+    output_cost_details: dict[str, float]
+    """The cost details of the output tokens."""
+```
+
+Note that the usage data can also include cost information, in case you do not want to rely on LangSmith's token-based cost formula. This is useful for models with pricing that is not linear by token type.
+
+**Setting run metadata**
+
+You can [modify the current run's metadata](/langsmith/add-metadata-tags) with usage information within your traced function. The advantage of this approach is that you do not need to change your traced function's runtime outputs. Here's an example:
+
+<Note>
+Requires `langsmith>=0.3.43` (Python) and `langsmith>=0.3.30` (JS/TS).
+</Note>
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable, get_current_run_tree
+
+inputs = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "I'd like to book a table for two."},
+]
+
+@traceable(
+    run_type="llm",
+    metadata={"ls_provider": "my_provider", "ls_model_name": "my_model"}
+)
+def chat_model(messages: list):
+    llm_output = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "Sure, what time would you like to book the table for?"
+                }
+            }
+        ],
+        "usage_metadata": {
+            "input_tokens": 27,
+            "output_tokens": 13,
+            "total_tokens": 40,
+            "input_token_details": {"cache_read": 10},
+            # If you wanted to specify costs:
+            # "input_cost": 1.1e-6,
+            # "input_cost_details": {"cache_read": 2.3e-7},
+            # "output_cost": 5.0e-6,
+        },
+    }
+    run = get_current_run_tree()
+    run.set(usage_metadata=llm_output["usage_metadata"])
+    return llm_output["choices"][0]["message"]
+
+chat_model(inputs)
+```
+
+```typescript TypeScript
+import { traceable, getCurrentRunTree } from "langsmith/traceable";
+
+const messages = [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "I'd like to book a table for two." }
+];
+
+const chatModel = traceable(
+    async ({
+        messages,
+    }: {
+        messages: { role: string; content: string }[];
+        model: string;
+    }) => {
+        const llmOutput = {
+            choices: [
+                {
+                    message: {
+                        role: "assistant",
+                        content: "Sure, what time would you like to book the table for?",
+                    },
+                },
+            ],
+            usage_metadata: {
+                input_tokens: 27,
+                output_tokens: 13,
+                total_tokens: 40,
+            },
+        };
+        const runTree = getCurrentRunTree();
+        runTree.metadata.usage_metadata = llmOutput.usage_metadata;
+        return llmOutput.choices[0].message;
+    },
+    {
+        run_type: "llm",
+        name: "chat_model",
+        metadata: {
+            ls_provider: "my_provider",
+            ls_model_name: "my_model"
+        }
+    }
+);
+
+await chatModel({ messages });
+```
+
+</CodeGroup>
+
+**Setting run outputs**
+
+You can add a `usage_metadata` key to the function's response to set manual token counts and costs.
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable
+
+inputs = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "I'd like to book a table for two."},
+]
+output = {
+    "choices": [
+        {
+            "message": {
+                "role": "assistant",
+                "content": "Sure, what time would you like to book the table for?"
+            }
+        }
+    ],
+    "usage_metadata": {
+        "input_tokens": 27,
+        "output_tokens": 13,
+        "total_tokens": 40,
+        "input_token_details": {"cache_read": 10},
+        # If you wanted to specify costs:
+        # "input_cost": 1.1e-6,
+        # "input_cost_details": {"cache_read": 2.3e-7},
+        # "output_cost": 5.0e-6,
+    },
+}
+
+@traceable(
+    run_type="llm",
+    metadata={"ls_provider": "my_provider", "ls_model_name": "my_model"}
+)
+def chat_model(messages: list):
+    return output
+
+chat_model(inputs)
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const messages = [
+    { role: "system", content: "You are a helpful assistant." },
+    { role: "user", content: "I'd like to book a table for two." }
+];
+const output = {
+    choices: [
+        {
+            message: {
+                role: "assistant",
+                content: "Sure, what time would you like to book the table for?",
+            },
+        },
+    ],
+    usage_metadata: {
+        input_tokens: 27,
+        output_tokens: 13,
+        total_tokens: 40,
+    },
+};
+
+const chatModel = traceable(
+    async ({
+        messages,
+    }: {
+        messages: { role: string; content: string }[];
+        model: string;
+    }) => {
+        return output;
+    },
+    {
+        run_type: "llm",
+        name: "chat_model",
+        metadata: {
+            ls_provider: "my_provider",
+            ls_model_name: "my_model"
+        }
+    }
+);
+
+await chatModel({ messages });
+```
+</CodeGroup>
+
+### Other runs: Sending costs
+
+
+### Cost tracking for custom runs
+
+
+LangSmith allows you to track token-based costs for LLM runs. The costs are rolled up to the trace and project level.
+
+There are two ways costs can be tracked:
+
+1. Derived from token counts and model prices
+2. Directly specified as part of the run data
+
+
+In most cases it is easier to include token counts in the run data and specify model pricing in LangSmith. LangSmith assumes that costs are linear in token counts, broken down by token type. For the few models with non-linear pricing (e.g., above X input tokens the per-token price changes), we recommend computing costs client-side and sending them as part of the run data.
+
+
+
+
+
+For specifying pricing breakdowns, here are the detailed token count types used by LangChain chat model integrations and LangSmith SDK wrappers:
+
+```python
+# Standardized
+cache_read
+cache_creation
+reasoning
+audio
+image
+video
+# Anthropic-only
+ephemeral_1h_input_tokens
+ephemeral_5m_input_tokens
+```
+
+## Cost formula
+
+The cost for a run is computed greedily from most-to-lease specific token type. Suppose we set a price of \$2 per 1M prompt tokens with a detailed price of \$1 per 1M `cache_read` prompt tokens, and \$3 per 1M completion tokens. If we uploaded the following usage metadata:
+
+```python
+{
+  "input_tokens": 20,
+  "input_token_details": {"cache_read": 5},
+  "output_tokens": 10,
+  "output_token_details": {},
+  "total_tokens": 30,
+}
+```
+
+then we'd compute the token costs as follows:
+
+```python
+# A.K.A. prompt_cost
+# Notice that we compute the cache_read cost and then for any
+# remaining input_tokens we apply the default input price.
+input_cost = 5 * 1e-6 + (20 - 5) * 2e-6  # 3.5e-5
+# A.K.A. completion_cost
+output_cost = 10 * 3e-6  # 3e-5
+total_cost = input_cost + output_cost  # 6.5e-5
+```
+
+## Send costs directly
+
+If you are tracing an LLM call that returns token cost information, are tracing an API with a non-token based pricing scheme, or otherwise have accurate information around costs at runtime, you may instead populate a `usage_metadata` dict while tracing rather than relying on LangSmith's built-in cost calculations.
+
+See [this guide](/langsmith/log-llm-trace#provide-token-and-cost-information) to learn how to manually provide cost information for a run.
