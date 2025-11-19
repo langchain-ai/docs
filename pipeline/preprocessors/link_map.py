@@ -123,6 +123,7 @@ LINK_MAPS: list[LinkMap] = [
             "TodoListMiddleware": "langchain/middleware/#langchain.agents.middleware.TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/middleware/#langchain.agents.middleware.LLMToolSelectorMiddleware",
             "ToolRetryMiddleware": "langchain/middleware/#langchain.agents.middleware.ToolRetryMiddleware",
+            "ModelRetryMiddleware": "langchain/middleware/#langchain.agents.middleware.ModelRetryMiddleware",
             "LLMToolEmulator": "langchain/middleware/#langchain.agents.middleware.LLMToolEmulator",
             "ContextEditingMiddleware": "langchain/middleware/#langchain.agents.middleware.ContextEditingMiddleware",
             "ClearToolUsesEdit": "langchain/middleware/#langchain.agents.middleware.ClearToolUsesEdit",
@@ -386,6 +387,7 @@ LINK_MAPS: list[LinkMap] = [
             "ClearToolUsesEdit": "classes/langchain.index.ClearToolUsesEdit.html",
             "ContextEdit": "interfaces/langchain.index.ContextEdit.html",
             "toolRetryMiddleware": "functions/langchain.index.toolRetryMiddleware.html",
+            "modelRetryMiddleware": "functions/langchain.index.modelRetryMiddleware.html",
         },
     },
 ]
