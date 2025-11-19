@@ -105,8 +105,10 @@ LINK_MAPS: list[LinkMap] = [
             "AgentState": "langchain/agents/#langchain.agents.AgentState",
             "ModelRequest": "langchain/middleware/#langchain.agents.middleware.ModelRequest",
             "@dynamic_prompt": "langchain/middleware/#langchain.agents.middleware.dynamic_prompt",
+            "@before_agent": "langchain/middleware/#langchain.agents.middleware.before_agent",
             "@before_model": "langchain/middleware/#langchain.agents.middleware.before_model",
             "@after_model": "langchain/middleware/#langchain.agents.middleware.after_model",
+            "@after_agent": "langchain/middleware/#langchain.agents.middleware.after_agent",
             "@wrap_tool_call": "langchain/middleware/#langchain.agents.middleware.wrap_tool_call",
             "@wrap_model_call": "langchain/middleware/#langchain.agents.middleware.wrap_model_call",
             # Middleware
@@ -223,6 +225,12 @@ LINK_MAPS: list[LinkMap] = [
             "on_llm_new_token": "langchain_core/callbacks/#langchain_core.callbacks.base.AsyncCallbackHandler.on_llm_new_token",
             # Rate limiters
             "InMemoryRateLimiter": "langchain_core/rate_limiters/#langchain_core.rate_limiters.InMemoryRateLimiter",
+            # LangSmith SDK
+            "Client": "langsmith/observability/sdk/client/#langsmith.client.Client",
+            "Client.evaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.evaluate",
+            "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
+            "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
+            "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
             # LangGraph
             "get_stream_writer": "langgraph/config/#langgraph.config.get_stream_writer",
             "StateGraph": "langgraph/graphs/#langgraph.graph.state.StateGraph",
@@ -377,6 +385,7 @@ LINK_MAPS: list[LinkMap] = [
             "RunsClient.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
             "ClearToolUsesEdit": "classes/langchain.index.ClearToolUsesEdit.html",
             "ContextEdit": "interfaces/langchain.index.ContextEdit.html",
+            "toolRetryMiddleware": "functions/langchain.index.toolRetryMiddleware.html",
         },
     },
 ]
