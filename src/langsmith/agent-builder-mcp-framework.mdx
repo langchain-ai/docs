@@ -76,25 +76,22 @@ Here's a simple example that lists available tools and calls the `add` tool:
 
 ```python
 import asyncio
-from mcp import ClientSession
-from mcp.client.sse import sse_client
+import aiohttp
+
+async def mcp_request(url: str, method: str, params: dict = None):
+    async with aiohttp.ClientSession() as session:
+        payload = {"jsonrpc": "2.0", "method": method, "params": params or {}, "id": 1}
+        async with session.post(f"{url}/mcp", json=payload) as response:
+            return await response.json()
 
 async def main():
-    # Connect to the local tool server
-    url = "http://localhost:8000/mcp/sse"
+    url = "http://localhost:8000"
 
-    async with sse_client(url=url) as streams:
-        async with ClientSession(streams[0], streams[1]) as session:
-            # Initialize the session
-            await session.initialize()
+    tools = await mcp_request(url, "tools/list")
+    print(f"Tools: {tools}")
 
-            # List available tools
-            tools = await session.list_tools()
-            print("Available tools:", tools)
-
-            # Call the add tool
-            result = await session.call_tool("add", {"x": 5, "y": 3})
-            print("Result:", result)
+    result = await mcp_request(url, "tools/call", {"name": "add", "arguments": {"a": 5, "b": 3}})
+    print(f"Result: {result}")
 
 asyncio.run(main())
 ```
