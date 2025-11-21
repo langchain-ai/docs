@@ -302,6 +302,9 @@ LINK_MAPS: list[LinkMap] = [
             # @langchain/core references
             "AIMessage": "classes/_langchain_core.messages.AIMessage.html",
             "AIMessageChunk": "classes/_langchain_core.messages.AIMessageChunk.html",
+            "SystemMessage": "classes/_langchain_core.messages.SystemMessage.html",
+            "SystemMessage.concat": "classes/_langchain_core.messages.SystemMessage.html#concat",
+            "ModelRequest": "classes/_langchain_core.messages.ModelRequest.html",
             "BaseChatModel.invoke": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#invoke",
             "BaseChatModel.stream": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#stream",
             "BaseChatModel.streamEvents": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#streamEvents",

@@ -908,6 +908,79 @@ const agent = createAgent({
 
 :::
 
+### Working with system messages
+
+You can modify system prompts in middleware using either `systemPrompt` (`string`) or `systemMessage` (@[`SystemMessage`]). The @[`ModelRequest`] provides both for maximum flexibility.
+
+**Key behavior:**
+- Middleware receives both `systemPrompt` (string) and `systemMessage` (@[`SystemMessage`]) in the request
+- You can modify either `systemPrompt` or `systemMessage`, but **cannot set both in the same middleware call** - this prevents conflicts
+- Using `systemPrompt` creates a new simple system message (may overwrite cache control metadata)
+- Using `systemMessage` (JavaScript) or manually combining content blocks (Python) preserves existing cache control and structured content blocks
+- Multiple middleware can chain modifications sequentially across different middleware calls
+
+:::python
+
+```python
+@wrap_model_call
+def add_context_preserve_cache(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    new_system_message = SystemMessage(content="Additional context.")
+    return handler(request.override(system_message=new_system_message))
+```
+:::
+
+:::js
+**Example: Chaining middleware** - Different middleware can use different approaches:
+
+```typescript
+import { createMiddleware, SystemMessage, createAgent } from "langchain";
+
+// Middleware 1: Uses systemPrompt (string)
+const myMiddleware = createMiddleware({
+  name: "MyMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemPrompt: request.systemMessage.concat(`\nAdditional context.`),
+    });
+  },
+});
+
+// Middleware 2: Uses systemMessage (preserves structure)
+const myOtherMiddleware = createMiddleware({
+  name: "MyOtherMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemMessage: request.systemMessage.concat(
+        new SystemMessage({
+          content: [
+            {
+              type: "text",
+              text: " More additional context. This will be cached.",
+              cache_control: { type: "ephemeral", ttl: "5m" },
+            },
+          ],
+        })
+      ),
+    });
+  },
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-3-5-sonnet",
+  systemPrompt: "You are a helpful assistant.",
+  middleware: [myMiddleware, myOtherMiddleware],
+});
+```
+
+Use @[`SystemMessage.concat`] to preserve cache control metadata or structured content blocks created by other middleware.
+
+:::
+
 ## Additional resources
 
 - [Middleware API reference](https://reference.langchain.com/python/langchain/middleware/)

@@ -24,80 +24,29 @@ bun add @langchain/core @langchain/langgraph
 
 ## Model profiles
 
-Model profiles provide a standardized way to understand model capabilities and constraints, enabling LangChain components to make better decisions based on model-specific characteristics.
-
-### What are model profiles?
-
-Model profiles describe key model properties such as:
-- **Context window size** - Maximum tokens a model can process
-- **Structured output support** - Whether the model supports native structured output mechanisms
-- **Capabilities** - Model-specific features and limitations
-
-These profiles are automatically generated from [models.dev](https://models.dev) and maintained in provider packages, ensuring they stay up-to-date as models evolve.
-
-### Accessing model profiles
-
-Every chat model now exposes a `.profile` getter that returns its `ModelProfile`:
+Model profiles provide a standardized way to understand model capabilities and constraints. Every chat model now exposes a `.profile` getter that returns information about context window size, structured output support, and other model-specific characteristics.
 
 ```typescript
 import { initChatModel } from "langchain";
 
 const model = await initChatModel("gpt-4o");
-
-// Access the model's profile
 const profile = model.profile;
 
 console.log(profile.maxTokens); // Maximum context window size
 console.log(profile.supportsStructuredOutput); // Native structured output support
 ```
 
-### Benefits
-
-Model profiles enable several improvements across LangChain:
-
-1. **Accurate context management** - Middleware like summarization can now use accurate token limits instead of hardcoded values, preventing incorrect context window calculations.
-
-2. **Better structured output** - The `createAgent` abstraction can automatically detect if a model supports native structured output mechanisms, choosing the optimal approach for each model.
-
-3. **Improved testing** - Test suites can adapt to model-specific capabilities, making it easier to test across different models with varying constraints.
-
-4. **Future extensibility** - The profile system provides a foundation for model-aware features that can adapt to each model's unique characteristics.
-
-Profiles are automatically maintained and updated as new models are released or existing models gain new capabilities, ensuring your applications always have accurate information about model constraints.
+Profiles are automatically generated from [models.dev](https://models.dev) and enable middleware like summarization to use accurate token limits, while `createAgent` can automatically detect native structured output support.
 
 ## System message improvements
 
-### Concatenate system messages
-
-You can now easily extend system messages with additional content using the new `concat` method. This simplifies extending system prompts without manually handling string or array content types.
-
-```typescript
-import { SystemMessage } from "langchain";
-
-const systemPrompt = new SystemMessage("You are a helpful assistant.");
-
-// Easily append additional content
-const extendedPrompt = systemPrompt.concat(" Always be concise and accurate.");
-```
-
-Previously, extending system messages required complex conditional logic to handle both string and array content types. The `concat` method handles this automatically, making it much easier to build dynamic system prompts.
-
-### SystemMessage as systemPrompt
-
-You can now pass a `SystemMessage` instance directly to the `systemPrompt` parameter when creating agents, providing more flexibility in prompt design. This enables advanced features like cache control (e.g., Anthropic's ephemeral cache) and structured content blocks.
+You can now pass a `SystemMessage` instance directly to the `systemPrompt` parameter when creating agents, and use the new `concat` method to extend system messages. This enables advanced features like cache control (e.g., Anthropic's ephemeral cache) and structured content blocks.
 
 ```typescript
 import { createAgent, SystemMessage } from "langchain";
 
-// Simple string (still supported)
-const agent1 = createAgent({
-  model: "gpt-4o",
-  tools: [myTool],
-  systemPrompt: "You are a helpful assistant.",
-});
-
 // SystemMessage instance with cache control
-const agent2 = createAgent({
+const agent = createAgent({
   model: "anthropic:claude-3-5-sonnet",
   tools: [myTool],
   systemPrompt: new SystemMessage({
@@ -116,105 +65,11 @@ const agent2 = createAgent({
 });
 ```
 
-#### Middleware Support
-
-When using middleware with `wrapModelCall`, the request object provides both `systemPrompt` (as a string) and `systemMessage` (as a `SystemMessage` object) for maximum flexibility. This dual interface allows middleware to choose the most appropriate approach for their use case.
-
-**Key Behavior:**
-- Middleware receives both `systemPrompt` (string) and `systemMessage` (SystemMessage) in the request
-- You can modify either `systemPrompt` or `systemMessage`, but **cannot set both in the same middleware call** - this prevents conflicts
-- Using `systemPrompt` creates a new simple system message (overwrites cache control metadata)
-- Using `systemMessage.concat()` preserves existing cache control and structured content blocks
-- Multiple middleware can chain modifications sequentially across different middleware calls
-
-**Example: Using `systemPrompt` (string)** - Simple string concatenation, loses cache control:
-```typescript
-import { createMiddleware } from "langchain";
-
-const middleware = createMiddleware({
-  name: "MyMiddleware",
-  wrapModelCall: async (request, handler) => {
-    return handler({
-      ...request,
-      systemPrompt: `${request.systemPrompt}. \nAdditional context.`,
-    });
-  },
-});
-```
-
-**Example: Using `systemMessage` (SystemMessage)** - Preserves cache control and structured content:
-```typescript
-import { createMiddleware, SystemMessage } from "langchain";
-
-const middleware = createMiddleware({
-  name: "MyMiddleware",
-  wrapModelCall: async (request, handler) => {
-    return handler({
-      ...request,
-      systemMessage: request.systemMessage.concat(
-        new SystemMessage({
-          content: [
-            {
-              type: "text",
-              text: " Additional context.",
-              cache_control: { type: "ephemeral", ttl: "10m" },
-            },
-          ],
-        })
-      ),
-    });
-  },
-});
-```
-
-**Example: Chaining middleware** - Different middleware can use different approaches:
-```typescript
-// Middleware 1: Uses systemPrompt (string)
-const myMiddleware = createMiddleware({
-  name: "MyMiddleware",
-  wrapModelCall: async (request, handler) => {
-    return handler({
-      ...request,
-      systemPrompt: `${request.systemPrompt} Additional context.`,
-    });
-  },
-});
-
-// Middleware 2: Uses systemMessage (preserves structure)
-const myOtherMiddleware = createMiddleware({
-  name: "MyOtherMiddleware",
-  wrapModelCall: async (request, handler) => {
-    return handler({
-      ...request,
-      systemMessage: request.systemMessage.concat(
-        new SystemMessage({
-          content: [
-            {
-              type: "text",
-              text: " More additional context. This will be cached.",
-              cache_control: { type: "ephemeral", ttl: "5m" },
-            },
-          ],
-        })
-      ),
-    });
-  },
-});
-
-const agent = createAgent({
-  model: "anthropic:claude-4-5-sonnet",
-  systemPrompt: "You are a helpful assistant.",
-  middleware: [myMiddleware, myOtherMiddleware],
-});
-```
-
-**When to use each approach:**
-- Use `systemPrompt` when you need simple string manipulation and don't need cache control
-- Use `systemMessage.concat()` when you need to preserve cache control metadata or work with structured content blocks
+When using middleware with `wrapModelCall`, you can modify system prompts using either `systemPrompt` (string) or `systemMessage` (SystemMessage object). See the [custom middleware documentation](/oss/langchain/middleware/custom#working-with-system-messages) for detailed examples and best practices.
 
 ## Model retry middleware
 
-A new `modelRetryMiddleware` automatically retries failed model calls with configurable exponential backoff. This middleware improves agent reliability by handling transient model failures gracefully.
+A new `modelRetryMiddleware` automatically retries failed model calls with configurable exponential backoff, improving agent reliability by handling transient model failures gracefully.
 
 ```typescript
 import { createAgent, modelRetryMiddleware } from "langchain";
@@ -232,10 +87,7 @@ const agent = createAgent({
 });
 ```
 
-The middleware supports:
-- Configurable retry attempts with exponential backoff
-- Custom exception filtering to determine which errors should trigger retries
-- Flexible failure handling strategies
+See the [built-in middleware documentation](/oss/langchain/middleware/built-in) for configuration options and detailed examples.
 
 ## OpenAI content moderation middleware
 
