@@ -3,7 +3,7 @@ title: What's new in v1.1
 sidebarTitle: v1.1 Release notes
 ---
 
-**LangChain v1.1 focuses on improving agent reliability and flexibility.** This release introduces model profiles, new middleware capabilities, and enhanced type safety for custom middleware implementations.
+**LangChain v1.1 focuses on improving agent reliability and flexibility.** This release introduces new middleware capabilities for retrying model calls and content moderation, improved system message handling, and enhanced compatibility with Zod v4.
 
 To upgrade,
 
@@ -22,21 +22,194 @@ bun add @langchain/core @langchain/langgraph
 ```
 </CodeGroup>
 
-## Model profiles
+## System message improvements
 
-Model profiles allow you to configure how agents interact with specific models by defining capabilities, context handling, and structured output behavior.
+### Concatenate system messages
 
-### Summarization middleware
+You can now easily extend system messages with additional content using the new `concat` method. This simplifies extending system prompts without manually handling string or array content types.
 
-### Structured output for agents
+```typescript
+import { SystemMessage } from "langchain";
+
+const systemPrompt = new SystemMessage("You are a helpful assistant.");
+
+// Easily append additional content
+const extendedPrompt = systemPrompt.concat(" Always be concise and accurate.");
+```
+
+Previously, extending system messages required complex conditional logic to handle both string and array content types. The `concat` method handles this automatically, making it much easier to build dynamic system prompts.
+
+### SystemMessage as systemPrompt
+
+You can now pass a `SystemMessage` instance directly to the `systemPrompt` parameter when creating agents, providing more flexibility in prompt design. This enables advanced features like cache control (e.g., Anthropic's ephemeral cache) and structured content blocks.
+
+```typescript
+import { createAgent, SystemMessage } from "langchain";
+
+// Simple string (still supported)
+const agent1 = createAgent({
+  model: "gpt-4o",
+  tools: [myTool],
+  systemPrompt: "You are a helpful assistant.",
+});
+
+// SystemMessage instance with cache control
+const agent2 = createAgent({
+  model: "anthropic:claude-3-5-sonnet",
+  tools: [myTool],
+  systemPrompt: new SystemMessage({
+    content: [
+      {
+        type: "text",
+        text: "You are a helpful assistant.",
+      },
+      {
+        type: "text",
+        text: "Today's date is 2024-06-01.",
+        cache_control: { type: "ephemeral", ttl: "5m" },
+      },
+    ],
+  }),
+});
+```
+
+#### Middleware Support
+
+When using middleware with `wrapModelCall`, the request object provides both `systemPrompt` (as a string) and `systemMessage` (as a `SystemMessage` object) for maximum flexibility. This dual interface allows middleware to choose the most appropriate approach for their use case.
+
+**Key Behavior:**
+- Middleware receives both `systemPrompt` (string) and `systemMessage` (SystemMessage) in the request
+- You can modify either `systemPrompt` or `systemMessage`, but **cannot set both in the same middleware call** - this prevents conflicts
+- Using `systemPrompt` creates a new simple system message (overwrites cache control metadata)
+- Using `systemMessage.concat()` preserves existing cache control and structured content blocks
+- Multiple middleware can chain modifications sequentially across different middleware calls
+
+**Example: Using `systemPrompt` (string)** - Simple string concatenation, loses cache control:
+```typescript
+import { createMiddleware } from "langchain";
+
+const middleware = createMiddleware({
+  name: "MyMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemPrompt: `${request.systemPrompt}. \nAdditional context.`,
+    });
+  },
+});
+```
+
+**Example: Using `systemMessage` (SystemMessage)** - Preserves cache control and structured content:
+```typescript
+import { createMiddleware, SystemMessage } from "langchain";
+
+const middleware = createMiddleware({
+  name: "MyMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemMessage: request.systemMessage.concat(
+        new SystemMessage({
+          content: [
+            {
+              type: "text",
+              text: " Additional context.",
+              cache_control: { type: "ephemeral", ttl: "10m" },
+            },
+          ],
+        })
+      ),
+    });
+  },
+});
+```
+
+**Example: Chaining middleware** - Different middleware can use different approaches:
+```typescript
+// Middleware 1: Uses systemPrompt (string)
+const myMiddleware = createMiddleware({
+  name: "MyMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemPrompt: `${request.systemPrompt} Additional context.`,
+    });
+  },
+});
+
+// Middleware 2: Uses systemMessage (preserves structure)
+const myOtherMiddleware = createMiddleware({
+  name: "MyOtherMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemMessage: request.systemMessage.concat(
+        new SystemMessage({
+          content: [
+            {
+              type: "text",
+              text: " More additional context. This will be cached.",
+              cache_control: { type: "ephemeral", ttl: "5m" },
+            },
+          ],
+        })
+      ),
+    });
+  },
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-4-5-sonnet",
+  systemPrompt: "You are a helpful assistant.",
+  middleware: [myMiddleware, myOtherMiddleware],
+});
+```
+
+**When to use each approach:**
+- Use `systemPrompt` when you need simple string manipulation and don't need cache control
+- Use `systemMessage.concat()` when you need to preserve cache control metadata or work with structured content blocks
 
 ## Model retry middleware
 
-## Misc
+A new `modelRetryMiddleware` automatically retries failed model calls with configurable exponential backoff. This middleware improves agent reliability by handling transient model failures gracefully.
 
-### New middleware docs
+```typescript
+import { createAgent, modelRetryMiddleware } from "langchain";
 
-### Type safety improvements for custom middlewares
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [searchTool, databaseTool],
+  middleware: [
+    modelRetryMiddleware({
+      maxRetries: 3,
+      backoffFactor: 2.0,
+      initialDelayMs: 1000,
+    }),
+  ],
+});
+```
+
+The middleware supports:
+- Configurable retry attempts with exponential backoff
+- Custom exception filtering to determine which errors should trigger retries
+- Flexible failure handling strategies
+
+## OpenAI content moderation middleware
+
+A new middleware integrates OpenAI's moderation endpoint to detect and handle unsafe content in agent interactions. This middleware is useful for applications requiring content safety and compliance.
+
+The middleware can check content at multiple stages:
+- **Input checking**: User messages before model calls
+- **Output checking**: AI messages after model calls
+- **Tool results**: Tool outputs before model calls
+
+You can configure how violations are handled with options like ending execution, raising errors, or replacing flagged content. See the [middleware documentation](/oss/langchain/middleware/built-in#content-moderation) for detailed usage examples.
+
+## Compatibility improvements
+
+### Zod v4 support
+
+LangChain.js now supports Zod v4, ensuring seamless integration with the latest version of the schema validation library. This update maintains backward compatibility while enabling you to use the latest Zod features for structured output and tool schemas.
 
 ## Reporting issues
 
