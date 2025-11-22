@@ -22,6 +22,7 @@ The following middleware work with any LLM provider:
 | [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
 | [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
 | [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
+| [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
 | [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
@@ -42,6 +43,7 @@ The following middleware work with any LLM provider:
 | [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
 | [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
 | [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
+| [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
 
@@ -1261,11 +1263,13 @@ const agent = createAgent({
     Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
 </ParamField>
 
-<ParamField body="onFailure" type="'raise' | 'return_message' | ((error: Error) => string)" default="return_message">
+<ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
     Behavior when all retries are exhausted. Options:
-    - `'return_message'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure and potentially recover
-    - `'raise'` - Re-raise the exception, stopping agent execution
+    - `'continue'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure and potentially recover
+    - `'error'` - Re-raise the exception, stopping agent execution
     - Custom function - Function that takes the exception and returns a string for the `ToolMessage` content, allowing custom error formatting
+
+    **Deprecated values:** `'raise'` (use `'error'` instead) and `'return_message'` (use `'continue'` instead). These deprecated values still work but will show a warning.
 </ParamField>
 
 <ParamField body="backoffFactor" type="number" default="2.0">
@@ -1313,8 +1317,8 @@ The middleware automatically retries failed tool calls with exponential backoff.
 - `jitter` - Add random variation (default: true)
 
 **Failure handling:**
-- `onFailure: "return_message"` - Return error message
-- `onFailure: "raise"` - Re-raise exception
+- `onFailure: "continue"` (default) - Return error message
+- `onFailure: "error"` - Re-raise exception
 - Custom function - Function returning error message
 :::
 
@@ -1416,7 +1420,281 @@ const constantBackoff = toolRetryMiddleware({
 // Raise exception on failure
 const strictRetry = toolRetryMiddleware({
   maxRetries: 2,
-  onFailure: "raise", // Re-raise exception instead of returning message
+  onFailure: "error", // Re-raise exception instead of returning message
+});
+```
+:::
+
+</Accordion>
+
+
+### Model retry
+
+Automatically retry failed model calls with configurable exponential backoff. Model retry is useful for the following:
+
+- Handling transient failures in model API calls.
+- Improving reliability of network-dependent model requests.
+- Building resilient agents that gracefully handle temporary model errors.
+
+:::python
+**API reference:** @[`ModelRetryMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRetryMiddleware
+
+agent = create_agent(
+    model="gpt-4o",
+    tools=[search_tool, database_tool],
+    middleware=[
+        ModelRetryMiddleware(
+            max_retries=3,
+            backoff_factor=2.0,
+            initial_delay=1.0,
+        ),
+    ],
+)
+```
+:::
+
+:::js
+**API reference:** @[`modelRetryMiddleware`]
+
+```typescript
+import { createAgent, modelRetryMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [searchTool, databaseTool],
+  middleware: [
+    modelRetryMiddleware({
+      maxRetries: 3,
+      backoffFactor: 2.0,
+      initialDelayMs: 1000,
+    }),
+  ],
+});
+```
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="max_retries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default)
+</ParamField>
+
+<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
+    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried.
+</ParamField>
+
+<ParamField body="on_failure" type="string | callable" default="continue">
+    Behavior when all retries are exhausted. Options:
+    - `'continue'` (default) - Return an `AIMessage` with error details, allowing the agent to potentially handle the failure gracefully
+    - `'error'` - Re-raise the exception (stops agent execution)
+    - Custom callable - Function that takes the exception and returns a string for the `AIMessage` content
+</ParamField>
+
+<ParamField body="backoff_factor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initial_delay * (backoff_factor ** retry_number)` seconds. Set to `0.0` for constant delay.
+</ParamField>
+
+<ParamField body="initial_delay" type="number" default="1.0">
+    Initial delay in seconds before first retry
+</ParamField>
+
+<ParamField body="max_delay" type="number" default="60.0">
+    Maximum delay in seconds between retries (caps exponential backoff growth)
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
+
+:::js
+<ParamField body="maxRetries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
+</ParamField>
+
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+</ParamField>
+
+<ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
+    Behavior when all retries are exhausted. Options:
+    - `'continue'` (default) - Return an `AIMessage` with error details, allowing the agent to potentially handle the failure gracefully
+    - `'error'` - Re-raise the exception, stopping agent execution
+    - Custom function - Function that takes the exception and returns a string for the `AIMessage` content, allowing custom error formatting
+</ParamField>
+
+<ParamField body="backoffFactor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initialDelayMs * (backoffFactor ** retryNumber)` milliseconds. Set to `0.0` for constant delay. Must be >= 0.
+</ParamField>
+
+<ParamField body="initialDelayMs" type="number" default="1000">
+    Initial delay in milliseconds before first retry. Must be >= 0.
+</ParamField>
+
+<ParamField body="maxDelayMs" type="number" default="60000">
+    Maximum delay in milliseconds between retries (caps exponential backoff growth). Must be >= 0.
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware automatically retries failed model calls with exponential backoff.
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRetryMiddleware
+
+
+# Basic usage with default settings (2 retries, exponential backoff)
+agent = create_agent(
+    model="gpt-4o",
+    tools=[search_tool],
+    middleware=[ModelRetryMiddleware()],
+)
+
+# Custom exception filtering
+class TimeoutError(Exception):
+    """Custom exception for timeout errors."""
+    pass
+
+class ConnectionError(Exception):
+    """Custom exception for connection errors."""
+    pass
+
+# Retry specific exceptions only
+retry = ModelRetryMiddleware(
+    max_retries=4,
+    retry_on=(TimeoutError, ConnectionError),
+    backoff_factor=1.5,
+)
+
+
+def should_retry(error: Exception) -> bool:
+    # Only retry on rate limit errors
+    if isinstance(error, TimeoutError):
+        return True
+    # Or check for specific HTTP status codes
+    if hasattr(error, "status_code"):
+        return error.status_code in (429, 503)
+    return False
+
+retry_with_filter = ModelRetryMiddleware(
+    max_retries=3,
+    retry_on=should_retry,
+)
+
+# Return error message instead of raising
+retry_continue = ModelRetryMiddleware(
+    max_retries=4,
+    on_failure="continue",  # Return AIMessage with error instead of raising
+)
+
+# Custom error message formatting
+def format_error(error: Exception) -> str:
+    return f"Model call failed: {error}. Please try again later."
+
+retry_with_formatter = ModelRetryMiddleware(
+    max_retries=4,
+    on_failure=format_error,
+)
+
+# Constant backoff (no exponential growth)
+constant_backoff = ModelRetryMiddleware(
+    max_retries=5,
+    backoff_factor=0.0,  # No exponential growth
+    initial_delay=2.0,  # Always wait 2 seconds
+)
+
+# Raise exception on failure
+strict_retry = ModelRetryMiddleware(
+    max_retries=2,
+    on_failure="error",  # Re-raise exception instead of returning message
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, modelRetryMiddleware } from "langchain";
+
+// Basic usage with default settings (2 retries, exponential backoff)
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [searchTool],
+  middleware: [modelRetryMiddleware()],
+});
+
+class TimeoutError extends Error {
+    // ...
+}
+class NetworkError extends Error {
+    // ...
+}
+
+// Retry specific exceptions only
+const retry = modelRetryMiddleware({
+  maxRetries: 4,
+  retryOn: [TimeoutError, NetworkError],
+  backoffFactor: 1.5,
+});
+
+// Custom exception filtering
+function shouldRetry(error: Error): boolean {
+  // Only retry on rate limit errors
+  if (error.name === "RateLimitError") {
+    return true;
+  }
+  // Or check for specific HTTP status codes
+  if (error.name === "HTTPError" && "statusCode" in error) {
+    const statusCode = (error as any).statusCode;
+    return statusCode === 429 || statusCode === 503;
+  }
+  return false;
+}
+
+const retryWithFilter = modelRetryMiddleware({
+  maxRetries: 3,
+  retryOn: shouldRetry,
+});
+
+// Return error message instead of raising
+const retryContinue = modelRetryMiddleware({
+  maxRetries: 4,
+  onFailure: "continue", // Return AIMessage with error instead of throwing
+});
+
+// Custom error message formatting
+const formatError = (error: Error) =>
+  `Model call failed: ${error.message}. Please try again later.`;
+
+const retryWithFormatter = modelRetryMiddleware({
+  maxRetries: 4,
+  onFailure: formatError,
+});
+
+// Constant backoff (no exponential growth)
+const constantBackoff = modelRetryMiddleware({
+  maxRetries: 5,
+  backoffFactor: 0.0, // No exponential growth
+  initialDelayMs: 2000, // Always wait 2 seconds
+});
+
+// Raise exception on failure
+const strictRetry = modelRetryMiddleware({
+  maxRetries: 2,
+  onFailure: "error", // Re-raise exception instead of returning message
 });
 ```
 :::
