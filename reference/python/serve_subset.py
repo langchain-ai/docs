@@ -267,7 +267,7 @@ def get_all_paths(nav_item: list | dict | str) -> list[str]:
     return paths
 
 
-def main():
+def main() -> None:
     """Main entry point for the documentation subset server.
 
     Parses command-line arguments, generates a subset of the MkDocs configuration
