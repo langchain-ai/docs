@@ -158,8 +158,6 @@ CustomDumper.add_representer(PythonNameTag, python_name_representer)
 
 import os
 
-import yaml
-
 # --- Custom YAML handling to preserve tags ---
 
 
