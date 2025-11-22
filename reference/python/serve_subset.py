@@ -219,7 +219,7 @@ CustomDumper.add_representer(PythonNameTag, python_name_representer)
 # --- End Custom YAML handling ---
 
 
-def find_section(nav, target):
+def find_section(nav: list | dict, target: str) -> dict | None:
     """Search for a section in the nav using BFS."""
     target = target.lower()
 
