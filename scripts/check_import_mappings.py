@@ -3,16 +3,54 @@
 
 1. Fetch latest releases of `langchain_core` and `langchain` from PyPI
 2. Introspect all public `__init__` files in `langchain`
-3. Identify members that are re-exported from `langchain_core`
+3. Identify members (in `langchain`) that are just re-exports from `langchain_core`
 4. Store results in `import_mappings.json`
 
-Results used to identify inbound docs that incorrectly include `langchain_core` imports
-when they should import from `langchain` instead.
+Results are used to identify inbound docs PRs that incorrectly include `langchain_core`
+imports if they can be imported from `langchain` instead.
+
+## Output Format (import_mappings.json)
+
+The generated JSON file contains the following structure:
+
+```json
+{
+  "metadata": {
+    "langchain_version": "1.0.8",           // Version of langchain analyzed
+    "langchain_core_version": "1.1.0",      // Version of langchain_core analyzed
+    "total_init_files": 8                   // Number of __init__.py files analyzed
+  },
+  "analysis": [
+    {
+      "file": "/path/to/langchain/messages/__init__.py",  // Analyzed file
+      "langchain_core_imports": {                     // Raw imports from langchain_core
+        "HumanMessage": {
+          "module": "langchain_core.messages",        // Source module
+          "original_name": "HumanMessage"             // Original symbol name
+        }
+      },
+      "all_exports": [                            // All symbols exported by this module
+        "HumanMessage", "AIMessage", "..."
+      ],
+      "exported_from_core": {                   // Subset that comes from langchain_core
+        "HumanMessage": {
+          "module": "langchain_core.messages",
+          "original_name": "HumanMessage"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total_langchain_core_reexports": 40,   // Total re-exported symbols
+    "modules_with_core_reexports": 5        // Number of modules with re-exports
+  }
+}
+```
 """
 
 import ast
+import importlib.metadata
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -21,27 +59,12 @@ from pathlib import Path
 from typing import Any
 
 
-def get_package_version_after_install(temp_dir: Path, package_name: str) -> str:
-    """Get version of installed package using uv pip show."""
+def get_package_version_after_install(package_name: str) -> str:
+    """Get version of installed package using importlib.metadata."""
     try:
-        uv_path = shutil.which("uv")
-        if not uv_path:
-            return "unknown"
-
-        result = subprocess.run(  # noqa: S603
-            [uv_path, "pip", "show", package_name],
-            capture_output=True,
-            text=True,
-            check=True,
-            env={**os.environ, "PYTHONPATH": str(temp_dir)},
-        )
-
-        for line in result.stdout.split("\n"):
-            if line.startswith("Version:"):
-                return line.split(":")[1].strip()
-    except Exception:  # noqa: BLE001, S110
-        pass
-    return "unknown"
+        return importlib.metadata.version(package_name)
+    except Exception:  # noqa: BLE001
+        return "unknown"
 
 
 def install_packages(temp_dir: Path, packages: list[str]) -> None:
@@ -109,7 +132,7 @@ def analyze_init_file(init_file: Path) -> dict[str, Any]:
             def visit_ImportFrom(self, node):
                 if node.module and node.module.startswith("langchain_core"):
                     for alias in node.names:
-                        # The name as it appears in this module (either alias or original)
+                        # The name as it appears in this module (alias or original)
                         local_name = alias.asname if alias.asname else alias.name
 
                         # Store the import mapping
@@ -169,10 +192,8 @@ def main():
         sys.path.insert(0, str(temp_path))
 
         # Get versions after installation
-        langchain_version = get_package_version_after_install(temp_path, "langchain")
-        langchain_core_version = get_package_version_after_install(
-            temp_path, "langchain_core"
-        )
+        langchain_version = get_package_version_after_install("langchain")
+        langchain_core_version = get_package_version_after_install("langchain_core")
 
         print(f"Installed langchain version: {langchain_version}")
         print(f"Installed langchain_core version: {langchain_core_version}")
