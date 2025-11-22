@@ -313,3 +313,44 @@ def test_analyze_empty_diff(mapping_dict: dict[str, str]) -> None:
     """Test analyzing empty diff."""
     issues = analyze_diff("", mapping_dict)
     assert len(issues) == 0
+
+
+def test_from_import_direct_langchain_core(mapping_dict: dict[str, str]) -> None:
+    """Test direct import from langchain_core package (no submodule)."""
+    line = "from langchain_core import AIMessage, SystemMessage"
+    issues = check_import_line(line, mapping_dict)
+
+    # This should find issues but currently doesn't due to regex bug
+    # Once the bug is fixed, this test should pass
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue["original"] == line
+    # Should suggest importing from langchain.messages
+    assert "langchain.messages" in issue["suggested"]
+
+
+def test_analyze_diff_direct_langchain_core_import(
+    mapping_dict: dict[str, str],
+) -> None:
+    """Test analyzing diff with direct langchain_core import (reproduces the bug)."""
+    diff = """diff --git a/src/oss/langchain/models.mdx b/src/oss/langchain/models.mdx
+index d51f18f8a..077e9ba03 100644
+--- a/src/oss/langchain/models.mdx
++++ b/src/oss/langchain/models.mdx
+@@ -1438,6 +1438,7 @@ If a model invokes a tool server-side, content will
+ :::python
+ ```python Invoke with server-side tool use
+ from langchain.chat_models import init_chat_model
++from langchain_core import AIMessage, SystemMessage
+
+ model = init_chat_model("gpt-4.1-mini")
+"""
+
+    issues = analyze_diff(diff, mapping_dict)
+
+    # This should find the issue but currently doesn't due to regex bug
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue["file"] == "src/oss/langchain/models.mdx"
+    assert issue["original"] == "from langchain_core import AIMessage, SystemMessage"
+    assert "langchain.messages" in issue["suggested"]

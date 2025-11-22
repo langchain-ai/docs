@@ -96,8 +96,8 @@ def check_import_line(line: str, mapping_dict: dict[str, str]) -> list[dict[str,
 
     # Match different import patterns
     patterns = [
-        r"from\s+(langchain_core\.\S+)\s+import\s+(.+)",  # Matches `from langchain_core.module import ...`  # noqa: E501
-        r"import\s+(langchain_core\.\S+)",  # Matches `import langchain_core.module`
+        r"from\s+(langchain_core(?:\.\S+)?)\s+import\s+(.+)",  # Matches both `from langchain_core import ...` and `from langchain_core.module import ...`  # noqa: E501
+        r"import\s+(langchain_core(?:\.\S+)?)",  # Matches both `import langchain_core` and `import langchain_core.module`  # noqa: E501
     ]
 
     for i, pattern in enumerate(patterns):
@@ -123,33 +123,87 @@ def check_import_line(line: str, mapping_dict: dict[str, str]) -> list[dict[str,
                         }
                     )
                 else:
-                    # Check individual imports
+                    # Check individual imports - handles direct langchain_core imports
                     import_list = [imp.strip() for imp in imports.split(",")]
                     problematic_imports = []
+                    suggested_modules = {}
+
                     for imp in import_list:
                         # Clean up import (remove aliases, etc.)
                         clean_imp = imp.split(" as ")[0].strip()
-                        full_import = f"{core_module}.{clean_imp}"
-                        if full_import in mapping_dict:
-                            problematic_imports.append(clean_imp)
+                        # For direct langchain_core imports, check each symbol
+                        if core_module == "langchain_core":
+                            # Look for symbols that are re-exported from langchain
+                            for mapping_key, langchain_path in mapping_dict.items():
+                                if mapping_key.endswith(f".{clean_imp}"):
+                                    problematic_imports.append(clean_imp)
+                                    # Extract module part from langchain path
+                                    suggested_module = langchain_path.rsplit(".", 1)[0]
+                                    suggested_modules[clean_imp] = suggested_module
+                                    break
+                        else:
+                            # For submodule imports
+                            full_import = f"{core_module}.{clean_imp}"
+                            if full_import in mapping_dict:
+                                problematic_imports.append(clean_imp)
 
                     if problematic_imports:
-                        # Find the langchain module for these imports
-                        first_problematic = f"{core_module}.{problematic_imports[0]}"
-                        suggested_module = mapping_dict[first_problematic].rsplit(
-                            ".", 1
-                        )[0]
-                        suggested_line = f"from {suggested_module} import {imports}"
-                        issues.append(
-                            {
-                                "original": line,
-                                "suggested": suggested_line,
-                                "reason": (
-                                    "These imports are re-exported "
-                                    f"from {suggested_module}"
-                                ),
-                            }
-                        )
+                        if core_module == "langchain_core":
+                            # For direct langchain_core imports, suggest module
+                            # Group by suggested module
+                            modules_to_imports: dict[str, list[str]] = {}
+                            for imp in problematic_imports:
+                                suggested_module = suggested_modules[imp]
+                                if suggested_module not in modules_to_imports:
+                                    modules_to_imports[suggested_module] = []
+                                modules_to_imports[suggested_module].append(imp)
+
+                            # Create separate suggestions for each module
+                            for (
+                                suggested_module,
+                                module_imports,
+                            ) in modules_to_imports.items():
+                                # Find which imports belong to this module
+                                import_parts = []
+                                for imp in imports.split(","):
+                                    clean_imp = imp.strip().split(" as ")[0].strip()
+                                    if clean_imp in module_imports:
+                                        import_parts.append(imp.strip())
+
+                                if import_parts:
+                                    import_str = ", ".join(import_parts)
+                                    suggested_line = (
+                                        f"from {suggested_module} import {import_str}"
+                                    )
+                                    issues.append(
+                                        {
+                                            "original": line,
+                                            "suggested": suggested_line,
+                                            "reason": (
+                                                f"These imports are re-exported from "
+                                                f"{suggested_module}"
+                                            ),
+                                        }
+                                    )
+                        else:
+                            # Submodule imports
+                            first_problematic = (
+                                f"{core_module}.{problematic_imports[0]}"
+                            )
+                            suggested_module = mapping_dict[first_problematic].rsplit(
+                                ".", 1
+                            )[0]
+                            suggested_line = f"from {suggested_module} import {imports}"
+                            issues.append(
+                                {
+                                    "original": line,
+                                    "suggested": suggested_line,
+                                    "reason": (
+                                        "These imports are re-exported "
+                                        f"from {suggested_module}"
+                                    ),
+                                }
+                            )
             else:
                 # import ... pattern
                 core_module = match.group(1)
