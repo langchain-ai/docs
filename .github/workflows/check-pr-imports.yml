@@ -1,0 +1,140 @@
+---
+name: Check PR Imports
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.py"
+      - "**/*.md"
+      - "**/*.mdx"
+      - "**/*.ipynb"
+
+jobs:
+  check-imports:
+    name: Check for incorrect langchain_core imports
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Need full history to compare with base branch
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          uv sync --group test
+
+      - name: Ensure import mappings exist
+        id: check-mappings
+        run: |
+          if [ -f "scripts/import_mappings.json" ]; then
+            echo "mappings_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "mappings_exist=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate import mappings if missing
+        if: steps.check-mappings.outputs.mappings_exist == 'false'
+        run: |
+          echo "Import mappings not found, generating..."
+          uv run scripts/check_import_mappings.py
+
+      - name: Check PR
+        id: check-imports
+        run: |
+          if uv run scripts/check_pr_imports.py > import_check_output.txt 2>&1; then
+            echo "check_passed=true" >> $GITHUB_OUTPUT
+            echo "No import issues found"
+          else
+            echo "check_passed=false" >> $GITHUB_OUTPUT
+            echo "Import issues found"
+            cat import_check_output.txt
+          fi
+
+      - name: Comment on PR with issues
+        if: steps.check-imports.outputs.check_passed == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let output = '';
+            try {
+              output = fs.readFileSync('import_check_output.txt', 'utf8');
+            } catch (error) {
+              output = 'Error reading import check output';
+            }
+
+            const body = `## ❌ Import check failed
+
+            This PR contains imports from \`langchain_core\` that should be imported from \`langchain\` instead.
+
+            <details>
+            <summary>Detailed issues</summary>
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            </details>
+
+            ### Why this is a problem
+
+            The \`langchain\` package re-exports many modules and classes from \`langchain_core\`. When possible, imports should use \`langchain\` instead of \`langchain_core\` for:
+            - Better user experience (single import source)
+            - Consistency across documentation
+            - Reduced cognitive load for users
+
+            ### How to fix
+
+            Replace the imports as suggested above. For example:
+            - ❌ \`from langchain_core.messages import HumanMessage\`
+            - ✅ \`from langchain.messages import HumanMessage\`
+
+            ### 🤖 Automated check
+
+            This check is based on the latest analysis of \`langchain\` re-exports from \`langchain_core\`.
+            `;
+
+            // Check if we already commented
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Import check failed')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Fail the check if issues found
+        if: steps.check-imports.outputs.check_passed == 'false'
+        run: |
+          echo "❌ Import check failed. Please fix the issues above."
+          exit 1
