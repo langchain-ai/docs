@@ -179,7 +179,7 @@ def analyze_init_file(init_file: Path, package_path: Path) -> dict[str, Any]:
         print(f"Error analyzing {init_file}: {e}")
         # Convert to relative path from package root
         relative_path = init_file.relative_to(package_path)
-        
+
         return {
             "file": str(relative_path),
             "error": str(e),
