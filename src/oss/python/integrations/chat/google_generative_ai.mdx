@@ -101,6 +101,20 @@ print(ai_msg.content)
 J'adore la programmation.
 ```
 
+<Note>
+Gemini 3 series models will always return a list of content blocks to capture [thought signatures](#thought-signatures). Use the `.text` property to recover string content.
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(model="gemini-3-pro-preview")
+response = llm.invoke("Hello")
+
+response.content  # [{"type": "text", "text": "Hello!", "extras": {"signature": "EpQFCp...lKx64r"}}]
+response.text     # "Hello!"
+```
+</Note>
+
 ## Multimodal usage
 
 Gemini models can accept multimodal inputs (text, images, audio, video) and, for some models, generate multimodal outputs.
@@ -390,49 +404,73 @@ Usage Metadata:
 
 ## Built-in tools
 
-Google Gemini supports a variety of built-in tools ([google search](https://ai.google.dev/gemini-api/docs/grounding/search-suggestions), [code execution](https://ai.google.dev/gemini-api/docs/code-execution?lang=python)), which can be bound to the model in the usual way.
+Google Gemini supports a variety of built-in tools, which can be bound to the model in the usual way.
+
+### Google search
+
+ See [Gemini docs](https://ai.google.dev/gemini-api/docs/grounding/search-suggestions) for detail.
 
 ```python
-from google.ai.generativelanguage_v1beta.types import Tool as GenAITool
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-resp = llm.invoke(
-    "When is the next total solar eclipse in US?",
-    tools=[GenAITool(google_search={})],
-)
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
 
-print(resp.content)
+model_with_search = model.bind_tools([{"google_search": {}}])
+response = model_with_search.invoke("When is the next total solar eclipse in US?")
+
+response.content_blocks
 ```
-
 ```output
-The next total solar eclipse visible in the United States will occur on August 23, 2044. However, the path of totality will only pass through Montana, North Dakota, and South Dakota.
-
-For a total solar eclipse that crosses a significant portion of the continental U.S., you'll have to wait until August 12, 2045. This eclipse will start in California and end in Florida.
+[{'type': 'text',
+  'text': 'The next total solar eclipse visible in the contiguous United States will occur on...',
+  'annotations': [{'type': 'citation',
+    'id': 'abc123',
+    'url': '<url for source 1>',
+    'title': '<source 1 title>',
+    'start_index': 0,
+    'end_index': 99,
+    'cited_text': 'The next total solar eclipse...',
+    'extras': {'google_ai_metadata': {'web_search_queries': ['next total solar eclipse in US'],
+       'grounding_chunk_index': 0,
+       'confidence_scores': []}}},
+   {'type': 'citation',
+    'id': 'abc234',
+    'url': '<url for source 2>',
+    'title': '<source 2 title>',
+    'start_index': 0,
+    'end_index': 99,
+    'cited_text': 'The next total solar eclipse...',
+    'extras': {'google_ai_metadata': {'web_search_queries': ['next total solar eclipse in US'],
+       'grounding_chunk_index': 1,
+       'confidence_scores': []}}}]}]
 ```
+
+### Code execution
+
+See [Gemini docs](https://ai.google.dev/gemini-api/docs/code-execution?lang=python) for detail.
 
 ```python
-from google.ai.generativelanguage_v1beta.types import Tool as GenAITool
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-resp = llm.invoke(
-    "What is 2*2, use python",
-    tools=[GenAITool(code_execution={})],
-)
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
 
-for c in resp.content:
-    if isinstance(c, dict):
-        if c["type"] == "code_execution_result":
-            print(f"Code execution result: {c['code_execution_result']}")
-        elif c["type"] == "executable_code":
-            print(f"Executable code: {c['executable_code']}")
-    else:
-        print(c)
+model_with_code_interpreter = model.bind_tools([{"code_execution": {}}])
+response = model_with_code_interpreter.invoke("Use Python to calculate 3^3.")
+
+response.content_blocks
 ```
-
 ```output
-Executable code: print(2*2)
-
-Code execution result: 4
-
-2*2 is 4.
+[{'type': 'server_tool_call',
+  'name': 'code_interpreter',
+  'args': {'code': 'print(3**3)', 'language': <Language.PYTHON: 1>},
+  'id': '...'},
+ {'type': 'server_tool_result',
+  'tool_call_id': '',
+  'status': 'success',
+  'output': '27\n',
+  'extras': {'block_type': 'code_execution_result',
+   'outcome': <Outcome.OUTCOME_OK: 1>}},
+ {'type': 'text', 'text': 'The calculation of 3 to the power of 3 is 27.'}]
 ```
 
 ## Thinking Support
@@ -444,7 +482,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
     model="models/gemini-2.5-flash",
-    thinking_budget=1024
+    thinking_budget=1024,
+    include_thoughts=True,
 )
 
 response = llm.invoke("How many O's are in Google? How did you verify your answer?")
@@ -452,6 +491,29 @@ reasoning_score = response.usage_metadata["output_token_details"]["reasoning"]
 
 print("Response:", response.content)
 print("Reasoning tokens used:", reasoning_score)
+```
+
+### Thought signatures
+
+[Thought signatures](https://ai.google.dev/gemini-api/docs/thought-signatures) are encrypted representations of the model's reasoning processes. Gemini 2.5 and 3 series models may return thought signatures in their responses.
+
+<Note>
+Gemini 3 may raise 4xx errors if thought signatures are not passed back with tool call responses. Upgrade to `langchain-google-genai >= 3.1.0` to ensure this is handled correctly.
+</Note>
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(
+    model="models/gemini-3-pro-preview",
+    thinking_budget=1024,
+    include_thoughts=True,
+)
+
+response = llm.invoke("How many O's are in Google? How did you verify your answer?")
+
+response.content_blocks[-1]
+# {"type": "text", "text": "...", "extras": {"signature": "EtgVCt...mc0w=="}}
 ```
 
 ## Safety settings
