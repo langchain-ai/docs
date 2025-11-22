@@ -270,6 +270,11 @@ def get_all_paths(nav_item: list | dict | str) -> list[str]:
 
 
 def main():
+    """Main entry point for the documentation subset server.
+
+    Parses command-line arguments, generates a subset of the MkDocs configuration
+    based on the specified section, and serves the documentation.
+    """
     parser = argparse.ArgumentParser(description="Serve a subset of the documentation.")
     parser.add_argument(
         "section",
