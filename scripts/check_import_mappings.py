@@ -3,8 +3,8 @@
 
 1. Fetch latest releases of `langchain_core` and `langchain` from PyPI
 2. Introspect all public `__init__` files in `langchain`
-4. Identify members that are re-exported from `langchain_core`
-5. Store results in `import_mappings.json`
+3. Identify members that are re-exported from `langchain_core`
+4. Store results in `import_mappings.json`
 
 Results used to identify inbound docs that incorrectly include `langchain_core` imports
 when they should import from `langchain` instead.
@@ -109,10 +109,11 @@ def analyze_init_file(init_file: Path) -> dict[str, Any]:
             def visit_ImportFrom(self, node):
                 if node.module and node.module.startswith("langchain_core"):
                     for alias in node.names:
-                        name = alias.asname if alias.asname else alias.name
+                        # The name as it appears in this module (either alias or original)
+                        local_name = alias.asname if alias.asname else alias.name
 
                         # Store the import mapping
-                        langchain_core_imports[name] = {
+                        langchain_core_imports[local_name] = {
                             "module": node.module,
                             "original_name": alias.name,
                         }

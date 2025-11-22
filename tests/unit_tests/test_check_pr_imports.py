@@ -236,7 +236,7 @@ index 1234567..abcdefg 100644
     assert len(issues) == 1
     issue = issues[0]
     assert issue["file"] == "test.py"
-    assert issue["line"] == 1
+    assert issue["line"] == 2
     assert issue["original"] == "from langchain_core.messages import HumanMessage"
     assert issue["suggested"] == "from langchain.messages import HumanMessage"
 
@@ -266,12 +266,12 @@ index 2345678..bcdefgh 100644
 
     # First issue
     assert issues[0]["file"] == "file1.py"
-    assert issues[0]["line"] == 1
+    assert issues[0]["line"] == 2
     assert issues[0]["original"] == "from langchain_core.messages import HumanMessage"
 
     # Second issue
     assert issues[1]["file"] == "file2.py"
-    assert issues[1]["line"] == 10
+    assert issues[1]["line"] == 12
     assert issues[1]["original"] == "import langchain_core.messages"
 
 

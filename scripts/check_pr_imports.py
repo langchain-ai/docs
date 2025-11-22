@@ -96,10 +96,8 @@ def check_import_line(line: str, mapping_dict: dict[str, str]) -> list[dict[str,
 
     # Match different import patterns
     patterns = [
-        # from langchain_core.module import ...
-        r"from\s+(langchain_core\.\S+)\s+import\s+(.+)",
-        # import langchain_core.module  # noqa: ERA001
-        r"import\s+(langchain_core\.\S+)",
+        r"from\s+(langchain_core\.\S+)\s+import\s+(.+)",  # Matches `from langchain_core.module import ...`  # noqa: E501
+        r"import\s+(langchain_core\.\S+)",  # Matches `import langchain_core.module`
     ]
 
     for i, pattern in enumerate(patterns):
@@ -203,6 +201,9 @@ def analyze_diff(diff: str, mapping_dict: dict[str, str]) -> list[dict[str, Any]
                     for issue in import_issues
                 )
 
+            line_number += 1
+        elif not line.startswith("-") and current_file is not None:
+            # Context line (not removed, not added, not a header)
             line_number += 1
 
     return issues
