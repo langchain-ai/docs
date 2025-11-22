@@ -98,6 +98,7 @@ LINK_MAPS: list[LinkMap] = [
             "AzureOpenAI": "integrations/langchain_openai/AzureOpenAI",
             "OpenAIEmbeddings": "integrations/langchain_openai/OpenAIEmbeddings",
             "AzureOpenAIEmbeddings": "integrations/langchain_openai/AzureOpenAIEmbeddings",
+            "convert_to_openai_tool": "langchain_core/utils/#langchain_core.utils.function_calling.convert_to_openai_tool",
             # langchain-anthropic
             "langchain-anthropic": "integrations/langchain_anthropic",
             "ChatAnthropic": "integrations/langchain_anthropic/ChatAnthropic",
@@ -135,6 +136,9 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.configurable_fields": "langchain_core/language_models/#langchain_core.language_models.chat_models.BaseChatModel.configurable_fields",
             "BaseChatModel.with_structured_output": "langchain_core/language_models/#langchain_core.language_models.chat_models.BaseChatModel.with_structured_output",
             "BaseChatModel.with_structured_output(include_raw)": "langchain_core/language_models/#langchain_core.language_models.chat_models.BaseChatModel.with_structured_output(include_raw)",
+            "BaseChatModel.with_retry": "langchain_core/language_models/#langchain_core.language_models.BaseChatModel.with_retry",
+            # ??
+            "ChatPromptTemplate": "langchain_core/prompts/#langchain_core.prompts.chat.ChatPromptTemplate",
             # Tools
             "@tool": "langchain/tools/#langchain.tools.tool",
             "BaseTool": "langchain/tools/#langchain.tools.BaseTool",
