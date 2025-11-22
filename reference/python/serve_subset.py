@@ -255,7 +255,7 @@ def find_section(nav: list | dict, target: str) -> dict | None:
     return None
 
 
-def get_all_paths(nav_item):
+def get_all_paths(nav_item: list | dict | str) -> list[str]:
     """Recursively extract all file paths from a nav item."""
     paths = []
     if isinstance(nav_item, list):
