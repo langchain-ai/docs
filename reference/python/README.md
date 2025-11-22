@@ -552,7 +552,7 @@ title: Chat models (Classic)
 ### Language and style
 
 > [!NOTE]
-> Use [Google-style docstrings](https://google.github.io/styleguide/pyguide.html) with complete type hints for all public functions.
+> Use [Google-style docstrings](https://google.github.io/styleguide/pyguide.html) with complete type hints for all public functions. This documentation is parsed using [Griffe](https://mkdocstrings.github.io/griffe/reference/docstrings/#google-style).
 
 Follow these standards for all documentation:
 

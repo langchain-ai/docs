@@ -68,14 +68,14 @@ for p in data["packages"]:
     )
 
     if downloads_updated_at is not None and downloads_updated_at > yesterday:
-        print(f"done: {p['name']}: {p['downloads']}")  # noqa: T201
+        print(f"done: {p['name']}: {p['downloads']}")
         continue
 
     p["downloads"] = _get_downloads(p)
     p["downloads_updated_at"] = current_datetime.isoformat()
     with PACKAGE_YML.open("w") as f:
         yaml.dump(data, f)
-    print(f"{p['name']}: {p['downloads']}")  # noqa: T201
+    print(f"{p['name']}: {p['downloads']}")
 
 
 with PACKAGE_YML.open("w") as f:

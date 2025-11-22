@@ -576,16 +576,49 @@ Your name is Bob. You introduced yourself at the beginning of our conversation.
 
 In the [LangSmith trace](https://smith.langchain.com/public/4d0584d8-5f9e-4b91-8704-93ba2ccf416a/r), toggling "raw output" will show exactly what messages are sent to the chat model, including `cache_control` keys.
 
+## Strict tool use
+
+<Info>
+Strict tool use requires:
+- Claude Sonnet 4.5 or Opus 4.1.
+- `langchain-anthropic>=1.1.0`
+</Info>
+
+Anthropic supports opt-in [strict schema adherence to tool calls](https://docs.claude.com/en/docs/build-with-claude/structured-outputs). This guarantees that tool names and arguments are validated and correctly typed.
+
+To enable strict tool use:
+1. Specify the `structured-outputs-2025-11-13` beta header
+2. Specify `strict=True` when calling [bind_tools](/oss/langchain/models#tool-calling).
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(
+    model="claude-sonnet-4-5",
+    betas=["structured-outputs-2025-11-13"],  # [!code highlight]
+)
+
+def get_weather(location: str) -> str:
+    """Get the weather at a location."""
+    return "It's sunny."
+
+model_with_tools = model.bind_tools([get_weather], strict=True)  # [!code highlight]
+```
+
+
 ## Token-efficient tool use
 
-Anthropic supports a (beta) [token-efficient tool use](https://docs.claude.com/en/docs/agents-and-tools/tool-use/token-efficient-tool-use) feature. To use it, specify the relevant beta-headers when instantiating the model.
+Anthropic supports a [token-efficient tool use](https://docs.claude.com/en/docs/agents-and-tools/tool-use/token-efficient-tool-use) feature. It is supported by default on all Claude 4 models.
 
+To use it with Claude 3.7, specify the `token-efficient-tools-2025-02-19` beta-header when instantiating the model, as shown below:
+
+<Accordion title="Enabling token-efficient tool use with Claude 3.7">
 ```python
 from langchain_anthropic import ChatAnthropic
 from langchain.tools import tool
 
 model = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
+    model="claude-3-7-sonnet-20250219",
     betas=["token-efficient-tools-2025-02-19"],  # [!code highlight]
 )
 
@@ -607,6 +640,7 @@ print(f"\nTotal tokens: {response.usage_metadata['total_tokens']}")
 
 Total tokens: 408
 ```
+</Accordion>
 
 ## Citations
 
@@ -871,6 +905,80 @@ model = ChatAnthropic(
 model_with_tools = model.bind_tools([{"type": "web_search_20250305", "name": "web_search"}])
 response = model_with_tools.invoke("Search for recent developments in AI")
 ```
+
+## Structured output
+
+<Info>
+Structured output requires:
+- Claude Sonnet 4.5 or Opus 4.1.
+- `langchain-anthropic>=1.1.0`
+</Info>
+
+Anthropic supports a native [structured output feature](https://docs.claude.com/en/docs/build-with-claude/structured-outputs), which guarantees that its responses adhere to a given schema.
+
+You can access this feature in individual model calls, or by specifying the [response format](/oss/langchain/structured-output) of a LangChain [agent](/oss/langchain/agents). See below for examples.
+
+<Accordion title="Individual model calls">
+
+Use the [with_structured_output](/oss/langchain/models#structured-output) method to generate a structured model response. Specify `method="json_schema"` to enable Anthropic's native structured output feature; otherwise the method defaults to using function calling.
+
+Note that we set the `structured-outputs-2025-11-13` beta header.
+
+```python
+from langchain_anthropic import ChatAnthropic
+from pydantic import BaseModel, Field
+
+model = ChatAnthropic(
+    model="claude-sonnet-4-5",
+    betas=["structured-outputs-2025-11-13"],  # [!code highlight]
+)
+
+class Movie(BaseModel):
+    """A movie with details."""
+    title: str = Field(..., description="The title of the movie")
+    year: int = Field(..., description="The year the movie was released")
+    director: str = Field(..., description="The director of the movie")
+    rating: float = Field(..., description="The movie's rating out of 10")
+
+model_with_structure = model.with_structured_output(Movie, method="json_schema")  # [!code highlight]
+response = model_with_structure.invoke("Provide details about the movie Inception")
+print(response)  # Movie(title="Inception", year=2010, director="Christopher Nolan", rating=8.8)
+```
+
+</Accordion>
+
+<Accordion title="Agent response format">
+
+Specify `response_format` with [ProviderStrategy](/oss/langchain/agents#providerstrategy) to engage Anthropic's structured output feature when generating its final response.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.structured_output import ProviderStrategy
+from pydantic import BaseModel
+
+class Weather(BaseModel):
+    temperature: float
+    condition: str
+
+def weather_tool(location: str) -> str:
+    """Get the weather at a location."""
+    return "Sunny and 75 degrees F."
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5",
+    tools=[weather_tool],
+    response_format=ProviderStrategy(Weather),  # [!code highlight]
+)
+
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "What's the weather in SF?"}]
+})
+
+print(result["structured_response"])
+# Weather(temperature=75.0, condition='Sunny')
+```
+
+</Accordion>
 
 ## Built-in tools
 

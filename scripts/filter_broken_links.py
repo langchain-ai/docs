@@ -2,7 +2,8 @@
 """Filter broken links output from Mintlify.
 
 This script can optionally filter the output from 'mint broken-links' to:
-1. Skip entire sections for integration directories (oss/python/integrations/ and oss/javascript/integrations/)
+1. Skip entire sections for integration directories (oss/python/integrations/
+    and oss/javascript/integrations/)
 2. Count only the visible broken links
 3. Update the final summary with the correct count
 
