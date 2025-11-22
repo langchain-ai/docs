@@ -16,7 +16,7 @@ from typing import Any
 
 def load_import_mappings() -> dict[str, Any]:
     """Load the import mappings from JSON file."""
-    mappings_file = Path("import_mappings.json")
+    mappings_file = Path("scripts/import_mappings.json")
     if not mappings_file.exists():
         print(
             "Error: import_mappings.json not found. Run check_import_mappings.py first."

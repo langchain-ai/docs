@@ -117,7 +117,7 @@ def find_init_files(package_path: Path) -> list[Path]:
     return init_files
 
 
-def analyze_init_file(init_file: Path) -> dict[str, Any]:
+def analyze_init_file(init_file: Path, package_path: Path) -> dict[str, Any]:
     """Analyze an `__init__` file to find `langchain_core` re-exports."""
     try:
         with init_file.open(encoding="utf-8") as f:
@@ -165,8 +165,11 @@ def analyze_init_file(init_file: Path) -> dict[str, Any]:
             if export in langchain_core_imports:
                 exported_from_core[export] = langchain_core_imports[export]
 
+        # Convert to relative path from package root
+        relative_path = init_file.relative_to(package_path)
+
         return {
-            "file": str(init_file),
+            "file": str(relative_path),
             "langchain_core_imports": langchain_core_imports,
             "all_exports": all_exports,
             "exported_from_core": exported_from_core,
@@ -174,8 +177,11 @@ def analyze_init_file(init_file: Path) -> dict[str, Any]:
 
     except (OSError, SyntaxError, ValueError) as e:
         print(f"Error analyzing {init_file}: {e}")
+        # Convert to relative path from package root
+        relative_path = init_file.relative_to(package_path)
+        
         return {
-            "file": str(init_file),
+            "file": str(relative_path),
             "error": str(e),
             "langchain_core_imports": {},
             "all_exports": [],
@@ -212,8 +218,14 @@ def main():
 
         for init_file in init_files:
             print(f"Analyzing: {init_file}")
-            analysis = analyze_init_file(init_file)
-            results["analysis"].append(analysis)
+            analysis = analyze_init_file(init_file, temp_path)
+            # Only include files that have langchain_core imports or exports
+            if (
+                analysis.get("langchain_core_imports")
+                or analysis.get("all_exports")
+                or analysis.get("exported_from_core")
+            ):
+                results["analysis"].append(analysis)
 
         total_core_exports = 0
         modules_with_core_exports = 0
@@ -232,7 +244,7 @@ def main():
         print(f"- Total langchain_core re-exports: {total_core_exports}")
         print(f"- Modules with langchain_core re-exports: {modules_with_core_exports}")
 
-        output_file = Path("import_mappings.json")
+        output_file = Path("scripts/import_mappings.json")
         with output_file.open("w") as f:
             json.dump(results, f, indent=2)
 
