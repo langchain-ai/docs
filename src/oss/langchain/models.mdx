@@ -77,7 +77,7 @@ See @[`initChatModel`][initChatModel] for more detail, including information on 
 A chat model takes parameters that can be used to configure its behavior. The full set of supported parameters varies by model and provider, but standard ones include:
 
 <ParamField body="model" type="string" required>
-    The name or identifier of the specific model you want to use with a provider.
+   The name or identifier of the specific model you want to use with a provider. You can also specify both the model and its provider in a single argument using the '{model_provider}:{model}' format, for example, 'openai:o1'.
 </ParamField>
 
 :::python
@@ -172,7 +172,7 @@ console.log(response);
 ```
 :::
 
-A list of messages can be provided to a model to represent conversation history. Each message has a role that models use to indicate who sent the message in the conversation. See the [messages](/oss/langchain/messages) guide for more detail on roles, types, and content.
+A list of messages can be provided to a chat model to represent conversation history. Each message has a role that models use to indicate who sent the message in the conversation. See the [messages](/oss/langchain/messages) guide for more detail on roles, types, and content.
 
 :::python
 ```python Dictionary format
@@ -227,6 +227,10 @@ const response = await model.invoke(conversation);
 console.log(response);  // AIMessage("J'adore créer des applications.")
 ```
 :::
+
+<Info>
+    If the return type of your invocation is a string, ensure that you are using a chat model as opposed to a LLM. Legacy, text-completion LLMs return strings directly. LangChain chat models are prefixed with "Chat", e.g., @[`ChatOpenAI`](/oss/integrations/chat/openai).
+</Info>
 
 ### Stream
 
@@ -1185,6 +1189,130 @@ LangChain supports all major model providers, including OpenAI, Anthropic, Googl
 ---
 
 ## Advanced topics
+
+### Model profiles
+
+<Warning> This is a beta feature. The format of model profiles is subject to change. </Warning>
+
+<Info> Model profiles require `langchain>=1.1`. </Info>
+
+:::python
+LangChain chat models expose supported features and capabilities through a `.profile` attribute:
+```python
+model.profile
+# {
+#   "max_input_tokens": 400000,
+#   "image_inputs": True,
+#   "reasoning_output": True,
+#   "tool_calling": True,
+#   ...
+# }
+```
+Refer to the full set of fields in the [API reference](https://reference.langchain.com/python/langchain_core/language_models/).
+
+Much of the model profile data is powered by the [models.dev](https://github.com/sst/models.dev) project, an open source initiative that provides model capability data. These data are augmented with additional fields for purposes of use with LangChain. These augmentations are kept aligned with the upstream project as it evolves.
+
+Model profile data allow applications to work around model capabilities dynamically. For example:
+1. [Summarization middleware](/oss/langchain/middleware/built-in#summarization) can trigger summarization based on a model's context window size.
+2. [Structured output](/oss/langchain/structured-output) strategies in `create_agent` can be inferred automatically (e.g., by checking support for native structured output features).
+3. Model inputs can be gated based on supported [modalities](#multimodal) and maximum input tokens.
+
+#### Updating or overwriting profile data
+Model profile data can be changed if it is missing, stale, or incorrect.
+
+**Option 1 (quick fix)**
+
+You can instantiate a chat model with any valid profile:
+```python
+custom_profile = {
+    "max_input_tokens": 100_000,
+    "tool_calling": True,
+    "structured_output": True,
+    # ...
+}
+model = init_chat_model("...", profile=custom_profile)
+```
+
+The `profile` is also a regular `dict` and can be updated in place. If the model instance is shared, consider using
+```python
+new_profile = model.profile | {"key": "value"}
+model.model_copy(update={"profile": new_profile})
+```
+to avoid mutating shared state.
+
+**Option 2 (fix data upstream)**
+
+The primary source for the data is the [models.dev](https://models.dev/) project. These data are merged with additional fields and overrides in LangChain [integration packages](/oss/python/integrations/providers/overview) and are shipped with those packages.
+
+Model profile data can be updated through the following process:
+1. (If needed) update the source data at [models.dev](https://models.dev/) through a pull request to its [repository on Github](https://github.com/sst/models.dev).
+2. (If needed) update additional fields and overrides in `langchain_<package>/data/profile_augmentations.toml` through a pull request to the LangChain [integration package](/oss/python/integrations/providers/overview)`.
+3. Use the [langchain-model-profiles](https://pypi.org/project/langchain-model-profiles/) CLI tool to pull the latest data from [models.dev](https://models.dev/), merge in the augmentations and update the profile data:
+
+```bash
+pip install langchain-model-profiles
+```
+```bash
+langchain-profiles refresh --provider <provider> --data-dir <data_dir>
+```
+That command will:
+- Download the latest data for `<provider>` from models.dev
+- Merge in augmentations from `profile_augmentations.toml` in `<data_dir>`
+- Write the merged profiles to `profiles.py` in `<data_dir>`
+
+Example, from [libs/partners/anthropic](https://github.com/langchain-ai/langchain/tree/master/libs/partners/anthropic) in the LangChain monorepo:
+```bash
+uv run --with langchain-model-profiles --provider anthropic --data-dir langchain_anthropic/data
+```
+
+:::
+
+:::js
+LangChain chat models expose supported features and capabilities through a `.profile` property:
+```typescript
+model.profile;
+// {
+//   maxInputTokens: 400000,
+//   imageInputs: true,
+//   reasoningOutput: true,
+//   toolCalling: true,
+//   ...
+// }
+```
+Refer to the full set of fields in the [API reference](https://reference.langchain.com/javascript/interfaces/_langchain_core.language_models_profile.ModelProfile.html).
+
+Much of the model profile data is powered by the [models.dev](https://github.com/sst/models.dev) project, an open source initiative that provides model capability data. These data are augmented with additional fields for purposes of use with LangChain. These augmentations are kept aligned with the upstream project as it evolves.
+
+Model profile data allow applications to work around model capabilities dynamically. For example:
+1. [Summarization middleware](/oss/langchain/middleware/built-in#summarization) can trigger summarization based on a model's context window size.
+2. [Structured output](/oss/langchain/structured-output) strategies in `createAgent` can be inferred automatically (e.g., by checking support for native structured output features).
+3. Model inputs can be gated based on supported [modalities](#multimodal) and maximum input tokens.
+
+#### Updating or overwriting profile data
+Model profile data can be changed if it is missing, stale, or incorrect.
+
+**Option 1 (quick fix)**
+
+You can instantiate a chat model with any valid profile:
+```typescript
+const customProfile = {
+  maxInputTokens: 100_000,
+  toolCalling: true,
+  structuredOutput: true,
+  // ...
+};
+const model = initChatModel("...", { profile: customProfile });
+```
+
+**Option 2 (fix data upstream)**
+
+The primary source for the data is the [models.dev](https://models.dev/) project. These data are merged with additional fields and overrides in LangChain [integration packages](/oss/javascript/integrations/providers/overview) and are shipped with those packages.
+
+Model profile data can be updated through the following process:
+1. (If needed) update the source data at [models.dev](https://models.dev/) through a pull request to its [repository on Github](https://github.com/sst/models.dev).
+2. (If needed) update additional fields and overrides in `langchain-<package>/profiles.toml` through a pull request to the LangChain [integration package](/oss/javascript/integrations/providers/overview).
+
+:::
 
 ### Multimodal
 
