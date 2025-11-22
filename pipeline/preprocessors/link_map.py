@@ -454,6 +454,7 @@ LINK_MAPS: list[LinkMap] = [
             "toolRetryMiddleware": "functions/langchain.index.toolRetryMiddleware.html",
             "modelRetryMiddleware": "functions/langchain.index.modelRetryMiddleware.html",
             "systemPrompt": "types/langchain.index.CreateAgentParams.html#systemprompt",
+            "openAIModerationMiddleware": "classes/_langchain_openai.middleware.OpenAIModerationMiddleware.html",
         },
     },
     {
