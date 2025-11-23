@@ -5,6 +5,44 @@ Create and serve a subset of the Python reference documentation. Uses the
 
 https://github.com/apenwarr/mkdocs-exclude
 
+## Exclusion strategy
+
+- Analyzes the navigation structure to identify which top-level directories are needed
+- Calculates which directories to exclude by comparing all available docs directories
+    against the directories referenced in the kept navigation subset
+- Always preserves essential directories like `_snippets`, `javascripts`, `static`, etc.
+
+## Plugin configuration
+
+Automatically configures `mkdocs-exclude` by:
+
+- Adding or modifying the `exclude` plugin configuration in the generated
+    `mkdocs.subset.yml`
+- Using glob patterns to exclude entire directory trees (e.g., `langchain/**/*`)
+- Preserving existing exclude configurations from the original mkdocs.yml (if any)
+
+## Example exclusion process
+
+When serving only the "LangGraph" section:
+
+```txt
+Available directories: ['langchain', 'langgraph', 'langsmith', 'integrations']
+Kept directories:      ['langgraph']  # From nav analysis
+Always keep:           ['_snippets', 'javascripts', 'static', 'stylesheets']
+Excluded patterns:     ['langchain/**/*', 'langsmith/**/*', 'integrations/**/*']
+```
+
+The generated mkdocs.subset.yml will include:
+
+```yaml
+plugins:
+  - exclude:
+      glob:
+        - langchain/**/*
+        - langsmith/**/*
+        - integrations/**/*
+```
+
 Usage:
     python serve_subset.py langgraph  # Serve only the LangGraph section
 """  # noqa: INP001
