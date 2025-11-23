@@ -158,64 +158,6 @@ CustomDumper.add_representer(PythonNameTag, python_name_representer)
 
 import os
 
-# --- Custom YAML handling to preserve tags ---
-
-
-class EnvTag:
-    def __init__(self, value):
-        self.value = value
-
-    def __repr__(self):
-        return f"EnvTag({self.value})"
-
-
-class PythonNameTag:
-    def __init__(self, suffix):
-        self.suffix = suffix
-
-    def __repr__(self):
-        return f"PythonNameTag({self.suffix})"
-
-
-def env_constructor(loader, node):
-    if isinstance(node, yaml.SequenceNode):
-        value = loader.construct_sequence(node)
-    else:
-        value = loader.construct_scalar(node)
-    return EnvTag(value)
-
-
-def env_representer(dumper, data):
-    if isinstance(data.value, list):
-        return dumper.represent_sequence("!ENV", data.value)
-    return dumper.represent_scalar("!ENV", str(data.value))
-
-
-def python_name_multi_constructor(loader, tag_suffix, node):
-    return PythonNameTag(tag_suffix)
-
-
-def python_name_representer(dumper, data):
-    return dumper.represent_scalar(f"tag:yaml.org,2002:python/name:{data.suffix}", "")
-
-
-# Register with SafeLoader
-yaml.SafeLoader.add_constructor("!ENV", env_constructor)
-yaml.SafeLoader.add_multi_constructor(
-    "tag:yaml.org,2002:python/name:", python_name_multi_constructor
-)
-
-
-# Custom Dumper
-class CustomDumper(yaml.SafeDumper):
-    pass
-
-
-CustomDumper.add_representer(EnvTag, env_representer)
-CustomDumper.add_representer(PythonNameTag, python_name_representer)
-
-# --- End Custom YAML handling ---
-
 
 def find_section(nav: list | dict, target: str) -> dict | None:
     """Search for a section in the nav using BFS."""
