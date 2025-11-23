@@ -1,14 +1,16 @@
 """MkDocs Documentation Subset Server.
 
-Create and serve a subset of the Python reference documentation.
+Create and serve a subset of the Python reference documentation. Uses the
+`mkdocs-exclude` plugin to exclude unneeded sections based on the specified nav section.
 
-Faster build times for development and testing.
+https://github.com/apenwarr/mkdocs-exclude
 
 Usage:
     python serve_subset.py langgraph  # Serve only the LangGraph section
 """  # noqa: INP001
 
 import argparse
+import socket
 import subprocess
 import sys
 from collections import deque
@@ -53,6 +55,28 @@ class EnvTag:
         return f"EnvTag({self.value})"
 
 
+class PythonNameTag:
+    """Custom YAML tag for Python name references.
+
+    Preserves `tag:yaml.org,2002:python/name:` tags when reading and writing YAML.
+
+    Args:
+        suffix: The suffix part of the Python name tag.
+    """
+
+    def __init__(self, suffix: str) -> None:
+        """Initialize `PythonNameTag` with a suffix.
+
+        Args:
+            suffix: The suffix part of the Python name tag.
+        """
+        self.suffix = suffix
+
+    def __repr__(self) -> str:
+        """Return string representation of `PythonNameTag`."""
+        return f"PythonNameTag({self.suffix})"
+
+
 def env_constructor(loader: yaml.SafeLoader, node: yaml.Node) -> EnvTag:
     """YAML constructor for `!ENV` tags.
 
@@ -88,8 +112,40 @@ def env_representer(dumper: yaml.SafeDumper, data: EnvTag) -> yaml.Node:
     return dumper.represent_scalar("!ENV", str(data.value))
 
 
+def python_name_multi_constructor(
+    _loader: yaml.SafeLoader, tag_suffix: str, _node: yaml.Node
+) -> PythonNameTag:
+    """YAML multi-constructor for Python name tags.
+
+    Args:
+        _loader: YAML loader instance (unused).
+        tag_suffix: The suffix part of the tag.
+        _node: YAML node (unused but required by interface).
+
+    Returns:
+        PythonNameTag: Wrapped Python name tag.
+    """
+    return PythonNameTag(tag_suffix)
+
+
+def python_name_representer(dumper: yaml.SafeDumper, data: PythonNameTag) -> yaml.Node:
+    """YAML representer for `PythonNameTag` objects.
+
+    Args:
+        dumper: YAML dumper instance.
+        data: `PythonNameTag` object to represent.
+
+    Returns:
+        YAML representation of the Python name tag.
+    """
+    return dumper.represent_scalar(f"tag:yaml.org,2002:python/name:{data.suffix}", "")
+
+
 # Register with SafeLoader
 yaml.SafeLoader.add_constructor("!ENV", env_constructor)
+yaml.SafeLoader.add_multi_constructor(
+    "tag:yaml.org,2002:python/name:", python_name_multi_constructor
+)
 
 
 class CustomDumper(yaml.SafeDumper):
@@ -99,8 +155,9 @@ class CustomDumper(yaml.SafeDumper):
     creating a subset navigation), it needs to write the modified configuration back to
     a new YAML file while preserving the original custom tags.
 
-    Without this, tags like `!ENV [ENABLE_INSIDERS_PLUGINS, false]` would be lost during
-    the YAML serialization process.
+    Without this, tags like `!ENV [ENABLE_INSIDERS_PLUGINS, false]` or
+    `!!python/name:material.extensions.emoji.to_svg` would be lost during the YAML
+    serialization process.
 
     Example:
         ```yaml
@@ -114,6 +171,7 @@ class CustomDumper(yaml.SafeDumper):
 
 
 CustomDumper.add_representer(EnvTag, env_representer)
+CustomDumper.add_representer(PythonNameTag, python_name_representer)
 
 # --- End Custom YAML handling ---
 
@@ -183,6 +241,47 @@ def find_section(nav: list, target: str) -> dict | None:
                 queue.append((child, current_path))
 
     return None
+
+
+def is_port_available(port: int) -> bool:
+    """Check if a port is available for binding.
+
+    Args:
+        port: Port number to check
+
+    Returns:
+        True if port is available, False if in use
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("localhost", port))
+            return True
+    except OSError:
+        return False
+
+
+def find_available_port(start_port: int = 8000, max_attempts: int = 10) -> int:
+    """Find the first available port starting from start_port.
+
+    Args:
+        start_port: Port to start checking from
+        max_attempts: Maximum number of ports to try
+
+    Returns:
+        First available port number
+
+    Raises:
+        RuntimeError: If no available port found within max_attempts
+    """
+    for port in range(start_port, start_port + max_attempts):
+        if is_port_available(port):
+            return port
+
+    msg = (
+        "No available ports found in range "
+        f"{start_port}-{start_port + max_attempts - 1}"
+    )
+    raise RuntimeError(msg)
 
 
 def get_all_paths(nav_item: list | dict | str) -> list[str]:
@@ -260,6 +359,20 @@ def main() -> None:
             f"Error: Invalid port '{args.port}'. Must be a number between 1024-65535."
         )
         sys.exit(1)
+
+    # Check if requested port is available, find alternative if not
+    requested_port = int(args.port)
+    if not is_port_available(requested_port):
+        print(f"Port {requested_port} is already in use.")
+        try:
+            available_port = find_available_port(requested_port)
+            print(f"Using available port {available_port} instead.")
+            actual_port = str(available_port)
+        except RuntimeError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+    else:
+        actual_port = args.port
     if not args.out.endswith(".yml"):
         print(f"Error: Output file must have a .yml extension. Got: {args.out}")
         sys.exit(1)
@@ -346,8 +459,6 @@ def main() -> None:
         ]
 
         if to_exclude:
-            print(f"Excluding {len(to_exclude)} directories.")
-
             # Configure mkdocs-exclude plugin to exclude paths
             if "plugins" not in config:
                 # Ensure plugins list exists
@@ -386,7 +497,7 @@ def main() -> None:
         "-f",
         args.out,
         "-a",
-        f"localhost:{args.port}",
+        f"localhost:{actual_port}",
     ]
     if not args.clean:
         cmd.append("--dirty")
