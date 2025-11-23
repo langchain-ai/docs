@@ -2,23 +2,24 @@
 
 Create and serve a subset of the Python reference documentation.
 
-Useful for faster development and testing.
+Faster build times for development and testing.
 
 Usage:
-    python serve_subset.py LangGraph
+    python serve_subset.py langgraph  # Serve only the LangGraph section
 """  # noqa: INP001
 
 import argparse
 import subprocess
 import sys
 from collections import deque
+from pathlib import Path
 
 import yaml
 
 ALIAS_MAP = {
     "deepagents": "Deep Agents",
-    # "core": "langchain-core",
-    # "community": "langchain-community",
+    "core": "langchain-core",
+    "community": "langchain-community",
 }
 """Map of alias names to actual section names in the nav.
 
@@ -52,28 +53,6 @@ class EnvTag:
         return f"EnvTag({self.value})"
 
 
-class PythonNameTag:
-    """Custom YAML tag for Python name references.
-
-    Preserves `tag:yaml.org,2002:python/name:` tags when reading and writing YAML.
-
-    Args:
-        suffix: The suffix part of the Python name tag.
-    """
-
-    def __init__(self, suffix: str) -> None:
-        """Initialize `PythonNameTag` with a suffix.
-
-        Args:
-            suffix: The suffix part of the Python name tag.
-        """
-        self.suffix = suffix
-
-    def __repr__(self) -> str:
-        """Return string representation of `PythonNameTag`."""
-        return f"PythonNameTag({self.suffix})"
-
-
 def env_constructor(loader: yaml.SafeLoader, node: yaml.Node) -> EnvTag:
     """YAML constructor for `!ENV` tags.
 
@@ -85,9 +64,12 @@ def env_constructor(loader: yaml.SafeLoader, node: yaml.Node) -> EnvTag:
         EnvTag: Wrapped environment tag value.
     """
     if isinstance(node, yaml.SequenceNode):
-        value = loader.construct_sequence(node)
-    else:
+        value: str | list = loader.construct_sequence(node)
+    elif isinstance(node, (yaml.ScalarNode, yaml.MappingNode)):
         value = loader.construct_scalar(node)
+    else:
+        msg = f"Unsupported node type for !ENV tag: {type(node)}"
+        raise TypeError(msg)
     return EnvTag(value)
 
 
@@ -106,65 +88,73 @@ def env_representer(dumper: yaml.SafeDumper, data: EnvTag) -> yaml.Node:
     return dumper.represent_scalar("!ENV", str(data.value))
 
 
-def python_name_multi_constructor(
-    _loader: yaml.SafeLoader, tag_suffix: str, _node: yaml.Node
-) -> PythonNameTag:
-    """YAML multi-constructor for Python name tags.
-
-    Args:
-        _loader: YAML loader instance (unused).
-        tag_suffix: The suffix part of the tag.
-        _node: YAML node (unused but required by interface).
-
-    Returns:
-        PythonNameTag: Wrapped Python name tag.
-    """
-    return PythonNameTag(tag_suffix)
-
-
-def python_name_representer(dumper: yaml.SafeDumper, data: PythonNameTag) -> yaml.Node:
-    """YAML representer for `PythonNameTag` objects.
-
-    Args:
-        dumper: YAML dumper instance.
-        data: `PythonNameTag` object to represent.
-
-    Returns:
-        YAML representation of the Python name tag.
-    """
-    return dumper.represent_scalar(f"tag:yaml.org,2002:python/name:{data.suffix}", "")
-
-
 # Register with SafeLoader
 yaml.SafeLoader.add_constructor("!ENV", env_constructor)
-yaml.SafeLoader.add_multi_constructor(
-    "tag:yaml.org,2002:python/name:", python_name_multi_constructor
-)
 
 
-# Custom Dumper
 class CustomDumper(yaml.SafeDumper):
-    """Custom YAML dumper that preserves special tags.
+    """Custom YAML dumper that preserves special YAML tags from `mkdocs.yml`.
 
-    Extends `SafeDumper` to handle `EnvTag` and `PythonNameTag` objects.
+    When this script reads the original `mkdocs.yml` file and modifies it (e.g.,
+    creating a subset navigation), it needs to write the modified configuration back to
+    a new YAML file while preserving the original custom tags.
+
+    Without this, tags like `!ENV [ENABLE_INSIDERS_PLUGINS, false]` would be lost during
+    the YAML serialization process.
+
+    Example:
+        ```yaml
+        - group:
+            enabled: !ENV [ENABLE_INSIDERS_PLUGINS, false]
+        ```
+
+    This dumper ensures the `!ENV` tag is preserved in the output `mkdocs.subset.yml`
+    file so MkDocs can still process environment variables correctly.
     """
 
 
 CustomDumper.add_representer(EnvTag, env_representer)
-CustomDumper.add_representer(PythonNameTag, python_name_representer)
 
 # --- End Custom YAML handling ---
 
 
-import os
+def find_section(nav: list, target: str) -> dict | None:
+    """Search for a section in the nav using BFS.
 
+    Use BFS since we're typically not building a deep subset. Resolves issues where some
+    subsections share names with higher-level sections (e.g. `langsmith` under
+    langchain-classic).
 
-def find_section(nav: list | dict, target: str) -> dict | None:
-    """Search for a section in the nav using BFS."""
+    Args:
+        nav: The nav from mkdocs.yml
+        target: The section name to search for (case-insensitive)
+
+    Returns:
+        The matching navigation section as a `dict`, or `None` if not found
+
+    Example:
+        ```python
+        nav = [
+            {'Home': 'index.md'},
+            {'LangGraph':
+                [
+                    {'Introduction': 'langgraph/index.md'}
+                ]
+            }
+        ]
+
+        find_section(nav, 'langgraph')
+        # {'LangGraph':
+        #   [
+        #       {'Introduction': 'langgraph/index.md'}
+        #   ]
+        # }
+        ```
+    """
     target = target.lower()
 
     # BFS queue: (nav_item, path_for_debugging)
-    queue = deque()
+    queue: deque[tuple[dict | list | str, list[str]]] = deque()
 
     # Initialize queue with top-level items
     if isinstance(nav, list):
@@ -177,8 +167,8 @@ def find_section(nav: list | dict, target: str) -> dict | None:
         current_nav, path = queue.popleft()
 
         if isinstance(current_nav, dict):
-            key = list(current_nav.keys())[0]
-            current_path = path + [key]
+            key = next(iter(current_nav.keys()))
+            current_path = [*path, key]
 
             # Check if this key matches our target
             if target == key.lower():
@@ -196,7 +186,31 @@ def find_section(nav: list | dict, target: str) -> dict | None:
 
 
 def get_all_paths(nav_item: list | dict | str) -> list[str]:
-    """Recursively extract all file paths from a nav item."""
+    """Recursively extract all file paths from a nav item.
+
+    Traverses through the given nav item and collects all file paths (as string values)
+    from nested lists and dictionaries. Used to determine which files are included in a
+    documentation subset.
+
+    Args:
+        nav_item: A navigation item which can be a list, dict, or string
+
+    Returns:
+        List of file paths found in the navigation structure
+
+    Example:
+        ```python
+        nav = {
+            'LangGraph': [
+                {'Introduction': 'langgraph/index.md'},
+                'langgraph/tutorial.md'
+            ]
+        }
+
+        get_all_paths(nav)
+        # ['langgraph/index.md', 'langgraph/tutorial.md']
+        ```
+    """
     paths = []
     if isinstance(nav_item, list):
         for item in nav_item:
@@ -215,10 +229,13 @@ def main() -> None:
     Parses command-line arguments, generates a subset of the MkDocs configuration
     based on the specified section, and serves the documentation.
     """
-    parser = argparse.ArgumentParser(description="Serve a subset of the documentation.")
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "section",
-        help="The section of the nav to include (e.g., 'LangGraph', 'Integrations'). Case-insensitive.",
+        help=(
+            "The section of the nav to build (e.g., 'LangGraph', 'Integrations'). "
+            "Case-insensitive."
+        ),
     )
     parser.add_argument(
         "--config", default="mkdocs.yml", help="Path to the input mkdocs.yml file."
@@ -237,14 +254,25 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Validate args
+    if not args.port.isdigit() or not (1024 <= int(args.port) <= 65535):  # noqa: PLR2004
+        print(
+            f"Error: Invalid port '{args.port}'. Must be a number between 1024-65535."
+        )
+        sys.exit(1)
+    if not args.out.endswith(".yml"):
+        print(f"Error: Output file must have a .yml extension. Got: {args.out}")
+        sys.exit(1)
+
     # Resolve alias
-    target_section = args.section
+    target_section: str = args.section
     if target_section.lower() in ALIAS_MAP:
         target_section = ALIAS_MAP[target_section.lower()]
         print(f"Resolved alias '{args.section}' to '{target_section}'")
 
+    # Load the original mkdocs.yml
     try:
-        with open(args.config) as f:
+        with Path(args.config).open() as f:
             config = yaml.load(f, Loader=yaml.SafeLoader)
     except FileNotFoundError:
         print(f"Error: Could not find {args.config}")
@@ -253,17 +281,18 @@ def main() -> None:
         print(f"Error parsing YAML: {e}")
         sys.exit(1)
 
+    # Validate nav presence
     if "nav" not in config:
         print("Error: 'nav' section not found in mkdocs.yml")
         sys.exit(1)
 
-    original_nav = config["nav"]
+    original_nav: list = config["nav"]
     new_nav = []
 
-    # Always keep "Get started" or root index
+    # Always keep "Get started" / root index
     for item in original_nav:
         if isinstance(item, dict):
-            key = list(item.keys())[0]
+            key = next(iter(item.keys()))
             value = item[key]
             if "get started" in key.lower() or (
                 isinstance(value, str) and value == "index.md"
@@ -275,11 +304,10 @@ def main() -> None:
 
     if not found_section:
         print(f"Error: No section matching '{target_section}' found in nav.")
-        print(f"Available aliases: {', '.join(ALIAS_MAP.keys())}")
         sys.exit(1)
 
     new_nav.append(found_section)
-    config["nav"] = new_nav
+    config["nav"] = new_nav  # Replace nav with new subset
 
     # --- Exclusion Logic ---
 
@@ -291,49 +319,44 @@ def main() -> None:
         parts = p.split("/")
         if len(parts) > 0:
             kept_roots.add(parts[0])
-
     print(f"Kept top-level directories: {kept_roots}")
 
     # 2. Identify all top-level docs directories
-    docs_dir = "docs"
-    if not os.path.exists(docs_dir):
+    docs_dir = Path("docs")
+    if not docs_dir.exists():
         print(f"Warning: {docs_dir} directory not found. Skipping exclusion logic.")
     else:
-        all_roots = [
-            d for d in os.listdir(docs_dir) if os.path.isdir(os.path.join(docs_dir, d))
-        ]
+        all_roots = [d.name for d in docs_dir.iterdir() if d.is_dir()]
 
-        # 3. Define always kept directories (assets, snippets, etc.)
+        # 3. Directories to keep always (assets, snippets, etc.)
         always_keep = {
             "_snippets",
+            "javascripts",
             "static",
             "stylesheets",
-            "javascripts",
-            "templates",
             "overrides",
-            "__pycache__",
+            "templates",
         }
 
         # 4. Calculate excludes
-        to_exclude = []
-        for root in all_roots:
-            if root not in kept_roots and root not in always_keep:
-                to_exclude.append(f"{root}/**/*")
+        to_exclude = [
+            f"{root}/**/*"
+            for root in all_roots
+            if root not in kept_roots and root not in always_keep
+        ]
 
         if to_exclude:
-            print(f"Excluding {len(to_exclude)} directories to speed up build.")
+            print(f"Excluding {len(to_exclude)} directories.")
 
-            # Add mkdocs-exclude plugin
+            # Configure mkdocs-exclude plugin to exclude paths
             if "plugins" not in config:
+                # Ensure plugins list exists
                 config["plugins"] = []
-
-            # Check if exclude plugin is already present
             exclude_plugin = None
             for p in config["plugins"]:
                 if isinstance(p, dict) and "exclude" in p:
                     exclude_plugin = p
                     break
-
             if exclude_plugin:
                 if "glob" not in exclude_plugin["exclude"]:
                     exclude_plugin["exclude"]["glob"] = []
@@ -341,13 +364,17 @@ def main() -> None:
             else:
                 config["plugins"].append({"exclude": {"glob": to_exclude}})
 
-    # Write the new config
-    with open(args.out, "w") as f:
-        yaml.dump(config, f, Dumper=CustomDumper, sort_keys=False)
-
+    # Write the new mkdocs.yml using the output name
+    with Path(args.out).open("w") as f:
+        yaml.dump(
+            config,
+            f,
+            Dumper=CustomDumper,  # Use custom dumper to preserve tags
+            sort_keys=False,  # Preserve key order
+        )
     print(f"Generated {args.out}")
 
-    # Run mkdocs serve
+    # Serve the documentation subset
     cmd = [
         "uv",
         "run",
@@ -366,12 +393,14 @@ def main() -> None:
 
     print(f"Running: {' '.join(cmd)}")
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True)  # noqa: S603
     except KeyboardInterrupt:
         print("\nStopping server...")
     finally:
-        if os.path.exists(args.out):
-            os.remove(args.out)
+        output_path = Path(args.out)
+        if output_path.exists():
+            # Cleanup temporary config file
+            output_path.unlink()
             print(f"Removed {args.out}")
 
 
