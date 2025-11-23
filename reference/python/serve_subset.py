@@ -18,7 +18,8 @@ Automatically configures `mkdocs-exclude` by:
 
 - Adding or modifying the `exclude` plugin configuration in the generated
     `mkdocs.subset.yml`
-- Using glob patterns to exclude entire directory trees (e.g., `langchain/**/*`)
+- Using regex patterns to exclude entire directory trees (e.g., `^langchain/.*`)
+- Disabling cross-references
 - Preserving existing exclude configurations from the original mkdocs.yml (if any)
 
 ## Example exclusion process
@@ -29,7 +30,7 @@ When serving only the "LangGraph" section:
 Available directories: ['langchain', 'langgraph', 'langsmith', 'integrations']
 Kept directories:      ['langgraph']  # From nav analysis
 Always keep:           ['_snippets', 'javascripts', 'static', 'stylesheets']
-Excluded patterns:     ['langchain/**/*', 'langsmith/**/*', 'integrations/**/*']
+Excluded patterns:     ['^langchain/.*', '^langsmith/.*', '^integrations/.*']
 ```
 
 The generated mkdocs.subset.yml will include:
@@ -37,10 +38,11 @@ The generated mkdocs.subset.yml will include:
 ```yaml
 plugins:
   - exclude:
-      glob:
-        - langchain/**/*
-        - langsmith/**/*
-        - integrations/**/*
+      regex:
+        - ^langchain/.*
+        - ^langsmith/.*
+        - ^integrations/.*
+  # ... other plugins
 ```
 
 Usage:
@@ -497,9 +499,17 @@ def main() -> None:
         ]
 
         if to_exclude:
+            print(f"Excluding patterns: {to_exclude}")
+            # Try using explicit regex patterns instead of glob patterns
+            regex_patterns = []
+            for pattern in to_exclude:
+                # Convert glob patterns to regex
+                # langchain/**/* -> ^langchain/.*
+                root = pattern.split("/")[0]
+                regex_patterns.append(f"^{root}/.*")
+
             # Configure mkdocs-exclude plugin to exclude paths
             if "plugins" not in config:
-                # Ensure plugins list exists
                 config["plugins"] = []
             exclude_plugin = None
             for p in config["plugins"]:
@@ -507,11 +517,43 @@ def main() -> None:
                     exclude_plugin = p
                     break
             if exclude_plugin:
-                if "glob" not in exclude_plugin["exclude"]:
-                    exclude_plugin["exclude"]["glob"] = []
-                exclude_plugin["exclude"]["glob"].extend(to_exclude)
+                if "regex" not in exclude_plugin["exclude"]:
+                    exclude_plugin["exclude"]["regex"] = []
+                exclude_plugin["exclude"]["regex"].extend(regex_patterns)
             else:
-                config["plugins"].append({"exclude": {"glob": to_exclude}})
+                # Always insert exclude plugin at the very beginning
+                new_exclude_plugin = {"exclude": {"regex": regex_patterns}}
+                config["plugins"].insert(0, new_exclude_plugin)
+
+    # --- Remove modules from preload_modules in original mkdocs.yml ---
+
+    # Find and update mkdocstrings plugin configuration
+    for plugin in config.get("plugins", []):
+        if isinstance(plugin, dict) and "mkdocstrings" in plugin:
+            mkdocstrings_config = plugin["mkdocstrings"]
+            handlers = mkdocstrings_config.get("handlers", {})
+            python_handler = handlers.get("python", {})
+            options = python_handler.get("options", {})
+
+            if "preload_modules" in options:
+                # Disable preloading modules
+                original_preload = options["preload_modules"]
+                options["preload_modules"] = []
+                print(f"Filtered preload_modules: {original_preload} → []")
+
+            # Disable signature cross-references
+            options["signature_crossrefs"] = False
+
+            # Disable auto-discovery of packages to prevent cross-references
+            options["show_inheritance_diagram"] = False
+            options["allow_inspection"] = False
+
+            # Disable imports and inventory that might cause cross-package resolution
+            # issues when serving subsets
+            options["enable_inventory"] = False
+            handlers["python"]["import"] = []
+
+            break
 
     # Write the new mkdocs.yml using the output name
     with Path(args.out).open("w") as f:
