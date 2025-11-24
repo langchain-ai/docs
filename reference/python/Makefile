@@ -39,19 +39,29 @@ build:
 # To preview what the docs will look like when built
 serve-clean-docs:
 	@./install-mkdocs.sh
-	@if [ "$$VERCEL" = "1" ] && [ -n "$$MKDOCS_INSIDERS" ]; then \
-		ENABLE_INSIDERS_PLUGINS=true uv run --no-sync python -m mkdocs serve -c -f mkdocs.yml --strict; \
+	@port=8000; \
+	while lsof -ti:$$port > /dev/null 2>&1; do \
+		port=$$((port + 1)); \
+	done; \
+	echo "Starting MkDocs server on port $$port..."; \
+	if [ "$$VERCEL" = "1" ] && [ -n "$$MKDOCS_INSIDERS" ]; then \
+		ENABLE_INSIDERS_PLUGINS=true uv run --no-sync python -m mkdocs serve -c -f mkdocs.yml --strict -a 127.0.0.1:$$port; \
 	else \
-		uv run --no-sync python -m mkdocs serve -c -f mkdocs.yml --strict; \
+		uv run --no-sync python -m mkdocs serve -c -f mkdocs.yml --strict -a 127.0.0.1:$$port; \
 	fi
 
 # For local development; uses --dirty to avoid rebuilding unchanged files
 serve-docs:
 	@./install-mkdocs.sh
-	@if [ "$$VERCEL" = "1" ] && [ -n "$$MKDOCS_INSIDERS" ]; then \
-		ENABLE_INSIDERS_PLUGINS=true uv run --no-sync python -m mkdocs serve -f mkdocs.yml --dirty; \
+	@port=8000; \
+	while lsof -ti:$$port > /dev/null 2>&1; do \
+		port=$$((port + 1)); \
+	done; \
+	echo "Starting MkDocs server on port $$port..."; \
+	if [ "$$VERCEL" = "1" ] && [ -n "$$MKDOCS_INSIDERS" ]; then \
+		ENABLE_INSIDERS_PLUGINS=true uv run --no-sync python -m mkdocs serve -f mkdocs.yml --dirty -a 127.0.0.1:$$port; \
 	else \
-		uv run --no-sync python -m mkdocs serve -f mkdocs.yml --dirty; \
+		uv run --no-sync python -m mkdocs serve -f mkdocs.yml --dirty -a 127.0.0.1:$$port; \
 	fi
 
 # format-docs:

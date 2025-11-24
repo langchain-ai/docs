@@ -11,3 +11,5 @@ title: LangChain Classic home
 Reference documentation for the [`langchain-classic`](https://pypi.org/project/langchain-classic/) package.
 
 --8<-- "wip.md"
+
+--8<-- "langchain-classic-warning.md"

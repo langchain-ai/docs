@@ -89,6 +89,14 @@ llm = ChatOpenAI(
 
 See the @[`ChatOpenAI`] API Reference for the full set of available model parameters.
 
+<Note>
+    **Token parameter deprecation**
+
+    OpenAI deprecated `max_tokens` in favor of `max_completion_tokens` in September 2024. While `max_tokens` is still supported for backwards compatibility, it's automatically converted to `max_completion_tokens` internally.
+</Note>
+
+---
+
 ## Invocation
 
 ```python
@@ -115,6 +123,8 @@ print(ai_msg.text)
 J'adore la programmation.
 ```
 
+---
+
 ## Streaming usage metadata
 
 OpenAI's Chat Completions API does not stream token usage statistics by default (see API reference [here](https://platform.openai.com/docs/api-reference/completions/create#completions-create-stream_options)).
@@ -126,6 +136,8 @@ from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(model="gpt-4.1-mini", stream_usage=True)  # [!code highlight]
 ```
+
+---
 
 ## Using with Azure OpenAI
 
@@ -221,6 +233,8 @@ When using an async callable for the API key, you must use async methods (`ainvo
 </Note>
 
 </Accordion>
+
+---
 
 ## Tool calling
 
@@ -462,6 +476,8 @@ Name: do_math
 ```
 
 </Accordion>
+
+---
 
 ## Responses API
 
@@ -1066,6 +1082,16 @@ for block in response.content_blocks:
 The user is asking about 3 raised to the power of 3. That's a pretty simple calculation! I know that 3^3 equals 27, so I can say, "3 to the power of 3 equals 27." I might also include a quick explanation that it's 3 multiplied by itself three times: 3 × 3 × 3 = 27. So, the answer is definitely 27.
 ```
 
+<Tip>
+    **Troubleshooting: Empty responses from reasoning models**
+
+    If you're getting empty responses from reasoning models like `gpt-5-nano`, this is likely due to restrictive token limits. The model uses tokens for internal reasoning and may not have any left for the final output.
+
+    Ensure `max_tokens` is set to `None` or increase the token limit to allow sufficient tokens for both reasoning and output generation.
+</Tip>
+
+---
+
 ## Fine-tuning
 
 You can call fine-tuned OpenAI models by passing in your corresponding `modelName` parameter.
@@ -1083,6 +1109,8 @@ fine_tuned_model.invoke(messages)
 ```output
 AIMessage(content="J'adore la programmation.", additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 8, 'prompt_tokens': 31, 'total_tokens': 39}, 'model_name': 'ft:gpt-3.5-turbo-0613:langchain::7qTVM5AR', 'system_fingerprint': None, 'finish_reason': 'stop', 'logprobs': None}, id='run-0f39b30e-c56e-4f3b-af99-5c948c984146-0', usage_metadata={'input_tokens': 31, 'output_tokens': 8, 'total_tokens': 39})
 ```
+
+---
 
 ## Multimodal Inputs (images, PDFs, audio)
 
@@ -1196,6 +1224,8 @@ content_block = {
 ```
 </Accordion>
 
+---
+
 ## Predicted output
 
 <Info>
@@ -1268,6 +1298,7 @@ public class User
 ```
 
 Note that currently predictions are billed as additional tokens and may increase your usage and costs in exchange for this reduced latency.
+---
 
 ## Audio Generation (Preview)
 
@@ -1325,6 +1356,82 @@ history = [
 ]
 second_output_message = llm.invoke(history)
 ```
+
+---
+
+## Prompt caching
+
+OpenAI's [prompt caching](https://platform.openai.com/docs/guides/prompt-caching) feature automatically caches prompts longer than 1024 tokens to reduce costs and improve response times. This feature is enabled for all recent models (`gpt-4o` and newer).
+
+### Manual caching
+
+You can use the `prompt_cache_key` parameter to influence OpenAI's caching and optimize cache hit rates:
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o")
+
+# Use a cache key for repeated prompts
+messages = [
+    {"role": "system", "content": "You are a helpful assistant that translates English to French."},
+    {"role": "user", "content": "I love programming."},
+]
+
+response = llm.invoke(
+    messages,
+    prompt_cache_key="translation-assistant-v1"
+)
+
+# Check cache usage
+cache_read_tokens = response.usage_metadata.input_token_details.cache_read
+print(f"Cached tokens used: {cache_read_tokens}")
+```
+
+<Warning>
+    Cache hits require the prompt prefix to match exactly
+</Warning>
+
+### Cache key strategies
+
+You can use different cache key strategies based on your application's needs:
+
+```python
+# Static cache keys for consistent prompt templates
+customer_response = llm.invoke(
+    messages,
+    prompt_cache_key="customer-support-v1"
+)
+
+support_response = llm.invoke(
+    messages,
+    prompt_cache_key="internal-support-v1"
+)
+
+# Dynamic cache keys based on context
+user_type = "premium"
+cache_key = f"assistant-{user_type}-v1"
+response = llm.invoke(messages, prompt_cache_key=cache_key)
+```
+
+### Model-level caching
+
+You can also set a default cache key at the model level using `model_kwargs`:
+
+```python
+llm = ChatOpenAI(
+    model="gpt-4o-mini",
+    model_kwargs={"prompt_cache_key": "default-cache-v1"}
+)
+
+# Uses default cache key
+response1 = llm.invoke(messages)
+
+# Override with specific cache key
+response2 = llm.invoke(messages, prompt_cache_key="override-cache-v1")
+```
+
+---
 
 ## Flex processing
 

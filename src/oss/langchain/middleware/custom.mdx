@@ -373,14 +373,18 @@ Middleware can extend the agent's state with custom properties.
 <Tab title="Decorator">
 
 ```python
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
 from langchain.agents.middleware import AgentState, before_model, after_model
 from typing_extensions import NotRequired
 from typing import Any
 from langgraph.runtime import Runtime
 
+
 class CustomState(AgentState):
     model_call_count: NotRequired[int]
     user_id: NotRequired[str]
+
 
 @before_model(state_schema=CustomState, can_jump_to=["end"])
 def check_call_limit(state: CustomState, runtime: Runtime) -> dict[str, Any] | None:
@@ -389,14 +393,16 @@ def check_call_limit(state: CustomState, runtime: Runtime) -> dict[str, Any] | N
         return {"jump_to": "end"}
     return None
 
+
 @after_model(state_schema=CustomState)
 def increment_counter(state: CustomState, runtime: Runtime) -> dict[str, Any] | None:
     return {"model_call_count": state.get("model_call_count", 0) + 1}
 
+
 agent = create_agent(
     model="gpt-4o",
     middleware=[check_call_limit, increment_counter],
-    tools=[...],
+    tools=[],
 )
 
 # Invoke with custom state
@@ -412,13 +418,17 @@ result = agent.invoke({
 <Tab title="Class">
 
 ```python
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
 from langchain.agents.middleware import AgentState, AgentMiddleware
 from typing_extensions import NotRequired
 from typing import Any
 
+
 class CustomState(AgentState):
     model_call_count: NotRequired[int]
     user_id: NotRequired[str]
+
 
 class CallCounterMiddleware(AgentMiddleware[CustomState]):
     state_schema = CustomState
@@ -432,10 +442,11 @@ class CallCounterMiddleware(AgentMiddleware[CustomState]):
     def after_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
         return {"model_call_count": state.get("model_call_count", 0) + 1}
 
+
 agent = create_agent(
     model="gpt-4o",
     middleware=[CallCounterMiddleware()],
-    tools=[...],
+    tools=[],
 )
 
 # Invoke with custom state
@@ -905,6 +916,201 @@ const agent = createAgent({
   middleware: [toolSelectorMiddleware],
 });
 ```
+
+:::
+
+### Working with system messages
+
+:::python
+
+Modify system messages in middleware using the `system_message` field on `ModelRequest`. The `system_message` field contains a @[`SystemMessage`] object (even if the agent was created with a string `system_prompt`).
+
+**Example: Adding context to system message**
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from langchain.messages import SystemMessage
+from typing import Callable
+
+
+@wrap_model_call
+def add_context(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    # Always work with content blocks
+    new_content = list(request.system_message.content_blocks) + [
+        {"type": "text", "text": "Additional context."}
+    ]
+    new_system_message = SystemMessage(content=new_content)
+    return handler(request.override(system_message=new_system_message))
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.messages import SystemMessage
+from typing import Callable
+
+
+class ContextMiddleware(AgentMiddleware):
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        # Always work with content blocks
+        new_content = list(request.system_message.content_blocks) + [
+            {"type": "text", "text": "Additional context."}
+        ]
+        new_system_message = SystemMessage(content=new_content)
+        return handler(request.override(system_message=new_system_message))
+```
+
+</Tab>
+</Tabs>
+
+**Example: Working with cache control (Anthropic)**
+
+When working with Anthropic models, you can use structured content blocks with cache control directives to cache large system prompts:
+
+<Tabs>
+<Tab title="Decorator">
+
+```python
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from langchain.messages import SystemMessage
+from typing import Callable
+
+
+@wrap_model_call
+def add_cached_context(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    # Always work with content blocks
+    new_content = list(request.system_message.content_blocks) + [
+        {
+            "type": "text",
+            "text": "Here is a large document to analyze:\n\n<document>...</document>",
+            # content up until this point is cached
+            "cache_control": {"type": "ephemeral"}
+        }
+    ]
+
+    new_system_message = SystemMessage(content=new_content)
+    return handler(request.override(system_message=new_system_message))
+```
+
+</Tab>
+
+<Tab title="Class">
+
+```python
+from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.messages import SystemMessage
+from typing import Callable
+
+
+class CachedContextMiddleware(AgentMiddleware):
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        # Always work with content blocks
+        new_content = list(request.system_message.content_blocks) + [
+            {
+                "type": "text",
+                "text": "Here is a large document to analyze:\n\n<document>...</document>",
+                "cache_control": {"type": "ephemeral"}  # This content will be cached
+            }
+        ]
+
+        new_system_message = SystemMessage(content=new_content)
+        return handler(request.override(system_message=new_system_message))
+```
+
+</Tab>
+</Tabs>
+
+**Notes:**
+- `ModelRequest.system_message` is always a @[`SystemMessage`] object, even if the agent was created with `system_prompt="string"`
+- Use `SystemMessage.content_blocks` to access content as a list of blocks, regardless of whether the original content was a string or list
+- When modifying system messages, use `content_blocks` and append new blocks to preserve existing structure
+- You can pass @[`SystemMessage`] objects directly to `create_agent`'s `system_prompt` parameter for advanced use cases like cache control
+
+:::
+
+:::js
+Modify system messages in middleware using the `systemMessage` field in `ModelRequest`. It contains a @[`SystemMessage`] object (even if the agent was created with a string @[`systemPrompt`]).
+
+**Example: Chaining middleware** - Different middleware can use different approaches:
+
+```typescript
+import { createMiddleware, SystemMessage, createAgent } from "langchain";
+
+// Middleware 1: Uses systemMessage with simple concatenation
+const myMiddleware = createMiddleware({
+  name: "MyMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemMessage: request.systemMessage.concat(`Additional context.`),
+    });
+  },
+});
+
+// Middleware 2: Uses systemMessage with structured content (preserves structure)
+const myOtherMiddleware = createMiddleware({
+  name: "MyOtherMiddleware",
+  wrapModelCall: async (request, handler) => {
+    return handler({
+      ...request,
+      systemMessage: request.systemMessage.concat(
+        new SystemMessage({
+          content: [
+            {
+              type: "text",
+              text: " More additional context. This will be cached.",
+              cache_control: { type: "ephemeral", ttl: "5m" },
+            },
+          ],
+        })
+      ),
+    });
+  },
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-3-5-sonnet",
+  systemPrompt: "You are a helpful assistant.",
+  middleware: [myMiddleware, myOtherMiddleware],
+});
+```
+
+The resulting system message will be:
+```typescript
+new SystemMessage({
+  content: [
+    { type: "text", text: "You are a helpful assistant." },
+    { type: "text", text: "Additional context." },
+    {
+        type: "text",
+        text: " More additional context. This will be cached.",
+        cache_control: { type: "ephemeral", ttl: "5m" },
+    },
+  ],
+});
+```
+
+Use @[`SystemMessage.concat`] to preserve cache control metadata or structured content blocks created by other middleware.
 
 :::
 
