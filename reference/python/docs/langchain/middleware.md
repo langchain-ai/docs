@@ -185,3 +185,6 @@ Core types for building middleware:
 ::: langchain.agents.middleware.InterruptOnConfig
     options:
       merge_init_into_class: true
+
+<!-- Copy and paste the above for each new entry -->
+<!-- (Don't use "members") -->
