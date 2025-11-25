@@ -35,6 +35,11 @@ def test_load_existing_mappings() -> None:
         )
         mock_path.return_value.open.return_value.__exit__ = Mock(return_value=None)
 
+        # Mock the stat method due to file size check
+        mock_stat = Mock()
+        mock_stat.st_size = 100  # Small file size
+        mock_path.return_value.stat.return_value = mock_stat
+
         result = load_import_mappings()
         assert result == test_data
 
@@ -129,7 +134,9 @@ def test_build_mapping_dict_basic() -> None:
         ]
     }
 
-    result = build_mapping_dict(mappings)
+    # Mock validate_path to always return True for test paths
+    with patch("scripts.check_pr_imports.validate_path", return_value=True):
+        result = build_mapping_dict(mappings)
 
     expected = {
         "langchain_core.messages.HumanMessage": "langchain.messages.HumanMessage",

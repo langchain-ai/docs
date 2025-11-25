@@ -18,10 +18,13 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout code
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # Need full history to compare with base branch
+          persist-credentials: false
 
       - name: Set up Python 3.13 + uv
         uses: "./.github/actions/uv_setup"
@@ -35,7 +38,14 @@ jobs:
       - name: Ensure import mappings exist
         id: check-mappings
         run: |
-          if [ -f "scripts/import_mappings.json" ]; then
+          MAPPINGS_FILE="$(pwd)/scripts/import_mappings.json"
+          if [ -f "${MAPPINGS_FILE}" ]; then
+            # Prevent extremely large files
+            FILE_SIZE=$(stat -f%z "${MAPPINGS_FILE}" 2>/dev/null || stat -c%s "${MAPPINGS_FILE}" 2>/dev/null || echo "0")
+            if [ "${FILE_SIZE}" -gt 10485760 ]; then  # 10MB limit
+              echo "Error: import_mappings.json file too large"
+              exit 1
+            fi
             echo "mappings_exist=true" >> $GITHUB_OUTPUT
           else
             echo "mappings_exist=false" >> $GITHUB_OUTPUT
@@ -45,31 +55,90 @@ jobs:
         if: steps.check-mappings.outputs.mappings_exist == 'false'
         run: |
           echo "Import mappings not found, generating..."
-          uv run scripts/check_import_mappings.py
+          timeout 300 uv run scripts/check_import_mappings.py
+
+      - name: Validate Git environment
+        run: |
+          # Security: Validate we're in a proper git repository
+          git rev-parse --git-dir > /dev/null
+          # Verify origin/main exists
+          git rev-parse --verify origin/main > /dev/null
 
       - name: Check PR
         id: check-imports
         run: |
-          if uv run scripts/check_pr_imports.py > import_check_output.txt 2>&1; then
+          set +e  # Don't exit on error
+          timeout 600 uv run scripts/check_pr_imports.py > import_check_output.txt 2>&1
+          EXIT_CODE=$?
+          set -e  # Re-enable exit on error
+
+          if [ $EXIT_CODE -eq 0 ]; then
             echo "check_passed=true" >> $GITHUB_OUTPUT
             echo "No import issues found"
+          elif [ $EXIT_CODE -eq 124 ]; then
+            echo "check_passed=false" >> $GITHUB_OUTPUT
+            echo "Import check timed out" > import_check_output.txt
           else
             echo "check_passed=false" >> $GITHUB_OUTPUT
             echo "Import issues found"
-            cat import_check_output.txt
+            # Security: Limit output size
+            head -c 32768 import_check_output.txt
+          fi
+
+      - name: Validate output file
+        if: always()
+        run: |
+          # Validate output file exists and isn't too large
+          if [ -f import_check_output.txt ]; then
+            FILE_SIZE=$(stat -f%z import_check_output.txt 2>/dev/null || stat -c%s import_check_output.txt 2>/dev/null || echo "0")
+            if [ "${FILE_SIZE}" -gt 65536 ]; then  # 64KB limit
+              echo "Output file too large, truncating..."
+              head -c 65536 import_check_output.txt > import_check_output_safe.txt
+              mv import_check_output_safe.txt import_check_output.txt
+            fi
+
+            # Remove any potential control characters
+            tr -d '\000-\010\013\014\016-\037\177-\377' < import_check_output.txt > import_check_output_clean.txt
+            mv import_check_output_clean.txt import_check_output.txt
+          else
+            echo "Error reading import check output" > import_check_output.txt
           fi
 
       - name: Comment on PR with issues
         if: steps.check-imports.outputs.check_passed == 'false'
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             let output = '';
+
             try {
-              output = fs.readFileSync('import_check_output.txt', 'utf8');
+              // Read file safely with size limit
+              const stats = fs.statSync('import_check_output.txt');
+              if (stats.size > 32768) {  // 32KB limit for comment
+                output = 'Output too large to display in comment. Check workflow logs.';
+              } else {
+                output = fs.readFileSync('import_check_output.txt', 'utf8');
+                // Basic sanitization for GitHub comments
+                output = output.replace(/[^\x20-\x7E\n\r\t]/g, '');
+                if (output.length > 32000) {
+                  output = output.substring(0, 32000) + '\n... (truncated)';
+                }
+              }
             } catch (error) {
               output = 'Error reading import check output';
+            }
+
+            // Validate context data
+            if (!context.repo || !context.repo.owner || !context.repo.repo) {
+              console.log('Invalid repository context');
+              return;
+            }
+
+            if (!context.issue || typeof context.issue.number !== 'number') {
+              console.log('Invalid issue context');
+              return;
             }
 
             const body = `## ❌ Import check failed
@@ -136,5 +205,10 @@ jobs:
       - name: Fail the check if issues found
         if: steps.check-imports.outputs.check_passed == 'false'
         run: |
-          echo "❌ Import check failed. Please fix the issues above."
+          echo "❌ Import check failed. Please fix the issues listed in the comment."
           exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f import_check_output.txt import_check_output_safe.txt import_check_output_clean.txt

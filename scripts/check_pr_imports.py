@@ -14,43 +14,149 @@ from pathlib import Path
 from typing import Any
 
 
+def validate_json_schema(data: dict[str, Any]) -> bool:
+    """Validate that JSON data matches expected schema."""
+    if not isinstance(data, dict):
+        return False
+
+    # Check for required top-level structure
+    if "analysis" not in data or not isinstance(data["analysis"], list):
+        return False
+
+    # Validate each analysis entry
+    for analysis in data["analysis"]:
+        if not isinstance(analysis, dict):
+            return False
+
+        # Check required fields exist and are proper types
+        if "file" not in analysis or not isinstance(analysis["file"], str):
+            return False
+
+        if "exported_from_core" in analysis:
+            exported = analysis["exported_from_core"]
+            if not isinstance(exported, dict):
+                return False
+
+    return True
+
+
+def validate_path(file_path: str) -> bool:
+    """Validate that file path is safe and within expected bounds."""
+    try:
+        # Resolve to absolute path to prevent traversal
+        abs_path = Path(file_path).resolve()
+        current_dir = Path.cwd().resolve()
+
+        # Ensure path is within current working directory
+        abs_path.relative_to(current_dir)
+    except (ValueError, OSError):
+        return False
+    else:
+        # Check for suspicious path components
+        suspicious_components = ["..", "~", "/etc", "/proc", "/sys"]
+        path_str = str(abs_path)
+
+        return all(component not in path_str for component in suspicious_components)
+
+
+def sanitize_git_ref(ref: str) -> str:
+    """Sanitize git reference to prevent injection."""
+    # Only allow alphanumeric, hyphens, underscores, slashes, and dots
+    if not re.match(r"^[a-zA-Z0-9/_.-]+$", ref):
+        msg = f"Invalid git reference: {ref}"
+        raise ValueError(msg)
+
+    dangerous_patterns = ["..", "--", "$(", "`", ";", "&", "|"]
+    for pattern in dangerous_patterns:
+        if pattern in ref:
+            msg = f"Dangerous pattern in git reference: {pattern}"
+            raise ValueError(msg)
+
+    return ref
+
+
 def load_import_mappings() -> dict[str, Any]:
     """Load the import mappings from JSON file."""
     mappings_file = Path("scripts/import_mappings.json")
+
+    # Validate file path
+    if not validate_path(str(mappings_file)):
+        print("Error: Invalid path for import_mappings.json")
+        sys.exit(1)
+
     if not mappings_file.exists():
         print(
             "Error: import_mappings.json not found. Run check_import_mappings.py first."
         )
         sys.exit(1)
 
-    with mappings_file.open() as f:
-        return json.load(f)
+    # Prevent loading extremely large files
+    file_size = mappings_file.stat().st_size
+    if file_size > 10 * 1024 * 1024:  # 10MB limit
+        print("Error: import_mappings.json file too large")
+        sys.exit(1)
+
+    try:
+        with mappings_file.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        print(f"Error: Invalid JSON in import_mappings.json: {e}")
+        sys.exit(1)
+
+    # Validate JSON schema
+    if not validate_json_schema(data):
+        print("Error: Invalid schema in import_mappings.json")
+        sys.exit(1)
+
+    return data
 
 
 def get_pr_diff() -> str:
     """Get the diff for the current PR."""
     try:
-        # Get the base branch (usually main)
-        result = subprocess.run(
-            ["git", "merge-base", "HEAD", "origin/main"],  # noqa: S607
+        # Verify we're in a git repository
+        git_dir_check = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,
+            timeout=10,
+        )
+
+        if not git_dir_check.stdout.strip():
+            raise subprocess.CalledProcessError(1, "git rev-parse --git-dir")  # noqa: TRY301
+
+        merge_base_cmd = ["git", "merge-base", "HEAD", "origin/main"]
+        result = subprocess.run(  # noqa: S603
+            merge_base_cmd, capture_output=True, text=True, check=True, timeout=30
         )
         base_sha = result.stdout.strip()
 
+        # Validate the base SHA
+        if not re.match(r"^[a-f0-9]{40}$", base_sha):
+            print(f"Error: Invalid base SHA format: {base_sha}")
+            sys.exit(1)
+
+        # Sanitize the SHA for safety
+        base_sha = sanitize_git_ref(base_sha)
+
         # Get the diff from base to HEAD
-        result = subprocess.run(  # noqa: S603
-            ["git", "diff", base_sha, "HEAD"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        diff_cmd = ["git", "diff", base_sha, "HEAD"]
+
+        return subprocess.run(  # noqa: S603
+            diff_cmd, capture_output=True, text=True, check=True, timeout=60
+        ).stdout
+
+    except subprocess.TimeoutExpired:
+        print("Error: Git command timed out")
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"Error getting PR diff: {e}")
+        print(f"Command: {' '.join(e.cmd)}")
         sys.exit(1)
-    else:
-        return result.stdout
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
 
 
 def build_mapping_dict(mappings: dict[str, Any]) -> dict[str, str]:
@@ -64,23 +170,41 @@ def build_mapping_dict(mappings: dict[str, Any]) -> dict[str, str]:
 
         # Extract module path from file path
         file_path = analysis.get("file", "")
-        if not file_path:
+        if not file_path or not validate_path(file_path):
             continue
 
         # Convert file path to module path
         # e.g., /path/to/langchain/messages/__init__.py -> langchain.messages
-        parts = file_path.split("/")
         try:
+            parts = file_path.split("/")
             langchain_idx = parts.index("langchain")
             module_parts = parts[langchain_idx:-1]  # Exclude __init__.py
+
+            # Validate module parts contain only safe characters
+            for part in module_parts:
+                if not re.match(r"^[a-zA-Z0-9_]+$", part):
+                    continue
+
             langchain_module = ".".join(module_parts)
         except (ValueError, IndexError):
             continue
 
         # Map each exported symbol
         for symbol, info in exported_from_core.items():
+            if not isinstance(symbol, str) or not isinstance(info, dict):
+                continue
+
+            # Validate symbol name
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", symbol):
+                continue
+
+            # Collect and validate module name
             core_module = info.get("module", "")
-            if core_module:
+            if (
+                core_module
+                and isinstance(core_module, str)
+                and re.match(r"^[a-zA-Z_][a-zA-Z0-9_.]*$", core_module)
+            ):
                 mapping_dict[f"{core_module}.{symbol}"] = f"{langchain_module}.{symbol}"
                 # Also map module-level imports
                 if core_module not in mapping_dict:
@@ -265,30 +389,67 @@ def analyze_diff(diff: str, mapping_dict: dict[str, str]) -> list[dict[str, Any]
 
 def main():
     """Entrypoint."""
-    mappings = load_import_mappings()
-    mapping_dict = build_mapping_dict(mappings)
-    diff = get_pr_diff()
+    try:
+        # Validate environment
+        if not Path.cwd():
+            print("Error: Unable to determine current working directory")
+            sys.exit(1)
 
-    print("Analyzing diff for import issues...")
-    issues = analyze_diff(diff, mapping_dict)
+        mappings = load_import_mappings()
+        mapping_dict = build_mapping_dict(mappings)
+        diff = get_pr_diff()
 
-    if not issues:
-        print("✅ No import issues found!")
-        return
+        print("Analyzing diff for import issues...")
+        issues = analyze_diff(diff, mapping_dict)
 
-    print(f"❌ Found {len(issues)} import issues:")
-    print()
+        if not issues:
+            print("✅ No import issues found!")
+            return
 
-    for issue in issues:
-        print(f"File: {issue['file']}")
-        print(f"Line: {issue['line']}")
-        print(f"Issue: {issue['reason']}")
-        print(f"Current:   {issue['original']}")
-        print(f"Suggested: {issue['suggested']}")
-        print("-" * 80)
+        print(f"❌ Found {len(issues)} import issues:")
+        print()
 
-    print(f"\n❌ Found {len(issues)} import issues that need to be fixed.")
-    sys.exit(1)
+        for issue in issues:
+            # Sanitize output to prevent terminal injection
+            file_path = (
+                str(issue["file"])
+                .replace("\x1b", "")
+                .replace("\r", "")
+                .replace("\n", "")
+            )
+            line_num = int(issue["line"]) if isinstance(issue["line"], int) else 0
+            reason = (
+                str(issue["reason"])
+                .replace("\x1b", "")
+                .replace("\r", "")
+                .replace("\n", " ")
+            )
+            original = (
+                str(issue["original"])
+                .replace("\x1b", "")
+                .replace("\r", "")
+                .replace("\n", " ")
+            )
+            suggested = (
+                str(issue["suggested"])
+                .replace("\x1b", "")
+                .replace("\r", "")
+                .replace("\n", " ")
+            )
+
+            print(f"File: {file_path}")
+            print(f"Line: {line_num}")
+            print(f"Issue: {reason}")
+            print(f"Current:   {original}")
+            print(f"Suggested: {suggested}")
+            print("-" * 80)
+
+        print(f"\n❌ Found {len(issues)} import issues that need to be fixed.")
+        sys.exit(1)
+
+    except Exception as e:  # noqa: BLE001
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
