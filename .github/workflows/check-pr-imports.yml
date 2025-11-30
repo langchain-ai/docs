@@ -1,0 +1,131 @@
+---
+name: Check PR Imports
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.py"
+      - "**/*.md"
+      - "**/*.mdx"
+      - "**/*.ipynb"
+
+jobs:
+  check-imports:
+    name: Check for incorrect langchain_core imports
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Need full history to compare with base branch
+          persist-credentials: false
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          uv sync --group test
+
+      - name: Ensure import mappings exist
+        id: check-mappings
+        run: |
+          MAPPINGS_FILE="$(pwd)/scripts/import_mappings.json"
+          if [ -f "${MAPPINGS_FILE}" ]; then
+            # Prevent extremely large files
+            FILE_SIZE=$(stat -f%z "${MAPPINGS_FILE}" 2>/dev/null || stat -c%s "${MAPPINGS_FILE}" 2>/dev/null || echo "0")
+            if [ "${FILE_SIZE}" -gt 10485760 ]; then  # 10MB limit
+              echo "Error: import_mappings.json file too large"
+              exit 1
+            fi
+            echo "mappings_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "mappings_exist=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate import mappings if missing
+        if: steps.check-mappings.outputs.mappings_exist == 'false'
+        run: |
+          echo "Import mappings not found, generating..."
+          timeout 300 uv run scripts/check_import_mappings.py
+
+      - name: Validate Git environment
+        run: |
+          # Security: Validate we're in a proper git repository
+          git rev-parse --git-dir > /dev/null
+          # Verify origin/main exists
+          git rev-parse --verify origin/main > /dev/null
+
+      - name: Check PR
+        id: check-imports
+        run: |
+          set +e  # Don't exit on error
+          timeout 600 uv run scripts/check_pr_imports.py > import_check_output.txt 2>&1
+          EXIT_CODE=$?
+          set -e  # Re-enable exit on error
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "check_passed=true" >> $GITHUB_OUTPUT
+            echo "No import issues found"
+          elif [ $EXIT_CODE -eq 124 ]; then
+            echo "check_passed=false" >> $GITHUB_OUTPUT
+            echo "Import check timed out" > import_check_output.txt
+          else
+            echo "check_passed=false" >> $GITHUB_OUTPUT
+            echo "Import issues found"
+            # Security: Limit output size
+            head -c 32768 import_check_output.txt
+          fi
+
+      - name: Validate output file
+        if: always()
+        run: |
+          # Validate output file exists and isn't too large
+          if [ -f import_check_output.txt ]; then
+            FILE_SIZE=$(stat -f%z import_check_output.txt 2>/dev/null || stat -c%s import_check_output.txt 2>/dev/null || echo "0")
+            if [ "${FILE_SIZE}" -gt 65536 ]; then  # 64KB limit
+              echo "Output file too large, truncating..."
+              head -c 65536 import_check_output.txt > import_check_output_safe.txt
+              mv import_check_output_safe.txt import_check_output.txt
+            fi
+
+            # Remove any potential control characters
+            tr -d '\000-\010\013\014\016-\037\177-\377' < import_check_output.txt > import_check_output_clean.txt
+            mv import_check_output_clean.txt import_check_output.txt
+          else
+            echo "Error reading import check output" > import_check_output.txt
+          fi
+
+      - name: Save PR number
+        if: steps.check-imports.outputs.check_passed == 'false'
+        run: |
+          echo "${{ github.event.pull_request.number }}" > pr_number.txt
+
+      - name: Upload check results
+        if: steps.check-imports.outputs.check_passed == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: import-check-result
+          path: |
+            import_check_output.txt
+            pr_number.txt
+          retention-days: 1
+
+      - name: Fail the check if issues found
+        if: steps.check-imports.outputs.check_passed == 'false'
+        run: |
+          echo "❌ Import check failed. Please fix the issues listed in the comment."
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f import_check_output.txt import_check_output_safe.txt import_check_output_clean.txt

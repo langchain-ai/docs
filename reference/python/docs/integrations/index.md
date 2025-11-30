@@ -8,8 +8,12 @@ Welcome! These pages include reference documentation for all `langchain-*` Pytho
 
 To learn more about integrations in LangChain, visit the [Integrations overview](https://docs.langchain.com/oss/python/integrations/providers/overview).
 
-!!! tip "Model Context Protocol (MCP) support"
-    To use MCP tools within LangChain and LangGraph applications, refer to [`langchain-mcp-adapters`](../langchain_mcp_adapters/index.md).
+!!! tip "Model Context Protocol (MCP)"
+    LangChain supports the Model Context Protocol (MCP). This lets external tools work with LangChain and LangGraph applications through a standard interface.
+
+    To use MCP tools in your project, see [`langchain-mcp-adapters`](../langchain_mcp_adapters/index.md).
+
+---
 
 ## Popular providers
 
