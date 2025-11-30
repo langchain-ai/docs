@@ -1,0 +1,98 @@
+---
+title: Isaacus
+---
+
+This guide walks you through how to get started generating legal embeddings using [Isaacus'](/oss/integrations/providers/isaacus) LangChain integration.
+
+## 1. Set up your account
+
+Head to the [Isaacus Platform](https://platform.isaacus.com/accounts/signup/) to create a new account.
+
+Once signed up, [add a payment method](https://platform.isaacus.com/billing/) to claim your [free credits](https://docs.isaacus.com/pricing/credits).
+
+After adding a payment method, [create a new API key](https://platform.isaacus.com/users/api-keys/).
+
+Make sure to keep your API key safe. You won't be able to see it again after you create it. But don't worry, you can always generate a new one.
+
+## 2. Install the Isaacus API client
+
+Now that your account is set up, install the [Isaacus LangChain](https://pypi.org/project/langchain-isaacus/) integration package.
+
+<CodeGroup>
+```bash pip
+pip install langchain-isaacus
+```
+
+```bash uv
+uv add langchain-isaacus
+```
+</CodeGroup>
+
+## 3. Embed a document
+
+With our API client installed, let's embed our first legal query and document.
+
+To start, you need to **initialize the client with your API key**. You can do this by setting the `ISAACUS_API_KEY` environment variable or by passing it directly, which is what we're doing in this example.
+
+We're going to use [Kanon 2 Embedder](https://isaacus.com/blog/introducing-kanon-2-embedder), the world's most accurate legal embedding model on the [Massive Legal Embedding Benchmark](https://isaacus.com/blog/introducing-mleb) as of 20 October 2025.
+
+```python
+from langchain_isaacus import IsaacusEmbeddings
+
+# Create an Isaacus API client for Kanon 2 Embedder.
+client = IsaacusEmbeddings(
+    model="kanon-2-embedder",
+    api_key="PASTE_YOUR_API_KEY_HERE",
+    # dimensions=1792, # You may optionally wish to specify a lower dimension.
+)
+```
+Next, let's grab a legal document to embed. For this example, we'll use [GitHub's terms of service](https://github.com/terms).
+
+```python
+import isaacus
+
+tos = isaacus.Isaacus().get(path="https://examples.isaacus.com/github-tos.md", cast_to=str)
+```
+
+We're interested in retrieving the GitHub terms of service given a search query about it.
+
+To do that, we'll first embed the document using the `.embed_documents()` method of our API client. Using this method indicates that we're embedding a document (as opposed to a search query) which is important for ensuring that our embeddings are optimized for retrieval (as opposed to other tasks like classification or sentence similarity).
+
+```python
+document_embedding = client.embed_documents(texts=[tos])[0]
+```
+
+Now, let's embed two search queries, one that is clearly relevant to the document and another that is clearly irrelevant. This time we'll use the `.embed_query()` method of our API client, which indicates that we're embedding a search query.
+
+```python
+relevant_query_embedding = client.embed_query(text="What are GitHub's billing policies?")
+irrelevant_query_embedding = client.embed_query(text="What are Microsoft's billing policies?")
+```
+
+To assess the relevance of the queries to the document, we can compute the cosine similarity between their embeddings and the document embedding.
+
+Cosine similarity measures how similar two sets of numbers are (specifically, the cosine of the angle between two vectors in an inner product space). In theory, it ranges from $$-1$$ to $$1$$, with $$1$$ indicating that the vectors are identical, $$0$$ indicating that they are orthogonal (i.e., completely dissimilar), and $$-1$$ indicating that they are diametrically opposed. In practice, however, it tends to range from $$0$$ to $$1$$ for text embeddings (since they are usually non-negative).
+
+Isaacus' embedders have been optimized such that the cosine similarity of the embeddings they produce roughly corresponds to how similar the original texts are in meaning. Unlike Isaacus' universal classifiers, however, Isaacus embedders' scores have not been calibrated to be interpreted as probabilities, only as relative measures of similarity, making them most useful for ranking search results.
+
+For the sake of convenience, our Python example uses [`numpy`](https://numpy.org/)'s `dot` function to compute the dot product of our embeddings (which is equivalent to their cosine similarity since all our embeddings are L2-normalized). If you prefer, you can use another library to compute the cosine similarity of the embeddings (e.g., [`torch`](https://pytorch.org/) via `torch.nn.functional.cosine_similarity`), or you could write your own implementation.
+
+```python
+import numpy as np
+
+relevant_similarity = np.dot(relevant_query_embedding, document_embedding)
+irrelevant_similarity = np.dot(irrelevant_query_embedding, document_embedding)
+
+print(f"Similarity of relevant query to the document: {relevant_similarity * 100:.2f}")
+print(f"Similarity of irrelevant query to the document: {irrelevant_similarity * 100:.2f}")
+```
+
+The output should look something like this:
+```
+Similarity of relevant query to the document: 52.87
+Similarity of irrelevant query to the document: 24.86
+```
+
+As you should see, the relevant query has a much higher similarity score to the document than the irrelevant query, indicating that our embedder has successfully captured the semantic meaning of the texts.
+
+And that's it! You've just successfully embedded a legal document and queries using the Isaacus API with LangChain.

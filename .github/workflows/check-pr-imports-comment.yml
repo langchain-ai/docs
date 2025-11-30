@@ -1,0 +1,138 @@
+---
+name: Comment on PR Import Check
+
+on:
+  workflow_run:
+    workflows: ["Check PR Imports"]
+    types:
+      - completed
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Download artifact
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id,
+            });
+
+            const matchArtifact = artifacts.data.artifacts.filter((artifact) => {
+              return artifact.name == "import-check-result"
+            })[0];
+
+            if (!matchArtifact) {
+              console.log('No artifact found');
+              return;
+            }
+
+            const download = await github.rest.actions.downloadArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: matchArtifact.id,
+              archive_format: 'zip',
+            });
+
+            const fs = require('fs');
+            fs.writeFileSync('${{github.workspace}}/import-check-result.zip', Buffer.from(download.data));
+
+      - name: Extract artifact
+        run: unzip import-check-result.zip
+
+      - name: Read PR number and output
+        id: read-data
+        run: |
+          if [ -f pr_number.txt ] && [ -f import_check_output.txt ]; then
+            PR_NUMBER=$(cat pr_number.txt)
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            echo "has_data=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_data=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR
+        if: steps.read-data.outputs.has_data == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.read-data.outputs.pr_number }}
+        with:
+          script: |
+            const fs = require('fs');
+            const prNumber = process.env.PR_NUMBER;
+            let output = '';
+
+            try {
+              output = fs.readFileSync('import_check_output.txt', 'utf8');
+              output = output.replace(/[^\x20-\x7E\n\r\t]/g, '');
+              if (output.length > 32000) {
+                output = output.substring(0, 32000) + '\n... (truncated)';
+              }
+            } catch (error) {
+              output = 'Error reading import check output';
+            }
+
+            const body = `## ❌ Import check failed
+
+            This PR contains imports from \`langchain_core\` that should be imported from \`langchain\` instead.
+
+            <details>
+            <summary>Detailed issues</summary>
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            </details>
+
+            ### Why this is a problem
+
+            The \`langchain\` package re-exports many modules and classes from \`langchain_core\`. When possible, imports should use \`langchain\` instead of \`langchain_core\` for:
+            - Better user experience (single import source)
+            - Consistency across documentation
+            - Reduced cognitive load for users
+
+            ### How to fix
+
+            Replace the imports as suggested above. For example:
+            - ❌ \`from langchain_core.messages import HumanMessage\`
+            - ✅ \`from langchain.messages import HumanMessage\`
+
+            ### 🤖 Automated check
+
+            This check is based on the latest analysis of \`langchain\` re-exports from \`langchain_core\`.
+            `;
+
+            // Check if we already commented
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Import check failed')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body
+              });
+            }
