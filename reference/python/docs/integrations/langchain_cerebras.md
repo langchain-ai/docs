@@ -8,5 +8,4 @@ title: Cerebras
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-cerebras)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-cerebras)](https://pypistats.org/packages/langchain-cerebras)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+::: langchain_cerebras

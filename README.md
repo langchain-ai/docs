@@ -37,6 +37,8 @@
 
 To contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
 
+For detailed information about setting up your development environment and contributing to documentation, see the [documentation contributing guide](https://docs.langchain.com/oss/python/contributing/documentation).
+
 > [!IMPORTANT]
 > For contributing to reference docs, see the `README.md` file in the `/reference/python` and `/reference/javascript` directories.
 

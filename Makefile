@@ -55,6 +55,7 @@ test:
 install:
 	@echo "Installing all dependencies"
 	uv sync --all-groups
+	npm install -g mint@latest
 
 clean:
 	@echo "Cleaning build artifacts..."
