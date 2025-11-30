@@ -135,6 +135,11 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-deepseek
             "langchain-deepseek": "integrations/langchain_deepseek",
             "ChatDeepSeek": "integrations/langchain_deepseek/#langchain_deepseek.ChatDeepSeek",
+            # langchain-parallel
+            "langchain-parallel": "integrations/langchain_parallel",
+            "ChatParallelWeb": "integrations/langchain_parallel/ChatParallelWeb",
+            "ParallelWebSearchTool": "integrations/langchain_parallel/ParallelWebSearchTool",
+            "ParallelExtractTool": "integrations/langchain_parallel/ParallelExtractTool",
             # Models
             "init_chat_model": "langchain/models/#langchain.chat_models.init_chat_model",
             "init_chat_model(model)": "langchain/models/#langchain.chat_models.init_chat_model(model)",

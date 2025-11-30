@@ -562,6 +562,14 @@ title: Chat models (Classic)
 
 ---
 
+## Icons
+
+Icons from Material for MkDocs are available for use in documentation with integrated search. This includes thousands of icons from popular icon sets like Material Design Icons, FontAwesome, Octicons, and more.
+
+See the [Material for MkDocs Icons Reference](https://squidfunk.github.io/mkdocs-material/reference/icons-emojis/) for the complete icon catalog and usage instructions.
+
+---
+
 ## In-code documentation
 
 ### Language and style
