@@ -2,8 +2,6 @@
 title: Short-term memory
 ---
 
-
-
 ## Overview
 
 Memory is a system that remembers information about previous interactions. For AI agents, memory is crucial because it lets them remember previous interactions, learn from feedback, and adapt to user preferences. As agents tackle more complex tasks with numerous user interactions, this capability becomes essential for both efficiency and user satisfaction.
@@ -110,11 +108,11 @@ const checkpointer = PostgresSaver.fromConnString(DB_URI);
 
 ## Customizing agent memory
 
+:::python
 By default, agents use @[`AgentState`] to manage short term memory, specifically the conversation history via a `messages` key.
 
 You can extend @[`AgentState`] to add additional fields. Custom state schemas are passed to @[`create_agent`] using the @[`state_schema`] parameter.
 
-:::python
 ```python
 from langchain.agents import create_agent, AgentState
 from langgraph.checkpoint.memory import InMemorySaver
@@ -141,14 +139,16 @@ result = agent.invoke(
     {"configurable": {"thread_id": "1"}})
 ```
 :::
+
 :::js
+You can extend the agent state by creating custom middleware with a state schema. Custom state schemas can be passed using the `stateSchema` parameter in middleware.
+
 ```typescript
 import * as z from "zod";
 import { createAgent, createMiddleware } from "langchain";
-import { MessagesZodState, MemorySaver } from "@langchain/langgraph";
+import { MemorySaver } from "@langchain/langgraph";
 
 const customStateSchema = z.object({  // [!code highlight]
-    messages: MessagesZodState.shape.messages,  // [!code highlight]
     userId: z.string(),  // [!code highlight]
     preferences: z.record(z.string(), z.any()),  // [!code highlight]
 });  // [!code highlight]
@@ -162,7 +162,7 @@ const checkpointer = new MemorySaver();
 const agent = createAgent({
     model: "gpt-5",
     tools: [],
-    middleware: [stateExtensionMiddleware] as const,  // [!code highlight]
+    middleware: [stateExtensionMiddleware],  // [!code highlight]
     checkpointer,
 });
 
@@ -508,8 +508,8 @@ agent = create_agent(
     middleware=[
         SummarizationMiddleware(
             model="gpt-4o-mini",
-            max_tokens_before_summary=4000,  # Trigger summarization at 4000 tokens
-            messages_to_keep=20,  # Keep last 20 messages after summary
+            trigger={"tokens": 4000},
+            keep={"messages": 20},
         )
     ],
     checkpointer=checkpointer,
@@ -546,8 +546,8 @@ const agent = createAgent({
   middleware: [
     summarizationMiddleware({
       model: "gpt-4o-mini",
-      maxTokensBeforeSummary: 4000,
-      messagesToKeep: 20,
+      trigger: { tokens: 4000 },
+      keep: { messages: 20 },
     }),
   ],
   checkpointer,
@@ -679,7 +679,7 @@ def update_user_info(
     runtime: ToolRuntime[CustomContext, CustomState],
 ) -> Command:
     """Look up and update user info."""
-    user_id = runtime.context.user_id 
+    user_id = runtime.context.user_id
     name = "John Smith" if user_id == "user_123" else "Unknown user"
     return Command(update={  # [!code highlight]
         "user_name": name,
@@ -695,16 +695,25 @@ def update_user_info(
 @tool
 def greet(
     runtime: ToolRuntime[CustomContext, CustomState]
-) -> str:
+) -> str | Command:
     """Use this to greet the user once you found their info."""
-    user_name = runtime.state["user_name"]
+    user_name = runtime.state.get("user_name", None)
+    if user_name is None:
+       return Command(update={
+            "messages": [
+                ToolMessage(
+                    "Please call the 'update_user_info' tool it will get and update the user's name.",
+                    tool_call_id=runtime.tool_call_id
+                )
+            ]
+        })
     return f"Hello {user_name}!"
 
 agent = create_agent(
     model="gpt-5-nano",
     tools=[update_user_info, greet],
     state_schema=CustomState, # [!code highlight]
-    context_schema=CustomContext,  
+    context_schema=CustomContext,
 )
 
 agent.invoke(
@@ -920,7 +929,9 @@ for (const message of result.messages) {
 
 ### Before model
 
+:::python
 Access short term memory (state) in @[`@before_model`] middleware to process messages before model calls.
+:::
 
 
 ```mermaid
@@ -956,6 +967,7 @@ from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents import create_agent, AgentState
 from langchain.agents.middleware import before_model
+from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from typing import Any
 
@@ -979,10 +991,12 @@ def trim_messages(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
         ]
     }
 
+
 agent = create_agent(
-    model,
-    tools=tools,
-    middleware=[trim_messages]
+    "gpt-5-nano",
+    tools=[],
+    middleware=[trim_messages],
+    checkpointer=InMemorySaver()
 )
 
 config: RunnableConfig = {"configurable": {"thread_id": "1"}}
@@ -1030,7 +1044,9 @@ const agent = createAgent({
 
 ### After model
 
+:::python
 Access short term memory (state) in @[`@after_model`] middleware to process messages after model calls.
+:::
 
 ```mermaid
 %%{

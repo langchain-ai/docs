@@ -8,5 +8,4 @@ title: Upstage
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-upstage)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-upstage)](https://pypistats.org/packages/langchain-upstage)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+::: langchain_upstage

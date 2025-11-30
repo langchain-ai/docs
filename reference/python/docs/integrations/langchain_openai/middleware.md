@@ -2,11 +2,11 @@
 title: OpenAI Middleware
 ---
 
+# :fontawesome-brands-openai:{ .lg .middle } OpenAI Middleware
+
 !!! warning "Reference docs"
 
     This page contains **reference documentation** for OpenAI Middleware. See [the docs](https://docs.langchain.com/oss/python/langchain/middleware/built-in#openai) for conceptual guides, tutorials, and examples on using OpenAI Middleware.
-
-## Middleware classes
 
 Provider-specific middleware for OpenAI models:
 
@@ -14,18 +14,16 @@ Provider-specific middleware for OpenAI models:
 | ----- | ----------- |
 | [`OpenAIModerationMiddleware`](#langchain_openai.middleware.OpenAIModerationMiddleware) | Moderate agent traffic using OpenAI's moderation endpoint |
 
-<!-- Configuration notes:
-- summary: false - Using custom tables above instead of auto-generated summaries
-- group_by_category: false - Custom ordering via explicit members list
-- members: Show only __init__ for middleware classes
-- inherited_members: false - Hide inherited members by default
-- show_if_no_docstring: true - Show members even without docstrings
--->
+<!-- TODO: `ignore_init_summary` doesn't seem to work.  -->
 
-<!-- Module-level documentation removed to avoid duplicates - using explicit class blocks below -->
+<!-- `"^__init__$"` used to exclude everything other than `__init__` -->
 
 ::: langchain_openai.middleware.OpenAIModerationMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+<!-- Copy and paste the above for each new entry -->
+<!-- (Don't use "members") -->
