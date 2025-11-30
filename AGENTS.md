@@ -92,3 +92,9 @@ In general, follow the [Google Developer Documentation Style Guide](https://deve
 - Do not include localization in relative links (e.g., `/python/` or `/javascript/`) - these are resolved automatically by the build pipeline
 
 For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
+
+## Pull request guidelines
+
+- Describe the "why" of the changes, why the proposed solution is the right one.
+- Highlight areas of the proposed changes that require careful review.
+- Always add a disclaimer to the PR description mentioning how AI agents are involved with the contribution.
