@@ -7,11 +7,10 @@ mode: wide
 
 You can invoke Agent Builder agents from your applications using the LangGraph SDK. This allows you to programmatically trigger agents using standard LangGraph concepts like threads (for conversation history) and runs (for individual agent executions), with support for custom configuration like model selection and authentication.
 
-The following code demonstrates the complete flow: 
+The following code demonstrates how to initialize the SDK client and retrieve an agent:
 
-- Initialize the SDK client with your deployment URL, PAT API key, and the `X-Auth-Scheme: langsmith-api-key` header for authentication. 
-- Create a thread to maintain conversation context, and use `create_and_wait` to execute a run with your input message. 
-- The run processes your message through the agent and returns the output synchronously. You can optionally pass a `configurable` object to override agent settings at runtime, such as specifying a different model or API key environment variable.
+- Initialize the SDK client with your deployment URL, PAT API key, and the `X-Auth-Scheme: langsmith-api-key` header for authentication.
+- Use the client to retrieve agent details by calling `assistants.get()` with your agent ID.
 
 <Tabs>
   <Tab title="Python">
@@ -26,7 +25,7 @@ agent_id = "your-agent-id"
 
 # This must be a PAT API key tied to your user
 api_key = os.getenv("LANGGRAPH_API_KEY")
-api_url = "https://your-deployment.langgraph.app"
+api_url = "https://prod-agent-builder-5ccea139413e5ef289ab8e5d04688e11.us.langgraph.app"
 
 client = get_client(
     url=api_url,
@@ -36,26 +35,13 @@ client = get_client(
     },
 )
 
-# Get the assistant
-agent = await client.assistants.get(agent_id)
+async def get_assistant(agent_id: str):
+    agent = await client.assistants.get(agent_id)
+    print(agent)
 
-# Create a thread and run
-thread = await client.threads.create()
-
-run = await client.runs.create_and_wait(
-    thread_id=thread["thread_id"],
-    assistant_id=agent_id,
-    input={"messages": [{"role": "user", "content": "Plan a weekly summary"}]},
-    configurable={
-        # Optional: override model (see Custom models)
-        "llm_model_config": {
-            "modelId": "anthropic:claude-sonnet-4-5",
-            "envVarName": "AGENT_BUILDER_ANTHROPIC_API_KEY",
-        }
-    },
-)
-
-print(run["output"])  # agent response
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(get_assistant(agent_id))
 ```
   </Tab>
   <Tab title="TypeScript">
@@ -67,7 +53,7 @@ const agentId = "your-agent-id";
 
 // This must be a PAT API key tied to your user
 const apiKey = process.env.LANGGRAPH_API_KEY;
-const apiUrl = "https://your-deployment.langgraph.app";
+const apiUrl = "https://prod-agent-builder-5ccea139413e5ef289ab8e5d04688e11.us.langgraph.app";
 
 const client = new Client({
   apiUrl,
@@ -77,29 +63,12 @@ const client = new Client({
   },
 });
 
-// Get the assistant
-const agent = await client.assistants.get(agentId);
+async function main(agentId: string) {
+  const agent = await client.assistants.get(agentId);
+  console.log(agent);
+}
 
-// Create a thread and run
-const thread = await client.threads.create();
-
-const run = await client.runs.createAndWait(
-  thread.thread_id,
-  {
-    assistant_id: agentId,
-    input: { messages: [{ role: "user", content: "Draft an update" }] },
-  },
-  {
-    configurable: {
-      llm_model_config: {
-        modelId: "anthropic:claude-sonnet-4-5",
-        envVarName: "AGENT_BUILDER_ANTHROPIC_API_KEY",
-      },
-    },
-  }
-);
-
-console.log(run.output);
+main(agentId).catch(console.error);
 ```
   </Tab>
 </Tabs>
