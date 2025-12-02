@@ -394,7 +394,7 @@ LINK_MAPS: list[LinkMap] = [
         },
     },
     {
-        # LangSmith Deployment REST API - Python scope
+        # LangSmith Deployment Agent Server API - Python scope
         "host": "https://langchain-ai.github.io/langgraph/cloud/reference/api/",
         "scope": "python",
         "links": {
@@ -409,7 +409,7 @@ LINK_MAPS: list[LinkMap] = [
         },
     },
     {
-        # LangSmith Deployment REST API - JS scope
+        # LangSmith Deployment Agent Server API - JS scope
         "host": "https://langchain-ai.github.io/langgraph/cloud/reference/api/",
         "scope": "js",
         "links": {

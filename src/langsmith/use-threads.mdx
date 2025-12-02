@@ -48,7 +48,7 @@ sequenceDiagram
 - Later runs have access to the full conversation history.
 
 <Note>
-- **[Assistants](/langsmith/assistants)** define the configuration (model, prompts, tools) for how your graph executes. When creating a run, you can specify either a **graph name** (e.g., `"agent"`) to use the default assistant, or an **assistant ID** (UUID) to use a specific configuration.
+- **[Assistants](/langsmith/assistants)** define the configuration (model, prompts, tools) for how your graph executes. When creating a run, you can specify either a **graph ID** (e.g., `"agent"`) to use the default assistant, or an **assistant ID** (UUID) to use a specific configuration.
 - **Threads** maintain the state and conversation history.
 - **Runs** combine an assistant and thread to execute your graph with a specific configuration and state.
 </Note>
@@ -122,17 +122,17 @@ Alternatively, if you already have a thread in your application whose state you 
 ```python Python
 # Copy an existing thread
 # The new thread will have the same state as the original at the time of copying
-copied_thread = await client.threads.copy(<THREAD_ID>)
+copied_thread = await client.threads.copy(thread["thread_id"])
 ```
 
 ```javascript JavaScript
 // Copy an existing thread
 // The new thread will have the same state as the original at the time of copying
-const copiedThread = await client.threads.copy(<THREAD_ID>);
+const copiedThread = await client.threads.copy(thread["thread_id"]);
 ```
 
 ```bash cURL
-curl --request POST --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/copy \
+curl --request POST --url <DEPLOYMENT_URL>/threads/thread["thread_id"]/copy \
 --header 'Content-Type: application/json'
 ```
 </CodeGroup>
@@ -445,18 +445,18 @@ To view a specific thread given its `thread_id`, use the @[`get`][ThreadsClient.
 ```python Python
 # Retrieve a specific thread by its ID
 # Returns the thread metadata including status, creation time, and metadata
-print((await client.threads.get(<THREAD_ID>)))
+print((await client.threads.get(thread["thread_id"])))
 ```
 
 ```javascript JavaScript
 // Retrieve a specific thread by its ID
 // Returns the thread metadata including status, creation time, and metadata
-console.log((await client.threads.get(<THREAD_ID>)));
+console.log((await client.threads.get(thread["thread_id"])));
 ```
 
 ```bash cURL
 curl --request GET \
---url <DEPLOYMENT_URL>/threads/<THREAD_ID> \
+--url <DEPLOYMENT_URL>/threads/thread["thread_id"] \
 --header 'Content-Type: application/json'
 ```
 </CodeGroup>
@@ -484,18 +484,18 @@ To view the current state of a given thread, use the @[`get_state`][ThreadsClien
 ```python Python
 # Get the current state of a thread
 # Returns values, next nodes, tasks, checkpoint info, and metadata
-print((await client.threads.get_state(<THREAD_ID>)))
+print((await client.threads.get_state(thread["thread_id"])))
 ```
 
 ```javascript JavaScript
 // Get the current state of a thread
 // Returns values, next nodes, tasks, checkpoint info, and metadata
-console.log((await client.threads.getState(<THREAD_ID>)));
+console.log((await client.threads.getState(thread["thread_id"])));
 ```
 
 ```bash cURL
 curl --request GET \
---url <DEPLOYMENT_URL>/threads/<THREAD_ID>/state \
+--url <DEPLOYMENT_URL>/threads/thread["thread_id"]/state \
 --header 'Content-Type: application/json'
 ```
 </CodeGroup>
@@ -567,27 +567,53 @@ Output:
 
 For more information, refer to the @[Python][ThreadsClient.get_state] and @[JS][ThreadsClient.get_state] SDK docs, or the @[REST API][ThreadsAPI.get_state] reference.
 
-Optionally, to view the state of a thread at a given checkpoint, pass in the checkpoint ID. This is useful for inspecting the thread state at a specific point in its execution history:
+Optionally, to view the state of a thread at a given checkpoint, pass in the checkpoint ID. This is useful for inspecting the thread state at a specific point in its execution history.
+
+First, get the checkpoint ID from the thread's history:
+
+<CodeGroup>
+```python Python
+# Get the thread history to find checkpoint IDs
+history = await client.threads.get_history(thread_id=thread["thread_id"])
+checkpoint_id = history[0]["checkpoint_id"]  # Get the most recent checkpoint
+```
+
+```javascript JavaScript
+// Get the thread history to find checkpoint IDs
+const history = await client.threads.getHistory(thread["thread_id"]);
+const checkpointId = history[0].checkpoint_id;  // Get the most recent checkpoint
+```
+
+```bash cURL
+# Get the thread history to find checkpoint IDs
+curl --request POST \
+--url <DEPLOYMENT_URL>/threads/thread["thread_id"]/history \
+--header 'Content-Type: application/json' \
+--data '{"limit": 1}'
+```
+</CodeGroup>
+
+Then use the checkpoint ID to get the state at that specific point:
 
 <CodeGroup>
 ```python Python
 # Get thread state at a specific checkpoint
 # Useful for inspecting historical state or debugging
 thread_state = await client.threads.get_state(
-  thread_id=<THREAD_ID>,
-  checkpoint_id=<CHECKPOINT_ID>
+  thread_id=thread["thread_id"],
+  checkpoint_id=checkpoint_id
 )
 ```
 
 ```javascript JavaScript
 // Get thread state at a specific checkpoint
 // Useful for inspecting historical state or debugging
-const threadState = await client.threads.getState(<THREAD_ID>, <CHECKPOINT_ID>);
+const threadState = await client.threads.getState(thread["thread_id"], checkpointId);
 ```
 
 ```bash cURL
 curl --request GET \
---url <DEPLOYMENT_URL>/threads/<THREAD_ID>/state/<CHECKPOINT_ID> \
+--url <DEPLOYMENT_URL>/threads/thread["thread_id"]/state/<CHECKPOINT_ID> \
 --header 'Content-Type: application/json'
 ```
 </CodeGroup>
@@ -601,7 +627,7 @@ To view a thread's history, use the @[`get_history`][ThreadsClient.get_history] 
 # Get the full history of a thread
 # Returns a list of all state snapshots from the thread's execution
 history = await client.threads.get_history(
-  thread_id=<THREAD_ID>,
+  thread_id=thread["thread_id"],
   limit=10  # Optional: limit the number of states returned
 )
 
@@ -614,7 +640,7 @@ for state in history:
 // Get the full history of a thread
 // Returns a list of all state snapshots from the thread's execution
 const history = await client.threads.getHistory(
-  <THREAD_ID>,
+  thread["thread_id"],
   {
     limit: 10  // Optional: limit the number of states returned
   }
@@ -628,7 +654,7 @@ for (const state of history) {
 
 ```bash cURL
 curl --request POST \
---url <DEPLOYMENT_URL>/threads/<THREAD_ID>/history \
+--url <DEPLOYMENT_URL>/threads/thread["thread_id"]/history \
 --header 'Content-Type: application/json' \
 --data '{"limit": 10}'
 ```
