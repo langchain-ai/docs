@@ -61,7 +61,7 @@ pyproject.toml            # Dependencies
 
 # --- reference.langchain.com -----------------------------------------
 reference/                # Reference docs build pipelines
-    dist/                 # Build docs (DO NOT EDIT)
+    dist/                 # Built docs (DO NOT EDIT)
     javascript/           # JS/TS reference build pipeline
     python/               # Python reference build pipeline and source
     package.json          # Vercel commands and dependencies

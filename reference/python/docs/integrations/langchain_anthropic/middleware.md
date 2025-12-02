@@ -2,11 +2,11 @@
 title: Anthropic Middleware
 ---
 
+# :simple-claude:{ .lg .middle } Anthropic Middleware
+
 !!! warning "Reference docs"
 
     This page contains **reference documentation** for Anthropic Middleware. See [the docs](https://docs.langchain.com/oss/python/langchain/middleware/built-in#anthropic) for conceptual guides, tutorials, and examples on using Anthropic Middleware.
-
-## Middleware classes
 
 Provider-specific middleware for Anthropic's Claude models:
 
@@ -20,54 +20,58 @@ Provider-specific middleware for Anthropic's Claude models:
 | [`FilesystemClaudeMemoryMiddleware`](#langchain_anthropic.middleware.FilesystemClaudeMemoryMiddleware) | Provide Claude's memory tool for filesystem-based persistent agent memory |
 | [`StateFileSearchMiddleware`](#langchain_anthropic.middleware.StateFileSearchMiddleware) | Search tools for state-based file systems |
 
-<!-- Configuration notes:
-- summary: false - Using custom tables above instead of auto-generated summaries
-- group_by_category: false - Custom ordering via explicit members list
-- members: Show only __init__ for middleware classes
-- inherited_members: false - Hide inherited members by default
-- show_if_no_docstring: true - Show members even without docstrings
--->
+<!-- TODO: `ignore_init_summary` doesn't seem to work.  -->
 
-<!-- Module-level documentation removed to avoid duplicates - using explicit class blocks below -->
+<!-- `"^__init__$"` used to exclude everything other than `__init__` -->
 
 ::: langchain_anthropic.middleware.AnthropicPromptCachingMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain_anthropic.middleware.ClaudeBashToolMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain_anthropic.middleware.StateClaudeTextEditorMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain_anthropic.middleware.FilesystemClaudeTextEditorMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain_anthropic.middleware.StateClaudeMemoryMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain_anthropic.middleware.FilesystemClaudeMemoryMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
 
 ::: langchain_anthropic.middleware.StateFileSearchMiddleware
     options:
-      show_bases: false
-      members:
-        - __init__
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
+
+<!-- Copy and paste the above for each new entry -->
+<!-- (Don't use "members") -->

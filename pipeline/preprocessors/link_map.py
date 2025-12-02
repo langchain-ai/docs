@@ -71,6 +71,7 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemClaudeMemoryMiddleware": "langchain/middleware/#langchain.agents.middleware.FilesystemClaudeMemoryMiddleware",
             "StateFileSearchMiddleware": "langchain/middleware/#langchain.agents.middleware.StateFileSearchMiddleware",
             "OpenAIModerationMiddleware": "langchain/middleware/#langchain.agents.middleware.OpenAIModerationMiddleware",
+            "ContextSize": "langchain/middleware/#langchain.agents.middleware.summarization.ContextSize",
             # Messages
             "AIMessage": "langchain/messages/#langchain.messages.AIMessage",
             "AIMessageChunk": "langchain/messages/#langchain.messages.AIMessageChunk",
@@ -135,6 +136,11 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-deepseek
             "langchain-deepseek": "integrations/langchain_deepseek",
             "ChatDeepSeek": "integrations/langchain_deepseek/#langchain_deepseek.ChatDeepSeek",
+            # langchain-parallel
+            "langchain-parallel": "integrations/langchain_parallel",
+            "ChatParallelWeb": "integrations/langchain_parallel/ChatParallelWeb",
+            "ParallelWebSearchTool": "integrations/langchain_parallel/ParallelWebSearchTool",
+            "ParallelExtractTool": "integrations/langchain_parallel/ParallelExtractTool",
             # Models
             "init_chat_model": "langchain/models/#langchain.chat_models.init_chat_model",
             "init_chat_model(model)": "langchain/models/#langchain.chat_models.init_chat_model(model)",
