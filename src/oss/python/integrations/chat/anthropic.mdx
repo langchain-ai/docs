@@ -631,20 +631,22 @@ Below, we implement a simple chatbot that incorporates this feature. We follow t
 
 <Info>
 Strict tool use requires:
-
 - Claude Sonnet 4.5 or Opus 4.1.
 - `langchain-anthropic>=1.1.0`
 </Info>
 
 Anthropic supports opt-in [strict schema adherence to tool calls](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). This guarantees that tool names and arguments are validated and correctly typed.
 
-To enable strict tool use, specify `strict=True` when calling [`bind_tools`](/oss/langchain/models#tool-calling).
+To enable strict tool use:
+1. Specify the `structured-outputs-2025-11-13` beta header
+2. Specify `strict=True` when calling [bind_tools](/oss/langchain/models#tool-calling).
 
 ```python
 from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5",
+    betas=["structured-outputs-2025-11-13"],  # [!code highlight]
 )
 
 def get_weather(location: str) -> str:
@@ -653,6 +655,7 @@ def get_weather(location: str) -> str:
 
 model_with_tools = model.bind_tools([get_weather], strict=True)  # [!code highlight]
 ```
+
 
 ## Token-efficient tool use
 
@@ -949,8 +952,8 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
-    betas=["context-management-2025-06-27"], # [!code highlight]
-    context_management={"edits": [{"type": "clear_tool_uses_20250919"}]}, # [!code highlight]
+    betas=["context-management-2025-06-27"],
+    context_management={"edits": [{"type": "clear_tool_uses_20250919"}]},
 )
 model_with_tools = model.bind_tools([{"type": "web_search_20250305", "name": "web_search"}])
 response = model_with_tools.invoke("Search for recent developments in AI")
@@ -960,7 +963,6 @@ response = model_with_tools.invoke("Search for recent developments in AI")
 
 <Info>
 Structured output requires:
-
 - Claude Sonnet 4.5 or Opus 4.1.
 - `langchain-anthropic>=1.1.0`
 </Info>
@@ -973,11 +975,16 @@ You can access this feature in individual model calls, or by specifying the [res
 
 Use the [`with_structured_output`](/oss/langchain/models#structured-output) method to generate a structured model response. Specify `method="json_schema"` to enable Anthropic's native structured output feature; otherwise the method defaults to using function calling.
 
+Note that we set the `structured-outputs-2025-11-13` beta header.
+
 ```python
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field
 
-model = ChatAnthropic(model="claude-sonnet-4-5")
+model = ChatAnthropic(
+    model="claude-sonnet-4-5",
+    betas=["structured-outputs-2025-11-13"],  # [!code highlight]
+)
 
 class Movie(BaseModel):
     """A movie with details."""
@@ -1043,7 +1050,7 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3} # [!code highlight]
+tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?")
@@ -1056,9 +1063,12 @@ Claude can use a [web fetching tool](https://platform.claude.com/docs/en/agents-
 ```python
 from langchain_anthropic import ChatAnthropic
 
-model = ChatAnthropic(model="claude-haiku-4-5-20251001")
+model = ChatAnthropic(
+    model="claude-haiku-4-5-20251001",
+    betas=["web-fetch-2025-09-10"],  # Enable web fetch beta
+)
 
-tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3} # [!code highlight]
+tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3}
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke(
@@ -1089,9 +1099,10 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
+    betas=["code-execution-2025-08-25"],
 )
 
-tool = {"type": "code_execution_20250825", "name": "code_execution"} # [!code highlight]
+tool = {"type": "code_execution_20250825", "name": "code_execution"}
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke(
@@ -1118,9 +1129,10 @@ file_id = file.id
 # Run inference
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
+    betas=["code-execution-2025-08-25"],
 )
 
-tool = {"type": "code_execution_20250825", "name": "code_execution"} # [!code highlight]
+tool = {"type": "code_execution_20250825", "name": "code_execution"}
 model_with_tools = model.bind_tools([tool])
 
 input_message = {
@@ -1172,8 +1184,9 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
+    betas=["context-management-2025-06-27"],
 )
-model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}]) # [!code highlight]
+model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}])
 
 response = model_with_tools.invoke("What are my interests?")
 ```
@@ -1204,7 +1217,8 @@ mcp_servers = [
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
-    mcp_servers=mcp_servers, # [!code highlight]
+    betas=["mcp-client-2025-04-04"],
+    mcp_servers=mcp_servers,
 )
 
 response = model.invoke(
@@ -1222,7 +1236,7 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-tool = {"type": "text_editor_20250124", "name": "str_replace_editor"} # [!code highlight]
+tool = {"type": "text_editor_20250124", "name": "str_replace_editor"}
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke(
