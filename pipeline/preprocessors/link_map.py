@@ -71,6 +71,7 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemClaudeMemoryMiddleware": "langchain/middleware/#langchain.agents.middleware.FilesystemClaudeMemoryMiddleware",
             "StateFileSearchMiddleware": "langchain/middleware/#langchain.agents.middleware.StateFileSearchMiddleware",
             "OpenAIModerationMiddleware": "langchain/middleware/#langchain.agents.middleware.OpenAIModerationMiddleware",
+            "ContextSize": "langchain/middleware/#langchain.agents.middleware.summarization.ContextSize",
             # Messages
             "AIMessage": "langchain/messages/#langchain.messages.AIMessage",
             "AIMessageChunk": "langchain/messages/#langchain.messages.AIMessageChunk",
