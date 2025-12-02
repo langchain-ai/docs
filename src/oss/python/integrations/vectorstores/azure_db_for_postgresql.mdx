@@ -1,0 +1,451 @@
+---
+title: Azure Database for PostgreSQL - Flexible Server
+---
+
+[Azure Database for PostgreSQL - Flexible Server](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/service-overview) is a relational database service based on the open-source Postgres database engine. It's a fully managed database-as-a-service that can handle mission-critical workloads with predictable performance, security, high availability, and dynamic scalability.
+
+This guide shows you how to leverage this integrated [vector database](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-use-pgvector) to store documents in collections, create indices and perform vector search queries using approximate nearest neighbor algorithms such as Cosine Distance, L2 (Euclidean distance), and IP (inner product) to locate documents close to the query vectors.
+
+## Vector support
+
+Azure Database for PostgreSQL - Flexible Server enables you to efficiently store and query millions of vector embeddings in PostgreSQL. As well as scale your AI use cases from POC to production:
+
+* Provides a familiar SQL interface for querying vector embeddings and relational data.
+* Boosts `pgvector` with a faster and more precise similarity search across 100M+ vectors using [DiskANN indexing algorithm.](https://aka.ms/pg-diskann-docs)
+* Simplifies operations by integrating relational metadata, vector embeddings, and time-series data into a single database.
+* Leverages the power of the robust PostgreSQL ecosystem and Azure Cloud for enterprise-grade features including replication, and high availability.
+
+## Authentication
+
+Azure Database for PostgreSQL - Flexible Server supports password-based as well as [Microsoft Entra](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-azure-ad-authentication) (formerly Azure Active Directory) authentication.
+
+Entra authentication allows you to use Entra identity to authenticate to your PostgreSQL server. This eliminates the need to manage separate usernames and passwords for your database users, and allows
+you to leverage the same security mechanisms that you use for other Azure services.
+
+This guide is set up to use either authentication method. You can configure whether or not to use Entra authentication later in the notebook.
+
+## Setup
+
+Azure Database for PostgreSQL is based on open-source Postgres. This integration uses the dedicated [`langchain-azure-postgresql`](https://pypi.org/project/langchain-azure-postgresql/) package, which provides optimized support including DiskANN indexing and Microsoft Entra authentication.
+
+First download the partner packages:
+
+```python
+pip install -qU langchain-azure-postgresql langchain-openai azure-identity
+```
+
+### Enable pgvector
+
+See [enablement instructions](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-use-pgvector) for Azure Database for PostgreSQL.
+
+### Set up credentials
+
+You will need your Azure Database for PostgreSQL [connection details](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/quickstart-create-server-portal#get-the-connection-information) and add them as environment variables to run this notebook.
+
+Set the `USE_ENTRA_AUTH` flag to `True` if you want to use Microsoft Entra authentication. If using Entra authentication, you will only need to supply the host and database name. If using password authentication, you'll also need to set the username and password.
+
+```python
+import getpass
+import os
+
+USE_ENTRA_AUTH = True
+
+# Supply the connection details for the database
+os.environ["DBHOST"] = "REPLACE_WITH_SERVER_NAME"
+os.environ["DBNAME"] = "REPLACE_WITH_DATABASE_NAME"
+os.environ["SSLMODE"] = "require"
+
+if not USE_ENTRA_AUTH:
+    # If using a username and password, supply them here
+    os.environ["DBUSER"] = "REPLACE_WITH_USERNAME"
+    os.environ["DBPASSWORD"] = getpass.getpass("Database Password:")
+```
+
+### Setup `AzureOpenAIEmbeddings`
+
+```python
+os.environ["AZURE_OPENAI_ENDPOINT"] = "REPLACE_WITH_AZURE_OPENAI_ENDPOINT"
+os.environ["AZURE_OPENAI_API_KEY"] = getpass.getpass("Azure OpenAI API Key:")
+```
+
+```python
+AZURE_OPENAI_ENDPOINT = os.environ["AZURE_OPENAI_ENDPOINT"]
+AZURE_OPENAI_API_KEY = os.environ["AZURE_OPENAI_API_KEY"]
+
+from langchain_openai import AzureOpenAIEmbeddings
+
+embeddings = AzureOpenAIEmbeddings(
+    model="text-embedding-3-small",
+    api_key=AZURE_OPENAI_API_KEY,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    azure_deployment="text-embedding-3-small",
+)
+```
+
+## Initialization
+
+### Use Microsoft Entra authentication
+
+The following sections demonstrate how to set up LangChain to use Microsoft Entra authentication. The class `AzurePGConnectionPool` in the LangChain Azure Postgres package retrieves tokens for the Azure Database for PostgreSQL service by using `DefaultAzureCredential` from the `azure.identity` library.
+
+The connection can be passed into the `connection` parameter of the `AzurePGVectorStore` LangChain vector store.
+
+#### Sign in to Azure
+
+To log into Azure, ensure you have the [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) installed. You will need to run the following command in your terminal:
+
+```bash
+az login
+```
+
+Once you have logged in, the below code will be able to fetch the token.
+
+```python
+from langchain_azure_postgresql.common import (
+    BasicAuth,
+    AzurePGConnectionPool,
+    ConnectionInfo,
+)
+from langchain_azure_postgresql.langchain import AzurePGVectorStore
+
+entra_connection_pool = AzurePGConnectionPool(
+    azure_conn_info=ConnectionInfo(
+        host=os.environ["DBHOST"], dbname=os.environ["DBNAME"]
+    )
+)
+```
+
+### Password authentication
+
+If you're not using Microsoft Entra authentication, the `BasicAuth` class allows the use of username and password:
+
+```python
+basic_auth_connection_pool = AzurePGConnectionPool(
+    azure_conn_info=ConnectionInfo(
+        host=os.environ["DBHOST"],
+        dbname=os.environ["DBNAME"],
+        credentials=BasicAuth(
+            username=os.environ["DBUSER"],
+            password=os.environ["DBPASSWORD"],
+        ),
+    )
+)
+```
+
+### Creating the Vector Store
+
+```python
+from langchain_core.documents import Document
+from langchain_azure_postgresql.langchain import AzurePGVectorStore
+
+table_name = "my_docs"
+
+# The connection is either using Entra ID or Basic Auth
+connection = entra_connection_pool if USE_ENTRA_AUTH else basic_auth_connection_pool
+
+vector_store = AzurePGVectorStore(
+    embedding=embeddings,
+    table_name=table_name,
+    connection=connection,
+)
+```
+
+```output
+Metadata columns are specified as a string, defaulting to 'jsonb' type.
+Embedding type is not specified, defaulting to 'vector'.
+Embedding dimension is not specified, defaulting to 1536.
+Embedding index is not specified, defaulting to 'DiskANN' with 'vector_cosine_ops' opclass.
+```
+
+## Configuring Vector Store parameters
+
+You can override the default parameters for metadata type, embedding dimension, index type, and more when initializing `AzurePGVectorStore`. This allows you to tailor the vector store to your specific use case and data.
+
+**Key configuration options:**
+
+- `metadata_column_type`: The type of the metadata column (default: `'jsonb'`). Set to `'jsonb'`, `'text'`, etc.
+- `embedding_column_type`: The type of the embedding column (default: `'vector'`).
+- `embedding_dimension`: The dimension of your embedding vectors (default: `1536`).
+- `embedding_index_type`: The index type for vector search (default: `'DiskANN'`). Other options may include `'ivfflat'`, `'hnsw'`, etc.
+- `embedding_index_opclass`: The operator class for the index (default: `'vector_cosine_ops'`).
+
+**Example:**
+
+```python
+vector_store = AzurePGVectorStore(
+    embedding=embeddings,
+    table_name=table_name,
+    connection=connection,
+    metadata_column_type="jsonb",           # or "text"
+    embedding_column_type="vector",
+    embedding_dimension=768,                # set to match your model's output
+    embedding_index_type="DiskANN",         # or "ivfflat", "hnsw", etc.
+    embedding_index_opclass="vector_cosine_ops",  # or "vector_l2_ops", etc.
+)
+```
+
+## Initialize the DiskANN Vector index for more efficient vector search
+
+[DiskANN](https://aka.ms/pg-diskann-blog) is a scalable approximate nearest neighbor search algorithm for efficient vector search at any scale. It offers high recall, high queries per second, and low query latency, even for billion-point datasets. Those characteristics make it a powerful tool for handling large volumes of data.
+
+```python
+vector_store.create_index()
+```
+
+```output
+True
+```
+
+## Manage vector store
+
+### Add items
+
+Note that adding documents by ID will over-write any existing documents that match that ID.
+
+```python
+docs = [
+    Document(
+        page_content="there are cats in the pond",
+        metadata={"doc_id": 1, "location": "pond", "topic": "animals"},
+    ),
+    Document(
+        page_content="ducks are also found in the pond",
+        metadata={"doc_id": 2, "location": "pond", "topic": "animals"},
+    ),
+    Document(
+        page_content="fresh apples are available at the market",
+        metadata={"doc_id": 3, "location": "market", "topic": "food"},
+    ),
+    Document(
+        page_content="the market also sells fresh oranges",
+        metadata={"doc_id": 4, "location": "market", "topic": "food"},
+    ),
+    Document(
+        page_content="the new art exhibit is fascinating",
+        metadata={"doc_id": 5, "location": "museum", "topic": "art"},
+    ),
+    Document(
+        page_content="a sculpture exhibit is also at the museum",
+        metadata={"doc_id": 6, "location": "museum", "topic": "art"},
+    ),
+    Document(
+        page_content="a new coffee shop opened on Main Street",
+        metadata={"doc_id": 7, "location": "Main Street", "topic": "food"},
+    ),
+    Document(
+        page_content="the book club meets at the library",
+        metadata={"doc_id": 8, "location": "library", "topic": "reading"},
+    ),
+    Document(
+        page_content="the library hosts a weekly story time for kids",
+        metadata={"doc_id": 9, "location": "library", "topic": "reading"},
+    ),
+    Document(
+        page_content="a cooking class for beginners is offered at the community center",
+        metadata={"doc_id": 10, "location": "community center", "topic": "classes"},
+    ),
+]
+
+uuids = vector_store.add_documents(docs)
+uuids
+```
+
+```output
+['00e2cfe6-6e58-4733-9ebf-a708fd16488a',
+ '224a22a8-567f-4e12-ac0f-5cfe4f0a4480',
+ '62058e25-8f5e-4388-81c2-a5b7348ffef0',
+ '1d37d282-504d-4d28-855a-8d39694b0265',
+ '1fffcd2e-6fce-423f-bac3-ee5dc9084673',
+ 'b99efbab-2247-418f-b80d-d865f01d3c9e',
+ 'd2a86d1b-5d81-4c53-b3d2-a6b1e5189a3f',
+ 'a9577242-823e-42bc-9b0f-01670dbec190',
+ 'eaa45ae8-a84b-46eb-8a27-bf8652148d17',
+ '7d7f04fd-6fb8-4a29-8708-b9f835ef270a']
+```
+
+### Update items
+
+```python
+updated_docs = [
+    Document(
+        page_content="Updated - cooking class for beginners is offered at the community center",
+        metadata={"doc_id": 10, "location": "community center", "topic": "classes"},
+        id=uuids[-1],
+    )
+]
+vector_store.add_documents(updated_docs, ids=[uuids[-1]], on_conflict_update=True)
+```
+
+```output
+['7d7f04fd-6fb8-4a29-8708-b9f835ef270a']
+```
+
+### Retrieve items
+
+```python
+vector_store.get_by_ids([str(uuids[3])])
+```
+
+```output
+[Document(id='1d37d282-504d-4d28-855a-8d39694b0265', metadata={'topic': 'food', 'doc_id': 4, 'location': 'market'}, page_content='the market also sells fresh oranges')]
+```
+
+### Delete items
+
+```python
+vector_store.delete(ids=[uuids[3]])
+```
+
+```output
+True
+```
+
+## Query vector store
+
+After you create your vector store and add the relevant documents, you can query the vector store in your chain or agent.
+
+### Filtering
+
+The vector store supports a set of filters that can be applied against the metadata fields of the documents via the `FilterCondition`, `OrFilter`, and `AndFilter` in the [LangChain Azure PostgreSQL](https://pypi.org/project/langchain-azure-postgresql/) package:
+
+| Operator | Meaning/Category                |
+| -------- | ------------------------------- |
+| `=`      | Equality                    |
+| `!=`      | Inequality                  |
+| `<`      | Less than                    |
+| `<=`     | Less than or equal          |
+| `>`      | Greater than                 |
+| `>=`     | Greater than or equal      |
+| `in`      | Special cased (in)              |
+| `not in`     | Special cased (not in)          |
+| `is null`     | Special cased (is null)          |
+| `is not null`     | Special cased (is not null)          |
+| `between` | Special cased (between)         |
+| `not between` | Special cased (not between)         |
+| `like`    | Text (like)                     |
+| `ilike`   | Text (case-insensitive like)    |
+| `AND`     | Logical (and)                   |
+| `OR`      | Logical (or)                    |
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+```python
+from langchain_azure_postgresql import FilterCondition, AndFilter
+
+results = vector_store.similarity_search(
+    "kitty",
+    k=10,
+    filter=FilterCondition(
+        column="(metadata->>'doc_id')::int",
+        operator="in",
+        value=[1, 5, 2, 9],
+    ),
+)
+
+for doc in results:
+    print("* " + doc.page_content + " [" + str(doc.metadata) + "]")
+```
+
+```output
+* there are cats in the pond [{'topic': 'animals', 'doc_id': 1, 'location': 'pond'}]
+* ducks are also found in the pond [{'topic': 'animals', 'doc_id': 2, 'location': 'pond'}]
+* the new art exhibit is fascinating [{'topic': 'art', 'doc_id': 5, 'location': 'museum'}]
+* the library hosts a weekly story time for kids [{'topic': 'reading', 'doc_id': 9, 'location': 'library'}]
+```
+
+If you want to use logical `AND` filters, here is an example:
+
+```python
+results = vector_store.similarity_search(
+    "ducks",
+    k=10,
+    filter=AndFilter(
+        AND=[
+            FilterCondition(
+                column="(metadata->>'doc_id')::int",
+                operator="in",
+                value=[1, 5, 2, 9],
+            ),
+            FilterCondition(
+                column="metadata->>'location'",
+                operator="in",
+                value=["pond", "market"],
+            ),
+        ]
+    ),
+)
+
+for doc in results:
+    print("* " + doc.page_content + " [" + str(doc.metadata) + "]")
+```
+
+```output
+* ducks are also found in the pond [{'topic': 'animals', 'doc_id': 2, 'location': 'pond'}]
+* there are cats in the pond [{'topic': 'animals', 'doc_id': 1, 'location': 'pond'}]
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```python
+results = vector_store.similarity_search_with_score(query="cats", k=1)
+for doc, score in results:
+    print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+```output
+* [SIM=0.528167] there are cats in the pond [{'topic': 'animals', 'doc_id': 1, 'location': 'pond'}]
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+```python
+retriever = vector_store.as_retriever(search_kwargs={"k": 1})
+retriever.invoke("kitty")
+```
+
+```output
+[Document(id='00e2cfe6-6e58-4733-9ebf-a708fd16488a', metadata={'topic': 'animals', 'doc_id': 1, 'location': 'pond'}, page_content='there are cats in the pond')]
+```
+
+If you want to use max marginal relevance search on your vector store:
+
+```python
+results = vector_store.max_marginal_relevance_search(
+    "query about cats",
+    k=10,
+    lambda_mult=0.5,
+    filter=FilterCondition(
+        column="(metadata->>'doc_id')::int",
+        operator="in",
+        value=[1, 2, 5, 9],
+    ),
+)
+
+for doc in results:
+    print("* " + doc.page_content + " [" + str(doc.metadata) + "]")
+```
+
+```output
+* there are cats in the pond [{'topic': 'animals', 'doc_id': 1, 'location': 'pond'}]
+* the new art exhibit is fascinating [{'topic': 'art', 'doc_id': 5, 'location': 'museum'}]
+* the library hosts a weekly story time for kids [{'topic': 'reading', 'doc_id': 9, 'location': 'library'}]
+* ducks are also found in the pond [{'topic': 'animals', 'doc_id': 2, 'location': 'pond'}]
+```
+
+For a full list of the different searches you can execute on a `AzurePGVectorStore` vector store, please refer to the [documentation](https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-postgresql).
+
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+* [Tutorials: working with external knowledge](https://python.langchain.com/docs/tutorials/#working-with-external-knowledge)
+* [How-to: Question and answer with RAG](https://python.langchain.com/docs/how_to/#qa-with-rag)
+* [Retrieval conceptual docs](https://python.langchain.com/docs/concepts/#retrieval)
+
+## API reference
+
+For detailed documentation of all AzurePGVectorStore features and configurations head to the API reference: https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-postgresql/src/langchain_azure_postgresql/langchain
