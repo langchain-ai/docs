@@ -2,8 +2,6 @@
 title: Structured output
 ---
 
-
-
 :::python
 
 Structured output allows agents to return data in a specific, predictable format. Instead of parsing natural language responses, you get structured data in the form of JSON objects, Pydantic models, or dataclasses that your application can directly use.
@@ -29,8 +27,20 @@ Controls how the agent returns structured data:
 - **`None`**: No structured output
 
 When a schema type is provided directly, LangChain automatically chooses:
-- `ProviderStrategy` for models supporting native structured output (e.g. [OpenAI](/oss/integrations/providers/openai), [Grok](/oss/integrations/providers/xai))
-- `ToolStrategy` for all other models
+- `ProviderStrategy` for models supporting native structured output (e.g. [OpenAI](/oss/integrations/providers/openai), [Anthropic](/oss/integrations/providers/anthropic), or [Grok](/oss/integrations/providers/xai)).
+- `ToolStrategy` for all other models.
+
+<Tip>
+Support for native structured output features is read dynamically from the model's [profile data](/oss/langchain/models#model-profiles) if using `langchain>=1.1`. If data are not available, use another condition or specify manually:
+```python
+custom_profile = {
+    "structured_output": True,
+    # ...
+}
+model = init_chat_model("...", profile=custom_profile)
+```
+If tools are specified, the model must support simultaneous use of tools and structured output.
+</Tip>
 
 The structured response is returned in the `structured_response` key of the agent's final state.
 :::
@@ -52,22 +62,35 @@ const agent = createAgent({
 ```
 
 ## Response Format
-    Controls how the agent returns structured data. You can provide either a Zod object or JSON schema. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
 
-    You can control the behavior by wrapping `ResponseFormat` in a `toolStrategy` or `providerStrategy` function call:
+Controls how the agent returns structured data. You can provide either a Zod object or JSON schema. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
 
-    ```ts
-    import { toolStrategy, providerStrategy } from "langchain";
+You can control the behavior by wrapping `ResponseFormat` in a `toolStrategy` or `providerStrategy` function call:
 
-    const agent = createAgent({
-        // use a provider strategy if supported by the model
-        responseFormat: providerStrategy(z.object({ ... }))
-        // or enforce a tool strategy
-        responseFormat: toolStrategy(z.object({ ... }))
-    })
-    ```
+```ts
+import { toolStrategy, providerStrategy } from "langchain";
 
-    The structured response is returned in the `structuredResponse` key of the agent's final state.
+const agent = createAgent({
+    // use a provider strategy if supported by the model
+    responseFormat: providerStrategy(z.object({ ... }))
+    // or enforce a tool strategy
+    responseFormat: toolStrategy(z.object({ ... }))
+})
+```
+
+The structured response is returned in the `structuredResponse` key of the agent's final state.
+
+<Tip>
+Support for native structured output features is read dynamically from the model's [profile data](/oss/langchain/models#model-profiles) if using `langchain>=1.1`. If data are not available, use another condition or specify manually:
+```typescript
+const customProfile: ModelProfile = {
+    structuredOutput: true,
+    // ...
+}
+const model = await initChatModel("...", { profile: customProfile });
+```
+If tools are specified, the model must support simultaneous use of tools and structured output.
+</Tip>
 :::
 
 ## Provider strategy
@@ -272,12 +295,12 @@ Provider-native structured output provides high reliability and strict validatio
 
 :::python
 <Note>
-    If the provider natively supports structured output for your model choice, it is functionally equivalent to write `response_format=ProductReview` instead of `response_format=ToolStrategy(ProductReview)`. In either case, if structured output is not supported, the agent will fall back to a tool calling strategy.
+    If the provider natively supports structured output for your model choice, it is functionally equivalent to write `response_format=ProductReview` instead of `response_format=ProviderStrategy(ProductReview)`. In either case, if structured output is not supported, the agent will fall back to a tool calling strategy.
 </Note>
 :::
 :::js
 <Note>
-    If the provider natively supports structured output for your model choice, it is functionally equivalent to write `responseFormat: contactInfoSchema` instead of `responseFormat: toolStrategy(contactInfoSchema)`. In either case, if structured output is not supported, the agent will fall back to a tool calling strategy.
+    If the provider natively supports structured output for your model choice, it is functionally equivalent to write `responseFormat: contactInfoSchema` instead of `responseFormat: providerStrategy(contactInfoSchema)`. In either case, if structured output is not supported, the agent will fall back to a tool calling strategy.
 </Note>
 :::
 
