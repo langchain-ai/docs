@@ -552,6 +552,7 @@ console.log(result._internalFlag); // undefined
 
 :::
 
+:::js
 ## Custom context
 
 Middleware can define a custom context schema to access per-invocation metadata. Unlike state, context is read-only and not persisted between invocations. This makes it ideal for:
@@ -560,117 +561,6 @@ Middleware can define a custom context schema to access per-invocation metadata.
 - **Configuration overrides**: Provide per-invocation settings like rate limits or feature flags
 - **Tenant/workspace context**: Include organization-specific data for multi-tenant applications
 - **Request metadata**: Pass request IDs, API keys, or other metadata needed by middleware
-
-:::python
-
-<Tabs>
-<Tab title="Decorator">
-
-```python
-from dataclasses import dataclass
-from langchain.agents import create_agent
-from langchain.messages import HumanMessage, SystemMessage
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from typing import Callable
-
-
-@dataclass
-class Context:
-    user_id: str
-    tenant_id: str
-    api_key: str | None = None
-
-
-@wrap_model_call
-def add_user_context(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse],
-) -> ModelResponse:
-    # Access context from runtime
-    user_id = request.runtime.context.user_id
-    tenant_id = request.runtime.context.tenant_id
-
-    # Add user context to system message
-    new_content = list(request.system_message.content_blocks) + [
-        {"type": "text", "text": f"User ID: {user_id}, Tenant: {tenant_id}"}
-    ]
-    new_system_message = SystemMessage(content=new_content)
-
-    return handler(request.override(system_message=new_system_message))
-
-
-agent = create_agent(
-    model="gpt-4o",
-    middleware=[add_user_context],
-    tools=[],
-    context_schema=Context,
-)
-
-# Invoke with context
-result = agent.invoke(
-    {"messages": [HumanMessage("Hello")]},
-    context=Context(user_id="user-123", tenant_id="acme-corp", api_key="sk-...")
-)
-```
-
-</Tab>
-
-<Tab title="Class">
-
-```python
-from dataclasses import dataclass
-from langchain.agents import create_agent
-from langchain.messages import HumanMessage, SystemMessage
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from typing import Callable
-
-
-@dataclass
-class Context:
-    user_id: str
-    tenant_id: str
-    api_key: str | None = None
-
-
-class UserContextMiddleware(AgentMiddleware):
-    def wrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        # Access context from runtime
-        user_id = request.runtime.context.user_id
-        tenant_id = request.runtime.context.tenant_id
-
-        # Add user context to system message
-        new_content = list(request.system_message.content_blocks) + [
-            {"type": "text", "text": f"User ID: {user_id}, Tenant: {tenant_id}"}
-        ]
-        new_system_message = SystemMessage(content=new_content)
-
-        return handler(request.override(system_message=new_system_message))
-
-
-agent = create_agent(
-    model="gpt-4o",
-    middleware=[UserContextMiddleware()],
-    tools=[],
-    context_schema=Context,
-)
-
-# Invoke with context
-result = agent.invoke(
-    {"messages": [HumanMessage("Hello")]},
-    context=Context(user_id="user-123", tenant_id="acme-corp", api_key="sk-...")
-)
-```
-
-</Tab>
-</Tabs>
-
-:::
-
-:::js
 
 Define a context schema using Zod and access it via `runtime.context` in middleware hooks. Required fields in the context schema will be enforced at the TypeScript level, ensuring you must provide them when calling `agent.invoke()`.
 
@@ -730,7 +620,6 @@ const result = await agent.invoke(
   { context: { userId: "user-123" } } // Error: tenantId is required
 );
 ```
-
 :::
 
 ## Execution order
