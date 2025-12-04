@@ -1,0 +1,323 @@
+---
+title: Firebolt
+---
+
+This guide provides a quick overview for getting started with the Firebolt [vector store](/oss/integrations/vectorstores#overview). For a detailed listing of all Firebolt features, parameters, and configurations, head to the [Firebolt VectorStore API reference](https://github.com/firebolt-db/langchain-firebolt/blob/main/README.md#api-reference)).
+
+## Setup
+
+To access the Firebolt vector store, you'll need to create a Firebolt account, get your credentials, and install the `langchain-firebolt` integration package.
+
+### Account signup
+
+Sign up for a free Firebolt account at [https://firebolt.io/signup](https://firebolt.io/signup). After creating your account, you'll need to:
+
+1. Create a database in your Firebolt account
+2. Create an engine to run queries
+3. Set up a LOCATION object (if using SQL embeddings) - see [LOCATION object setup guide](https://docs.firebolt.io/reference-sql/commands/data-definition/create-location-bedrock)
+4. Generate API credentials (client ID and secret) for authentication - see [service account setup guide](https://docs.firebolt.io/Guides/managing-your-organization/service-accounts.html)
+
+### Credentials
+
+Firebolt requires multiple connection parameters. You can set them via environment variables or pass them explicitly to `FireboltSettings`:
+
+```python Set credentials icon="key"
+import getpass
+import os
+
+# Required connection parameters
+if "FIREBOLT_CLIENT_ID" not in os.environ:
+    os.environ["FIREBOLT_CLIENT_ID"] = getpass.getpass("Enter your Firebolt client ID: ")
+if "FIREBOLT_CLIENT_SECRET" not in os.environ:
+    os.environ["FIREBOLT_CLIENT_SECRET"] = getpass.getpass("Enter your Firebolt client secret: ")
+if "FIREBOLT_ENGINE" not in os.environ:
+    os.environ["FIREBOLT_ENGINE"] = getpass.getpass("Enter your Firebolt engine name: ")
+if "FIREBOLT_DB" not in os.environ:
+    os.environ["FIREBOLT_DB"] = getpass.getpass("Enter your Firebolt database name: ")
+if "FIREBOLT_ACCOUNT" not in os.environ:
+    os.environ["FIREBOLT_ACCOUNT"] = getpass.getpass("Enter your Firebolt account name: ")
+```
+
+### Installation
+
+The LangChain Firebolt integration lives in the `langchain-firebolt` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-firebolt
+    ```
+    ```python uv
+    uv add langchain-firebolt
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Firebolt supports two modes of operation:
+
+1. **SQL Embeddings (Recommended)**: Embeddings are computed in Firebolt using `AI_EMBED_TEXT`. This requires a [LOCATION object setup](https://docs.firebolt.io/reference-sql/commands/data-definition/create-location-bedrock) in Firebolt.
+2. **Client-Side Embeddings**: Embeddings are computed client-side using a LangChain embedding model.
+
+### Using SQL Embeddings
+
+When using SQL embeddings, you don't need to pass an embeddings model. Firebolt will compute embeddings server-side:
+
+```python Initialize with SQL embeddings icon="database"
+from langchain_firebolt import Firebolt, FireboltSettings
+
+settings = FireboltSettings(
+    # Connection settings (can also use environment variables)
+    client_id=os.environ.get("FIREBOLT_CLIENT_ID"),
+    client_secret=os.environ.get("FIREBOLT_CLIENT_SECRET"),
+    engine=os.environ.get("FIREBOLT_ENGINE"),
+    database=os.environ.get("FIREBOLT_DB"),
+    account=os.environ.get("FIREBOLT_ACCOUNT"),
+    table="documents",
+
+    # Embedding configuration (required for SQL embeddings)
+    embedding_model="amazon.titan-embed-text-v2:0",  # Model identifier for AI_EMBED_TEXT
+    embedding_dimension=256,  # Dimension of embeddings
+    llm_location="llm_api",  # LOCATION object name in Firebolt (see [setup guide](https://docs.firebolt.io/reference-sql/commands/data-definition/create-location-bedrock))
+
+    # Optional settings
+    index="documents_index",  # Vector search index name
+    metric="vector_cosine_ops",  # Similarity metric
+    batch_size=32
+)
+
+vector_store = Firebolt(config=settings)
+```
+
+### Using Client-Side Embeddings
+
+When using client-side embeddings, you need to provide a LangChain embedding model:
+
+```python Initialize with client-side embeddings icon="database"
+from langchain_firebolt import Firebolt, FireboltSettings
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+settings = FireboltSettings(
+    client_id=os.environ.get("FIREBOLT_CLIENT_ID"),
+    client_secret=os.environ.get("FIREBOLT_CLIENT_SECRET"),
+    engine=os.environ.get("FIREBOLT_ENGINE"),
+    database=os.environ.get("FIREBOLT_DB"),
+    account=os.environ.get("FIREBOLT_ACCOUNT"),
+    table="documents",
+    embedding_dimension=1536,  # Must match your embedding model dimension
+    metric="vector_cosine_ops"
+)
+
+vector_store = Firebolt(embedding=embeddings, config=settings)
+```
+
+### Using Environment Variables
+
+You can configure most settings via environment variables. Create a `.env` file or export them:
+
+```python Using environment variables icon="gear"
+# Settings automatically read from environment variables
+# FIREBOLT_CLIENT_ID, FIREBOLT_CLIENT_SECRET, FIREBOLT_ENGINE,
+# FIREBOLT_DB, FIREBOLT_ACCOUNT, FIREBOLT_TABLENAME, etc.
+
+from langchain_firebolt import Firebolt, FireboltSettings
+
+settings = FireboltSettings(
+    # Only provide parameters that don't have environment variable support
+    embedding_model="amazon.titan-embed-text-v2:0",
+    embedding_dimension=256,
+    metric="vector_cosine_ops"
+)
+
+vector_store = Firebolt(config=settings)
+```
+
+---
+
+## Manage vector store
+
+### Add or Update items
+
+```python Add documents icon="folder-plus"
+from langchain_core.documents import Document
+
+document_1 = Document(page_content="foo", metadata={"source": "https://example.com"})
+document_2 = Document(page_content="bar", metadata={"source": "https://example.com"})
+document_3 = Document(page_content="baz", metadata={"source": "https://example.com"})
+documents = [document_1, document_2, document_3]
+
+vector_store.add_documents(documents=documents, ids=["1", "2", "3"])
+```
+
+For large datasets, you can specify a batch size:
+
+```python Add documents in batches icon="folder-plus"
+vector_store.add_documents(documents=documents, ids=["1", "2", "3"], batch_size=64)
+```
+
+### Delete items
+
+```python Delete documents by IDs icon="trash"
+vector_store.delete(ids=["3"])
+```
+
+You can also delete by filter or delete all documents:
+
+```python Delete by filter icon="trash"
+# Delete documents matching a filter
+vector_store.delete(filter={"source": "https://example.com"})
+
+# Delete all documents (use with caution)
+# vector_store.delete(delete_all=True)
+```
+
+### Get items by IDs
+
+```python Get documents by IDs icon="search"
+documents = vector_store.get_by_ids(ids=["1", "2"])
+```
+
+---
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Directly
+
+Performing a simple similarity search can be done as follows:
+
+```python Similarity search icon="folder-tree"
+results = vector_store.similarity_search(
+    query="thud", k=1, filter={"source": "https://another-example.com"}
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```python Similarity search with scores icon="star-half-stroke"
+results = vector_store.similarity_search_with_score(
+    query="thud", k=1, filter={"source": "https://example.com"}
+)
+for doc, score in results:
+    print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### By turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains:
+
+```python Create retriever icon="robot"
+retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 1})
+retriever.invoke("thud")
+```
+
+---
+
+## Connection management
+
+Firebolt uses two connections: one for read operations and one for write operations. Always close connections when done:
+
+```python Context manager icon="plug"
+# Using context manager (recommended)
+with Firebolt(config=settings) as vector_store:
+    results = vector_store.similarity_search("query")
+    # Connection automatically closed when exiting context
+```
+
+Or manually close:
+
+```python Manual close icon="plug"
+vector_store = Firebolt(config=settings)
+try:
+    results = vector_store.similarity_search("query")
+finally:
+    vector_store.close()
+```
+
+---
+
+## Similarity metrics
+
+Firebolt supports different similarity metrics for vector search:
+
+- **Cosine similarity** (`vector_cosine_ops`): Best for normalized embeddings, most common
+- **Inner product** (`vector_ip_ops`): Good for unnormalized embeddings
+- **L2 squared distance** (`vector_l2sq_ops`): Good for distance-based applications
+
+Set the metric when creating `FireboltSettings`:
+
+```python Set similarity metric icon="ruler-horizontal"
+settings = FireboltSettings(
+    # ... other settings ...
+    metric="vector_cosine_ops"  # or "vector_ip_ops" or "vector_l2sq_ops"
+)
+```
+
+---
+
+## Usage for retrieval-augmented generation
+
+<Card
+    title="Firebolt Vector Store RAG Guide"
+    href="/oss/langchain/rag"
+    icon="magnifying-glass"
+    arrow
+>
+    Guide on how to use this vector store for retrieval-augmented generation (RAG)
+</Card>
+
+---
+
+## Best practices
+
+### Batch operations
+
+For large datasets, use batch operations to optimize performance, larger batch sizes are more efficient:
+
+```python Batch operations icon="server"
+vector_store.add_documents(documents, batch_size=64)
+```
+
+### Metadata design
+
+Design your metadata columns carefully for efficient filtering:
+
+```python Metadata configuration icon="tags"
+column_map = {
+    "id": "id",
+    "document": "document",
+    "embedding": "embedding",
+    "metadata": ["file_name", "page_number", "source", "author", "date"]
+}
+
+settings = FireboltSettings(
+    # ... other settings ...
+    column_map=column_map
+)
+```
+
+### SQL embeddings vs client-side embeddings
+
+**SQL Embeddings (Recommended):**
+- Embeddings computed in Firebolt using `AI_EMBED_TEXT`
+- No need to manage embeddings client-side
+- Consistent with search-time embeddings
+- Requires [LOCATION object setup](https://docs.firebolt.io/reference-sql/commands/data-definition/create-location-bedrock) in Firebolt
+
+**Client-Side Embeddings:**
+- More control over embedding model
+- Useful for testing or when LOCATION object is not available
+- Requires passing embeddings model to constructor
+
+---
+
+## API reference
+
+For detailed documentation of all Firebolt features and configurations, head to the [API reference](https://github.com/firebolt-db/langchain-firebolt/blob/main/README.md#api-reference).
+
