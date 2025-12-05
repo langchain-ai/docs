@@ -396,19 +396,32 @@ The `tools` argument to `createAgent` accepts:
 - LangChain tool instances
 - Objects that represent built-in provider tools
 
-Use middleware `wrapToolCall` to centralize error handling and logging for tools.
+#### Handling tool errors
+
+You can now configure the handling of tool errors with middleware implementing the `wrapToolCall` method.
 
 <CodeGroup>
 ```typescript v1 (new)
-import { createAgent, createMiddleware } from "langchain";
+import { createAgent, createMiddleware, ToolMessage } from "langchain";
 
-const errorHandling = createMiddleware({
-  name: "ToolErrors",
+const handleToolErrors = createMiddleware({
+  name: "HandleToolErrors",
   wrapToolCall: async (request, handler) => {
     try {
       return await handler(request);
-    } catch (err) {
-      return `Error executing ${request.toolName}: ${String(err)}`;
+    } catch (error) {
+      // Only handle errors that occur during tool execution due to invalid inputs
+      // that pass schema validation but fail at runtime (e.g., invalid SQL syntax).
+      // Do NOT handle:
+      // - Network failures (use tool retry middleware instead)
+      // - Incorrect tool implementation errors (should bubble up)
+      // - Schema mismatch errors (already auto-handled by the framework)
+      //
+      // Return a custom error message to the model
+      return new ToolMessage({
+        content: `Tool error: Please check your input and try again. (${error})`,
+        tool_call_id: request.toolCall.id!,
+      });
     }
   },
 });
@@ -416,16 +429,18 @@ const errorHandling = createMiddleware({
 const agent = createAgent({
   model: "claude-sonnet-4-5-20250929",
   tools: [checkWeather, searchWeb],
-  middleware: [errorHandling],
+  middleware: [handleToolErrors],
 });
 ```
 ```typescript v0 (old)
-import { createReactAgent } from "@langchain/langgraph/prebuilts";
+import { createReactAgent, ToolNode } from "@langchain/langgraph/prebuilts";
 
 const agent = createReactAgent({
   model: "claude-sonnet-4-5-20250929",
-  tools: [checkWeather, searchWeb],
-  // Error handling commonly implemented inside tool code or post hooks
+  tools: new ToolNode(
+    [checkWeather, searchWeb],
+    { handleToolErrors: true } // [!code highlight]
+  ),
 });
 ```
 </CodeGroup>

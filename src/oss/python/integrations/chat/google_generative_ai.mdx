@@ -419,13 +419,13 @@ Certain models (such as `gemini-2.5-flash-preview-tts`) can generate audio files
 See more information on the [Gemini API docs](https://ai.google.dev/gemini-api/docs/speech-generation) for details.
 
 ```python
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, Modality
 
 model = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-tts")
 
 response = model.invoke(
     "Please say The quick brown fox jumps over the lazy dog",
-    generation_config=dict(response_modalities=["AUDIO"]),
+    generation_config=dict(response_modalities=[Modality.AUDIO]),
 )
 
 # Base64 encoded binary data of the audio
@@ -582,18 +582,21 @@ See the [Gemini API docs](https://ai.google.dev/gemini-api/docs/thinking) for mo
 
 ### Thought signatures
 
-[Thought signatures](https://ai.google.dev/gemini-api/docs/thought-signatures) are encrypted representations of the model's reasoning processes.
+[Thought signatures](https://ai.google.dev/gemini-api/docs/thinking) are encrypted representations of the model's reasoning processes. They enable Gemini to maintain thought context across multi-turn conversations, since the API is stateless and treats each request independently.
 
 <Note>
     Gemini 3 may raise 4xx errors if thought signatures are not passed back with tool call responses. Upgrade to `langchain-google-genai >= 3.1.0` to ensure this is handled correctly.
 </Note>
+
+Signatures appear in two places in `AIMessage` responses:
+- **Text blocks**: Stored in `extras.signature` within the content block
+- **Tool calls**: Stored in `additional_kwargs["__gemini_function_call_thought_signatures__"]`
 
 ```python
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-3-pro-preview",
-    thinking_budget=1024,
     include_thoughts=True,
 )
 
@@ -602,6 +605,40 @@ response = llm.invoke("How many O's are in Google? How did you verify your answe
 response.content_blocks[-1]
 # -> {"type": "text", "text": "...", "extras": {"signature": "EtgVCt..."}}
 ```
+
+For multi-turn conversations with tool calls, you must pass the full `AIMessage` back to the model so signatures are preserved. This happens automatically when you append the `AIMessage` to your messages list:
+
+```python
+from langchain.tools import tool
+from langchain.messages import HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+
+@tool
+def get_weather(location: str) -> str:
+    """Get current weather for a location."""
+    return f"Weather in {location}: sunny, 22°C"
+
+
+model = ChatGoogleGenerativeAI(model="gemini-3-pro-preview").bind_tools([get_weather])
+messages = [HumanMessage("What's the weather in Tokyo?")]
+
+# Step 1: Model returns tool call with thought signature attached
+ai_msg = model.invoke(messages)
+messages.append(ai_msg)  # Preserves thought signature
+
+# Step 2: Execute tool and add result
+for tool_call in ai_msg.tool_calls:
+    result = get_weather.invoke(tool_call)
+    messages.append(result)
+
+# Step 3: Model receives signature back, continues reasoning coherently
+final_response = model.invoke(messages)
+```
+
+<Warning>
+    **Don't reconstruct messages manually.** If you create a new `AIMessage` instead of passing the original object, the signatures will be lost and the API may reject the request.
+</Warning>
 
 ## Built-in tools
 

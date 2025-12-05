@@ -14,16 +14,13 @@ LangSmith uses Redis to back our queuing/caching operations. By default, LangSmi
   * [Azure Cache for Redis](https://azure.microsoft.com/en-us/services/cache/)
 
 * Note: We only officially support Redis versions >= 5.
+* We support both Standalone and Redis Cluster. See the appropriate sections for deployment instructions.
 
 * By default, we recommend an instance with at least 2 vCPUs and 8GB of memory. However, the actual requirements will depend on your tracing workload. We recommend monitoring your Redis instance and scaling up as needed.
 
-<Info>
-We now support Redis Cluster for LangSmith as of helm version **0.12.25**. You can find the helm values to configure under [redis.external.cluster](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml), and an example configuration [here](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/examples/redis_cluster.yaml)
-</Info>
+## Standalone Redis
 
-## Connection String
-
-We use `redis-py` to connect to Redis. This library supports a variety of connection strings. You can find more information on the connection string format [here](https://redis-py.readthedocs.io/en/stable/#redis.StrictRedis.from_url).
+### Connection String
 
 You will need to assemble the connection string for your Redis instance. This connection string should include the following information:
 
@@ -44,13 +41,18 @@ An example connection string might look like:
 "redis://langsmith-redis:6379/0"
 ```
 
-To use SSL, you can use the `rediss://` prefix. An example connection string with SSL might look like:
+Note: If your Standalone Redis requires authentication or TLS, include these directly in the connection URL:
 
-```
-"rediss://langsmith-redis:6380/0?password=foo"
+- Use `rediss://` when TLS is enabled on your Redis server.
+- Provide the password in the connection string.
+
+For example:
+
+```text
+rediss://langsmith-redis:6380/0?password=foo
 ```
 
-## Configuration
+### Configuration
 
 With your connection string in hand, you can configure your LangSmith instance to use an external Redis instance. You can do this by modifying the `values` file for your LangSmith Helm Chart installation or the `.env` file for your Docker installation.
 
@@ -68,6 +70,235 @@ redis:
 REDIS_DATABASE_URI="Your connection url"
 ```
 
+
+</CodeGroup>
+
+You can also store the connection URL in an existing Kubernetes Secret and reference it in your Helm values.
+
+<CodeGroup>
+
+```yaml Helm (using an existing Secret)
+redis:
+  external:
+    enabled: true
+    # Name of an existing Secret that contains the connection URL
+    existingSecretName: "my-redis-secret"
+    # Key in the Secret that stores the connection URL (default shown)
+    connectionUrlSecretKey: "connection_url"
+```
+
+```yaml Kubernetes Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-redis-secret
+type: Opaque
+stringData:
+  # Full connection URL, e.g., using TLS with password
+  connection_url: "rediss://langsmith-redis:6380/0?password=foo"
+```
+
 </CodeGroup>
 
 Once configured, you should be able to reinstall your LangSmith instance. If everything is configured correctly, your LangSmith instance should now be using your external Redis instance.
+
+## Redis Cluster
+As of LangSmith helm version **0.12.25**, we officially support **Redis Cluster**.
+
+### Host Names
+
+When using Redis Cluster, provide a list of node hostnames and ports. Each node URI must be in the form:
+
+```text
+redis://hostname:port
+```
+
+For example:
+
+```text
+redis://redis-node-0:6379
+redis://redis-node-1:6379
+redis://redis-node-2:6379
+```
+
+Do not include a password in these URIs, and do not use `rediss` here. For Redis Cluster:
+
+- Provide the password separately via `redis.external.cluster.password` or through a Secret using `passwordSecretKey`.
+- Enable TLS separately with `redis.external.cluster.tlsEnabled: true`.
+
+### Configuration
+
+When connecting to an external Redis Cluster, configure the Helm values under `redis.external.cluster`. You can either:
+
+* Provide node URIs and (optionally) a password directly in `values.yaml`.
+* Or reference an existing Kubernetes `Secret` containing node URIs and password.
+
+<CodeGroup>
+
+```yaml Helm (inline values)
+redis:
+  external:
+    enabled: true
+    cluster:
+      enabled: true
+      # List of cluster node URIs. Format: redis://host:port
+      nodeUris:
+        - "redis://redis-node-0:6379"
+        - "redis://redis-node-1:6379"
+        - "redis://redis-node-2:6379"
+      # Optional. If your cluster requires auth, set a password or use a Secret (recommended).
+      password: "your_redis_password"
+      # Enable if your cluster uses TLS.
+      tlsEnabled: true
+```
+
+```yaml Helm (using an existing Secret)
+redis:
+  external:
+    enabled: true
+    # Name of an existing Secret that contains cluster connection details
+    existingSecretName: "my-redis-cluster-secret"
+    cluster:
+      enabled: true
+      # Keys in the Secret. Defaults shown here; override if your Secret uses different keys.
+      nodeUrisSecretKey: "redis_cluster_node_uris"
+      passwordSecretKey: "redis_cluster_password"
+      tlsEnabled: true
+```
+
+</CodeGroup>
+
+If using an existing Secret, it should contain:
+
+<CodeGroup>
+
+```yaml Kubernetes Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-redis-cluster-secret
+type: Opaque
+stringData:
+  # JSON array of node URIs (as a string)
+  redis_cluster_node_uris: '["redis://redis-node-0:6379","redis://redis-node-1:6379","redis://redis-node-2:6379"]'
+  # Optional if your cluster requires a password
+  redis_cluster_password: "your_redis_password"
+```
+
+</CodeGroup>
+
+## TLS with Redis
+
+Use this section to configure TLS for Redis connections. For mounting internal/public CAs so LangSmith trusts your Redis server certificate, see [Configure custom TLS certificates](/langsmith/self-host-custom-tls-certificates#mount-internal-cas-for-tls).
+
+### Server TLS (one-way)
+
+To validate the Redis server certificate:
+
+- Provide a CA bundle using `config.customCa.secretName` and `config.customCa.secretKey`.
+- For Standalone Redis, use `rediss://` in the connection URL.
+- For Redis Cluster, set `redis.external.cluster.tlsEnabled: true`.
+
+<Warning>
+Mount a custom CA only when your Redis server uses an internal or private CA. Publicly trusted CAs do not require this configuration.
+</Warning>
+
+<CodeGroup>
+
+```yaml Helm (Standalone - server TLS)
+config:
+  customCa:
+    secretName: "langsmith-custom-ca"  # Secret containing your CA bundle
+    secretKey: "ca.crt"    # Key in the Secret with the CA bundle
+redis:
+  external:
+    enabled: true
+    # Use rediss:// and include password if required by your server
+    connectionUrl: "rediss://host:6380/0?password=<PASSWORD>"
+```
+
+```yaml Helm (Cluster - server TLS)
+config:
+  customCa:
+    secretName: "langsmith-custom-ca"  # Secret containing your CA bundle
+    secretKey: "ca.crt"    # Key in the Secret with the CA bundle
+redis:
+  external:
+    enabled: true
+    cluster:
+      enabled: true
+      tlsEnabled: true
+      nodeUris:
+        - "redis://redis-node-0:6379"
+        - "redis://redis-node-1:6379"
+        - "redis://redis-node-2:6379"
+      password: "<PASSWORD>"
+```
+
+```yaml Kubernetes Secret (CA bundle)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langsmith-custom-ca
+type: Opaque
+stringData:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    <ROOT_OR_INTERMEDIATE_CA_CERT_CHAIN>
+    -----END CERTIFICATE-----
+```
+
+</CodeGroup>
+
+### Mutual TLS with Client Auth (mTLS)
+
+As of LangSmith helm chart version **0.12.26**, we support mTLS for Redis clients. For server-side authentication in mTLS, use the Server TLS steps above (custom CA) in addition to the client certificate configuration below.
+
+If your Redis server requires client certificate authentication:
+
+- Provide a Secret with your client certificate and key.
+- Reference it via `redis.external.clientCert.secretName` and specify the keys with `certSecretKey` and `keySecretKey`.
+- For Standalone Redis, keep using `rediss://` in the connection URL.
+- For Redis Cluster, set `redis.external.cluster.tlsEnabled: true`.
+
+<CodeGroup>
+
+```yaml Helm (client Auth)
+redis:
+  external:
+    enabled: true
+    clientCert:
+      secretName: "redis-mtls-secret"
+      certSecretKey: "client.crt"
+      keySecretKey: "client.key"
+    # Standalone example:
+    # connectionUrl: "rediss://host:6380/0?password=<PASSWORD>"
+    # Or, for Cluster:
+    cluster:
+      enabled: true
+      tlsEnabled: true
+      nodeUris:
+        - "redis://redis-node-0:6379"
+        - "redis://redis-node-1:6379"
+        - "redis://redis-node-2:6379"
+      password: "<PASSWORD>"
+```
+
+```yaml Kubernetes Secret (client cert/key)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-mtls-secret
+type: Opaque
+stringData:
+  client.crt: |
+    -----BEGIN CERTIFICATE-----
+    <CLIENT_CERT>
+    -----END CERTIFICATE-----
+  client.key: |
+    -----BEGIN PRIVATE KEY-----
+    <CLIENT_KEY>
+    -----END PRIVATE KEY-----
+```
+
+</CodeGroup>

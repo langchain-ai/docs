@@ -1,8 +1,12 @@
-# LangGraph Swarm
+# :material-hexagon-multiple:{ .lg .middle } `langgraph-swarm`
 
-Swarm has not been upgraded to LangChain v1 yet. See [existing docs](https://langchain-ai.github.io/langgraph/reference/swarm/).
+[![PyPI - Version](https://img.shields.io/pypi/v/langgraph-swarm?label=%20)](https://pypi.org/project/langgraph-swarm/#history)
+[![PyPI - License](https://img.shields.io/pypi/l/langgraph-swarm)](https://opensource.org/licenses/MIT)
+[![PyPI - Downloads](https://img.shields.io/pepy/dt/langgraph-swarm)](https://pypistats.org/packages/langgraph-swarm)
 
-<!-- ::: langgraph_swarm.swarm
+See the [project description](https://pypi.org/project/langgraph-swarm/) for more details.
+
+::: langgraph_swarm.swarm
     options:
       members:
         - SwarmState
@@ -12,4 +16,4 @@ Swarm has not been upgraded to LangChain v1 yet. See [existing docs](https://lan
 ::: langgraph_swarm.handoff
     options:
       members:
-        - create_handoff_tool -->
+        - create_handoff_tool
