@@ -1135,6 +1135,94 @@ class Sections(BaseModel):
 
 # Augment the LLM with schema for structured output
 planner = llm.with_structured_output(Sections)
+
+
+# Graph state
+class State(TypedDict):
+    topic: str
+    sections: list[Section]
+    completed_sections: Annotated[list, operator.add]
+    final_report: str
+
+
+# Worker state
+class WorkerState(TypedDict):
+    section: Section
+    completed_sections: Annotated[list, operator.add]
+
+
+# Nodes
+def orchestrator(state: State):
+    """Orchestrator that generates a plan for the report"""
+
+    report_sections = planner.invoke(
+        [
+            SystemMessage(content="Generate a plan for the report."),
+            HumanMessage(content=f"Here is the report topic: {state['topic']}"),
+        ]
+    )
+
+    return {"sections": report_sections.sections}
+
+
+def llm_call(state: WorkerState):
+    """Worker writes a section of the report"""
+
+    section = state["section"]
+    result = llm.invoke(
+        [
+            SystemMessage(content="Write a report section."),
+            HumanMessage(
+                content=f"Here is the section name: {section.name} and description: {section.description}"
+            ),
+        ]
+    )
+
+    return {"completed_sections": [result.content]}
+
+
+def synthesizer(state: State):
+    """Synthesize full report from sections"""
+
+    completed_sections = state["completed_sections"]
+    final_report = "\n\n---\n\n".join(completed_sections)
+    return {"final_report": final_report}
+
+
+# Conditional edge function to create llm_call workers
+def assign_workers(state: State):
+    """Assign a worker to each section in the plan"""
+    return [Send("llm_call", {"section": s}) for s in state["sections"]]
+
+
+# Build workflow
+from langgraph.types import Send
+
+orchestrator_worker_builder = StateGraph(State)
+
+# Add nodes
+orchestrator_worker_builder.add_node("orchestrator", orchestrator)
+orchestrator_worker_builder.add_node("llm_call", llm_call)
+orchestrator_worker_builder.add_node("synthesizer", synthesizer)
+
+# Add edges
+orchestrator_worker_builder.add_edge(START, "orchestrator")
+orchestrator_worker_builder.add_conditional_edges(
+    "orchestrator", assign_workers, ["llm_call"]
+)
+orchestrator_worker_builder.add_edge("llm_call", "synthesizer")
+orchestrator_worker_builder.add_edge("synthesizer", END)
+
+# Compile
+orchestrator_worker = orchestrator_worker_builder.compile()
+
+# Show workflow
+display(Image(orchestrator_worker.get_graph().draw_mermaid_png()))
+
+# Invoke
+state = orchestrator_worker.invoke({"topic": "Create a report on LLM scaling laws"})
+from IPython.display import Markdown
+Markdown(state["final_report"])
 ```
 ```python Functional API
 from typing import List
@@ -1219,6 +1307,7 @@ Markdown(report)
 :::js
 <CodeGroup>
 ```typescript Graph API
+import { Annotation, StateGraph, Send } from "@langchain/langgraph";
 
 type SectionSchema = {
     name: string;
@@ -1230,6 +1319,88 @@ type SectionsSchema = {
 
 // Augment the LLM with schema for structured output
 const planner = llm.withStructuredOutput(sectionsSchema);
+
+// Graph state
+const StateAnnotation = Annotation.Root({
+  topic: Annotation<string>,
+  sections: Annotation<SectionSchema[]>,
+  completedSections: Annotation<string[]>({
+    default: () => [],
+    reducer: (a, b) => a.concat(b),
+  }),
+  finalReport: Annotation<string>,
+});
+
+// Worker state
+const WorkerStateAnnotation = Annotation.Root({
+  section: Annotation<SectionSchema>,
+  completedSections: Annotation<string[]>({
+    default: () => [],
+    reducer: (a, b) => a.concat(b),
+  }),
+});
+
+// Nodes
+async function orchestrator(state: typeof StateAnnotation.State) {
+  // Generate plan for the report
+  const reportSections = await planner.invoke([
+    { role: "system", content: "Generate a plan for the report." },
+    { role: "user", content: `Here is the report topic: ${state.topic}` },
+  ]);
+
+  return { sections: reportSections.sections };
+}
+
+async function llmCall(state: typeof WorkerStateAnnotation.State) {
+  // Worker writes a section of the report
+  const result = await llm.invoke([
+    {
+      role: "system",
+      content: "Write a report section.",
+    },
+    {
+      role: "user",
+      content: `Here is the section name: ${state.section.name} and description: ${state.section.description}`,
+    },
+  ]);
+
+  return { completedSections: [result.content] };
+}
+
+async function synthesizer(state: typeof StateAnnotation.State) {
+  // Synthesize full report from sections
+  const finalReport = state.completedSections.join("\n\n---\n\n");
+  return { finalReport };
+}
+
+// Conditional edge function to create llm_call workers
+function assignWorkers(state: typeof StateAnnotation.State) {
+  // Assign a worker to each section in the plan
+  return state.sections.map((section) =>
+    new Send("llmCall", { section })
+  );
+}
+
+// Build workflow
+const orchestratorWorker = new StateGraph(StateAnnotation)
+  .addNode("orchestrator", orchestrator)
+  .addNode("llmCall", llmCall)
+  .addNode("synthesizer", synthesizer)
+  .addEdge("__start__", "orchestrator")
+  .addConditionalEdges(
+    "orchestrator",
+    assignWorkers,
+    ["llmCall"]
+  )
+  .addEdge("llmCall", "synthesizer")
+  .addEdge("synthesizer", "__end__")
+  .compile();
+
+// Invoke
+const state = await orchestratorWorker.invoke({
+  topic: "Create a report on LLM scaling laws"
+});
+console.log(state.finalReport);
 ```
 ```typescript Functional API
 import * as z from "zod";
