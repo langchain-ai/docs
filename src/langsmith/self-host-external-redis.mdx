@@ -252,7 +252,7 @@ stringData:
 
 ### Mutual TLS with Client Auth (mTLS)
 
-As of LangSmith helm chart version **0.12.26**, we support mTLS for Redis clients. For server-side authentication in mTLS, use the Server TLS steps above (custom CA) in addition to the client certificate configuration below.
+As of LangSmith helm chart version **0.12.28**, we support mTLS for Redis clients. For server-side authentication in mTLS, use the Server TLS steps above (custom CA) in addition to the client certificate configuration below.
 
 If your Redis server requires client certificate authentication:
 
@@ -269,8 +269,8 @@ redis:
     enabled: true
     clientCert:
       secretName: "redis-mtls-secret"
-      certSecretKey: "client.crt"
-      keySecretKey: "client.key"
+      certSecretKey: "tls.crt"
+      keySecretKey: "tls.key"
     # Standalone example:
     # connectionUrl: "rediss://host:6380/0?password=<PASSWORD>"
     # Or, for Cluster:
@@ -291,14 +291,33 @@ metadata:
   name: redis-mtls-secret
 type: Opaque
 stringData:
-  client.crt: |
+  tls.crt: |
     -----BEGIN CERTIFICATE-----
     <CLIENT_CERT>
     -----END CERTIFICATE-----
-  client.key: |
+  tls.key: |
     -----BEGIN PRIVATE KEY-----
     <CLIENT_KEY>
     -----END PRIVATE KEY-----
 ```
 
 </CodeGroup>
+
+#### Pod security context for certificate volumes
+
+The certificate volumes mounted for mTLS are protected by file access restrictions. To ensure all LangSmith pods can read the certificate files, you must set `fsGroup: 1000` in the pod security context.
+
+You can configure this in one of two ways:
+
+**Option 1: Use `commonPodSecurityContext`**
+
+Set the `fsGroup` at the top level to apply it to all pods:
+
+```yaml
+commonPodSecurityContext:
+  fsGroup: 1000
+```
+
+**Option 2: Add to individual pod security contexts**
+
+If you need more granular control, add the `fsGroup` to each pod's security context individually. See the [mtls configuration example](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/examples/mtls_config.yaml) for a complete reference.
