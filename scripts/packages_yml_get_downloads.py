@@ -12,7 +12,7 @@ yaml = YAML()
 yaml.preserve_quotes = True
 yaml.width = 4096  # Prevent line wrapping
 
-PACKAGE_YML = Path(__file__).parents[2] / "reference" / "packages.yml"
+PACKAGE_YML = Path(__file__).parents[1] / "reference" / "packages.yml"
 
 
 def _get_downloads(p: dict) -> int:

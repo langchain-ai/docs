@@ -8,7 +8,7 @@ title: AstraDB
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-astradb)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-astradb)](https://pypistats.org/packages/langchain-astradb)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for AstraDB. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/astradb) for conceptual guides, tutorials, and examples on using AstraDB.
 
 ::: langchain_astradb

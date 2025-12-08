@@ -8,7 +8,7 @@ title: Fireworks
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-fireworks)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-fireworks)](https://pypistats.org/packages/langchain-fireworks)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for Fireworks. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/fireworks) for conceptual guides, tutorials, and examples on using Fireworks modules.
 
 ::: langchain_fireworks
