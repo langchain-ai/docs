@@ -334,6 +334,20 @@ LINK_MAPS: list[LinkMap] = [
             "entrypoint.final": "langgraph/func/#langgraph.func.entrypoint.final",
             # Configuration
             "langgraph.json": "cloud/reference/cli/#configuration-file",
+            # MCP stuff
+            "MultiServerMCPClient": "langchain_mcp_adapters/#langchain_mcp_adapters.client.MultiServerMCPClient",
+            "load_mcp_tools": "langchain_mcp_adapters/#langchain_mcp_adapters.tools.load_mcp_tools",
+            "load_mcp_prompt": "langchain_mcp_adapters/#langchain_mcp_adapters.prompts.load_mcp_prompt",
+            "load_mcp_resources": "langchain_mcp_adapters/#langchain_mcp_adapters.resources.load_mcp_resources",
+            "MCPToolArtifact": "langchain_mcp_adapters/#langchain_mcp_adapters.tools.MCPToolArtifact",
+            "ToolCallInterceptor": "langchain_mcp_adapters/#langchain_mcp_adapters.interceptors.ToolCallInterceptor",
+            "CallbackContext": "langchain_mcp_adapters/#langchain_mcp_adapters.callbacks.CallbackContext",
+            "Callbacks": "langchain_mcp_adapters/#langchain_mcp_adapters.callbacks.Callbacks",
+            "Connection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.Connection",
+            "McpHttpClientFactory": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.McpHttpClientFactory",
+            "StdioConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StdioConnection",
+            "StreamableHttpConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StreamableHttpConnection",
+            "WebsocketConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.WebsocketConnection",
         },
     },
     {
@@ -454,6 +468,7 @@ LINK_MAPS: list[LinkMap] = [
             "toolRetryMiddleware": "functions/langchain.index.toolRetryMiddleware.html",
             "modelRetryMiddleware": "functions/langchain.index.modelRetryMiddleware.html",
             "systemPrompt": "types/langchain.index.CreateAgentParams.html#systemprompt",
+            "openAIModerationMiddleware": "classes/_langchain_openai.middleware.OpenAIModerationMiddleware.html",
         },
     },
     {

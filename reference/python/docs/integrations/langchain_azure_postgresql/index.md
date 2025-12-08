@@ -8,7 +8,7 @@ title: Azure Postgres
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-azure-postgresql)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-azure-postgresql)](https://pypistats.org/packages/langchain-azure-postgresql)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for `Azure AI`. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/microsoft) for conceptual guides, tutorials, and examples on using `Azure AI`.
 
 ::: langchain_azure_postgresql
