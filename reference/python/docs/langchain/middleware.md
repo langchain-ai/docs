@@ -1,4 +1,4 @@
-!!! warning "Reference docs"
+!!! note "Reference docs"
 
     This page contains **reference documentation** for Middleware. See [the docs](https://docs.langchain.com/oss/python/langchain/middleware) for conceptual guides, tutorials, and examples on using Middleware.
 
