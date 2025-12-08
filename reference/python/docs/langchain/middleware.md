@@ -59,7 +59,6 @@ Core types for building middleware:
 | [`ContextTokens`](#langchain.agents.middleware.summarization.ContextTokens) | Summarize at token threshold |
 | [`ContextMessages`](#langchain.agents.middleware.summarization.ContextMessages) | Summarize at message threshold |
 
-
 <!-- TODO: `ignore_init_summary` doesn't seem to work.  -->
 
 ::: langchain.agents.middleware.SummarizationMiddleware
