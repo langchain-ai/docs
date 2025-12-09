@@ -58,7 +58,7 @@ if "ANTHROPIC_API_KEY" not in os.environ:
     os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API key: ")
 ```
 
-To enable automated tracing of your model calls, set your [LangSmith](https://docs.smith.langchain.com/) API key:
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.langchain.com/langsmith/home) API key:
 
 ```python
 os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
@@ -631,22 +631,20 @@ Below, we implement a simple chatbot that incorporates this feature. We follow t
 
 <Info>
 Strict tool use requires:
+
 - Claude Sonnet 4.5 or Opus 4.1.
 - `langchain-anthropic>=1.1.0`
 </Info>
 
 Anthropic supports opt-in [strict schema adherence to tool calls](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). This guarantees that tool names and arguments are validated and correctly typed.
 
-To enable strict tool use:
-1. Specify the `structured-outputs-2025-11-13` beta header
-2. Specify `strict=True` when calling [bind_tools](/oss/langchain/models#tool-calling).
+To enable strict tool use, specify `strict=True` when calling [`bind_tools`](/oss/langchain/models#tool-calling).
 
 ```python
 from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5",
-    betas=["structured-outputs-2025-11-13"],  # [!code highlight]
 )
 
 def get_weather(location: str) -> str:
@@ -655,7 +653,6 @@ def get_weather(location: str) -> str:
 
 model_with_tools = model.bind_tools([get_weather], strict=True)  # [!code highlight]
 ```
-
 
 ## Token-efficient tool use
 
@@ -692,6 +689,55 @@ print(f"\nTotal tokens: {response.usage_metadata['total_tokens']}")
 Total tokens: 408
 ```
 </Accordion>
+
+## Fine-grained tool streaming
+
+Anthropic supports [fine-grained tool streaming](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming), a beta feature that reduces latency when streaming tool calls with large parameters.
+
+Rather than buffering entire parameter values before transmission, fine-grained streaming sends parameter data as it becomes available. This can reduce the initial delay from 15 seconds to around 3 seconds for large tool parameters.
+
+<Warning>
+    Fine-grained streaming may return invalid or partial JSON inputs, especially if the response reaches `max_tokens` before completing. Implement appropriate error handling for incomplete JSON data.
+</Warning>
+
+To enable fine-grained tool streaming, specify the `fine-grained-tool-streaming-2025-05-14` beta header when initializing the model:
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(
+    model="claude-3-5-sonnet-20241022",
+    betas=["fine-grained-tool-streaming-2025-05-14"],  # [!code highlight]
+)
+
+def write_document(title: str, content: str) -> str:
+    """Write a document with the given title and content."""
+    return f"Document '{title}' written successfully"
+
+model_with_tools = model.bind_tools([write_document])
+
+# Stream tool calls with reduced latency
+for chunk in model_with_tools.stream(
+    "Write a detailed technical document about the benefits of streaming APIs"
+):
+    print(chunk.content)
+```
+
+The streaming chunks will arrive faster, but you should handle potential JSON parsing errors:
+
+```python
+import json
+
+for chunk in model_with_tools.stream("Write a document about AI"):
+    if chunk.tool_calls:
+        for tool_call in chunk.tool_calls:
+            try:
+                # Validate that args are complete
+                json.dumps(tool_call["args"])
+            except (ValueError, TypeError) as e:
+                # Handle incomplete JSON
+                print(f"Received partial tool call: {e}")
+```
 
 ## Citations
 
@@ -952,8 +998,8 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
-    betas=["context-management-2025-06-27"],
-    context_management={"edits": [{"type": "clear_tool_uses_20250919"}]},
+    betas=["context-management-2025-06-27"], # [!code highlight]
+    context_management={"edits": [{"type": "clear_tool_uses_20250919"}]}, # [!code highlight]
 )
 model_with_tools = model.bind_tools([{"type": "web_search_20250305", "name": "web_search"}])
 response = model_with_tools.invoke("Search for recent developments in AI")
@@ -963,6 +1009,7 @@ response = model_with_tools.invoke("Search for recent developments in AI")
 
 <Info>
 Structured output requires:
+
 - Claude Sonnet 4.5 or Opus 4.1.
 - `langchain-anthropic>=1.1.0`
 </Info>
@@ -975,16 +1022,11 @@ You can access this feature in individual model calls, or by specifying the [res
 
 Use the [`with_structured_output`](/oss/langchain/models#structured-output) method to generate a structured model response. Specify `method="json_schema"` to enable Anthropic's native structured output feature; otherwise the method defaults to using function calling.
 
-Note that we set the `structured-outputs-2025-11-13` beta header.
-
 ```python
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field
 
-model = ChatAnthropic(
-    model="claude-sonnet-4-5",
-    betas=["structured-outputs-2025-11-13"],  # [!code highlight]
-)
+model = ChatAnthropic(model="claude-sonnet-4-5")
 
 class Movie(BaseModel):
     """A movie with details."""
@@ -1050,7 +1092,7 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
+tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3} # [!code highlight]
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?")
@@ -1063,12 +1105,9 @@ Claude can use a [web fetching tool](https://platform.claude.com/docs/en/agents-
 ```python
 from langchain_anthropic import ChatAnthropic
 
-model = ChatAnthropic(
-    model="claude-haiku-4-5-20251001",
-    betas=["web-fetch-2025-09-10"],  # Enable web fetch beta
-)
+model = ChatAnthropic(model="claude-haiku-4-5-20251001")
 
-tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3}
+tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3} # [!code highlight]
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke(
@@ -1099,10 +1138,9 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
-    betas=["code-execution-2025-08-25"],
 )
 
-tool = {"type": "code_execution_20250825", "name": "code_execution"}
+tool = {"type": "code_execution_20250825", "name": "code_execution"} # [!code highlight]
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke(
@@ -1129,10 +1167,9 @@ file_id = file.id
 # Run inference
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
-    betas=["code-execution-2025-08-25"],
 )
 
-tool = {"type": "code_execution_20250825", "name": "code_execution"}
+tool = {"type": "code_execution_20250825", "name": "code_execution"} # [!code highlight]
 model_with_tools = model.bind_tools([tool])
 
 input_message = {
@@ -1184,9 +1221,8 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
-    betas=["context-management-2025-06-27"],
 )
-model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}])
+model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}]) # [!code highlight]
 
 response = model_with_tools.invoke("What are my interests?")
 ```
@@ -1217,8 +1253,7 @@ mcp_servers = [
 
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
-    betas=["mcp-client-2025-04-04"],
-    mcp_servers=mcp_servers,
+    mcp_servers=mcp_servers, # [!code highlight]
 )
 
 response = model.invoke(
@@ -1226,6 +1261,76 @@ response = model.invoke(
     "spec (modelcontextprotocol/modelcontextprotocol) support?"
 )
 ```
+
+### Tool search
+
+Claude supports a [tool search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) feature that enables dynamic tool discovery and loading. Instead of loading all tool definitions into the context window upfront, Claude can search your tool catalog and load only the tools it needs.
+
+This is useful when:
+
+- You have 10+ tools available in your system
+- Tool definitions are consuming significant tokens
+- You're experiencing tool selection accuracy issues with large tool sets
+
+There are two tool search variants:
+
+- **Regex** (`tool_search_tool_regex_20251119`): Claude constructs regex patterns to search for tools
+- **BM25** (`tool_search_tool_bm25_20251119`): Claude uses natural language queries to search for tools
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(
+    model="claude-sonnet-4-5-20250929",
+)
+
+# Define tools with defer_loading for on-demand loading
+tools = [
+    {
+        "type": "tool_search_tool_regex_20251119",
+        "name": "tool_search_tool_regex",
+    },
+    {
+        "name": "get_weather",
+        "description": "Get the current weather for a location",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["celsius", "fahrenheit"],
+                },
+            },
+            "required": ["location"],
+        },
+        "defer_loading": True,  # Tool is loaded on-demand  # [!code highlight]
+    },
+    {
+        "name": "search_files",
+        "description": "Search through files in the workspace",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+            },
+            "required": ["query"],
+        },
+        "defer_loading": True, # [!code highlight]
+    },
+]
+
+model_with_tools = model.bind_tools(tools)
+response = model_with_tools.invoke("What's the weather in San Francisco?")
+```
+
+**Key points:**
+
+- Tools with `defer_loading: True` are only loaded when Claude discovers them via search
+- Keep your 3-5 most frequently used tools as non-deferred for optimal performance
+- Both variants search tool names, descriptions, argument names, and argument descriptions
+
+See the [Claude documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) for more details on tool search, including usage with MCP servers and client-side implementations.
 
 ### Text editor
 
@@ -1236,7 +1341,7 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-tool = {"type": "text_editor_20250124", "name": "str_replace_editor"}
+tool = {"type": "text_editor_20250124", "name": "str_replace_editor"} # [!code highlight]
 model_with_tools = model.bind_tools([tool])
 
 response = model_with_tools.invoke(
@@ -1256,6 +1361,60 @@ I'd be happy to help you fix the syntax error in your primes.py file. First, let
   'id': 'toolu_01VdNgt1YV7kGfj9LFLm6HyQ',
   'type': 'tool_call'}]
 ```
+
+### Computer use
+
+Claude supports [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) capabilities, allowing it to interact with desktop environments through screenshots, mouse control, and keyboard input.
+
+<Warning>
+    **Important: You must provide the execution environment**
+
+    LangChain handles the API integration (sending/receiving tool calls), but **you are responsible** for:
+    - Setting up a sandboxed computing environment (Linux VM, Docker container, etc.)
+    - Implementing a virtual display (e.g., Xvfb)
+    - Executing Claude's tool calls (screenshot, mouse clicks, keyboard input)
+    - Passing results back to Claude in an agent loop
+
+    Anthropic provides a [reference implementation](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo) to help you get started.
+</Warning>
+
+<Info>
+    **Requirements:**
+
+    - Claude Opus 4.5, Claude 4, or Claude Sonnet 3.7
+</Info>
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+# LangChain handles the API call and tool binding
+computer_tool = {
+    "type": "computer_20250124",
+    "name": "computer",
+    "display_width_px": 1024,
+    "display_height_px": 768,
+    "display_number": 1,
+}
+
+model_with_computer = model.bind_tools([computer_tool])
+response = model_with_computer.invoke(
+    "Take a screenshot to see what's on the screen"
+)
+
+# response.tool_calls will contain the computer action Claude wants to perform
+# You must execute this action in your environment and pass the result back
+```
+
+<Note>
+    **Available tool versions:**
+
+    - `computer_20250124` (for Claude 4 and Claude Sonnet 3.7)
+    - `computer_20251124` (for Claude Opus 4.5)
+
+    In each case, the required beta header is automatically added by LangChain when the tool is bound.
+</Note>
 
 ---
 
