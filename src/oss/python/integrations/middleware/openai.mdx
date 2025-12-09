@@ -1,0 +1,157 @@
+---
+title: OpenAI middleware
+---
+
+Middleware specifically designed for OpenAI models. Learn more about [middleware](/oss/langchain/middleware/overview).
+
+| Middleware | Description |
+|------------|-------------|
+| [Content moderation](#content-moderation) | Moderate agent traffic using OpenAI's moderation endpoint |
+
+## Content moderation
+
+Moderate agent traffic (user input, model output, and tool results) using OpenAI's moderation endpoint to detect and handle unsafe content. Content moderation is useful for the following:
+
+- Applications requiring content safety and compliance
+- Filtering harmful, hateful, or inappropriate content
+- Customer-facing agents that need safety guardrails
+- Meeting platform moderation requirements
+
+<Info>
+    Learn more about [OpenAI's moderation models](https://platform.openai.com/docs/guides/moderation) and categories.
+</Info>
+
+**API reference:** @[`OpenAIModerationMiddleware`]
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_openai.middleware import OpenAIModerationMiddleware
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool, database_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            model="omni-moderation-latest",
+            check_input=True,
+            check_output=True,
+            exit_behavior="end",
+        ),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="model" type="ModerationModel" default="omni-moderation-latest">
+    OpenAI moderation model to use. Options: `'omni-moderation-latest'`, `'omni-moderation-2024-09-26'`, `'text-moderation-latest'`, `'text-moderation-stable'`
+</ParamField>
+
+<ParamField body="check_input" type="bool" default="True">
+    Whether to check user input messages before the model is called
+</ParamField>
+
+<ParamField body="check_output" type="bool" default="True">
+    Whether to check model output messages after the model is called
+</ParamField>
+
+<ParamField body="check_tool_results" type="bool" default="False">
+    Whether to check tool result messages before the model is called
+</ParamField>
+
+<ParamField body="exit_behavior" type="string" default="end">
+    How to handle violations when content is flagged. Options:
+
+    - `'end'` - End agent execution immediately with a violation message
+    - `'error'` - Raise `OpenAIModerationError` exception
+    - `'replace'` - Replace the flagged content with the violation message and continue
+</ParamField>
+
+<ParamField body="violation_message" type="str | None">
+    Custom template for violation messages. Supports template variables:
+
+    - `{categories}` - Comma-separated list of flagged categories
+    - `{category_scores}` - JSON string of category scores
+    - `{original_content}` - The original flagged content
+
+    Default: `"I'm sorry, but I can't comply with that request. It was flagged for {categories}."`
+</ParamField>
+
+<ParamField body="client" type="OpenAI | None">
+    Optional pre-configured OpenAI client to reuse. If not provided, a new client will be created.
+</ParamField>
+
+<ParamField body="async_client" type="AsyncOpenAI | None">
+    Optional pre-configured AsyncOpenAI client to reuse. If not provided, a new async client will be created.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware integrates OpenAI's moderation endpoint to check content at different stages:
+
+**Moderation stages:**
+- `check_input` - User messages before model call
+- `check_output` - AI messages after model call
+- `check_tool_results` - Tool outputs before model call
+
+**Exit behaviors:**
+- `'end'` (default) - Stop execution with violation message
+- `'error'` - Raise exception for application handling
+- `'replace'` - Replace flagged content and continue
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_openai.middleware import OpenAIModerationMiddleware
+from langchain.agents import create_agent
+
+
+# Basic moderation
+agent = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool, customer_data_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            model="omni-moderation-latest",
+            check_input=True,
+            check_output=True,
+        ),
+    ],
+)
+
+# Strict moderation with custom message
+agent_strict = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool, customer_data_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            model="omni-moderation-latest",
+            check_input=True,
+            check_output=True,
+            check_tool_results=True,
+            exit_behavior="error",
+            violation_message=(
+                "Content policy violation detected: {categories}. "
+                "Please rephrase your request."
+            ),
+        ),
+    ],
+)
+
+# Moderation with replacement behavior
+agent_replace = create_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_tool],
+    middleware=[
+        OpenAIModerationMiddleware(
+            check_input=True,
+            exit_behavior="replace",
+            violation_message="[Content removed due to safety policies]",
+        ),
+    ],
+)
+```
+</Accordion>
+

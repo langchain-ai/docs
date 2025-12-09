@@ -65,7 +65,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 
 agent = create_agent(
     model="gpt-4o",
-    tools=[weather_tool, calculator_tool],
+    tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
             model="gpt-4o-mini",
@@ -98,40 +98,50 @@ const agent = createAgent({
 <Accordion title="Configuration options">
 
 :::python
+
 <Tip>
-The `fraction` conditions for `trigger` and `keep` (shown below) rely on a chat model's [profile data](/oss/langchain/models#model-profiles) if using `langchain>=1.1`. If data are not available, use another condition or specify manually:
-```python
-custom_profile = {
-    "max_input_tokens": 100_000,
-    # ...
-}
-model = init_chat_model("...", profile=custom_profile)
-```
+    The `fraction` conditions for `trigger` and `keep` (shown below) rely on a chat model's [profile data](/oss/langchain/models#model-profiles) if using `langchain>=1.1`. If data are not available, use another condition or specify manually:
+
+    ```python
+    from langchain.chat_models import init_chat_model
+
+    custom_profile = {
+        "max_input_tokens": 100_000,
+        # ...
+    }
+    model = init_chat_model("gpt-4o", profile=custom_profile)
+    ```
 </Tip>
+
 <ParamField body="model" type="string | BaseChatModel" required>
     Model for generating summaries. Can be a model identifier string (e.g., `'openai:gpt-4o-mini'`) or a `BaseChatModel` instance. See @[`init_chat_model`][init_chat_model(model)] for more information.
 </ParamField>
 
-<ParamField body="trigger" type="dict | list[dict]">
+<ParamField body="trigger" type="ContextSize | list[ContextSize] | None">
     Conditions for triggering summarization. Can be:
 
-    - A single condition dict (all properties must be met - AND logic)
-    - A list of condition dicts (any condition must be met - OR logic)
+    - A single @[`ContextSize`] dict (all properties must be met - AND logic)
+    - A list of @[`ContextSize`] dicts (any condition must be met - OR logic)
 
     Each condition can include:
+
     - `fraction` (float): Fraction of model's context size (0-1)
     - `tokens` (int): Absolute token count
     - `messages` (int): Message count
 
     At least one property must be specified per condition. If not provided, summarization will not trigger automatically.
+
+    See the API reference for @[`ContextSize`] for more information.
 </ParamField>
 
-<ParamField body="keep" type="dict" default="{messages: 20}">
+<ParamField body="keep" type="ContextSize" default="{messages: 20}">
     How much context to preserve after summarization. Specify exactly one of:
 
     - `fraction` (float): Fraction of model's context size to keep (0-1)
     - `tokens` (int): Absolute token count to keep
     - `messages` (int): Number of recent messages to keep
+
+    See the API reference for @[`ContextSize`] for more information.
 </ParamField>
 
 <ParamField body="token_counter" type="function">
@@ -161,17 +171,18 @@ model = init_chat_model("...", profile=custom_profile)
 
 :::js
 <Tip>
-The `fraction` conditions for `trigger` and `keep` (shown below) rely on a chat model's [profile data](/oss/langchain/models#model-profiles) if using `langchain@1.1.0`. If data are not available, use another condition or specify manually:
-```typescript
-const customProfile: ModelProfile = {
-    maxInputTokens: 100_000,
-    // ...
-}
-model = await initChatModel("...", {
-    profile: customProfile,
-});
-```
+    The `fraction` conditions for `trigger` and `keep` (shown below) rely on a chat model's [profile data](/oss/langchain/models#model-profiles) if using `langchain@1.1.0`. If data are not available, use another condition or specify manually:
+    ```typescript
+    const customProfile: ModelProfile = {
+        maxInputTokens: 100_000,
+        // ...
+    }
+    model = await initChatModel("...", {
+        profile: customProfile,
+    });
+    ```
 </Tip>
+
 <ParamField body="model" type="string | BaseChatModel" required>
     Model for generating summaries. Can be a model identifier string (e.g., `'openai:gpt-4o-mini'`) or a `BaseChatModel` instance.
 </ParamField>
@@ -248,12 +259,12 @@ from langchain.agents.middleware import SummarizationMiddleware
 # Single condition: trigger if tokens >= 4000 AND messages >= 10
 agent = create_agent(
     model="gpt-4o",
-    tools=[weather_tool, calculator_tool],
+    tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
             model="gpt-4o-mini",
-            trigger={"tokens": 4000, "messages": 10},
-            keep={"messages": 20},
+            trigger=[("tokens", 4000), ("messages", 10)],
+            keep=("messages", 20),
         ),
     ],
 )
@@ -261,15 +272,15 @@ agent = create_agent(
 # Multiple conditions
 agent2 = create_agent(
     model="gpt-4o",
-    tools=[weather_tool, calculator_tool],
+    tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
             model="gpt-4o-mini",
             trigger=[
-                {"tokens": 5000, "messages": 3},
-                {"tokens": 3000, "messages": 6},
+                ("tokens", 3000),
+                ("messages", 6),
             ],
-            keep={"messages": 20},
+            keep=("messages", 20),
         ),
     ],
 )
@@ -277,12 +288,12 @@ agent2 = create_agent(
 # Using fractional limits
 agent3 = create_agent(
     model="gpt-4o",
-    tools=[weather_tool, calculator_tool],
+    tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
             model="gpt-4o-mini",
-            trigger={"fraction": 0.8},
-            keep={"fraction": 0.3},
+            trigger=("fraction", 0.8),
+            keep=("fraction", 0.3),
         ),
     ],
 )
@@ -314,7 +325,6 @@ const agent2 = createAgent({
     summarizationMiddleware({
       model: "gpt-4o-mini",
       trigger: [
-        { tokens: 5000, messages: 3 },
         { tokens: 3000, messages: 6 },
       ],
       keep: { messages: 20 },
@@ -339,7 +349,6 @@ const agent3 = createAgent({
 
 </Accordion>
 
-
 ### Human-in-the-loop
 
 Pause agent execution for human approval, editing, or rejection of tool calls before they execute. [Human-in-the-loop](/oss/langchain/human-in-the-loop) is useful for the following:
@@ -362,17 +371,26 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
+
+def read_email_tool(email_id: str) -> str:
+    """Mock function to read an email by its ID."""
+    return f"Email content for ID: {email_id}"
+
+def send_email_tool(recipient: str, subject: str, body: str) -> str:
+    """Mock function to send an email."""
+    return f"Email sent to {recipient} with subject '{subject}'"
+
 agent = create_agent(
     model="gpt-4o",
-    tools=[read_email_tool, send_email_tool],
+    tools=[your_read_email_tool, your_send_email_tool],
     checkpointer=InMemorySaver(),
     middleware=[
         HumanInTheLoopMiddleware(
             interrupt_on={
-                "send_email_tool": {
+                "your_send_email_tool": {
                     "allowed_decisions": ["approve", "edit", "reject"],
                 },
-                "read_email_tool": False,
+                "your_read_email_tool": False,
             }
         ),
     ],
@@ -384,18 +402,28 @@ agent = create_agent(
 ```typescript
 import { createAgent, humanInTheLoopMiddleware } from "langchain";
 
+function readEmailTool(emailId: string): string {
+  /** Mock function to read an email by its ID. */
+  return `Email content for ID: ${emailId}`;
+}
+
+function sendEmailTool(recipient: string, subject: string, body: string): string {
+  /** Mock function to send an email. */
+  return `Email sent to ${recipient} with subject '${subject}'`;
+}
+
 const agent = createAgent({
   model: "gpt-4o",
   tools: [readEmailTool, sendEmailTool],
   middleware: [
     humanInTheLoopMiddleware({
       interruptOn: {
-        send_email: {
+        sendEmailTool: {
           allowAccept: true,
           allowEdit: true,
           allowRespond: true,
         },
-        read_email: false,
+        readEmailTool: false,
       }
     })
   ]
@@ -406,6 +434,18 @@ const agent = createAgent({
 <Tip>
     For complete examples, configuration options, and integration patterns, see the [Human-in-the-loop documentation](/oss/langchain/human-in-the-loop).
 </Tip>
+
+:::python
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=SpfT6-YAVPk) demonstrating Human-in-the-loop middleware behavior.
+</Callout>
+:::
+
+:::js
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=tdOeUVERukA) demonstrating Human-in-the-loop middleware behavior.
+</Callout>
+:::
 
 ### Model call limit
 
@@ -424,7 +464,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware
 
 agent = create_agent(
     model="gpt-4o",
-    tools=[...],
+    tools=[],
     middleware=[
         ModelCallLimitMiddleware(
             thread_limit=10,
@@ -442,7 +482,7 @@ import { createAgent, modelCallLimitMiddleware } from "langchain";
 
 const agent = createAgent({
   model: "gpt-4o",
-  tools: [...],
+  tools: [],
   middleware: [
     modelCallLimitMiddleware({
       threadLimit: 10,
@@ -452,6 +492,18 @@ const agent = createAgent({
   ],
 });
 ```
+:::
+
+:::python
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=nJEER0uaNkE) demonstrating Model Call Limit middleware behavior.
+</Callout>
+:::
+
+:::js
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=x5jLQTFXR0Y) demonstrating Model Call Limit middleware behavior.
+</Callout>
 :::
 
 <Accordion title="Configuration options">
@@ -537,6 +589,18 @@ const agent = createAgent({
   ],
 });
 ```
+:::
+
+:::python
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=6gYlaJJ8t0w) demonstrating Tool Call Limit middleware behavior.
+</Callout>
+:::
+
+:::js
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=oL6am5UqODY) demonstrating Tool Call Limit middleware behavior.
+</Callout>
 :::
 
 <Accordion title="Configuration options">
@@ -658,7 +722,7 @@ from langchain.agents.middleware import ModelFallbackMiddleware
 
 agent = create_agent(
     model="gpt-4o",
-    tools=[...],
+    tools=[],
     middleware=[
         ModelFallbackMiddleware(
             "gpt-4o-mini",
@@ -675,7 +739,7 @@ import { createAgent, modelFallbackMiddleware } from "langchain";
 
 const agent = createAgent({
   model: "gpt-4o",
-  tools: [...],
+  tools: [],
   middleware: [
     modelFallbackMiddleware(
       "gpt-4o-mini",
@@ -684,6 +748,12 @@ const agent = createAgent({
   ],
 });
 ```
+:::
+
+:::python
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=8rCRO0DUeIM) demonstrating Model Fallback middleware behavior.
+</Callout>
 :::
 
 <Accordion title="Configuration options">
@@ -716,7 +786,6 @@ The middleware accepts a variable number of string arguments representing fallba
 
 </Accordion>
 
-
 ### PII detection
 
 Detect and handle Personally Identifiable Information (PII) in conversations using configurable strategies. PII detection is useful for the following:
@@ -734,7 +803,7 @@ from langchain.agents.middleware import PIIMiddleware
 
 agent = create_agent(
     model="gpt-4o",
-    tools=[...],
+    tools=[],
     middleware=[
         PIIMiddleware("email", strategy="redact", apply_to_input=True),
         PIIMiddleware("credit_card", strategy="mask", apply_to_input=True),
@@ -749,7 +818,7 @@ import { createAgent, piiMiddleware } from "langchain";
 
 const agent = createAgent({
   model: "gpt-4o",
-  tools: [...],
+  tools: [],
   middleware: [
     piiMiddleware("email", { strategy: "redact", applyToInput: true }),
     piiMiddleware("credit_card", { strategy: "mask", applyToInput: true }),
@@ -780,7 +849,7 @@ import re
 # Method 1: Regex pattern string
 agent1 = create_agent(
     model="gpt-4o",
-    tools=[...],
+    tools=[],
     middleware=[
         PIIMiddleware(
             "api_key",
@@ -793,7 +862,7 @@ agent1 = create_agent(
 # Method 2: Compiled regex pattern
 agent2 = create_agent(
     model="gpt-4o",
-    tools=[...],
+    tools=[],
     middleware=[
         PIIMiddleware(
             "phone_number",
@@ -826,7 +895,7 @@ def detect_ssn(content: str) -> list[dict[str, str | int]]:
 
 agent3 = create_agent(
     model="gpt-4o",
-    tools=[...],
+    tools=[],
     middleware=[
         PIIMiddleware(
             "ssn",
@@ -845,7 +914,7 @@ import { createAgent, piiMiddleware, type PIIMatch } from "langchain";
 // Method 1: Regex pattern string
 const agent1 = createAgent({
   model: "gpt-4o",
-  tools: [...],
+  tools: [],
   middleware: [
     piiMiddleware("api_key", {
       detector: "sk-[a-zA-Z0-9]{32}",
@@ -857,7 +926,7 @@ const agent1 = createAgent({
 // Method 2: RegExp object
 const agent2 = createAgent({
   model: "gpt-4o",
-  tools: [...],
+  tools: [],
   middleware: [
     piiMiddleware("phone_number", {
       detector: /\+?\d{1,3}[\s.-]?\d{3,4}[\s.-]?\d{4}/,
@@ -889,7 +958,7 @@ function detectSSN(content: string): PIIMatch[] {
 
 const agent3 = createAgent({
   model: "gpt-4o",
-  tools: [...],
+  tools: [],
   middleware: [
     piiMiddleware("ssn", {
       detector: detectSSN,
@@ -933,12 +1002,12 @@ function detector(content: string): PIIMatch[] {
 :::
 
 <Tip>
-For custom detectors:
+    For custom detectors:
 
-- Use regex strings for simple patterns
-- Use RegExp objects when you need flags (e.g., case-insensitive matching)
-- Use custom functions when you need validation logic beyond pattern matching
-- Custom functions give you full control over detection logic and can implement complex validation rules
+    - Use regex strings for simple patterns
+    - Use RegExp objects when you need flags (e.g., case-insensitive matching)
+    - Use custom functions when you need validation logic beyond pattern matching
+    - Custom functions give you full control over detection logic and can implement complex validation rules
 </Tip>
 
 <Accordion title="Configuration options">
@@ -1049,6 +1118,18 @@ const agent = createAgent({
   middleware: [todoListMiddleware()],
 });
 ```
+:::
+
+:::python
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=yTWocbVKQxw) demonstrating To-do List middleware behavior.
+</Callout>
+:::
+
+:::js
+<Callout icon="circle-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=dwvhZ1z_Pas) demonstrating To-do List middleware behavior.
+</Callout>
 :::
 
 <Accordion title="Configuration options">
@@ -1340,7 +1421,7 @@ agent = create_agent(
             jitter=True,
             tools=["api_tool"],
             retry_on=(ConnectionError, TimeoutError),
-            on_failure="return_message",
+            on_failure="continue",
         ),
     ],
 )
@@ -1426,7 +1507,6 @@ const strictRetry = toolRetryMiddleware({
 :::
 
 </Accordion>
-
 
 ### Model retry
 
@@ -1701,7 +1781,6 @@ const strictRetry = modelRetryMiddleware({
 
 </Accordion>
 
-
 ### LLM tool emulator
 
 Emulate tool execution using an LLM for testing purposes, replacing actual tool calls with AI-generated responses. LLM tool emulators are useful for the following:
@@ -1805,7 +1884,7 @@ agent2 = create_agent(
 agent4 = create_agent(
     model="gpt-4o",
     tools=[get_weather, send_email],
-    middleware=[LLMToolEmulator(model="anthropic:claude-sonnet-4-5-20250929")],
+    middleware=[LLMToolEmulator(model="claude-sonnet-4-5-20250929")],
 )
 ```
 :::
@@ -1872,7 +1951,7 @@ const agent5 = createAgent({
   tools: [getWeather, sendEmail],
   middleware: [
     toolEmulatorMiddleware({
-      model: "anthropic:claude-sonnet-4-5-20250929",
+      model: "claude-sonnet-4-5-20250929",
     }),
   ],
 });
@@ -1898,7 +1977,7 @@ from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesE
 
 agent = create_agent(
     model="gpt-4o",
-    tools=[...],
+    tools=[],
     middleware=[
         ContextEditingMiddleware(
             edits=[
@@ -1919,7 +1998,7 @@ import { createAgent, contextEditingMiddleware, ClearToolUsesEdit } from "langch
 
 const agent = createAgent({
   model: "gpt-4o",
-  tools: [...],
+  tools: [],
   middleware: [
     contextEditingMiddleware({
       edits: [
@@ -2024,7 +2103,7 @@ from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesE
 
 agent = create_agent(
     model="gpt-4o",
-    tools=[search_tool, calculator_tool, database_tool],
+    tools=[search_tool, your_calculator_tool, database_tool],
     middleware=[
         ContextEditingMiddleware(
             edits=[
@@ -2067,7 +2146,6 @@ const agent = createAgent({
 :::
 
 </Accordion>
-
 
 :::python
 ### Shell tool
@@ -2212,7 +2290,6 @@ agent_redacted = create_agent(
 
 </Accordion>
 
-
 ### File search
 
 Provide Glob and Grep search tools over filesystem files. File search middleware is useful for the following:
@@ -2305,10 +2382,19 @@ result = agent.invoke({
 These middleware are optimized for specific LLM providers. See each provider's documentation for full details and examples.
 
 <Columns cols={2}>
-    <Card title="Anthropic" href="/oss/integrations/providers/anthropic#middleware" icon="anthropic" arrow>
+
+:::python
+    <Card title="Anthropic" href="/oss/integrations/middleware/anthropic" icon="anthropic" arrow>
         Prompt caching, bash tool, text editor, memory, and file search middleware for Claude models.
     </Card>
-    <Card title="OpenAI" href="/oss/integrations/providers/openai#middleware" icon="openai" arrow>
+    <Card title="OpenAI" href="/oss/integrations/middleware/openai" icon="openai" arrow>
         Content moderation middleware for OpenAI models.
     </Card>
+:::
+
+:::js
+    <Card title="Anthropic" href="/oss/integrations/middleware/anthropic" icon="anthropic" arrow>
+        Prompt caching, bash tool, text editor, memory, and file search middleware for Claude models.
+    </Card>
+:::
 </Columns>

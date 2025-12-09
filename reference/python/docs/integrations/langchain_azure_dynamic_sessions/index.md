@@ -11,7 +11,7 @@ title: Azure Dynamic Sessions
 !!! note
     This package ref has not yet been migrated to v1. It will be updated pending the release of `langchain-azure-dynamic-sessions` v1.0.
 
-<!-- !!! warning "Reference docs"
+<!-- !!! note "Reference docs"
     This page contains **reference documentation** for `Azure AI`. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/microsoft) for conceptual guides, tutorials, and examples on using `Azure AI`. -->
 
 <!-- ::: langchain_azure_dynamic_sessions -->
