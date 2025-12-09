@@ -268,8 +268,13 @@ Quick and simple for single-hook middleware. Use decorators to wrap individual f
 **Example:**
 
 ```python
-from langchain.agents.middleware import before_model, wrap_model_call
-from langchain.agents.middleware import AgentState, ModelRequest, ModelResponse
+from langchain.agents.middleware import (
+    before_model,
+    wrap_model_call,
+    AgentState,
+    ModelRequest,
+    ModelResponse,
+)
 from langchain.agents import create_agent
 from langgraph.runtime import Runtime
 from typing import Any, Callable
@@ -312,7 +317,12 @@ More powerful for complex middleware with multiple hooks or configuration. Use c
 **Example:**
 
 ```python
-from langchain.agents.middleware import AgentMiddleware, AgentState, ModelRequest, ModelResponse
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    AgentState,
+    ModelRequest,
+    ModelResponse,
+)
 from langgraph.runtime import Runtime
 from typing import Any, Callable
 
@@ -365,7 +375,17 @@ const loggingMiddleware = createMiddleware({
 
 ## Custom state schema
 
-Middleware can extend the agent's state with custom properties.
+Middleware can extend the agent's state with custom properties. This enables middleware to:
+
+- **Track state across execution**: Maintain counters, flags, or other values that persist throughout the agent's execution lifecycle
+:::python
+- **Share data between hooks**: Pass information from `before_model` to `after_model` or between different middleware instances
+:::
+:::js
+- **Share data between hooks**: Pass information from `beforeModel` to `afterModel` or between different middleware instances
+:::
+- **Implement cross-cutting concerns**: Add functionality like rate limiting, usage tracking, user context, or audit logging without modifying the core agent logic
+- **Make conditional decisions**: Use accumulated state to determine whether to continue execution, jump to different nodes, or modify behavior dynamically
 
 :::python
 
@@ -498,6 +518,108 @@ const result = await agent.invoke({
 });
 ```
 
+State fields can be either public or private. Fields that start with an underscore (`_`) are considered private and will not be included in the agent's result. Only public fields (those without a leading underscore) are returned.
+
+This is useful for storing internal middleware state that shouldn't be exposed to the caller, such as temporary tracking variables or internal flags:
+
+```typescript
+const middleware = createMiddleware({
+  name: "ExampleMiddleware",
+  stateSchema: z.object({
+    // Public field - included in invoke result
+    publicCounter: z.number().default(0),
+    // Private field - excluded from invoke result
+    _internalFlag: z.boolean().default(false),
+  }),
+  afterModel: (state) => {
+    // Both fields are accessible during execution
+    if (state._internalFlag) {
+      return { publicCounter: state.publicCounter + 1 };
+    }
+    return { _internalFlag: true };
+  },
+});
+
+const result = await agent.invoke({
+  messages: [new HumanMessage("Hello")],
+  publicCounter: 0
+});
+
+// result only contains publicCounter, not _internalFlag
+console.log(result.publicCounter); // 1
+console.log(result._internalFlag); // undefined
+```
+
+:::
+
+:::js
+## Custom context
+
+Middleware can define a custom context schema to access per-invocation metadata. Unlike state, context is read-only and not persisted between invocations. This makes it ideal for:
+
+- **User information**: Pass user ID, roles, or preferences that don't change during execution
+- **Configuration overrides**: Provide per-invocation settings like rate limits or feature flags
+- **Tenant/workspace context**: Include organization-specific data for multi-tenant applications
+- **Request metadata**: Pass request IDs, API keys, or other metadata needed by middleware
+
+Define a context schema using Zod and access it via `runtime.context` in middleware hooks. Required fields in the context schema will be enforced at the TypeScript level, ensuring you must provide them when calling `agent.invoke()`.
+
+```typescript
+import { createAgent, createMiddleware, HumanMessage } from "langchain";
+import * as z from "zod";
+
+const contextSchema = z.object({
+  userId: z.string(),
+  tenantId: z.string(),
+  apiKey: z.string().optional(),
+});
+
+const userContextMiddleware = createMiddleware({
+  name: "UserContextMiddleware",
+  contextSchema,
+  wrapModelCall: (request, handler) => {
+    // Access context from runtime
+    const { userId, tenantId } = request.runtime.context;
+
+    // Add user context to system message
+    const contextText = `User ID: ${userId}, Tenant: ${tenantId}`;
+    const newSystemMessage = request.systemMessage.concat(contextText);
+
+    return handler({
+      ...request,
+      systemMessage: newSystemMessage,
+    });
+  },
+});
+
+const agent = createAgent({
+  model: "gpt-4o",
+  middleware: [userContextMiddleware],
+  tools: [],
+  contextSchema,
+});
+
+const result = await agent.invoke(
+  { messages: [new HumanMessage("Hello")] },
+  // Required fields (userId, tenantId) must be provided
+  {
+    context: {
+      userId: "user-123",
+      tenantId: "acme-corp",
+    },
+  }
+);
+```
+
+**Required context fields**: When you define required fields in your `contextSchema` (fields without `.optional()` or `.default()`), TypeScript will enforce that these fields must be provided during `agent.invoke()` calls. This ensures type safety and prevents runtime errors from missing required context.
+
+```typescript
+// This will cause a TypeScript error if userId or tenantId are missing
+const result = await agent.invoke(
+  { messages: [new HumanMessage("Hello")] },
+  { context: { userId: "user-123" } } // Error: tenantId is required
+);
+```
 :::
 
 ## Execution order
@@ -623,23 +745,39 @@ class BlockedContentMiddleware(AgentMiddleware):
 :::js
 
 ```typescript
-import { createMiddleware, AIMessage } from "langchain";
+import { createAgent, createMiddleware, AIMessage } from "langchain";
 
-const blockedContentMiddleware = createMiddleware({
-  name: "BlockedContentMiddleware",
-  afterModel: (state) => {
-    const lastMessage = state.messages[state.messages.length - 1];
-    if (lastMessage.content.includes("BLOCKED")) {
-      return {
-        messages: [new AIMessage("I cannot respond to that request.")],
-        jumpTo: "end",
-      };
-    }
-    return;
-  },
+const agent = createAgent({
+  model: "gpt-4o",
+  middleware: [
+    createMiddleware({
+      name: "BlockedContentMiddleware",
+      beforeModel: {
+        canJumpTo: ["end"],
+        hook: (state) => {
+          if (state.messages.at(-1)?.content.includes("BLOCKED")) {
+            return {
+              messages: [new AIMessage("I cannot respond to that request.")],
+              jumpTo: "end" as const,
+            };
+          }
+          return;
+        },
+      },
+    }),
+  ],
 });
-```
 
+const result = await agent.invoke({
+    messages: "Hello, world! BLOCKED"
+});
+
+/**
+ * Expected output:
+ * I cannot respond to that request.
+ */
+console.log(result.messages.at(-1)?.content);
+```
 :::
 
 ## Best practices
@@ -678,10 +816,10 @@ def dynamic_model(
     handler: Callable[[ModelRequest], ModelResponse],
 ) -> ModelResponse:
     # Use different model based on conversation length
-   if len(request.messages) > 10:
-       model = complex_model
+    if len(request.messages) > 10:
+        model = complex_model
     else:
-       model = simple_model
+        model = simple_model
     return handler(request.override(model=model))
 ```
 
@@ -705,9 +843,9 @@ class DynamicModelMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         # Use different model based on conversation length
         if len(request.messages) > 10:
-           model = complex_model
+            model = complex_model
         else:
-           model = simple_model
+            model = simple_model
         return handler(request.override(model=model))
 ```
 

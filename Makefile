@@ -67,11 +67,17 @@ clean:
 	@find . -name "__pycache__" -type d -exec rm -rf {} +
 
 # Mintlify commands (run from build directory where final docs are generated)
-# Note: mint must be installed globally via npm
+# broken-links: Checks for broken links, excluding OpenAPI-generated pages (/langsmith/agent-server-api/)
 broken-links: build
-	@echo "Checking for broken links..."
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
+	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt | grep -v '/langsmith/agent-server-api/'; \
+		grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -qE '^[[:space:]]+' && \
+		echo "❌ Broken links found" && exit 1; echo "✅ No broken links"
+
+check-openapi: build
+	@echo "Checking openapi spec validity"
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
-	@cd build && output=$$(mint broken-links) && echo "$$output" && count=$$(echo "$$output" | sed -n 's/.*found \([0-9][0-9]*\) broken links.*/\1/p'); if [ -n "$$count" ] && [ "$$count" -gt 5 ]; then echo "❌ More than 5 broken links detected!"; exit 1; else echo "✅ Broken links check passed (≤5 broken links)"; fi
+	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
 check-pnpm:
 	@command -v pnpm >/dev/null 2>&1 || { echo >&2 "pnpm is not installed. Please install pnpm to proceed (https://pnpm.io/installation)"; exit 1; }

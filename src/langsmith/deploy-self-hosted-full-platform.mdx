@@ -126,12 +126,54 @@ Replace the values with your registry credentials:
 - `your-password`: Your registry password or access token
 - `langsmith`: The Kubernetes namespace where LangSmith is installed
 
-**Step 2: Configure the secret in your `values.yaml`**
+**Step 2: Configure the deployment template in your `values.yaml`**
 
-```yaml
-images:
-    imagePullSecrets:
-    - name: langsmith-registry-secret
+To enable agent server deployments to use the private registry secret, you must add `imagePullSecrets` to the operator's deployment template:
+
+```yaml {21-22}
+operator:
+  templates:
+    deployment: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ${name}
+        namespace: ${namespace}
+      spec:
+        replicas: ${replicas}
+        revisionHistoryLimit: 10
+        selector:
+          matchLabels:
+            app: ${name}
+        template:
+          metadata:
+            labels:
+              app: ${name}
+          spec:
+            enableServiceLinks: false
+            imagePullSecrets:
+            - name: langsmith-registry-secret
+            containers:
+            - name: api-server
+              image: ${image}
+              ports:
+              - name: api-server
+                containerPort: 8000
+                protocol: TCP
+              livenessProbe:
+                httpGet:
+                  path: /ok
+                  port: 8000
+                periodSeconds: 15
+                timeoutSeconds: 5
+                failureThreshold: 6
+              readinessProbe:
+                httpGet:
+                  path: /ok
+                  port: 8000
+                periodSeconds: 15
+                timeoutSeconds: 5
+                failureThreshold: 6
 ```
 
 **Step 3: Apply during Helm installation/upgrade**
