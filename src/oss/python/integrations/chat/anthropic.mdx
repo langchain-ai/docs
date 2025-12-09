@@ -1383,12 +1383,26 @@ Weather(temperature=75.0, condition='Sunny')
 
 Anthropic supports a variety of [built-in tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool), which can be bound to the model in the [usual way](/oss/langchain/tools/). Claude will generate tool calls adhering to its internal schema for the tool.
 
-### Web search
+### Bash tool
 
-Claude can use a [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) to run searches and ground its responses with citations.
+Claude supports a [bash tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool) that allows it to execute shell commands in a persistent bash session. This enables system operations, script execution, and command-line automation.
+
+<Note>
+    **Important: You must provide the execution environment**
+
+    LangChain handles the API integration (sending/receiving tool calls), but **you are responsible** for:
+
+    - Setting up a sandboxed computing environment (Docker, VM, etc.)
+    - Implementing command execution and output capture
+    - Passing results back to Claude in an agent loop
+
+    See the [Claude bash tool docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool) for implementation guidance.
+</Note>
 
 <Info>
-    **Web search tool is supported since `langchain-anthropic>=0.3.13`**
+    **Requirements:**
+
+    - Claude 4 models or Claude Sonnet 3.7
 </Info>
 
 ```python
@@ -1396,28 +1410,31 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3} # [!code highlight]
-model_with_tools = model.bind_tools([tool])
+bash_tool = {
+    "type": "bash_20250124",
+    "name": "bash",
+}
 
-response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?")
-```
-
-### Web fetching
-
-Claude can use a [web fetching tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool) to run searches and ground its responses with citations.
-
-```python
-from langchain_anthropic import ChatAnthropic
-
-model = ChatAnthropic(model="claude-haiku-4-5-20251001")
-
-tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3} # [!code highlight]
-model_with_tools = model.bind_tools([tool])
-
-response = model_with_tools.invoke(
-    "Please analyze the content at https://docs.langchain.com/"
+model_with_bash = model.bind_tools([bash_tool])
+response = model_with_bash.invoke(
+    "List all Python files in the current directory"
 )
 ```
+
+`response.tool_calls` will contain the bash command Claude wants to execute. You must run this command in your environment and pass the result back.
+
+```output
+[{'type': 'text',
+  'text': "I'll list the Python files in the current directory for you."},
+ {'type': 'tool_call',
+  'name': 'bash',
+  'args': {'command': 'ls -la *.py'},
+  'id': 'toolu_01ABC123...'}]
+```
+
+The bash tool supports two parameters:
+- `command` (required): The bash command to execute
+- `restart` (optional): Set to `true` to restart the bash session
 
 ### Code execution
 
@@ -1508,35 +1525,6 @@ for i, file_id in enumerate(file_ids):
 
 </Accordion>
 
-### Memory tool
-
-Claude supports a memory tool for client-side storage and retrieval of context across conversational threads. See docs [here](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool) for details.
-
-<Info>
-    **Anthropic's built-in memory tool is supported since `langchain-anthropic>=0.3.21`**
-</Info>
-
-```python
-from langchain_anthropic import ChatAnthropic
-
-model = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
-)
-model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}]) # [!code highlight]
-
-response = model_with_tools.invoke("What are my interests?")
-response.content_blocks
-```
-
-```output
-[{'type': 'text',
-  'text': "I'll check my memory to see what information I have about your interests."},
- {'type': 'tool_call',
-  'name': 'memory',
-  'args': {'command': 'view', 'path': '/memories'},
-  'id': 'toolu_01XeP9sxx44rcZHFNqXSaKqh'}]
-```
-
 ### Remote MCP
 
 Claude can use a [MCP connector tool](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector) for model-generated calls to remote MCP servers.
@@ -1571,6 +1559,161 @@ response = model.invoke(
     tools=[{"type": "mcp_toolset", "mcp_server_name": "LangChain Docs"}], # [!code highlight]
 )
 response.content_blocks
+```
+
+### Computer use
+
+Claude supports [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) capabilities, allowing it to interact with desktop environments through screenshots, mouse control, and keyboard input.
+
+<Note>
+    **Important: You must provide the execution environment**
+
+    LangChain handles the API integration (sending/receiving tool calls), but **you are responsible** for:
+    - Setting up a sandboxed computing environment (Linux VM, Docker container, etc.)
+    - Implementing a virtual display (e.g., Xvfb)
+    - Executing Claude's tool calls (screenshot, mouse clicks, keyboard input)
+    - Passing results back to Claude in an agent loop
+
+    Anthropic provides a [reference implementation](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo) to help you get started.
+</Note>
+
+<Info>
+    **Requirements:**
+
+    - Claude Opus 4.5, Claude 4, or Claude Sonnet 3.7
+</Info>
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+# LangChain handles the API call and tool binding
+computer_tool = {
+    "type": "computer_20250124",
+    "name": "computer",
+    "display_width_px": 1024,
+    "display_height_px": 768,
+    "display_number": 1,
+}
+
+model_with_computer = model.bind_tools([computer_tool])
+response = model_with_computer.invoke(
+    "Take a screenshot to see what's on the screen"
+)
+```
+
+`response.tool_calls` will contain the computer action Claude wants to perform. You must execute this action in your environment and pass the result back.
+
+```output
+[{'type': 'text',
+  'text': "I'll take a screenshot to see what's currently on the screen."},
+ {'type': 'tool_call',
+  'name': 'computer',
+  'args': {'action': 'screenshot'},
+  'id': 'toolu_01RNsqAE7dDZujELtacNeYv9'}]
+```
+
+<Note>
+    **Available tool versions:**
+
+    - `computer_20250124` (for Claude 4 and Claude Sonnet 3.7)
+    - `computer_20251124` (for Claude Opus 4.5)
+</Note>
+
+### Text editor
+
+The text editor tool can be used to view and modify text files. See docs [here](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool) for details.
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+tool = {"type": "text_editor_20250728", "name": "str_replace_based_edit_tool"}
+model_with_tools = model.bind_tools([tool])
+
+response = model_with_tools.invoke(
+    "There's a syntax error in my primes.py file. Can you help me fix it?"
+)
+print(response.text)
+response.tool_calls
+```
+
+```output
+I'll help you fix the syntax error in your primes.py file. Let me first take a look at the file to identify the issue.
+```
+
+```output
+[{'name': 'str_replace_based_edit_tool',
+  'args': {'command': 'view', 'path': '/root'},
+  'id': 'toolu_011BG5RbqnfBYkD8qQonS9k9',
+  'type': 'tool_call'}]
+```
+
+### Web fetching
+
+Claude can use a [web fetching tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool) to run searches and ground its responses with citations.
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-haiku-4-5-20251001")
+
+tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3} # [!code highlight]
+model_with_tools = model.bind_tools([tool])
+
+response = model_with_tools.invoke(
+    "Please analyze the content at https://docs.langchain.com/"
+)
+```
+
+### Web search
+
+Claude can use a [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) to run searches and ground its responses with citations.
+
+<Info>
+    **Web search tool is supported since `langchain-anthropic>=0.3.13`**
+</Info>
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3} # [!code highlight]
+model_with_tools = model.bind_tools([tool])
+
+response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?")
+```
+
+### Memory tool
+
+Claude supports a memory tool for client-side storage and retrieval of context across conversational threads. See docs [here](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool) for details.
+
+<Info>
+    **Anthropic's built-in memory tool is supported since `langchain-anthropic>=0.3.21`**
+</Info>
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(
+    model="claude-sonnet-4-5-20250929",
+)
+model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}]) # [!code highlight]
+
+response = model_with_tools.invoke("What are my interests?")
+response.content_blocks
+```
+
+```output
+[{'type': 'text',
+  'text': "I'll check my memory to see what information I have about your interests."},
+ {'type': 'tool_call',
+  'name': 'memory',
+  'args': {'command': 'view', 'path': '/memories'},
+  'id': 'toolu_01XeP9sxx44rcZHFNqXSaKqh'}]
 ```
 
 ### Tool search
@@ -1645,96 +1788,6 @@ sequenceDiagram
 - Both variants search tool names, descriptions, argument names, and argument descriptions
 
 See the [Claude documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) for more details on tool search, including usage with MCP servers and client-side implementations.
-
-### Text editor
-
-The text editor tool can be used to view and modify text files. See docs [here](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool) for details.
-
-```python
-from langchain_anthropic import ChatAnthropic
-
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
-
-tool = {"type": "text_editor_20250728", "name": "str_replace_based_edit_tool"}
-model_with_tools = model.bind_tools([tool])
-
-response = model_with_tools.invoke(
-    "There's a syntax error in my primes.py file. Can you help me fix it?"
-)
-print(response.text)
-response.tool_calls
-```
-
-```output
-I'll help you fix the syntax error in your primes.py file. Let me first take a look at the file to identify the issue.
-```
-
-```output
-[{'name': 'str_replace_based_edit_tool',
-  'args': {'command': 'view', 'path': '/root'},
-  'id': 'toolu_011BG5RbqnfBYkD8qQonS9k9',
-  'type': 'tool_call'}]
-```
-
-### Computer use
-
-Claude supports [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) capabilities, allowing it to interact with desktop environments through screenshots, mouse control, and keyboard input.
-
-<Warning>
-    **Important: You must provide the execution environment**
-
-    LangChain handles the API integration (sending/receiving tool calls), but **you are responsible** for:
-    - Setting up a sandboxed computing environment (Linux VM, Docker container, etc.)
-    - Implementing a virtual display (e.g., Xvfb)
-    - Executing Claude's tool calls (screenshot, mouse clicks, keyboard input)
-    - Passing results back to Claude in an agent loop
-
-    Anthropic provides a [reference implementation](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo) to help you get started.
-</Warning>
-
-<Info>
-    **Requirements:**
-
-    - Claude Opus 4.5, Claude 4, or Claude Sonnet 3.7
-</Info>
-
-```python
-from langchain_anthropic import ChatAnthropic
-
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
-
-# LangChain handles the API call and tool binding
-computer_tool = {
-    "type": "computer_20250124",
-    "name": "computer",
-    "display_width_px": 1024,
-    "display_height_px": 768,
-    "display_number": 1,
-}
-
-model_with_computer = model.bind_tools([computer_tool])
-response = model_with_computer.invoke(
-    "Take a screenshot to see what's on the screen"
-)
-```
-
-`response.tool_calls` will contain the computer action Claude wants to perform. You must execute this action in your environment and pass the result back.
-
-```output
-[{'type': 'text',
-  'text': "I'll take a screenshot to see what's currently on the screen."},
- {'type': 'tool_call',
-  'name': 'computer',
-  'args': {'action': 'screenshot'},
-  'id': 'toolu_01RNsqAE7dDZujELtacNeYv9'}]
-```
-
-<Note>
-    **Available tool versions:**
-
-    - `computer_20250124` (for Claude 4 and Claude Sonnet 3.7)
-    - `computer_20251124` (for Claude Opus 4.5)
-</Note>
 
 ---
 
