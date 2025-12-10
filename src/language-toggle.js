@@ -15,101 +15,172 @@
   var PYTHON_PREFIX = "/oss/python/";
   var JS_PREFIX = "/oss/javascript/";
 
+  // Overview/landing pages for each tab - these are where the dropdown navigates to
   var LANDING_PAGES = [
+    // LangChain tab
     "langchain/overview",
+    // LangGraph tab
     "langgraph/overview",
+    // Deep Agents tab
     "deepagents/overview",
+    // Integrations tab
     "integrations/providers/overview",
+    // Learn tab
     "learn",
+    // Reference tab
     "reference/overview",
+    // Contribute tab
     "contributing/overview",
   ];
 
-  function getPathLanguage(path) {
-    if (path.startsWith(PYTHON_PREFIX)) return "python";
-    if (path.startsWith(JS_PREFIX)) return "javascript";
-    return null;
-  }
-
-  function isLandingPage(path) {
-    var normalized = path.replace(/\/$/, "");
-    return LANDING_PAGES.some(function (landing) {
-      return (
-        normalized === PYTHON_PREFIX + landing ||
-        normalized === JS_PREFIX + landing
-      );
-    });
-  }
-
+  /**
+   * Get the equivalent path in the target language
+   */
   function getEquivalentPath(sourcePath, targetLang) {
     var sourcePrefix = targetLang === "python" ? JS_PREFIX : PYTHON_PREFIX;
     var targetPrefix = targetLang === "python" ? PYTHON_PREFIX : JS_PREFIX;
+
     if (sourcePath.startsWith(sourcePrefix)) {
       return targetPrefix + sourcePath.substring(sourcePrefix.length);
     }
     return null;
   }
 
-  function getStorage(key, fallback) {
-    try {
-      return sessionStorage.getItem(key) || fallback;
-    } catch (e) {
-      return fallback;
-    }
+  /**
+   * Check if a path is a landing/overview page (where dropdown navigates to)
+   */
+  function isLandingPage(path) {
+    // Remove trailing slash for comparison
+    var normalizedPath = path.replace(/\/$/, "");
+
+    return LANDING_PAGES.some(function (landing) {
+      return (
+        normalizedPath === PYTHON_PREFIX + landing ||
+        normalizedPath === JS_PREFIX + landing ||
+        normalizedPath === (PYTHON_PREFIX + landing).replace(/\/$/, "") ||
+        normalizedPath === (JS_PREFIX + landing).replace(/\/$/, "")
+      );
+    });
   }
 
-  function setStorage(key, value) {
-    try {
-      sessionStorage.setItem(key, value);
-    } catch (e) {}
+  /**
+   * Detect which language a path belongs to
+   */
+  function getPathLanguage(path) {
+    if (path.startsWith(PYTHON_PREFIX)) return "python";
+    if (path.startsWith(JS_PREFIX)) return "javascript";
+    return null;
   }
 
-  function clearStorage() {
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-      sessionStorage.removeItem(STORAGE_KEY_HASH);
-    } catch (e) {}
-  }
-
+  /**
+   * Store current path and hash for later comparison
+   */
   function storeCurrentPath() {
     var path = window.location.pathname;
+    var hash = window.location.hash;
+    // Only store if it's a language-specific page
     if (getPathLanguage(path)) {
-      setStorage(STORAGE_KEY, path);
-      setStorage(STORAGE_KEY_HASH, window.location.hash || "");
+      try {
+        sessionStorage.setItem(STORAGE_KEY, path);
+        sessionStorage.setItem(STORAGE_KEY_HASH, hash || "");
+      } catch (e) {
+        // sessionStorage not available
+      }
     }
   }
 
+  /**
+   * Get the previously stored path
+   */
+  function getPreviousPath() {
+    try {
+      return sessionStorage.getItem(STORAGE_KEY);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Get the previously stored hash
+   */
+  function getPreviousHash() {
+    try {
+      return sessionStorage.getItem(STORAGE_KEY_HASH) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  /**
+   * Main logic to check and redirect if needed
+   */
   function checkAndRedirect() {
     var currentPath = window.location.pathname;
     var currentLang = getPathLanguage(currentPath);
 
-    if (!currentLang || !isLandingPage(currentPath)) {
+    // Only proceed if we're on a language-specific page
+    if (!currentLang) {
+      return;
+    }
+
+    // Only redirect if we're on a landing page (indicates dropdown navigation)
+    if (!isLandingPage(currentPath)) {
+      // We're on a regular page, just store it
       storeCurrentPath();
       return;
     }
 
-    var previousPath = getStorage(STORAGE_KEY, null);
-    var previousLang = previousPath && getPathLanguage(previousPath);
-
-    // Redirect only if coming from a non-landing page in the other language
-    if (!previousLang || previousLang === currentLang || isLandingPage(previousPath)) {
+    // Check if we have a previous path from the other language
+    var previousPath = getPreviousPath();
+    if (!previousPath) {
       storeCurrentPath();
       return;
     }
 
+    var previousLang = getPathLanguage(previousPath);
+
+    // Only redirect if we came from the other language
+    if (!previousLang || previousLang === currentLang) {
+      storeCurrentPath();
+      return;
+    }
+
+    // Don't redirect if the previous page was also a landing page
+    // (user was intentionally navigating between overview pages)
+    if (isLandingPage(previousPath)) {
+      storeCurrentPath();
+      return;
+    }
+
+    // Calculate the equivalent page in the new language
     var equivalentPath = getEquivalentPath(previousPath, currentLang);
+
     if (!equivalentPath || equivalentPath === currentPath) {
       storeCurrentPath();
       return;
     }
 
-    clearStorage();
-    window.location.replace(equivalentPath + getStorage(STORAGE_KEY_HASH, ""));
+    // Get the hash from the previous page to preserve section navigation
+    var previousHash = getPreviousHash();
+
+    // Redirect to the equivalent page with the hash if present
+    // Clear the stored path to prevent redirect loops
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY_HASH);
+    } catch (e) {
+      // Ignore
+    }
+
+    // Use replace to avoid polluting browser history
+    window.location.replace(equivalentPath + previousHash);
   }
 
+  /**
+   * Set up event listeners for path tracking
+   */
   function setupPathTracking() {
-    var lastPath = window.location.pathname;
-
+    // Track clicks on links to store path before navigation
     document.addEventListener(
       "click",
       function (event) {
@@ -121,26 +192,53 @@
       true
     );
 
+    // For SPAs, also monitor popstate (back/forward navigation)
     window.addEventListener("popstate", function () {
+      // Small delay to let the URL update
       setTimeout(checkAndRedirect, 0);
     });
 
-    // Poll for URL changes (handles SPA navigation)
+    // Monitor for client-side navigation via MutationObserver
+    // Mintlify may update the URL without full page loads
+    var lastPath = window.location.pathname;
+
+    if (window.MutationObserver) {
+      var observer = new MutationObserver(function () {
+        var newPath = window.location.pathname;
+        if (newPath !== lastPath) {
+          lastPath = newPath;
+          checkAndRedirect();
+        }
+      });
+
+      // Observe changes to document title (usually changes with navigation)
+      // and body (content changes)
+      observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    // Also use a periodic check as a fallback for missed navigations
     setInterval(function () {
-      if (window.location.pathname !== lastPath) {
-        lastPath = window.location.pathname;
+      var newPath = window.location.pathname;
+      if (newPath !== lastPath) {
+        lastPath = newPath;
         checkAndRedirect();
       }
     }, 500);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", function () {
-      checkAndRedirect();
-      setupPathTracking();
-    });
-  } else {
+  // Initialize
+  function init() {
     checkAndRedirect();
     setupPathTracking();
+  }
+
+  // Run when DOM is ready
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
 })();
