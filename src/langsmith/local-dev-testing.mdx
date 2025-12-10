@@ -16,11 +16,15 @@ The [LangGraph CLI](/langsmith/cli) provides two commands for local development,
 | **Primary use case** | Rapid development & testing | Production-like validation |
 | **State persistence** | In-memory & pickled to local directory | PostgreSQL |
 | **Hot reloading** | Yes (default) | Optional (`--watch` flag) |
-| **Default port** | 2024 | 8123 |
+| **Default port** | `2024` | `8123` |
 | **Resource usage** | Lightweight | Heavier (build and run separate docker containers for the server, PostgreSQL, and Redis) |
 | **Debugging** | Built-in debugger support | Standard container debugging |
 | **Suitable for production** | No | Yes (with license key) |
 | **Custom auth** | Yes | Yes (with license key) |
+
+<Tip>
+For a full reference details, refer to the [LangGraph CLI reference](/langsmith/cli) page.
+</Tip>
 
 ## Development
 
@@ -38,8 +42,8 @@ flowchart LR
 
 | Stage | Tool | Purpose |
 |-------|------|---------|
-| **Develop & Test Locally** | `langgraph dev` | Write and iterate on your graph with hot reloading |
-| **Validate** | `langgraph up` | Test production-like behavior with full stack |
+| **Develop & Test Locally** | [`langgraph dev`](/langsmith/cli#dev) | Write and iterate on your graph with hot reloading |
+| **Validate** | [`langgraph up`](/langsmith/cli#up) | Test production-like behavior with full stack |
 | **Deploy** | [LangSmith UI](/langsmith/deployment-quickstart) or [Control Plane API](/langsmith/api-ref-control-plane) | Deploy to production with confidence |
 
 A workflow for reliable development and deployment:
@@ -51,13 +55,17 @@ A workflow for reliable development and deployment:
 
 ## `langgraph dev`
 
-The `langgraph dev` command runs a lightweight server directly in your environment, designed for speed and convenience during active development. The key features include:
+The [`langgraph dev`](/langsmith/cli#dev) command runs a lightweight server directly in your environment, designed for speed and convenience during active development. The key features include:
 
 - **No Docker required**: Runs directly in your environment.
 - **Hot reloading**: Automatically reloads when you change code.
 - **Fast startup**: Ready in seconds.
 - **Built-in debugger support**: Attach your IDE debugger.
 - **In-memory storage**: State persisted to local directory.
+
+<Note>
+The `dev` server is tested with the same integration test suite as production to ensure its behavior is the same during development while using minimal resources.
+</Note>
 
 ### Get started
 
@@ -86,11 +94,9 @@ Use `langgraph dev` as your primary development tool for:
 
 ## `langgraph up`
 
-The `langgraph up` command orchestrates a full Docker-based stack that mirrors production infrastructure, which can help you catch deployment issues before they reach production. The key features include:
+The [`langgraph up`](/langsmith/cli#up) command orchestrates a full Docker-based stack that mirrors production infrastructure, which can help you catch deployment issues before they reach production. The key features include:
 
-- **Production-like environment**: PostgreSQL + Redis + API server in Docker.
-- **Persistent storage**: State survives server restarts.
-- **Full containerization**: Tests your build process and dependencies.
+- **Verify build & dependencies**: Tests your build process and dependencies.
 - **Isolated networking**: Realistic container networking.
 - **Production validation**: Verifies deployment readiness.
 
@@ -110,7 +116,7 @@ Your server starts at `http://localhost:8123` with full persistent storage.
 
 Use `langgraph up` for validation and production-readiness testing:
 
-- **Pre-deployment validation**: Before deploying to production, run a final check with a fresh build:
+- **Pre-deployment validation**: Before deploying to production, you can run a final check with a fresh build:
 
     ```bash
     langgraph up --recreate
@@ -124,41 +130,35 @@ Use `langgraph up` for validation and production-readiness testing:
     langgraph up
 
     # Test your graph, then stop and restart
-    langgraph up
 
     # Verify state is retained
     ```
-    With `langgraph dev`, state would be lost on restart since it uses in-memory storage.
 
 - **Major feature validation**: After implementing significant changes, test with the full production stack periodically to ensure everything works in a containerized environment.
 - **Docker troubleshooting**: When debugging container-specific issues, networking problems, or environment variable configurations that only appear in production.
 
-### Pre-deployment checklist
+## Pre-deployment checklist
 
-Before deploying an application, verify the following with `langgraph up`:
+Before deploying an application, verify the following with `langgraph dev`:
 
 - All [dependencies](/langsmith/setup-app-requirements-txt) install correctly in the container.
 - Application starts without errors.
 - Graph executes successfully.
-- State persists across restarts (if needed).
-- Performance is acceptable with persistent storage.
 - All [environment variables](/langsmith/env-var) work correctly.
-- Authentication/authorization works as expected.
+- [Authentication/authorization](/langsmith/cli#adding-custom-authentication) works as expected.
 
 ## Dependencies configuration
 
-Both `langgraph dev` and `langgraph up` read your application's dependencies from your [configuration files](/langsmith/configuration-file), but they run in different environments:
+Both `langgraph dev` and `langgraph up` read your application's [dependencies](/langsmith/application-structure#dependencies) from your [configuration files](/langsmith/configuration-file), but they run in different environments:
 
 - **`langgraph dev`** runs your code directly in your local environment (Python or Node.js) without Docker.
 - **`langgraph up`** builds a Docker container and runs your code inside that isolated container.
-
-This difference means your code might work with one command but not the other, even with the same dependency configuration. For example, `langgraph up` might fail locally due to Docker issues, but production deployment succeeds because it uses different infrastructure.
 
 Properly configuring your dependencies ensures both commands work correctly and that what you test locally matches what gets deployed to production.
 
 ### `langgraph.json` file
 
-The `dependencies` field tells the CLI **where** to find your application code. The `dependencies` field can point to:
+The `dependencies` field tells the [CLI](/langsmith/cli) **where** to find your application code. The `dependencies` field can point to:
 - **A directory with package config** (containing `pyproject.toml`, `setup.py`, `requirements.txt`, or `package.json`)
 - **A specific subdirectory**: `"dependencies": ["./my_agent"]`
 - **A specific package**: `"dependencies": ["my-package==1.0.0"]` (Python) or `"dependencies": ["my-package@1.0.0"]` (JavaScript)
@@ -231,40 +231,16 @@ langgraph
 
 ### Dependency resolution process
 
-When you run `langgraph dev` or `langgraph up`, the CLI follows these steps to install your application's dependencies:
+When you run [`langgraph up`](/langsmith/cli#up), the CLI follows these steps to install your application's dependencies:
 
-1. `langgraph.json` tells the CLI **where** to look for your application code. The `dependencies: ["."]` field points to the current directory.
+1. [`langgraph.json`](/langsmith/application-structure#configuration-file) tells the CLI **where** to look for your application code. The `dependencies: ["."]` field points to the current directory.
 1. **Find package configuration**: The CLI looks in that directory for a package configuration file ([`pyproject.toml`](/langsmith/setup-pyproject), [`requirements.txt`](/langsmith/setup-app-requirements-txt), or [`package.json`](/langsmith/setup-javascript)).
 1. **Read dependencies list**: The CLI reads the list of packages from the configuration file.
-1. **Install packages**: The CLI installs all the packages using the appropriate package manager for your language.
+1. **Install packages**: The CLI installs all the packages using the appropriate package manager for your language (`uv` or `pip` for Python, `npm` for JavaScript).
 
 This two-file approach separates concerns: `langgraph.json` handles application structure and location, while the package configuration file handles language-specific package dependencies.
 
-## Dependency installer
-
-Starting from LangGraph CLI v0.3, `uv` is the default installer. You can configure which installer to use.
-
-The CLI uses `uv` by default:
-
-- **Drop-in replacement**: Compatible with most packages
-- **Automatic fallback**: Falls back to pip on errors
-
-### Configure the installer
-
-Add `pip_installer` to your `langgraph.json` to determine which to use:
-
-```json
-{
-  "dependencies": ["."],
-  "pip_installer": "uv"  // Options: "auto", "pip", "uv"
-}
-```
-
-Options include:
-
-- `"auto"` (default): Uses uv, falls back to pip on errors.
-- `"uv"`: Always uses uv, fails if uv can't handle it.
-- `"pip"`: Always uses pip.
+For more information on the installer, refer to [CLI configuration file](/langsmith/cli#configuration-file).
 
 ### Troubleshooting
 
@@ -282,7 +258,7 @@ Then rebuild:
 langgraph up --recreate
 ```
 
-## Local vs production troubleshooting
+## Debug your local Docker setup
 
 Production deployment might succeed even when `langgraph up` fails on your local machine. This happens because production uses managed infrastructure while `langgraph up` runs the full stack locally on your computer.
 
