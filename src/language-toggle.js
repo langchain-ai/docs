@@ -114,21 +114,33 @@
       }
     }, true);
 
-    // Watch for URL changes via Mintlify's client-side routing
-    // MutationObserver is necessary because Mintlify changes the URL without full page reloads
+    // Watch for URL changes via History API (used by Mintlify's client-side routing)
+    // This is more efficient than MutationObserver - only fires on actual URL changes
     let lastPath = location.pathname;
 
-    const observer = new MutationObserver(() => {
+    function onPathChange() {
       if (location.pathname !== lastPath) {
         lastPath = location.pathname;
         checkRedirect();
       }
-    });
+    }
 
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-    });
+    // Handle back/forward navigation
+    window.addEventListener("popstate", onPathChange);
+
+    // Intercept pushState/replaceState calls
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      originalPushState.apply(this, args);
+      onPathChange();
+    };
+
+    history.replaceState = function (...args) {
+      originalReplaceState.apply(this, args);
+      onPathChange();
+    };
 
     // Run initial check in case user landed here via language toggle
     checkRedirect();
