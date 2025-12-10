@@ -1,244 +1,135 @@
 /**
  * Language Toggle Script
  *
- * Enables smart navigation when switching between Python and TypeScript
- * documentation. When a user clicks the language dropdown to switch languages,
- * this script redirects them to the equivalent page in the target language
- * instead of the default overview page.
+ * Enables smart navigation when switching between Python and TypeScript docs.
+ * When a user clicks the language dropdown, this redirects them to the equivalent
+ * page in the target language (preserving the section hash) instead of the default
+ * overview page.
+ *
+ * How it works:
+ * 1. Click listener detects language toggle clicks and stores current URL+hash
+ * 2. MutationObserver detects when Mintlify's client-side routing changes the path
+ * 3. On path change, check if we're switching languages and redirect to equivalent page
  */
 
 (function () {
-  "use strict";
+    "use strict";
 
-  var STORAGE_KEY = "langchain_docs_prev_path";
-  var STORAGE_KEY_HASH = "langchain_docs_prev_hash";
-  var PYTHON_PREFIX = "/oss/python/";
-  var JS_PREFIX = "/oss/javascript/";
+    const STORAGE_KEY = "langchain_docs_prev_url";
+    const PYTHON_PREFIX = "/oss/python/";
+    const JS_PREFIX = "/oss/javascript/";
 
-  // Overview/landing pages for each tab - these are where the dropdown navigates to
-  var LANDING_PAGES = [
-    // LangChain tab
-    "langchain/overview",
-    // LangGraph tab
-    "langgraph/overview",
-    // Deep Agents tab
-    "deepagents/overview",
-    // Integrations tab
-    "integrations/providers/overview",
-    // Learn tab
-    "learn",
-    // Reference tab
-    "reference/overview",
-    // Contribute tab
-    "contributing/overview",
-  ];
+    // Selector for language dropdown items (Python/TypeScript links)
+    const LANGUAGE_TOGGLE_SELECTOR = '[data-dropdown-item]';
 
-  /**
-   * Get the equivalent path in the target language
-   */
-  function getEquivalentPath(sourcePath, targetLang) {
-    var sourcePrefix = targetLang === "python" ? JS_PREFIX : PYTHON_PREFIX;
-    var targetPrefix = targetLang === "python" ? PYTHON_PREFIX : JS_PREFIX;
+    /**
+     * Convert a path from one language to another
+     * e.g., /oss/javascript/foo → /oss/python/foo
+     */
+    function getEquivalentPath(sourcePath, targetLang) {
+      const sourcePrefix = targetLang === "python" ? JS_PREFIX : PYTHON_PREFIX;
+      const targetPrefix = targetLang === "python" ? PYTHON_PREFIX : JS_PREFIX;
 
-    if (sourcePath.startsWith(sourcePrefix)) {
-      return targetPrefix + sourcePath.substring(sourcePrefix.length);
-    }
-    return null;
-  }
-
-  /**
-   * Check if a path is a landing/overview page (where dropdown navigates to)
-   */
-  function isLandingPage(path) {
-    // Remove trailing slash for comparison
-    var normalizedPath = path.replace(/\/$/, "");
-
-    return LANDING_PAGES.some(function (landing) {
-      return (
-        normalizedPath === PYTHON_PREFIX + landing ||
-        normalizedPath === JS_PREFIX + landing ||
-        normalizedPath === (PYTHON_PREFIX + landing).replace(/\/$/, "") ||
-        normalizedPath === (JS_PREFIX + landing).replace(/\/$/, "")
-      );
-    });
-  }
-
-  /**
-   * Detect which language a path belongs to
-   */
-  function getPathLanguage(path) {
-    if (path.startsWith(PYTHON_PREFIX)) return "python";
-    if (path.startsWith(JS_PREFIX)) return "javascript";
-    return null;
-  }
-
-  /**
-   * Store current path and hash for later comparison
-   */
-  function storeCurrentPath() {
-    var path = window.location.pathname;
-    var hash = window.location.hash;
-    // Only store if it's a language-specific page
-    if (getPathLanguage(path)) {
-      try {
-        sessionStorage.setItem(STORAGE_KEY, path);
-        sessionStorage.setItem(STORAGE_KEY_HASH, hash || "");
-      } catch (e) {
-        // sessionStorage not available
+      if (sourcePath.startsWith(sourcePrefix)) {
+        return targetPrefix + sourcePath.substring(sourcePrefix.length);
       }
-    }
-  }
-
-  /**
-   * Get the previously stored path
-   */
-  function getPreviousPath() {
-    try {
-      return sessionStorage.getItem(STORAGE_KEY);
-    } catch (e) {
       return null;
     }
-  }
 
-  /**
-   * Get the previously stored hash
-   */
-  function getPreviousHash() {
-    try {
-      return sessionStorage.getItem(STORAGE_KEY_HASH) || "";
-    } catch (e) {
-      return "";
-    }
-  }
-
-  /**
-   * Main logic to check and redirect if needed
-   */
-  function checkAndRedirect() {
-    var currentPath = window.location.pathname;
-    var currentLang = getPathLanguage(currentPath);
-
-    // Only proceed if we're on a language-specific page
-    if (!currentLang) {
-      return;
+    /**
+     * Detect which language a path belongs to
+     * Returns "python", "javascript", or null
+     */
+    function getPathLanguage(path) {
+      if (path.startsWith(PYTHON_PREFIX)) return "python";
+      if (path.startsWith(JS_PREFIX)) return "javascript";
+      return null;
     }
 
-    // Only redirect if we're on a landing page (indicates dropdown navigation)
-    if (!isLandingPage(currentPath)) {
-      // We're on a regular page, just store it
-      storeCurrentPath();
-      return;
+    /**
+     * Store current URL (path + hash) in session storage
+     * Only stores language-specific pages
+     */
+    function storeCurrent() {
+      const lang = getPathLanguage(location.pathname);
+      if (lang) {
+        try {
+          sessionStorage.setItem(STORAGE_KEY, location.pathname + location.hash);
+        } catch (e) {}
+      }
     }
 
-    // Check if we have a previous path from the other language
-    var previousPath = getPreviousPath();
-    if (!previousPath) {
-      storeCurrentPath();
-      return;
-    }
+    /**
+     * Check if we should redirect to an equivalent page in a different language
+     * This runs after every path change detected by the MutationObserver
+     */
+    function checkRedirect() {
+      const currentLang = getPathLanguage(location.pathname);
+      if (!currentLang) return;
 
-    var previousLang = getPathLanguage(previousPath);
+      // Get the previous URL we stored
+      let previousUrl;
+      try {
+        previousUrl = sessionStorage.getItem(STORAGE_KEY);
+      } catch (e) {
+        storeCurrent();
+        return;
+      }
 
-    // Only redirect if we came from the other language
-    if (!previousLang || previousLang === currentLang) {
-      storeCurrentPath();
-      return;
-    }
+      if (!previousUrl) {
+        storeCurrent();
+        return;
+      }
 
-    // Don't redirect if the previous page was also a landing page
-    // (user was intentionally navigating between overview pages)
-    if (isLandingPage(previousPath)) {
-      storeCurrentPath();
-      return;
-    }
+      // Split path and hash (e.g., "/oss/python/foo#bar" → ["/oss/python/foo", "bar"])
+      const [prevPath, prevHash = ""] = previousUrl.split("#");
+      const prevLang = getPathLanguage(prevPath);
 
-    // Calculate the equivalent page in the new language
-    var equivalentPath = getEquivalentPath(previousPath, currentLang);
+      // Only redirect if we're switching between languages
+      if (prevLang && prevLang !== currentLang) {
+        const equivalentPath = getEquivalentPath(prevPath, currentLang);
 
-    if (!equivalentPath || equivalentPath === currentPath) {
-      storeCurrentPath();
-      return;
-    }
+        if (equivalentPath && equivalentPath !== location.pathname) {
+          // Clear storage before redirect to prevent redirect loops
+          try {
+            sessionStorage.removeItem(STORAGE_KEY);
+          } catch (e) {}
 
-    // Get the hash from the previous page to preserve section navigation
-    var previousHash = getPreviousHash();
-
-    // Redirect to the equivalent page with the hash if present
-    // Clear the stored path to prevent redirect loops
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-      sessionStorage.removeItem(STORAGE_KEY_HASH);
-    } catch (e) {
-      // Ignore
-    }
-
-    // Use replace to avoid polluting browser history
-    window.location.replace(equivalentPath + previousHash);
-  }
-
-  /**
-   * Set up event listeners for path tracking
-   */
-  function setupPathTracking() {
-    // Track clicks on links to store path before navigation
-    document.addEventListener(
-      "click",
-      function (event) {
-        var link = event.target.closest("a");
-        if (link && link.href && link.href.startsWith(window.location.origin)) {
-          storeCurrentPath();
+          // Redirect with the hash from the previous page
+          location.replace(equivalentPath + (prevHash ? "#" + prevHash : ""));
+          return;
         }
-      },
-      true
-    );
+      }
 
-    // For SPAs, also monitor popstate (back/forward navigation)
-    window.addEventListener("popstate", function () {
-      // Small delay to let the URL update
-      setTimeout(checkAndRedirect, 0);
+      // If no redirect needed, store current location for next navigation
+      storeCurrent();
+    }
+
+    // Store current URL when language toggle is clicked
+    // This captures the hash before Mintlify's client-side routing changes the page
+    document.addEventListener("click", function (e) {
+      const toggle = e.target.closest(LANGUAGE_TOGGLE_SELECTOR);
+      if (toggle) {
+        storeCurrent();
+      }
+    }, true);
+
+    // Watch for URL changes via Mintlify's client-side routing
+    // MutationObserver is necessary because Mintlify changes the URL without full page reloads
+    let lastPath = location.pathname;
+
+    const observer = new MutationObserver(() => {
+      if (location.pathname !== lastPath) {
+        lastPath = location.pathname;
+        checkRedirect();
+      }
     });
 
-    // Monitor for client-side navigation via MutationObserver
-    // Mintlify may update the URL without full page loads
-    var lastPath = window.location.pathname;
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
 
-    if (window.MutationObserver) {
-      var observer = new MutationObserver(function () {
-        var newPath = window.location.pathname;
-        if (newPath !== lastPath) {
-          lastPath = newPath;
-          checkAndRedirect();
-        }
-      });
-
-      // Observe changes to document title (usually changes with navigation)
-      // and body (content changes)
-      observer.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-      });
-    }
-
-    // Also use a periodic check as a fallback for missed navigations
-    setInterval(function () {
-      var newPath = window.location.pathname;
-      if (newPath !== lastPath) {
-        lastPath = newPath;
-        checkAndRedirect();
-      }
-    }, 500);
-  }
-
-  // Initialize
-  function init() {
-    checkAndRedirect();
-    setupPathTracking();
-  }
-
-  // Run when DOM is ready
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
-})();
+    // Run initial check in case user landed here via language toggle
+    checkRedirect();
+  })();
