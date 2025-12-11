@@ -8,7 +8,8 @@
  *
  * How it works:
  * 1. Click listener detects language toggle clicks and stores current URL+hash
- * 2. MutationObserver detects when Mintlify's client-side routing changes the path
+ * 2. History API interception (pushState/replaceState) and popstate/hashchange
+ *    listeners detect when Mintlify's client-side routing changes the path
  * 3. On path change, check if we're switching languages and redirect to equivalent page
  */
 

@@ -565,7 +565,7 @@ const agent = createAgent({ model: "claude-sonnet-4-5-20250929", tools });
 
 MCP tools can return [structured content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#structured-content) alongside the human-readable text response. This is useful when a tool needs to return machine-parseable data (like JSON) in addition to text that gets shown to the model.
 
-When an MCP tool returns `structuredContent`, the adapter wraps it in an [`MCPToolArtifact`](/docs/reference/langchain-mcp-adapters#MCPToolArtifact) and returns it as the tool's artifact. You can access this using the `artifact` field on the `ToolMessage`.
+When an MCP tool returns `structuredContent`, the adapter wraps it in an [`MCPToolArtifact`](/docs/reference/langchain-mcp-adapters#MCPToolArtifact) and returns it as the tool's artifact. You can access this using the `artifact` field on the `ToolMessage`. You can also use [interceptors](#tool-interceptors) to process or transform structured content automatically.
 
 **Extracting structured content from artifact**
 
@@ -588,6 +588,29 @@ result = await agent.ainvoke(
 for message in result["messages"]:
     if isinstance(message, ToolMessage) and message.artifact:
         structured_content = message.artifact["structured_content"]
+```
+
+**Appending structured content via interceptor**
+
+If you want structured content to be visible in the conversation history (visible to the model), you can use an [interceptor](#tool-interceptors) to automatically append structured content to the tool result:
+
+```python
+import json
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.interceptors import MCPToolCallRequest
+from mcp.types import TextContent
+
+async def append_structured_content(request: MCPToolCallRequest, handler):
+    """Append structured content from artifact to tool message."""
+    result = await handler(request)
+    if result.structuredContent:
+        result.content += [
+            TextContent(type="text", text=json.dumps(result.structuredContent)),
+        ]
+    return result
+
+client = MultiServerMCPClient({...}, tool_interceptors=[append_structured_content])
 ```
 
 #### Multimodal tool content
