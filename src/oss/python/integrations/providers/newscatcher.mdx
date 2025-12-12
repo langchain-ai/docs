@@ -1,0 +1,248 @@
+---
+title: NewsCatcher
+---
+
+NewsCatcher's [CatchAll](https://www.newscatcherapi.com/docs/v3/catch-all/overview/introduction) is an AI web search tool that finds real-world events and extracts structured data. It scans millions of pages to find any events you search for, ranging from regulatory filings and policy changes to clinical trials and product launches, across every major industry.
+
+## Installation and setup
+
+Install the LangChain integration package:
+
+<CodeGroup>
+    ```bash pip
+    pip install -qU langchain-catchall
+    ``` 
+    ```bash uv
+    uv add langchain-catchall
+    ```
+</CodeGroup>
+
+Sign up at [platform.newscatcherapi.com](https://platform.newscatcherapi.com) to get your API key, then set it as an environment variable:
+
+```python
+import os
+
+os.environ["CATCHALL_API_KEY"] = "your-api-key"
+```
+
+---
+
+## CatchAllClient
+
+For programmatic access and data pipeline integration, use `CatchAllClient`:
+
+```python
+from langchain_catchall import CatchAllClient
+
+client = CatchAllClient(
+    api_key=os.environ["CATCHALL_API_KEY"],
+    poll_interval=30,    # Check status every 30 seconds
+    max_wait_time=2400,  # Timeout after 40 minutes
+)
+```
+
+<Note>
+  `CatchAllClient` submits queries directly to the API without transformation, while `CatchAllTools` adds automatic query transformation (prefix and date ranges). For details, see the [tool documentation](/oss/integrations/tools/newscatcher_catchall#query-transformation).
+</Note>
+
+### Search and retrieve
+
+Submit a search query and wait for results:
+
+```python
+# Search with automatic polling and retrieval
+result = client.search("FDA drug approvals for rare disease treatments")
+
+print(f"Found {result.valid_records} records")
+for record in result.all_records[:3]:
+    print(f"- {record.record_title}")
+```
+
+### Granular control
+
+For data pipelines, submit jobs and retrieve results separately:
+
+```python
+# Submit job
+job_id = client.submit_job(
+    query="Phase 3 clinical trial results for oncology drugs",
+    context="Focus on FDA approval status and trial outcomes",
+    schema="[DRUG_NAME] showed [OUTCOME] in [INDICATION] trial",
+)
+
+# Wait for completion
+client.wait_for_completion(job_id)
+
+# Retrieve all results
+result = client.get_all_results(job_id)
+```
+
+### Async support
+
+Use `AsyncCatchAllClient` for concurrent operations:
+
+```python
+import asyncio
+from langchain_catchall import AsyncCatchAllClient
+
+async def search_multiple():
+    client = AsyncCatchAllClient(api_key=os.environ["CATCHALL_API_KEY"])
+
+    queries = [
+        "FDA drug approvals for oncology",
+        "Clinical trial failures in Phase 3",
+        "Breakthrough therapy designations",
+    ]
+
+    # Submit jobs concurrently
+    job_ids = await asyncio.gather(*[
+        client.submit_job(query) for query in queries
+    ])
+
+    # Wait for all completions
+    await asyncio.gather(*[
+        client.wait_for_completion(job_id) for job_id in job_ids
+    ])
+
+    # Retrieve results
+    results = await asyncio.gather(*[
+        client.get_all_results(job_id) for job_id in job_ids
+    ])
+
+    return results
+
+# Run async function
+results = asyncio.run(search_multiple())
+```
+
+For complete client documentation, see the [LangChain integration guide](https://www.newscatcherapi.com/docs/v3/catch-all/integrations/langchain).
+
+---
+
+## Tools
+
+For agent integration, use the `CatchAllTools` toolkit with LangGraph:
+
+```python
+from langchain_catchall import CatchAllTools
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o")
+
+toolkit = CatchAllTools(
+    api_key=os.environ["CATCHALL_API_KEY"],
+    llm=llm,
+    max_results=100,
+    verbose=True,
+    transform_query=False,
+)
+
+tools = toolkit.get_tools()
+```
+
+The toolkit provides two complementary tools optimized for agent workflows:
+
+### `catchall_search_data`
+
+Initializes new search operations. Processes 50,000+ web pages in 10-15 minutes:
+
+```python
+from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import SystemMessage
+from langchain_catchall import CATCHALL_AGENT_PROMPT
+
+agent = create_react_agent(model=llm, tools=tools)
+messages = [SystemMessage(content=CATCHALL_AGENT_PROMPT)]
+
+response = agent.invoke({
+    "messages": messages + [
+        ("user", "Find Phase 3 clinical trial results for oncology drugs")
+    ]
+})
+```
+
+### `catchall_analyze_data`
+
+Queries cached results instantly. Use for filtering, sorting, and analysis without additional API costs:
+
+```python
+# Follow-up queries use cached data
+response = agent.invoke({
+    "messages": messages + [
+        ("user", "Show only FDA-approved trials")
+    ]
+})
+```
+
+See the [tool documentation](/oss/integrations/tools/newscatcher_catchall) for usage examples and agent patterns.
+
+---
+
+## Agent prompt
+
+The `CATCHALL_AGENT_PROMPT` teaches agents optimal tool usage patterns for cost-effective operation. The prompt is maintained in the [package source code](https://github.com/Newscatcher/langchain-catchall/blob/main/langchain_catchall/prompts.py) and may be updated over time.
+
+Key patterns:
+
+- Search broadly first with `catchall_search_data`.
+- Use `catchall_analyze_data` for filtering, sorting, and follow-up questions.
+- Never search twice in a row (cache is automatically maintained).
+
+---
+
+## Cost optimization
+
+The most powerful pattern: search once, analyze many times without additional costs:
+
+```python
+from langchain_catchall import CatchAllClient, query_with_llm
+from langchain_openai import ChatOpenAI
+
+client = CatchAllClient(api_key=os.environ["CATCHALL_API_KEY"])
+llm = ChatOpenAI(model="gpt-4o")
+
+# Search once (10-15 minutes, costs API credits)
+result = client.search("Phase 3 clinical trial results for oncology drugs")
+
+# Analyze many times (instant, no additional cost)
+questions = [
+    "Which drugs showed the most promising results?",
+    "What are the most common cancer types being treated?",
+    "Which trials are FDA-approved?",
+    "What are the average trial durations?",
+    "Which pharmaceutical companies are most active?",
+]
+
+for question in questions:
+    answer = query_with_llm(result, question, llm)
+    print(f"\nQ: {question}")
+    print(f"A: {answer}")
+```
+
+This pattern is ideal for:
+
+- Pharmaceutical research (analyze clinical trial data from multiple angles).
+- Regulatory intelligence (extract different insights from one search).
+- Competitive analysis (iterate on questions without re-fetching).
+
+---
+
+## Resources
+
+<CardGroup cols={2}>
+    <Card title="Tool documentation" icon="screwdriver-wrench" href="/oss/integrations/tools/newscatcher_catchall">
+        Complete guide to using CatchAll tools with LangGraph agents.
+    </Card>
+
+    <Card title="API reference" icon="book" href="https://www.newscatcherapi.com/docs/v3/catch-all/endpoints/create-job">
+        Full API endpoint documentation and parameters.
+    </Card>
+
+    <Card title="Integration guide" icon="link" href="https://www.newscatcherapi.com/docs/v3/catch-all/integrations/langchain">
+        Detailed LangChain integration patterns and examples.
+    </Card>
+
+    <Card title="GitHub repository" icon="github" href="https://github.com/NewscatcherAPI/langchain-catchall">
+        Source code and community contributions.
+    </Card>
+</CardGroup>
