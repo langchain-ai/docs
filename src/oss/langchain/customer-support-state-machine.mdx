@@ -1,12 +1,12 @@
 ---
-title: Build a customer support agent with handoffs
-sidebarTitle: Customer support handoffs
+title: Build a customer support state machine
+sidebarTitle: Customer support state machine
 ---
 
 import ChatModelTabsPy from '/snippets/chat-model-tabs.mdx';
 import ChatModelTabsJs from '/snippets/chat-model-tabs-js.mdx';
 
-The [handoffs pattern](/oss/langchain/multi-agent#handoffs) describes workflows where an agent's behavior changes as it moves through different steps of a task. This tutorial shows how to implement handoffs by using tool calls to dynamically change a single agent's configuration—updating its available tools and instructions at each step based on what happened earlier in the conversation.
+The [state machine pattern](/oss/langchain/multi-agent#state-machine) describes workflows where an agent's behavior changes as it moves through different states of a task. This tutorial shows how to implement a state machine by using tool calls to dynamically change a single agent's configuration—updating its available tools and instructions based on the current state. The state can be determined from multiple sources: the agent's past actions (tool calls), external state (such as API call results), or even initial user input (for example, by running a classifier to determine user intent).
 
 In this tutorial, you'll build a customer support agent that does the following:
 
@@ -15,10 +15,10 @@ In this tutorial, you'll build a customer support agent that does the following:
 - Provides solutions or escalates to human support.
 - Maintains conversation state across multiple turns.
 
-Unlike the [supervisor pattern](/oss/langchain/supervisor) where sub-agents are called as tools, handoffs create a **state machine** where the active step changes based on workflow progress. Each "step" is just a different configuration (system prompt + tools) of the same underlying agent, selected dynamically based on state.
+Unlike the [supervisor pattern](/oss/langchain/supervisor) where sub-agents are called as tools, the **state machine pattern** uses a single agent whose configuration changes based on workflow progress. Each "step" is just a different configuration (system prompt + tools) of the same underlying agent, selected dynamically based on state.
 
 <Tip>
-**A note on terminology**: This tutorial uses "steps" to describe where we are in the workflow. If you've implemented this kind of flow in the past using distinct agents, you could also think of this as an "active_agent" field that switches between configurations.
+Some users may have implemented this workflow in the past using handoffs between distinct agents (an approach popularized by OpenAI). However, this can introduce unnecessary complexity (and latency) and ambiguity in correctly handling the chat history: an extra tool call to transfer control, followed by another to act on the user's request. This state machine pattern is more efficient—one tool call both performs the action (like recording warranty status) and transitions to the next step. Users experience a single, continuous agent throughout.
 </Tip>
 
 Here's the workflow we'll build:
@@ -152,19 +152,19 @@ from typing import Literal
 SupportStep = Literal["warranty_collector", "issue_classifier", "resolution_specialist"]  # [!code highlight]
 
 class SupportState(AgentState):  # [!code highlight]
-    """State for customer support workflow with handoffs."""
+    """State for customer support workflow."""
     current_step: NotRequired[SupportStep]  # [!code highlight]
     warranty_status: NotRequired[Literal["in_warranty", "out_of_warranty"]]
     issue_type: NotRequired[Literal["hardware", "software"]]
 ```
 
-The `current_step` field is the core of the handoffs pattern - it determines which configuration (prompt + tools) is loaded on each turn.
+The `current_step` field is the core of the state machine pattern - it determines which configuration (prompt + tools) is loaded on each turn.
 
-## 2. Create handoff tools
+## 2. Create tools that manage workflow state
 
 Create tools that update the workflow state. These tools allow the agent to record information and transition to the next step.
 
-The key to handoffs is using `Command` to update state, including the `current_step` field:
+The key is using `Command` to update state, including the `current_step` field:
 
 ```python
 from langchain.tools import tool, ToolRuntime
@@ -224,7 +224,7 @@ def provide_solution(solution: str) -> str:
     return f"Solution provided: {solution}"
 ```
 
-Notice how `record_warranty_status` and `record_issue_type` return `Command` objects that update both the data (`warranty_status`, `issue_type`) AND the `current_step`. This is the handoff mechanism - tools control the workflow.
+Notice how `record_warranty_status` and `record_issue_type` return `Command` objects that update both the data (`warranty_status`, `issue_type`) AND the `current_step`. This is how the state machine works - tools control workflow progression.
 
 ## 3. Define step configurations
 
@@ -377,12 +377,12 @@ agent = create_agent(
 ```
 
 <Note>
-**Why a checkpointer?** The checkpointer maintains state across conversation turns. Without it, the `current_step` state would be lost between user messages, breaking the handoff flow.
+**Why a checkpointer?** The checkpointer maintains state across conversation turns. Without it, the `current_step` state would be lost between user messages, breaking the workflow.
 </Note>
 
 ## 6. Test the workflow
 
-Test the complete handoff workflow:
+Test the complete workflow:
 
 ```python
 from langchain.messages import HumanMessage
@@ -436,7 +436,7 @@ Expected flow:
 2. **Issue classification step**: Asks about the problem, determines it's hardware
 3. **Resolution step**: Provides warranty repair instructions
 
-## 7. Understanding the handoff mechanism
+## 7. Understanding state transitions
 
 Let's trace what happens at each turn:
 
@@ -478,7 +478,7 @@ Next turn, middleware applies:
 - System prompt: `RESOLUTION_SPECIALIST_PROMPT` (formatted with `warranty_status` and `issue_type`)
 - Tools: `[provide_solution, escalate_to_human]`
 
-The key insight: **Tools drive the workflow** by updating `current_step`, and **middleware responds** by applying the appropriate configuration.
+The key insight: **Tools drive the workflow** by updating `current_step`, and **middleware responds** by applying the appropriate configuration on the next turn.
 
 ## 8. Manage message history
 
@@ -512,7 +512,7 @@ See the [short-term memory guide](/oss/langchain/short-term-memory) for other me
 Some workflows need to allow users to return to previous steps to correct information (e.g., changing warranty status or issue classification). However, not all transitions make sense—for example, you typically can't go back once a refund has been processed. For this support workflow, we'll add tools to return to the warranty verification and issue classification steps.
 
 <Tip>
-If your workflow requires arbitrary transitions between most steps, consider whether you need a structured workflow at all. The handoffs pattern works best when steps follow a clear sequential progression with occasional backwards transitions for corrections.
+If your workflow requires arbitrary transitions between most steps, consider whether you need a structured workflow at all. This pattern works best when steps follow a clear sequential progression with occasional backwards transitions for corrections.
 </Tip>
 
 Add "go back" tools to the resolution step:
@@ -574,9 +574,9 @@ Here's everything together in a runnable script:
 
 ```python
 """
-Customer Support Handoffs Example
+Customer Support State Machine Example
 
-This example demonstrates the handoffs pattern.
+This example demonstrates the state machine pattern.
 A single agent dynamically changes its behavior based on the current_step state,
 creating a state machine for sequential information collection.
 """
@@ -602,7 +602,7 @@ SupportStep = Literal["warranty_collector", "issue_classifier", "resolution_spec
 
 
 class SupportState(AgentState):
-    """State for customer support workflow with handoffs."""
+    """State for customer support workflow."""
 
     current_step: NotRequired[SupportStep]
     warranty_status: NotRequired[Literal["in_warranty", "out_of_warranty"]]
