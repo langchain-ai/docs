@@ -74,92 +74,116 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-haiku-4-5-20251001",
-    temperature=0,
-    max_tokens=1024,
-    timeout=None,
-    max_retries=2,
-    # other params...
+    # temperature=,
+    # max_tokens=,
+    # timeout=,
+    # max_retries=,
+    # ...
 )
 ```
 
-See the @[`ChatAnthropic`] API reference for details on all available parameters.
+See the @[`ChatAnthropic`] API reference for details on all available instantiation parameters.
+
+{/* TODO: show use with a proxy or different base_url */}
 
 ## Invocation
 
-```python
-messages = [
-    (
-        "system",
-        "You are a helpful assistant that translates English to French. Translate the user sentence.",
-    ),
-    ("human", "I love programming."),
-]
-ai_msg = model.invoke(messages)
-ai_msg
-```
+<AccordionGroup>
+    <Accordion
+        title="Invoke"
+    >
+        ```python
+        messages = [
+            (
+                "system",
+                "You are a helpful translator. Translate the user sentence to French.",
+            ),
+            (
+                "human",
+                "I love programming.",
+            ),
+        ]
+        model.invoke(messages)
+        ```
 
-```output
-AIMessage(content="J'adore la programmation.", response_metadata={'id': 'msg_018Nnu76krRPq8HvgKLW4F8T', 'model': 'claude-3-5-sonnet-20240620', 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 29, 'output_tokens': 11}}, id='run-57e9295f-db8a-48dc-9619-babd2bedd891-0', usage_metadata={'input_tokens': 29, 'output_tokens': 11, 'total_tokens': 40})
-```
 
-```python
-print(ai_msg.text)
-```
+        ```python
+        print(ai_msg.text)
+        ```
 
-```output
-J'adore la programmation.
-```
+        ```output
+        J'adore la programmation.
+        ```
+    </Accordion>
+    <Accordion
+        title="Stream"
+    >
+        ```python
+        for chunk in model.stream(messages):
+            print(chunk.text, end="")
+        ```
+
+        ```python
+        AIMessageChunk(content="J", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        AIMessageChunk(content="'", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        AIMessageChunk(content="a", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        AIMessageChunk(content="ime", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        AIMessageChunk(content=" la", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        AIMessageChunk(content=" programm", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        AIMessageChunk(content="ation", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        AIMessageChunk(content=".", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        ```
+
+        To aggregate the full message from the stream:
+
+        ```python
+        stream = model.stream(messages)
+        full = next(stream)
+        for chunk in stream:
+            full += chunk
+        full
+        ```
+
+        ```python
+        AIMessageChunk(content="J'aime la programmation.", id="run-b34faef0-882f-4869-a19c-ed2b856e6361")
+        ```
+    </Accordion>
+    <Accordion
+        title="Async"
+    >
+        ```python
+        await model.ainvoke(messages)
+
+        # stream
+        async for chunk in (await model.astream(messages))
+
+        # batch
+        await model.abatch([messages])
+        ```
+
+        ```python
+        AIMessage(
+            content="J'aime la programmation.",
+            response_metadata={
+                "id": "msg_01Trik66aiQ9Z1higrD5XFx3",
+                "model": "claude-sonnet-4-5-20250929",
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 25, "output_tokens": 11},
+            },
+            id="run-5886ac5f-3c2e-49f5-8a44-b1e92808c929-0",
+            usage_metadata={
+                "input_tokens": 25,
+                "output_tokens": 11,
+                "total_tokens": 36,
+            },
+        )
+        ```
+    </Accordion>
+</AccordionGroup>
 
 Learn more about supported invocation methods in our [models](/oss/langchain/models#invocation) guide.
 
-## Token counting
-
-You can count tokens in messages before sending them to the model using @[`get_num_tokens_from_messages()`][ChatAnthropic.get_num_tokens_from_messages]. This uses Anthropic's official [token counting API](https://platform.claude.com/docs/en/build-with-claude/token-counting).
-
-```python
-from langchain_anthropic import ChatAnthropic
-from langchain.messages import HumanMessage, SystemMessage
-
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
-
-messages = [
-    SystemMessage(content="You are a scientist"),
-    HumanMessage(content="Hello, Claude"),
-]
-
-token_count = model.get_num_tokens_from_messages(messages)
-print(token_count)
-```
-
-```output
-14
-```
-
-You can also count tokens when using tools:
-
-```python
-from langchain.tools import tool
-
-@tool(parse_docstring=True)
-def get_weather(location: str) -> str:
-    """Get the current weather in a given location
-
-    Args:
-        location: The city and state, e.g. San Francisco, CA
-    """
-    return "Sunny"
-
-messages = [
-    HumanMessage(content="What's the weather like in San Francisco?"),
-]
-
-token_count = model.get_num_tokens_from_messages(messages, tools=[get_weather])
-print(token_count)
-```
-
-```output
-586
-```
 
 ## Content blocks
 
@@ -186,7 +210,7 @@ response = model_with_tools.invoke("Which city is hotter today: LA or NY?")
 response.content
 ```
 
-```output
+```python
 [{'text': "I'll help you compare the temperatures of Los Angeles and New York by checking their current weather. I'll retrieve the weather for both cities.",
   'type': 'text'},
  {'id': 'toolu_01CkMaXrgmsNjTso7so94RJq',
@@ -212,7 +236,7 @@ You can also access tool calls specifically in a standard format using the
 response.tool_calls
 ```
 
-```output
+```python
 [{'name': 'GetWeather',
   'args': {'location': 'Los Angeles, CA'},
   'id': 'toolu_01Ddzj5PkuZkrjF4tafzu54A'},
@@ -230,6 +254,52 @@ See @[`ChatAnthropic.bind_tools`] for details on how to bind tools to your model
 <Note>
     For information about Claude's built-in tools (code execution, web browsing, files API, etc), see the [Built-in tools](#built-in-tools).
 </Note>
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    '''Get the current weather in a given location'''
+
+    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+
+class GetPopulation(BaseModel):
+    '''Get the current population in a given location'''
+
+    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+
+model_with_tools = model.bind_tools([GetWeather, GetPopulation]) # [!code highlight]
+ai_msg = model_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
+ai_msg.tool_calls
+```
+
+```python
+[
+    {
+        "name": "GetWeather",
+        "args": {"location": "Los Angeles, CA"},
+        "id": "toolu_01KzpPEAgzura7hpBqwHbWdo",
+    },
+    {
+        "name": "GetWeather",
+        "args": {"location": "New York, NY"},
+        "id": "toolu_01JtgbVGVJbiSwtZk3Uycezx",
+    },
+    {
+        "name": "GetPopulation",
+        "args": {"location": "Los Angeles, CA"},
+        "id": "toolu_01429aygngesudV9nTbCKGuw",
+    },
+    {
+        "name": "GetPopulation",
+        "args": {"location": "New York, NY"},
+        "id": "toolu_01JPktyd44tVMeBcPPnFSEJG",
+    },
+]
+```
 
 ### Strict tool use
 
@@ -398,7 +468,7 @@ Anthropic supports a [token-efficient tool use](https://platform.claude.com/docs
     print(f"\nTotal tokens: {response.usage_metadata['total_tokens']}")
     ```
 
-    ```output
+    ```python
     [{'name': 'get_weather', 'args': {'location': 'San Francisco'}, 'id': 'toolu_01EoeE1qYaePcmNbUvMsWtmA', 'type': 'tool_call'}]
 
     Total tokens: 408
@@ -462,8 +532,64 @@ for chunk in model_with_tools.stream("Write a document about AI"):
                 pass
 ```
 
-```output
+```python
 Complete args: {'title': 'Artificial Intelligence: An Overview', 'content': '# Artificial Intelligence: An Overview...
+```
+
+### Programmatic tool calling
+
+<Info>
+    Programmatic tool calling requires:
+
+    - Claude Sonnet 4.5 or Opus 4.5.
+    - `langchain-anthropic>=1.3.0`
+
+    You must specify the `advanced-tool-use-2025-11-20` beta header to enable programmatic tool calling.
+</Info>
+
+Tools can be configured to be callable from Claude's [code execution](#code-execution) environment, reducing latency and token consumption in contexts involving large data processing or multi-tool workflows.
+
+Refer to Claude's [programmatic tool calling guide](https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling) for details. To use this feature:
+
+- Include the [code execution](#code-execution) built-in tool in your set of tools
+- Specify `extras={"allowed_callers": ["code_execution_20250825"]}` on tools you wish to call programmatically
+
+See below for a full example with [`create_agent`](/oss/langchain/agents).
+
+<Tip>
+    You can specify `reuse_last_container` on initialization to automatically reuse code execution containers from previous model responses.
+</Tip>
+
+```python
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_anthropic import ChatAnthropic
+
+
+@tool(extras={"allowed_callers": ["code_execution_20250825"]}) # [!code highlight]
+def get_weather(location: str) -> str:
+    """Get the weather at a location."""
+    return "It's sunny."
+
+tools = [
+    {"type": "code_execution_20250825", "name": "code_execution"}, # [!code highlight]
+    get_weather,
+]
+
+model = ChatAnthropic(
+    model="claude-sonnet-4-5",
+    betas=["advanced-tool-use-2025-11-20"], # [!code highlight]
+    reuse_last_container=True,  # [!code highlight]
+)
+
+agent = create_agent(model, tools=tools)
+
+input_query = {
+    "role": "user",
+    "content": "What's the weather in Boston?",
+}
+
+result = agent.invoke({"messages": [input_query]})
 ```
 
 ## Multimodal
@@ -644,38 +770,36 @@ To use extended thinking, specify the `thinking` parameter when initializing @[`
 You will need to specify a token budget to use this feature. See usage example below:
 
 <CodeGroup>
+    ```python Initialization param
+    import json
+    from langchain_anthropic import ChatAnthropic
 
-```python Init param
-import json
-from langchain_anthropic import ChatAnthropic
+    model = ChatAnthropic(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=5000,
+        thinking={"type": "enabled", "budget_tokens": 2000}, # [!code highlight]
+    )
 
-model = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
-    max_tokens=5000,
-    thinking={"type": "enabled", "budget_tokens": 2000}, # [!code highlight]
-)
+    response = model.invoke("What is the cube root of 50.653?")
+    print(json.dumps(response.content_blocks, indent=2))
+    ```
 
-response = model.invoke("What is the cube root of 50.653?")
-print(json.dumps(response.content_blocks, indent=2))
-```
+    ```python Invocation param
+    import json
+    from langchain_anthropic import ChatAnthropic
 
-```python Invocation param
-import json
-from langchain_anthropic import ChatAnthropic
+    model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
-
-response = model.invoke(
-    "What is the cube root of 50.653?",
-    max_tokens=5000,
-    thinking={"type": "enabled", "budget_tokens": 2000} # [!code highlight]
-)
-print(json.dumps(response.content_blocks, indent=2))
-```
-
+    response = model.invoke(
+        "What is the cube root of 50.653?",
+        max_tokens=5000,
+        thinking={"type": "enabled", "budget_tokens": 2000} # [!code highlight]
+    )
+    print(json.dumps(response.content_blocks, indent=2))
+    ```
 </CodeGroup>
 
-```output
+```json
 [
   {
     "type": "reasoning",
@@ -683,11 +807,17 @@ print(json.dumps(response.content_blocks, indent=2))
     "extras": {"signature": "ErUBCkYIBxgCIkB0UjV..."}
   },
   {
-    "type": "text"
+    "type": "text",
     "text": "The cube root of 50.653 is approximately 3.6998.\n\nTo verify: 3.6998\u00b3 = 50.6530, which is very close to our original number.",
   }
 ]
 ```
+
+<Warning>
+    The Claude Messages API handles thinking differently across Claude Sonnet 3.7 and Claude 4 models.
+
+    Refer to the [Claude docs](https://platform.claude.com/docs/en/build-with-claude/extended-thinking#differences-in-thinking-across-model-versions) for more info.
+</Warning>
 
 ## Effort
 
@@ -698,7 +828,7 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-opus-4-5-20251101",
-    effort="medium", # [!code highlight]
+    effort="medium",  # # Options: "high", "medium", "low" [!code highlight]
 )
 
 response = model.invoke("Analyze the trade-offs between microservices and monolithic architectures")
@@ -709,294 +839,6 @@ response = model.invoke("Analyze the trade-offs between microservices and monoli
 </Note>
 
 See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/effort) for detail on when to use different effort levels and to see supported models.
-
-## Prompt caching
-
-Anthropic supports [caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) of elements of your prompts, including messages, tool definitions, tool results, images and documents. This allows you to re-use large documents, instructions, [few-shot documents](/langsmith/create-few-shot-evaluators), and other data to reduce latency and costs.
-
-To enable caching on an element of a prompt, mark its associated content block using the `cache_control` key. See examples below:
-
-<Warning>
-    Only certain Claude models support prompt caching. See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#supported-models) for details.
-</Warning>
-
-### Messages
-
-```python expandable
-import requests
-from langchain_anthropic import ChatAnthropic
-
-
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
-
-# Pull LangChain readme
-get_response = requests.get(
-    "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
-)
-readme = get_response.text
-
-messages = [
-    {
-        "role": "system",
-        "content": [
-            {
-                "type": "text",
-                "text": "You are a technology expert.",
-            },
-            {
-                "type": "text",
-                "text": f"{readme}",
-                "cache_control": {"type": "ephemeral"},  # [!code highlight]
-            },
-        ],
-    },
-    {
-        "role": "user",
-        "content": "What's LangChain, according to its README?",
-    },
-]
-
-response_1 = model.invoke(messages)
-response_2 = model.invoke(messages)
-
-usage_1 = response_1.usage_metadata["input_token_details"]
-usage_2 = response_2.usage_metadata["input_token_details"]
-
-print(f"First invocation:\n{usage_1}")
-print(f"\nSecond:\n{usage_2}")
-```
-
-```output
-First invocation:
-{'cache_read': 0, 'cache_creation': 1458}
-
-Second:
-{'cache_read': 1458, 'cache_creation': 0}
-```
-
-<Tip>
-**Extended caching**
-
-    The cache lifetime is 5 minutes by default. If this is too short, you can apply one hour caching by enabling the `"extended-cache-ttl-2025-04-11"` beta header and specifying `"cache_control": {"type": "ephemeral", "ttl": "1h"}` on the message:
-
-    ```python
-    model = ChatAnthropic(
-        model="claude-sonnet-4-5-20250929",
-        betas=["extended-cache-ttl-2025-04-11"],  # [!code highlight]
-    )
-
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": f"{long_text}",
-                    "cache_control": {"type": "ephemeral", "ttl": "1h"}, # [!code highlight]
-                },
-            ],
-        }
-    ]
-    ```
-
-    Details of cached token counts will be included on the @[`InputTokenDetails`] of response's @[`usage_metadata`][UsageMetadata]:
-
-    ```python
-    response = model.invoke(messages)
-    response.usage_metadata
-    ```
-    ```json
-    {
-        "input_tokens": 1500,
-        "output_tokens": 200,
-        "total_tokens": 1700,
-        "input_token_details": {
-            "cache_read": 0,
-            "cache_creation": 1000,
-            "ephemeral_1h_input_tokens": 750,
-            "ephemeral_5m_input_tokens": 250,
-        }
-    }
-    ```
-
-</Tip>
-
-### Caching tools
-
-```python expandable
-from langchain_anthropic import ChatAnthropic
-from langchain.tools import tool
-
-
-# For demonstration purposes, we artificially expand the
-# tool description.
-description = (
-    "Get the weather at a location. "
-    f"By the way, check out this readme: {readme}"
-)
-
-
-@tool(description=description, extras={"cache_control": {"type": "ephemeral"}})  # [!code highlight]
-def get_weather(location: str) -> str:
-    return "It's sunny."
-
-
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
-model_with_tools = model.bind_tools([get_weather])
-query = "What's the weather in San Francisco?"
-
-response_1 = model_with_tools.invoke(query)
-response_2 = model_with_tools.invoke(query)
-
-usage_1 = response_1.usage_metadata["input_token_details"]
-usage_2 = response_2.usage_metadata["input_token_details"]
-
-print(f"First invocation:\n{usage_1}")
-print(f"\nSecond:\n{usage_2}")
-```
-
-```output
-First invocation:
-{'cache_read': 0, 'cache_creation': 1809}
-
-Second:
-{'cache_read': 1809, 'cache_creation': 0}
-```
-
-### Incremental caching in conversational applications
-
-Prompt caching can be used in [multi-turn conversations](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#continuing-a-multi-turn-conversation) to maintain context from earlier messages without redundant processing.
-
-We can enable incremental caching by marking the final message with `cache_control`. Claude will automatically use the longest previously-cached prefix for follow-up messages.
-
-Below, we implement a simple chatbot that incorporates this feature. We follow the LangChain [chatbot tutorial](/oss/langchain/quickstart), but add a custom [reducer](/oss/langgraph/graph-api#reducers) that automatically marks the last content block in each user message with `cache_control`:
-
-<Accordion title="Chatbot with incremental prompt caching">
-    ```python expandable
-    import requests
-    from langchain_anthropic import ChatAnthropic
-    from langgraph.checkpoint.memory import MemorySaver
-    from langgraph.graph import START, StateGraph, add_messages
-    from typing_extensions import Annotated, TypedDict
-
-
-    model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
-
-    # Pull LangChain readme
-    get_response = requests.get(
-        "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
-    )
-    readme = get_response.text
-
-
-    def messages_reducer(left: list, right: list) -> list:
-        # Update last user message
-        for i in range(len(right) - 1, -1, -1):
-            if right[i].type == "human":
-                right[i].content[-1]["cache_control"] = {"type": "ephemeral"}
-                break
-
-        return add_messages(left, right)
-
-
-    class State(TypedDict):
-        messages: Annotated[list, messages_reducer]
-
-
-    workflow = StateGraph(state_schema=State)
-
-
-    # Define the function that calls the model
-    def call_model(state: State):
-        response = model.invoke(state["messages"])
-        return {"messages": [response]}
-
-
-    # Define the (single) node in the graph
-    workflow.add_edge(START, "model")
-    workflow.add_node("model", call_model)
-
-    # Add memory
-    memory = MemorySaver()
-    app = workflow.compile(checkpointer=memory)
-    ```
-
-    ```python
-    from langchain.messages import HumanMessage
-
-    config = {"configurable": {"thread_id": "abc123"}}
-
-    query = "Hi! I'm Bob."
-
-    input_message = HumanMessage([{"type": "text", "text": query}])
-    output = app.invoke({"messages": [input_message]}, config)
-    output["messages"][-1].pretty_print()
-    print(f"\n{output['messages'][-1].usage_metadata['input_token_details']}")
-    ```
-
-    ```output
-    ================================== Ai Message ==================================
-
-    Hello, Bob! It's nice to meet you. How are you doing today? Is there something I can help you with?
-
-    {'cache_read': 0, 'cache_creation': 0, 'ephemeral_5m_input_tokens': 0, 'ephemeral_1h_input_tokens': 0}
-    ```
-
-    ```python
-    query = f"Check out this readme: {readme}"
-
-    input_message = HumanMessage([{"type": "text", "text": query}])
-    output = app.invoke({"messages": [input_message]}, config)
-    output["messages"][-1].pretty_print()
-    print(f"\n{output['messages'][-1].usage_metadata['input_token_details']}")
-    ```
-
-    ```output
-    ================================== Ai Message ==================================
-
-    I can see you've shared the README from the LangChain GitHub repository. This is the documentation for LangChain, which is a popular framework for building applications powered by Large Language Models (LLMs). Here's a summary of what the README contains:
-
-    LangChain is:
-    - A framework for developing LLM-powered applications
-    - Helps chain together components and integrations to simplify AI application development
-    - Provides a standard interface for models, embeddings, vector stores, etc.
-
-    Key features/benefits:
-    - Real-time data augmentation (connect LLMs to diverse data sources)
-    - Model interoperability (swap models easily as needed)
-    - Large ecosystem of integrations
-
-    The LangChain ecosystem includes:
-    - LangSmith - For evaluations and observability
-    - LangGraph - For building complex agents with customizable architecture
-    - LangSmith - For deployment and scaling of agents
-
-    The README also mentions installation instructions (`pip install -U langchain`) and links to various resources including tutorials, how-to guides, conceptual guides, and API references.
-
-    Is there anything specific about LangChain you'd like to know more about, Bob?
-
-    {'cache_read': 0, 'cache_creation': 1846, 'ephemeral_5m_input_tokens': 1846, 'ephemeral_1h_input_tokens': 0}
-    ```
-
-    ```python
-    query = "What was my name again?"
-
-    input_message = HumanMessage([{"type": "text", "text": query}])
-    output = app.invoke({"messages": [input_message]}, config)
-    output["messages"][-1].pretty_print()
-    print(f"\n{output['messages'][-1].usage_metadata['input_token_details']}")
-    ```
-
-    ```output
-    ================================== Ai Message ==================================
-
-    Your name is Bob. You introduced yourself at the beginning of our conversation.
-
-    {'cache_read': 1846, 'cache_creation': 278, 'ephemeral_5m_input_tokens': 278, 'ephemeral_1h_input_tokens': 0}
-    ```
-
-    In the [LangSmith trace](https://smith.langchain.com/public/4d0584d8-5f9e-4b91-8704-93ba2ccf416a/r), toggling "raw output" will show exactly what messages are sent to the chat model, including `cache_control` keys.
-</Accordion>
 
 ## Citations
 
@@ -1036,7 +878,7 @@ response = model.invoke(messages)
 response.content
 ```
 
-```output
+```python
 [{'text': 'Based on the document, ', 'type': 'text'},
  {'text': 'the grass is green',
   'type': 'text',
@@ -1253,6 +1095,365 @@ model = ChatAnthropic(model="claude-haiku-4-5-20251001")
 response = model.invoke([message])
 ```
 
+## Prompt caching
+
+Anthropic supports [caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) of elements of your prompts, including messages, tool definitions, tool results, images and documents. This allows you to re-use large documents, instructions, [few-shot documents](/langsmith/create-few-shot-evaluators), and other data to reduce latency and costs.
+
+To enable caching on an element of a prompt, mark its associated content block using the `cache_control` key. See examples below:
+
+<Warning>
+    Only certain Claude models support prompt caching. See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#supported-models) for details.
+</Warning>
+
+### Messages
+
+```python expandable
+import requests
+from langchain_anthropic import ChatAnthropic
+
+
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+# Pull LangChain readme
+get_response = requests.get(
+    "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
+)
+readme = get_response.text
+
+messages = [
+    {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": "You are a technology expert.",
+            },
+            {
+                "type": "text",
+                "text": f"{readme}",
+                "cache_control": {"type": "ephemeral"},  # [!code highlight]
+            },
+        ],
+    },
+    {
+        "role": "user",
+        "content": "What's LangChain, according to its README?",
+    },
+]
+
+response_1 = model.invoke(messages)
+response_2 = model.invoke(messages)
+
+usage_1 = response_1.usage_metadata["input_token_details"]
+usage_2 = response_2.usage_metadata["input_token_details"]
+
+print(f"First invocation:\n{usage_1}")
+print(f"\nSecond:\n{usage_2}")
+```
+
+```python
+First invocation:
+{'cache_read': 0, 'cache_creation': 1458}
+
+Second:
+{'cache_read': 1458, 'cache_creation': 0}
+```
+
+Alternatively, you may enable prompt caching at invocation time. You may want to conditionally cache based on runtime conditions, such as the length of the context. This is useful for app-level decisions about what to cache.
+
+```python
+response = model.invoke(
+    messages,
+    cache_control={"type": "ephemeral"},  # [!code highlight]
+)
+```
+
+<Tip>
+    **Extended caching**
+
+    The cache lifetime is 5 minutes by default. If this is too short, you can apply one hour caching by enabling the `"extended-cache-ttl-2025-04-11"` beta header and specifying `"cache_control": {"type": "ephemeral", "ttl": "1h"}` on the message.
+
+    <Accordion
+        title="Example"
+    >
+        ```python
+        model = ChatAnthropic(
+            model="claude-sonnet-4-5-20250929",
+            betas=["extended-cache-ttl-2025-04-11"],  # [!code highlight]
+        )
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"{long_text}",
+                        "cache_control": {"type": "ephemeral", "ttl": "1h"}, # [!code highlight]
+                    },
+                ],
+            }
+        ]
+        ```
+
+        Details of cached token counts will be included on the @[`InputTokenDetails`] of response's @[`usage_metadata`][UsageMetadata]:
+
+        ```python
+        response = model.invoke(messages)
+        response.usage_metadata
+        ```
+        ```json
+        {
+            "input_tokens": 1500,
+            "output_tokens": 200,
+            "total_tokens": 1700,
+            "input_token_details": {
+                "cache_read": 0,
+                "cache_creation": 1000,
+                "ephemeral_1h_input_tokens": 750,
+                "ephemeral_5m_input_tokens": 250,
+            }
+        }
+        ```
+    </Accordion>
+
+</Tip>
+
+### Caching tools
+
+```python expandable
+from langchain_anthropic import ChatAnthropic
+from langchain.tools import tool
+
+
+# For demonstration purposes, we artificially expand the
+# tool description.
+description = (
+    "Get the weather at a location. "
+    f"By the way, check out this readme: {readme}"
+)
+
+
+@tool(description=description, extras={"cache_control": {"type": "ephemeral"}})  # [!code highlight]
+def get_weather(location: str) -> str:
+    return "It's sunny."
+
+
+model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+model_with_tools = model.bind_tools([get_weather])
+query = "What's the weather in San Francisco?"
+
+response_1 = model_with_tools.invoke(query)
+response_2 = model_with_tools.invoke(query)
+
+usage_1 = response_1.usage_metadata["input_token_details"]
+usage_2 = response_2.usage_metadata["input_token_details"]
+
+print(f"First invocation:\n{usage_1}")
+print(f"\nSecond:\n{usage_2}")
+```
+
+```python
+First invocation:
+{'cache_read': 0, 'cache_creation': 1809}
+
+Second:
+{'cache_read': 1809, 'cache_creation': 0}
+```
+
+### Incremental caching in conversational applications
+
+Prompt caching can be used in [multi-turn conversations](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#continuing-a-multi-turn-conversation) to maintain context from earlier messages without redundant processing.
+
+We can enable incremental caching by marking the final message with `cache_control`. Claude will automatically use the longest previously-cached prefix for follow-up messages.
+
+Below, we implement a simple chatbot that incorporates this feature. We follow the LangChain [chatbot tutorial](/oss/langchain/quickstart), but add a custom [reducer](/oss/langgraph/graph-api#reducers) that automatically marks the last content block in each user message with `cache_control`:
+
+<Accordion title="Chatbot with incremental prompt caching">
+    ```python expandable
+    import requests
+    from langchain_anthropic import ChatAnthropic
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.graph import START, StateGraph, add_messages
+    from typing_extensions import Annotated, TypedDict
+
+
+    model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+    # Pull LangChain readme
+    get_response = requests.get(
+        "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
+    )
+    readme = get_response.text
+
+
+    def messages_reducer(left: list, right: list) -> list:
+        # Update last user message
+        for i in range(len(right) - 1, -1, -1):
+            if right[i].type == "human":
+                right[i].content[-1]["cache_control"] = {"type": "ephemeral"}
+                break
+
+        return add_messages(left, right)
+
+
+    class State(TypedDict):
+        messages: Annotated[list, messages_reducer]
+
+
+    workflow = StateGraph(state_schema=State)
+
+
+    # Define the function that calls the model
+    def call_model(state: State):
+        response = model.invoke(state["messages"])
+        return {"messages": [response]}
+
+
+    # Define the (single) node in the graph
+    workflow.add_edge(START, "model")
+    workflow.add_node("model", call_model)
+
+    # Add memory
+    memory = MemorySaver()
+    app = workflow.compile(checkpointer=memory)
+    ```
+
+    ```python
+    from langchain.messages import HumanMessage
+
+    config = {"configurable": {"thread_id": "abc123"}}
+
+    query = "Hi! I'm Bob."
+
+    input_message = HumanMessage([{"type": "text", "text": query}])
+    output = app.invoke({"messages": [input_message]}, config)
+    output["messages"][-1].pretty_print()
+    print(f"\n{output['messages'][-1].usage_metadata['input_token_details']}")
+    ```
+
+    ```python
+    ================================== Ai Message ==================================
+
+    Hello, Bob! It's nice to meet you. How are you doing today? Is there something I can help you with?
+
+    {'cache_read': 0, 'cache_creation': 0, 'ephemeral_5m_input_tokens': 0, 'ephemeral_1h_input_tokens': 0}
+    ```
+
+    ```python
+    query = f"Check out this readme: {readme}"
+
+    input_message = HumanMessage([{"type": "text", "text": query}])
+    output = app.invoke({"messages": [input_message]}, config)
+    output["messages"][-1].pretty_print()
+    print(f"\n{output['messages'][-1].usage_metadata['input_token_details']}")
+    ```
+
+    ```output
+    ================================== Ai Message ==================================
+
+    I can see you've shared the README from the LangChain GitHub repository. This is the documentation for LangChain, which is a popular framework for building applications powered by Large Language Models (LLMs). Here's a summary of what the README contains:
+
+    LangChain is:
+    - A framework for developing LLM-powered applications
+    - Helps chain together components and integrations to simplify AI application development
+    - Provides a standard interface for models, embeddings, vector stores, etc.
+
+    Key features/benefits:
+    - Real-time data augmentation (connect LLMs to diverse data sources)
+    - Model interoperability (swap models easily as needed)
+    - Large ecosystem of integrations
+
+    The LangChain ecosystem includes:
+    - LangSmith - For evaluations and observability
+    - LangGraph - For building complex agents with customizable architecture
+    - LangSmith - For deployment and scaling of agents
+
+    The README also mentions installation instructions (`pip install -U langchain`) and links to various resources including tutorials, how-to guides, conceptual guides, and API references.
+
+    Is there anything specific about LangChain you'd like to know more about, Bob?
+
+    {'cache_read': 0, 'cache_creation': 1846, 'ephemeral_5m_input_tokens': 1846, 'ephemeral_1h_input_tokens': 0}
+    ```
+
+    ```python
+    query = "What was my name again?"
+
+    input_message = HumanMessage([{"type": "text", "text": query}])
+    output = app.invoke({"messages": [input_message]}, config)
+    output["messages"][-1].pretty_print()
+    print(f"\n{output['messages'][-1].usage_metadata['input_token_details']}")
+    ```
+
+    ```output
+    ================================== Ai Message ==================================
+
+    Your name is Bob. You introduced yourself at the beginning of our conversation.
+
+    {'cache_read': 1846, 'cache_creation': 278, 'ephemeral_5m_input_tokens': 278, 'ephemeral_1h_input_tokens': 0}
+    ```
+
+    In the [LangSmith trace](https://smith.langchain.com/public/4d0584d8-5f9e-4b91-8704-93ba2ccf416a/r), toggling "raw output" will show exactly what messages are sent to the chat model, including `cache_control` keys.
+</Accordion>
+
+## Token counting
+
+You can count tokens in messages before sending them to the model using @[`get_num_tokens_from_messages()`][ChatAnthropic.get_num_tokens_from_messages]. This uses Anthropic's official [token counting API](https://platform.claude.com/docs/en/build-with-claude/token-counting).
+
+<AccordionGroup>
+    <Accordion
+        title="Message token counting"
+    >
+        ```python
+        from langchain_anthropic import ChatAnthropic
+        from langchain.messages import HumanMessage, SystemMessage
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+        messages = [
+            SystemMessage(content="You are a scientist"),
+            HumanMessage(content="Hello, Claude"),
+        ]
+
+        token_count = model.get_num_tokens_from_messages(messages)
+        print(token_count)
+        ```
+
+        ```output
+        14
+        ```
+    </Accordion>
+    <Accordion
+        title="Tool token counting"
+    >
+        You can also count tokens when using tools:
+
+        ```python
+        from langchain.tools import tool
+
+        @tool(parse_docstring=True)
+        def get_weather(location: str) -> str:
+            """Get the current weather in a given location
+
+            Args:
+                location: The city and state, e.g. San Francisco, CA
+            """
+            return "Sunny"
+
+        messages = [
+            HumanMessage(content="What's the weather like in San Francisco?"),
+        ]
+
+        token_count = model.get_num_tokens_from_messages(messages, tools=[get_weather])
+        print(token_count)
+        ```
+
+        ```output
+        586
+        ```
+    </Accordion>
+</AccordionGroup>
+
 ## Context management
 
 Anthropic supports a context editing feature that will automatically manage the model's context window (e.g., by clearing tool results).
@@ -1262,7 +1463,7 @@ See the [Claude documentation](https://platform.claude.com/docs/en/build-with-cl
 <Info>
     **Context management is supported since `langchain-anthropic>=0.3.21`**
 
-    You must speficy the `context-management-2025-06-27` beta header to apply context management to your model calls.
+    You must specify the `context-management-2025-06-27` beta header to apply context management to your model calls.
 </Info>
 
 ```python
@@ -1349,7 +1550,7 @@ response = model_with_structure.invoke("Provide details about the movie Inceptio
 response
 ```
 
-```output
+```python
 Movie(title='Inception', year=2010, director='Christopher Nolan', rating=8.8)
 ```
 
@@ -1385,7 +1586,7 @@ result = agent.invoke({
 result["structured_response"]
 ```
 
-```output
+```python
 Weather(temperature=75.0, condition='Sunny')
 ```
 
@@ -1393,11 +1594,31 @@ Weather(temperature=75.0, condition='Sunny')
 
 ## Built-in tools
 
-Anthropic supports a variety of [built-in tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool), which can be bound to the model in the [usual way](/oss/langchain/tools/). Claude will generate tool calls adhering to its internal schema for the tool.
+Anthropic supports a variety of built-in client and server-side [tools](/oss/langchain/tools/).
+
+Server-side tools (e.g., [web search](#web-search)) are passed to the model and executed by Anthropic. Client-side tools (e.g., [bash tool](#bash-tool)) require you to implement the callback execution logic in your application and return results to the model.
+
+In either case, you make tools accessible to your chat model by using @[`bind_tools`][ChatAnthropic.bind_tools] on the model instance.
+
+Importantly, client-side tools require you to implement the execution logic. See the relevant sections below for examples.
+
+<Info>
+    **Middleware vs tools**
+
+    For client-side tools (e.g. [bash](#bash-tool), [text editor](#text-editor), [memory](#memory-tool)), you may opt to use [middleware](/oss/integrations/middleware/anthropic), which provide production-ready implementations that contain built-in execution, state management, and security policies.
+
+    Use middleware when you want a turnkey solution; use tools (documented below) when you need custom execution logic or want to use @[`bind_tools`][ChatAnthropic.bind_tools] directly.
+</Info>
+
+<Note>
+    **Beta tools**
+
+    If binding a beta tool to your chat model, LangChain will automatically add the required beta header for you.
+</Note>
 
 ### Bash tool
 
-Claude supports a [bash tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool) that allows it to execute shell commands in a persistent bash session. This enables system operations, script execution, and command-line automation.
+Claude supports a client-side [bash tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool) that allows it to execute shell commands in a persistent bash session. This enables system operations, script execution, and command-line automation.
 
 <Note>
     **Important: You must provide the execution environment**
@@ -1417,40 +1638,149 @@ Claude supports a [bash tool](https://platform.claude.com/docs/en/agents-and-too
     - Claude 4 models or Claude Sonnet 3.7
 </Info>
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python expandable
+        import subprocess
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        from anthropic.types.beta import BetaToolBash20250124Param  # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
+        from langchain.messages import HumanMessage, ToolMessage
+        from langchain.tools import tool
 
-bash_tool = {
-    "type": "bash_20250124",
-    "name": "bash",
-}
+        tool_spec = BetaToolBash20250124Param(  # [!code highlight]
+            name="bash",  # [!code highlight]
+            type="bash_20250124",  # [!code highlight]
+        )  # [!code highlight]
 
-model_with_bash = model.bind_tools([bash_tool])
-response = model_with_bash.invoke(
-    "List all Python files in the current directory"
-)
-```
 
-`response.tool_calls` will contain the bash command Claude wants to execute. You must run this command in your environment and pass the result back.
+        @tool(extras={"provider_tool_definition": tool_spec})  # [!code highlight]
+        def bash(*, command: str, restart: bool = False, **kw):
+            """Execute a bash command."""
+            if restart:
+                return "Bash session restarted"
+            try:
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                return result.stdout + result.stderr
+            except Exception as e:
+                return f"Error: {e}"
 
-```output
-[{'type': 'text',
-  'text': "I'll list the Python files in the current directory for you."},
- {'type': 'tool_call',
-  'name': 'bash',
-  'args': {'command': 'ls -la *.py'},
-  'id': 'toolu_01ABC123...'}]
-```
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        model_with_bash = model.bind_tools([bash]) # [!code highlight]
+
+        # Initial request
+        messages = [HumanMessage("List all files in the current directory")]
+        response = model_with_bash.invoke(messages)
+        print(response.content_blocks)
+
+        # Tool execution loop
+        while response.tool_calls:
+            # Execute each tool call
+            tool_messages = []
+            for tool_call in response.tool_calls:
+                result = bash.invoke(tool_call)
+                tool_messages.append(result)
+
+            # Continue conversation with tool results
+            messages = [*messages, response, *tool_messages]
+            response = model_with_bash.invoke(messages)
+            print(response.content_blocks)
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python expandable
+        import subprocess
+
+        from anthropic.types.beta import BetaToolBash20250124Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+        from langchain.tools import tool
+
+        tool_spec = BetaToolBash20250124Param( # [!code highlight]
+            name="bash", # [!code highlight]
+            type="bash_20250124", # [!code highlight]
+        ) # [!code highlight]
+
+
+        @tool(extras={"provider_tool_definition": tool_spec}) # [!code highlight]
+        def bash(*, command: str, restart: bool = False, **kw):
+            """Execute a bash command."""
+            if restart:
+                return "Bash session restarted"
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout + result.stderr
+
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+            tools=[bash],  # [!code highlight]
+        )
+
+        result = agent.invoke({"messages": [{"role": "user", "content": "List files"}]})
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+        bash_tool = { # [!code highlight]
+            "type": "bash_20250124", # [!code highlight]
+            "name": "bash", # [!code highlight]
+        } # [!code highlight]
+
+        model_with_bash = model.bind_tools([bash_tool]) # [!code highlight]
+        response = model_with_bash.invoke(
+            "List all Python files in the current directory"
+        )
+        # You must handle execution of the bash command in response.tool_calls via a tool execution loop
+        ```
+
+        Using @[`create_agent`] handles the tool execution loop automatically.
+
+        `response.tool_calls` will contain the bash command Claude wants to execute. You must run this command in your environment and pass the result back.
+
+        ```python
+        [{'type': 'text',
+        'text': "I'll list the Python files in the current directory for you."},
+        {'type': 'tool_call',
+        'name': 'bash',
+        'args': {'command': 'ls -la *.py'},
+        'id': 'toolu_01ABC123...'}]
+        ```
+    </Tab>
+</Tabs>
+
 
 The bash tool supports two parameters:
 - `command` (required): The bash command to execute
 - `restart` (optional): Set to `true` to restart the bash session
 
+<Tip>
+    For a "batteries-included" implementation, consider using [`ClaudeBashToolMiddleware`](/oss/integrations/middleware/anthropic#bash-tool) which provides persistent sessions, Docker isolation, output redaction, and startup/shutdown commands out of the box.
+</Tip>
+
 ### Code execution
 
-Claude can use a [code execution tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool) to execute code in a sandboxed environment.
+Claude can use a server-side [code execution tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool) to execute code in a sandboxed environment.
 
 <Info>
     Anthropic's `2025-08-25` code execution tools are supported since `langchain-anthropic>=1.0.3`.
@@ -1462,91 +1792,146 @@ Claude can use a [code execution tool](https://platform.claude.com/docs/en/agent
     The code sandbox does not have internet access, thus you may only use packages that are pre-installed in the environment. See the [Claude docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool#networking-and-security) for more info.
 </Note>
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python
+        from anthropic.types.beta import BetaCodeExecutionTool20250825Param # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
 
-model = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
-)
-
-tool = {"type": "code_execution_20250825", "name": "code_execution"} # [!code highlight]
-model_with_tools = model.bind_tools([tool])
-
-response = model_with_tools.invoke(
-    "Calculate the mean and standard deviation of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
-)
-```
-
-<Accordion title="Use with Files API">
-
-Using the Files API, Claude can write code to access files for data analysis and other purposes. See example below:
-
-```python
-import anthropic
-from langchain_anthropic import ChatAnthropic
-
-
-client = anthropic.Anthropic()
-file = client.beta.files.upload(
-    file=open("/path/to/sample_data.csv", "rb")
-)
-file_id = file.id
-
-
-# Run inference
-model = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
-)
-
-tool = {"type": "code_execution_20250825", "name": "code_execution"} # [!code highlight]
-model_with_tools = model.bind_tools([tool])
-
-input_message = {
-    "role": "user",
-    "content": [
-        {
-            "type": "text",
-            "text": "Please plot these data and tell me what you see.",
-        },
-        {
-            "type": "container_upload",
-            "file_id": file_id,
-        },
-    ]
-}
-response = model_with_tools.invoke([input_message])
-```
-
-Note that Claude may generate files as part of its code execution. You can access these files using the Files API:
-
-```python
-# Take all file outputs for demonstration purposes
-file_ids = []
-for block in response.content:
-    if block["type"] == "bash_code_execution_tool_result":
-        file_ids.extend(
-            content["file_id"]
-            for content in block.get("content", {}).get("content", [])
-            if "file_id" in content
+        model = ChatAnthropic(
+            model="claude-sonnet-4-5-20250929",
+            # (Optional) Enable the param below to automatically
+            # pass back in container IDs from previous response
+            reuse_last_container=True,
         )
 
-for i, file_id in enumerate(file_ids):
-    file_content = client.beta.files.download(file_id)
-    file_content.write_to_file(f"/path/to/file_{i}.png")
-```
+        code_tool = BetaCodeExecutionTool20250825Param( # [!code highlight]
+            name="code_execution", # [!code highlight]
+            type="code_execution_20250825", # [!code highlight]
+        ) # [!code highlight]
+        model_with_tools = model.bind_tools([code_tool]) # [!code highlight]
 
-<Note>
-    **Available tool versions:**
+        response = model_with_tools.invoke(
+            "Calculate the mean and standard deviation of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
+        )
+        ```
+    </Tab>
 
-    - `code_execution_20250522` (legacy)
-    - `code_execution_20250825` (recommended)
-</Note>
+    <Tab title="create_agent">
+        ```python
+        from anthropic.types.beta import BetaCodeExecutionTool20250825Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
 
+        code_tool = BetaCodeExecutionTool20250825Param( # [!code highlight]
+            name="code_execution", # [!code highlight]
+            type="code_execution_20250825", # [!code highlight]
+        ) # [!code highlight]
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+            tools=[code_tool],  # [!code highlight]
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "Calculate mean and std of [1,2,3,4,5]"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(
+            model="claude-sonnet-4-5-20250929",
+        )
+
+        code_tool = {"type": "code_execution_20250825", "name": "code_execution"} # [!code highlight]
+        model_with_tools = model.bind_tools([code_tool])
+
+        response = model_with_tools.invoke(
+            "Calculate the mean and standard deviation of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
+        )
+        ```
+    </Tab>
+</Tabs>
+
+<Accordion title="Use with Files API">
+    Using the Files API, Claude can write code to access files for data analysis and other purposes. See example below:
+
+    ```python
+    import anthropic
+    from anthropic.types.beta import BetaCodeExecutionTool20250825Param # [!code highlight]
+    from langchain_anthropic import ChatAnthropic
+
+
+    client = anthropic.Anthropic()
+    file = client.beta.files.upload(
+        file=open("/path/to/sample_data.csv", "rb")
+    )
+    file_id = file.id
+
+
+    # Run inference
+    model = ChatAnthropic(
+        model="claude-sonnet-4-5-20250929",
+    )
+
+    code_tool = BetaCodeExecutionTool20250825Param( # [!code highlight]
+        name="code_execution", # [!code highlight]
+        type="code_execution_20250825", # [!code highlight]
+    ) # [!code highlight]
+    model_with_tools = model.bind_tools([code_tool])
+
+    input_message = {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "Please plot these data and tell me what you see.",
+            },
+            {
+                "type": "container_upload",
+                "file_id": file_id,
+            },
+        ]
+    }
+    response = model_with_tools.invoke([input_message])
+    ```
+
+    Note that Claude may generate files as part of its code execution. You can access these files using the Files API:
+
+    ```python
+    # Take all file outputs for demonstration purposes
+    file_ids = []
+    for block in response.content:
+        if block["type"] == "bash_code_execution_tool_result":
+            file_ids.extend(
+                content["file_id"]
+                for content in block.get("content", {}).get("content", [])
+                if "file_id" in content
+            )
+
+    for i, file_id in enumerate(file_ids):
+        file_content = client.beta.files.download(file_id)
+        file_content.write_to_file(f"/path/to/file_{i}.png")
+    ```
+
+    <Note>
+        **Available tool versions:**
+
+        - `code_execution_20250522` (legacy)
+        - `code_execution_20250825` (recommended)
+    </Note>
 </Accordion>
 
 ### Computer use
 
-Claude supports [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) capabilities, allowing it to interact with desktop environments through screenshots, mouse control, and keyboard input.
+Claude supports client-side [computer use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) capabilities, allowing it to interact with desktop environments through screenshots, mouse control, and keyboard input.
 
 <Note>
     **Important: You must provide the execution environment**
@@ -1566,36 +1951,165 @@ Claude supports [computer use](https://platform.claude.com/docs/en/agents-and-to
     - Claude Opus 4.5, Claude 4, or Claude Sonnet 3.7
 </Info>
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python expandable
+        import base64
+        from typing import Literal
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        from anthropic.types.beta import BetaToolComputerUse20250124Param # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
+        from langchain.messages import HumanMessage, ToolMessage
+        from langchain.tools import tool
 
-# LangChain handles the API call and tool binding
-computer_tool = {
-    "type": "computer_20250124",
-    "name": "computer",
-    "display_width_px": 1024,
-    "display_height_px": 768,
-    "display_number": 1,
-}
+        DISPLAY_WIDTH = 1024
+        DISPLAY_HEIGHT = 768
 
-model_with_computer = model.bind_tools([computer_tool])
-response = model_with_computer.invoke(
-    "Take a screenshot to see what's on the screen"
-)
-```
+        tool_spec = BetaToolComputerUse20250124Param( # [!code highlight]
+            name="computer", # [!code highlight]
+            type="computer_20250124", # [!code highlight]
+            display_width_px=DISPLAY_WIDTH, # [!code highlight]
+            display_height_px=DISPLAY_HEIGHT, # [!code highlight]
+            display_number=1, # [!code highlight]
+        ) # [!code highlight]
 
-`response.tool_calls` will contain the computer action Claude wants to perform. You must execute this action in your environment and pass the result back.
+        @tool(extras={"provider_tool_definition": tool_spec}) # [!code highlight]
+        def computer(
+            *,
+            action: Literal[
+                "key", "type", "mouse_move", "left_click", "left_click_drag",
+                "right_click", "middle_click", "double_click", "screenshot",
+                "cursor_position", "scroll"
+            ],
+            coordinate: list[int] | None = None,
+            text: str | None = None,
+            **kw
+        ):
+            """Control the computer display."""
+            if action == "screenshot":
+                # Take screenshot and return base64-encoded image
+                # Implementation depends on your display setup (e.g., Xvfb, pyautogui)
+                return {"type": "image", "data": "base64_screenshot_data..."}
+            elif action == "left_click" and coordinate:
+                # Execute click at coordinate
+                return f"Clicked at {coordinate}"
+            elif action == "type" and text:
+                # Type text
+                return f"Typed: {text}"
+            # ... implement other actions
+            return f"Executed {action}"
 
-```output
-[{'type': 'text',
-  'text': "I'll take a screenshot to see what's currently on the screen."},
- {'type': 'tool_call',
-  'name': 'computer',
-  'args': {'action': 'screenshot'},
-  'id': 'toolu_01RNsqAE7dDZujELtacNeYv9'}]
-```
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        model_with_computer = model.bind_tools([computer]) # [!code highlight]
+
+        # Initial request
+        messages = [HumanMessage("Take a screenshot to see what's on the screen")]
+        response = model_with_computer.invoke(messages)
+        print(response.content_blocks)
+
+        # Tool execution loop
+        while response.tool_calls:
+            tool_messages = []
+            for tool_call in response.tool_calls:
+                result = computer.invoke(tool_call["args"])
+                tool_messages.append(
+                    ToolMessage(content=str(result), tool_call_id=tool_call["id"])
+                )
+
+            messages = [*messages, response, *tool_messages]
+            response = model_with_computer.invoke(messages)
+            print(response.content_blocks)
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python expandable
+        from typing import Literal
+
+        from anthropic.types.beta import BetaToolComputerUse20250124Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+        from langchain.tools import tool
+
+        tool_spec = BetaToolComputerUse20250124Param( # [!code highlight]
+            name="computer", # [!code highlight]
+            type="computer_20250124", # [!code highlight]
+            display_width_px=1024, # [!code highlight]
+            display_height_px=768, # [!code highlight]
+        ) # [!code highlight]
+
+
+        @tool(extras={"provider_tool_definition": tool_spec}) # [!code highlight]
+        def computer(
+            *,
+            action: Literal[
+                "key", "type", "mouse_move", "left_click", "left_click_drag",
+                "right_click", "middle_click", "double_click", "screenshot",
+                "cursor_position", "scroll"
+            ],
+            coordinate: list[int] | None = None,
+            text: str | None = None,
+            **kw
+        ):
+            """Control the computer display."""
+            if action == "screenshot":
+                return {"type": "image", "data": "base64_screenshot_data..."}
+            elif action == "left_click" and coordinate:
+                return f"Clicked at {coordinate}"
+            elif action == "type" and text:
+                return f"Typed: {text}"
+            return f"Executed {action}"
+
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+            tools=[computer],  # [!code highlight]
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "Take a screenshot"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+        computer_tool = {
+            "type": "computer_20250124",
+            "name": "computer",
+            "display_width_px": 1024,
+            "display_height_px": 768,
+            "display_number": 1,
+        }
+
+        model_with_computer = model.bind_tools([computer_tool]) # [!code highlight]
+        response = model_with_computer.invoke(
+            "Take a screenshot to see what's on the screen"
+        )
+        # You must handle execution of the computer actions in response.tool_calls via a tool execution loop
+        ```
+
+        Using @[`create_agent`] handles the tool execution loop automatically.
+
+        `response.tool_calls` will contain the computer action Claude wants to perform. You must execute this action in your environment and pass the result back.
+
+        ```python
+        [{'type': 'text',
+        'text': "I'll take a screenshot to see what's currently on the screen."},
+        {'type': 'tool_call',
+        'name': 'computer',
+        'args': {'action': 'screenshot'},
+        'id': 'toolu_01RNsqAE7dDZujELtacNeYv9'}]
+        ```
+    </Tab>
+</Tabs>
 
 <Note>
     **Available tool versions:**
@@ -1606,69 +2120,274 @@ response = model_with_computer.invoke(
 
 ### Remote MCP
 
-Claude can use a [MCP connector tool](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector) for model-generated calls to remote MCP servers.
+Claude can use a server-side [MCP connector tool](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector) for model-generated calls to remote MCP servers.
 
 <Info>
     **Remote MCP is supported since `langchain-anthropic>=0.3.14`**
 </Info>
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python
+        from anthropic.types.beta import BetaMCPToolsetParam # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
 
-mcp_servers = [
-    {
-        "type": "url",
-        "url": "https://docs.langchain.com/mcp",
-        "name": "LangChain Docs",
-        # "tool_configuration": {  # optional configuration
-        #     "enabled": True,
-        #     "allowed_tools": ["ask_question"],
-        # },
-        # "authorization_token": "PLACEHOLDER",  # optional authorization if needed
-    }
-]
+        mcp_servers = [
+            {
+                "type": "url",
+                "url": "https://docs.langchain.com/mcp",
+                "name": "LangChain Docs",
+            }
+        ]
 
-model = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
-    mcp_servers=mcp_servers, # [!code highlight]
-)
+        model = ChatAnthropic(
+            model="claude-sonnet-4-5-20250929",
+            mcp_servers=mcp_servers, # [!code highlight]
+        )
 
-response = model.invoke(
-    "What are LangChain content blocks?",
-    tools=[{"type": "mcp_toolset", "mcp_server_name": "LangChain Docs"}], # [!code highlight]
-)
-response.content_blocks
-```
+        mcp_tool = BetaMCPToolsetParam( # [!code highlight]
+            type="mcp_toolset", # [!code highlight]
+            mcp_server_name="LangChain Docs", # [!code highlight]
+        ) # [!code highlight]
+
+        response = model.invoke(
+            "What are LangChain content blocks?",
+            tools=[mcp_tool], # [!code highlight]
+        )
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python
+        from anthropic.types.beta import BetaMCPToolsetParam # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+
+        mcp_servers = [
+            {
+                "type": "url",
+                "url": "https://docs.langchain.com/mcp",
+                "name": "LangChain Docs",
+            }
+        ]
+
+        mcp_tool = BetaMCPToolsetParam( # [!code highlight]
+            type="mcp_toolset", # [!code highlight]
+            mcp_server_name="LangChain Docs", # [!code highlight]
+        ) # [!code highlight]
+
+        agent = create_agent(
+            model=ChatAnthropic(
+                model="claude-sonnet-4-5-20250929",
+                mcp_servers=mcp_servers,  # [!code highlight]
+            ),
+            tools=[mcp_tool],  # [!code highlight]
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "What are LangChain content blocks?"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        mcp_servers = [
+            {
+                "type": "url",
+                "url": "https://docs.langchain.com/mcp",
+                "name": "LangChain Docs",
+                # "tool_configuration": {  # optional configuration
+                #     "enabled": True,
+                #     "allowed_tools": ["ask_question"],
+                # },
+                # "authorization_token": "PLACEHOLDER",  # optional authorization if needed
+            }
+        ]
+
+        model = ChatAnthropic(
+            model="claude-sonnet-4-5-20250929",
+            mcp_servers=mcp_servers, # [!code highlight]
+        )
+
+        response = model.invoke(
+            "What are LangChain content blocks?",
+            tools=[{"type": "mcp_toolset", "mcp_server_name": "LangChain Docs"}], # [!code highlight]
+        )
+        response.content_blocks
+        ```
+    </Tab>
+</Tabs>
 
 ### Text editor
 
-The text editor tool can be used to view and modify text files. See docs [here](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool) for details.
+Claude supports a client-side text editor tool can be used to view and modify text local files. See docs [here](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool) for details.
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python expandable
+        from typing import Literal
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        from anthropic.types.beta import BetaToolTextEditor20250728Param # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
+        from langchain.messages import HumanMessage, ToolMessage
+        from langchain.tools import tool
 
-tool = {"type": "text_editor_20250728", "name": "str_replace_based_edit_tool"}
-model_with_tools = model.bind_tools([tool])
+        tool_spec = BetaToolTextEditor20250728Param( # [!code highlight]
+            name="str_replace_based_edit_tool", # [!code highlight]
+            type="text_editor_20250728", # [!code highlight]
+        ) # [!code highlight]
 
-response = model_with_tools.invoke(
-    "There's a syntax error in my primes.py file. Can you help me fix it?"
-)
-print(response.text)
-response.tool_calls
-```
+        # Simple in-memory file storage for demonstration
+        files: dict[str, str] = {
+            "/workspace/primes.py": "def is_prime(n):\n    if n < 2\n        return False\n    return True"
+        }
 
-```output
-I'll help you fix the syntax error in your primes.py file. Let me first take a look at the file to identify the issue.
-```
+        @tool(extras={"provider_tool_definition": tool_spec}) # [!code highlight]
+        def str_replace_based_edit_tool(
+            *,
+            command: Literal["view", "create", "str_replace", "insert", "undo_edit"],
+            path: str,
+            file_text: str | None = None,
+            old_str: str | None = None,
+            new_str: str | None = None,
+            insert_line: int | None = None,
+            view_range: list[int] | None = None,
+            **kw
+        ):
+            """View and edit text files."""
+            if command == "view":
+                if path not in files:
+                    return f"Error: File {path} not found"
+                content = files[path]
+                if view_range:
+                    lines = content.splitlines()
+                    start, end = view_range[0] - 1, view_range[1]
+                    return "\n".join(lines[start:end])
+                return content
+            elif command == "create":
+                files[path] = file_text or ""
+                return f"Created {path}"
+            elif command == "str_replace" and old_str is not None:
+                if path not in files:
+                    return f"Error: File {path} not found"
+                files[path] = files[path].replace(old_str, new_str or "", 1)
+                return f"Replaced in {path}"
+            # ... implement other commands
+            return f"Executed {command} on {path}"
 
-```output
-[{'name': 'str_replace_based_edit_tool',
-  'args': {'command': 'view', 'path': '/root'},
-  'id': 'toolu_011BG5RbqnfBYkD8qQonS9k9',
-  'type': 'tool_call'}]
-```
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        model_with_tools = model.bind_tools([str_replace_based_edit_tool]) # [!code highlight]
+
+        # Initial request
+        messages = [HumanMessage("There's a syntax error in my primes.py file. Can you fix it?")]
+        response = model_with_tools.invoke(messages)
+        print(response.content_blocks)
+
+        # Tool execution loop
+        while response.tool_calls:
+            tool_messages = []
+            for tool_call in response.tool_calls:
+                result = str_replace_based_edit_tool.invoke(tool_call["args"])
+                tool_messages.append(
+                    ToolMessage(content=result, tool_call_id=tool_call["id"])
+                )
+
+            messages = [*messages, response, *tool_messages]
+            response = model_with_tools.invoke(messages)
+            print(response.content_blocks)
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python expandable
+        from typing import Literal
+
+        from anthropic.types.beta import BetaToolTextEditor20250728Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+        from langchain.tools import tool
+
+        # Simple in-memory file storage
+        files: dict[str, str] = {
+            "/workspace/primes.py": "def is_prime(n):\n    if n < 2\n        return False\n    return True"
+        }
+
+        tool_spec = BetaToolTextEditor20250728Param( # [!code highlight]
+            name="str_replace_based_edit_tool", # [!code highlight]
+            type="text_editor_20250728", # [!code highlight]
+        ) # [!code highlight]
+
+
+        @tool(extras={"provider_tool_definition": tool_spec}) # [!code highlight]
+        def str_replace_based_edit_tool(
+            *,
+            command: Literal["view", "create", "str_replace", "insert", "undo_edit"],
+            path: str,
+            file_text: str | None = None,
+            old_str: str | None = None,
+            new_str: str | None = None,
+            **kw
+        ):
+            """View and edit text files."""
+            if command == "view":
+                return files.get(path, f"Error: File {path} not found")
+            elif command == "create":
+                files[path] = file_text or ""
+                return f"Created {path}"
+            elif command == "str_replace" and old_str is not None:
+                if path not in files:
+                    return f"Error: File {path} not found"
+                files[path] = files[path].replace(old_str, new_str or "", 1)
+                return f"Replaced in {path}"
+            return f"Executed {command} on {path}"
+
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+            tools=[str_replace_based_edit_tool],  # [!code highlight]
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "Fix the syntax error in /workspace/primes.py"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+        editor_tool = {"type": "text_editor_20250728", "name": "str_replace_based_edit_tool"} # [!code highlight]
+
+        model_with_tools = model.bind_tools([editor_tool]) # [!code highlight]
+
+        response = model_with_tools.invoke(
+            "There's a syntax error in my primes.py file. Can you help me fix it?"
+        )
+        # You must handle execution of the text editor commands in response.tool_calls via a tool execution loop
+        ```
+
+        Using @[`create_agent`] handles the tool execution loop automatically.
+
+        ```python
+        [{'name': 'str_replace_based_edit_tool',
+        'args': {'command': 'view', 'path': '/root'},
+        'id': 'toolu_011BG5RbqnfBYkD8qQonS9k9',
+        'type': 'tool_call'}]
+        ```
+    </Tab>
+</Tabs>
 
 <Note>
     **Available tool versions:**
@@ -1677,41 +2396,147 @@ I'll help you fix the syntax error in your primes.py file. Let me first take a l
     - `text_editor_20250728` (recommended)
 </Note>
 
+<Tip>
+    For a "batteries-included" implementation, consider using [`StateClaudeTextEditorMiddleware`](/oss/integrations/middleware/anthropic#text-editor) or [`FilesystemClaudeTextEditorMiddleware`](/oss/integrations/middleware/anthropic#text-editor) which provide LangGraph state integration or filesystem persistence, path validation, and other features.
+</Tip>
+
 ### Web fetching
 
-Claude can use a [web fetching tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool) to retrieve full content from specified web pages and PDF documents and ground its responses with citations.
+Claude can use a server-side [web fetching tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool) to retrieve full content from specified web pages and PDF documents and ground its responses with citations.
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python
+        from anthropic.types.beta import BetaWebFetchTool20250910Param # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
 
-model = ChatAnthropic(model="claude-haiku-4-5-20251001")
+        model = ChatAnthropic(model="claude-haiku-4-5-20251001")
 
-tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3} # [!code highlight]
-model_with_tools = model.bind_tools([tool])
+        fetch_tool = BetaWebFetchTool20250910Param( # [!code highlight]
+            name="web_fetch", # [!code highlight]
+            type="web_fetch_20250910", # [!code highlight]
+            max_uses=3, # [!code highlight]
+        ) # [!code highlight]
 
-response = model_with_tools.invoke(
-    "Please analyze the content at https://docs.langchain.com/"
-)
-```
+        model_with_tools = model.bind_tools([fetch_tool]) # [!code highlight]
+
+        response = model_with_tools.invoke(
+            "Please analyze the content at https://docs.langchain.com/"
+        )
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python
+        from anthropic.types.beta import BetaWebFetchTool20250910Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+
+        fetch_tool = BetaWebFetchTool20250910Param( # [!code highlight]
+            name="web_fetch", # [!code highlight]
+            type="web_fetch_20250910", # [!code highlight]
+            max_uses=3, # [!code highlight]
+        ) # [!code highlight]
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-haiku-4-5-20251001"),
+            tools=[fetch_tool],  # [!code highlight]
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "Analyze https://docs.langchain.com/"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(model="claude-haiku-4-5-20251001")
+
+        fetch_tool = {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": 3} # [!code highlight]
+
+        model_with_tools = model.bind_tools([fetch_tool]) # [!code highlight]
+
+        response = model_with_tools.invoke(
+            "Please analyze the content at https://docs.langchain.com/"
+        )
+        ```
+    </Tab>
+</Tabs>
 
 ### Web search
 
-Claude can use a [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) to run searches and ground its responses with citations.
+Claude can use a server-side [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) to run searches and ground its responses with citations.
 
 <Info>
     **Web search tool is supported since `langchain-anthropic>=0.3.13`**
 </Info>
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python
+        from anthropic.types.beta import BetaWebSearchTool20250305Param # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3} # [!code highlight]
-model_with_tools = model.bind_tools([tool])
+        search_tool = BetaWebSearchTool20250305Param( # [!code highlight]
+            name="web_search", # [!code highlight]
+            type="web_search_20250305", # [!code highlight]
+            max_uses=3, # [!code highlight]
+        ) # [!code highlight]
 
-response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?")
-```
+        model_with_tools = model.bind_tools([search_tool]) # [!code highlight]
+
+        response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?")
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python
+        from anthropic.types.beta import BetaWebSearchTool20250305Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+
+        search_tool = BetaWebSearchTool20250305Param( # [!code highlight]
+            name="web_search", # [!code highlight]
+            type="web_search_20250305", # [!code highlight]
+            max_uses=3, # [!code highlight]
+        ) # [!code highlight]
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+            tools=[search_tool],  # [!code highlight]
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "How do I update a web app to TypeScript 5.5?"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+        search_tool = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3} # [!code highlight]
+
+        model_with_tools = model.bind_tools([search_tool]) # [!code highlight]
+
+        response = model_with_tools.invoke("How do I update a web app to TypeScript 5.5?")
+        ```
+    </Tab>
+</Tabs>
 
 ### Memory tool
 
@@ -1721,30 +2546,185 @@ Claude supports a memory tool for client-side storage and retrieval of context a
     **Anthropic's built-in memory tool is supported since `langchain-anthropic>=0.3.21`**
 </Info>
 
-```python
-from langchain_anthropic import ChatAnthropic
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python expandable
+        from typing import Literal
 
-model = ChatAnthropic(
-    model="claude-sonnet-4-5-20250929",
-)
-model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}]) # [!code highlight]
+        from anthropic.types.beta import BetaMemoryTool20250818Param  # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
+        from langchain.messages import HumanMessage, ToolMessage
+        from langchain.tools import tool
 
-response = model_with_tools.invoke("What are my interests?")
-response.content_blocks
-```
+        tool_spec = BetaMemoryTool20250818Param(  # [!code highlight]
+            name="memory",  # [!code highlight]
+            type="memory_20250818",  # [!code highlight]
+        )  # [!code highlight]
 
-```output
-[{'type': 'text',
-  'text': "I'll check my memory to see what information I have about your interests."},
- {'type': 'tool_call',
-  'name': 'memory',
-  'args': {'command': 'view', 'path': '/memories'},
-  'id': 'toolu_01XeP9sxx44rcZHFNqXSaKqh'}]
-```
+        # Simple in-memory storage for demonstration purposes
+        memory_store: dict[str, str] = {
+            "/memories/interests": "User enjoys Python programming and hiking"
+        }
+
+
+        @tool(extras={"provider_tool_definition": tool_spec})  # [!code highlight]
+        def memory(
+            *,
+            command: Literal["view", "create", "str_replace", "insert", "delete", "rename"],
+            path: str,
+            content: str | None = None,
+            old_str: str | None = None,
+            new_str: str | None = None,
+            insert_line: int | None = None,
+            new_path: str | None = None,
+            **kw,
+        ):
+            """Manage persistent memory across conversations."""
+            if command == "view":
+                if path == "/memories":
+                    # List all memories
+                    return "\n".join(memory_store.keys()) or "No memories stored"
+                return memory_store.get(path, f"No memory at {path}")
+            elif command == "create":
+                memory_store[path] = content or ""
+                return f"Created memory at {path}"
+            elif command == "str_replace" and old_str is not None:
+                if path in memory_store:
+                    memory_store[path] = memory_store[path].replace(old_str, new_str or "", 1)
+                return f"Updated {path}"
+            elif command == "delete":
+                memory_store.pop(path, None)
+                return f"Deleted {path}"
+            # ... implement other commands
+            return f"Executed {command} on {path}"
+
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        model_with_tools = model.bind_tools([memory]) # [!code highlight]
+
+        # Initial request
+        messages = [HumanMessage("What are my interests?")]
+        response = model_with_tools.invoke(messages)
+        print(response.content_blocks)
+
+        # Tool execution loop
+        while response.tool_calls:
+            tool_messages = []
+            for tool_call in response.tool_calls:
+                result = memory.invoke(tool_call["args"])
+                tool_messages.append(ToolMessage(content=result, tool_call_id=tool_call["id"]))
+
+            messages = [*messages, response, *tool_messages]
+            response = model_with_tools.invoke(messages)
+            print(response.content_blocks)
+        ```
+
+        ```python
+        [{'type': 'text',
+        'text': "I'll check my memory to see what information I have about your interests."},
+        {'type': 'tool_call',
+        'name': 'memory',
+        'args': {'command': 'view', 'path': '/memories'},
+        'id': 'toolu_01XeP9sxx44rcZHFNqXSaKqh'}]
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python expandable
+        from typing import Literal
+
+        from anthropic.types.beta import BetaMemoryTool20250818Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+        from langchain.tools import tool
+
+        # Simple in-memory storage
+        memory_store: dict[str, str] = {
+            "/memories/interests": "User enjoys Python programming and hiking"
+        }
+
+        tool_spec = BetaMemoryTool20250818Param( # [!code highlight]
+            name="memory", # [!code highlight]
+            type="memory_20250818", # [!code highlight]
+        ) # [!code highlight]
+
+
+        @tool(extras={"provider_tool_definition": tool_spec}) # [!code highlight]
+        def memory(
+            *,
+            command: Literal["view", "create", "str_replace", "insert", "delete", "rename"],
+            path: str,
+            content: str | None = None,
+            old_str: str | None = None,
+            new_str: str | None = None,
+            **kw
+        ):
+            """Manage persistent memory across conversations."""
+            if command == "view":
+                if path == "/memories":
+                    return "\n".join(memory_store.keys()) or "No memories stored"
+                return memory_store.get(path, f"No memory at {path}")
+            elif command == "create":
+                memory_store[path] = content or ""
+                return f"Created memory at {path}"
+            elif command == "str_replace" and old_str is not None:
+                if path in memory_store:
+                    memory_store[path] = memory_store[path].replace(old_str, new_str or "", 1)
+                return f"Updated {path}"
+            elif command == "delete":
+                memory_store.pop(path, None)
+                return f"Deleted {path}"
+            return f"Executed {command} on {path}"
+
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+            tools=[memory],  # [!code highlight]
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "What are my interests?"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+
+        Using @[`create_agent`] handles the tool execution loop automatically.
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(
+            model="claude-sonnet-4-5-20250929",
+        )
+        model_with_tools = model.bind_tools([{"type": "memory_20250818", "name": "memory"}]) # [!code highlight]
+
+        response = model_with_tools.invoke("What are my interests?")
+        response.content_blocks
+        # You must handle execution of the memory commands in response.tool_calls via a tool execution loop
+        ```
+
+        ```python
+        [{'type': 'text',
+        'text': "I'll check my memory to see what information I have about your interests."},
+        {'type': 'tool_call',
+        'name': 'memory',
+        'args': {'command': 'view', 'path': '/memories'},
+        'id': 'toolu_01XeP9sxx44rcZHFNqXSaKqh'}]
+        ```
+    </Tab>
+</Tabs>
+
+<Tip>
+    For a "batteries-included" implementation, consider using [`StateClaudeMemoryMiddleware`](/oss/integrations/middleware/anthropic#memory) or [`FilesystemClaudeMemoryMiddleware`](/oss/integrations/middleware/anthropic#memory) which provide LangGraph state integration or filesystem persistence, automatic system prompt injection, and other features.
+</Tip>
 
 ### Tool search
 
-Claude supports a [tool search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) feature that enables dynamic tool discovery and loading. Instead of loading all tool definitions into the context window upfront, Claude can search your tool catalog and load only the tools it needs.
+Claude supports a server-side [tool search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) feature that enables dynamic tool discovery and loading. Instead of loading all tool definitions into the context window upfront, Claude can search your tool catalog and load only the tools it needs.
 
 This is useful when:
 
@@ -1759,38 +2739,135 @@ There are two tool search variants:
 
 Use the `extras` parameter to specify `defer_loading` on LangChain tools:
 
-```python
-from langchain_anthropic import ChatAnthropic
-from langchain.tools import tool
+<Tabs>
+    <Tab title="Anthropic type">
+        ```python expandable
+        from anthropic.types.beta import BetaToolSearchToolRegex20251119Param # [!code highlight]
+        from langchain_anthropic import ChatAnthropic
+        from langchain.tools import tool
 
-@tool(extras={"defer_loading": True})  # [!code highlight]
-def get_weather(location: str, unit: str = "fahrenheit") -> str:
-    """Get the current weather for a location.
+        @tool(extras={"defer_loading": True}) # [!code highlight]
+        def get_weather(location: str, unit: str = "fahrenheit") -> str:
+            """Get the current weather for a location.
 
-    Args:
-        location: City name
-        unit: Temperature unit (celsius or fahrenheit)
-    """
-    return f"Weather in {location}: Sunny"
+            Args:
+                location: City name
+                unit: Temperature unit (celsius or fahrenheit)
+            """
+            return f"Weather in {location}: Sunny"
 
-@tool(extras={"defer_loading": True})  # [!code highlight]
-def search_files(query: str) -> str:
-    """Search through files in the workspace.
+        @tool(extras={"defer_loading": True}) # [!code highlight]
+        def search_files(query: str) -> str:
+            """Search through files in the workspace.
 
-    Args:
-        query: Search query
-    """
-    return f"Found files matching '{query}'"
+            Args:
+                query: Search query
+            """
+            return f"Found files matching '{query}'"
 
-model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
 
-model_with_tools = model.bind_tools([
-    {"type": "tool_search_tool_regex_20251119", "name": "tool_search_tool_regex"},
-    get_weather,
-    search_files,
-])
-response = model_with_tools.invoke("What's the weather in San Francisco?")
-```
+        tool_search = BetaToolSearchToolRegex20251119Param( # [!code highlight]
+            name="tool_search_tool_regex", # [!code highlight]
+            type="tool_search_tool_regex_20251119", # [!code highlight]
+        ) # [!code highlight]
+
+        model_with_tools = model.bind_tools([
+            tool_search, # [!code highlight]
+            get_weather,
+            search_files,
+        ])
+        response = model_with_tools.invoke("What's the weather in San Francisco?")
+        ```
+    </Tab>
+
+    <Tab title="create_agent">
+        ```python expandable
+        from anthropic.types.beta import BetaToolSearchToolRegex20251119Param # [!code highlight]
+        from langchain.agents import create_agent
+        from langchain_anthropic import ChatAnthropic
+        from langchain.tools import tool
+
+        tool_search = BetaToolSearchToolRegex20251119Param( # [!code highlight]
+            name="tool_search_tool_regex", # [!code highlight]
+            type="tool_search_tool_regex_20251119", # [!code highlight]
+        ) # [!code highlight]
+
+
+        @tool(extras={"defer_loading": True}) # [!code highlight]
+        def get_weather(location: str, unit: str = "fahrenheit") -> str:
+            """Get the current weather for a location.
+
+            Args:
+                location: City name
+                unit: Temperature unit (celsius or fahrenheit)
+            """
+            return f"Weather in {location}: Sunny"
+
+
+        @tool(extras={"defer_loading": True}) # [!code highlight]
+        def search_files(query: str) -> str:
+            """Search through files in the workspace.
+
+            Args:
+                query: Search query
+            """
+            return f"Found files matching '{query}'"
+
+
+        agent = create_agent(
+            model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+            tools=[
+                tool_search,  # [!code highlight]
+                get_weather,
+                search_files,
+            ],
+        )
+
+        result = agent.invoke({
+            "messages": [{"role": "user", "content": "What's the weather in San Francisco?"}]
+        })
+
+        for message in result["messages"]:
+            message.pretty_print()
+        ```
+    </Tab>
+
+    <Tab title="Dict">
+        ```python
+        from langchain_anthropic import ChatAnthropic
+        from langchain.tools import tool
+
+        @tool(extras={"defer_loading": True})  # [!code highlight]
+        def get_weather(location: str, unit: str = "fahrenheit") -> str:
+            """Get the current weather for a location.
+
+            Args:
+                location: City name
+                unit: Temperature unit (celsius or fahrenheit)
+            """
+            return f"Weather in {location}: Sunny"
+
+        @tool(extras={"defer_loading": True})  # [!code highlight]
+        def search_files(query: str) -> str:
+            """Search through files in the workspace.
+
+            Args:
+                query: Search query
+            """
+            return f"Found files matching '{query}'"
+
+        model = ChatAnthropic(model="claude-sonnet-4-5-20250929")
+
+        model_with_tools = model.bind_tools([
+            {"type": "tool_search_tool_regex_20251119", "name": "tool_search_tool_regex"}, # [!code highlight]
+            get_weather,
+            search_files,
+        ])
+        response = model_with_tools.invoke("What's the weather in San Francisco?")
+        ```
+    </Tab>
+</Tabs>
 
 ```mermaid
 sequenceDiagram
@@ -1814,6 +2891,52 @@ sequenceDiagram
 - Both variants search tool names, descriptions, argument names, and argument descriptions
 
 See the [Claude documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) for more details on tool search, including usage with MCP servers and client-side implementations.
+
+
+## Response metadata
+
+```python
+ai_msg = model.invoke(messages)
+ai_msg.response_metadata
+```
+
+```python
+{
+    "id": "msg_013xU6FHEGEq76aP4RgFerVT",
+    "model": "claude-sonnet-4-5-20250929",
+    "stop_reason": "end_turn",
+    "stop_sequence": None,
+    "usage": {"input_tokens": 25, "output_tokens": 11},
+}
+```
+
+## Token usage metadata
+
+```python
+ai_msg = model.invoke(messages)
+ai_msg.usage_metadata
+```
+
+```python
+{"input_tokens": 25, "output_tokens": 11, "total_tokens": 36}
+```
+
+Message chunks containing token usage will be included during streaming by
+default:
+
+```python
+stream = model.stream(messages)
+full = next(stream)
+for chunk in stream:
+    full += chunk
+full.usage_metadata
+```
+
+```python
+{"input_tokens": 25, "output_tokens": 11, "total_tokens": 36}
+```
+
+These can be disabled by setting `stream_usage=False` in the stream method or when initializing `ChatAnthropic`.
 
 ---
 
