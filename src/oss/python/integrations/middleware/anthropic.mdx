@@ -17,7 +17,7 @@ Middleware specifically designed for Anthropic's Claude models. Learn more about
 `langchain-anthropic` provides two ways to use Claude's native tools:
 
 - **Middleware** (this page): Production-ready implementations with built-in execution, state management, and security policies
-- **Tools** ([`langchain_anthropic.tools`](/oss/integrations/chat/anthropic#built-in-tools)): Low-level building blocks where you provide your own execution logic
+- **Tools** (via [`bind_tools`](/oss/integrations/chat/anthropic#built-in-tools)): Low-level building blocks where you provide your own execution logic
 
 ### When to use which
 
@@ -26,7 +26,6 @@ Middleware specifically designed for Anthropic's Claude models. Learn more about
 | Production agents with bash | Middleware | Persistent sessions, Docker isolation, output redaction |
 | State-based file editing | Middleware | Built-in LangGraph state persistence |
 | Filesystem file editing | Middleware | Writes to disk with path validation |
-| Server-side tools (web search, code execution) | Tools | Anthropic executes these server-side |
 | Custom execution logic | Tools | Full control over execution |
 | Quick prototype | Tools | Simpler, bring your own callback |
 | Non-agent use with @[`bind_tools`][ChatAnthropic.bind_tools] | Tools | Middleware requires @[`create_agent`] |
@@ -37,14 +36,8 @@ Middleware specifically designed for Anthropic's Claude models. Learn more about
 |---------|:----------:|:-----:|
 | Works with @[`create_agent`] | ✅ | ✅ |
 | Works with @[`bind_tools`][ChatAnthropic.bind_tools] | ❌ | ✅ |
-| Persistent shell sessions | ✅ | ❌ |
-| Docker/sandbox isolation | ✅ | ❌ |
-| Output redaction | ✅ | ❌ |
-| LangGraph state integration | ✅ | ❌ |
-| Startup/shutdown hooks | ✅ | ❌ |
-| System prompt injection | ✅ (memory) | ❌ |
+| Built-in state management | ✅ | ❌ |
 | Custom execute callback | ❌ | ✅ |
-| Server-side execution | ❌ | ✅ |
 
 <Accordion title="Example: Middleware vs tools comparison">
 
@@ -74,22 +67,44 @@ agent = create_agent(
 ```python
 import subprocess
 
-from langchain_anthropic import ChatAnthropic, tools
+from anthropic.types.beta import BetaToolBash20250124Param
+from langchain_anthropic import ChatAnthropic
 from langchain.agents import create_agent
+from langchain.tools import tool
 
-def my_bash_execute(*, command=None, restart=False, **kwargs):
-    """You implement the execution logic."""
+tool_spec = BetaToolBash20250124Param(
+    name="bash",
+    type="bash_20250124",
+    strict=True,
+)
+
+@tool(extras={"provider_tool_definition": tool_spec})
+def bash(*, command: str, restart: bool = False, **kw):
+    """Execute a bash command."""
     if restart:
-        return "Session restarted"
+        return "Bash session restarted"
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.stdout + result.stderr
+    except Exception as e:
+        return f"Error: {e}"
 
-    # Run command in your environment
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
-    return result.stdout + result.stderr
 
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
-    tools=[tools.bash_20250124(execute=my_bash_execute)],
+    tools=[bash],
 )
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "List files in this directory"}]}
+)
+print(result["messages"][-1].content)
 ```
 
 </Accordion>
