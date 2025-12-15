@@ -100,7 +100,7 @@ CONDITIONAL_FENCE_PATTERN = re.compile(
 CROSS_REFERENCE_PATTERN = re.compile(
     r"""
     (?:                     # Non-capturing group for two possible formats:
-        @\[                 # @ symbol followed by opening bracket for title
+        (?<!\\)@\[          # @ symbol (not preceded by backslash) followed by opening bracket
         (?P<title>[^\]]+)   # Custom title - one or more non-bracket characters
         \]                  # Closing bracket for title
         \[                  # Opening bracket for link name
@@ -109,7 +109,7 @@ CROSS_REFERENCE_PATTERN = re.compile(
         (?(backtick_with_title)`|)  # Closing backtick if opening backtick present
         \]                  # Closing bracket for link name
         |                   # OR
-        @\[                 # @ symbol followed by opening bracket
+        (?<!\\)@\[          # @ symbol (not preceded by backslash) followed by opening bracket
         (?P<backtick>`)?    # Optional backtick before link name
         (?P<link_name>[^`\]]+)   # Link name - non-backtick/bracket characters
         (?(backtick)`|)     # Closing backtick if opening backtick present
@@ -161,6 +161,9 @@ def replace_autolinks(
     based on the current conditional fence scope. Conditional fences use the
     syntax :::language to define scope boundaries.
 
+    Escaped autolinks (with backslash) are preserved as literal text:
+    \@[StateGraph] will appear as @[StateGraph] in the output without transformation.
+
     Args:
         markdown: The markdown content to process.
         file_path: The file path for error reporting.
@@ -168,13 +171,19 @@ def replace_autolinks(
 
     Returns:
         Processed markdown content with @[references] transformed to proper
-        markdown links or left unchanged if not found.
+        markdown links or left unchanged if not found. Escaped references are
+        unescaped.
 
     Example:
         Input:
             "@[StateGraph]\\n:::python\\n@[Command]\\n:::\\n"
         Output:
             "[StateGraph](url)\\n:::python\\n[Command](url)\\n:::\\n"
+
+        Input (escaped):
+            "\\@[StateGraph]"
+        Output:
+            "@[StateGraph]"
     """
     # Track the current scope context
     current_scope = default_scope
@@ -199,4 +208,7 @@ def replace_autolinks(
         )
         processed_lines.append(transformed_line)
 
-    return "".join(processed_lines)
+    result = "".join(processed_lines)
+
+    # Unescape escaped autolinks by removing the backslash
+    return re.sub(r"\\(@\[)", r"\1", result)
