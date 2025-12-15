@@ -44,11 +44,27 @@ Tools drive dynamic behavior: updating state to route between agents, loading co
 
 ## Supervisor
 
-In the **supervisor** architecture, a central supervisor agent coordinates sub-agents by calling them as tools. The supervisor decides which sub-agent to invoke, what input to provide, and how to combine results.
+In the **supervisor** architecture, a central supervisor agent coordinates sub-agents by calling them as tools. The supervisor decides which sub-agent to invoke, what input to provide, and how to combine results. Sub-agents are stateless—they don't remember past interactions, with all conversation memory maintained by the supervisor. This provides context isolation: each sub-agent invocation works in a clean context window, preventing context bloat in the main conversation.
+
+**Key characteristics:**
+
+* Centralized control: All routing passes through the supervisor
+* No direct user interaction: Sub-agents return results to the supervisor, not the user
+* Sub-agents via tools: Sub-agents are invoked via tools
+* Parallel execution: The supervisor can invoke multiple sub-agents in a single turn
 
 Use the supervisor pattern when you have multiple distinct domains (e.g., calendar, email, CRM, database), sub-agents don't need to converse directly with users, or you want centralized workflow control. For simpler cases with just a few tools, use a single agent.
 
-There are three main approaches to implementing supervisor coordination:
+<Card
+    title="Tutorial: Build a supervisor agent"
+    icon="sitemap"
+    href="/oss/langchain/supervisor"
+    arrow cta="Learn more"
+>
+    Learn how to build a personal assistant using the supervisor pattern, where a central supervisor agent coordinates specialized worker agents.
+</Card>
+
+Main approaches to implementing supervisor coordination:
 
 ### One tool per agent
 
@@ -63,22 +79,6 @@ graph LR
     E --> B
     B --> F[User response]
 ```
-
-**Key characteristics:**
-
-* Centralized control: All routing passes through the supervisor
-* Sub-agents as tools: Each sub-agent is wrapped as a callable tool
-* No direct user interaction: Sub-agents return results to the supervisor, not the user
-* Parallel execution: The supervisor can invoke multiple sub-agents in a single turn
-
-<Card
-    title="Tutorial: Build a supervisor agent"
-    icon="sitemap"
-    href="/oss/langchain/supervisor"
-    arrow cta="Learn more"
->
-    Learn how to build a personal assistant using the supervisor pattern, where a central supervisor agent coordinates specialized worker agents.
-</Card>
 
 The key idea is wrapping sub-agents as tools that the supervisor can call:
 
@@ -277,7 +277,7 @@ const callSubagent1 = tool(
 </Accordion>
 
 
-### One tool for all agents (spawning)
+### One tool for all agents
 
 An alternative approach uses a single parameterized tool to spawn ephemeral sub-agents for independent tasks. Unlike the [one tool per agent](#one-tool-per-agent) approach where each sub-agent is wrapped as a separate tool, this uses a convention-based approach with a single `task` tool: the task description is passed as a human message to the sub-agent, and the sub-agent's final message is returned as the tool result.
 
@@ -298,17 +298,15 @@ graph LR
 **Key characteristics:**
 
 * Single task tool: One parameterized tool that can invoke any registered sub-agent by name
-* Convention-based context: Task description passes as human message, output is the final message content
-* Ephemeral execution: Each sub-agent invocation is stateless and returns a single result
-* Context isolation: Helps manage context by offloading complex tasks to isolated threads
+* Convention-based invocation: Agent selected by name, task passed as human message, final message returned as tool result
 * Team distribution: Different teams can develop and deploy agents independently
 * Agent discovery: Sub-agents can be discovered via system prompt (listing available agents) or through [progressive disclosure](/oss/langchain/progressive-disclosure-skills) (loading agent information on-demand via tools)
 
-**When context isolation matters most:**
-
-An interesting aspect of this approach is that sub-agents may have the exact same capabilities as the main agent. In such cases, spawning a sub-agent is **really about context isolation** as the primary reason—allowing complex, multi-step tasks to run in isolated context windows without bloating the main agent's conversation history. The sub-agent completes its work autonomously and returns only a concise summary, keeping the main thread focused and efficient.
-
 Use this approach when you want to distribute agent development across multiple teams, need to isolate complex tasks into separate context windows, need a scalable way to add new agents without modifying the coordinator, or prefer convention over customization. This approach trades flexibility in context engineering for simplicity in agent composition and strong context isolation.
+
+<Tip>
+An interesting aspect of this approach is that sub-agents may have the exact same capabilities as the main agent. In such cases, spawning a sub-agent is **really about context isolation** as the primary reason—allowing complex, multi-step tasks to run in isolated context windows without bloating the main agent's conversation history. The sub-agent completes its work autonomously and returns only a concise summary, keeping the main thread focused and efficient.
+</Tip>
 
 :::python
 ```python
@@ -793,7 +791,7 @@ const agent = createAgent({
 
 In the **router** architecture, a routing step decomposes the input and directs it to one or more specialized agents. The router can use query decomposition to determine which domain experts to consult, then runs them in parallel. Results from all agents are collected, synthesized, and returned.
 
-There are two main approaches to implementing routing:
+Main approaches to implementing routing:
 
 ### Stateless
 
@@ -813,11 +811,9 @@ graph LR
 
 **Key characteristics:**
 
-* Query decomposition: Router breaks down questions and determines which experts to consult
-* Domain experts: Each agent specializes in a specific knowledge base or domain
-* Parallel execution: Multiple agents process the request concurrently
-* Result synthesis: Outputs from specialized agents are combined into a coherent response
-* Stateless design: Best suited for single-turn requests rather than multi-turn conversations
+* Router decomposes the query, routes to one or more specialized agents in parallel
+* Results are synthesized into a coherent response
+* Stateless: best for single-turn requests
 
 This pattern excels at combining expertise from multiple domains. It's best thought of as a stateless API — a tool that takes a query and returns synthesized results. While it could be adapted for conversations (by including past interactions in prompts), a simpler approach is to expose the entire router as a tool that another conversational agent can call.
 
