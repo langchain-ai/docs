@@ -1141,143 +1141,224 @@ This is how handoffs via tools work in multi-agent systems. It's similar to the 
 
 ## Custom workflow
 
-In the **custom workflow** architecture, you build bespoke workflows tailored to your specific use case using LangGraph. The graph structure is defined at construction time and can include conditional branches, parallel execution, and agentic routing based on LLM outputs.
+In the **custom workflow** architecture, you define your own bespoke execution flow using LangGraph. You have complete control over the graph structure—including sequential steps, conditional branches, loops, and parallel execution.
 
-Use the custom workflow pattern when you need full control over execution flow, want to mix agentic and non-agentic steps, or have requirements that don't fit standard patterns. The [router pattern](#router) is another example of a custom workflow.
+Use custom workflows when:
+- Standard patterns (subagents, skills, etc.) don't fit your requirements
+- You need to mix deterministic logic with agentic behavior
+- Your use case requires complex routing or multi-stage processing
 
-One common variant is a **sequential pipeline**, where nodes run in a fixed order. Each node processes the input and passes results to the next:
+Each node in your workflow can be a simple function, an LLM call, or an entire agent with tools. You can also compose other architectures within a custom workflow—for example, embedding a multi-agent system as a single node.
 
-    ```mermaid
-    graph LR
-        A[User] --> B[Extract text]
-        B --> C[Summarize]
-        C --> D[Translate]
-        D --> E[Result]
-    ```
+The [router pattern](#router) is an example of a custom workflow.
+One common use case for a sequential workflow is a Retrieval-Augmented Generation (RAG) pipeline.
 
-    <Accordion title="Building a sequential document processing pipeline">
+**Example: custom RAG pipeline**
 
-    This example builds a document processing pipeline that extracts text from a document, summarizes it, and translates the summary. The workflow uses custom state to pass structured data between nodes rather than relying solely on messages.
+This example shows a workflow that combines three different types of nodes:
 
-    The pipeline demonstrates two node types:
-    - Plain function: Deterministic text extraction (no LLM)
-    - Agent node: LLM-powered summarization and translation
+- **Model node** (Rewrite): An LLM call that rewrites the user query for better retrieval. Uses structured output to produce a clean search query.
+- **Deterministic node** (Retrieve): A standard function that performs vector similarity search. No LLM involved — just embedding lookup and ranking.
+- **Agent node** (Agent): A full agent with tools that can reason over the retrieved context and optionally fetch additional information.
 
-    Using custom state fields (like `extracted_text` and `summary`) keeps each stage's output cleanly separated and makes debugging easier.
+```mermaid
+graph LR
+    A([Query]) --> B{{Rewrite}}
+    B --> C[(Retrieve)]
+    C --> D((Agent))
+    D --> E([Response])
+```
 
-    :::python
-    ```python
-    from typing import TypedDict
-    from langgraph.graph import StateGraph, START, END
-    from langchain.agents import create_agent
+<Accordion title="Full implementation">
 
-    class DocumentState(TypedDict):
-        document: str
-        extracted_text: str
-        summary: str
-        translation: str
+:::python
+```python
+from typing import TypedDict
+from pydantic import BaseModel
+from langgraph.graph import StateGraph, START, END
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.vectorstores import InMemoryVectorStore
 
-    def extract_text(state: DocumentState) -> dict:
-        """Extract text content from a document."""
-        raw = state["document"]
-        return {"extracted_text": f"[Extracted from document]: {raw}"}
+class State(TypedDict):
+    question: str
+    rewritten_query: str
+    documents: list[str]
+    answer: str
 
-    summarize_agent = create_agent(
-        model="openai:gpt-4o",
-        prompt="Summarize the following text concisely.",
-        name="summarizer"
-    )
+# WNBA knowledge base with rosters, game results, and player stats
+embeddings = OpenAIEmbeddings()
+vector_store = InMemoryVectorStore(embeddings)
+vector_store.add_texts([
+    # Rosters
+    "New York Liberty 2024 roster: Breanna Stewart, Sabrina Ionescu, Jonquel Jones, Courtney Vandersloot.",
+    "Las Vegas Aces 2024 roster: A'ja Wilson, Kelsey Plum, Jackie Young, Chelsea Gray.",
+    "Indiana Fever 2024 roster: Caitlin Clark, Aliyah Boston, Kelsey Mitchell, NaLyssa Smith.",
+    # Game results
+    "2024 WNBA Finals: New York Liberty defeated Minnesota Lynx 3-2 to win the championship.",
+    "June 15, 2024: Indiana Fever 85, Chicago Sky 79. Caitlin Clark had 23 points and 8 assists.",
+    "August 20, 2024: Las Vegas Aces 92, Phoenix Mercury 84. A'ja Wilson scored 35 points.",
+    # Player stats
+    "A'ja Wilson 2024 season stats: 26.9 PPG, 11.9 RPG, 2.6 BPG. Won MVP award.",
+    "Caitlin Clark 2024 rookie stats: 19.2 PPG, 8.4 APG, 5.7 RPG. Won Rookie of the Year.",
+    "Breanna Stewart 2024 stats: 20.4 PPG, 8.5 RPG, 3.5 APG.",
+])
+retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 
-    def summarize(state: DocumentState) -> dict:
-        result = summarize_agent.invoke({
-            "messages": [{"role": "user", "content": state["extracted_text"]}]
-        })
-        return {"summary": result["messages"][-1].content}
+@tool
+def get_latest_news(query: str) -> str:
+    """Get the latest WNBA news and updates."""
+    # Your news API here
+    return "Latest: The WNBA announced expanded playoff format for 2025..."
 
-    translate_agent = create_agent(
-        model="openai:gpt-4o",
-        prompt="Translate the following text to Spanish.",
-        name="translator"
-    )
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[get_latest_news],
+)
 
-    def translate(state: DocumentState) -> dict:
-        result = translate_agent.invoke({
-            "messages": [{"role": "user", "content": state["summary"]}]
-        })
-        return {"translation": result["messages"][-1].content}
+model = ChatOpenAI(model="gpt-4o")
 
-    workflow = (
-        StateGraph(DocumentState)
-        .add_node("extract", extract_text)
-        .add_node("summarize", summarize)
-        .add_node("translate", translate)
-        .add_edge(START, "extract")
-        .add_edge("extract", "summarize")
-        .add_edge("summarize", "translate")
-        .add_edge("translate", END)
-        .compile()
-    )
+class RewrittenQuery(BaseModel):
+    query: str
 
-    result = workflow.invoke({"document": "Long document about AI agents..."})
-    print(result["translation"])
-    ```
-    :::
-    :::js
-    ```typescript
-    import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
-    import { createAgent } from "langchain";
+def rewrite_query(state: State) -> dict:
+    """Rewrite the user query for better retrieval."""
+    system_prompt = """Rewrite this query to retrieve relevant WNBA information.
+The knowledge base contains: team rosters, game results with scores, and player statistics (PPG, RPG, APG).
+Focus on specific player names, team names, or stat categories mentioned."""
+    response = model.with_structured_output(RewrittenQuery).invoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": state["question"]}
+    ])
+    return {"rewritten_query": response.query}
 
-    const DocumentState = Annotation.Root({
-      document: Annotation<string>(),
-      extractedText: Annotation<string>(),
-      summary: Annotation<string>(),
-      translation: Annotation<string>()
-    });
+def retrieve(state: State) -> dict:
+    """Retrieve documents based on the rewritten query."""
+    docs = retriever.invoke(state["rewritten_query"])
+    return {"documents": [doc.page_content for doc in docs]}
 
-    function extractText(state: typeof DocumentState.State) {
-      const raw = state.document;
-      return { extractedText: `[Extracted from document]: ${raw}` };
-    }
+def call_agent(state: State) -> dict:
+    """Generate answer using retrieved context."""
+    context = "\n\n".join(state["documents"])
+    prompt = f"Context:\n{context}\n\nQuestion: {state['question']}"
+    response = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    return {"answer": response["messages"][-1].content}
 
-    const summarizeAgent = createAgent({
-      model: "openai:gpt-4o",
-      prompt: "Summarize the following text concisely.",
-      name: "summarizer"
-    });
+workflow = (
+    StateGraph(State)
+    .add_node("rewrite", rewrite_query)
+    .add_node("retrieve", retrieve)
+    .add_node("agent", call_agent)
+    .add_edge(START, "rewrite")
+    .add_edge("rewrite", "retrieve")
+    .add_edge("retrieve", "agent")
+    .add_edge("agent", END)
+    .compile()
+)
 
-    async function summarize(state: typeof DocumentState.State) {
-      const result = await summarizeAgent.invoke({
-        messages: [{ role: "user", content: state.extractedText }]
-      });
-      return { summary: result.messages.at(-1)?.content };
-    }
+result = workflow.invoke({"question": "Who won the 2024 WNBA Championship?"})
+print(result["answer"])
+```
+:::
+:::js
+```typescript
+import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
+import { createAgent, tool } from "langchain";
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import * as z from "zod";
 
-    const translateAgent = createAgent({
-      model: "openai:gpt-4o",
-      prompt: "Translate the following text to Spanish.",
-      name: "translator"
-    });
+const State = Annotation.Root({
+  question: Annotation<string>(),
+  rewrittenQuery: Annotation<string>(),
+  documents: Annotation<string[]>(),
+  answer: Annotation<string>(),
+});
 
-    async function translate(state: typeof DocumentState.State) {
-      const result = await translateAgent.invoke({
-        messages: [{ role: "user", content: state.summary }]
-      });
-      return { translation: result.messages.at(-1)?.content };
-    }
+// WNBA knowledge base with rosters, game results, and player stats
+const embeddings = new OpenAIEmbeddings();
+const vectorStore = await MemoryVectorStore.fromTexts(
+  [
+    // Rosters
+    "New York Liberty 2024 roster: Breanna Stewart, Sabrina Ionescu, Jonquel Jones, Courtney Vandersloot.",
+    "Las Vegas Aces 2024 roster: A'ja Wilson, Kelsey Plum, Jackie Young, Chelsea Gray.",
+    "Indiana Fever 2024 roster: Caitlin Clark, Aliyah Boston, Kelsey Mitchell, NaLyssa Smith.",
+    // Game results
+    "2024 WNBA Finals: New York Liberty defeated Minnesota Lynx 3-2 to win the championship.",
+    "June 15, 2024: Indiana Fever 85, Chicago Sky 79. Caitlin Clark had 23 points and 8 assists.",
+    "August 20, 2024: Las Vegas Aces 92, Phoenix Mercury 84. A'ja Wilson scored 35 points.",
+    // Player stats
+    "A'ja Wilson 2024 season stats: 26.9 PPG, 11.9 RPG, 2.6 BPG. Won MVP award.",
+    "Caitlin Clark 2024 rookie stats: 19.2 PPG, 8.4 APG, 5.7 RPG. Won Rookie of the Year.",
+    "Breanna Stewart 2024 stats: 20.4 PPG, 8.5 RPG, 3.5 APG.",
+  ],
+  [{}, {}, {}, {}, {}, {}, {}, {}, {}],
+  embeddings
+);
+const retriever = vectorStore.asRetriever({ k: 5 });
 
-    const workflow = new StateGraph(DocumentState)
-      .addNode("extract", extractText)
-      .addNode("summarize", summarize)
-      .addNode("translate", translate)
-      .addEdge(START, "extract")
-      .addEdge("extract", "summarize")
-      .addEdge("summarize", "translate")
-      .addEdge("translate", END)
-      .compile();
+const getLatestNews = tool(
+  async ({ query }) => {
+    // Your news API here
+    return "Latest: The WNBA announced expanded playoff format for 2025...";
+  },
+  {
+    name: "get_latest_news",
+    description: "Get the latest WNBA news and updates",
+    schema: z.object({ query: z.string() })
+  }
+);
 
-    const result = await workflow.invoke({ document: "Long document about AI agents..." });
-    console.log(result.translation);
-    ```
-    :::
+const agent = createAgent({
+  model: "openai:gpt-4o",
+  tools: [getLatestNews],
+});
 
-    </Accordion>
+const model = new ChatOpenAI({ model: "gpt-4o" });
+
+const RewrittenQuery = z.object({ query: z.string() });
+
+async function rewriteQuery(state: typeof State.State) {
+  const systemPrompt = `Rewrite this query to retrieve relevant WNBA information.
+The knowledge base contains: team rosters, game results with scores, and player statistics (PPG, RPG, APG).
+Focus on specific player names, team names, or stat categories mentioned.`;
+  const response = await model.withStructuredOutput(RewrittenQuery).invoke([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: state.question }
+  ]);
+  return { rewrittenQuery: response.query };
+}
+
+async function retrieve(state: typeof State.State) {
+  const docs = await retriever.invoke(state.rewrittenQuery);
+  return { documents: docs.map(doc => doc.pageContent) };
+}
+
+async function callAgent(state: typeof State.State) {
+  const context = state.documents.join("\n\n");
+  const prompt = `Context:\n${context}\n\nQuestion: ${state.question}`;
+  const response = await agent.invoke({ messages: [{ role: "user", content: prompt }] });
+  return { answer: response.messages.at(-1)?.content };
+}
+
+const workflow = new StateGraph(State)
+  .addNode("rewrite", rewriteQuery)
+  .addNode("retrieve", retrieve)
+  .addNode("agent", callAgent)
+  .addEdge(START, "rewrite")
+  .addEdge("rewrite", "retrieve")
+  .addEdge("retrieve", "agent")
+  .addEdge("agent", END)
+  .compile();
+
+const result = await workflow.invoke({ question: "Who won the 2024 WNBA Championship?" });
+console.log(result.answer);
+```
+:::
+
+</Accordion>
+
+<Tip>
+You can use LangGraph state to pass information between workflow steps. This allows each part of your workflow to read and update structured fields, making it easy to share data and context across nodes.
+</Tip>
