@@ -184,8 +184,8 @@ def table() -> str:
 def doc() -> str:
     return f"""\
 ---
-title: Integration packages
-sidebarTitle: Overview
+title: LangChain integrations packages
+sidebarTitle: LangChain integrations
 mode: "wide"
 ---
 {{/* File generated automatically by pipeline/tools/partner_pkg_table.py */}}
