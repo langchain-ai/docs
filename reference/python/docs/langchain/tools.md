@@ -13,6 +13,8 @@
             - get_input_schema
             - get_output_schema
             - response_format
+            - args_schema
+            - return_direct
             - extras
 ::: langchain.tools.InjectedState
 ::: langchain.tools.InjectedStore
