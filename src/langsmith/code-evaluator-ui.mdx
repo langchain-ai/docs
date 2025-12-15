@@ -1,0 +1,111 @@
+---
+title: How to define a code evaluator
+sidebarTitle: Code evaluator
+---
+
+Code evaluators in the [LangSmith UI](https://smith.langchain.com) allow you to write custom evaluation logic using Python or TypeScript code directly in the interface. Unlike [LLM-as-a-judge](/langsmith/llm-as-judge) evaluators that use a model to evaluate outputs, code evaluators use deterministic logic you define.
+
+<Note>
+To define code evaluators programmatically using the SDK, refer to [How to define a code evaluator (SDK)](/langsmith/code-evaluator).
+</Note>
+
+## Step 1. Create the evaluator
+
+1. Create an evaluator from one of the following pages in the [LangSmith UI](https://smith.langchain.com):
+    - In the playground or from a dataset: Select the **+ Evaluator** button.
+    - From a tracing project: Select **Add rules**, configure your rule and select **Apply evaluator**.
+
+1. Select **Create custom code evaluator** from the evaluator type options.
+
+## Step 2. Write your evaluator code
+
+In the **Add Custom Code Evaluator** page, define your evaluation logic using Python or TypeScript.
+
+Your evaluator function must be named `perform_eval` and should:
+
+1. Accept `run` and `example` parameters.
+1. Access data via `run['inputs']`, `run['outputs']`, and `example['outputs']`.
+1. Return a dictionary with your metric name as the key.
+
+### Function signature
+
+```python
+def perform_eval(run, example):
+    # Access the data
+    inputs = run['inputs']
+    outputs = run['outputs']
+    reference_outputs = example['outputs']  # Optional: reference/expected outputs
+
+    # Your evaluation logic here
+    score = ...
+
+    # Return a dict with your metric name
+    return {"metric_name": score}
+```
+
+### Example: Exact match evaluator
+
+```python
+def perform_eval(run, example):
+    """Check if the answer exactly matches the expected answer."""
+    actual = run['outputs']['answer']
+    expected = example['outputs']['answer']
+
+    is_correct = actual == expected
+    return {"exact_match": is_correct}
+```
+
+### Example: Concision evaluator
+
+```python
+def perform_eval(run, example):
+    """Score how concise the answer is. 1 is most concise, 5 is least concise."""
+    answer = run['outputs']['answer']
+    score = min(len(answer) // 1000, 4) + 1
+
+    return {"concision_score": score}
+```
+
+### Example: Input-based evaluator
+
+```python
+def perform_eval(run, example):
+    """Check if the input text contains toxic language."""
+    text = run['inputs'].get('text', '').lower()
+    toxic_words = ["idiot", "stupid", "hate", "awful"]
+
+    is_toxic = any(word in text for word in toxic_words)
+    return {"is_toxic": is_toxic}
+```
+
+## Step 3. Configure the evaluator
+
+### Name and description
+
+Give your evaluator a clear name that describes what it measures (e.g., "Exact Match", "Concision Score").
+
+### Feedback configuration
+
+Configure how the score should be interpreted:
+
+- **Boolean**: True/false feedback
+- **Categorical**: String values representing categories
+- **Continuous**: Numerical scoring within a range
+
+## Step 4. Test and save
+
+1. Preview your evaluator on example data to ensure it works as expected
+2. Click **Save** to make the evaluator available for use
+
+## Use your code evaluator
+
+Once created, you can use your code evaluator:
+
+- When running evaluations from the [playground](/langsmith/observability-concepts#prompt-playground)
+- As part of a dataset to [automatically run evaluations on experiments](/langsmith/bind-evaluator-to-dataset)
+- When running [online evaluations](/langsmith/online-evaluations-code)
+
+## Related
+
+- [LLM-as-a-judge evaluator (UI)](/langsmith/llm-as-judge): Use an LLM to evaluate outputs
+- [Composite evaluators](/langsmith/composite-evaluators-ui): Combine multiple evaluator scores

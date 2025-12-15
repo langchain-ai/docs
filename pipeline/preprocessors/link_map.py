@@ -205,6 +205,8 @@ LINK_MAPS: list[LinkMap] = [
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
             "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
             "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
+            "traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "@traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
             # LangGraph
             "RemoteGraph": "langsmith/deployment/remote_graph/",
             "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
