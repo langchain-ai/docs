@@ -797,43 +797,53 @@ When writing custom implementations, you can extend the basic skills pattern in 
 
 ## Router
 
-In the **router** architecture, a routing mechanism determines which specialized agents to invoke. This pattern has two distinct approaches: **stateless** and **stateful**.
-
-Main approaches to implementing routing:
-
-### Stateless
-
-In the stateless approach, routing is triggered on every single user input. Each request is independently routed to the appropriate agents, processed, and returned.
+In the **router** architecture, a routing step classifies input and directs it to specialized agents. This is useful when you have distinct **verticals**—separate knowledge domains that each require their own agent.
 
 ```mermaid
 graph LR
     A([Query]) --> B[Router]
-    B --> C[Code docs agent]
-    B --> D[MCP docs agent]
-    B --> E[Notion docs agent]
+    B --> C[Agent A]
+    B --> D[Agent B]
+    B --> E[Agent C]
     C --> F[Synthesize]
     D --> F
     E --> F
     F --> G([Combined answer])
 ```
 
-**Key characteristics:**
+Key characteristics:
 
-* Router decomposes the query, routes to one or more specialized agents in parallel
+* Router decomposes the query
+* One or more specialized agents are invoked in parallel
 * Results are synthesized into a coherent response
-* Stateless: best for single-turn requests
 
-This pattern excels at combining expertise from multiple domains. It's best thought of as a stateless API — a tool that takes a query and returns synthesized results. While it could be adapted for conversations (by including past interactions in prompts), a simpler approach is to expose the entire router as a tool that another conversational agent can call.
+Two approaches:
+* [**Stateless routers**](#stateless) address each request independently
+* [**Stateful routers**](#stateful) maintain conversation history across requests
+
+### Stateless
+
+Each request is routed independently—no memory between calls. For multi-turn conversations, see [Stateful routers](#stateful).
 
 <Tip>
 **Stateless router vs Supervisor**: The [supervisor pattern](#supervisor) can also route to multiple agents. Use the stateless router when you need specialized preprocessing or custom routing logic. Use the supervisor pattern when you want the LLM to decide which agents to call dynamically.
 </Tip>
 
-Use the stateless router when you have distinct knowledge domains that need to be queried, questions that benefit from consulting multiple experts, or you want to parallelize search across multiple data sources. Common examples include documentation search across multiple repositories, research assistants querying different knowledge bases, and content retrieval from diverse sources.
+<Accordion title="Building a multi-source knowledge base router">
 
-<Accordion title="Building a multi-source documentation router">
+Your organization's knowledge lives in multiple places: GitHub repositories, Notion wikis, and Slack conversations. These are three distinct verticals, each requiring specialized tools and context. When users ask questions like "How do I authenticate API requests?", the answer may require information from multiple sources. This example builds a router that decomposes queries, identifies which verticals to consult, queries them in parallel, and synthesizes results.
 
-Your organization's documentation lives in multiple places: code repositories, MCP protocol specifications, and internal Notion pages. When users ask questions like "How do I authenticate API requests?", the answer requires information from all three sources. This example builds a router that decomposes queries, identifies which knowledge bases to consult, queries them in parallel using specialized agents, and synthesizes the results into a comprehensive answer.
+```mermaid
+graph LR
+    A([Query]) --> B[Router]
+    B --> C[GitHub agent]
+    B --> D[Notion agent]
+    B --> E[Slack agent]
+    C --> F[Synthesize]
+    D --> F
+    E --> F
+    F --> G([Combined answer])
+```
 
 :::python
 ```python
@@ -842,80 +852,83 @@ from langgraph.graph import StateGraph, START, END, Send
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 
-class DocsState(TypedDict):
+class RouterState(TypedDict):
     query: str
     routes: list[str]  # Which knowledge bases to query
-    code_docs_result: str | None
-    mcp_docs_result: str | None
-    notion_docs_result: str | None
+    github_result: str | None
+    notion_result: str | None
+    slack_result: str | None
     final_answer: str
 
-# Domain expert agents with specialized knowledge
-code_docs_agent = create_agent(
+# Specialized agents for each vertical
+github_agent = create_agent(
     model="openai:gpt-4o",
-    prompt="You are a code documentation expert. Answer questions about API references, code examples, and implementation details.",
-    name="code_docs"
+    tools=[search_code, search_issues, search_prs],
+    prompt="You are a GitHub expert. Answer questions about code, API references, and implementation details.",
+    name="github_agent"
 )
 
-mcp_docs_agent = create_agent(
+notion_agent = create_agent(
     model="openai:gpt-4o",
-    prompt="You are an MCP (Model Context Protocol) expert. Answer questions about MCP servers, tools, and integrations.",
-    name="mcp_docs"
+    tools=[search_notion, get_page],
+    prompt="You are a Notion expert. Answer questions about internal processes, policies, and team documentation.",
+    name="notion_agent"
 )
 
-notion_docs_agent = create_agent(
+slack_agent = create_agent(
     model="openai:gpt-4o",
-    prompt="You are a company knowledge expert. Answer questions about internal processes, policies, and team documentation.",
-    name="notion_docs"
+    tools=[search_slack, get_thread],
+    prompt="You are a Slack expert. Answer questions by searching relevant threads and discussions.",
+    name="slack_agent"
 )
 
 router_llm = ChatOpenAI(model="gpt-4o-mini")
 
-def decompose_query(state: DocsState) -> dict:  # [!code highlight]
+def decompose_query(state: RouterState) -> dict:  # [!code highlight]
     """Decompose query and determine which knowledge bases to consult."""  # [!code highlight]
     response = router_llm.invoke([
         {
             "role": "system",
-            "content": "Analyze this query and determine which knowledge bases to consult. Return a JSON list with one or more of: 'code_docs', 'mcp_docs', 'notion_docs'."
+            "content": "Analyze this query and determine which knowledge bases to consult. Return a JSON list with one or more of: 'github', 'notion', 'slack'."
         },
         {"role": "user", "content": state["query"]}
     ])
     # Parse LLM response to get routes (simplified for example)
-    routes = ["code_docs", "mcp_docs"]  # In practice, parse from LLM response
+    routes = ["github", "notion"]  # In practice, parse from LLM response
     return {"routes": routes}
 
 # Route to multiple agents in parallel  # [!code highlight]
-def route_to_agents(state: DocsState) -> list[Send]:  # [!code highlight]
+def route_to_agents(state: RouterState) -> list[Send]:  # [!code highlight]
     """Fan out to multiple agents in parallel."""  # [!code highlight]
     return [Send(route, state) for route in state["routes"]]  # [!code highlight]
 
-def query_code_docs(state: DocsState) -> dict:
-    result = code_docs_agent.invoke({
+def query_github(state: RouterState) -> dict:
+    result = github_agent.invoke({
         "messages": [{"role": "user", "content": state["query"]}]
     })
-    return {"code_docs_result": result["messages"][-1].content}
+    return {"github_result": result["messages"][-1].content}
 
-def query_mcp_docs(state: DocsState) -> dict:
-    result = mcp_docs_agent.invoke({
+def query_notion(state: RouterState) -> dict:
+    result = notion_agent.invoke({
         "messages": [{"role": "user", "content": state["query"]}]
     })
-    return {"mcp_docs_result": result["messages"][-1].content}
+    return {"notion_result": result["messages"][-1].content}
 
-def query_notion_docs(state: DocsState) -> dict:
-    result = notion_docs_agent.invoke({
+def query_slack(state: RouterState) -> dict:
+    result = slack_agent.invoke({
         "messages": [{"role": "user", "content": state["query"]}]
     })
-    return {"notion_docs_result": result["messages"][-1].content}
+    return {"slack_result": result["messages"][-1].content}
 
-def synthesize_results(state: DocsState) -> dict:  # [!code highlight]
+def synthesize_results(state: RouterState) -> dict:  # [!code highlight]
     """Combine results from multiple agents into a coherent answer."""  # [!code highlight]
     results = []
-    if state.get("code_docs_result"):
-        results.append(f"Code Docs: {state['code_docs_result']}")
-    if state.get("mcp_docs_result"):
-        results.append(f"MCP Docs: {state['mcp_docs_result']}")
-    if state.get("notion_docs_result"):
-        results.append(f"Notion: {state['notion_docs_result']}")
+    if state.get("github_result"):
+        results.append(f"GitHub: {state['github_result']}")
+    if state.get("notion_result"):
+        results.append(f"Notion: {state['notion_result']}")
+    if state.get("slack_result"):
+        results.append(f"Slack: {state['slack_result']}")
 
     # Use LLM to synthesize
     synthesis_response = router_llm.invoke([
@@ -926,22 +939,22 @@ def synthesize_results(state: DocsState) -> dict:  # [!code highlight]
 
 # Build workflow with parallel execution
 workflow = (
-    StateGraph(DocsState)
+    StateGraph(RouterState)
     .add_node("decompose", decompose_query)
-    .add_node("code_docs", query_code_docs)
-    .add_node("mcp_docs", query_mcp_docs)
-    .add_node("notion_docs", query_notion_docs)
+    .add_node("github", query_github)
+    .add_node("notion", query_notion)
+    .add_node("slack", query_slack)
     .add_node("synthesize", synthesize_results)
     .add_edge(START, "decompose")
-    .add_conditional_edges("decompose", route_to_agents, ["code_docs", "mcp_docs", "notion_docs"])  # [!code highlight]
-    .add_edge("code_docs", "synthesize")
-    .add_edge("mcp_docs", "synthesize")
-    .add_edge("notion_docs", "synthesize")
+    .add_conditional_edges("decompose", route_to_agents, ["github", "notion", "slack"])  # [!code highlight]
+    .add_edge("github", "synthesize")
+    .add_edge("notion", "synthesize")
+    .add_edge("slack", "synthesize")
     .add_edge("synthesize", END)
     .compile()
 )
 
-result = workflow.invoke({"query": "How do I use MCP with FastAPI?"})
+result = workflow.invoke({"query": "How do I authenticate API requests?"})
 print(result["final_answer"])
 ```
 :::
@@ -951,83 +964,86 @@ import { StateGraph, Annotation, START, END, Send } from "@langchain/langgraph";
 import { createAgent } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 
-const DocsState = Annotation.Root({
+const RouterState = Annotation.Root({
   query: Annotation<string>(),
   routes: Annotation<string[]>(),
-  codeDocsResult: Annotation<string | null>(),
-  mcpDocsResult: Annotation<string | null>(),
-  notionDocsResult: Annotation<string | null>(),
+  githubResult: Annotation<string | null>(),
+  notionResult: Annotation<string | null>(),
+  slackResult: Annotation<string | null>(),
   finalAnswer: Annotation<string>()
 });
 
-// Domain expert agents with specialized knowledge
-const codeDocsAgent = createAgent({
+// Specialized agents for each vertical
+const githubAgent = createAgent({
   model: "openai:gpt-4o",
-  prompt: "You are a code documentation expert. Answer questions about API references, code examples, and implementation details.",
-  name: "code_docs"
+  tools: [searchCode, searchIssues, searchPrs],
+  prompt: "You are a GitHub expert. Answer questions about code, API references, and implementation details.",
+  name: "github_agent"
 });
 
-const mcpDocsAgent = createAgent({
+const notionAgent = createAgent({
   model: "openai:gpt-4o",
-  prompt: "You are an MCP (Model Context Protocol) expert. Answer questions about MCP servers, tools, and integrations.",
-  name: "mcp_docs"
+  tools: [searchNotion, getPage],
+  prompt: "You are a Notion expert. Answer questions about internal processes, policies, and team documentation.",
+  name: "notion_agent"
 });
 
-const notionDocsAgent = createAgent({
+const slackAgent = createAgent({
   model: "openai:gpt-4o",
-  prompt: "You are a company knowledge expert. Answer questions about internal processes, policies, and team documentation.",
-  name: "notion_docs"
+  tools: [searchSlack, getThread],
+  prompt: "You are a Slack expert. Answer questions by searching relevant threads and discussions.",
+  name: "slack_agent"
 });
 
 const routerLlm = new ChatOpenAI({ model: "gpt-4o-mini" });
 
-async function decomposeQuery(state: typeof DocsState.State) {  // [!code highlight]
+async function decomposeQuery(state: typeof RouterState.State) {  // [!code highlight]
   // Decompose query and determine which knowledge bases to consult  // [!code highlight]
   const response = await routerLlm.invoke([
     {
       role: "system",
-      content: "Analyze this query and determine which knowledge bases to consult. Return a JSON list with one or more of: 'code_docs', 'mcp_docs', 'notion_docs'."
+      content: "Analyze this query and determine which knowledge bases to consult. Return a JSON list with one or more of: 'github', 'notion', 'slack'."
     },
     { role: "user", content: state.query }
   ]);
   // Parse LLM response to get routes (simplified for example)
-  const routes = ["code_docs", "mcp_docs"];
+  const routes = ["github", "notion"];
   return { routes };
 }
 
 // Route to multiple agents in parallel  // [!code highlight]
-function routeToAgents(state: typeof DocsState.State): Send[] {  // [!code highlight]
+function routeToAgents(state: typeof RouterState.State): Send[] {  // [!code highlight]
   // Fan out to multiple agents in parallel  // [!code highlight]
   return state.routes.map(route => new Send(route, state));  // [!code highlight]
 }
 
-async function queryCodeDocs(state: typeof DocsState.State) {
-  const result = await codeDocsAgent.invoke({
+async function queryGithub(state: typeof RouterState.State) {
+  const result = await githubAgent.invoke({
     messages: [{ role: "user", content: state.query }]
   });
-  return { codeDocsResult: result.messages.at(-1)?.content };
+  return { githubResult: result.messages.at(-1)?.content };
 }
 
-async function queryMcpDocs(state: typeof DocsState.State) {
-  const result = await mcpDocsAgent.invoke({
+async function queryNotion(state: typeof RouterState.State) {
+  const result = await notionAgent.invoke({
     messages: [{ role: "user", content: state.query }]
   });
-  return { mcpDocsResult: result.messages.at(-1)?.content };
+  return { notionResult: result.messages.at(-1)?.content };
 }
 
-async function queryNotionDocs(state: typeof DocsState.State) {
-  const result = await notionDocsAgent.invoke({
+async function querySlack(state: typeof RouterState.State) {
+  const result = await slackAgent.invoke({
     messages: [{ role: "user", content: state.query }]
   });
-  return { notionDocsResult: result.messages.at(-1)?.content };
+  return { slackResult: result.messages.at(-1)?.content };
 }
 
-async function synthesizeResults(state: typeof DocsState.State) {  // [!code highlight]
+async function synthesizeResults(state: typeof RouterState.State) {  // [!code highlight]
   // Combine results from multiple agents into a coherent answer  // [!code highlight]
   const results: string[] = [];
-  if (state.codeDocsResult) results.push(`Code Docs: ${state.codeDocsResult}`);
-  if (state.mcpDocsResult) results.push(`MCP Docs: ${state.mcpDocsResult}`);
-  if (state.notionDocsResult) results.push(`Notion: ${state.notionDocsResult}`);
+  if (state.githubResult) results.push(`GitHub: ${state.githubResult}`);
+  if (state.notionResult) results.push(`Notion: ${state.notionResult}`);
+  if (state.slackResult) results.push(`Slack: ${state.slackResult}`);
 
   // Use LLM to synthesize
   const synthesisResponse = await routerLlm.invoke([
@@ -1038,29 +1054,33 @@ async function synthesizeResults(state: typeof DocsState.State) {  // [!code hig
 }
 
 // Build workflow with parallel execution
-const workflow = new StateGraph(DocsState)
+const workflow = new StateGraph(RouterState)
   .addNode("decompose", decomposeQuery)
-  .addNode("code_docs", queryCodeDocs)
-  .addNode("mcp_docs", queryMcpDocs)
-  .addNode("notion_docs", queryNotionDocs)
+  .addNode("github", queryGithub)
+  .addNode("notion", queryNotion)
+  .addNode("slack", querySlack)
   .addNode("synthesize", synthesizeResults)
   .addEdge(START, "decompose")
-  .addConditionalEdges("decompose", routeToAgents, ["code_docs", "mcp_docs", "notion_docs"])  // [!code highlight]
-  .addEdge("code_docs", "synthesize")
-  .addEdge("mcp_docs", "synthesize")
-  .addEdge("notion_docs", "synthesize")
+  .addConditionalEdges("decompose", routeToAgents, ["github", "notion", "slack"])  // [!code highlight]
+  .addEdge("github", "synthesize")
+  .addEdge("notion", "synthesize")
+  .addEdge("slack", "synthesize")
   .addEdge("synthesize", END)
   .compile();
 
-const result = await workflow.invoke({ query: "How do I use MCP with FastAPI?" });
+const result = await workflow.invoke({ query: "How do I authenticate API requests?" });
 console.log(result.finalAnswer);
 ```
 :::
 
 </Accordion>
 
-<Tip>
-**Using routers as tools**: The entire router workflow can be exposed as a tool that another agent calls. This is simpler than trying to make the router itself conversational.
+
+### Stateful
+
+For multi-turn conversations, you need to maintain context across invocations.
+
+**The simplest approach:** wrap the stateless router as a tool that a conversational agent can call.
 
 :::python
 ```python
@@ -1070,7 +1090,7 @@ def search_docs(query: str) -> str:
     result = workflow.invoke({"query": query})
     return result["final_answer"]
 
-# Now any conversational agent can use this tool
+# Conversational agent uses the router as a tool
 conversational_agent = create_agent(
     model,
     tools=[search_docs],
@@ -1094,7 +1114,7 @@ const searchDocs = tool(
   }
 );
 
-// Now any conversational agent can use this tool
+// Conversational agent uses the router as a tool
 const conversationalAgent = createAgent({
   model,
   tools: [searchDocs],
@@ -1102,50 +1122,16 @@ const conversationalAgent = createAgent({
 });
 ```
 :::
-</Tip>
 
+The conversational agent handles memory and context; the router stays stateless. This avoids the complexity of managing conversation history across multiple parallel agents.
 
-### Stateful (handoffs)
+**Alternative**: Full persistence
 
-In the stateful approach, agents transfer control to one another using a handoff tool that updates the `active_agent` state variable. On the next user message, the conversation is directed to the currently active agent rather than re-routing from scratch.
+If you need the router itself to maintain state, use [persistence](/oss/langchain/short-term-memory) to store message history. When routing to an agent, fetch previous messages from state and selectively include them in the agent's context—this is a lever for [context engineering](/oss/langchain/context-engineering).
 
-```mermaid
-stateDiagram-v2
-    [*] --> Triage Agent
-    Triage Agent --> Triage Agent: User message
-    Triage Agent --> Sales Agent: transfer_to_sales()
-    Sales Agent --> Sales Agent: User message
-    Sales Agent --> Support Agent: transfer_to_support()
-    Support Agent --> Support Agent: User message
-    Support Agent --> Triage Agent: transfer_to_triage()
-
-    note right of Triage Agent
-        active_agent: "triage"
-        Tools: [transfer_to_sales, transfer_to_support]
-    end note
-
-    note right of Sales Agent
-        active_agent: "sales"
-        Tools: [transfer_to_support, transfer_to_triage]
-    end note
-
-    note right of Support Agent
-        active_agent: "support"
-        Tools: [transfer_to_triage, transfer_to_sales]
-    end note
-```
-
-**Key characteristics:**
-
-* State-driven routing: The `active_agent` state variable determines which agent handles the next user message
-* Tool-based transfers: Agents use handoff tools (e.g., `transfer_to_sales()`) to update the active agent
-* Persistent context: The conversation continues with the new agent maintaining state
-* Distinct agents: Unlike [state machine](#state-machine), this pattern supports completely different agents with their own prompts, tools, and capabilities
-
-This is how handoffs via tools work in multi-agent systems. It's similar to the [state machine pattern](#state-machine) in that both rely on a state variable to change behavior. However, the state machine pattern uses a single agent whose configuration changes, while stateful routing supports distinct agents with separate implementations.
-
-**Ambiguity in tool semantics:** One challenge with this pattern is potential ambiguity in whether a handoff tool call implements both the action and the transfer of control. For example, if a triage agent calls `transfer_to_sales()`, does it just update the routing state, or should it also perform some action (like creating a sales ticket) before transferring? This requires careful design of tool descriptions and agent prompts to clarify the intended semantics.
-
+<Warning>
+**This is challenging.** Maintaining coherent history across multiple agents is difficult, especially when agents run in parallel. Agents can become confused about context or produce inconsistent responses. Synthesizing results also becomes harder—you need to track which agents have responded and how to combine partial results across turns. Consider the [state machine pattern](#state-machine) or [supervisor pattern](#supervisor) instead—both are simpler to reason about.
+</Warning>
 
 ## Custom workflow
 
