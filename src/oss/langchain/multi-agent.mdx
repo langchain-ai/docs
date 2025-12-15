@@ -1150,12 +1150,54 @@ Use custom workflows when:
 
 Each node in your workflow can be a simple function, an LLM call, or an entire agent with tools. You can also compose other architectures within a custom workflow—for example, embedding a multi-agent system as a single node.
 
+```mermaid
+graph LR
+    A([Input]) --> B{{Conditional}}
+    B -->|path_a| C[Deterministic step]
+    B -->|path_b| D((Agentic step))
+    C --> G([Output])
+    D --> G([Output])
+```
+
 The [router pattern](#router) is an example of a custom workflow.
-One common use case for a sequential workflow is a Retrieval-Augmented Generation (RAG) pipeline.
 
-**Example: custom RAG pipeline**
+<Tip>
+**Calling a LangChain agent from a LangGraph node**: The main insight when mixing LangChain and LangGraph is that you can call a LangChain agent directly inside any LangGraph node. This lets you combine the flexibility of custom workflows with the convenience of pre-built agents:
 
-This pipeline answers questions about WNBA teams, players, and game results by combining retrieval with an agent that can fetch live news.
+:::python
+```python
+from langchain.agents import create_agent
+
+agent = create_agent(model="openai:gpt-4o", tools=[...])
+
+def agent_node(state: State) -> dict:
+    """A LangGraph node that invokes a LangChain agent."""
+    result = agent.invoke({
+        "messages": [{"role": "user", "content": state["query"]}]
+    })
+    return {"answer": result["messages"][-1].content}
+```
+:::
+:::js
+```typescript
+import { createAgent } from "langchain";
+
+const agent = createAgent({ model: "openai:gpt-4o", tools: [...] });
+
+async function agentNode(state: typeof State.State) {
+  // A LangGraph node that invokes a LangChain agent
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: state.query }]
+  });
+  return { answer: result.messages.at(-1)?.content };
+}
+```
+:::
+</Tip>
+
+**Example: RAG pipeline** — A common use case is combining retrieval with an agent. This example builds a WNBA stats assistant that retrieves from a knowledge base and can fetch live news.
+
+<Accordion title="Custom RAG workflow">
 
 The workflow demonstrates three types of nodes:
 
@@ -1171,7 +1213,9 @@ graph LR
     D --> E([Response])
 ```
 
-<Accordion title="Full implementation">
+<Tip>
+You can use LangGraph state to pass information between workflow steps. This allows each part of your workflow to read and update structured fields, making it easy to share data and context across nodes.
+</Tip>
 
 :::python
 ```python
@@ -1245,7 +1289,7 @@ def call_agent(state: State) -> dict:
     context = "\n\n".join(state["documents"])
     prompt = f"Context:\n{context}\n\nQuestion: {state['question']}"
     response = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
-    return {"answer": response["messages"][-1].content}
+    return {"answer": response["messages"][-1].content_blocks}
 
 workflow = (
     StateGraph(State)
@@ -1341,7 +1385,7 @@ async function callAgent(state: typeof State.State) {
   const context = state.documents.join("\n\n");
   const prompt = `Context:\n${context}\n\nQuestion: ${state.question}`;
   const response = await agent.invoke({ messages: [{ role: "user", content: prompt }] });
-  return { answer: response.messages.at(-1)?.content };
+  return { answer: response.messages.at(-1)?.contentBlocks };
 }
 
 const workflow = new StateGraph(State)
@@ -1360,7 +1404,3 @@ console.log(result.answer);
 :::
 
 </Accordion>
-
-<Tip>
-You can use LangGraph state to pass information between workflow steps. This allows each part of your workflow to read and update structured fields, making it easy to share data and context across nodes.
-</Tip>
