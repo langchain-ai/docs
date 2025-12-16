@@ -184,9 +184,7 @@ class DocumentationBuilder:
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"
             )
-            issue_url = (
-                f"https://github.com/langchain-ai/docs/issues/new/choose"
-            )
+            issue_url = "https://github.com/langchain-ai/docs/issues/new/choose"
 
             # Create the callout section with Mintlify Callout component
             source_links_section = (
