@@ -8,17 +8,23 @@ Multi-agent systems break complex applications into coordinated components. **Im
 
 When developers say they need "multi-agent," they're usually looking for one or more of these capabilities:
 
-* **Context management**: Provide specialized knowledge without overwhelming the model's context window. If context were infinite and latency zero, you could dump all knowledge into a single prompt — but since it's not, you need patterns to selectively surface relevant information.
-* **Distributed development**: Allow different teams to develop and maintain capabilities independently, composing them into a larger system with clear boundaries and independent testing.
-* **Parallelization**: Spawn specialized workers for subtasks and execute them concurrently.
+<Columns cols={3}>
+  <Card title="Context management" icon="brain">
+    Surface relevant knowledge without overwhelming the context window. Different tasks (agents) need different context.
+  </Card>
+  <Card title="Distributed development" icon="users">
+    Let different teams develop and maintain capabilities independently with clear boundaries.
+  </Card>
+  <Card title="Parallelization" icon="arrows-split-up-and-left">
+    Spawn specialized workers for subtasks and execute them concurrently for faster results.
+  </Card>
+</Columns>
 
 Multi-agent patterns are particularly valuable when a single agent has too many [tools](/oss/langchain/tools) and makes poor decisions about which to use, when tasks require specialized knowledge with extensive context (long prompts and domain-specific tools), or when you need to enforce sequential constraints that unlock capabilities only after certain conditions are met.
 
-## Context engineering
-
-At the center of multi-agent design is **[context engineering](/oss/langchain/context-engineering)** — deciding what information each agent sees. LangChain gives you fine-grained control over which parts of the conversation or state are passed to each agent, specialized prompts tailored to sub-agents, inclusion or exclusion of intermediate reasoning, and customizing input/output formats per agent.
-
-The quality of your system depends on context engineering. The goal is to ensure that each agent has access to the correct data it needs to perform its task, whether it's acting as a tool or as an active agent.
+<Tip>
+At the center of multi-agent design is **[context engineering](/oss/langchain/context-engineering)**—deciding what information each agent sees. The quality of your system depends on ensuring each agent has access to the right data for its task.
+</Tip>
 
 ## Patterns
 
@@ -27,7 +33,7 @@ Here are the main patterns for building multi-agent systems, each suited to diff
 | Pattern | How it works |
 |--------------|--------------|
 | [**Subagents**](#subagents) | A main agent coordinates subagents and background jobs as tools. Centralized control — all routing passes through the main agent. Multiple coordination approaches available. |
-| [**State machine (handoffs)**](#state-machine-handoffs) | Behavior changes dynamically based on state. Tool calls update a state variable, and the system adjusts behavior accordingly. Supports both handoffs between distinct agents and dynamic configuration changes. |
+| [**Handoffs**](#handoffs) | Behavior changes dynamically based on state. Tool calls update a state variable, and the system adjusts behavior accordingly. Supports both handoffs between distinct agents and dynamic configuration changes. |
 | [**Skills**](#skills) | Specialized prompts loaded on-demand. The main agent stays in control and gains additional context as needed. |
 | [**Router**](#router) | A routing step classifies input and directs it to one or more specialized agents. Results are collected and returned to the user. |
 | [**Custom workflow**](#custom-workflow) | Build bespoke logic with LangGraph, mixing deterministic and agentic steps. Reuse or customize agents as needed. |
@@ -41,6 +47,22 @@ Here are the main patterns for building multi-agent systems, each suited to diff
 Tools drive dynamic behavior: updating state to route between agents, loading context, changing configuration, or spawning sub-agents. Patterns can also use middleware to modify system prompts or implement deterministic routing ([custom workflows](#custom-workflow)).
 
 **[Progressive disclosure](/oss/langchain/progressive-disclosure-skills)** loads information on-demand, valuable for managing large amounts of context. It combines retrieval with dynamic state updates (registering tools, discovering sub-agents). However, it adds latency through extra tool calls—simpler patterns like [state machine](#state-machine-handoffs) suffice when context is manageable or sequential constraints are needed.
+
+### Choosing a pattern
+
+Use this table to match your requirements to the right pattern:
+
+| Pattern | Distributed development | Parallelization | Multi-turn | Direct user interaction |
+|---------|:-----------------------:|:---------------:|:----------:|:-----------------------:|
+| [**Subagents**](#subagents) | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | — |
+| [**Handoffs**](#handoffs) | — | — | ⭐⭐⭐ | ⭐⭐⭐ |
+| [**Skills**](#skills) | ⭐⭐ | — | — | ⭐⭐⭐ |
+| [**Router**](#router) | ⭐⭐ | ⭐⭐⭐ | — | ⭐⭐ |
+
+- **Distributed development**: Can different teams develop and maintain components independently?
+- **Parallelization**: Can multiple agents execute concurrently?
+- **Multi-turn**: Does the pattern support multi-turn conversations with state across turns?
+- **Direct user interaction**: Can subagents/components converse directly with the user?
 
 ## Subagents
 
@@ -475,9 +497,9 @@ sequenceDiagram
 **Handling job completion:** When a job finishes, your application needs to notify the user. One approach: surface a notification that, when clicked, sends a `HumanMessage` like "Check job_123 and summarize the results." This prompts the main agent to retrieve and present the findings.
 
 
-## State machine (handoffs)
+## Handoffs
 
-In the **state machine** architecture, behavior changes dynamically based on state. The core mechanism: tools update a state variable (e.g., `current_step` or `active_agent`) that persists across turns, and the system reads this variable to adjust behavior—either applying different configuration (system prompt, tools) or routing to a different agent. This pattern supports both handoffs between distinct agents and dynamic configuration changes within a single agent.
+In the **handoffs** architecture, behavior changes dynamically based on state. The core mechanism: tools update a state variable (e.g., `current_step` or `active_agent`) that persists across turns, and the system reads this variable to adjust behavior—either applying different configuration (system prompt, tools) or routing to a different agent. This pattern supports both handoffs between distinct agents and dynamic configuration changes within a single agent.
 
 <Tip>
 The term **handoffs** was coined by [OpenAI](https://openai.github.io/openai-agents-python/handoffs/) for using tool calls (e.g., `transfer_to_sales_agent`) to transfer control between agents or states.
@@ -511,18 +533,18 @@ sequenceDiagram
 * Direct user interaction: Each state's configuration handles user messages directly
 * Persistent state: State survives across conversation turns
 
-Use the state machine pattern when you need to enforce sequential constraints (unlock capabilities only after preconditions are met), the agent needs to converse directly with the user across different states, or you're building multi-stage conversational flows. This pattern is particularly valuable for customer support scenarios where you need to collect information in a specific sequence — for example, collecting a warranty ID before processing a refund.
+Use the handoffs pattern when you need to enforce sequential constraints (unlock capabilities only after preconditions are met), the agent needs to converse directly with the user across different states, or you're building multi-stage conversational flows. This pattern is particularly valuable for customer support scenarios where you need to collect information in a specific sequence — for example, collecting a warranty ID before processing a refund.
 
 <Card
-    title="Tutorial: Build a customer support agent using a state machine"
+    title="Tutorial: Build a customer support agent using handoffs"
     icon="people-arrows"
-    href="/oss/langchain/customer-support-state-machine"
+    href="/oss/langchain/customer-support-handoffs"
     arrow cta="Learn more"
 >
-    Learn how to build a customer support agent using the state machine pattern, where a single agent transitions between different configurations.
+    Learn how to build a customer support agent using the handoffs pattern, where a single agent transitions between different configurations.
 </Card>
 
-There are two ways to implement state machines: **[single agent with middleware](#single-agent-with-middleware)** (one agent with dynamic configuration) or **[multiple agent subgraphs](#multiple-agent-subgraphs)** (distinct agents as graph nodes).
+There are two ways to implement handoffs: **[single agent with middleware](#single-agent-with-middleware)** (one agent with dynamic configuration) or **[multiple agent subgraphs](#multiple-agent-subgraphs)** (distinct agents as graph nodes).
 
 ### Single agent with middleware
 
@@ -972,7 +994,7 @@ const graph = builder.compile();
 </Accordion>
 
 <Tip>
-Use **single agent with middleware** for most state machine use cases—it's simpler. Only use **multiple agent subgraphs** when you need bespoke agent implementations (e.g., a node that's itself a complex graph with reflection or retrieval steps).
+Use **single agent with middleware** for most handoffs use cases—it's simpler. Only use **multiple agent subgraphs** when you need bespoke agent implementations (e.g., a node that's itself a complex graph with reflection or retrieval steps).
 </Tip>
 
 **Implementation considerations:**
@@ -1430,7 +1452,7 @@ The conversational agent handles memory and context; the router stays stateless.
 If you need the router itself to maintain state, use [persistence](/oss/langchain/short-term-memory) to store message history. When routing to an agent, fetch previous messages from state and selectively include them in the agent's context—this is a lever for [context engineering](/oss/langchain/context-engineering).
 
 <Warning>
-**Stateful routers require custom history management.** If the router switches between agents across turns, conversations may not feel fluid to end users when agents have different tones or prompts. With parallel invocation, you'll need to maintain history at the router level (inputs and synthesized outputs) and leverage this history in routing logic. Consider the [state machine pattern](#state-machine) or [subagents pattern](#subagents) instead—both provide clearer semantics for multi-turn conversations.
+**Stateful routers require custom history management.** If the router switches between agents across turns, conversations may not feel fluid to end users when agents have different tones or prompts. With parallel invocation, you'll need to maintain history at the router level (inputs and synthesized outputs) and leverage this history in routing logic. Consider the [handoffs pattern](#handoffs) or [subagents pattern](#subagents) instead—both provide clearer semantics for multi-turn conversations.
 </Warning>
 
 ## Custom workflow
