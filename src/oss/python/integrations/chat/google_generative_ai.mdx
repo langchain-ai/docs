@@ -904,28 +904,67 @@ Usage Metadata:
 
 ## Thinking support
 
-With reasoning models, you have the option to adjust the number of internal thinking tokens used (`thinking_budget`) or to disable thinking altogether.
+Certain Gemini models support configurable thinking depth. Depending on the model version used, you can control this via either `thinking_level` (Gemini 3+) or `thinking_budget` (Gemini 2.5).
+
+### Thinking level
+
+For Gemini 3+ models, use `thinking_level` to control reasoning depth. Some model providers call this "reasoning effort".
+
+| Value | Description |
+|-------|-------------|
+| `'low'` | Minimizes latency and cost |
+| `'medium'` | Balances latency/cost with reasoning depth |
+| `'high'` | Maximizes reasoning depth (default) |
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3-flash-preview",
+    thinking_level="medium",  # [!code highlight]
+)
+
+response = llm.invoke("How many O's are in Google?")
+```
+
+### Gemini 2.5 models: `thinking_budget`
+
+For Gemini 2.5 models, use `thinking_budget` (an integer token count) instead:
+
+- Set to `0` to disable thinking (where supported)
+- Set to `-1` for dynamic thinking (model decides)
+- Set to a positive integer to constrain token usage
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    thinking_budget=1024,  # [!code highlight]
+)
+```
 
 <Warning>
     Not all models allow disabling thinking. See the [Gemini models documentation](https://ai.google.dev/gemini-api/docs/models) for details.
 </Warning>
 
-To see a thinking model's thoughts, set `include_thoughts=True` to have the model's reasoning summaries included in the response.
+### Viewing model thoughts
+
+To see a thinking model's reasoning, set `include_thoughts=True`:
 
 ```python
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-3-pro-preview",
-    thinking_budget=1024, # [!code highlight]
-    include_thoughts=True, # [!code highlight]
+    include_thoughts=True,  # [!code highlight]
 )
 
 response = llm.invoke("How many O's are in Google? How did you verify your answer?")
-reasoning_score = response.usage_metadata["output_token_details"]["reasoning"]
+reasoning_tokens = response.usage_metadata["output_token_details"]["reasoning"]
 
 print("Response:", response.content)
-print("Reasoning tokens used:", reasoning_score)
+print("Reasoning tokens used:", reasoning_tokens)
 ```
 ```output
 Response: [{'type': 'thinking', 'thinking': '**Analyzing and Cou...'}, {'type': 'text', 'text': 'There a...', 'extras': {'signature': 'EroR...'}}]
