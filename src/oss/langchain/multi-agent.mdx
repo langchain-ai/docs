@@ -8,7 +8,7 @@ Multi-agent systems break complex applications into coordinated components. **Im
 
 When developers say they need "multi-agent," they're usually looking for one or more of these capabilities:
 
-<Columns cols={3}>
+<Columns cols={2}>
   <Card title="Context management" icon="brain">
     Surface relevant knowledge without overwhelming the context window. Different tasks (agents) need different context.
   </Card>
@@ -17,6 +17,9 @@ When developers say they need "multi-agent," they're usually looking for one or 
   </Card>
   <Card title="Parallelization" icon="arrows-split-up-and-left">
     Spawn specialized workers for subtasks and execute them concurrently for faster results.
+  </Card>
+  <Card title="Sequential constraints" icon="lock">
+    Enforce step-by-step workflows. Unlock tools and actions only after preconditions are met.
   </Card>
 </Columns>
 
@@ -86,9 +89,64 @@ Use the subagents pattern when you have multiple distinct domains (e.g., calenda
     Learn how to build a personal assistant using the subagents pattern, where a central main agent (supervisor) coordinates specialized worker agents.
 </Card>
 
-Main approaches to implementing subagent coordination:
+### Sync vs async
 
-### One tool per agent
+By default, subagent calls are **synchronous**—the main agent waits for each subagent to complete before continuing. This is simple and works well for most cases.
+
+For **long-running tasks** (reviewing contracts, conducting research, auditing code), use **asynchronous execution**. The main agent kicks off a background job and continues conversing with the user while the work completes.
+
+<Accordion title="Background job pattern">
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Main Agent
+    participant Job System
+    participant Contract Reviewer
+
+    User->>Main Agent: "Review this M&A contract"
+    Main Agent->>Job System: run_agent("legal_reviewer", task)
+    Job System->>Contract Reviewer: Start agent
+    Job System-->>Main Agent: job_id: "job_123"
+    Main Agent-->>User: "Started review (job_123)"
+
+    Note over Contract Reviewer: Reviewing 150+ pages<br/>(may take minutes)
+
+    User->>Main Agent: "What's the status?"
+    Main Agent->>Job System: check_status(job_id)
+    Job System-->>Main Agent: "running"
+    Main Agent-->>User: "Still reviewing contract..."
+
+    Note over Contract Reviewer: Review completes
+
+    User->>Main Agent: "Is it done yet?"
+    Main Agent->>Job System: check_status(job_id)
+    Job System-->>Main Agent: "completed"
+    Main Agent->>Job System: get_result(job_id)
+    Job System-->>Main Agent: Contract analysis
+    Main Agent-->>User: "Review complete: [findings]"
+```
+
+**Key characteristics:**
+
+* Three-tool pattern: Kick off job (returns job ID), check status, get results
+* Asynchronous execution: Work proceeds in the background while main agent remains responsive
+* User-initiated checks: Main agent checks job status when the user asks, not on a polling schedule
+
+**Handling job completion:** When a job finishes, your application needs to notify the user. One approach: surface a notification that, when clicked, sends a `HumanMessage` like "Check job_123 and summarize the results."
+
+</Accordion>
+
+### Tool patterns
+
+There are two main ways to expose subagents as tools:
+
+| Pattern | Best for | Trade-off |
+|---------|----------|-----------|
+| [**Tool per agent**](#tool-per-agent) | Fine-grained control over each subagent's input/output | More setup, but more customization |
+| [**Single dispatch tool**](#single-dispatch-tool) | Many agents, distributed teams, convention over configuration | Simpler composition, less per-agent customization |
+
+#### Tool per agent
 
 ```mermaid
 graph LR
@@ -152,156 +210,11 @@ const mainAgent = createAgent({ model, tools: [callSubagent] });  // [!code high
 ```
 :::
 
-The main agent invokes the subagent tool when it decides the task matches the subagent's description, receives the result, and continues orchestration.
+The main agent invokes the subagent tool when it decides the task matches the subagent's description, receives the result, and continues orchestration. See [Context engineering](#context-engineering) for fine-grained control.
 
-There are several points where you can control how context is passed between the main agent and its subagents:
+#### Single dispatch tool
 
-1. **Sub-agent name** (`"subagent_name"`): This is how the main agent refers to the sub-agent. Since it influences prompting, choose it carefully.
-2. **Sub-agent description** (`"subagent_description"`): This is what the main agent knows about the sub-agent. It directly shapes how the main agent decides when to call it.
-3. **Input to the sub-agent**: You can customize this input to better shape how the sub-agent interprets tasks. In the example above, we pass the agent-generated `query` directly.
-4. **Output from the sub-agent**: This is the response passed back to the main agent. You can adjust what is returned to control how the main agent interprets results. In the example above, we return the final message text, but you could return additional state or metadata.
-
-<Accordion title="Customizing sub-agent input">
-
-There are two main levers to control the input that the main agent passes to a sub-agent: modifying the prompt (adjust the main agent's prompt or tool metadata to better guide when and how it calls the sub-agent) or context injection (add input that isn't practical to capture in a static prompt, like full message history, prior results, or task metadata, by adjusting the tool call to pull from the agent's state).
-
-:::python
-```python
-from langchain.agents import AgentState
-from langchain.tools import tool, ToolRuntime
-
-class CustomState(AgentState):
-    example_state_key: str
-
-@tool(
-    "subagent1_name",
-    description="subagent1_description"
-)
-def call_subagent1(query: str, runtime: ToolRuntime[None, CustomState]):
-    # Apply any logic needed to transform the messages into a suitable input
-    subagent_input = some_logic(query, runtime.state["messages"])
-    result = subagent1.invoke({
-        "messages": subagent_input,
-        # You could also pass other state keys here as needed.
-        # Make sure to define these in both the main and subagent's
-        # state schemas.
-        "example_state_key": runtime.state["example_state_key"]
-    })
-    return result["messages"][-1].content
-```
-:::
-:::js
-```typescript
-import { createAgent, tool, AgentState, ToolMessage } from "langchain";
-import { Command } from "@langchain/langgraph";
-import * as z from "zod";
-
-// Example of passing the full conversation history to the sub agent via the state.
-const callSubagent1 = tool(
-  async ({query}) => {
-    const state = getCurrentTaskInput<AgentState>();
-    // Apply any logic needed to transform the messages into a suitable input
-    const subAgentInput = someLogic(query, state.messages);
-    const result = await subagent1.invoke({
-      messages: subAgentInput,
-      // You could also pass other state keys here as needed.
-      // Make sure to define these in both the main and subagent's
-      // state schemas.
-      exampleStateKey: state.exampleStateKey
-    });
-    return result.messages.at(-1)?.content;
-  },
-  {
-    name: "subagent1_name",
-    description: "subagent1_description",
-  }
-);
-```
-:::
-
-</Accordion>
-
-<Accordion title="Customizing sub-agent output">
-
-Two common strategies for shaping what the main agent receives back from a sub-agent: First, modify the sub-agent's prompt to specify exactly what should be returned—this is useful when outputs are incomplete, too verbose, or missing key details. A common failure mode is that the sub-agent performs tool calls or reasoning but doesn't include the results in its final message; remind it that the controller and user only see the final output, so all relevant info must be included there. Second, adjust or enrich the sub-agent's response in code before handing it back to the main agent—for example, pass specific state keys back in addition to the final text. This requires wrapping the result in a @[`Command`] (or equivalent structure) so you can merge custom state with the sub-agent's response.
-
-:::python
-```python
-from typing import Annotated
-from langchain.agents import AgentState
-from langchain.tools import InjectedToolCallId
-from langgraph.types import Command
-
-
-@tool(
-    "subagent1_name",
-    description="subagent1_description"
-)
-# We need to pass the `tool_call_id` to the sub agent so it can use it to respond with the tool call result
-def call_subagent1(
-    query: str,
-    tool_call_id: Annotated[str, InjectedToolCallId],
-# You need to return a `Command` object to include more than just a final tool call
-) -> Command:
-    result = subagent1.invoke({
-        "messages": [{"role": "user", "content": query}]
-    })
-    return Command(update={
-        # This is the example state key we are passing back
-        "example_state_key": result["example_state_key"],
-        "messages": [
-            ToolMessage(
-                content=result["messages"][-1].content,
-                # We need to include the tool call id so it matches up with the right tool call
-                tool_call_id=tool_call_id
-            )
-        ]
-    })
-```
-:::
-:::js
-```typescript
-import { tool, ToolMessage } from "langchain";
-import { Command } from "@langchain/langgraph";
-import * as z from "zod";
-
-const callSubagent1 = tool(
-  async ({ query }, config) => {
-    const result = await subagent1.invoke({
-      messages: [{ role: "user", content: query }]
-    });
-
-    // Return a Command to update multiple state keys
-    return new Command({
-      update: {
-        // Pass back additional state from the subagent
-        exampleStateKey: result.exampleStateKey,
-        messages: [
-          new ToolMessage({
-            content: result.messages.at(-1)?.text,
-            tool_call_id: config.toolCall?.id!
-          })
-        ]
-      }
-    });
-  },
-  {
-    name: "subagent1_name",
-    description: "subagent1_description",
-    schema: z.object({
-      query: z.string().describe("The query to send to subagent1")
-    })
-  }
-);
-```
-:::
-
-</Accordion>
-
-
-### One tool for all agents
-
-An alternative approach uses a single parameterized tool to spawn ephemeral sub-agents for independent tasks. Unlike the [one tool per agent](#one-tool-per-agent) approach where each sub-agent is wrapped as a separate tool, this uses a convention-based approach with a single `task` tool: the task description is passed as a human message to the sub-agent, and the sub-agent's final message is returned as the tool result.
+An alternative approach uses a single parameterized tool to spawn ephemeral sub-agents for independent tasks. Unlike the [tool per agent](#tool-per-agent) approach where each sub-agent is wrapped as a separate tool, this uses a convention-based approach with a single `task` tool: the task description is passed as a human message to the sub-agent, and the sub-agent's final message is returned as the tool result.
 
 ```mermaid
 graph LR
@@ -329,6 +242,8 @@ Use this approach when you want to distribute agent development across multiple 
 <Tip>
 An interesting aspect of this approach is that sub-agents may have the exact same capabilities as the main agent. In such cases, spawning a sub-agent is **really about context isolation** as the primary reason—allowing complex, multi-step tasks to run in isolated context windows without bloating the main agent's conversation history. The sub-agent completes its work autonomously and returns only a concise summary, keeping the main thread focused and efficient.
 </Tip>
+
+<Accordion title="Agent registry with task dispatcher">
 
 :::python
 ```python
@@ -448,54 +363,165 @@ const mainAgent = createAgent({
 ```
 :::
 
-<Tip>
-**One tool per agent vs One tool for all agents**: The [one tool per agent](#one-tool-per-agent) approach wraps each sub-agent as a separate tool with custom input/output handling, giving fine-grained control over context engineering. The one tool for all agents approach uses a single tool with a consistent convention, making it easier to add new agents but harder to customize how each agent receives context.
-</Tip>
+</Accordion>
 
+### Context engineering
 
-### Background jobs
+Control how context flows between the main agent and its subagents:
 
-Background jobs keep the main agent responsive during long-running tasks. When work takes minutes—reviewing contracts, conducting research, auditing code—the main agent kicks off a subagent as a background job and continues conversing with the user while the work completes.
+| Category | Purpose | Impacts |
+|----------|---------|---------|
+| [**Subagent specs**](#subagent-specs) | Ensure subagents are invoked when they should be | Main agent routing decisions |
+| [**Subagent inputs**](#subagent-inputs) | Ensure subagents can execute well with optimized context | Subagent performance |
+| [**Subagent outputs**](#subagent-outputs) | Ensure the supervisor can act on subagent results | Main agent performance |
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Main Agent
-    participant Job System
-    participant Contract Reviewer
+#### Subagent specs
 
-    User->>Main Agent: "Review this M&A contract"
-    Main Agent->>Job System: run_agent("legal_reviewer", task)
-    Job System->>Contract Reviewer: Start agent
-    Job System-->>Main Agent: job_id: "job_123"
-    Main Agent-->>User: "Started review (job_123)"
+The **name** and **description** you give a subagent tool determine when the main agent decides to invoke it. These are prompting levers—choose them carefully.
 
-    Note over Contract Reviewer: Reviewing 150+ pages<br/>(may take minutes)
+- **Name**: How the main agent refers to the sub-agent. Keep it clear and action-oriented (e.g., `research_agent`, `code_reviewer`).
+- **Description**: What the main agent knows about the sub-agent's capabilities. Be specific about what tasks it handles and when to use it.
 
-    User->>Main Agent: "What's the status?"
-    Main Agent->>Job System: check_status(job_id)
-    Job System-->>Main Agent: "running"
-    Main Agent-->>User: "Still reviewing contract..."
+#### Subagent inputs
 
-    Note over Contract Reviewer: Review completes
+Customize what context the subagent receives to execute its task. Add input that isn't practical to capture in a static prompt—full message history, prior results, or task metadata—by pulling from the agent's state.
 
-    User->>Main Agent: "Is it done yet?"
-    Main Agent->>Job System: check_status(job_id)
-    Job System-->>Main Agent: "completed"
-    Main Agent->>Job System: get_result(job_id)
-    Job System-->>Main Agent: Contract analysis
-    Main Agent-->>User: "Review complete: [findings]"
+<Accordion title="Subagent inputs">
+
+:::python
+```python
+from langchain.agents import AgentState
+from langchain.tools import tool, ToolRuntime
+
+class CustomState(AgentState):
+    example_state_key: str
+
+@tool(
+    "subagent1_name",
+    description="subagent1_description"
+)
+def call_subagent1(query: str, runtime: ToolRuntime[None, CustomState]):
+    # Apply any logic needed to transform the messages into a suitable input
+    subagent_input = some_logic(query, runtime.state["messages"])
+    result = subagent1.invoke({
+        "messages": subagent_input,
+        # You could also pass other state keys here as needed.
+        # Make sure to define these in both the main and subagent's
+        # state schemas.
+        "example_state_key": runtime.state["example_state_key"]
+    })
+    return result["messages"][-1].content
 ```
+:::
+:::js
+```typescript
+import { createAgent, tool, AgentState, ToolMessage } from "langchain";
+import { Command } from "@langchain/langgraph";
+import * as z from "zod";
 
-**Key characteristics:**
+// Example of passing the full conversation history to the sub agent via the state.
+const callSubagent1 = tool(
+  async ({query}) => {
+    const state = getCurrentTaskInput<AgentState>();
+    // Apply any logic needed to transform the messages into a suitable input
+    const subAgentInput = someLogic(query, state.messages);
+    const result = await subagent1.invoke({
+      messages: subAgentInput,
+      // You could also pass other state keys here as needed.
+      // Make sure to define these in both the main and subagent's
+      // state schemas.
+      exampleStateKey: state.exampleStateKey
+    });
+    return result.messages.at(-1)?.content;
+  },
+  {
+    name: "subagent1_name",
+    description: "subagent1_description",
+  }
+);
+```
+:::
 
-* Three-tool pattern: Kick off job (returns job ID), check status, get results
-* Asynchronous execution: Work proceeds in the background while main agent remains responsive
-* User-initiated checks: Main agent checks job status when the user asks, not on a polling schedule
-* Flexible workload: Works for long-running agents or any async computation (database queries, API calls, ML inference)
+</Accordion>
 
-**Handling job completion:** When a job finishes, your application needs to notify the user. One approach: surface a notification that, when clicked, sends a `HumanMessage` like "Check job_123 and summarize the results." This prompts the main agent to retrieve and present the findings.
+#### Subagent outputs
 
+Customize what the main agent receives back so it can make good decisions. Two strategies:
+
+1. **Prompt the sub-agent**: Specify exactly what should be returned. A common failure mode is that the sub-agent performs tool calls or reasoning but doesn't include results in its final message—remind it that the supervisor only sees the final output.
+2. **Format in code**: Adjust or enrich the response before returning it. For example, pass specific state keys back in addition to the final text using a `Command`.
+
+<Accordion title="Subagent outputs">
+
+:::python
+```python
+from typing import Annotated
+from langchain.agents import AgentState
+from langchain.tools import InjectedToolCallId
+from langgraph.types import Command
+
+
+@tool(
+    "subagent1_name",
+    description="subagent1_description"
+)
+def call_subagent1(
+    query: str,
+    tool_call_id: Annotated[str, InjectedToolCallId],
+) -> Command:
+    result = subagent1.invoke({
+        "messages": [{"role": "user", "content": query}]
+    })
+    return Command(update={
+        # Pass back additional state from the subagent
+        "example_state_key": result["example_state_key"],
+        "messages": [
+            ToolMessage(
+                content=result["messages"][-1].content,
+                tool_call_id=tool_call_id
+            )
+        ]
+    })
+```
+:::
+:::js
+```typescript
+import { tool, ToolMessage } from "langchain";
+import { Command } from "@langchain/langgraph";
+import * as z from "zod";
+
+const callSubagent1 = tool(
+  async ({ query }, config) => {
+    const result = await subagent1.invoke({
+      messages: [{ role: "user", content: query }]
+    });
+
+    // Return a Command to update multiple state keys
+    return new Command({
+      update: {
+        // Pass back additional state from the subagent
+        exampleStateKey: result.exampleStateKey,
+        messages: [
+          new ToolMessage({
+            content: result.messages.at(-1)?.text,
+            tool_call_id: config.toolCall?.id!
+          })
+        ]
+      }
+    });
+  },
+  {
+    name: "subagent1_name",
+    description: "subagent1_description",
+    schema: z.object({
+      query: z.string().describe("The query to send to subagent1")
+    })
+  }
+);
+```
+:::
+
+</Accordion>
 
 ## Handoffs
 
@@ -1029,6 +1055,8 @@ Use the skills pattern when you want a single agent with many possible specializ
 This pattern is conceptually identical to [llms.txt](https://llmstxt.org/) (introduced by Jeremy Howard), which uses tool calling for progressive disclosure of documentation. The skills pattern applies the same approach to specialized prompts and domain knowledge rather than just documentation pages.
 </Tip>
 
+<Accordion title="Loading skills on-demand">
+
 :::python
 ```python
 from langchain.tools import tool
@@ -1098,6 +1126,8 @@ const agent = createAgent({
 });
 ```
 :::
+
+</Accordion>
 
 ### Extending the pattern
 
@@ -1402,7 +1432,9 @@ console.log(result.finalAnswer);
 
 For multi-turn conversations, you need to maintain context across invocations.
 
-**The simplest approach:** wrap the stateless router as a tool that a conversational agent can call.
+#### Tool wrapper
+
+The simplest approach: wrap the stateless router as a tool that a conversational agent can call. The conversational agent handles memory and context; the router stays stateless. This avoids the complexity of managing conversation history across multiple parallel agents.
 
 :::python
 ```python
@@ -1445,9 +1477,7 @@ const conversationalAgent = createAgent({
 ```
 :::
 
-The conversational agent handles memory and context; the router stays stateless. This avoids the complexity of managing conversation history across multiple parallel agents.
-
-**Alternative**: Full persistence
+#### Full persistence
 
 If you need the router itself to maintain state, use [persistence](/oss/langchain/short-term-memory) to store message history. When routing to an agent, fetch previous messages from state and selectively include them in the agent's context—this is a lever for [context engineering](/oss/langchain/context-engineering).
 
