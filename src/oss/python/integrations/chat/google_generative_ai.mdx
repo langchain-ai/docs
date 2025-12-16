@@ -904,28 +904,67 @@ Usage Metadata:
 
 ## Thinking support
 
-With reasoning models, you have the option to adjust the number of internal thinking tokens used (`thinking_budget`) or to disable thinking altogether.
+Certain Gemini models support configurable thinking depth. Depending on the model version used, you can control this via either `thinking_level` (Gemini 3+) or `thinking_budget` (Gemini 2.5).
 
-<Warning>
-    Not all models allow disabling thinking. See the [Gemini models documentation](https://ai.google.dev/gemini-api/docs/models) for details.
-</Warning>
+### Thinking level
 
-To see a thinking model's thoughts, set `include_thoughts=True` to have the model's reasoning summaries included in the response.
+For Gemini 3+ models, use `thinking_level` to control reasoning depth. Some model providers call this "reasoning effort".
+
+| Value | Description |
+|-------|-------------|
+| `'low'` | Minimizes latency and cost |
+| `'medium'` | Balances latency/cost with reasoning depth |
+| `'high'` | Maximizes reasoning depth (default) |
 
 ```python
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-3-pro-preview",
-    thinking_budget=1024, # [!code highlight]
-    include_thoughts=True, # [!code highlight]
+    thinking_level="low",  # [!code highlight]
+)
+
+response = llm.invoke("How many O's are in Google?")
+```
+
+### Gemini 2.5 models: `thinking_budget`
+
+For Gemini 2.5 models, use `thinking_budget` (an integer token count) instead:
+
+- Set to `0` to disable thinking (where supported)
+- Set to `-1` for dynamic thinking (model decides)
+- Set to a positive integer to constrain token usage
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    thinking_budget=1024,  # [!code highlight]
+)
+```
+
+<Warning>
+    Not all models allow disabling thinking. See the [Gemini models documentation](https://ai.google.dev/gemini-api/docs/models) for details.
+</Warning>
+
+### Viewing model thoughts
+
+To see a thinking model's reasoning, set `include_thoughts=True`:
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3-pro-preview",
+    include_thoughts=True,  # [!code highlight]
 )
 
 response = llm.invoke("How many O's are in Google? How did you verify your answer?")
-reasoning_score = response.usage_metadata["output_token_details"]["reasoning"]
+reasoning_tokens = response.usage_metadata["output_token_details"]["reasoning"]
 
 print("Response:", response.content)
-print("Reasoning tokens used:", reasoning_score)
+print("Reasoning tokens used:", reasoning_tokens)
 ```
 ```output
 Response: [{'type': 'thinking', 'thinking': '**Analyzing and Cou...'}, {'type': 'text', 'text': 'There a...', 'extras': {'signature': 'EroR...'}}]
@@ -1121,6 +1160,34 @@ You can optionally provide a specific location context using `tool_config` with 
                 } # [!code highlight]
             }
         },
+    )
+    ```
+</CodeGroup>
+
+### URL context
+
+The URL context tool enables the model to access and analyze content from URLs you provide in your prompt. This is useful for tasks like summarizing web pages, extracting data from multiple sources, or answering questions about online content. See [Gemini docs](https://ai.google.dev/gemini-api/docs/url-context) for detail and limitations.
+
+<CodeGroup>
+    ```python Bind to model
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+
+    model_with_url_context = model.bind_tools([{"url_context": {}}]) # [!code highlight]
+    response = model_with_url_context.invoke(
+        "Summarize the content at https://docs.langchain.com"
+    )
+    ```
+
+    ```python Use on invocation
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+
+    response = model.invoke(
+        "Summarize the content at https://docs.langchain.com",
+        tools=[{"url_context": {}}], # [!code highlight]
     )
     ```
 </CodeGroup>

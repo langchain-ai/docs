@@ -12,6 +12,105 @@ Middleware specifically designed for Anthropic's Claude models. Learn more about
 | [Memory](#memory) | Provide Claude's memory tool for persistent agent memory |
 | [File search](#file-search) | Search tools for state-based file systems |
 
+## Middleware vs tools
+
+`langchain-anthropic` provides two ways to use Claude's native tools:
+
+- **Middleware** (this page): Production-ready implementations with built-in execution, state management, and security policies
+- **Tools** (via [`bind_tools`](/oss/integrations/chat/anthropic#built-in-tools)): Low-level building blocks where you provide your own execution logic
+
+### When to use which
+
+| Use case | Recommended | Why |
+|----------|-------------|-----|
+| Production agents with bash | Middleware | Persistent sessions, Docker isolation, output redaction |
+| State-based file editing | Middleware | Built-in LangGraph state persistence |
+| Filesystem file editing | Middleware | Writes to disk with path validation |
+| Custom execution logic | Tools | Full control over execution |
+| Quick prototype | Tools | Simpler, bring your own callback |
+| Non-agent use with @[`bind_tools`][ChatAnthropic.bind_tools] | Tools | Middleware requires @[`create_agent`] |
+
+### Feature comparison
+
+| Feature | Middleware | Tools |
+|---------|:----------:|:-----:|
+| Works with @[`create_agent`] | ✅ | ✅ |
+| Works with @[`bind_tools`][ChatAnthropic.bind_tools] | ❌ | ✅ |
+| Built-in state management | ✅ | ❌ |
+| Custom execute callback | ❌ | ✅ |
+
+<Accordion title="Example: Middleware vs tools comparison">
+
+**Using middleware** (turnkey solution):
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import ClaudeBashToolMiddleware
+from langchain.agents import create_agent
+from langchain.agents.middleware import DockerExecutionPolicy
+
+# Production-ready with Docker isolation, session management, etc.
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    middleware=[
+        ClaudeBashToolMiddleware(
+            workspace_root="/workspace",
+            execution_policy=DockerExecutionPolicy(image="python:3.11"),
+            startup_commands=["pip install pandas"],
+        ),
+    ],
+)
+```
+
+**Using tools** (bring your own execution):
+
+```python
+import subprocess
+
+from anthropic.types.beta import BetaToolBash20250124Param
+from langchain_anthropic import ChatAnthropic
+from langchain.agents import create_agent
+from langchain.tools import tool
+
+tool_spec = BetaToolBash20250124Param(
+    name="bash",
+    type="bash_20250124",
+    strict=True,
+)
+
+@tool(extras={"provider_tool_definition": tool_spec})
+def bash(*, command: str, restart: bool = False, **kw):
+    """Execute a bash command."""
+    if restart:
+        return "Bash session restarted"
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.stdout + result.stderr
+    except Exception as e:
+        return f"Error: {e}"
+
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[bash],
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "List files in this directory"}]}
+)
+print(result["messages"][-1].content)
+```
+
+</Accordion>
+
+---
+
 ## Prompt caching
 
 Reduce costs and latency by caching static or repetitive prompt content (like system prompts, tool definitions, and conversation history) on Anthropic's servers. This middleware implements a **conversational caching strategy** that places cache breakpoints after the most recent message, allowing the entire conversation history (including the latest user message) to be cached and reused in subsequent API calls.
