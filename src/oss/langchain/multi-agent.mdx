@@ -26,61 +26,61 @@ Here are the main patterns for building multi-agent systems, each suited to diff
 
 | Pattern | How it works |
 |--------------|--------------|
-| [**Supervisor**](#supervisor) | A supervisor agent coordinates sub-agents and background jobs as tools. Centralized control — all routing passes through the supervisor. Multiple coordination approaches available. |
+| [**Subagents**](#subagents) | A main agent coordinates subagents and background jobs as tools. Centralized control — all routing passes through the main agent. Multiple coordination approaches available. |
 | [**State machine**](#state-machine) | Single agent whose configuration (prompt, tools, capabilities) changes as it moves through different states. Efficient for sequential workflows — one tool call both performs the action and transitions to the next state. |
 | [**Skills**](#skills) | Specialized prompts loaded on-demand. The main agent stays in control and gains additional context as needed. |
 | [**Router**](#router) | A routing step classifies input and directs it to one or more specialized agents. Results are collected and returned to the user. |
 | [**Custom workflow**](#custom-workflow) | Build bespoke logic with LangGraph, mixing deterministic and agentic steps. Reuse or customize agents as needed. |
 
 <Tip>
-    You can mix patterns! For example, a **supervisor** can manage **workflow** sub-graphs or use the **router** pattern as a tool (querying multiple knowledge bases in parallel, then synthesizing results). A **state machine** can invoke **skills** at specific stages (loading specialized context only when reaching certain steps). The **[one tool for all agents](#one-tool-for-all-agents-spawning)** approach can work within a **custom workflow** to parallelize independent tasks while maintaining deterministic overall structure.
+    You can mix patterns! For example, a **subagents** pattern can manage **workflow** sub-graphs or use the **router** pattern as a tool (querying multiple knowledge bases in parallel, then synthesizing results). A **state machine** can invoke **skills** at specific stages (loading specialized context only when reaching certain steps). The **[one tool for all agents](#one-tool-for-all-agents-spawning)** approach can work within a **custom workflow** to parallelize independent tasks while maintaining deterministic overall structure.
 </Tip>
 
-**Common mechanisms:** These patterns share common mechanisms for coordinating multi-agent behavior. Most rely on **tool calling** as the primary coordination mechanism—tools can invoke sub-agents ([supervisor](#supervisor)), update state to trigger routing or behavior changes ([state machine](#state-machine)), load context on-demand ([skills](#skills)), or even invoke entire multi-agent systems (like wrapping a [router](#router) as a tool).
+**Common mechanisms:** These patterns share common mechanisms for coordinating multi-agent behavior. Most rely on **tool calling** as the primary coordination mechanism—tools can invoke subagents ([subagents](#subagents)), update state to trigger routing or behavior changes ([state machine](#state-machine)), load context on-demand ([skills](#skills)), or even invoke entire multi-agent systems (like wrapping a [router](#router) as a tool).
 
 Tools drive dynamic behavior: updating state to route between agents, loading context, changing configuration, or spawning sub-agents. Patterns can also use middleware to modify system prompts or implement deterministic routing ([custom workflows](#custom-workflow)).
 
 **[Progressive disclosure](/oss/langchain/progressive-disclosure-skills)** loads information on-demand, valuable for managing large amounts of context. It combines retrieval with dynamic state updates (registering tools, discovering sub-agents). However, it adds latency through extra tool calls—simpler patterns like [state machine](#state-machine) suffice when context is manageable or sequential constraints are needed.
 
-## Supervisor
+## Subagents
 
-In the **supervisor** architecture, a central supervisor agent coordinates sub-agents by calling them as tools. The supervisor decides which sub-agent to invoke, what input to provide, and how to combine results. Sub-agents are stateless—they don't remember past interactions, with all conversation memory maintained by the supervisor. This provides context isolation: each sub-agent invocation works in a clean context window, preventing context bloat in the main conversation.
+In the **subagents** architecture, a central main agent coordinates subagents by calling them as tools. The main agent decides which subagent to invoke, what input to provide, and how to combine results. Subagents are stateless—they don't remember past interactions, with all conversation memory maintained by the main agent. This provides context isolation: each subagent invocation works in a clean context window, preventing context bloat in the main conversation.
 
 **Key characteristics:**
 
-* Centralized control: All routing passes through the supervisor
-* No direct user interaction: Sub-agents return results to the supervisor, not the user
-* Sub-agents via tools: Sub-agents are invoked via tools
-* Parallel execution: The supervisor can invoke multiple sub-agents in a single turn
+* Centralized control: All routing passes through the main agent
+* No direct user interaction: Subagents return results to the main agent, not the user
+* Subagents via tools: Subagents are invoked via tools
+* Parallel execution: The main agent can invoke multiple subagents in a single turn
 
-Use the supervisor pattern when you have multiple distinct domains (e.g., calendar, email, CRM, database), sub-agents don't need to converse directly with users, or you want centralized workflow control. For simpler cases with just a few tools, use a single agent.
+Use the subagents pattern when you have multiple distinct domains (e.g., calendar, email, CRM, database), subagents don't need to converse directly with users, or you want centralized workflow control. For simpler cases with just a few tools, use a single agent.
 
 <Card
-    title="Tutorial: Build a supervisor agent"
+    title="Tutorial: Build an agent with subagents"
     icon="sitemap"
     href="/oss/langchain/supervisor"
     arrow cta="Learn more"
 >
-    Learn how to build a personal assistant using the supervisor pattern, where a central supervisor agent coordinates specialized worker agents.
+    Learn how to build a personal assistant using the subagents pattern, where a central main agent coordinates specialized worker agents.
 </Card>
 
-Main approaches to implementing supervisor coordination:
+Main approaches to implementing subagent coordination:
 
 ### One tool per agent
 
 ```mermaid
 graph LR
-    A[User] --> B[Supervisor]
-    B --> C[Sub-agent A]
-    B --> D[Sub-agent B]
-    B --> E[Sub-agent C]
+    A[User] --> B[Main Agent]
+    B --> C[Subagent A]
+    B --> D[Subagent B]
+    B --> E[Subagent C]
     C --> B
     D --> B
     E --> B
     B --> F[User response]
 ```
 
-The key idea is wrapping sub-agents as tools that the supervisor can call:
+The key idea is wrapping subagents as tools that the main agent can call:
 
 :::python
 ```python
@@ -96,8 +96,8 @@ def call_subagent(query: str):  # [!code highlight]
     result = subagent.invoke({"messages": [{"role": "user", "content": query}]})
     return result["messages"][-1].content
 
-# Supervisor agent with sub-agent as a tool  # [!code highlight]
-supervisor = create_agent(model="...", tools=[call_subagent])  # [!code highlight]
+# Main agent with subagent as a tool  # [!code highlight]
+main_agent = create_agent(model="...", tools=[call_subagent])  # [!code highlight]
 ```
 :::
 :::js
@@ -125,12 +125,12 @@ const callSubagent = tool(  // [!code highlight]
   }
 );
 
-// Supervisor agent with sub-agent as a tool  // [!code highlight]
-const supervisor = createAgent({ model, tools: [callSubagent] });  // [!code highlight]
+// Main agent with subagent as a tool  // [!code highlight]
+const mainAgent = createAgent({ model, tools: [callSubagent] });  // [!code highlight]
 ```
 :::
 
-The supervisor invokes the sub-agent tool when it decides the task matches the sub-agent's description, receives the result, and continues orchestration.
+The main agent invokes the subagent tool when it decides the task matches the subagent's description, receives the result, and continues orchestration.
 
 There are several points where you can control how context is passed between the main agent and its subagents:
 
@@ -433,46 +433,46 @@ const mainAgent = createAgent({
 
 ### Background jobs
 
-Background jobs keep the supervisor responsive during long-running tasks. When work takes minutes—reviewing contracts, conducting research, auditing code—the supervisor kicks off an agent as a background job and continues conversing with the user while the work completes.
+Background jobs keep the main agent responsive during long-running tasks. When work takes minutes—reviewing contracts, conducting research, auditing code—the main agent kicks off a subagent as a background job and continues conversing with the user while the work completes.
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Supervisor
+    participant Main Agent
     participant Job System
     participant Contract Reviewer
 
-    User->>Supervisor: "Review this M&A contract"
-    Supervisor->>Job System: run_agent("legal_reviewer", task)
+    User->>Main Agent: "Review this M&A contract"
+    Main Agent->>Job System: run_agent("legal_reviewer", task)
     Job System->>Contract Reviewer: Start agent
-    Job System-->>Supervisor: job_id: "job_123"
-    Supervisor-->>User: "Started review (job_123)"
+    Job System-->>Main Agent: job_id: "job_123"
+    Main Agent-->>User: "Started review (job_123)"
 
     Note over Contract Reviewer: Reviewing 150+ pages<br/>(may take minutes)
 
-    User->>Supervisor: "What's the status?"
-    Supervisor->>Job System: check_status(job_id)
-    Job System-->>Supervisor: "running"
-    Supervisor-->>User: "Still reviewing contract..."
+    User->>Main Agent: "What's the status?"
+    Main Agent->>Job System: check_status(job_id)
+    Job System-->>Main Agent: "running"
+    Main Agent-->>User: "Still reviewing contract..."
 
     Note over Contract Reviewer: Review completes
 
-    User->>Supervisor: "Is it done yet?"
-    Supervisor->>Job System: check_status(job_id)
-    Job System-->>Supervisor: "completed"
-    Supervisor->>Job System: get_result(job_id)
-    Job System-->>Supervisor: Contract analysis
-    Supervisor-->>User: "Review complete: [findings]"
+    User->>Main Agent: "Is it done yet?"
+    Main Agent->>Job System: check_status(job_id)
+    Job System-->>Main Agent: "completed"
+    Main Agent->>Job System: get_result(job_id)
+    Job System-->>Main Agent: Contract analysis
+    Main Agent-->>User: "Review complete: [findings]"
 ```
 
 **Key characteristics:**
 
 * Three-tool pattern: Kick off job (returns job ID), check status, get results
-* Asynchronous execution: Work proceeds in the background while supervisor remains responsive
-* User-initiated checks: Supervisor checks job status when the user asks, not on a polling schedule
+* Asynchronous execution: Work proceeds in the background while main agent remains responsive
+* User-initiated checks: Main agent checks job status when the user asks, not on a polling schedule
 * Flexible workload: Works for long-running agents or any async computation (database queries, API calls, ML inference)
 
-**Handling job completion:** When a job finishes, your application needs to notify the user. One approach: surface a notification that, when clicked, sends a `HumanMessage` like "Check job_123 and summarize the results." This prompts the supervisor to retrieve and present the findings.
+**Handling job completion:** When a job finishes, your application needs to notify the user. One approach: surface a notification that, when clicked, sends a `HumanMessage` like "Check job_123 and summarize the results." This prompts the main agent to retrieve and present the findings.
 
 
 ## State machine
@@ -826,7 +826,7 @@ Two approaches:
 Each request is routed independently—no memory between calls. For multi-turn conversations, see [Stateful routers](#stateful).
 
 <Tip>
-**Stateless router vs Supervisor**: The [supervisor pattern](#supervisor) can also route to multiple agents. Use the stateless router when you need specialized preprocessing or custom routing logic. Use the supervisor pattern when you want the LLM to decide which agents to call dynamically.
+**Stateless router vs Subagents**: The [subagents pattern](#subagents) can also route to multiple agents. Use the stateless router when you need specialized preprocessing or custom routing logic. Use the subagents pattern when you want the LLM to decide which agents to call dynamically.
 </Tip>
 
 <Accordion title="Building a multi-source knowledge base router">
@@ -1130,7 +1130,7 @@ The conversational agent handles memory and context; the router stays stateless.
 If you need the router itself to maintain state, use [persistence](/oss/langchain/short-term-memory) to store message history. When routing to an agent, fetch previous messages from state and selectively include them in the agent's context—this is a lever for [context engineering](/oss/langchain/context-engineering).
 
 <Warning>
-**This is challenging.** Maintaining coherent history across multiple agents is difficult, especially when agents run in parallel. Agents can become confused about context or produce inconsistent responses. Synthesizing results also becomes harder—you need to track which agents have responded and how to combine partial results across turns. Consider the [state machine pattern](#state-machine) or [supervisor pattern](#supervisor) instead—both are simpler to reason about.
+**This is challenging.** Maintaining coherent history across multiple agents is difficult, especially when agents run in parallel. Agents can become confused about context or produce inconsistent responses. Synthesizing results also becomes harder—you need to track which agents have responded and how to combine partial results across turns. Consider the [state machine pattern](#state-machine) or [subagents pattern](#subagents) instead—both are simpler to reason about.
 </Warning>
 
 ## Custom workflow
