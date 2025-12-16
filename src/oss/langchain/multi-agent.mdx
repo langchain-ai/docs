@@ -44,7 +44,7 @@ Tools drive dynamic behavior: updating state to route between agents, loading co
 
 ## Subagents
 
-In the **subagents** architecture, a central main agent coordinates subagents by calling them as tools. The main agent decides which subagent to invoke, what input to provide, and how to combine results. Subagents are stateless—they don't remember past interactions, with all conversation memory maintained by the main agent. This provides context isolation: each subagent invocation works in a clean context window, preventing context bloat in the main conversation.
+In the **subagents** architecture, a central main agent (often referred to as a **supervisor**) coordinates subagents by calling them as tools. The main agent decides which subagent to invoke, what input to provide, and how to combine results. Subagents are stateless—they don't remember past interactions, with all conversation memory maintained by the main agent. This provides context isolation: each subagent invocation works in a clean context window, preventing context bloat in the main conversation.
 
 **Key characteristics:**
 
@@ -61,7 +61,7 @@ Use the subagents pattern when you have multiple distinct domains (e.g., calenda
     href="/oss/langchain/supervisor"
     arrow cta="Learn more"
 >
-    Learn how to build a personal assistant using the subagents pattern, where a central main agent coordinates specialized worker agents.
+    Learn how to build a personal assistant using the subagents pattern, where a central main agent (supervisor) coordinates specialized worker agents.
 </Card>
 
 Main approaches to implementing subagent coordination:
@@ -477,33 +477,33 @@ sequenceDiagram
 
 ## State machine (handoffs)
 
-In the **state machine** architecture, behavior changes dynamically based on state. The core mechanism is simple: tool calls update a state variable (e.g., `current_step` or `active_agent`), and the system adjusts behavior based on that state. This pattern supports both handoffs between distinct agents and dynamic configuration changes within a single agent.
+In the **state machine** architecture, behavior changes dynamically based on state. The core mechanism: tools update a state variable (e.g., `current_step` or `active_agent`) that persists across turns, and the system reads this variable to adjust behavior—either applying different configuration (system prompt, tools) or routing to a different agent. This pattern supports both handoffs between distinct agents and dynamic configuration changes within a single agent.
 
 <Tip>
-**Handoffs** is a pattern for transitioning between agents or states using tool calls, popularized by [OpenAI's agent handoffs](https://openai.github.io/openai-agents-python/handoffs/). Handoffs appear as tools to the LLM (e.g., `transfer_to_sales_agent`) and are useful for coordinating specialized agents across different domains or for enforcing sequential constraints that unlock capabilities step by step.
+The term **handoffs** was coined by [OpenAI](https://openai.github.io/openai-agents-python/handoffs/) for using tool calls (e.g., `transfer_to_sales_agent`) to transfer control between agents or states.
 </Tip>
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Triage
-    Triage --> Specialist: record_warranty_status()
-    Specialist --> Resolution: record_issue_type()
-    Resolution --> [*]
+sequenceDiagram
+    participant User
+    participant Agent
+    participant Workflow State
 
-    note right of Triage
-        Step 1: Collect information
-        Tools: [record_warranty_status]
-    end note
+    User->>Agent: "My device is broken"
+    Note over Agent,Workflow State: warranty_collector<br/>Available: record_warranty_status
+    Agent->>Workflow State: record_warranty_status("in_warranty")
+    Note over Workflow State: → issue_classifier
+    Agent-->>User: "Can you describe the issue?"
 
-    note right of Specialist
-        Step 2: Classify the issue
-        Tools: [record_issue_type]
-    end note
+    User->>Agent: "The screen is cracked"
+    Note over Agent,Workflow State: issue_classifier<br/>Available: record_issue_type
+    Agent->>Workflow State: record_issue_type("hardware")
+    Note over Workflow State: → resolution_specialist
+    Agent-->>User: "I can help with that"
 
-    note right of Resolution
-        Step 3: Provide solution
-        Tools: [provide_solution, escalate_to_human]
-    end note
+    User->>Agent: "What should I do?"
+    Note over Agent,Workflow State: resolution_specialist<br/>Available: provide_solution, escalate_to_human
+    Agent-->>User: "Here's the warranty repair process..."
 ```
 
 **Key characteristics:**
@@ -523,14 +523,6 @@ Use the state machine pattern when you need to enforce sequential constraints (u
 >
     Learn how to build a customer support agent using the state machine pattern, where a single agent transitions between different configurations.
 </Card>
-
-### Core mechanism
-
-The state machine pattern relies on [persistent state](/oss/langchain/short-term-memory) that survives across conversation turns:
-
-1. **State variable**: A field in your state schema (e.g., `current_step` or `active_agent`) tracks the current state.
-2. **State update tool**: Tools change the state variable value when transitioning between states.
-3. **Dynamic behavior**: On each turn, the system reads the state variable and adjusts behavior—either by applying different configuration (system prompt, tools) or routing to a different agent.
 
 There are two ways to implement state machines: **[single agent with middleware](#single-agent-with-middleware)** (one agent with dynamic configuration) or **[multiple agent subgraphs](#multiple-agent-subgraphs)** (distinct agents as graph nodes).
 
