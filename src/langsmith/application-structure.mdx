@@ -3,8 +3,7 @@ title: Application structure
 sidebarTitle: Application structure
 ---
 
-import FrameworkAgnosticPy from '/snippets/langsmith/framework-agnostic-py.mdx';
-import FrameworkAgnosticJS from '/snippets/langsmith/framework-agnostic-js.mdx';
+import FrameworkAgnostic from '/snippets/langsmith/framework-agnostic.mdx';
 
 To deploy on LangSmith, an application must consist of one or more graphs, a configuration file (`langgraph.json`), a file that specifies dependencies, and an optional `.env` file that specifies environment variables.
 
@@ -21,12 +20,7 @@ To deploy using LangSmith, provide the following information:
 
 <Tip>
 **Framework agnostic**
-:::python
-<FrameworkAgnosticPy/>
-:::
-:::js
-<FrameworkAgnosticJS/>
-:::
+<FrameworkAgnostic/>
 </Tip>
 
 ## File structure
@@ -154,6 +148,94 @@ You will generally need to specify the following information for dependencies to
 Use the `graphs` key in the [configuration file](#configuration-file-concepts) to specify which graphs will be available in the deployed application.
 
 You can specify one or more graphs in the configuration file. Each graph is identified by a unique name and a path to either (1) a compiled graph or (2) a function that defines a graph.
+
+### Use any framework with LangSmith Deployment
+
+While LangSmith Deployment requires applications to be structured as a LangGraph graph, individual nodes within that graph can contain arbitrary code. This means you can use any framework or library within your nodes while still benefiting from LangSmith's deployment infrastructure.
+
+The graph structure serves as a deployment interface, but your core application logic can use whichever tools and frameworks best suit your needs.
+
+To deploy with LangSmith, you need:
+
+<Tabs>
+  <Tab title="Python">
+
+    1. **A LangGraph graph structure**: Define a graph using @[`StateGraph`] with @[`add_node`] and @[`add_edge`].
+    1. **Node functions with arbitrary logic**: Your node functions can call any framework or library.
+    1. **A compiled graph**: @[Compile][StateGraph.compile] the graph to create a deployable application.
+
+    The following example shows how to wrap your existing application logic within a minimal LangGraph structure:
+
+  ```python
+  from langgraph.graph import StateGraph, START, END
+  from typing import TypedDict
+
+  # Your existing application logic using any framework
+  from app_logic import process_data
+  from app_logic import fetch_data
+
+  class State(TypedDict):
+      input: str
+      result: str
+
+  def my_app_node(state: State) -> State:
+      """Node containing arbitrary framework code."""
+      # Use any framework or library here
+      raw_data = fetch_data(state["input"])
+      processed = process_data(raw_data)
+      return {"result": processed}
+
+  # Define the graph structure
+  graph = StateGraph(State)
+  graph.add_node("process", my_app_node)  # Add node with your logic
+  graph.add_edge(START, "process")  # Connect start to your node
+  graph.add_edge("process", END)  # Connect your node to end
+
+  # Compile for deployment
+  app = graph.compile()
+  ```
+  </Tab>
+  <Tab title="JavaScript">
+
+    1. **A LangGraph graph structure**: Define a graph using [`StateGraph`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html) with [`addNode`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addnode) and [`addEdge`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addedge).
+    1. **Node functions with arbitrary logic**: Your node functions can call any framework or library.
+    1. **A compiled graph**: [Compile](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#compile) the graph to create a deployable application.
+
+    The following example shows how to wrap your existing application logic within a minimal LangGraph structure:
+
+  ```typescript
+  import { StateGraph, START, END } from "@langchain/langgraph";
+  import { Annotation } from "@langchain/langgraph";
+
+  // Your existing application logic using any framework
+  import { processData } from "./app-logic";
+  import { fetchData } from "./app-logic";
+
+  const State = Annotation.Root({
+    input: Annotation<string>,
+    result: Annotation<string>
+  });
+
+  async function myAppNode(state: typeof State.State) {
+    // Use any framework or library here
+    const rawData = await fetchData(state.input);
+    const processed = await processData(rawData);
+    return { result: processed };
+  }
+
+  // Define the graph structure
+  const graph = new StateGraph(State)
+    .addNode("process", myAppNode)  // Add node with your logic
+    .addEdge(START, "process")  // Connect start to your node
+    .addEdge("process", END);  // Connect your node to end
+
+  // Compile for deployment
+  export const app = graph.compile();
+  ```
+  </Tab>
+</Tabs>
+
+In this example, the node functions (`my_app_node` for Python and `myAppNode` for JavaScript) can contain calls to any framework or library. The LangGraph structure simply provides the deployment interface and orchestration layer.
 
 ## Environment variables
 
