@@ -16,11 +16,11 @@ In this tutorial, you'll build a multi-source knowledge base router that demonst
 - A **Notion agent** that searches internal documentation and wikis.
 - A **Slack agent** that searches relevant threads and discussions.
 
-When a user asks "How do I authenticate API requests?", the router decomposes the query, determines which sources to consult, queries them in parallel, and synthesizes results into a coherent answer.
+When a user asks "How do I authenticate API requests?", the router decomposes the query into source-specific sub-questions, routes them to the relevant agents in parallel, and synthesizes results into a coherent answer.
 
 ```mermaid
 graph LR
-    A([Query]) --> B[Router]
+    A([Query]) --> B[Decompose]
     B --> C[GitHub agent]
     B --> D[Notion agent]
     B --> E[Slack agent]
@@ -37,6 +37,7 @@ The router pattern provides several advantages:
 - **Parallel execution**: Query multiple sources simultaneously, reducing latency compared to sequential approaches.
 - **Specialized agents**: Each vertical has focused tools and prompts optimized for its domain.
 - **Selective routing**: Not every query needs every source—the router intelligently selects relevant verticals.
+- **Targeted sub-questions**: Each agent receives a question tailored to its domain, improving result quality.
 - **Clean synthesis**: Results from multiple sources are combined into a single, coherent response.
 
 ### Concepts
@@ -134,15 +135,18 @@ Select a chat model from LangChain's suite of integrations:
 
 ## 1. Define state
 
-First, define the state schema that will flow through your router workflow. This state tracks the query, routing decisions, results from each agent, and the final synthesized answer:
+First, define the state schema that will flow through your router workflow. This state tracks the original query, decomposed sub-questions for each source, results from each agent, and the final synthesized answer:
 
 :::python
 ```python
 from typing import TypedDict
 
+
 class RouterState(TypedDict):
     query: str
-    routes: list[str]  # Which knowledge bases to query  # [!code highlight]
+    github_question: str | None
+    notion_question: str | None
+    slack_question: str | None
     github_result: str | None
     notion_result: str | None
     slack_result: str | None
@@ -156,16 +160,18 @@ import { Annotation } from "@langchain/langgraph";
 
 const RouterState = Annotation.Root({
   query: Annotation<string>(),
-  routes: Annotation<string[]>(),  // Which knowledge bases to query  // [!code highlight]
+  githubQuestion: Annotation<string | null>(),
+  notionQuestion: Annotation<string | null>(),
+  slackQuestion: Annotation<string | null>(),
   githubResult: Annotation<string | null>(),
   notionResult: Annotation<string | null>(),
   slackResult: Annotation<string | null>(),
-  finalAnswer: Annotation<string>()
+  finalAnswer: Annotation<string>(),
 });
 ```
 :::
 
-The `routes` field is key—it stores the routing decisions made by the decomposition step, determining which agents will be invoked in parallel.
+The `*_question` fields store decomposed sub-questions tailored to each knowledge source. This allows each agent to receive a question optimized for its domain rather than the raw user query.
 
 ## 2. Define tools for each vertical
 
@@ -176,55 +182,45 @@ Create tools for each knowledge domain. In a production system, these would call
 from langchain.tools import tool
 
 
-# GitHub tools
 @tool
 def search_code(query: str, repo: str = "main") -> str:
     """Search code in GitHub repositories."""
-    # Stub: In practice, this would call the GitHub API
     return f"Found code matching '{query}' in {repo}: authentication middleware in src/auth.py"
 
 
 @tool
 def search_issues(query: str) -> str:
     """Search GitHub issues and pull requests."""
-    # Stub: In practice, this would call the GitHub API
     return f"Found 3 issues matching '{query}': #142 (API auth docs), #89 (OAuth flow), #203 (token refresh)"
 
 
 @tool
 def search_prs(query: str) -> str:
     """Search pull requests for implementation details."""
-    # Stub: In practice, this would call the GitHub API
     return f"PR #156 added JWT authentication, PR #178 updated OAuth scopes"
 
 
-# Notion tools
 @tool
 def search_notion(query: str) -> str:
     """Search Notion workspace for documentation."""
-    # Stub: In practice, this would call the Notion API
     return f"Found documentation: 'API Authentication Guide' - covers OAuth2 flow, API keys, and JWT tokens"
 
 
 @tool
 def get_page(page_id: str) -> str:
     """Get a specific Notion page by ID."""
-    # Stub: In practice, this would call the Notion API
     return f"Page content: Step-by-step authentication setup instructions"
 
 
-# Slack tools
 @tool
 def search_slack(query: str) -> str:
     """Search Slack messages and threads."""
-    # Stub: In practice, this would call the Slack API
     return f"Found discussion in #engineering: 'Use Bearer tokens for API auth, see docs for refresh flow'"
 
 
 @tool
 def get_thread(thread_id: str) -> str:
     """Get a specific Slack thread."""
-    # Stub: In practice, this would call the Slack API
     return f"Thread discusses best practices for API key rotation"
 ```
 :::
@@ -234,11 +230,8 @@ def get_thread(thread_id: str) -> str:
 import { tool } from "langchain";
 import { z } from "zod";
 
-
-// GitHub tools
 const searchCode = tool(
   async ({ query, repo }) => {
-    // Stub: In practice, this would call the GitHub API
     return `Found code matching '${query}' in ${repo || "main"}: authentication middleware in src/auth.py`;
   },
   {
@@ -253,7 +246,6 @@ const searchCode = tool(
 
 const searchIssues = tool(
   async ({ query }) => {
-    // Stub: In practice, this would call the GitHub API
     return `Found 3 issues matching '${query}': #142 (API auth docs), #89 (OAuth flow), #203 (token refresh)`;
   },
   {
@@ -267,7 +259,6 @@ const searchIssues = tool(
 
 const searchPrs = tool(
   async ({ query }) => {
-    // Stub: In practice, this would call the GitHub API
     return `PR #156 added JWT authentication, PR #178 updated OAuth scopes`;
   },
   {
@@ -279,11 +270,8 @@ const searchPrs = tool(
   }
 );
 
-
-// Notion tools
 const searchNotion = tool(
   async ({ query }) => {
-    // Stub: In practice, this would call the Notion API
     return `Found documentation: 'API Authentication Guide' - covers OAuth2 flow, API keys, and JWT tokens`;
   },
   {
@@ -297,7 +285,6 @@ const searchNotion = tool(
 
 const getPage = tool(
   async ({ pageId }) => {
-    // Stub: In practice, this would call the Notion API
     return `Page content: Step-by-step authentication setup instructions`;
   },
   {
@@ -309,11 +296,8 @@ const getPage = tool(
   }
 );
 
-
-// Slack tools
 const searchSlack = tool(
   async ({ query }) => {
-    // Stub: In practice, this would call the Slack API
     return `Found discussion in #engineering: 'Use Bearer tokens for API auth, see docs for refresh flow'`;
   },
   {
@@ -327,7 +311,6 @@ const searchSlack = tool(
 
 const getThread = tool(
   async ({ threadId }) => {
-    // Stub: In practice, this would call the Slack API
     return `Thread discusses best practices for API key rotation`;
   },
   {
@@ -348,8 +331,11 @@ Create specialized agents for each vertical. Each agent has domain-specific tool
 :::python
 ```python
 from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
 
-github_agent = create_agent(  # [!code highlight]
+model = init_chat_model("openai:gpt-4o")
+
+github_agent = create_agent(
     model,
     tools=[search_code, search_issues, search_prs],
     system_prompt=(
@@ -359,7 +345,7 @@ github_agent = create_agent(  # [!code highlight]
     ),
 )
 
-notion_agent = create_agent(  # [!code highlight]
+notion_agent = create_agent(
     model,
     tools=[search_notion, get_page],
     system_prompt=(
@@ -369,7 +355,7 @@ notion_agent = create_agent(  # [!code highlight]
     ),
 )
 
-slack_agent = create_agent(  # [!code highlight]
+slack_agent = create_agent(
     model,
     tools=[search_slack, get_thread],
     system_prompt=(
@@ -384,8 +370,11 @@ slack_agent = create_agent(  # [!code highlight]
 :::js
 ```typescript
 import { createAgent } from "langchain";
+import { ChatOpenAI } from "@langchain/openai";
 
-const githubAgent = createAgent({  // [!code highlight]
+const llm = new ChatOpenAI({ model: "gpt-4o" });
+
+const githubAgent = createAgent({
   model: llm,
   tools: [searchCode, searchIssues, searchPrs],
   systemPrompt: `
@@ -395,7 +384,7 @@ repositories, issues, and pull requests.
   `.trim(),
 });
 
-const notionAgent = createAgent({  // [!code highlight]
+const notionAgent = createAgent({
   model: llm,
   tools: [searchNotion, getPage],
   systemPrompt: `
@@ -405,7 +394,7 @@ the organization's Notion workspace.
   `.trim(),
 });
 
-const slackAgent = createAgent({  // [!code highlight]
+const slackAgent = createAgent({
   model: llm,
   tools: [searchSlack, getThread],
   systemPrompt: `
@@ -423,83 +412,93 @@ Each agent is focused on its specific domain, with tools and prompts tailored to
 
 Now build the router workflow using a StateGraph. The workflow has four main steps:
 
-1. **Decompose**: Analyze the query and determine which sources to consult
+1. **Decompose**: Analyze the query and generate source-specific sub-questions
 2. **Route**: Fan out to selected agents in parallel using `Send`
-3. **Query agents**: Each selected agent searches its domain
+3. **Query agents**: Each selected agent searches its domain using its tailored sub-question
 4. **Synthesize**: Combine results into a coherent response
 
 :::python
 ```python
-from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, START, END, Send
 
-# Use a smaller model for routing decisions
 router_llm = init_chat_model("openai:gpt-4o-mini")
 
 
-def decompose_query(state: RouterState) -> dict:  # [!code highlight]
-    """Decompose query and determine which knowledge bases to consult."""  # [!code highlight]
-    response = router_llm.invoke([
+def decompose_query(state: RouterState) -> dict:
+    """Decompose query into source-specific sub-questions."""
+    response = router_llm.with_structured_output(dict).invoke([  # [!code highlight]
         {
             "role": "system",
             "content": """Analyze this query and determine which knowledge bases to consult.
+For each relevant source, generate a targeted sub-question optimized for that source.
 
 Available sources:
 - github: Code, API references, implementation details, issues, pull requests
 - notion: Internal documentation, processes, policies, team wikis
 - slack: Team discussions, informal knowledge sharing, recent conversations
 
-Return a JSON object with a "sources" array containing one or more of: "github", "notion", "slack".
-Only include sources that are likely to have relevant information.
+Return a JSON object with sub-questions ONLY for relevant sources:
+{
+  "github": "sub-question for GitHub (or null if not relevant)",
+  "notion": "sub-question for Notion (or null if not relevant)",
+  "slack": "sub-question for Slack (or null if not relevant)"
+}
 
-Example: {"sources": ["github", "notion"]}"""
+Example for "How do I authenticate API requests?":
+{
+  "github": "What authentication code exists? Search for auth middleware, JWT handling, OAuth implementation",
+  "notion": "What authentication documentation exists? Look for API auth guides, security policies",
+  "slack": null
+}"""
         },
         {"role": "user", "content": state["query"]}
     ])
 
-    # Parse the response to extract routes
-    import json
-    try:
-        result = json.loads(response.content)
-        routes = result.get("sources", ["github", "notion"])
-    except json.JSONDecodeError:
-        # Default to all sources if parsing fails
-        routes = ["github", "notion", "slack"]
-
-    return {"routes": routes}
+    return {
+        "github_question": response.get("github"),
+        "notion_question": response.get("notion"),
+        "slack_question": response.get("slack"),
+    }
 
 
-def route_to_agents(state: RouterState) -> list[Send]:  # [!code highlight]
-    """Fan out to selected agents in parallel using Send."""  # [!code highlight]
-    return [Send(route, state) for route in state["routes"]]  # [!code highlight]
+def route_to_agents(state: RouterState) -> list[Send]:
+    """Fan out to agents that have sub-questions assigned."""
+    sends = []
+    if state.get("github_question"):
+        sends.append(Send("github", state))  # [!code highlight]
+    if state.get("notion_question"):
+        sends.append(Send("notion", state))  # [!code highlight]
+    if state.get("slack_question"):
+        sends.append(Send("slack", state))  # [!code highlight]
+    return sends
 
 
 def query_github(state: RouterState) -> dict:
-    """Query the GitHub agent."""
+    """Query the GitHub agent with its targeted sub-question."""
     result = github_agent.invoke({
-        "messages": [{"role": "user", "content": state["query"]}]
+        "messages": [{"role": "user", "content": state["github_question"]}]  # [!code highlight]
     })
     return {"github_result": result["messages"][-1].content}
 
 
 def query_notion(state: RouterState) -> dict:
-    """Query the Notion agent."""
+    """Query the Notion agent with its targeted sub-question."""
     result = notion_agent.invoke({
-        "messages": [{"role": "user", "content": state["query"]}]
+        "messages": [{"role": "user", "content": state["notion_question"]}]  # [!code highlight]
     })
     return {"notion_result": result["messages"][-1].content}
 
 
 def query_slack(state: RouterState) -> dict:
-    """Query the Slack agent."""
+    """Query the Slack agent with its targeted sub-question."""
     result = slack_agent.invoke({
-        "messages": [{"role": "user", "content": state["query"]}]
+        "messages": [{"role": "user", "content": state["slack_question"]}]  # [!code highlight]
     })
     return {"slack_result": result["messages"][-1].content}
 
 
-def synthesize_results(state: RouterState) -> dict:  # [!code highlight]
-    """Combine results from multiple agents into a coherent answer."""  # [!code highlight]
+def synthesize_results(state: RouterState) -> dict:
+    """Combine results from multiple agents into a coherent answer."""
     results = []
     if state.get("github_result"):
         results.append(f"**From GitHub:**\n{state['github_result']}")
@@ -511,11 +510,10 @@ def synthesize_results(state: RouterState) -> dict:  # [!code highlight]
     if not results:
         return {"final_answer": "No results found from any knowledge source."}
 
-    # Use LLM to synthesize results into a coherent response
     synthesis_response = router_llm.invoke([
         {
             "role": "system",
-            "content": """Synthesize these search results into a coherent, helpful answer.
+            "content": f"""Synthesize these search results to answer the original question: "{state['query']}"
 
 - Combine information from multiple sources without redundancy
 - Highlight the most relevant and actionable information
@@ -532,55 +530,60 @@ def synthesize_results(state: RouterState) -> dict:  # [!code highlight]
 :::js
 ```typescript
 import { StateGraph, START, END, Send } from "@langchain/langgraph";
-import { ChatOpenAI } from "@langchain/openai";
 
-// Use a smaller model for routing decisions
 const routerLlm = new ChatOpenAI({ model: "gpt-4o-mini" });
 
 
-async function decomposeQuery(state: typeof RouterState.State) {  // [!code highlight]
-  // Decompose query and determine which knowledge bases to consult  // [!code highlight]
-  const response = await routerLlm.invoke([
+async function decomposeQuery(state: typeof RouterState.State) {
+  const response = await routerLlm.invoke([  // [!code highlight]
     {
       role: "system",
       content: `Analyze this query and determine which knowledge bases to consult.
+For each relevant source, generate a targeted sub-question optimized for that source.
 
 Available sources:
 - github: Code, API references, implementation details, issues, pull requests
 - notion: Internal documentation, processes, policies, team wikis
 - slack: Team discussions, informal knowledge sharing, recent conversations
 
-Return a JSON object with a "sources" array containing one or more of: "github", "notion", "slack".
-Only include sources that are likely to have relevant information.
+Return a JSON object with sub-questions ONLY for relevant sources:
+{
+  "github": "sub-question for GitHub (or null if not relevant)",
+  "notion": "sub-question for Notion (or null if not relevant)",
+  "slack": "sub-question for Slack (or null if not relevant)"
+}
 
-Example: {"sources": ["github", "notion"]}`
+Example for "How do I authenticate API requests?":
+{
+  "github": "What authentication code exists? Search for auth middleware, JWT handling, OAuth implementation",
+  "notion": "What authentication documentation exists? Look for API auth guides, security policies",
+  "slack": null
+}`
     },
     { role: "user", content: state.query }
   ]);
 
-  // Parse the response to extract routes
-  let routes: string[];
-  try {
-    const result = JSON.parse(response.content as string);
-    routes = result.sources || ["github", "notion"];
-  } catch {
-    // Default to all sources if parsing fails
-    routes = ["github", "notion", "slack"];
-  }
-
-  return { routes };
+  const parsed = JSON.parse(response.content as string);
+  return {
+    githubQuestion: parsed.github || null,
+    notionQuestion: parsed.notion || null,
+    slackQuestion: parsed.slack || null,
+  };
 }
 
 
-function routeToAgents(state: typeof RouterState.State): Send[] {  // [!code highlight]
-  // Fan out to selected agents in parallel using Send  // [!code highlight]
-  return state.routes.map(route => new Send(route, state));  // [!code highlight]
+function routeToAgents(state: typeof RouterState.State): Send[] {
+  const sends: Send[] = [];
+  if (state.githubQuestion) sends.push(new Send("github", state));  // [!code highlight]
+  if (state.notionQuestion) sends.push(new Send("notion", state));  // [!code highlight]
+  if (state.slackQuestion) sends.push(new Send("slack", state));  // [!code highlight]
+  return sends;
 }
 
 
 async function queryGithub(state: typeof RouterState.State) {
   const result = await githubAgent.invoke({
-    messages: [{ role: "user", content: state.query }]
+    messages: [{ role: "user", content: state.githubQuestion! }]  // [!code highlight]
   });
   return { githubResult: result.messages.at(-1)?.content };
 }
@@ -588,7 +591,7 @@ async function queryGithub(state: typeof RouterState.State) {
 
 async function queryNotion(state: typeof RouterState.State) {
   const result = await notionAgent.invoke({
-    messages: [{ role: "user", content: state.query }]
+    messages: [{ role: "user", content: state.notionQuestion! }]  // [!code highlight]
   });
   return { notionResult: result.messages.at(-1)?.content };
 }
@@ -596,14 +599,13 @@ async function queryNotion(state: typeof RouterState.State) {
 
 async function querySlack(state: typeof RouterState.State) {
   const result = await slackAgent.invoke({
-    messages: [{ role: "user", content: state.query }]
+    messages: [{ role: "user", content: state.slackQuestion! }]  // [!code highlight]
   });
   return { slackResult: result.messages.at(-1)?.content };
 }
 
 
-async function synthesizeResults(state: typeof RouterState.State) {  // [!code highlight]
-  // Combine results from multiple agents into a coherent answer  // [!code highlight]
+async function synthesizeResults(state: typeof RouterState.State) {
   const results: string[] = [];
   if (state.githubResult) results.push(`**From GitHub:**\n${state.githubResult}`);
   if (state.notionResult) results.push(`**From Notion:**\n${state.notionResult}`);
@@ -613,11 +615,10 @@ async function synthesizeResults(state: typeof RouterState.State) {  // [!code h
     return { finalAnswer: "No results found from any knowledge source." };
   }
 
-  // Use LLM to synthesize results into a coherent response
   const synthesisResponse = await routerLlm.invoke([
     {
       role: "system",
-      content: `Synthesize these search results into a coherent, helpful answer.
+      content: `Synthesize these search results to answer the original question: "${state.query}"
 
 - Combine information from multiple sources without redundancy
 - Highlight the most relevant and actionable information
@@ -638,7 +639,6 @@ Now assemble the workflow by connecting nodes with edges. The key is using `add_
 
 :::python
 ```python
-# Build workflow with parallel execution
 workflow = (
     StateGraph(RouterState)
     .add_node("decompose", decompose_query)
@@ -647,7 +647,7 @@ workflow = (
     .add_node("slack", query_slack)
     .add_node("synthesize", synthesize_results)
     .add_edge(START, "decompose")
-    .add_conditional_edges("decompose", route_to_agents, ["github", "notion", "slack"])  # [!code highlight]
+    .add_conditional_edges("decompose", route_to_agents, ["github", "notion", "slack"])
     .add_edge("github", "synthesize")
     .add_edge("notion", "synthesize")
     .add_edge("slack", "synthesize")
@@ -659,7 +659,6 @@ workflow = (
 
 :::js
 ```typescript
-// Build workflow with parallel execution
 const workflow = new StateGraph(RouterState)
   .addNode("decompose", decomposeQuery)
   .addNode("github", queryGithub)
@@ -667,7 +666,7 @@ const workflow = new StateGraph(RouterState)
   .addNode("slack", querySlack)
   .addNode("synthesize", synthesizeResults)
   .addEdge(START, "decompose")
-  .addConditionalEdges("decompose", routeToAgents, ["github", "notion", "slack"])  // [!code highlight]
+  .addConditionalEdges("decompose", routeToAgents, ["github", "notion", "slack"])
   .addEdge("github", "synthesize")
   .addEdge("notion", "synthesize")
   .addEdge("slack", "synthesize")
@@ -684,13 +683,19 @@ Test your router with queries that span multiple knowledge domains:
 
 :::python
 ```python
-# Query that requires multiple sources
 result = workflow.invoke({
     "query": "How do I authenticate API requests?"
 })
 
-print("Routes selected:", result["routes"])
-print("\n" + "="*60 + "\n")
+print("Original query:", result["query"])
+print("\nDecomposed questions:")
+if result.get("github_question"):
+    print(f"  GitHub: {result['github_question']}")
+if result.get("notion_question"):
+    print(f"  Notion: {result['notion_question']}")
+if result.get("slack_question"):
+    print(f"  Slack: {result['slack_question']}")
+print("\n" + "=" * 60 + "\n")
 print("Final Answer:")
 print(result["final_answer"])
 ```
@@ -698,12 +703,15 @@ print(result["final_answer"])
 
 :::js
 ```typescript
-// Query that requires multiple sources
 const result = await workflow.invoke({
   query: "How do I authenticate API requests?"
 });
 
-console.log("Routes selected:", result.routes);
+console.log("Original query:", result.query);
+console.log("\nDecomposed questions:");
+if (result.githubQuestion) console.log(`  GitHub: ${result.githubQuestion}`);
+if (result.notionQuestion) console.log(`  Notion: ${result.notionQuestion}`);
+if (result.slackQuestion) console.log(`  Slack: ${result.slackQuestion}`);
 console.log("\n" + "=".repeat(60) + "\n");
 console.log("Final Answer:");
 console.log(result.finalAnswer);
@@ -712,7 +720,11 @@ console.log(result.finalAnswer);
 
 Expected output:
 ```
-Routes selected: ['github', 'notion']
+Original query: How do I authenticate API requests?
+
+Decomposed questions:
+  GitHub: What authentication code exists? Search for auth middleware, JWT handling, OAuth implementation
+  Notion: What authentication documentation exists? Look for API auth guides, security policies
 
 ============================================================
 
@@ -732,7 +744,7 @@ For token refresh handling, see issue #203 and PR #178 for the latest
 OAuth scope updates.
 ```
 
-The router analyzed the query, determined that GitHub and Notion were relevant sources (but not Slack for this technical question), queried both in parallel, and synthesized the results into a coherent answer.
+The router analyzed the query, decomposed it into targeted sub-questions for GitHub and Notion (but not Slack for this technical question), queried both agents in parallel with their tailored questions, and synthesized the results into a coherent answer.
 
 ## 7. Understanding the architecture
 
@@ -740,25 +752,31 @@ The router workflow follows a clear pattern:
 
 ### Decomposition phase
 
-The `decompose_query` function analyzes the user's query and determines which knowledge sources are relevant. This is where the "routing" intelligence lives. You can make this as simple or sophisticated as needed:
+The `decompose_query` function analyzes the user's query and generates source-specific sub-questions. This is where the "routing" intelligence lives:
 
-- **Simple**: Keyword matching or rule-based routing
-- **LLM-based**: Use an LLM to analyze query intent (as shown in this tutorial)
-- **Classifier**: Train a classifier to predict relevant sources
+- Determines which sources are relevant to the query
+- Generates tailored sub-questions optimized for each source's domain
+- Skips sources that aren't relevant (by returning `null`)
+
+This targeted approach improves result quality because each agent receives a question framed for its specific knowledge domain.
 
 ### Parallel execution
 
-The `route_to_agents` function returns a list of `Send` objects, one for each selected route. LangGraph executes these in parallel, significantly reducing latency compared to sequential approaches.
+The `route_to_agents` function returns a list of `Send` objects, one for each source that has a sub-question assigned. LangGraph executes these in parallel:
 
 ```python
-# If routes = ["github", "notion"], this returns:
+# If github_question and notion_question are set, this returns:
 [Send("github", state), Send("notion", state)]
-# Both agents execute simultaneously
+# Both agents execute simultaneously with their targeted sub-questions
 ```
 
 ### Synthesis phase
 
-After all agents complete, the `synthesize_results` function combines their outputs. The synthesis step waits for all parallel branches to complete before executing.
+After all agents complete, the `synthesize_results` function combines their outputs. The synthesis step:
+
+- Waits for all parallel branches to complete
+- References the original query to ensure the answer addresses what the user actually asked
+- Combines information without redundancy
 
 <Note>
 **Partial results**: In this tutorial, all selected agents must complete before synthesis. For more advanced patterns where you want to handle partial results or timeouts, see the [map-reduce guide](/oss/langchain/map-reduce).
@@ -776,11 +794,10 @@ Here's everything together in a runnable script:
 Multi-Source Knowledge Router Example
 
 This example demonstrates the router pattern for multi-agent systems.
-A router decomposes queries, routes to specialized agents in parallel,
-and synthesizes results into a combined response.
+A router decomposes queries into source-specific sub-questions, routes them
+to specialized agents in parallel, and synthesizes results into a combined response.
 """
 
-import json
 from typing import TypedDict
 
 from langchain.agents import create_agent
@@ -789,22 +806,16 @@ from langchain.tools import tool
 from langgraph.graph import StateGraph, START, END, Send
 
 
-# ============================================================================
-# Step 1: Define state
-# ============================================================================
-
 class RouterState(TypedDict):
     query: str
-    routes: list[str]
+    github_question: str | None
+    notion_question: str | None
+    slack_question: str | None
     github_result: str | None
     notion_result: str | None
     slack_result: str | None
     final_answer: str
 
-
-# ============================================================================
-# Step 2: Define tools for each vertical
-# ============================================================================
 
 @tool
 def search_code(query: str, repo: str = "main") -> str:
@@ -847,10 +858,6 @@ def get_thread(thread_id: str) -> str:
     """Get a specific Slack thread."""
     return f"Thread discusses best practices for API key rotation"
 
-
-# ============================================================================
-# Step 3: Create specialized agents
-# ============================================================================
 
 model = init_chat_model("openai:gpt-4o")
 router_llm = init_chat_model("openai:gpt-4o-mini")
@@ -886,64 +893,68 @@ slack_agent = create_agent(
 )
 
 
-# ============================================================================
-# Step 4: Build the router workflow
-# ============================================================================
-
 def decompose_query(state: RouterState) -> dict:
-    """Decompose query and determine which knowledge bases to consult."""
-    response = router_llm.invoke([
+    """Decompose query into source-specific sub-questions."""
+    response = router_llm.with_structured_output(dict).invoke([
         {
             "role": "system",
             "content": """Analyze this query and determine which knowledge bases to consult.
+For each relevant source, generate a targeted sub-question optimized for that source.
 
 Available sources:
 - github: Code, API references, implementation details, issues, pull requests
 - notion: Internal documentation, processes, policies, team wikis
 - slack: Team discussions, informal knowledge sharing, recent conversations
 
-Return a JSON object with a "sources" array containing one or more of: "github", "notion", "slack".
-Only include sources that are likely to have relevant information.
-
-Example: {"sources": ["github", "notion"]}"""
+Return a JSON object with sub-questions ONLY for relevant sources:
+{
+  "github": "sub-question for GitHub (or null if not relevant)",
+  "notion": "sub-question for Notion (or null if not relevant)",
+  "slack": "sub-question for Slack (or null if not relevant)"
+}"""
         },
         {"role": "user", "content": state["query"]}
     ])
 
-    try:
-        result = json.loads(response.content)
-        routes = result.get("sources", ["github", "notion"])
-    except json.JSONDecodeError:
-        routes = ["github", "notion", "slack"]
-
-    return {"routes": routes}
+    return {
+        "github_question": response.get("github"),
+        "notion_question": response.get("notion"),
+        "slack_question": response.get("slack"),
+    }
 
 
 def route_to_agents(state: RouterState) -> list[Send]:
-    """Fan out to selected agents in parallel using Send."""
-    return [Send(route, state) for route in state["routes"]]
+    """Fan out to agents that have sub-questions assigned."""
+    sends = []
+    if state.get("github_question"):
+        sends.append(Send("github", state))
+    if state.get("notion_question"):
+        sends.append(Send("notion", state))
+    if state.get("slack_question"):
+        sends.append(Send("slack", state))
+    return sends
 
 
 def query_github(state: RouterState) -> dict:
-    """Query the GitHub agent."""
+    """Query the GitHub agent with its targeted sub-question."""
     result = github_agent.invoke({
-        "messages": [{"role": "user", "content": state["query"]}]
+        "messages": [{"role": "user", "content": state["github_question"]}]
     })
     return {"github_result": result["messages"][-1].content}
 
 
 def query_notion(state: RouterState) -> dict:
-    """Query the Notion agent."""
+    """Query the Notion agent with its targeted sub-question."""
     result = notion_agent.invoke({
-        "messages": [{"role": "user", "content": state["query"]}]
+        "messages": [{"role": "user", "content": state["notion_question"]}]
     })
     return {"notion_result": result["messages"][-1].content}
 
 
 def query_slack(state: RouterState) -> dict:
-    """Query the Slack agent."""
+    """Query the Slack agent with its targeted sub-question."""
     result = slack_agent.invoke({
-        "messages": [{"role": "user", "content": state["query"]}]
+        "messages": [{"role": "user", "content": state["slack_question"]}]
     })
     return {"slack_result": result["messages"][-1].content}
 
@@ -964,7 +975,7 @@ def synthesize_results(state: RouterState) -> dict:
     synthesis_response = router_llm.invoke([
         {
             "role": "system",
-            "content": """Synthesize these search results into a coherent, helpful answer.
+            "content": f"""Synthesize these search results to answer the original question: "{state['query']}"
 
 - Combine information from multiple sources without redundancy
 - Highlight the most relevant and actionable information
@@ -976,10 +987,6 @@ def synthesize_results(state: RouterState) -> dict:
 
     return {"final_answer": synthesis_response.content}
 
-
-# ============================================================================
-# Step 5: Compile the workflow
-# ============================================================================
 
 workflow = (
     StateGraph(RouterState)
@@ -998,19 +1005,20 @@ workflow = (
 )
 
 
-# ============================================================================
-# Step 6: Use the router
-# ============================================================================
-
 if __name__ == "__main__":
-    # Example query
     result = workflow.invoke({
         "query": "How do I authenticate API requests?"
     })
 
-    print("Query:", "How do I authenticate API requests?")
-    print("Routes selected:", result["routes"])
-    print("\n" + "="*60 + "\n")
+    print("Original query:", result["query"])
+    print("\nDecomposed questions:")
+    if result.get("github_question"):
+        print(f"  GitHub: {result['github_question']}")
+    if result.get("notion_question"):
+        print(f"  Notion: {result['notion_question']}")
+    if result.get("slack_question"):
+        print(f"  Slack: {result['slack_question']}")
+    print("\n" + "=" * 60 + "\n")
     print("Final Answer:")
     print(result["final_answer"])
 ```
@@ -1022,8 +1030,8 @@ if __name__ == "__main__":
  * Multi-Source Knowledge Router Example
  *
  * This example demonstrates the router pattern for multi-agent systems.
- * A router decomposes queries, routes to specialized agents in parallel,
- * and synthesizes results into a combined response.
+ * A router decomposes queries into source-specific sub-questions, routes them
+ * to specialized agents in parallel, and synthesizes results into a combined response.
  */
 
 import { tool, createAgent } from "langchain";
@@ -1032,23 +1040,17 @@ import { StateGraph, Annotation, START, END, Send } from "@langchain/langgraph";
 import { z } from "zod";
 
 
-// ============================================================================
-// Step 1: Define state
-// ============================================================================
-
 const RouterState = Annotation.Root({
   query: Annotation<string>(),
-  routes: Annotation<string[]>(),
+  githubQuestion: Annotation<string | null>(),
+  notionQuestion: Annotation<string | null>(),
+  slackQuestion: Annotation<string | null>(),
   githubResult: Annotation<string | null>(),
   notionResult: Annotation<string | null>(),
   slackResult: Annotation<string | null>(),
-  finalAnswer: Annotation<string>()
+  finalAnswer: Annotation<string>(),
 });
 
-
-// ============================================================================
-// Step 2: Define tools for each vertical
-// ============================================================================
 
 const searchCode = tool(
   async ({ query, repo }) => {
@@ -1143,10 +1145,6 @@ const getThread = tool(
 );
 
 
-// ============================================================================
-// Step 3: Create specialized agents
-// ============================================================================
-
 const llm = new ChatOpenAI({ model: "gpt-4o" });
 const routerLlm = new ChatOpenAI({ model: "gpt-4o-mini" });
 
@@ -1181,61 +1179,61 @@ shared knowledge and solutions.
 });
 
 
-// ============================================================================
-// Step 4: Build the router workflow
-// ============================================================================
-
 async function decomposeQuery(state: typeof RouterState.State) {
   const response = await routerLlm.invoke([
     {
       role: "system",
       content: `Analyze this query and determine which knowledge bases to consult.
+For each relevant source, generate a targeted sub-question optimized for that source.
 
 Available sources:
 - github: Code, API references, implementation details, issues, pull requests
 - notion: Internal documentation, processes, policies, team wikis
 - slack: Team discussions, informal knowledge sharing, recent conversations
 
-Return a JSON object with a "sources" array containing one or more of: "github", "notion", "slack".
-Only include sources that are likely to have relevant information.
-
-Example: {"sources": ["github", "notion"]}`
+Return a JSON object with sub-questions ONLY for relevant sources:
+{
+  "github": "sub-question for GitHub (or null if not relevant)",
+  "notion": "sub-question for Notion (or null if not relevant)",
+  "slack": "sub-question for Slack (or null if not relevant)"
+}`
     },
     { role: "user", content: state.query }
   ]);
 
-  let routes: string[];
-  try {
-    const result = JSON.parse(response.content as string);
-    routes = result.sources || ["github", "notion"];
-  } catch {
-    routes = ["github", "notion", "slack"];
-  }
-
-  return { routes };
+  const parsed = JSON.parse(response.content as string);
+  return {
+    githubQuestion: parsed.github || null,
+    notionQuestion: parsed.notion || null,
+    slackQuestion: parsed.slack || null,
+  };
 }
 
 function routeToAgents(state: typeof RouterState.State): Send[] {
-  return state.routes.map(route => new Send(route, state));
+  const sends: Send[] = [];
+  if (state.githubQuestion) sends.push(new Send("github", state));
+  if (state.notionQuestion) sends.push(new Send("notion", state));
+  if (state.slackQuestion) sends.push(new Send("slack", state));
+  return sends;
 }
 
 async function queryGithub(state: typeof RouterState.State) {
   const result = await githubAgent.invoke({
-    messages: [{ role: "user", content: state.query }]
+    messages: [{ role: "user", content: state.githubQuestion! }]
   });
   return { githubResult: result.messages.at(-1)?.content };
 }
 
 async function queryNotion(state: typeof RouterState.State) {
   const result = await notionAgent.invoke({
-    messages: [{ role: "user", content: state.query }]
+    messages: [{ role: "user", content: state.notionQuestion! }]
   });
   return { notionResult: result.messages.at(-1)?.content };
 }
 
 async function querySlack(state: typeof RouterState.State) {
   const result = await slackAgent.invoke({
-    messages: [{ role: "user", content: state.query }]
+    messages: [{ role: "user", content: state.slackQuestion! }]
   });
   return { slackResult: result.messages.at(-1)?.content };
 }
@@ -1253,7 +1251,7 @@ async function synthesizeResults(state: typeof RouterState.State) {
   const synthesisResponse = await routerLlm.invoke([
     {
       role: "system",
-      content: `Synthesize these search results into a coherent, helpful answer.
+      content: `Synthesize these search results to answer the original question: "${state.query}"
 
 - Combine information from multiple sources without redundancy
 - Highlight the most relevant and actionable information
@@ -1266,10 +1264,6 @@ async function synthesizeResults(state: typeof RouterState.State) {
   return { finalAnswer: synthesisResponse.content };
 }
 
-
-// ============================================================================
-// Step 5: Compile the workflow
-// ============================================================================
 
 const workflow = new StateGraph(RouterState)
   .addNode("decompose", decomposeQuery)
@@ -1286,16 +1280,15 @@ const workflow = new StateGraph(RouterState)
   .compile();
 
 
-// ============================================================================
-// Step 6: Use the router
-// ============================================================================
-
 const result = await workflow.invoke({
   query: "How do I authenticate API requests?"
 });
 
-console.log("Query:", "How do I authenticate API requests?");
-console.log("Routes selected:", result.routes);
+console.log("Original query:", result.query);
+console.log("\nDecomposed questions:");
+if (result.githubQuestion) console.log(`  GitHub: ${result.githubQuestion}`);
+if (result.notionQuestion) console.log(`  Notion: ${result.notionQuestion}`);
+if (result.slackQuestion) console.log(`  Slack: ${result.slackQuestion}`);
 console.log("\n" + "=".repeat(60) + "\n");
 console.log("Final Answer:");
 console.log(result.finalAnswer);
@@ -1314,13 +1307,11 @@ The simplest way to add conversation memory is to wrap the stateless router as a
 
 :::python
 ```python
-from langchain.tools import tool
-from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
 
 
 @tool
-def search_knowledge_base(query: str) -> str:  # [!code highlight]
+def search_knowledge_base(query: str) -> str:
     """Search across multiple knowledge sources (GitHub, Notion, Slack).
 
     Use this to find information about code, documentation, or team discussions.
@@ -1329,8 +1320,7 @@ def search_knowledge_base(query: str) -> str:  # [!code highlight]
     return result["final_answer"]
 
 
-# Conversational agent wraps the router as a tool
-conversational_agent = create_agent(  # [!code highlight]
+conversational_agent = create_agent(
     model,
     tools=[search_knowledge_base],
     system_prompt=(
@@ -1338,7 +1328,7 @@ conversational_agent = create_agent(  # [!code highlight]
         "Use the search_knowledge_base tool to find information across our code, "
         "documentation, and team discussions."
     ),
-    checkpointer=InMemorySaver(),  # Enables conversation memory  # [!code highlight]
+    checkpointer=InMemorySaver(),
 )
 ```
 :::
@@ -1347,7 +1337,7 @@ conversational_agent = create_agent(  # [!code highlight]
 ```typescript
 import { MemorySaver } from "@langchain/langgraph";
 
-const searchKnowledgeBase = tool(  // [!code highlight]
+const searchKnowledgeBase = tool(
   async ({ query }) => {
     const result = await workflow.invoke({ query });
     return result.finalAnswer;
@@ -1362,8 +1352,7 @@ Use this to find information about code, documentation, or team discussions.`,
   }
 );
 
-// Conversational agent wraps the router as a tool
-const conversationalAgent = createAgent({  // [!code highlight]
+const conversationalAgent = createAgent({
   model: llm,
   tools: [searchKnowledgeBase],
   systemPrompt: `
@@ -1371,7 +1360,7 @@ You are a helpful assistant that answers questions about our organization.
 Use the search_knowledge_base tool to find information across our code,
 documentation, and team discussions.
   `.trim(),
-  checkpointer: new MemorySaver(),  // Enables conversation memory  // [!code highlight]
+  checkpointer: new MemorySaver(),
 });
 ```
 :::
@@ -1380,17 +1369,14 @@ This approach keeps the router stateless while the conversational agent handles 
 
 :::python
 ```python
-# Multi-turn conversation
 config = {"configurable": {"thread_id": "user-123"}}
 
-# Turn 1
 result = conversational_agent.invoke(
     {"messages": [{"role": "user", "content": "How do I authenticate API requests?"}]},
     config
 )
 print(result["messages"][-1].content)
 
-# Turn 2 - references previous context
 result = conversational_agent.invoke(
     {"messages": [{"role": "user", "content": "What about rate limiting for those endpoints?"}]},
     config
@@ -1401,17 +1387,14 @@ print(result["messages"][-1].content)
 
 :::js
 ```typescript
-// Multi-turn conversation
 const config = { configurable: { thread_id: "user-123" } };
 
-// Turn 1
 let result = await conversationalAgent.invoke(
   { messages: [{ role: "user", content: "How do I authenticate API requests?" }] },
   config
 );
 console.log(result.messages.at(-1)?.content);
 
-// Turn 2 - references previous context
 result = await conversationalAgent.invoke(
   { messages: [{ role: "user", content: "What about rate limiting for those endpoints?" }] },
   config
@@ -1440,7 +1423,7 @@ The router pattern excels when you have:
 - **Parallel query needs**: Questions that benefit from querying multiple sources simultaneously
 - **Synthesis requirements**: Results from multiple sources need to be combined into a coherent response
 
-The pattern has three phases: **decompose** (determine which sources to query), **route** (execute queries in parallel), and **synthesize** (combine results).
+The pattern has three phases: **decompose** (analyze the query and generate targeted sub-questions), **route** (execute queries in parallel), and **synthesize** (combine results).
 
 <Tip>
 **When to use the router pattern**

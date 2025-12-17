@@ -26,12 +26,14 @@ Use custom workflows when standard patterns (subagents, skills, etc.) don't fit 
 
 Each node in your workflow can be a simple function, an LLM call, or an entire agent with tools. You can also compose other architectures within a custom workflow—for example, embedding a multi-agent system as a single node. The [router pattern](/oss/langchain/multi-agent/router) is an example of a custom workflow.
 
-<Tip>
-**Calling a LangChain agent from a LangGraph node**: The main insight when mixing LangChain and LangGraph is that you can call a LangChain agent directly inside any LangGraph node. This lets you combine the flexibility of custom workflows with the convenience of pre-built agents:
+## Basic implementation
+
+The core insight is that you can call a LangChain agent directly inside any LangGraph node, combining the flexibility of custom workflows with the convenience of pre-built agents:
 
 :::python
 ```python
 from langchain.agents import create_agent
+from langgraph.graph import StateGraph, START, END
 
 agent = create_agent(model="openai:gpt-4o", tools=[...])
 
@@ -41,11 +43,21 @@ def agent_node(state: State) -> dict:
         "messages": [{"role": "user", "content": state["query"]}]
     })
     return {"answer": result["messages"][-1].content}
+
+# Build a simple workflow
+workflow = (
+    StateGraph(State)
+    .add_node("agent", agent_node)
+    .add_edge(START, "agent")
+    .add_edge("agent", END)
+    .compile()
+)
 ```
 :::
 :::js
 ```typescript
 import { createAgent } from "langchain";
+import { StateGraph, START, END } from "@langchain/langgraph";
 
 const agent = createAgent({ model: "openai:gpt-4o", tools: [...] });
 
@@ -56,9 +68,15 @@ async function agentNode(state: typeof State.State) {
   });
   return { answer: result.messages.at(-1)?.content };
 }
+
+// Build a simple workflow
+const workflow = new StateGraph(State)
+  .addNode("agent", agentNode)
+  .addEdge(START, "agent")
+  .addEdge("agent", END)
+  .compile();
 ```
 :::
-</Tip>
 
 ## Example: RAG pipeline
 
