@@ -331,33 +331,63 @@ const agent = createAgent({
 
 ### Multiple agent subgraphs
 
-Multiple distinct agents exist as separate nodes in a graph. Handoff tools navigate between agent nodes using `Command.PARENT` to specify which node to execute next:
+Multiple distinct agents exist as separate nodes in a graph. Handoff tools navigate between agent nodes using `Command.PARENT` to specify which node to execute next.
+
+<Warning>
+Subgraph handoffs require careful **context engineering**. Unlike single-agent middleware (where message history flows naturally), you must explicitly decide what messages pass between agents. Get this wrong and agents receive malformed conversation history or bloated context. See [Context engineering](#context-engineering) below.
+</Warning>
 
 :::python
 ```python
+from langchain.tools import tool, ToolRuntime
+from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.types import Command
+
 @tool
-def transfer_to_sales():
+def transfer_to_sales(
+    runtime: ToolRuntime,
+) -> Command:
     """Transfer to the sales agent."""
+    last_ai_message = next(  # [!code highlight]
+        msg for msg in reversed(runtime.state["messages"]) if isinstance(msg, AIMessage)  # [!code highlight]
+    )  # [!code highlight]
+    transfer_message = ToolMessage(  # [!code highlight]
+        content="Transferred to sales agent",  # [!code highlight]
+        tool_call_id=runtime.tool_call_id,  # [!code highlight]
+    )  # [!code highlight]
     return Command(
-        # Navigate to the sales agent node
-        goto="sales_agent",  # [!code highlight]
-        # Update the state to indicate the sales agent is active
-        update={"active_agent": "sales_agent"},  # [!code highlight]
-        graph=Command.PARENT  # Navigate in parent graph
+        goto="sales_agent",
+        update={
+            "active_agent": "sales_agent",
+            "messages": [last_ai_message, transfer_message],  # [!code highlight]
+        },
+        graph=Command.PARENT
     )
 ```
 :::
 :::js
 ```typescript
+import { tool, ToolRuntime } from "@langchain/core/tools";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import { Command } from "@langchain/langgraph";
+import { z } from "zod";
+
 const transferToSales = tool(
-  async () => {
+  async (_, { runtime }: { runtime: ToolRuntime }) => {
+    const lastAiMessage = [...runtime.state.messages]  // [!code highlight]
+      .reverse()  // [!code highlight]
+      .find((msg): msg is AIMessage => msg instanceof AIMessage);  // [!code highlight]
+    const transferMessage = new ToolMessage({  // [!code highlight]
+      content: "Transferred to sales agent",  // [!code highlight]
+      tool_call_id: runtime.toolCallId  // [!code highlight]
+    });  // [!code highlight]
     return new Command({
-      // Navigate to the sales agent node
-      goto: "sales_agent",  // [!code highlight]
-      // Update the state to indicate the sales agent is active
-      update: { activeAgent: "sales_agent" },  // [!code highlight]
-      // Navigate in parent graph
-      graph: Command.PARENT  // Navigate in parent graph
+      goto: "sales_agent",
+      update: {
+        activeAgent: "sales_agent",
+        messages: [lastAiMessage, transferMessage].filter(Boolean),  // [!code highlight]
+      },
+      graph: Command.PARENT
     });
   },
   {
@@ -376,62 +406,116 @@ This example shows a multi-agent system with separate sales and support agents. 
 :::python
 ```python
 from typing import Literal
+
 from langchain.agents import AgentState, create_agent
-from langchain.tools import tool
-from langgraph.graph import StateGraph, START
+from langchain.messages import AIMessage, ToolMessage
+from langchain.tools import tool, ToolRuntime
+from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
+from typing_extensions import NotRequired
+
 
 # 1. Define state with active_agent tracker
 class MultiAgentState(AgentState):
-    active_agent: str = "sales_agent"  # Track which agent is active
+    active_agent: NotRequired[str]
+
 
 # 2. Create handoff tools
 @tool
-def transfer_to_sales():
+def transfer_to_sales(
+    runtime: ToolRuntime,
+) -> Command:
     """Transfer to the sales agent."""
+    last_ai_message = next(  # [!code highlight]
+        msg for msg in reversed(runtime.state["messages"]) if isinstance(msg, AIMessage)  # [!code highlight]
+    )  # [!code highlight]
+    transfer_message = ToolMessage(  # [!code highlight]
+        content="Transferred to sales agent from support agent",  # [!code highlight]
+        tool_call_id=runtime.tool_call_id,  # [!code highlight]
+    )  # [!code highlight]
     return Command(
         goto="sales_agent",
-        update={"active_agent": "sales_agent"},
-        graph=Command.PARENT
+        update={
+            "active_agent": "sales_agent",
+            "messages": [last_ai_message, transfer_message],  # [!code highlight]
+        },
+        graph=Command.PARENT,
     )
 
+
 @tool
-def transfer_to_support():
+def transfer_to_support(
+    runtime: ToolRuntime,
+) -> Command:
     """Transfer to the support agent."""
+    last_ai_message = next(  # [!code highlight]
+        msg for msg in reversed(runtime.state["messages"]) if isinstance(msg, AIMessage)  # [!code highlight]
+    )  # [!code highlight]
+    transfer_message = ToolMessage(  # [!code highlight]
+        content="Transferred to support agent from sales agent",  # [!code highlight]
+        tool_call_id=runtime.tool_call_id,  # [!code highlight]
+    )  # [!code highlight]
     return Command(
         goto="support_agent",
-        update={"active_agent": "support_agent"},
-        graph=Command.PARENT
+        update={
+            "active_agent": "support_agent",
+            "messages": [last_ai_message, transfer_message],  # [!code highlight]
+        },
+        graph=Command.PARENT,
     )
+
 
 # 3. Create agents with handoff tools
 sales_agent = create_agent(
-    model="anthropic:claude-3-5-sonnet-latest",
+    model="anthropic:claude-sonnet-4-20250514",
     tools=[transfer_to_support],
-    prompt="You are a sales agent. Help with sales inquiries."
+    system_prompt="You are a sales agent. Help with sales inquiries. If asked about technical issues or support, transfer to the support agent.",
 )
 
 support_agent = create_agent(
-    model="anthropic:claude-3-5-sonnet-latest",
+    model="anthropic:claude-sonnet-4-20250514",
     tools=[transfer_to_sales],
-    prompt="You are a support agent. Help with technical issues."
+    system_prompt="You are a support agent. Help with technical issues. If asked about pricing or purchasing, transfer to the sales agent.",
 )
 
+
 # 4. Create agent nodes that invoke the agents
-def call_sales_agent(state: MultiAgentState):
+def call_sales_agent(state: MultiAgentState) -> Command:
     """Node that calls the sales agent."""
     response = sales_agent.invoke(state)
     return response
 
-def call_support_agent(state: MultiAgentState):
+
+def call_support_agent(state: MultiAgentState) -> Command:
     """Node that calls the support agent."""
     response = support_agent.invoke(state)
     return response
 
-# 5. Create router node
-def route_to_agent(state: MultiAgentState) -> Literal["sales_agent", "support_agent"]:
-    """Route to the active agent based on state."""
-    return state["active_agent"]
+
+# 5. Create router that checks if we should end or continue
+def route_after_agent(
+    state: MultiAgentState,
+) -> Literal["sales_agent", "support_agent", "__end__"]:
+    """Route based on active_agent, or END if the agent finished without handoff."""
+    messages = state.get("messages", [])
+
+    # Check the last message - if it's an AIMessage without tool calls, we're done
+    if messages:
+        last_msg = messages[-1]
+        if isinstance(last_msg, AIMessage) and not last_msg.tool_calls:  # [!code highlight]
+            return "__end__"  # [!code highlight]
+
+    # Otherwise route to the active agent
+    active = state.get("active_agent", "sales_agent")
+    return active if active else "sales_agent"
+
+
+def route_initial(
+    state: MultiAgentState,
+) -> Literal["sales_agent", "support_agent"]:
+    """Route to the active agent based on state, default to sales agent."""
+    return state.get("active_agent") or "sales_agent"
+
 
 # 6. Build the graph
 builder = StateGraph(MultiAgentState)
@@ -439,51 +523,65 @@ builder.add_node("sales_agent", call_sales_agent)
 builder.add_node("support_agent", call_support_agent)
 
 # Start with conditional routing based on initial active_agent
-builder.add_conditional_edges(
-    START,
-    route_to_agent,
-    ["sales_agent", "support_agent"]
-)
+builder.add_conditional_edges(START, route_initial, ["sales_agent", "support_agent"])
 
-# After each agent, route to the active agent (enables handoffs)
+# After each agent, check if we should end or route to another agent
 builder.add_conditional_edges(
-    "sales_agent",
-    route_to_agent,
-    ["sales_agent", "support_agent"]
+    "sales_agent", route_after_agent, ["sales_agent", "support_agent", END]
 )
 builder.add_conditional_edges(
-    "support_agent",
-    route_to_agent,
-    ["sales_agent", "support_agent"]
+    "support_agent", route_after_agent, ["sales_agent", "support_agent", END]
 )
 
 graph = builder.compile()
+result = graph.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hi, I'm having trouble with my account login. Can you help?",
+            }
+        ]
+    }
+)
+
+for msg in result["messages"]:
+    msg.pretty_print()
 ```
 :::
 
 :::js
 ```typescript
-import { StateGraph, START, MessagesAnnotation, Annotation } from "@langchain/langgraph";
+import { StateGraph, START, END, MessagesAnnotation, Annotation, Command } from "@langchain/langgraph";
 import { createAgent } from "langchain";
-import { tool } from "@langchain/core/tools";
-import { Command } from "@langchain/langgraph";
+import { tool, ToolRuntime } from "@langchain/core/tools";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
 // 1. Define state with active_agent tracker
 const MultiAgentState = Annotation.Root({
   ...MessagesAnnotation.spec,
-  activeAgent: Annotation<string>({
+  activeAgent: Annotation<string | undefined>({
     reducer: (x, y) => y ?? x,
-    default: () => "sales_agent"
   })
 });
 
 // 2. Create handoff tools
 const transferToSales = tool(
-  async () => {
+  async (_, { runtime }: { runtime: ToolRuntime }) => {
+    const lastAiMessage = [...runtime.state.messages]  // [!code highlight]
+      .reverse()  // [!code highlight]
+      .find((msg): msg is AIMessage => msg instanceof AIMessage);  // [!code highlight]
+    const transferMessage = new ToolMessage({  // [!code highlight]
+      content: "Transferred to sales agent from support agent",  // [!code highlight]
+      tool_call_id: runtime.toolCallId  // [!code highlight]
+    });  // [!code highlight]
     return new Command({
       goto: "sales_agent",
-      update: { activeAgent: "sales_agent" },
+      update: {
+        activeAgent: "sales_agent",
+        messages: [lastAiMessage, transferMessage].filter(Boolean),  // [!code highlight]
+      },
       graph: Command.PARENT
     });
   },
@@ -495,10 +593,20 @@ const transferToSales = tool(
 );
 
 const transferToSupport = tool(
-  async () => {
+  async (_, { runtime }: { runtime: ToolRuntime }) => {
+    const lastAiMessage = [...runtime.state.messages]  // [!code highlight]
+      .reverse()  // [!code highlight]
+      .find((msg): msg is AIMessage => msg instanceof AIMessage);  // [!code highlight]
+    const transferMessage = new ToolMessage({  // [!code highlight]
+      content: "Transferred to support agent from sales agent",  // [!code highlight]
+      tool_call_id: runtime.toolCallId  // [!code highlight]
+    });  // [!code highlight]
     return new Command({
       goto: "support_agent",
-      update: { activeAgent: "support_agent" },
+      update: {
+        activeAgent: "support_agent",
+        messages: [lastAiMessage, transferMessage].filter(Boolean),  // [!code highlight]
+      },
       graph: Command.PARENT
     });
   },
@@ -511,15 +619,15 @@ const transferToSupport = tool(
 
 // 3. Create agents with handoff tools
 const salesAgent = createAgent({
-  llm: model,
+  model: "anthropic:claude-sonnet-4-20250514",
   tools: [transferToSupport],
-  prompt: "You are a sales agent. Help with sales inquiries."
+  prompt: "You are a sales agent. Help with sales inquiries. If asked about technical issues or support, transfer to the support agent."
 });
 
 const supportAgent = createAgent({
-  llm: model,
+  model: "anthropic:claude-sonnet-4-20250514",
   tools: [transferToSales],
-  prompt: "You are a support agent. Help with technical issues."
+  prompt: "You are a support agent. Help with technical issues. If asked about pricing or purchasing, transfer to the sales agent."
 });
 
 // 4. Create agent nodes that invoke the agents
@@ -533,9 +641,30 @@ const callSupportAgent = async (state: typeof MultiAgentState.State) => {
   return response;
 };
 
-// 5. Create router function
-const routeToAgent = (state: typeof MultiAgentState.State): string => {
-  return state.activeAgent;
+// 5. Create router that checks if we should end or continue
+const routeAfterAgent = (
+  state: typeof MultiAgentState.State
+): "sales_agent" | "support_agent" | "__end__" => {
+  const messages = state.messages ?? [];
+
+  // Check the last message - if it's an AIMessage without tool calls, we're done
+  if (messages.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg instanceof AIMessage && !lastMsg.tool_calls?.length) {  // [!code highlight]
+      return "__end__";  // [!code highlight]
+    }
+  }
+
+  // Otherwise route to the active agent
+  const active = state.activeAgent ?? "sales_agent";
+  return active as "sales_agent" | "support_agent";
+};
+
+const routeInitial = (
+  state: typeof MultiAgentState.State
+): "sales_agent" | "support_agent" => {
+  // Route to the active agent based on state, default to sales agent
+  return (state.activeAgent ?? "sales_agent") as "sales_agent" | "support_agent";
 };
 
 // 6. Build the graph
@@ -544,25 +673,33 @@ const builder = new StateGraph(MultiAgentState)
   .addNode("support_agent", callSupportAgent);
 
 // Start with conditional routing based on initial activeAgent
-builder.addConditionalEdges(
-  START,
-  routeToAgent,
-  ["sales_agent", "support_agent"]
-);
+builder.addConditionalEdges(START, routeInitial, ["sales_agent", "support_agent"]);
 
-// After each agent, route to the active agent (enables handoffs)
+// After each agent, check if we should end or route to another agent
 builder.addConditionalEdges(
   "sales_agent",
-  routeToAgent,
-  ["sales_agent", "support_agent"]
+  routeAfterAgent,
+  ["sales_agent", "support_agent", END]
 );
 builder.addConditionalEdges(
   "support_agent",
-  routeToAgent,
-  ["sales_agent", "support_agent"]
+  routeAfterAgent,
+  ["sales_agent", "support_agent", END]
 );
 
 const graph = builder.compile();
+const result = await graph.invoke({
+  messages: [
+    {
+      role: "user",
+      content: "Hi, I'm having trouble with my account login. Can you help?"
+    }
+  ]
+});
+
+for (const msg of result.messages) {
+  msg.pretty_print();
+}
 ```
 :::
 
@@ -572,7 +709,58 @@ const graph = builder.compile();
 Use **single agent with middleware** for most handoffs use cases—it's simpler. Only use **multiple agent subgraphs** when you need bespoke agent implementations (e.g., a node that's itself a complex graph with reflection or retrieval steps).
 </Tip>
 
-## Implementation considerations
+#### Context engineering
 
-* **Conversation history**: Decide what conversation history each agent/state receives—full history, filtered portions, or summaries.
-* **Tool semantics**: Clarify whether handoff tools only update routing state or also perform actions (e.g., should `transfer_to_sales()` also create a ticket?).
+With subgraph handoffs, you control exactly what messages flow between agents. This precision is essential for maintaining valid conversation history and avoiding context bloat that could confuse downstream agents.
+
+**Handling context during handoffs**
+
+When handing off between agents, you need to ensure the conversation history remains valid. LLMs expect tool calls to be paired with their responses, so when using `Command.PARENT` to hand off to another agent, you must include both:
+
+1. **The AIMessage containing the tool call** (the message that triggered the handoff)
+2. **A ToolMessage acknowledging the handoff** (the artificial response to that tool call)
+
+Without this pairing, the receiving agent will see an incomplete conversation and may produce errors or unexpected behavior.
+
+The example below assumes only the handoff tool was called (no parallel tool calls):
+
+:::python
+```python
+@tool
+def transfer_to_sales(runtime: ToolRuntime) -> Command:
+    # Get the AI message that triggered this handoff
+    last_ai_message = runtime.state["messages"][-1]
+
+    # Create an artificial tool response to complete the pair
+    transfer_message = ToolMessage(
+        content="Transferred to sales agent",
+        tool_call_id=runtime.tool_call_id,
+    )
+
+    return Command(
+        goto="sales_agent",
+        update={
+            "active_agent": "sales_agent",
+            # Pass only these two messages, not the full subagent history
+            "messages": [last_ai_message, transfer_message],
+        },
+        graph=Command.PARENT,
+    )
+```
+:::
+
+<Note>
+**Why not pass all subagent messages?** While you could include the full subagent conversation in the handoff, this often creates problems. The receiving agent may become confused by irrelevant internal reasoning, and token costs increase unnecessarily. By passing only the handoff pair, you keep the parent graph's context focused on high-level coordination. If the receiving agent needs additional context, consider summarizing the subagent's work in the ToolMessage content instead of passing raw message history.
+</Note>
+
+**Returning control to the user**
+
+When returning control to the user (ending the agent's turn), ensure the final message is an `AIMessage`. This maintains valid conversation history and signals to the user interface that the agent has finished its work.
+
+## Implementation Considerations
+
+As you design your multi-agent system, consider:
+
+* **Context filtering strategy**: Will each agent receive full conversation history, filtered portions, or summaries? Different agents may need different context depending on their role.
+* **Tool semantics**: Clarify whether handoff tools only update routing state or also perform side effects. For example, should `transfer_to_sales()` also create a support ticket, or should that be a separate action?
+* **Token efficiency**: Balance context completeness against token costs. Summarization and selective context passing become more important as conversations grow longer.

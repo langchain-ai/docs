@@ -37,23 +37,42 @@ Use `Command` to route to a single specialized agent:
 
 :::python
 ```python
+from typing import TypedDict
 from langgraph.types import Command
+
+class ClassificationResult(TypedDict):
+    query: str
+    agent: str
+
+def classify_query(query: str) -> ClassificationResult:
+    """Use LLM to classify query and determine the appropriate agent."""
+    # Classification logic here
+    ...
 
 def route_query(state: State):
     """Route to the appropriate agent based on query classification."""
-    # Use LLM to determine which agent to invoke
     classification = classify_query(state["query"])
 
     # Route to the selected agent
-    return Command(goto=classification.agent)
+    return Command(goto=classification["agent"])
 ```
 :::
 :::js
 ```typescript
 import { Command } from "@langchain/langgraph";
 
+interface ClassificationResult {
+  query: string;
+  agent: string;
+}
+
+function classifyQuery(query: string): ClassificationResult {
+  // Use LLM to classify query and determine the appropriate agent
+  // Classification logic here
+  ...
+}
+
 function routeQuery(state: typeof State.State) {
-  // Use LLM to determine which agent to invoke
   const classification = classifyQuery(state.query);
 
   // Route to the selected agent
@@ -69,17 +88,26 @@ Use `Send` to fan out to multiple specialized agents in parallel:
 
 :::python
 ```python
+from typing import TypedDict
 from langgraph.types import Send
+
+class ClassificationResult(TypedDict):
+    query: str
+    agent: str
+
+def classify_query(query: str) -> list[ClassificationResult]:
+    """Use LLM to classify query and determine which agents to invoke."""
+    # Classification logic here
+    ...
 
 def route_query(state: State):
     """Route to relevant agents based on query classification."""
-    # Use LLM to determine which agents to invoke
-    classification = classify_query(state["query"])
+    classifications = classify_query(state["query"])
 
     # Fan out to selected agents in parallel
     return [
-        Send(agent_name, {"query": state["query"]})
-        for agent_name in classification.agents
+        Send(c["agent"], {"query": c["query"]})
+        for c in classifications
     ]
 ```
 :::
@@ -87,13 +115,23 @@ def route_query(state: State):
 ```typescript
 import { Send } from "@langchain/langgraph";
 
+interface ClassificationResult {
+  query: string;
+  agent: string;
+}
+
+function classifyQuery(query: string): ClassificationResult[] {
+  // Use LLM to classify query and determine which agents to invoke
+  // Classification logic here
+  ...
+}
+
 function routeQuery(state: typeof State.State) {
-  // Use LLM to determine which agents to invoke
-  const classification = classifyQuery(state.query);
+  const classifications = classifyQuery(state.query);
 
   // Fan out to selected agents in parallel
-  return classification.agents.map(
-    (agentName) => new Send(agentName, { query: state.query })
+  return classifications.map(
+    (c) => new Send(c.agent, { query: c.query })
   );
 }
 ```
