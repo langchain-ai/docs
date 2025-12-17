@@ -30,6 +30,8 @@ LINK_MAPS: list[LinkMap] = [
             "langchain.embeddings": "langchain/embeddings",
             "langchain_core": "langchain_core/",
             "langchain-core": "langchain_core/",
+            "langchain-text-splitters": "langchain_text_splitters/",
+            "langchain_text_splitters": "langchain_text_splitters/",
             # Agents
             "create_agent": "langchain/agents/#langchain.agents.create_agent",
             "create_agent(tools)": "langchain/agents/#langchain.agents.create_agent(tools)",
@@ -74,6 +76,7 @@ LINK_MAPS: list[LinkMap] = [
             "ContextSize": "langchain/middleware/#langchain.agents.middleware.summarization.ContextSize",
             # Messages
             "AIMessage": "langchain/messages/#langchain.messages.AIMessage",
+            "AIMessage.tool_calls": "langchain/messages/#langchain.messages.AIMessage.tool_calls",
             "AIMessageChunk": "langchain/messages/#langchain.messages.AIMessageChunk",
             "ToolMessage": "langchain/messages/#langchain.messages.ToolMessage",
             "SystemMessage": "langchain/messages/#langchain.messages.SystemMessage",
@@ -111,10 +114,11 @@ LINK_MAPS: list[LinkMap] = [
             "AzureOpenAI": "integrations/langchain_openai/AzureOpenAI",
             "OpenAIEmbeddings": "integrations/langchain_openai/OpenAIEmbeddings",
             "AzureOpenAIEmbeddings": "integrations/langchain_openai/AzureOpenAIEmbeddings",
-            "convert_to_openai_tool": "langchain_core/utils/#langchain_core.utils.function_calling.convert_to_openai_tool",
             # langchain-anthropic
             "langchain-anthropic": "integrations/langchain_anthropic",
             "ChatAnthropic": "integrations/langchain_anthropic/ChatAnthropic",
+            "ChatAnthropic.bind_tools": "integrations/langchain_anthropic/ChatAnthropic/#langchain_anthropic.chat_models.ChatAnthropic.bind_tools",
+            "ChatAnthropic.get_num_tokens_from_messages": "integrations/langchain_anthropic/ChatAnthropic/#langchain_anthropic.chat_models.ChatAnthropic.get_num_tokens_from_messages",
             "AnthropicLLM": "integrations/langchain_anthropic/AnthropicLLM",
             "AnthropicPromptCachingMiddleware": "integrations/langchain_anthropic/middleware/#langchain_anthropic.middleware.AnthropicPromptCachingMiddleware",
             # langchain-google
@@ -165,6 +169,7 @@ LINK_MAPS: list[LinkMap] = [
             "@tool": "langchain/tools/#langchain.tools.tool",
             "BaseTool": "langchain/tools/#langchain.tools.BaseTool",
             "ToolRuntime": "langchain/tools/#langchain.tools.ToolRuntime",
+            "convert_to_openai_tool": "langchain_core/utils/#langchain_core.utils.function_calling.convert_to_openai_tool",
             # Embeddings
             "init_embeddings": "langchain_core/embeddings/#langchain_core.embeddings.embeddings.Embeddings",
             "Embeddings": "langchain_core/embeddings/#langchain_core.embeddings.embeddings.Embeddings",
@@ -199,6 +204,8 @@ LINK_MAPS: list[LinkMap] = [
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
             # LangGraph
+            "RemoteGraph": "langsmith/deployment/remote_graph/",
+            "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
             "get_stream_writer": "langgraph/config/#langgraph.config.get_stream_writer",
             "StateGraph": "langgraph/graphs/#langgraph.graph.state.StateGraph",
             "StateGraph.compile": "langgraph/graphs/#langgraph.graph.state.StateGraph.compile",
@@ -334,6 +341,20 @@ LINK_MAPS: list[LinkMap] = [
             "entrypoint.final": "langgraph/func/#langgraph.func.entrypoint.final",
             # Configuration
             "langgraph.json": "cloud/reference/cli/#configuration-file",
+            # MCP stuff
+            "MultiServerMCPClient": "langchain_mcp_adapters/#langchain_mcp_adapters.client.MultiServerMCPClient",
+            "load_mcp_tools": "langchain_mcp_adapters/#langchain_mcp_adapters.tools.load_mcp_tools",
+            "load_mcp_prompt": "langchain_mcp_adapters/#langchain_mcp_adapters.prompts.load_mcp_prompt",
+            "load_mcp_resources": "langchain_mcp_adapters/#langchain_mcp_adapters.resources.load_mcp_resources",
+            "MCPToolArtifact": "langchain_mcp_adapters/#langchain_mcp_adapters.tools.MCPToolArtifact",
+            "ToolCallInterceptor": "langchain_mcp_adapters/#langchain_mcp_adapters.interceptors.ToolCallInterceptor",
+            "CallbackContext": "langchain_mcp_adapters/#langchain_mcp_adapters.callbacks.CallbackContext",
+            "Callbacks": "langchain_mcp_adapters/#langchain_mcp_adapters.callbacks.Callbacks",
+            "Connection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.Connection",
+            "McpHttpClientFactory": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.McpHttpClientFactory",
+            "StdioConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StdioConnection",
+            "StreamableHttpConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StreamableHttpConnection",
+            "WebsocketConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.WebsocketConnection",
         },
     },
     {

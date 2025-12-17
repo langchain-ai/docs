@@ -43,14 +43,6 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
     [:octicons-arrow-right-24: Reference](./langchain_google_genai/index.md)
 
-- :simple-googlecloud:{ .lg .middle } __`langchain-google-vertexai`__
-
-    ---
-
-    Use Google's Vertex AI model platform.
-
-    [:octicons-arrow-right-24: Reference](./langchain_google_vertexai/index.md)
-
 - :material-aws:{ .lg .middle } __`langchain-aws`__
 
     ---

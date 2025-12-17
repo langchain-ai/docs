@@ -17,6 +17,22 @@ What's possible with LangChain streaming:
 * <Icon icon="table" size={16} /> [**Stream custom updates**](#custom-updates) — emit user-defined signals (e.g., `"Fetched 10/100 records"`).
 * <Icon icon="layer-plus" size={16} /> [**Stream multiple modes**](#stream-multiple-modes) — choose from `updates` (agent progress), `messages` (LLM tokens + metadata), or `custom` (arbitrary user data).
 
+## Supported stream modes
+
+:::python
+Pass one or more of the following stream modes as a list to the @[`stream`][CompiledStateGraph.stream] or @[`astream`][CompiledStateGraph.astream] methods:
+:::
+
+:::js
+Pass one or more of the following stream modes as a list to the @[`stream`][CompiledStateGraph.stream] method:
+:::
+
+| Mode       | Description                                                                                                 |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `updates`  | Streams state updates after each agent step. If multiple updates are made in the same step (e.g., multiple nodes are run), those updates are streamed separately. |
+| `messages` | Streams tuples of `(token, metadata)` from any graph nodes where an LLM is invoked. |
+| `custom`   | Streams custom data from inside your graph nodes using the stream writer. |
+
 ## Agent progress
 
 :::python
@@ -400,7 +416,9 @@ Acquired data for city: San Francisco
 ## Stream multiple modes
 
 :::python
-You can specify multiple streaming modes by passing stream mode as a list: `stream_mode=["updates", "custom"]`:
+You can specify multiple streaming modes by passing stream mode as a list: `stream_mode=["updates", "custom"]`.
+
+The streamed outputs will be tuples of `(mode, chunk)` where `mode` is the name of the stream mode and `chunk` is the data streamed by that mode.
 
 ```python title="Streaming multiple modes"
 from langchain.agents import create_agent
@@ -451,7 +469,9 @@ content: {'model': {'messages': [AIMessage(content='San Francisco weather: It's 
 :::
 
 :::js
-You can specify multiple streaming modes by passing streamMode as an array: `streamMode: ["updates", "messages", "custom"]`:
+You can specify multiple streaming modes by passing streamMode as an array: `streamMode: ["updates", "messages", "custom"]`.
+
+The streamed outputs will be tuples of `[mode, chunk]` where `mode` is the name of the stream mode and `chunk` is the data streamed by that mode.
 
 ```typescript
 import z from "zod";
@@ -491,8 +511,58 @@ for await (const [streamMode, chunk] of await agent.stream(
 
 ## Disable streaming
 
-In some applications you might need to disable streaming of individual tokens for a given model.
+In some applications you might need to disable streaming of individual tokens for a given model. This is useful when:
 
-This is useful in [multi-agent](/oss/langchain/multi-agent) systems to control which agents stream their output.
+- Working with [multi-agent](/oss/langchain/multi-agent) systems to control which agents stream their output
+- Mixing models that support streaming with those that do not
+- Deploying to [LangSmith](/langsmith/home) and wanting to prevent certain model outputs from being streamed to the client
 
-See the [Models](/oss/langchain/models#disable-streaming) guide to learn how to disable streaming.
+:::python
+Set `streaming=False` when initializing the model.
+
+```python
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(
+    model="gpt-4o",
+    streaming=False  # [!code highlight]
+)
+```
+:::
+
+:::js
+Set `streaming: false` when initializing the model.
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+
+const model = new ChatOpenAI({
+  model: "gpt-4o",
+  streaming: false,  // [!code highlight]
+});
+```
+:::
+
+<Tip>
+When deploying to LangSmith, set `streaming=False` on any models whose output you don't want streamed to the client. This is configured in your graph code before deployment.
+</Tip>
+
+:::python
+<Note>
+Not all chat model integrations support the `streaming` parameter. If your model doesn't support it, use `disable_streaming=True` instead. This parameter is available on all chat models via the base class.
+</Note>
+:::
+
+:::js
+<Note>
+Not all chat model integrations support the `streaming` parameter. If your model doesn't support it, use `disableStreaming: true` instead. This parameter is available on all chat models via the base class.
+</Note>
+:::
+
+See the [LangGraph streaming guide](/oss/langgraph/streaming#disable-streaming-for-specific-chat-models) for more details.
+
+## Related
+
+- [Streaming with chat models](/oss/langchain/models#stream) — Stream tokens directly from a chat model without using an agent or graph
+- [Streaming with human-in-the-loop](/oss/langchain/human-in-the-loop#streaming-with-hil) — Stream agent progress while handling interrupts for human review
+- [LangGraph streaming](/oss/langgraph/streaming) — Advanced streaming options including `values`, `debug` modes, and subgraph streaming
