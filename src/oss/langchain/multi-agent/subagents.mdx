@@ -86,15 +86,60 @@ const mainAgent = createAgent({ model: "anthropic:claude-sonnet-4-20250514", too
     Learn how to build a personal assistant using the subagents pattern, where a central main agent (supervisor) coordinates specialized worker agents.
 </Card>
 
+## Design decisions
+
+When implementing the subagents pattern, you'll make several key design choices. This table summarizes the options—each is covered in detail in the sections below.
+
+| Decision | Options |
+|----------|---------|
+| [**Execution mode**](#sync-vs-async) | Sync (blocking) vs. async (background) |
+| [**Tool design**](#tool-patterns) | Tool per agent vs. single dispatch tool |
+| [**Subagent inputs**](#subagent-inputs) | Query only vs. full context |
+| [**Subagent outputs**](#subagent-outputs) | Subagent result vs full conversation history |
+
 ## Sync vs. async
 
-By default, subagent calls are **synchronous**—the main agent waits for each subagent to complete before continuing. This is simple and works well for most cases.
+Subagent execution can be **synchronous** (blocking) or **asynchronous** (background). Your choice depends on whether the main agent needs the result to continue.
 
-For **long-running tasks** (reviewing contracts, conducting research, auditing code), use **asynchronous execution**. The main agent kicks off a background job and continues conversing with the user while the work completes.
+| Mode | Main agent behavior | Best for | Tradeoff |
+|------|---------------------|----------|----------|
+| **Sync** | Waits for subagent to complete | Main agent needs result to continue | Simple, but blocks the conversation |
+| **Async** | Continues while subagent runs in background | Independent tasks, user shouldn't wait | Responsive, but more complex |
 
 <Tip>
 Not to be confused with Python's `async`/`await`. Here, "async" means the main agent kicks off a background job (typically in a separate process or service) and continues without blocking.
 </Tip>
+
+### Synchronous (default)
+
+By default, subagent calls are **synchronous**—the main agent waits for each subagent to complete before continuing. Use sync when the main agent's next action depends on the subagent's result.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Main Agent
+    participant Research Subagent
+
+    User->>Main Agent: "What's the weather in Tokyo?"
+    Main Agent->>Research Subagent: research("Tokyo weather")
+    Note over Main Agent: Waiting for result...
+    Research Subagent-->>Main Agent: "Currently 72°F, sunny"
+    Main Agent-->>User: "It's 72°F and sunny in Tokyo"
+```
+
+**When to use sync:**
+- Main agent needs the subagent's result to formulate its response
+- Tasks have order dependencies (e.g., fetch data → analyze → respond)
+- Subagent failures should block the main agent's response
+
+**Tradeoffs:**
+- Simple implementation—just call and wait
+- User sees no response until all subagents complete
+- Long-running tasks freeze the conversation
+
+### Asynchronous
+
+Use **asynchronous execution** when the subagent's work is independent—the main agent doesn't need the result to continue conversing with the user. The main agent kicks off a background job and remains responsive.
 
 ```mermaid
 sequenceDiagram
@@ -109,7 +154,7 @@ sequenceDiagram
     Job System-->>Main Agent: job_id: "job_123"
     Main Agent-->>User: "Started review (job_123)"
 
-    Note over Contract Reviewer: Reviewing 150+ pages<br/>(may take minutes)
+    Note over Contract Reviewer: Reviewing 150+ pages...
 
     User->>Main Agent: "What's the status?"
     Main Agent->>Job System: check_status(job_id)
@@ -126,11 +171,15 @@ sequenceDiagram
     Main Agent-->>User: "Review complete: [findings]"
 ```
 
-**Key characteristics:**
+**When to use async:**
+- Subagent work is independent of the main conversation flow
+- Users should be able to continue chatting while work happens
+- You want to run multiple independent tasks in parallel
 
-* Three-tool pattern: Kick off job (returns job ID), check status, get results
-* Asynchronous execution: Work proceeds in the background while main agent remains responsive
-* User-initiated checks: Main agent checks job status when the user asks, not on a polling schedule
+**Three-tool pattern:**
+1. **Start job**: Kicks off the background task, returns a job ID
+2. **Check status**: Returns current state (pending, running, completed, failed)
+3. **Get result**: Retrieves the completed result
 
 **Handling job completion:** When a job finishes, your application needs to notify the user. One approach: surface a notification that, when clicked, sends a `HumanMessage` like "Check job_123 and summarize the results."
 
@@ -392,6 +441,12 @@ For the [single dispatch tool](#single-dispatch-tool) design, the main agent nee
 
 Customize what context the subagent receives to execute its task. Add input that isn't practical to capture in a static prompt—full message history, prior results, or task metadata—by pulling from the agent's state.
 
+| Input approach | What subagent receives | Use when |
+|----------------|------------------------|----------|
+| **Query only** | Just the task string | Subagent is self-contained and doesn't need conversation context |
+| **Query + history** | Task string + relevant messages | Subagent needs to understand prior conversation |
+| **Query + state** | Task string + custom state keys | Subagent needs structured data (user preferences, prior results) |
+
 :::python
 ```python Subagent inputs example expandable
 from langchain.agents import AgentState
@@ -448,7 +503,14 @@ const callSubagent1 = tool(
 
 ### Subagent outputs
 
-Customize what the main agent receives back so it can make good decisions. Two strategies:
+Customize what the main agent receives back so it can make good decisions.
+
+| Output approach | What main agent receives | Use when |
+|-----------------|--------------------------|----------|
+| **Text only** | Final message content as string | Simple cases where text response is sufficient |
+| **Text + state** | Text plus structured state updates via `Command` | Main agent needs structured data to continue (e.g., extracted entities, status flags) |
+
+Two strategies for controlling outputs:
 
 1. **Prompt the sub-agent**: Specify exactly what should be returned. A common failure mode is that the sub-agent performs tool calls or reasoning but doesn't include results in its final message—remind it that the supervisor only sees the final output.
 2. **Format in code**: Adjust or enrich the response before returning it. For example, pass specific state keys back in addition to the final text using a [`Command`](/oss/langgraph/graph-api#command).
