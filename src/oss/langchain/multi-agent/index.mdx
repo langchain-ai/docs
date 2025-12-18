@@ -236,79 +236,118 @@ Each language agent/skill contains ~2000 tokens of documentation. All patterns c
   <Tab title="Subagents">
     **5 calls, ~9K tokens**
 
-    ```
-    Call 1: Main agent (1K tokens)
-      ├─ Calls 3 subagents in parallel
-    Call 2: Python subagent (2K tokens) ─┐
-    Call 3: JavaScript subagent (2K tokens) ├─ Parallel
-    Call 4: Rust subagent (2K tokens) ─────┘
-    Call 5: Main synthesizes (2K tokens)
+    ```mermaid
+    sequenceDiagram
+        participant User
+        participant Main Agent
+        participant Python Subagent
+        participant JS Subagent
+        participant Rust Subagent
 
-    Total: 1K + 2K + 2K + 2K + 2K = 9K tokens
+        User->>Main Agent: "Compare Python, JS, Rust"
+        Note over Main Agent: Call 1 (1K)
+        par Parallel execution
+            Main Agent->>Python Subagent: python_subagent()
+            Note over Python Subagent: Call 2 (2K)
+            Python Subagent-->>Main Agent: Python analysis
+        and
+            Main Agent->>JS Subagent: js_subagent()
+            Note over JS Subagent: Call 3 (2K)
+            JS Subagent-->>Main Agent: JS analysis
+        and
+            Main Agent->>Rust Subagent: rust_subagent()
+            Note over Rust Subagent: Call 4 (2K)
+            Rust Subagent-->>Main Agent: Rust analysis
+        end
+        Note over Main Agent: Call 5 (2K)
+        Main Agent-->>User: Synthesized comparison
     ```
 
-    Each subagent works in **isolation** with only its relevant context.
+    Each subagent works in **isolation** with only its relevant context. Total: **9K tokens**.
   </Tab>
 
   <Tab title="Handoffs">
     **7+ calls, ~14K+ tokens**
 
-    ```
-    Call 1: Main agent handoff to Python (1K)
-    Call 2-3: Python agent researches (2-3 calls, ~2K each)
-    Call 4: Handoff to JavaScript agent (included in Python's response)
-    Call 5-6: JavaScript agent researches (2-3 calls, ~2K each)
-    Call 7: Handoff to Rust agent (included in JS's response)
-    Call 8-9: Rust agent researches (2-3 calls, ~2K each)
+    ```mermaid
+    sequenceDiagram
+        participant User
+        participant Main Agent
+        participant Python Agent
+        participant JS Agent
+        participant Rust Agent
 
-    Total: ~14K+ tokens across sequential handoffs
+        User->>Main Agent: "Compare Python, JS, Rust"
+        Note over Main Agent: Call 1 (1K)
+        Main Agent->>Python Agent: transfer_to_python()
+        Note over Python Agent: Calls 2-3 (2K each)
+        Python Agent->>JS Agent: transfer_to_js()
+        Note over JS Agent: Calls 4-5 (2K each)
+        JS Agent->>Rust Agent: transfer_to_rust()
+        Note over Rust Agent: Calls 6-7 (2K each)
+        Rust Agent-->>User: Combined comparison
     ```
 
-    Handoffs executes **sequentially**—can't research all three languages in parallel. Growing conversation history adds overhead.
+    Handoffs executes **sequentially**—can't research all three languages in parallel. Growing conversation history adds overhead. Total: **~14K+ tokens**.
   </Tab>
 
   <Tab title="Skills">
     **3 calls, ~15K tokens**
 
+    ```mermaid
+    sequenceDiagram
+        participant User
+        participant Agent
+        participant load_skill tool
+
+        User->>Agent: "Compare Python, JS, Rust"
+        Note over Agent: Call 1 (1K)
+        Agent->>load_skill tool: load_skill("python", "js", "rust")
+        load_skill tool-->>Agent: +6K context (2K each)
+        Note over Agent: Call 2 (7K: 1K base + 6K skills)
+        Note over Agent: Call 3 (7K: 1K base + 6K skills)
+        Agent-->>User: Synthesized comparison
     ```
-    Call 1: Load 3 skills (1K tokens)
-      └─ Adds Python (2K) + JavaScript (2K) + Rust (2K) = 6K to context
 
-    Call 2: Research (7K tokens)
-      └─ Base (1K) + ALL skill contexts (6K) = 7K total
-
-    Call 3: Synthesize (7K tokens)
-      └─ Base (1K) + ALL skill contexts (6K) = 7K total
-
-    Total: 1K + 7K + 7K = 15K tokens
-    ```
-
-    After loading, **every subsequent call processes all 6K tokens of skill documentation**. Subagents processes 67% fewer tokens overall due to context isolation.
+    After loading, **every subsequent call processes all 6K tokens of skill documentation**. Subagents processes 67% fewer tokens overall due to context isolation. Total: **15K tokens**.
   </Tab>
 
   <Tab title="Router">
     **5 calls, ~9K tokens**
 
-    ```
-    Call 1: Router LLM analyzes query (1K tokens)
-      ├─ Routes to Python, JavaScript, Rust agents
-    Call 2: Python agent (2K tokens) ─┐
-    Call 3: JavaScript agent (2K tokens) ├─ Parallel
-    Call 4: Rust agent (2K tokens) ─────┘
-    Call 5: Synthesis LLM combines results (2K tokens)
+    ```mermaid
+    sequenceDiagram
+        participant User
+        participant Router LLM
+        participant Python Agent
+        participant JS Agent
+        participant Rust Agent
+        participant Synthesis LLM
 
-    Total: 1K + 2K + 2K + 2K + 2K = 9K tokens
+        User->>Router LLM: "Compare Python, JS, Rust"
+        Note over Router LLM: Call 1 (1K)
+        par Parallel execution
+            Router LLM->>Python Agent: Route to Python
+            Note over Python Agent: Call 2 (2K)
+            Python Agent-->>Synthesis LLM: Python analysis
+        and
+            Router LLM->>JS Agent: Route to JS
+            Note over JS Agent: Call 3 (2K)
+            JS Agent-->>Synthesis LLM: JS analysis
+        and
+            Router LLM->>Rust Agent: Route to Rust
+            Note over Rust Agent: Call 4 (2K)
+            Rust Agent-->>Synthesis LLM: Rust analysis
+        end
+        Note over Synthesis LLM: Call 5 (2K)
+        Synthesis LLM-->>User: Combined comparison
     ```
 
-    Router uses an **LLM for routing**, then invokes agents in parallel. Similar to Subagents but with explicit routing step.
+    Router uses an **LLM for routing**, then invokes agents in parallel. Similar to Subagents but with explicit routing step. Total: **9K tokens**.
   </Tab>
 </Tabs>
 
 **Key insight:** For multi-domain tasks, patterns with parallel execution (Subagents, Router) are most efficient. Skills has fewer calls but high token usage due to context accumulation. Handoffs is inefficient here—it must execute sequentially and can't leverage parallel tool calling for consulting multiple domains simultaneously.
-
-<Warning>
-**When to avoid Skills**: The Skills pattern is ideal for a small number of lightweight skills. When you need many skills with extensive documentation (API references, detailed examples, comprehensive guidelines), use **Subagents** or **Router** instead. Context isolation prevents repeatedly processing accumulated documentation.
-</Warning>
 
 ### Summary
 
