@@ -55,49 +55,87 @@ This guide currently only supports macOS.
 # Sends Claude Code traces to LangSmith after each response.
 ###
 
+#!/bin/bash
+###
+# Claude Code Stop Hook - LangSmith Tracing Integration
+# Sends Claude Code traces to LangSmith after each response.
+###
+
 set -e
 
-# Exit early if tracing disabled
-if [ "$(echo "$TRACE_TO_LANGSMITH" | tr '[:upper:]' '[:lower:]')" != "true" ]; then
-    exit 0
-fi
-
-# Required commands
-for cmd in jq curl uuidgen; do
-    if ! command -v $cmd &> /dev/null; then
-        echo "Error: $cmd is required but not installed" >&2
-        exit 0
-    fi
-done
-
-# Config
-API_KEY="${CC_LANGSMITH_API_KEY:-$LANGSMITH_API_KEY}"
-PROJECT="${CC_LANGSMITH_PROJECT:-claude-code}"
-API_BASE="https://api.smith.langchain.com"
-STATE_FILE="$HOME/.claude/state/langsmith_state.json"
+# Config (needed early for logging)
 LOG_FILE="$HOME/.claude/state/hook.log"
 DEBUG="$(echo "$CC_LANGSMITH_DEBUG" | tr '[:upper:]' '[:lower:]')"
 
-# Ensure state directory exists
-mkdir -p "$(dirname "$STATE_FILE")"
-
-# Validate API key
-if [ -z "$API_KEY" ]; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [ERROR] CC_LANGSMITH_API_KEY not set" >> "$LOG_FILE"
-    exit 0
-fi
-
-# Logging function
+# Logging functions
 log() {
     local level="$1"
     shift
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $*" >> "$LOG_FILE"
 }
 
-# Debug logging
 debug() {
     if [ "$DEBUG" = "true" ]; then
         log "DEBUG" "$@"
+    fi
+}
+
+# Immediate debug logging
+debug "Hook started, TRACE_TO_LANGSMITH=$TRACE_TO_LANGSMITH"
+
+# Exit early if tracing disabled
+if [ "$(echo "$TRACE_TO_LANGSMITH" | tr '[:upper:]' '[:lower:]')" != "true" ]; then
+    debug "Tracing disabled, exiting early"
+    exit 0
+fi
+
+# Required commands
+for cmd in jq curl uuidgen; do
+    if ! command -v "$cmd" &> /dev/null; then
+        echo "Error: $cmd is required but not installed" >&2
+        exit 0
+    fi
+done
+
+# Config (continued)
+API_KEY="${CC_LANGSMITH_API_KEY:-$LANGSMITH_API_KEY}"
+PROJECT="${CC_LANGSMITH_PROJECT:-claude-code}"
+API_BASE="https://api.smith.langchain.com"
+STATE_FILE="$HOME/.claude/state/langsmith_state.json"
+
+# Global variables
+CURRENT_TURN_ID=""  # Track current turn run for cleanup on exit
+
+# Ensure state directory exists
+mkdir -p "$(dirname "$STATE_FILE")"
+
+# Validate API key
+if [ -z "$API_KEY" ]; then
+    log "ERROR" "CC_LANGSMITH_API_KEY not set"
+    exit 0
+fi
+
+# Get microseconds portably (macOS doesn't support date +%N)
+get_microseconds() {
+    if command -v gdate &> /dev/null; then
+        # Use GNU date if available (brew install coreutils)
+        gdate +%6N
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS fallback: use Python for microseconds
+        python3 -c "import time; print(str(int(time.time() * 1000000) % 1000000).zfill(6))"
+    else
+        # Linux/GNU date
+        date +%6N
+    fi
+}
+
+# Get file size portably (macOS and Linux have different stat syntax)
+get_file_size() {
+    local file="$1"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        stat -f%z "$file"
+    else
+        stat -c%s "$file"
     fi
 }
 
@@ -107,20 +145,16 @@ api_call() {
     local endpoint="$2"
     local data="$3"
 
-    debug "API call: $method $endpoint"
-
     local response
     local http_code
-    response=$(curl -s -w "\n%{http_code}" -X "$method" \
+    response=$(curl -s --max-time 60 -w "\n%{http_code}" -X "$method" \
         -H "x-api-key: $API_KEY" \
         -H "Content-Type: application/json" \
         -d "$data" \
         "$API_BASE$endpoint" 2>&1)
 
     http_code=$(echo "$response" | tail -n1)
-    response=$(echo "$response" | head -n-1)
-
-    debug "HTTP $http_code: ${response:0:200}"
+    response=$(echo "$response" | sed '$d')
 
     if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
         log "ERROR" "API call failed: $method $endpoint"
@@ -131,6 +165,31 @@ api_call() {
 
     echo "$response"
 }
+
+# Cleanup function to complete pending turn run on exit
+cleanup_pending_turn() {
+    if [ -n "$CURRENT_TURN_ID" ]; then
+        debug "Cleanup: completing pending turn run $CURRENT_TURN_ID"
+        local now
+        now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        local turn_update
+        turn_update=$(jq -n \
+            --arg time "$now" \
+            '{
+                outputs: {messages: []},
+                end_time: $time,
+                error: "Incomplete: script exited early"
+            }')
+
+        # Try to complete the turn run (ignore errors since we're exiting anyway)
+        api_call "PATCH" "/runs/$CURRENT_TURN_ID" "$turn_update" > /dev/null 2>&1 || true
+        log "WARN" "Completed pending turn run $CURRENT_TURN_ID due to early exit"
+    fi
+}
+
+# Set trap to cleanup on exit (EXIT covers normal exit, errors, and interrupts)
+trap cleanup_pending_turn EXIT
 
 # Load state
 load_state() {
@@ -150,7 +209,7 @@ save_state() {
 # Get message content
 get_content() {
     local msg="$1"
-    echo "$msg" | jq -c 'if has("message") then .message.content else .content end'
+    echo "$msg" | jq -c 'if type == "object" and has("message") then .message.content elif type == "object" then .content else null end'
 }
 
 # Check if message is tool result
@@ -181,6 +240,8 @@ format_content() {
             if type == "object" then
                 if .type == "text" then
                     {"type": "text", "text": .text}
+                elif .type == "thinking" then
+                    {"type": "thinking", "thinking": .thinking}
                 elif .type == "tool_use" then
                     {"type": "tool_call", "name": .name, "args": .input, "id": .id}
                 else
@@ -223,7 +284,7 @@ find_tool_result() {
     result=$(echo "$tool_results" | jq -r --arg id "$tool_id" '
         first(
             .[] |
-            (if has("message") then .message.content else .content end) as $content |
+            (if type == "object" and has("message") then .message.content elif type == "object" then .content else null end) as $content |
             if $content | type == "array" then
                 $content[] |
                 select(type == "object" and .type == "tool_result" and .tool_use_id == $id) |
@@ -247,6 +308,134 @@ find_tool_result() {
     fi
 }
 
+# Merge assistant message parts
+merge_assistant_parts() {
+    local current_assistant_parts="$1"
+
+    echo "$current_assistant_parts" | jq -s '
+        .[0][0] as $base |
+        (.[0] | map(if type == "object" and has("message") then .message.content elif type == "object" then .content else null end) | map(select(. != null))) as $contents |
+        ($contents | map(
+            if type == "string" then [{"type":"text","text":.}]
+            elif type == "array" then .
+            else [.]
+            end
+        ) | add // []) as $merged_content |
+        ($merged_content | reduce .[] as $item (
+            {result: [], buffer: null};
+            if $item.type == "text" then
+                if .buffer then .buffer.text += $item.text
+                else .buffer = $item
+                end
+            else
+                (if .buffer then .result += [.buffer] else . end) |
+                .buffer = null | .result += [$item]
+            end
+        ) | if .buffer then .result + [.buffer] else .result end) as $final_content |
+        $base | if type == "object" and has("message") then .message.content = $final_content elif type == "object" then .content = $final_content else . end
+    '
+}
+
+# Serialize run data for multipart upload
+# Writes parts to temp files and outputs curl -F arguments (one per line)
+serialize_for_multipart() {
+    local operation="$1"  # "post" or "patch"
+    local run_json="$2"   # Full run JSON
+    local temp_dir="$3"   # Temp directory for this batch
+
+    local run_id
+    run_id=$(echo "$run_json" | jq -r '.id')
+
+    # Extract inputs/outputs from main data
+    local inputs
+    inputs=$(echo "$run_json" | jq -c '.inputs // empty')
+
+    local outputs
+    outputs=$(echo "$run_json" | jq -c '.outputs // empty')
+
+    local main_data
+    main_data=$(echo "$run_json" | jq -c 'del(.inputs, .outputs)')
+
+    # Part 1: Main run data with Content-Length header
+    local main_file="$temp_dir/${operation}_${run_id}_main.json"
+    echo "$main_data" > "$main_file"
+    local main_size=$(get_file_size "$main_file")
+    echo "-F"
+    echo "${operation}.${run_id}=<${main_file};type=application/json;headers=Content-Length:${main_size}"
+
+    # Part 2: Inputs (if present) with Content-Length header
+    if [ "$inputs" != "null" ] && [ -n "$inputs" ]; then
+        local inputs_file="$temp_dir/${operation}_${run_id}_inputs.json"
+        echo "$inputs" > "$inputs_file"
+        local inputs_size=$(get_file_size "$inputs_file")
+        echo "-F"
+        echo "${operation}.${run_id}.inputs=<${inputs_file};type=application/json;headers=Content-Length:${inputs_size}"
+    fi
+
+    # Part 3: Outputs (if present) with Content-Length header
+    if [ "$outputs" != "null" ] && [ -n "$outputs" ]; then
+        local outputs_file="$temp_dir/${operation}_${run_id}_outputs.json"
+        echo "$outputs" > "$outputs_file"
+        local outputs_size=$(get_file_size "$outputs_file")
+        echo "-F"
+        echo "${operation}.${run_id}.outputs=<${outputs_file};type=application/json;headers=Content-Length:${outputs_size}"
+    fi
+}
+
+# Send batch of runs via multipart endpoint
+send_multipart_batch() {
+    local operation="$1"  # "post" or "patch"
+    local batch_json="$2" # JSON array of runs
+
+    # Parse batch size
+    local batch_size
+    batch_size=$(echo "$batch_json" | jq 'length')
+
+    if [ "$batch_size" -eq 0 ]; then
+        debug "No $operation runs to send"
+        return 0
+    fi
+
+    # Create temp directory for this batch
+    local temp_dir
+    temp_dir=$(mktemp -d)
+
+    # Build multipart curl command
+    local curl_args=()
+    curl_args+=("-s" "--max-time" "60" "-w" "\n%{http_code}" "-X" "POST")
+    curl_args+=("-H" "x-api-key: $API_KEY")
+
+    # Serialize each run and collect curl -F arguments
+    while IFS= read -r run; do
+        # Read arguments line by line (proper array handling, no word splitting)
+        while IFS= read -r arg; do
+            curl_args+=("$arg")
+        done < <(serialize_for_multipart "$operation" "$run" "$temp_dir")
+    done < <(echo "$batch_json" | jq -c '.[]')
+
+    curl_args+=("$API_BASE/runs/multipart")
+
+    # Execute curl
+    local response
+    local http_code
+
+    response=$(curl "${curl_args[@]}" 2>&1)
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+
+    # Cleanup temp directory
+    rm -rf "$temp_dir"
+
+    if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+        log "ERROR" "Batch $operation failed: HTTP $http_code"
+        log "ERROR" "Response: $response"
+        return 1
+    fi
+
+    log "INFO" "Batch $operation succeeded: $batch_size runs"
+    return 0
+}
+
 # Create LangSmith trace
 create_trace() {
     local session_id="$1"
@@ -254,6 +443,10 @@ create_trace() {
     local user_msg="$3"
     local assistant_messages="$4"  # JSON array of assistant messages
     local tool_results="$5"
+
+    # Initialize batch collectors for this trace
+    local posts_batch="[]"
+    local patches_batch="[]"
 
     local turn_id
     turn_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
@@ -264,29 +457,44 @@ create_trace() {
     local now
     now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    # Create top-level turn run
+    # Create dotted_order timestamp with microseconds (format: YYYYMMDDTHHMMSSffffffZ)
+    local dotted_timestamp
+    dotted_timestamp=$(date -u +"%Y%m%dT%H%M%S")
+    local microseconds
+    microseconds=$(get_microseconds)
+    dotted_timestamp="${dotted_timestamp}${microseconds}Z"
+
+    # Create top-level turn run with dotted_order and trace_id
+    # For top-level run: trace_id = run_id
+    local turn_dotted_order="${dotted_timestamp}${turn_id}"
     local turn_data
     turn_data=$(jq -n \
         --arg id "$turn_id" \
+        --arg trace_id "$turn_id" \
         --arg name "Claude Code" \
         --arg project "$PROJECT" \
         --arg session "$session_id" \
         --arg time "$now" \
         --argjson content "$user_content" \
         --arg turn "$turn_num" \
+        --arg dotted_order "$turn_dotted_order" \
         '{
             id: $id,
+            trace_id: $trace_id,
             name: $name,
             run_type: "chain",
             inputs: {messages: [{role: "user", content: $content}]},
             start_time: $time,
+            dotted_order: $dotted_order,
             session_name: $project,
             extra: {metadata: {thread_id: $session}},
             tags: ["claude-code", ("turn-" + $turn)]
         }')
 
-    debug "Creating turn run: $turn_id"
-    api_call "POST" "/runs" "$turn_data" > /dev/null
+    posts_batch=$(echo "$posts_batch" | jq --argjson data "$turn_data" '. += [$data]')
+
+    # Track this turn for cleanup on early exit
+    CURRENT_TURN_ID="$turn_id"
 
     # Build final outputs array (accumulates all LLM responses)
     local all_outputs
@@ -320,37 +528,57 @@ create_trace() {
         local llm_inputs
         llm_inputs=$(jq -n --argjson outputs "$all_outputs" '{messages: $outputs}')
 
+        # Create dotted_order for assistant (child of turn)
+        local assistant_timestamp
+        assistant_timestamp=$(date -u +"%Y%m%dT%H%M%S")
+        local assistant_microseconds
+        assistant_microseconds=$(get_microseconds)
+        assistant_timestamp="${assistant_timestamp}${assistant_microseconds}Z"
+        local assistant_dotted_order="${turn_dotted_order}.${assistant_timestamp}${assistant_id}"
+
+        # Extract trace_id from parent dotted_order (UUID after the Z)
+        # Format: 20231215T120000123456Zuuid -> uuid
+        local trace_id
+        trace_id="${turn_dotted_order#*Z}"
+
         local assistant_data
         assistant_data=$(jq -n \
             --arg id "$assistant_id" \
+            --arg trace_id "$trace_id" \
             --arg parent "$turn_id" \
             --arg name "Claude" \
             --arg project "$PROJECT" \
             --arg time "$llm_start" \
             --argjson inputs "$llm_inputs" \
+            --arg dotted_order "$assistant_dotted_order" \
             '{
                 id: $id,
+                trace_id: $trace_id,
                 parent_run_id: $parent,
                 name: $name,
                 run_type: "llm",
                 inputs: $inputs,
                 start_time: $time,
+                dotted_order: $dotted_order,
                 session_name: $project,
                 extra: {metadata: {ls_provider: "anthropic", ls_model_name: "claude-sonnet-4-5"}},
                 tags: ["claude-sonnet-4-5"]
             }')
 
-        debug "Creating assistant run #$llm_num: $assistant_id"
-        api_call "POST" "/runs" "$assistant_data" > /dev/null
+        posts_batch=$(echo "$posts_batch" | jq --argjson data "$assistant_data" '. += [$data]')
 
         # Build outputs for this LLM call
         local llm_outputs
         llm_outputs=$(jq -n --argjson content "$assistant_content" '[{role: "assistant", content: $content}]')
 
-        # Create tool runs
+        # Track when this LLM iteration ends (after tools complete)
+        local assistant_end
+
+        # Create tool runs as siblings of the assistant run
         if [ "$(echo "$tool_uses" | jq 'length')" -gt 0 ]; then
-            # Tools start slightly after LLM start
-            local tool_start="$llm_start"
+            # Tools start immediately after LLM outputs (slight delay for realism)
+            local tool_start
+            tool_start=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
             while IFS= read -r tool; do
                 local tool_id
@@ -365,27 +593,39 @@ create_trace() {
                 local tool_use_id
                 tool_use_id=$(echo "$tool" | jq -r '.id // ""')
 
+                # Create dotted_order for tool (child of turn)
+                local tool_timestamp
+                tool_timestamp=$(date -u +"%Y%m%dT%H%M%S")
+                local tool_microseconds
+                tool_microseconds=$(get_microseconds)
+                tool_timestamp="${tool_timestamp}${tool_microseconds}Z"
+                local tool_dotted_order="${turn_dotted_order}.${tool_timestamp}${tool_id}"
+
+                # Tools are siblings of the assistant run (both children of turn run)
                 local tool_data
                 tool_data=$(jq -n \
                     --arg id "$tool_id" \
-                    --arg parent "$assistant_id" \
+                    --arg trace_id "$trace_id" \
+                    --arg parent "$turn_id" \
                     --arg name "$tool_name" \
                     --arg project "$PROJECT" \
                     --arg time "$tool_start" \
                     --argjson input "$tool_input" \
+                    --arg dotted_order "$tool_dotted_order" \
                     '{
                         id: $id,
+                        trace_id: $trace_id,
                         parent_run_id: $parent,
                         name: $name,
                         run_type: "tool",
                         inputs: {input: $input},
                         start_time: $time,
+                        dotted_order: $dotted_order,
                         session_name: $project,
                         tags: ["tool"]
                     }')
 
-                debug "Creating tool run: $tool_name ($tool_id)"
-                api_call "POST" "/runs" "$tool_data" > /dev/null
+                posts_batch=$(echo "$posts_batch" | jq --argjson data "$tool_data" '. += [$data]')
 
                 # Find and add tool result
                 local result
@@ -395,48 +635,74 @@ create_trace() {
                 tool_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
                 local tool_update
-                tool_update=$(jq -n \
+                tool_update=$(echo "$result" | jq -Rs \
                     --arg time "$tool_end" \
-                    --arg result "$result" \
+                    --arg id "$tool_id" \
+                    --arg trace_id "$trace_id" \
+                    --arg parent "$turn_id" \
+                    --arg dotted_order "$tool_dotted_order" \
                     '{
-                        outputs: {output: $result},
+                        id: $id,
+                        trace_id: $trace_id,
+                        parent_run_id: $parent,
+                        dotted_order: $dotted_order,
+                        outputs: {output: .},
                         end_time: $time
                     }')
 
-                api_call "PATCH" "/runs/$tool_id" "$tool_update" > /dev/null
+                patches_batch=$(echo "$patches_batch" | jq --argjson data "$tool_update" '. += [$data]')
 
                 # Next tool starts after this one ends
                 tool_start="$tool_end"
 
-                # Add to this LLM's outputs
-                llm_outputs=$(echo "$llm_outputs" | jq \
-                    --arg id "$tool_use_id" \
-                    --arg result "$result" \
-                    '. += [{role: "tool", tool_call_id: $id, content: [{type: "text", text: $result}]}]')
-
             done < <(echo "$tool_uses" | jq -c '.[]')
+
+            # Assistant completes after all tools finish
+            assistant_end="$tool_start"
+        else
+            # No tools, assistant completes immediately
+            assistant_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         fi
 
-        # Update this assistant run
-        local assistant_end
-        assistant_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
+        # Now complete the assistant run
         local assistant_update
         assistant_update=$(jq -n \
             --arg time "$assistant_end" \
+            --arg id "$assistant_id" \
+            --arg trace_id "$trace_id" \
+            --arg parent "$turn_id" \
+            --arg dotted_order "$assistant_dotted_order" \
             --argjson outputs "$llm_outputs" \
             '{
+                id: $id,
+                trace_id: $trace_id,
+                parent_run_id: $parent,
+                dotted_order: $dotted_order,
                 outputs: {messages: $outputs},
                 end_time: $time
             }')
 
-        api_call "PATCH" "/runs/$assistant_id" "$assistant_update" > /dev/null
+        patches_batch=$(echo "$patches_batch" | jq --argjson data "$assistant_update" '. += [$data]')
 
         # Save end time for next LLM start
         last_llm_end="$assistant_end"
 
         # Add to overall outputs
         all_outputs=$(echo "$all_outputs" | jq --argjson new "$llm_outputs" '. += $new')
+
+        # Add tool results to accumulated context (for next LLM's inputs)
+        if [ "$(echo "$tool_uses" | jq 'length')" -gt 0 ]; then
+            while IFS= read -r tool; do
+                local tool_use_id
+                tool_use_id=$(echo "$tool" | jq -r '.id // ""')
+                local result
+                result=$(find_tool_result "$tool_use_id" "$tool_results")
+                all_outputs=$(echo "$all_outputs" | jq \
+                    --arg id "$tool_use_id" \
+                    --arg result "$result" \
+                    '. += [{role: "tool", tool_call_id: $id, content: [{type: "text", text: $result}]}]')
+            done < <(echo "$tool_uses" | jq -c '.[]')
+        fi
 
     done < <(echo "$assistant_messages" | jq -c '.[]')
 
@@ -451,24 +717,39 @@ create_trace() {
     local turn_update
     turn_update=$(jq -n \
         --arg time "$turn_end" \
+        --arg id "$turn_id" \
+        --arg trace_id "$turn_id" \
+        --arg dotted_order "$turn_dotted_order" \
         --argjson outputs "$turn_outputs" \
         '{
+            id: $id,
+            trace_id: $trace_id,
+            dotted_order: $dotted_order,
             outputs: {messages: $outputs},
             end_time: $time
         }')
 
-    api_call "PATCH" "/runs/$turn_id" "$turn_update" > /dev/null
+    patches_batch=$(echo "$patches_batch" | jq --argjson data "$turn_update" '. += [$data]')
+
+    # Send both batches
+    send_multipart_batch "post" "$posts_batch" || true
+    send_multipart_batch "patch" "$patches_batch" || true
+
+    # Clear the tracked turn since it's now complete
+    CURRENT_TURN_ID=""
 
     log "INFO" "Created turn $turn_num: $turn_id with $llm_num LLM call(s)"
 }
 
 # Main function
 main() {
+    # Track execution time
+    local script_start
+    script_start=$(date +%s)
+
     # Read hook input
     local hook_input
     hook_input=$(cat)
-
-    debug "Hook input: $hook_input"
 
     # Check stop_hook_active flag
     if echo "$hook_input" | jq -e '.stop_hook_active == true' > /dev/null 2>&1; then
@@ -530,7 +811,7 @@ main() {
         fi
 
         local role
-        role=$(echo "$line" | jq -r 'if has("message") then .message.role else .role end')
+        role=$(echo "$line" | jq -r 'if type == "object" and has("message") then .message.role elif type == "object" then .role else "unknown" end')
 
         if [ "$role" = "user" ]; then
             if is_tool_result "$line"; then
@@ -541,12 +822,7 @@ main() {
                 if [ -n "$current_msg_id" ] && [ "$(echo "$current_assistant_parts" | jq 'length')" -gt 0 ]; then
                     # Merge parts and add to assistants array
                     local merged
-                    merged=$(echo "$current_assistant_parts" | jq -s '
-                        .[0][0] as $base |
-                        (.[0] | map(if has("message") then .message.content else .content end)) as $contents |
-                        ($contents | map(if type == "string" then [{"type":"text","text":.}] else . end) | add) as $merged_content |
-                        $base | if has("message") then .message.content = $merged_content else .content = $merged_content end
-                    ')
+                    merged=$(merge_assistant_parts "$current_assistant_parts")
                     current_assistants=$(echo "$current_assistants" | jq --argjson msg "$merged" '. += [$msg]')
                     current_assistant_parts="[]"
                     current_msg_id=""
@@ -569,7 +845,7 @@ main() {
         elif [ "$role" = "assistant" ]; then
             # Get message ID
             local msg_id
-            msg_id=$(echo "$line" | jq -r 'if has("message") then .message.id else "" end')
+            msg_id=$(echo "$line" | jq -r 'if type == "object" and has("message") then .message.id else "" end')
 
             if [ -z "$msg_id" ]; then
                 # No message ID, treat as continuation of current message
@@ -582,12 +858,7 @@ main() {
                 if [ -n "$current_msg_id" ] && [ "$(echo "$current_assistant_parts" | jq 'length')" -gt 0 ]; then
                     # Merge parts and add to assistants array
                     local merged
-                    merged=$(echo "$current_assistant_parts" | jq -s '
-                        .[0][0] as $base |
-                        (.[0] | map(if has("message") then .message.content else .content end)) as $contents |
-                        ($contents | map(if type == "string" then [{"type":"text","text":.}] else . end) | add) as $merged_content |
-                        $base | if has("message") then .message.content = $merged_content else .content = $merged_content end
-                    ')
+                    merged=$(merge_assistant_parts "$current_assistant_parts")
                     current_assistants=$(echo "$current_assistants" | jq --argjson msg "$merged" '. += [$msg]')
                 fi
 
@@ -601,12 +872,7 @@ main() {
     # Process final turn - finalize any pending assistant message
     if [ -n "$current_msg_id" ] && [ "$(echo "$current_assistant_parts" | jq 'length')" -gt 0 ]; then
         local merged
-        merged=$(echo "$current_assistant_parts" | jq -s '
-            .[0][0] as $base |
-            (.[0] | map(if has("message") then .message.content else .content end)) as $contents |
-            ($contents | map(if type == "string" then [{"type":"text","text":.}] else . end) | add) as $merged_content |
-            $base | if has("message") then .message.content = $merged_content else .content = $merged_content end
-        ')
+        merged=$(merge_assistant_parts "$current_assistant_parts")
         current_assistants=$(echo "$current_assistants" | jq --argjson msg "$merged" '. += [$msg]')
     fi
 
@@ -629,11 +895,19 @@ main() {
 
     save_state "$state"
 
-    log "INFO" "Processed $turns turns"
+    # Log execution time
+    local script_end
+    script_end=$(date +%s)
+    local duration=$((script_end - script_start))
+
+    log "INFO" "Processed $turns turns in ${duration}s"
+    if [ "$duration" -gt 180 ]; then
+        log "WARN" "Hook took ${duration}s (>3min), consider optimizing"
+    fi
 }
 
 # Run main
-main 2>&1 | head -c 10000  # Limit output to prevent hanging
+main
 
 exit 0
 
@@ -655,18 +929,19 @@ Set up a global hook in `~/.claude/settings.json` that runs the `stop_hook.sh` s
 In `~/.claude/settings.json`, add the `Stop` hook.
 
 ```json
+{
 "hooks": {
-  "Stop": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash ~/.claude/hooks/stop_hook.sh",
-          "timeout": 30
-        }
-      ]
-    }
-  ]
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/stop_hook.sh"
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
@@ -691,7 +966,7 @@ For each Claude Code project (a Claude Code project is a directory with Claude C
 }
 ```
 
-<Note> Alternativley, if you want tracing to LangSmith enabled for all Claude Code sessions, you can add the above JSON to your [global Claude Code settings.json](https://code.claude.com/docs/en/settings#:~:text=User%20settings%20are%20defined%20in%20~/.claude/settings.json%20and%20apply%20to%20all%20projects.) file. </Note>
+<Note> Alternativley, to enable tracing to LangSmith for all Claude Code sessions, you can add the above JSON to your [global Claude Code settings.json](https://code.claude.com/docs/en/settings#:~:text=User%20settings%20are%20defined%20in%20~/.claude/settings.json%20and%20apply%20to%20all%20projects.) file. </Note>
 
 ## 4. Verify Setup
 
