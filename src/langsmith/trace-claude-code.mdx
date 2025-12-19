@@ -55,12 +55,6 @@ This guide currently only supports macOS.
 # Sends Claude Code traces to LangSmith after each response.
 ###
 
-#!/bin/bash
-###
-# Claude Code Stop Hook - LangSmith Tracing Integration
-# Sends Claude Code traces to LangSmith after each response.
-###
-
 set -e
 
 # Config (needed early for logging)
@@ -506,9 +500,15 @@ create_trace() {
     while IFS= read -r assistant_msg; do
         llm_num=$((llm_num + 1))
 
-        # Each LLM starts after the previous one ended
+        # Extract timestamp from message for proper ordering
+        local msg_timestamp
+        msg_timestamp=$(echo "$assistant_msg" | jq -r '.timestamp // ""')
+
+        # Use message timestamp for LLM start time
         local llm_start
-        if [ $llm_num -eq 1 ]; then
+        if [ -n "$msg_timestamp" ]; then
+            llm_start="$msg_timestamp"
+        elif [ $llm_num -eq 1 ]; then
             llm_start="$now"
         else
             llm_start="$last_llm_end"
@@ -529,11 +529,20 @@ create_trace() {
         llm_inputs=$(jq -n --argjson outputs "$all_outputs" '{messages: $outputs}')
 
         # Create dotted_order for assistant (child of turn)
+        # Convert ISO timestamp to dotted_order format
+        # From: 2025-12-16T17:44:04.397Z
+        # To: 20251216T174404397000Z (milliseconds padded to microseconds)
         local assistant_timestamp
-        assistant_timestamp=$(date -u +"%Y%m%dT%H%M%S")
-        local assistant_microseconds
-        assistant_microseconds=$(get_microseconds)
-        assistant_timestamp="${assistant_timestamp}${assistant_microseconds}Z"
+        if [ -n "$msg_timestamp" ]; then
+            # Extract and convert timestamp from message
+            assistant_timestamp=$(echo "$msg_timestamp" | sed 's/[-:]//g; s/\.\([0-9]*\)Z$/\1000Z/; s/T\([0-9]*\)\([0-9]\{3\}\)000Z$/T\1\2000Z/')
+        else
+            # Fallback to current time if no timestamp
+            assistant_timestamp=$(date -u +"%Y%m%dT%H%M%S")
+            local assistant_microseconds
+            assistant_microseconds=$(get_microseconds)
+            assistant_timestamp="${assistant_timestamp}${assistant_microseconds}Z"
+        fi
         local assistant_dotted_order="${turn_dotted_order}.${assistant_timestamp}${assistant_id}"
 
         # Extract trace_id from parent dotted_order (UUID after the Z)
