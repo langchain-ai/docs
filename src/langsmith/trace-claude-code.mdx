@@ -47,6 +47,7 @@ This guide currently only supports macOS.
 
 `stop_hook.sh` processes Claude Code's generated conversation transcripts and sends traces to LangSmith. Create the file `~/.claude/hooks/stop_hook.sh` with the following script:
 
+<sup>Last Updated: 2025-12-21</sup>
 <Accordion title="`stop_hook.sh` file">
 ```bash
 #!/bin/bash
@@ -269,37 +270,40 @@ get_tool_uses() {
     echo "$content" | jq -c '[.[] | select(type == "object" and .type == "tool_use")]'
 }
 
-# Find tool result
-find_tool_result() {
+# Find tool result and timestamp
+# Returns JSON: {result: "...", timestamp: "..."}
+find_tool_result_with_timestamp() {
     local tool_id="$1"
     local tool_results="$2"
 
-    local result
-    result=$(echo "$tool_results" | jq -r --arg id "$tool_id" '
+    local result_data
+    result_data=$(echo "$tool_results" | jq -c --arg id "$tool_id" '
         first(
             .[] |
+            . as $msg |
             (if type == "object" and has("message") then .message.content elif type == "object" then .content else null end) as $content |
             if $content | type == "array" then
                 $content[] |
                 select(type == "object" and .type == "tool_result" and .tool_use_id == $id) |
-                if .content | type == "array" then
-                    [.content[] | select(type == "object" and .type == "text") | .text] | join(" ")
-                elif .content | type == "string" then
-                    .content
-                else
-                    .content | tostring
-                end
+                {
+                    result: (
+                        if .content | type == "array" then
+                            [.content[] | select(type == "object" and .type == "text") | .text] | join(" ")
+                        elif .content | type == "string" then
+                            .content
+                        else
+                            .content | tostring
+                        end
+                    ),
+                    timestamp: $msg.timestamp
+                }
             else
                 empty
             end
-        ) // ""
+        ) // {result: "No result", timestamp: null}
     ')
 
-    if [ -z "$result" ]; then
-        echo "No result"
-    else
-        echo "$result"
-    fi
+    echo "$result_data"
 }
 
 # Merge assistant message parts
@@ -524,6 +528,10 @@ create_trace() {
         local assistant_content
         assistant_content=$(format_content "$assistant_msg")
 
+        # Extract model name from assistant message
+        local model_name
+        model_name=$(echo "$assistant_msg" | jq -r 'if type == "object" and has("message") then .message.model else empty end')
+
         # Build inputs for this LLM call (includes accumulated context)
         local llm_inputs
         llm_inputs=$(jq -n --argjson outputs "$all_outputs" '{messages: $outputs}')
@@ -560,6 +568,7 @@ create_trace() {
             --arg time "$llm_start" \
             --argjson inputs "$llm_inputs" \
             --arg dotted_order "$assistant_dotted_order" \
+            --arg model "$model_name" \
             '{
                 id: $id,
                 trace_id: $trace_id,
@@ -570,8 +579,8 @@ create_trace() {
                 start_time: $time,
                 dotted_order: $dotted_order,
                 session_name: $project,
-                extra: {metadata: {ls_provider: "anthropic", ls_model_name: "claude-sonnet-4-5"}},
-                tags: ["claude-sonnet-4-5"]
+                extra: {metadata: {ls_provider: "anthropic", ls_model_name: $model}},
+                tags: [$model]
             }')
 
         posts_batch=$(echo "$posts_batch" | jq --argjson data "$assistant_data" '. += [$data]')
@@ -602,13 +611,41 @@ create_trace() {
                 local tool_use_id
                 tool_use_id=$(echo "$tool" | jq -r '.id // ""')
 
+                # Find tool result and extract timestamp from transcript
+                local result_data
+                result_data=$(find_tool_result_with_timestamp "$tool_use_id" "$tool_results")
+
+                local result
+                result=$(echo "$result_data" | jq -r '.result')
+
+                local tool_result_timestamp
+                tool_result_timestamp=$(echo "$result_data" | jq -r '.timestamp // ""')
+
                 # Create dotted_order for tool (child of turn)
+                # Use the tool result timestamp from transcript for proper ordering
                 local tool_timestamp
-                tool_timestamp=$(date -u +"%Y%m%dT%H%M%S")
-                local tool_microseconds
-                tool_microseconds=$(get_microseconds)
-                tool_timestamp="${tool_timestamp}${tool_microseconds}Z"
+                if [ -n "$tool_result_timestamp" ]; then
+                    # Convert ISO timestamp to dotted_order format
+                    # From: 2025-12-16T17:44:04.397Z
+                    # To: 20251216T174404397000Z (milliseconds padded to microseconds)
+                    tool_timestamp=$(echo "$tool_result_timestamp" | sed 's/[-:]//g; s/\.\([0-9]*\)Z$/\1000Z/; s/T\([0-9]*\)\([0-9]\{3\}\)000Z$/T\1\2000Z/')
+                else
+                    # Fallback to current time if no timestamp in transcript
+                    tool_timestamp=$(date -u +"%Y%m%dT%H%M%S")
+                    local tool_microseconds
+                    tool_microseconds=$(get_microseconds)
+                    tool_timestamp="${tool_timestamp}${tool_microseconds}Z"
+                fi
+
                 local tool_dotted_order="${turn_dotted_order}.${tool_timestamp}${tool_id}"
+
+                # Use tool result timestamp for end time as well
+                local tool_end
+                if [ -n "$tool_result_timestamp" ]; then
+                    tool_end="$tool_result_timestamp"
+                else
+                    tool_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                fi
 
                 # Tools are siblings of the assistant run (both children of turn run)
                 local tool_data
@@ -635,13 +672,6 @@ create_trace() {
                     }')
 
                 posts_batch=$(echo "$posts_batch" | jq --argjson data "$tool_data" '. += [$data]')
-
-                # Find and add tool result
-                local result
-                result=$(find_tool_result "$tool_use_id" "$tool_results")
-
-                local tool_end
-                tool_end=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
                 local tool_update
                 tool_update=$(echo "$result" | jq -Rs \
@@ -704,8 +734,10 @@ create_trace() {
             while IFS= read -r tool; do
                 local tool_use_id
                 tool_use_id=$(echo "$tool" | jq -r '.id // ""')
+                local result_data
+                result_data=$(find_tool_result_with_timestamp "$tool_use_id" "$tool_results")
                 local result
-                result=$(find_tool_result "$tool_use_id" "$tool_results")
+                result=$(echo "$result_data" | jq -r '.result')
                 all_outputs=$(echo "$all_outputs" | jq \
                     --arg id "$tool_use_id" \
                     --arg result "$result" \
@@ -919,10 +951,8 @@ main() {
 main
 
 exit 0
-
 ```
 </Accordion>
-
 
 Make it executable:
 
