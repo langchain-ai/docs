@@ -265,35 +265,42 @@ If you'd like me to call you a nickname or use a different name, just say the wo
 :::
 
 :::js
-To trim message history in an agent, use `stateModifier` with the [`trimMessages`](https://js.langchain.com/docs/how_to/trim_messages/) function:
+To trim message history in an agent, use @[`createMiddleware`] with a `beforeModel` hook:
 
 ```typescript
-import {
-    createAgent,
-    trimMessages,
-    type AgentState,
-} from "langchain";
-import { MemorySaver } from "@langchain/langgraph";
+import { RemoveMessage } from "@langchain/core/messages";
+import { createAgent, createMiddleware } from "langchain";
+import { MemorySaver, REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
 
-// This function will be called every time before the node that calls LLM
-const stateModifier = async (state: AgentState) => {
+const trimMessages = createMiddleware({
+  name: "TrimMessages",
+  beforeModel: (state) => {
+    const messages = state.messages;
+
+    if (messages.length <= 3) {
+      return; // No changes needed
+    }
+
+    const firstMsg = messages[0];
+    const recentMessages =
+      messages.length % 2 === 0 ? messages.slice(-3) : messages.slice(-4);
+    const newMessages = [firstMsg, ...recentMessages];
+
     return {
-        messages: await trimMessages(state.messages, {
-        strategy: "last",
-        maxTokens: 384,
-        startOn: "human",
-        endOn: ["human", "tool"],
-        tokenCounter: (msgs) => msgs.length,
-        }),
+      messages: [
+        new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
+        ...newMessages,
+      ],
     };
-};
+  },
+});
 
 const checkpointer = new MemorySaver();
 const agent = createAgent({
-    model: "gpt-5",
-    tools: [],
-    preModelHook: stateModifier,
-    checkpointer,
+  model: "gpt-4o",
+  tools: [],
+  middleware: [trimMessages],
+  checkpointer,
 });
 ```
 :::
@@ -420,65 +427,69 @@ for event in agent.stream(
 :::js
 ```typescript
 import { RemoveMessage } from "@langchain/core/messages";
-import { AgentState, createAgent } from "langchain";
+import { createAgent, createMiddleware } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 
-const deleteMessages = (state: AgentState) => {
+const deleteOldMessages = createMiddleware({
+  name: "DeleteOldMessages",
+  afterModel: (state) => {
     const messages = state.messages;
     if (messages.length > 2) {
-        // remove the earliest two messages
-        return {
+      // remove the earliest two messages
+      return {
         messages: messages
-            .slice(0, 2)
-            .map((m) => new RemoveMessage({ id: m.id! })),
-        };
+          .slice(0, 2)
+          .map((m) => new RemoveMessage({ id: m.id! })),
+      };
     }
-    return {};
-};
+    return;
+  },
+});
 
 const agent = createAgent({
-    model: "gpt-5-nano",
-    tools: [],
-    prompt: "Please be concise and to the point.",
-    postModelHook: deleteMessages,
-    checkpointer: new MemorySaver(),
+  model: "gpt-4o",
+  tools: [],
+  systemPrompt: "Please be concise and to the point.",
+  middleware: [deleteOldMessages],
+  checkpointer: new MemorySaver(),
 });
 
 const config = { configurable: { thread_id: "1" } };
 
 const streamA = await agent.stream(
-    { messages: [{ role: "user", content: "hi! I'm bob" }] },
-    { ...config, streamMode: "values" }
+  { messages: [{ role: "user", content: "hi! I'm bob" }] },
+  { ...config, streamMode: "values" }
 );
 for await (const event of streamA) {
-    const messageDetails = event.messages.map((message) => [
-        message.getType(),
-        message.content,
-    ]);
-    console.log(messageDetails);
+  const messageDetails = event.messages.map((message) => [
+    message.getType(),
+    message.content,
+  ]);
+  console.log(messageDetails);
 }
 
 const streamB = await agent.stream(
-    {
-        messages: [{ role: "user", content: "what's my name?" }],
-    },
-    { ...config, streamMode: "values" }
+  {
+    messages: [{ role: "user", content: "what's my name?" }],
+  },
+  { ...config, streamMode: "values" }
 );
 for await (const event of streamB) {
-    const messageDetails = event.messages.map((message) => [
-        message.getType(),
-        message.content,
-    ]);
-    console.log(messageDetails);
+  const messageDetails = event.messages.map((message) => [
+    message.getType(),
+    message.content,
+  ]);
+  console.log(messageDetails);
 }
 ```
 
 ```
-[['human', "hi! I'm bob"]]
-[['human', "hi! I'm bob"], ['ai', 'Hi Bob! How are you doing today? Is there anything I can help you with?']]
-[['human', "hi! I'm bob"], ['ai', 'Hi Bob! How are you doing today? Is there anything I can help you with?'], ['human', "what's my name?"]]
-[['human', "hi! I'm bob"], ['ai', 'Hi Bob! How are you doing today? Is there anything I can help you with?'], ['human', "what's my name?"], ['ai', 'Your name is Bob.']]
-[['human', "what's my name?"], ['ai', 'Your name is Bob.']]
+[[ "human", "hi! I'm bob" ]]
+[[ "human", "hi! I'm bob" ], [ "ai", "Hello, Bob! How can I assist you today?" ]]
+[[ "human", "hi! I'm bob" ], [ "ai", "Hello, Bob! How can I assist you today?" ]]
+[[ "human", "hi! I'm bob" ], [ "ai", "Hello, Bob! How can I assist you today" ], ["human", "what's my name?" ]]
+[[ "human", "hi! I'm bob" ], [ "ai", "Hello, Bob! How can I assist you today?" ], ["human", "what's my name?"], [ "ai", "Your name is Bob, as you mentioned. How can I help you further?" ]]
+[[ "human", "what's my name?" ], [ "ai", "Your name is Bob, as you mentioned. How can I help you further?" ]]
 ```
 :::
 
@@ -487,7 +498,7 @@ for await (const event of streamB) {
 The problem with trimming or removing messages, as shown above, is that you may lose information from culling of the message queue.
 Because of this, some applications benefit from a more sophisticated approach of summarizing the message history using a chat model.
 
-![](/oss/images/summary.png)
+![Summary](/oss/images/summary.png)
 
 
 :::python
@@ -612,43 +623,42 @@ print(result["messages"][-1].content)
 :::js
 ```typescript
 import * as z from "zod";
-import { createAgent, tool } from "langchain";
+import { createAgent, tool, type ToolRuntime } from "langchain";
 
 const stateSchema = z.object({
-    userId: z.string(),
+  userId: z.string(),
 });
 
 const getUserInfo = tool(
-    async (_, config) => {
-        const userId = config.context?.userId;
-        return { userId };
-    },
-    {
-        name: "get_user_info",
-        description: "Get user info",
-        schema: z.object({}),
-    }
+  async (_, config: ToolRuntime<z.infer<typeof stateSchema>>) => {
+    const userId = config.state.userId;
+    return userId === "user_123" ? "John Doe" : "Unknown User";
+  },
+  {
+    name: "get_user_info",
+    description: "Get user info",
+    schema: z.object({}),
+  }
 );
 
 const agent = createAgent({
-    model: "gpt-5-nano",
-    tools: [getUserInfo],
-    stateSchema,
+  model: "gpt-5-nano",
+  tools: [getUserInfo],
+  stateSchema,
 });
 
 const result = await agent.invoke(
-    {
-        messages: [{ role: "user", content: "what's my name?" }],
-    },
-    {
-        context: {
-        userId: "user_123",
-        },
-    }
+  {
+    messages: [{ role: "user", content: "what's my name?" }],
+    userId: "user_123",
+  },
+  {
+    context: {},
+  }
 );
 
 console.log(result.messages.at(-1)?.content);
-// Outputs: "User is John Smith."
+// Outputs: "Your name is John Doe."
 ```
 :::
 
@@ -726,61 +736,62 @@ agent.invoke(
 :::js
 ```typescript
 import * as z from "zod";
-import { tool, createAgent } from "langchain";
-import { MessagesZodState, Command } from "@langchain/langgraph";
+import { tool, createAgent, ToolMessage, type ToolRuntime } from "langchain";
+import { Command } from "@langchain/langgraph";
 
 const CustomState = z.object({
-    messages: MessagesZodState.shape.messages,
-    userName: z.string().optional(),
+  userId: z.string().optional(),
 });
 
 const updateUserInfo = tool(
-    async (_, config) => {
-        const userId = config.context?.userId;
-        const name = userId === "user_123" ? "John Smith" : "Unknown user";
-        return new Command({
-        update: {
-            userName: name,
-            // update the message history
-            messages: [
-            {
-                role: "tool",
-                content: "Successfully looked up user information",
-                tool_call_id: config.toolCall?.id,
-            },
-            ],
-        },
-        });
-    },
-    {
-        name: "update_user_info",
-        description: "Look up and update user info.",
-        schema: z.object({}),
-    }
+  async (_, config: ToolRuntime<typeof CustomState>) => {
+    const userId = config.state.userId;
+    const name = userId === "user_123" ? "John Smith" : "Unknown user";
+    return new Command({
+      update: {
+        userName: name,
+        // update the message history
+        messages: [
+          new ToolMessage({
+            content: "Successfully looked up user information",
+            tool_call_id: config.toolCall?.id ?? "",
+          }),
+        ],
+      },
+    });
+  },
+  {
+    name: "update_user_info",
+    description: "Look up and update user info.",
+    schema: z.object({}),
+  }
 );
 
 const greet = tool(
-    async (_, config) => {
-        const userName = config.context?.userName;
-        return `Hello ${userName}!`;
-    },
-    {
-        name: "greet",
-        description: "Use this to greet the user once you found their info.",
-        schema: z.object({}),
-    }
+  async (_, config) => {
+    const userName = config.context?.userName;
+    return `Hello ${userName}!`;
+  },
+  {
+    name: "greet",
+    description: "Use this to greet the user once you found their info.",
+    schema: z.object({}),
+  }
 );
 
 const agent = createAgent({
-    model,
-    tools: [updateUserInfo, greet],
-    stateSchema: CustomState,
+  model: "openai:gpt-5-mini",
+  tools: [updateUserInfo, greet],
+  stateSchema: CustomState,
 });
 
-await agent.invoke(
-    { messages: [{ role: "user", content: "greet the user" }] },
-    { context: { userId: "user_123" } }
-);
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "greet the user" }],
+  userId: "user_123",
+});
+
+console.log(result.messages.at(-1)?.content);
+// Output: "Hello! I’m here to help — what would you like to do today?"
 ```
 :::
 
@@ -849,51 +860,50 @@ Hi John Smith, the weather in San Francisco is always sunny!
 :::js
 ```typescript
 import * as z from "zod";
-import { createAgent, tool, SystemMessage } from "langchain";
+import { createAgent, tool, dynamicSystemPromptMiddleware } from "langchain";
 
 const contextSchema = z.object({
-    userName: z.string(),
+  userName: z.string(),
 });
+type ContextSchema = z.infer<typeof contextSchema>;
 
 const getWeather = tool(
-    async ({ city }, config) => {
-        return `The weather in ${city} is always sunny!`;
-    },
-    {
-        name: "get_weather",
-        description: "Get user info",
-        schema: z.object({
-        city: z.string(),
-        }),
-    }
+  async ({ city }) => {
+    return `The weather in ${city} is always sunny!`;
+  },
+  {
+    name: "get_weather",
+    description: "Get user info",
+    schema: z.object({
+      city: z.string(),
+    }),
+  }
 );
 
 const agent = createAgent({
-    model: "gpt-5-nano",
-    tools: [getWeather],
-    contextSchema,
-    prompt: (state, config) => {
-        return [
-        new SystemMessage(
-            `You are a helpful assistant. Address the user as ${config.context?.userName}.`
-        ),
-        ...state.messages,
-    },
+  model: "gpt-5-nano",
+  tools: [getWeather],
+  contextSchema,
+  middleware: [
+    dynamicSystemPromptMiddleware<ContextSchema>((_, config) => {
+      return `You are a helpful assistant. Address the user as ${config.context?.userName}.`;
+    }),
+  ],
 });
 
 const result = await agent.invoke(
-    {
-        messages: [{ role: "user", content: "What is the weather in SF?" }],
+  {
+    messages: [{ role: "user", content: "What is the weather in SF?" }],
+  },
+  {
+    context: {
+      userName: "John Smith",
     },
-    {
-        context: {
-        userName: "John Smith",
-        },
-    }
+  }
 );
 
 for (const message of result.messages) {
-    console.log(message);
+  console.log(message);
 }
 /**
  * HumanMessage {
@@ -1018,7 +1028,8 @@ If you'd like me to call you a nickname or use a different name, just say the wo
 :::js
 ```typescript
 import { RemoveMessage } from "@langchain/core/messages";
-import { createAgent, createMiddleware, trimMessages, type AgentState } from "langchain";
+import { createAgent, createMiddleware, trimMessages } from "langchain";
+import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
 
 const trimMessageHistory = createMiddleware({
   name: "TrimMessages",
@@ -1030,14 +1041,16 @@ const trimMessageHistory = createMiddleware({
       endOn: ["human", "tool"],
       tokenCounter: (msgs) => msgs.length,
     });
-    return { messages: trimmed };
+    return {
+      messages: [new RemoveMessage({ id: REMOVE_ALL_MESSAGES }), ...trimmed],
+    };
   },
 });
 
 const agent = createAgent({
-    model: "gpt-5-nano",
-    tools: [],
-    middleware: [trimMessageHistory],
+  model: "gpt-5-nano",
+  tools: [],
+  middleware: [trimMessageHistory],
 });
 ```
 :::
@@ -1104,15 +1117,22 @@ agent = create_agent(
 :::js
 ```typescript
 import { RemoveMessage } from "@langchain/core/messages";
-import { createAgent, createMiddleware, type AgentState } from "langchain";
+import { createAgent, createMiddleware } from "langchain";
+import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
 
 const validateResponse = createMiddleware({
   name: "ValidateResponse",
   afterModel: (state) => {
     const lastMessage = state.messages.at(-1)?.content;
-    if (typeof lastMessage === "string" && lastMessage.toLowerCase().includes("confidential")) {
+    if (
+      typeof lastMessage === "string" &&
+      lastMessage.toLowerCase().includes("confidential")
+    ) {
       return {
-        messages: [new RemoveMessage({ id: "all" }), ...state.messages],
+        messages: [
+          new RemoveMessage({ id: REMOVE_ALL_MESSAGES }),
+          ...state.messages,
+        ],
       };
     }
     return;
@@ -1120,9 +1140,9 @@ const validateResponse = createMiddleware({
 });
 
 const agent = createAgent({
-    model: "gpt-5-nano",
-    tools: [],
-    middleware: [validateResponse],
+  model: "gpt-5-nano",
+  tools: [],
+  middleware: [validateResponse],
 });
 ```
 :::

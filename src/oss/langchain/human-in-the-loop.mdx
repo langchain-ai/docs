@@ -472,6 +472,86 @@ When multiple actions are under review, provide a decision for each action in th
 </Tab>
 </Tabs>
 
+## Streaming with human-in-the-loop
+
+You can use `stream()` instead of `invoke()` to get real-time updates while the agent runs and handles interrupts. Use `stream_mode=['updates', 'messages']` to stream both agent progress and LLM tokens.
+
+:::python
+```python
+from langgraph.types import Command
+
+config = {"configurable": {"thread_id": "some_id"}}
+
+# Stream agent progress and LLM tokens until interrupt
+for mode, chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "Delete old records from the database"}]},
+    config=config,
+    stream_mode=["updates", "messages"],  # [!code highlight]
+):
+    if mode == "messages":
+        # LLM token
+        token, metadata = chunk
+        if token.content:
+            print(token.content, end="", flush=True)
+    elif mode == "updates":
+        # Check for interrupt
+        if "__interrupt__" in chunk:
+            print(f"\n\nInterrupt: {chunk['__interrupt__']}")
+
+# Resume with streaming after human decision
+for mode, chunk in agent.stream(
+    Command(resume={"decisions": [{"type": "approve"}]}),
+    config=config,
+    stream_mode=["updates", "messages"],
+):
+    if mode == "messages":
+        token, metadata = chunk
+        if token.content:
+            print(token.content, end="", flush=True)
+```
+:::
+
+:::js
+```typescript
+import { Command } from "@langchain/langgraph";
+
+const config = { configurable: { thread_id: "some_id" } };
+
+// Stream agent progress and LLM tokens until interrupt
+for await (const [mode, chunk] of await agent.stream(
+    { messages: [{ role: "user", content: "Delete old records from the database" }] },
+    { ...config, streamMode: ["updates", "messages"] }  // [!code highlight]
+)) {
+    if (mode === "messages") {
+        // LLM token
+        const [token, metadata] = chunk;
+        if (token.content) {
+            process.stdout.write(token.content);
+        }
+    } else if (mode === "updates") {
+        // Check for interrupt
+        if ("__interrupt__" in chunk) {
+            console.log(`\n\nInterrupt: ${JSON.stringify(chunk.__interrupt__)}`);
+        }
+    }
+}
+
+// Resume with streaming after human decision
+for await (const [mode, chunk] of await agent.stream(
+    new Command({ resume: { decisions: [{ type: "approve" }] } }),
+    { ...config, streamMode: ["updates", "messages"] }
+)) {
+    if (mode === "messages") {
+        const [token, metadata] = chunk;
+        if (token.content) {
+            process.stdout.write(token.content);
+        }
+    }
+}
+```
+:::
+
+See the [Streaming](/oss/langchain/streaming) guide for more details on stream modes.
 
 ## Execution lifecycle
 

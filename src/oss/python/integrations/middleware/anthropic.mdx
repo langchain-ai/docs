@@ -12,9 +12,110 @@ Middleware specifically designed for Anthropic's Claude models. Learn more about
 | [Memory](#memory) | Provide Claude's memory tool for persistent agent memory |
 | [File search](#file-search) | Search tools for state-based file systems |
 
+## Middleware vs tools
+
+`langchain-anthropic` provides two ways to use Claude's native tools:
+
+- **Middleware** (this page): Production-ready implementations with built-in execution, state management, and security policies
+- **Tools** (via [`bind_tools`](/oss/integrations/chat/anthropic#built-in-tools)): Low-level building blocks where you provide your own execution logic
+
+### When to use which
+
+| Use case | Recommended | Why |
+|----------|-------------|-----|
+| Production agents with bash | Middleware | Persistent sessions, Docker isolation, output redaction |
+| State-based file editing | Middleware | Built-in LangGraph state persistence |
+| Filesystem file editing | Middleware | Writes to disk with path validation |
+| Custom execution logic | Tools | Full control over execution |
+| Quick prototype | Tools | Simpler, bring your own callback |
+| Non-agent use with @[`bind_tools`][ChatAnthropic.bind_tools] | Tools | Middleware requires @[`create_agent`] |
+
+### Feature comparison
+
+| Feature | Middleware | Tools |
+|---------|:----------:|:-----:|
+| Works with @[`create_agent`] | ✅ | ✅ |
+| Works with @[`bind_tools`][ChatAnthropic.bind_tools] | ❌ | ✅ |
+| Built-in state management | ✅ | ❌ |
+| Custom execute callback | ❌ | ✅ |
+
+<Accordion title="Example: Middleware vs tools comparison">
+
+**Using middleware** (turnkey solution):
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import ClaudeBashToolMiddleware
+from langchain.agents import create_agent
+from langchain.agents.middleware import DockerExecutionPolicy
+
+# Production-ready with Docker isolation, session management, etc.
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    middleware=[
+        ClaudeBashToolMiddleware(
+            workspace_root="/workspace",
+            execution_policy=DockerExecutionPolicy(image="python:3.11"),
+            startup_commands=["pip install pandas"],
+        ),
+    ],
+)
+```
+
+**Using tools** (bring your own execution):
+
+```python
+import subprocess
+
+from anthropic.types.beta import BetaToolBash20250124Param
+from langchain_anthropic import ChatAnthropic
+from langchain.agents import create_agent
+from langchain.tools import tool
+
+tool_spec = BetaToolBash20250124Param(
+    name="bash",
+    type="bash_20250124",
+    strict=True,
+)
+
+@tool(extras={"provider_tool_definition": tool_spec})
+def bash(*, command: str, restart: bool = False, **kw):
+    """Execute a bash command."""
+    if restart:
+        return "Bash session restarted"
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.stdout + result.stderr
+    except Exception as e:
+        return f"Error: {e}"
+
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[bash],
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "List files in this directory"}]}
+)
+print(result["messages"][-1].content)
+```
+
+</Accordion>
+
+---
+
 ## Prompt caching
 
-Reduce costs and latency by caching static or repetitive prompt content (like system prompts, tool definitions, and conversation history) on Anthropic's servers. This middleware implements a **conversational caching strategy** that places cache breakpoints after the most recent message, allowing the entire conversation history (including the latest user message) to be cached and reused in subsequent API calls. Prompt caching is useful for the following:
+Reduce costs and latency by caching static or repetitive prompt content (like system prompts, tool definitions, and conversation history) on Anthropic's servers. This middleware implements a **conversational caching strategy** that places cache breakpoints after the most recent message, allowing the entire conversation history (including the latest user message) to be cached and reused in subsequent API calls.
+
+Prompt caching is useful for the following:
 
 - Applications with long, static system prompts that don't change between requests
 - Agents with many tool definitions that remain constant across invocations
@@ -35,7 +136,7 @@ from langchain.agents import create_agent
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     system_prompt="<Your long system prompt here>",
-    middleware=[AnthropicPromptCachingMiddleware(ttl="5m")],
+    middleware=[AnthropicPromptCachingMiddleware(ttl="5m")], # [!code highlight]
 )
 ```
 
@@ -64,15 +165,21 @@ agent = create_agent(
 The middleware caches content up to and including the latest message in each request. On subsequent requests within the TTL window (5 minutes or 1 hour), previously seen content is retrieved from cache rather than reprocessed, significantly reducing costs and latency.
 
 **How it works:**
-1. First request: System prompt, tools, and the user message "Hi, my name is Bob" are sent to the API and cached
-2. Second request: The cached content (system prompt, tools, and first message) is retrieved from cache. Only the new message "What's my name?" needs to be processed, plus the model's response from the first request
+1. First request: System prompt, tools, and the user message *"Hi, my name is Bob"* are sent to the API and cached
+2. Second request: The cached content (system prompt, tools, and first message) is retrieved from cache. Only the new message *"What's my name?"* needs to be processed, plus the model's response from the first request
 3. This pattern continues for each turn, with each request reusing the cached conversation history
+
+<Note>
+    Prompt caching reduces API costs by caching tokens, but does **not** provide conversation memory. To persist conversation history across invocations, use a [checkpointer](https://langchain-ai.github.io/langgraph/concepts/persistence/#checkpointer-libraries) like `MemorySaver`.
+</Note>
 
 ```python
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 
 
 LONG_PROMPT = """
@@ -84,22 +191,33 @@ Please be a helpful assistant.
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     system_prompt=LONG_PROMPT,
-    middleware=[AnthropicPromptCachingMiddleware(ttl="5m")],
+    middleware=[AnthropicPromptCachingMiddleware(ttl="5m")], # [!code highlight]
+    checkpointer=MemorySaver(),  # Persists conversation history
 )
 
+# Use a thread_id to maintain conversation state
+config: RunnableConfig = {"configurable": {"thread_id": "user-123"}}
+
 # First invocation: Creates cache with system prompt, tools, and "Hi, my name is Bob"
-agent.invoke({"messages": [HumanMessage("Hi, my name is Bob")]})
+agent.invoke({"messages": [HumanMessage("Hi, my name is Bob")]}, config=config)
 
 # Second invocation: Reuses cached system prompt, tools, and previous messages
-# Only processes the new message "What's my name?" and the previous AI response
-agent.invoke({"messages": [HumanMessage("What's my name?")]})
+# The checkpointer maintains conversation history, so the agent remembers "Bob"
+result = agent.invoke({"messages": [HumanMessage("What's my name?")]}, config=config)
+print(result["messages"][-1].content)
+```
+
+```text
+Your name is Bob! You told me that when you introduced yourself at the start of our conversation.
 ```
 
 </Accordion>
 
 ## Bash tool
 
-Execute Claude's native `bash_20250124` tool with local command execution. The bash tool middleware is useful for the following:
+Execute Claude's native `bash_20250124` tool with local command execution.
+
+The bash tool middleware is useful for the following:
 
 - Using Claude's built-in bash tool with local execution
 - Leveraging Claude's optimized bash tool interface
@@ -119,11 +237,11 @@ from langchain.agents import create_agent
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
-    middleware=[
-        ClaudeBashToolMiddleware(
-            workspace_root="/workspace",
-        ),
-    ],
+    middleware=[ # [!code highlight]
+        ClaudeBashToolMiddleware( # [!code highlight]
+            workspace_root="/workspace", # [!code highlight]
+        ), # [!code highlight]
+    ], # [!code highlight]
 )
 ```
 
@@ -154,30 +272,40 @@ See [Shell tool](/oss/langchain/middleware/built-in#shell-tool) for full configu
 <Accordion title="Full example">
 
 ```python
+import tempfile
+
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import ClaudeBashToolMiddleware
 from langchain.agents import create_agent
 from langchain.agents.middleware import DockerExecutionPolicy
 
+# Create a temporary workspace directory for this demo.
+# In production, use a persistent directory path.
+workspace = tempfile.mkdtemp(prefix="agent-workspace-")
 
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
-    middleware=[
-        ClaudeBashToolMiddleware(
-            workspace_root="/workspace",
-            startup_commands=["pip install requests"],
-            execution_policy=DockerExecutionPolicy(
-                image="python:3.11-slim",
-            ),
-        ),
-    ],
+    middleware=[ # [!code highlight]
+        ClaudeBashToolMiddleware( # [!code highlight]
+            workspace_root=workspace, # [!code highlight]
+            startup_commands=["echo 'Session initialized'"], # [!code highlight]
+            execution_policy=DockerExecutionPolicy( # [!code highlight]
+                image="python:3.11-slim", # [!code highlight]
+            ), # [!code highlight]
+        ), # [!code highlight]
+    ], # [!code highlight]
 )
 
 # Claude can now use its native bash tool
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "List files in the workspace"}]
-})
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What version of Python is installed?"}]}
+)
+print(result["messages"][-1].content)
+```
+
+```text
+Python 3.11.14 is installed.
 ```
 
 </Accordion>
@@ -185,7 +313,9 @@ result = agent.invoke({
 
 ## Text editor
 
-Provide Claude's text editor tool (`text_editor_20250728`) for file creation and editing. The text editor middleware is useful for the following:
+Provide Claude's text editor tool (`text_editor_20250728`) for file creation and editing.
+
+The text editor middleware is useful for the following:
 
 - File-based agent workflows
 - Code editing and refactoring tasks
@@ -196,22 +326,46 @@ Provide Claude's text editor tool (`text_editor_20250728`) for file creation and
     Available in two variants: **State-based** (files in LangGraph state) and **Filesystem-based** (files on disk).
 </Note>
 
-**API reference:** @[`StateClaudeTextEditorMiddleware`], @[`FilesystemClaudeTextEditorMiddleware`]
+**API references:**
+- @[`StateClaudeTextEditorMiddleware`]
+- @[`FilesystemClaudeTextEditorMiddleware`]
 
-```python
+```python State-based text editor
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import StateClaudeTextEditorMiddleware
 from langchain.agents import create_agent
 
-# State-based (files in LangGraph state)
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
-    middleware=[
-        StateClaudeTextEditorMiddleware(),
-    ],
+    middleware=[StateClaudeTextEditorMiddleware()], # [!code highlight]
 )
 ```
+
+```python Filesystem-based text editor
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import FilesystemClaudeTextEditorMiddleware
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[ # [!code highlight]
+        FilesystemClaudeTextEditorMiddleware( # [!code highlight]
+            root_path="/workspace", # [!code highlight]
+        ), # [!code highlight]
+    ], # [!code highlight]
+)
+```
+
+Claude's text editor tool supports the following commands:
+
+- `view` - View file contents or list directory
+- `create` - Create a new file
+- `str_replace` - Replace string in file
+- `insert` - Insert text at line number
+- `delete` - Delete a file
+- `rename` - Rename/move a file
 
 <Accordion title="Configuration options">
 
@@ -237,56 +391,93 @@ agent = create_agent(
 
 </Accordion>
 
-<Accordion title="Full example">
+<AccordionGroup>
 
-Claude's text editor tool supports the following commands:
-- `view` - View file contents or list directory
-- `create` - Create a new file
-- `str_replace` - Replace string in file
-- `insert` - Insert text at line number
-- `delete` - Delete a file
-- `rename` - Rename/move a file
+<Accordion title="Full example: State-based text editor">
 
 ```python
 from langchain_anthropic import ChatAnthropic
-from langchain_anthropic.middleware import (
-    StateClaudeTextEditorMiddleware,
-    FilesystemClaudeTextEditorMiddleware,
-)
+from langchain_anthropic.middleware import StateClaudeTextEditorMiddleware
 from langchain.agents import create_agent
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 
 
-# State-based: Files persist in LangGraph state
-agent_state = create_agent(
+agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
     middleware=[
-        StateClaudeTextEditorMiddleware(
-            allowed_path_prefixes=["/project"],
-        ),
+        StateClaudeTextEditorMiddleware( # [!code highlight]
+            allowed_path_prefixes=["/project"], # [!code highlight]
+        ), # [!code highlight]
     ],
+    checkpointer=MemorySaver(),
 )
 
-# Filesystem-based: Files persist on disk
-agent_fs = create_agent(
-    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
-    tools=[],
-    middleware=[
-        FilesystemClaudeTextEditorMiddleware(
-            root_path="/workspace",
-            allowed_prefixes=["/src"],
-            max_file_size_mb=10,
-        ),
-    ],
+# Use a thread_id to persist state across invocations
+config: RunnableConfig = {"configurable": {"thread_id": "my-session"}}
+
+# Claude can now create and edit files (stored in LangGraph state)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Create a file at /project/hello.py with a simple hello world program"}]},
+    config=config,
 )
+print(result["messages"][-1].content)
+```
+
+```text
+I've created a simple "Hello, World!" program at `/project/hello.py`. The program uses Python's `print()` function to display "Hello, World!" to the console when executed.
 ```
 
 </Accordion>
 
+<Accordion title="Full example: Filesystem-based text editor">
+
+```python
+import tempfile
+
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import FilesystemClaudeTextEditorMiddleware
+from langchain.agents import create_agent
+
+
+# Create a temporary workspace directory for this demo.
+# In production, use a persistent directory path.
+workspace = tempfile.mkdtemp(prefix="editor-workspace-")
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        FilesystemClaudeTextEditorMiddleware( # [!code highlight]
+            root_path=workspace, # [!code highlight]
+            allowed_prefixes=["/src"], # [!code highlight]
+            max_file_size_mb=10, # [!code highlight]
+        ), # [!code highlight]
+    ],
+)
+
+# Claude can now create and edit files (stored on disk)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Create a file at /src/hello.py with a simple hello world program"}]}
+)
+print(result["messages"][-1].content)
+```
+
+```text
+I've created a simple "Hello, World!" program at `/src/hello.py`. The program uses Python's `print()` function to display "Hello, World!" to the console when executed.
+```
+
+</Accordion>
+
+</AccordionGroup>
+
 
 ## Memory
 
-Provide Claude's memory tool (`memory_20250818`) for persistent agent memory across conversation turns. The memory middleware is useful for the following:
+Provide Claude's memory tool (`memory_20250818`) for persistent agent memory across conversation turns.
+
+The memory middleware is useful for the following:
 
 - Long-running agent conversations
 - Maintaining context across interruptions
@@ -299,18 +490,31 @@ Provide Claude's memory tool (`memory_20250818`) for persistent agent memory acr
 
 **API reference:** @[`StateClaudeMemoryMiddleware`], @[`FilesystemClaudeMemoryMiddleware`]
 
-```python
+```python State-based memory
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import StateClaudeMemoryMiddleware
 from langchain.agents import create_agent
 
-# State-based memory
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
-    middleware=[
-        StateClaudeMemoryMiddleware(),
-    ],
+    middleware=[StateClaudeMemoryMiddleware()], # [!code highlight]
+)
+```
+
+```python Filesystem-based memory
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import FilesystemClaudeMemoryMiddleware
+from langchain.agents import create_agent
+
+agent_fs = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[ # [!code highlight]
+        FilesystemClaudeMemoryMiddleware( # [!code highlight]
+            root_path="/workspace", # [!code highlight]
+        ), # [!code highlight]
+    ], # [!code highlight]
 )
 ```
 
@@ -346,44 +550,90 @@ agent = create_agent(
 
 </Accordion>
 
-<Accordion title="Full example">
+<AccordionGroup>
+
+<Accordion title="Full example: State-based memory">
+
+The agent will automatically:
+1. Check `/memories` directory at start
+2. Record progress and thoughts during execution
+3. Update memory files as work progresses
 
 ```python
 from langchain_anthropic import ChatAnthropic
-from langchain_anthropic.middleware import (
-    StateClaudeMemoryMiddleware,
-    FilesystemClaudeMemoryMiddleware,
-)
+from langchain_anthropic.middleware import StateClaudeMemoryMiddleware
 from langchain.agents import create_agent
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 
 
-# State-based: Memory persists in LangGraph state
-agent_state = create_agent(
+agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
-    middleware=[
-        StateClaudeMemoryMiddleware(),
-    ],
+    middleware=[StateClaudeMemoryMiddleware()], # [!code highlight]
+    checkpointer=MemorySaver(),
 )
 
-# Filesystem-based: Memory persists on disk
-agent_fs = create_agent(
-    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
-    tools=[],
-    middleware=[
-        FilesystemClaudeMemoryMiddleware(
-            root_path="/workspace",
-        ),
-    ],
-)
+# Use a thread_id to persist state across invocations
+config: RunnableConfig = {"configurable": {"thread_id": "my-session"}}
 
-# The agent will automatically:
-# 1. Check /memories directory at start
-# 2. Record progress and thoughts during execution
-# 3. Update memory files as work progresses
+# Claude can now use memory to track progress (stored in LangGraph state)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Remember that my favorite color is blue, then confirm what you stored."}]},
+    config=config,
+)
+print(result["messages"][-1].content)
+```
+
+```text
+Perfect! I've stored your favorite color as **blue** in my memory system. The information is saved in my user preferences file where I can access it in future conversations.
 ```
 
 </Accordion>
+
+<Accordion title="Full example: Filesystem-based memory">
+
+The agent will automatically:
+1. Check `/memories` directory at start
+2. Record progress and thoughts during execution
+3. Update memory files as work progresses
+
+```python
+import tempfile
+
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import FilesystemClaudeMemoryMiddleware
+from langchain.agents import create_agent
+
+
+# Create a temporary workspace directory for this demo.
+# In production, use a persistent directory path.
+workspace = tempfile.mkdtemp(prefix="memory-workspace-")
+
+agent = create_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
+    tools=[],
+    middleware=[
+        FilesystemClaudeMemoryMiddleware( # [!code highlight]
+            root_path=workspace, # [!code highlight]
+        ), # [!code highlight]
+    ],
+)
+
+# Claude can now use memory to track progress (stored on disk)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Remember that my favorite color is blue, then confirm what you stored."}]}
+)
+print(result["messages"][-1].content)
+```
+
+```text
+Perfect! I've stored your favorite color as **blue** in my memory system. The information is saved in my user preferences file where I can access it in future conversations.
+```
+
+</Accordion>
+
+</AccordionGroup>
 
 
 ## File search
@@ -408,10 +658,10 @@ from langchain.agents import create_agent
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
-    middleware=[
-        StateClaudeTextEditorMiddleware(),
-        StateFileSearchMiddleware(),  # Search text editor files
-    ],
+    middleware=[ # [!code highlight]
+        StateClaudeTextEditorMiddleware(), # [!code highlight]
+        StateFileSearchMiddleware(),  # Search text editor files [!code highlight]
+    ], # [!code highlight]
 )
 ```
 
@@ -423,7 +673,9 @@ agent = create_agent(
 
 </Accordion>
 
-<Accordion title="Full example">
+<AccordionGroup>
+
+<Accordion title="Full example: Search text editor files">
 
 The middleware adds Glob and Grep search tools that work with state-based files.
 
@@ -431,31 +683,126 @@ The middleware adds Glob and Grep search tools that work with state-based files.
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import (
     StateClaudeTextEditorMiddleware,
-    StateClaudeMemoryMiddleware,
     StateFileSearchMiddleware,
 )
 from langchain.agents import create_agent
+from langchain.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
 
 
-# Search text editor files
 agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
     middleware=[
         StateClaudeTextEditorMiddleware(),
-        StateFileSearchMiddleware(state_key="text_editor_files"),
+        StateFileSearchMiddleware(state_key="text_editor_files"), # [!code highlight]
     ],
+    checkpointer=MemorySaver(),
 )
 
-# Search memory files
-agent_memory = create_agent(
+# Use a thread_id to persist state across invocations
+config: RunnableConfig = {"configurable": {"thread_id": "my-session"}}
+
+# First invocation: Create some files using the text editor tool
+result = agent.invoke(
+    {"messages": [HumanMessage("Create a Python project with main.py, utils/helpers.py, and tests/test_main.py")]},
+    config=config,
+)
+
+# The agent creates files, which are stored in state
+print("Files created:", list(result["text_editor_files"].keys()))
+
+# Second invocation: Search the files we just created
+# State is automatically persisted via the checkpointer
+result = agent.invoke(
+    {"messages": [HumanMessage("Find all Python files in the project")]},
+    config=config,
+)
+print(result["messages"][-1].content)
+```
+
+```text
+Files created: ['/project/main.py', '/project/utils/helpers.py', '/project/utils/__init__.py', '/project/tests/test_main.py', '/project/tests/__init__.py', '/project/README.md']
+```
+
+```text
+I found 5 Python files in the project:
+
+1. `/project/main.py` - Main application file
+2. `/project/utils/__init__.py` - Utils package initialization
+3. `/project/utils/helpers.py` - Helper utilities
+4. `/project/tests/__init__.py` - Tests package initialization
+5. `/project/tests/test_main.py` - Main test file
+
+Would you like me to view the contents of any of these files?
+```
+
+</Accordion>
+
+<Accordion title="Full example: Search memory files">
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import (
+    StateClaudeMemoryMiddleware,
+    StateFileSearchMiddleware,
+)
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
+
+
+agent = create_agent(
     model=ChatAnthropic(model="claude-sonnet-4-5-20250929"),
     tools=[],
     middleware=[
         StateClaudeMemoryMiddleware(),
-        StateFileSearchMiddleware(state_key="memory_files"),
+        StateFileSearchMiddleware(state_key="memory_files"), # [!code highlight]
     ],
+    checkpointer=MemorySaver(),
 )
+
+# Use a thread_id to persist state across invocations
+config: RunnableConfig = {"configurable": {"thread_id": "my-session"}}
+
+# First invocation: Record some memories
+result = agent.invoke(
+    {"messages": [HumanMessage("Remember that the project deadline is March 15th and code review deadline is March 10th")]},
+    config=config,
+)
+
+# The agent creates memory files, which are stored in state
+print("Memory files created:", list(result["memory_files"].keys()))
+
+# Second invocation: Search the memories we just recorded
+# State is automatically persisted via the checkpointer
+result = agent.invoke(
+    {"messages": [HumanMessage("Search my memories for project deadlines")]},
+    config=config,
+)
+print(result["messages"][-1].content)
+```
+
+```text
+Memory files created: ['/memories/project_info.md']
+```
+
+```text
+I found your project deadlines in my memory! Here's what I have recorded:
+
+## Important Deadlines
+- **Code Review Deadline:** March 10th
+- **Project Deadline:** March 15th
+
+## Notes
+- Code review must be completed 5 days before final project deadline
+- Need to ensure all code is ready for review by March 10th
+
+Is there anything specific about these deadlines you'd like to know or update?
 ```
 
 </Accordion>
+
+</AccordionGroup>

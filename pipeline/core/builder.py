@@ -184,15 +184,16 @@ class DocumentationBuilder:
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"
             )
+            issue_url = "https://github.com/langchain-ai/docs/issues/new/choose"
 
             # Create the callout section with Mintlify Callout component
             source_links_section = (
                 "\n\n---\n\n"
                 '<Callout icon="pen-to-square" iconType="regular">\n'
-                f"    [Edit the source of this page on GitHub.]({edit_url})\n"
+                f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
                 "</Callout>\n"
                 '<Tip icon="terminal" iconType="regular">\n'
-                "    [Connect these docs programmatically](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
+                "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
                 "</Tip>\n"
             )
 
