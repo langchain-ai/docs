@@ -1,0 +1,105 @@
+---
+title: Deploy other frameworks
+sidebarTitle: Deploy other frameworks (e.g., Strands, CrewAI)
+---
+This guide shows you how to use [Functional API](/oss/langgraph/functional-api) to deploy a [Strands Agent](https://strandsagents.com/latest/documentation/docs/) on [LangSmith Deployment](/langsmith/deployments) and set up tracing for [LangSmith Observability](/langsmith/observability). You can follow the same approach with other frameworks like CrewAI, AutoGen, Google ADK.
+
+Using Functional API and deploying to LangSmith Deployment provides several benefits:
+
+* Production deployment: Deploy your integrated solution to [LangSmith Deployment](/langsmith/deployments) for scalable production use.
+* Enhanced features: With Functional API, you can integrate your existing agents with [persistence](/oss/langgraph/persistence), [streaming](/langsmith/streaming), [short and long-term memory](/oss/concepts/memory) and more, with minimal changes to your existing code.
+* Multi-agent systems: Build [multi-agent systems](/oss/langchain/multi-agent) where individual agents are built with different frameworks.
+
+## Prerequisites
+
+* Python 3.9+
+* Dependencies: `pip install strands-agents strands-agents-tools langgraph`
+* AWS Credentials in your environment
+
+## 1. Define Strands agent
+
+Create a Strands Agent with pre-built tools.
+
+```python
+from strands import Agent
+from strands_tools import file_read, file_write, python_repl, shell, journal
+
+agent = Agent(
+        tools=[file_read, file_write, python_repl, shell, journal],
+        system_prompt="You are an Expert Software Developer Assistant specializing in web frameworks. Your task is to analyze project structures and identify mappings.",
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    )
+```
+
+## 2. Use Functional API to deploy on LangSmith Deployment
+
+[Functional API](/oss/langgraph/functional-api) allows you to intergate and deploy with frameworks other than LangChain. Functional API also provides the additional benefit to leverage other key features — persistence, memory, human-in-the-loop, and streaming — coupled with your existing agent, with minimal changes to your existing code.
+
+It uses two key building blocks:
+
+* **@[`@entrypoint`]**: Marks a function as the starting point of a workflow, encapsulating logic and managing execution flow, including handling long-running tasks and interrupts.
+* **@[`@task`]**: Represents a discrete unit of work, such as an API call or data processing step, that can be executed asynchronously within an entrypoint. Tasks return a future-like object that can be awaited or resolved synchronously.
+
+```python
+from strands.types.content import Message
+
+from langgraph.func import entrypoint, task
+import operator
+
+@task
+def invoke_strands(messages: list[Message]):
+    # run the agent with existing messages; can invoke with the final message with messages[-1]
+    result = agent(messages)
+    # return the resulting message
+    return [result.message]
+
+@entrypoint()
+def workflow(messages: list[Message], previous: list[Message]):
+    messages = operator.add(previous or [], messages)
+    response = invoke_strands(messages).result()
+    return entrypoint.final(value=response, save=operator.add(messages, response))
+```
+
+## 3. Set up tracing with OpenTelemetry
+
+In your environment variables, set up the following:
+
+```python
+# Turn off LangSmith default tracing, as we want to only trace with OpenTelemetry
+LANGSMITH_TRACING=false
+
+OTEL_EXPORTER_OTLP_ENDPOINT = "https://api.smith.langchain.com/otel/"
+
+OTEL_EXPORTER_OTLP_HEADERS = "x-api-key=your-langsmith-api-key,Langsmith-Project=your-tracing-project-name"
+```
+
+<Note>
+If you're [self-hosting LangSmith](/langsmith/self-hosted), replace the  `OTEL_EXPORTER_OTLP_ENDPOINT` endpoint with your LangSmith API endpoint and append `/api/v1/otel`. For example: `OTEL_EXPORTER_OTLP_ENDPOINT = "https://ai-company.com/api/v1/otel"`
+</Note>
+
+<Note>
+Strand's OTel tracing contains synchronous code. In this case, you may need to set `BG_JOB_ISOLATED_LOOPS=true` to execute background runs in an isolated event loop separate from the serving API event loop.
+</Note>
+
+In your main agent, set up the following:
+
+```python
+from strands.telemetry import StrandsTelemetry
+
+strands_telemetry = StrandsTelemetry()
+strands_telemetry.setup_otlp_exporter()
+strands_telemetry.setup_meter()
+```
+
+## 4. Prepare for deployment
+
+From here, to deploy to LangSmith, create a file structure like the following:
+
+```
+my-strands-agent/
+├── agent.py          # Your main agent code
+├── requirements.txt  # Python dependencies
+└── langgraph.json   # LangGraph configuration
+```
+
+To deploy your agent, follow the [Deploy to cloud](/langsmith/deploy-to-cloud) guide.
