@@ -96,15 +96,27 @@ async def dev_command(
 
     # Start mint dev in background
     logger.info("Starting mint dev...")
-    mint_process = await asyncio.create_subprocess_exec(
-        "mint",
-        "dev",
-        "--port",
-        "3000",
-        cwd=build_dir,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+
+    # Use shell on Windows for .CMD compatibility, keep exec on Unix
+    if sys.platform == "win32":
+        # Windows requires shell for .CMD files
+        mint_process = await asyncio.create_subprocess_shell(
+            "mint dev --port 3000",
+            cwd=build_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    else:
+        # Unix systems can use exec directly
+        mint_process = await asyncio.create_subprocess_exec(
+            "mint",
+            "dev",
+            "--port",
+            "3000",
+            cwd=build_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
     # Start log forwarding tasks
     stdout_task = asyncio.create_task(_forward_logs(mint_process.stdout, "mint-stdout"))

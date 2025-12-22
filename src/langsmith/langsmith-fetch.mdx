@@ -1,0 +1,219 @@
+---
+title: LangSmith Fetch
+sidebarTitle: Retrieve traces via CLI
+---
+
+LangSmith Fetch is a command-line interface (CLI) tool for retrieving trace data ([runs](/langsmith/observability-concepts#runs), [traces](/langsmith/observability-concepts#traces), and [threads](/langsmith/observability-concepts#threads)) from your LangSmith projects. It allows you to use LangSmith’s tracing and debugging features directly in your terminal and development workflows.
+
+You can use LangSmith Fetch for the following use cases:
+
+- Immediate debugging: Fetch the most recent trace of a failed or unexpected agent run with a single command.
+- Bulk export for analysis: Export large numbers of traces or entire conversation threads to JSON files for offline analysis, building [evaluation](/langsmith/evaluation-concepts) datasets, or [regression tests](/langsmith/evaluation-types#regression-tests).
+- Terminal-based workflows: Integrate trace data into your existing tools; for example, piping output to Unix utilities like jq, or feeding traces into an AI coding assistant for automated analysis.
+
+## Installation
+
+```bash
+pip install langsmith-fetch
+```
+
+## Setup
+
+Set your [LangSmith API key](/langsmith/create-account-api-key) and project name:
+
+```bash
+export LANGSMITH_API_KEY=lsv2_...
+export LANGSMITH_PROJECT=your-project-name
+```
+
+The CLI will automatically fetch traces or threads in `LANGSMITH_PROJECT`. Replace `your-project-name` with the name of your LangSmith project (if it doesn't exist, it will be created automatically on first use).
+
+<Note>
+`langsmith-fetch` only requires the `LANGSMITH_PROJECT` environment variable. It automatically looks up the project UUID and saves both to `~/.langsmith-cli/config.yaml`. You can also specify [a project by its UUID](#override-the-configured-tracing-project) via a CLI flag.
+</Note>
+
+### Use with a coding agent
+
+After you've installed and set up `langsmith-fetch`, use your coding agent to ask questions like the following:
+
+```
+Use langsmith-fetch to analyze the last 3 threads from my LangSmith project for potential improvements
+```
+
+Many agents will use the `langsmith-fetch --help` command to understand how to use the CLI and complete your request.
+
+## Find project and trace IDs
+
+In most cases, you won’t need to find IDs manually (the CLI uses your project name and latest traces by default). However, if you want to fetch a specific item by ID, you can find them in the [LangSmith UI](https://smith.langchain.com):
+
+- **Project UUID**: Each project has a unique ID (UUID). You can find it in the project's URL or by hovering over <Icon icon="link-simple"/> **ID** next to the project's name. This UUID can be used with the `--project-uuid` flag on CLI commands
+- **Trace ID**: Every trace (single execution) has an ID. In the **Runs** view, click on a specific run to see its Trace ID (copyable from the trace details panel). You can use `langsmith-fetch trace <trace-id>` to retrieve that exact trace if you have the ID.
+
+## Usage
+
+After installation and setup, you can use the `langsmith-fetch` command to retrieve traces or threads. The general usage is:
+
+```bash
+langsmith-fetch COMMAND [ARGUMENTS] [OPTIONS]
+```
+
+LangSmith Fetch provides the following commands to fetch either single items or in bulk:
+
+| Command               | Fetches                                    | Output location                                                                                                                                                      |
+| --------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trace <id>`          | A specific trace by ID                     | Prints to stdout (or to a file with `--file`)                                                                                                                        |
+| `thread <id>`         | A specific thread by ID                    | Prints to stdout (or to a file with `--file`)                                                                                                                        |
+| `traces [directory]`  | Recent traces from the project (multiple)  | Saves each trace as a JSON file in the given directory, or prints to stdout if no directory is provided. **Tip:** Using a directory is recommended for [bulk exports](#fetch-multiple). |
+| `threads [directory]` | Recent threads from the project (multiple) | Saves each thread as a JSON file in the given directory, or prints to stdout if no directory is provided.                                                            |
+
+<Note>
+Traces are fetched chronologically with most recent first.
+</Note>
+
+### Options
+
+The commands support additional flags to filter and format the output:
+
+| Option / Flag               | Applies to                       | Description                                                                                                                                                                   | Default                                 |
+| --------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `-n, --limit <int>`         | `traces`, `threads`              | Maximum number of traces/threads to fetch. Use this to limit how many items you retrieve (e.g., the last 5 traces).                                                            | **1** (if not specified)                |
+| `--last-n-minutes <int>`    | `traces`, `threads`              | Only fetch items from the last N minutes. This is useful to get recent data (e.g.,`--last-n-minutes 30` for the past half hour).                                              | *(no time filter)*                      |
+| `--since <timestamp>`       | `traces`, `threads`              | Only fetch items since a specific time. Provide an ISO 8601 timestamp (e.g.,`2025-12-01T00:00:00Z`) to get data after that time.                                              | *(no time filter)*                      |
+| `--project-uuid <uuid>`     | `trace, thread, traces, threads` | Manually specify the project by UUID (overrides the `LANGSMITH_PROJECT` env setting). Use this if you want to fetch from a different project without changing your env var.   | From env/config                         |
+| `--filename-pattern <text>` | `traces`, `threads`              | Pattern for output filenames when saving multiple files. You can use placeholders like `{trace_id}`, `{thread_id}`, `{index}`.                                                | `{trace_id}.json` or `{thread_id}.json` |
+| `--format <type>`           | **All commands**                 | Output format: `pretty`, `json`, or `raw`. (Refer to [Output formats](#output-formats) for details.)                                                                              | `pretty`                                |
+| `--file <path>`             | `trace`, `thread`                | Save the fetched trace/thread to a file instead of printing it.                                                                                                               | *(stdout)*                              |
+| `--include-metadata`        | `traces` (bulk fetch)            | Include run metadata in the output (such as tokens used, execution time, status, costs). This will add a `"metadata"` section to each trace’s JSON.                           | *Off by default*                        |
+| `--include-feedback`        | `traces` (bulk fetch)            | Include any feedback entries attached to the runs. Enabling this will make an extra API call for each trace to fetch feedback data.                                           | *Off by default*                        |
+| `--max-concurrent <int>`    | `traces`, `threads`              | Maximum concurrent fetch requests. Tune this if you are fetching a large number of items; increasing it may speed up retrieval but 5–10 is recommended to avoid API overload. | **5**                                   |
+| `--no-progress`             | `traces`, `threads`              | Disable the progress bar output. By default a progress indicator is shown when fetching multiple items; use this flag to hide it (useful for non-interactive scripts).        | Progress bar on                         |
+
+### Output formats
+
+The `--format` option controls how the fetched data is displayed:
+
+- `pretty` (default): A human-readable view with rich text formatting for easy inspection in the terminal. This format is great for quick debugging of a single trace or thread.
+
+    By default:
+
+    ```bash
+    langsmith-fetch trace <trace-id>
+    ```
+    Explicitly specify the format:
+
+    ```bash
+    langsmith-fetch trace <trace-id> --format pretty
+    ```
+
+- `json`: Well-formatted JSON output with syntax highlighting. Use this if you want to examine the raw data structure or pipe it into JSON processing tools.
+
+    ```bash
+    langsmith-fetch trace <trace-id> --format json
+    ```
+
+- `raw`: Compact JSON with no extra whitespace. This is useful for piping the output to other programs (e.g., using `jq` or saving directly) without extra formatting.
+
+    ```bash
+    langsmith-fetch trace <trace-id> --format raw | jq '.[] | select(.role=="user")'
+    ```
+
+### Fetch a trace or thread
+
+You can fetch a single thread or trace with the ID. The command will output to the terminal by default:
+
+```bash
+langsmith-fetch trace <trace-id>
+```
+```bash
+langsmith-fetch thread <thread-id>
+```
+
+![Output from a single trace fetch in default pretty format](/langsmith/images/langsmith-fetch-output-single.png)
+
+You can optionally redirect the thread or trace data to a file using the `--file` option.
+
+### Fetch multiple
+
+<Note>
+For bulk fetches of traces or threads, we recommend specifying a target directory path. Each fetched trace or thread will be saved as a separate JSON file in that folder, making it easy to browse or process them later.
+</Note>
+
+You can specify a destination directory for the bulk commands (`traces`/`threads`). For example, the following command will save the 10 most recent traces as JSON files in the `my-traces-data` directory:
+
+```bash
+langsmith-fetch traces ./my-traces-data --limit 10
+```
+```bash
+langsmith-fetch threads ./my-thread-data --limit 10
+```
+
+If you omit the directory and `--limit`, the tool will output the results of the most recent, single trace to your terminal.
+
+When sending to a directory, files will be named in the following way:
+
+- Default: Files named by trace ID (e.g., `3b0b15fe-1e3a-4aef-afa8-48df15879cfe.json`).
+- Custom pattern: Use `--filename-pattern` with placeholders:
+  - `{trace_id}`: Trace ID (default: `{trace_id}.json`).
+  - `{index}` or `{idx}`: Sequential number starting from 1.
+  - Format specs supported: `{index:03d}` for zero-padded numbers.
+
+### Include metadata and feedback
+
+You can include [run metadata](/langsmith/observability-concepts#metadata) and any [feedback](/langsmith/observability-concepts#feedback) associated with the trace:
+
+```bash
+langsmith-fetch traces --limit 1 --include-metadata --include-feedback
+```
+```
+RUN METADATA
+============================================================
+Status: success
+Start Time: 2025-12-12T18:05:47.558274
+End Time: 2025-12-12T18:05:48.811072
+Duration: 1252ms
+
+Token Usage:
+  Prompt: 15
+  Completion: 88
+  Total: 103
+
+Costs:
+  Total: $0.00014
+  Prompt: $0.00001
+  Completion: $0.00013
+
+Custom Metadata:
+  LANGSMITH_PROJECT: weather-demo
+  LANGSMITH_TRACING: true
+  ls_run_depth: 0
+
+Feedback Stats:
+  correctness: {'n': 1, 'avg': 1.0, 'stdev': 0.0, 'errors': 0, 'show_feedback_arrow': False, 'comments': [''], 'sources':
+['{"type":"app","metadata":null,"user_id":"d5ee8d42-a274-4f32-9c35-b765287fe5ec","ls_user_id":"ac375f5f-0da0-44c1-82a2-0ecfd6ecac27"}'],
+'session_min_score': 1.0, 'session_max_score': 1.0, 'values': {}, 'contains_thread_feedback': False}
+  note: {'n': 0, 'avg': None, 'stdev': None, 'errors': 0, 'show_feedback_arrow': False, 'comments': ['The answer should be more specific on rainfall
+totals.'], 'sources':
+['{"type":"app","metadata":null,"user_id":"d5ee8d42-a274-4f32-9c35-b765287fe5ec","ls_user_id":"ac375f5f-0da0-44c1-82a2-0ecfd6ecac27"}'],
+'session_min_score': None, 'session_max_score': None, 'values': {}, 'contains_thread_feedback': False}
+...
+```
+
+### Override the configured tracing project
+
+To fetch traces from a different project than the one configured with `LANGSMITH_PROJECT`, use the `--project-uuid` option:
+
+```bash
+langsmith-fetch traces --project-uuid <project-id> --limit 3
+```
+
+Running this command will just fetch traces from that project, it will not modify the LangSmith project already configured in `~/.langsmith-cli/config.yaml`.
+
+### Export to files
+
+You can fetch traces or full threads and export to a file:
+
+```bash
+langsmith-fetch threads ./my_threads --since 2025-12-01T00:00:00Z
+```
+
+This command retrieves all threads that have occurred since December 1, 2025, saving each conversation as a JSON file under `./my_threads`. This is useful for exporting chat transcripts or building regression tests on multi-turn conversations. You could also use `--limit` with threads to fetch a specific number of recent threads, and `--last-n-minutes` works here as well.

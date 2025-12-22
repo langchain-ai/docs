@@ -204,6 +204,8 @@ LINK_MAPS: list[LinkMap] = [
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
             # LangGraph
+            "RemoteGraph": "langsmith/deployment/remote_graph/",
+            "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
             "get_stream_writer": "langgraph/config/#langgraph.config.get_stream_writer",
             "StateGraph": "langgraph/graphs/#langgraph.graph.state.StateGraph",
             "StateGraph.compile": "langgraph/graphs/#langgraph.graph.state.StateGraph.compile",
