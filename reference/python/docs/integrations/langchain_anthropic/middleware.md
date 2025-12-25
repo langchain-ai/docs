@@ -4,7 +4,7 @@ title: Anthropic Middleware
 
 # :simple-claude:{ .lg .middle } Anthropic Middleware
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
 
     This page contains **reference documentation** for Anthropic Middleware. See [the docs](https://docs.langchain.com/oss/python/langchain/middleware/built-in#anthropic) for conceptual guides, tutorials, and examples on using Anthropic Middleware.
 

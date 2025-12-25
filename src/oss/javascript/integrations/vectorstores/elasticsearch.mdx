@@ -53,7 +53,7 @@ If you are using OpenAI embeddings for this guide, you'll need to set your OpenA
 process.env.OPENAI_API_KEY = "YOUR_API_KEY";
 ```
 
-If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+If you want to get automated tracing of your model calls you can also set your [LangSmith](https://docs.langchain.com/langsmith/home) API key by uncommenting below:
 
 ```typescript
 // process.env.LANGSMITH_TRACING="true"
@@ -108,6 +108,43 @@ const clientArgs: ElasticClientArgs = {
 const vectorStore = new ElasticVectorSearch(embeddings, clientArgs);
 ```
 
+## Hybrid search
+
+<Tip>
+Hybrid search requires Elasticsearch 8.9+ for RRF (Reciprocal Rank Fusion) support.
+</Tip>
+
+Hybrid search combines kNN vector search with BM25 full-text search using Reciprocal Rank Fusion (RRF) to improve search relevance. This is useful when you want to leverage both semantic similarity and keyword matching.
+
+To enable hybrid search, pass a `HybridRetrievalStrategy` to the constructor:
+
+```typescript
+import {
+  ElasticVectorSearch,
+  HybridRetrievalStrategy,
+  type ElasticClientArgs,
+} from "@langchain/community/vectorstores/elasticsearch";
+
+const hybridVectorStore = new ElasticVectorSearch(embeddings, {
+  client: new Client(config),
+  indexName: "test_hybrid_search",
+  strategy: new HybridRetrievalStrategy({
+    rankWindowSize: 100,  // Number of documents to consider for RRF
+    rankConstant: 60,     // RRF constant for score normalization
+    textField: "text",    // Field to use for BM25 full-text search
+  }),
+});
+```
+
+Once configured, hybrid search is automatically used for all similarity searches:
+
+```typescript
+// This now uses hybrid search (vector + BM25 + RRF)
+const results = await hybridVectorStore.similaritySearch(
+  "how to prevent muscle soreness while running",
+  5
+);
+```
 ## Manage vector store
 
 ### Add items to vector store
@@ -140,7 +177,7 @@ const documents = [document1, document2, document3, document4];
 await vectorStore.addDocuments(documents, { ids: ["1", "2", "3", "4"] });
 ```
 
-```output
+```python
 [ '1', '2', '3', '4' ]
 ```
 
@@ -174,7 +211,7 @@ for (const doc of similaritySearchResults) {
 }
 ```
 
-```output
+```text
 * The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
 * Mitochondria are made out of lipids [{"source":"https://example.com"}]
 ```
@@ -191,7 +228,7 @@ for (const [doc, score] of similaritySearchWithScoreResults) {
 }
 ```
 
-```output
+```text
 * [SIM=0.374] The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
 * [SIM=0.370] Mitochondria are made out of lipids [{"source":"https://example.com"}]
 ```
@@ -209,7 +246,7 @@ const retriever = vectorStore.asRetriever({
 await retriever.invoke("biology");
 ```
 
-```output
+```javascript
 [
   Document {
     pageContent: 'The powerhouse of the cell is the mitochondria',

@@ -4,7 +4,7 @@ title: OpenAI Middleware
 
 # :fontawesome-brands-openai:{ .lg .middle } OpenAI Middleware
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
 
     This page contains **reference documentation** for OpenAI Middleware. See [the docs](https://docs.langchain.com/oss/python/langchain/middleware/built-in#openai) for conceptual guides, tutorials, and examples on using OpenAI Middleware.
 

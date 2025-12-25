@@ -1,0 +1,358 @@
+---
+title: ChatAmazonNova
+description: Get started using Amazon Nova [chat models](/oss/langchain/models) in LangChain.
+---
+
+This guide provides a quick overview for getting started with Amazon Nova chat models. Amazon Nova models are OpenAI-compatible and accessed via the OpenAI SDK pointed at Nova's endpoint, providing seamless integration with LangChain's standard interfaces.
+
+You can find information about Amazon Nova's models, their features, and API details in the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all @[`ChatAmazonNova`] features and configuration options, head to the @[`ChatAmazonNova`] API reference.
+
+    For Amazon Nova model details and capabilities, see the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | <Tooltip tip="Can run on local hardware" cta="Learn more" href="/oss/langchain/models#local-models">Local</Tooltip> | Serializable | JS/TS Support | Downloads | Latest Version |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| @[`ChatAmazonNova`] | @[`langchain-amazon-nova`] | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-amazon-nova?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-amazon-nova?style=flat-square&label=%20) |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | JSON mode | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ❌ | ❌ | Model-dependent | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+
+## Setup
+
+To access Amazon Nova models, you'll need to obtain API credentials and install the @[`langchain-amazon-nova`] integration package.
+
+### Installation
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-amazon-nova
+    ```
+    ```bash uv
+    uv add langchain-amazon-nova
+    ```
+</CodeGroup>
+
+### Credentials
+
+Set your Nova API credentials as environment variables:
+
+```python
+import getpass
+import os
+
+if "NOVA_API_KEY" not in os.environ:
+    os.environ["NOVA_API_KEY"] = getpass.getpass("Enter your Nova API key: ")
+
+if "NOVA_BASE_URL" not in os.environ:
+    os.environ["NOVA_BASE_URL"] = getpass.getpass("Enter your Nova base URL: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.langchain.com/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```python
+from langchain_amazon_nova import ChatAmazonNova
+
+model = ChatAmazonNova(
+    model="nova-2-lite-v1",
+    temperature=0.7,
+    max_tokens=2048,
+    timeout=None,
+    max_retries=2,
+    # other params...
+)
+```
+
+<Info>
+    For a complete list of supported parameters and their descriptions, see the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+</Info>
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = model.invoke(messages)
+ai_msg
+```
+
+```text
+AIMessage(content="J'adore la programmation.", response_metadata={'model': 'nova-2-lite-v1', 'finish_reason': 'stop'}, id='run-12345678-1234-1234-1234-123456789abc', usage_metadata={'input_tokens': 29, 'output_tokens': 8, 'total_tokens': 37})
+```
+
+```python
+print(ai_msg.content)
+```
+
+```text
+J'adore la programmation.
+```
+
+## Content blocks
+
+Amazon Nova messages can contain either a single string or a list of content blocks. You can access standardized content blocks using the `content_blocks` property:
+
+```python
+ai_msg.content_blocks
+```
+
+Using `content_blocks` will render the content in a standard format that is consistent across other model providers. Read more about [content blocks](/oss/langchain/messages#standard-content-blocks).
+
+## Streaming
+
+Amazon Nova supports token-level streaming for real-time response generation:
+
+```python
+for chunk in model.stream(messages):
+    print(chunk.content, end="", flush=True)
+```
+
+```text
+J'adore la programmation.
+```
+
+### Async streaming
+
+For async applications, use `astream`:
+
+```python
+import asyncio
+
+async def main():
+    async for chunk in model.astream(messages):
+        print(chunk.content, end="", flush=True)
+
+asyncio.run(main())
+```
+
+## Tool calling
+
+Amazon Nova supports tool calling (function calling) on compatible models. You can check if a model supports tool calling using LangChain model profiles.
+
+<Info>
+    For details on Nova's tool calling implementation and available parameters, see the [tool calling documentation](https://nova.amazon.com/dev/documentation).
+</Info>
+
+### Basic tool usage
+
+Bind tools to the model using Pydantic models or LangChain @[`@tool`]:
+
+```python
+from pydantic import BaseModel, Field
+
+class GetWeather(BaseModel):
+    """Get the weather for a location."""
+
+    location: str = Field(..., description="City name")
+
+model_with_tools = model.bind_tools([GetWeather])
+response = model_with_tools.invoke("What's the weather in Paris?")
+print(response.tool_calls)
+```
+
+```text
+[{'name': 'GetWeather', 'args': {'location': 'Paris'}, 'id': 'call_abc123', 'type': 'tool_call'}]
+```
+
+You can also access tool calls specifically in a standard format using the `tool_calls` attribute:
+
+```python
+response.tool_calls
+```
+
+```text
+[{'name': 'GetWeather',
+  'args': {'location': 'Paris'},
+  'id': 'call_abc123',
+  'type': 'tool_call'}]
+```
+
+### Using LangChain tools
+
+You can also use standard LangChain tools:
+
+```python
+from langchain.tools import tool
+
+@tool
+def get_weather(location: str) -> str:
+    """Get the weather for a location."""
+    return f"Weather in {location}: Sunny, 72°F"
+
+model_with_tools = model.bind_tools([get_weather])
+response = model_with_tools.invoke("What's the weather in San Francisco?")
+```
+
+### Strict tool binding
+
+By default, @[`BaseChatModel.bind_tools`] validates that the model supports tool calling. To disable this validation:
+
+```python
+model_with_tools = model.bind_tools([GetWeather], strict=False)
+```
+
+## System tools
+
+Amazon Nova provides built-in system tools that can be enabled by passing them to the model initialization. See the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation) for available system tools and their capabilities.
+
+```python
+from langchain_amazon_nova import ChatAmazonNova
+
+model = ChatAmazonNova(
+    model="nova-2-lite-v1",
+    system_tools=["nova_grounding", "nova_code_interpreter"],
+)
+```
+
+<Info>
+    **System tools**
+
+    System tools like `nova_grounding` and `nova_code_interpreter` provide built-in capabilities. For details on available system tools and their usage, see the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+</Info>
+
+## Model Profile
+
+Amazon Nova provides different models with varying capabilities. It includes support for LangChain [model profiles](/oss/langchain/models#model-profiles).
+
+<Info>
+    **Model capabilities vary by model**
+
+    Some Amazon Nova models support vision inputs while others do not. Always check model capabilities before using multimodal features.
+
+    For a complete list of available models and their capabilities, see the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+</Info>
+
+## Async operations
+
+For production applications requiring high throughput, use native async operations:
+
+```python
+import asyncio
+
+async def main():
+    messages = [
+        ("system", "You are a helpful assistant."),
+        ("human", "What is the capital of France?"),
+    ]
+    response = await model.ainvoke(messages)
+    print(response.content)
+
+asyncio.run(main())
+```
+
+```text
+The capital of France is Paris.
+```
+
+## Chaining
+
+Amazon Nova models work seamlessly with LangChain's LCEL (LangChain Expression Language) for building chains:
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant that translates {input_language} to {output_language}."),
+    ("human", "{text}"),
+])
+
+chain = prompt | model | StrOutputParser()
+
+result = chain.invoke({
+    "input_language": "English",
+    "output_language": "Spanish",
+    "text": "Hello, how are you?"
+})
+print(result)
+```
+
+```text
+Hola, ¿cómo estás?
+```
+
+## Error handling
+
+The model includes built-in retry logic with configurable parameters:
+
+```python
+model = ChatAmazonNova(
+    model="nova-2-lite-v1",
+    max_retries=3,  # Number of retries on failure
+    timeout=60.0,   # Request timeout in seconds
+)
+```
+
+For additional control over retries, use the `with_retry` method:
+
+```python
+model_with_custom_retry = model.with_retry(
+    stop_after_attempt=5,
+    wait_exponential_jitter=True,
+)
+```
+
+## Troubleshooting
+
+### Connection issues
+
+If you encounter connection errors, verify your environment variables are set correctly:
+
+```python
+import os
+print(f"API Key set: {'NOVA_API_KEY' in os.environ}")
+print(f"Base URL: {os.environ.get('NOVA_BASE_URL', 'Not set')}")
+```
+
+For authentication and connection issues, refer to the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+
+### Compression errors
+
+<Note>
+    The @[`ChatAmazonNova`] client automatically disables compression to avoid potential decompression issues.
+</Note>
+
+If you need to customize HTTP client behavior, you can access the underlying OpenAI client:
+
+```python
+# The client is automatically configured with no compression
+model = ChatAmazonNova(model="nova-2-lite-v1")
+# model.client is the configured OpenAI client
+```
+
+### Tool calling validation errors
+
+If you receive a validation error when binding tools, ensure the model supports tool calling.
+
+---
+
+## API reference
+
+For detailed documentation of all @[`ChatAmazonNova`] features and configurations, head to the @[`ChatAmazonNova`] API reference.
+
+For Amazon Nova-specific features, model details, and API specifications, see the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).

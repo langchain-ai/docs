@@ -131,3 +131,65 @@ The langchain endpoints map to the following static IP addresses:
 | 34.107.251.234 | 34.13.73.122   |
 
 You may need to allowlist these to enable traffic from your private network to LangSmith SaaS endpoints (`api.smith.langchain.com`, `smith.langchain.com`, `beacon.langchain.com`, `eu.api.smith.langchain.com`, `eu.smith.langchain.com`, `eu.beacon.langchain.com`).
+
+### API rate limits
+
+LangSmith enforces rate limits on API endpoints to ensure service stability and fair usage. The following table shows the rate limits for different endpoints in both US and EU regions. Note that:
+
+- Rate limits are expressed as `count / interval` where count is the number of requests allowed within the interval (in seconds). For example, `2000 / 10` means 2000 requests per 10 seconds.
+- When no HTTP method is specified in the endpoint column, the rate limit applies to all HTTP methods for that endpoint.
+- When a specific method is listed (e.g., `POST`, `GET`), the rate limit applies only to that method.
+
+| Match / Endpoint (method) | Identity key | US prod limit | EU prod limit | Category |
+| --- | --- | --- | --- | --- |
+| OPTIONS, `/info`, `*/v1/metadata/submit` | IP | 2000 / 10 | 2000 / 10 | [High throughput](#rate-limit-categories) |
+| `/auth` | `x-api-key` | 2000 / 10 | 2000 / 10 | [High throughput](#rate-limit-categories) |
+| `/auth` | `x-user-id` + IP | 2000 / 10 | 2000 / 10 | [High throughput](#rate-limit-categories) |
+| `/v1/beacon` | IP | 2000 / 10 | 2000 / 10 | [High throughput](#rate-limit-categories) |
+| `/repos` | `x-api-key` | 100 / 60 | 100 / 60 | [Repository](#rate-limit-categories) |
+| `/repos` | `x-user-id` + IP | 100 / 60 | 100 / 60 | [Repository](#rate-limit-categories) |
+| `POST /runs/batch` | `x-api-key` | 2000 / 10 | 2000 / 10 | [High throughput](#rate-limit-categories) |
+| `POST /otel/v1/traces` | `x-api-key` | 2000 / 10 | 2000 / 10 | [Run ingest](#rate-limit-categories) |
+| `POST` containing `/charts` | `x-api-key` | 750 / 600 | 750 / 600 | [Charts](#rate-limit-categories) |
+| `POST` containing `/charts` | `x-user-id` + IP | 750 / 600 | 750 / 600 | [Charts](#rate-limit-categories) |
+| `POST /runs/multipart` | `x-api-key` | 6000 / 10 | 6000 / 10 | [Multipart ingest](#rate-limit-categories) |
+| `POST /runs/query` | `x-api-key` | 15 / 10 | 15 / 10 | [Run query (API)](#rate-limit-categories) |
+| `POST /runs/query` | `x-user-id` + IP | 300 / 10 | 300 / 10 | [Run query (User)](#rate-limit-categories) |
+| `/generate` | `x-api-key` | 30 / 3600 | 30 / 3600 | [Generation](#rate-limit-categories) |
+| `/generate` | `x-user-id` + IP | 30 / 3600 | 30 / 3600 | [Generation](#rate-limit-categories) |
+| `/commits` | `x-api-key` | 10000 / 60 | 2000 / 60 | [Commits](#rate-limit-categories) |
+| `/commits` | `x-user-id` + IP | 10000 / 60 | 2000 / 60 | [Commits](#rate-limit-categories) |
+| `DELETE /sessions` or `*/trigger` | `x-api-key` | 10 / 60 | 10 / 60 | [Deletion](#rate-limit-categories) |
+| `DELETE /sessions` or `*/trigger` | `x-user-id` + IP | 30 / 60 | 30 / 60 | [Deletion](#rate-limit-categories) |
+| `POST /runs` (single run ingest) | `x-api-key` | 2000 / 10 | 2000 / 10 | [Run ingest](#rate-limit-categories) |
+| `PATCH` containing `/runs` | `x-api-key` | 2000 / 10 | 2000 / 10 | [Run ingest](#rate-limit-categories) |
+| `POST /feedback` | `x-api-key` | 2000 / 10 | 2000 / 10 | [High throughput](#rate-limit-categories) |
+| `GET /runs/{uuid}` or `/api/v1/runs/{uuid}` | `x-api-key` | 30 / 60 | 30 / 60 | [Run lookup](#rate-limit-categories) |
+| `GET` containing `/examples` | `x-api-key` | 5000 / 60 | 5000 / 60 | [Examples](#rate-limit-categories) |
+| Any request with `x-api-key` | `x-api-key` | 1000 / 10 | 1000 / 10 | [Default (API key)](#rate-limit-categories) |
+| Any request with `x-user-id` | `x-user-id` + IP | 1000 / 10 | 1000 / 10 | [Default (User)](#rate-limit-categories) |
+| `/public/download` | IP | 5000 / 60 | 5000 / 60 | [Public download](#rate-limit-categories) |
+| `/runs/stats` | `x-api-key` | 1 / 10 | 20 / 10 | [Stats](#rate-limit-categories) |
+| All other IPs (catch-all) | IP | 100 / 60 | 100 / 60 | [Public (catch-all)](#rate-limit-categories) |
+
+#### Rate limit categories
+
+- **High throughput**: General high-volume endpoints for core operations like authentication, metadata, and feedback.
+- **Repository**: Repository and prompt management operations.
+- **Run ingest**: Individual trace/run ingestion endpoints for observability.
+- **Charts**: Chart generation and visualization endpoints.
+- **Multipart ingest**: Bulk run ingestion via multipart upload for high-volume tracing.
+- **Run query (API)**: API key-based run query operations with stricter limits for complex queries.
+- **Run query (User)**: User-based run query operations with higher limits for interactive use.
+- **Generation**: AI-powered code and content generation endpoints (limited to prevent abuse).
+- **Commits**: Prompt versioning and commit operations.
+- **Deletion**: Session deletion and workflow trigger operations.
+- **Run lookup**: Retrieving specific runs by UUID.
+- **Examples**: Fetching dataset examples for few-shot prompting.
+- **Default (API key)**: Fallback rate limit for authenticated API requests not matching specific patterns.
+- **Default (User)**: Fallback rate limit for authenticated user requests not matching specific patterns.
+- **Public download**: High-volume public download endpoints for shared resources.
+- **Stats**: Run statistics and analytics endpoints (region-specific limits apply).
+- **Public (catch-all)**: Default rate limit for unauthenticated public access.
+
+For more information on rate limits and other service limits, refer to the [Administration overview](/langsmith/administration-overview#rate-limits).

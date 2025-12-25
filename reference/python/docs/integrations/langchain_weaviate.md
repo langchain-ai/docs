@@ -8,7 +8,7 @@ title: Weaviate
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-weaviate)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-weaviate)](https://pypistats.org/packages/langchain-weaviate)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for Weaviate. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/weaviate) for conceptual guides, tutorials, and examples on using Weaviate modules.
 
 ::: langchain_weaviate

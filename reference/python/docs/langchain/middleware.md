@@ -1,4 +1,4 @@
-!!! warning "Reference docs"
+!!! note "Reference docs"
 
     This page contains **reference documentation** for Middleware. See [the docs](https://docs.langchain.com/oss/python/langchain/middleware) for conceptual guides, tutorials, and examples on using Middleware.
 
@@ -58,7 +58,6 @@ Core types for building middleware:
 | [`ContextFraction`](#langchain.agents.middleware.summarization.ContextFraction) | Summarize at fraction of total context |
 | [`ContextTokens`](#langchain.agents.middleware.summarization.ContextTokens) | Summarize at token threshold |
 | [`ContextMessages`](#langchain.agents.middleware.summarization.ContextMessages) | Summarize at message threshold |
-
 
 <!-- TODO: `ignore_init_summary` doesn't seem to work.  -->
 

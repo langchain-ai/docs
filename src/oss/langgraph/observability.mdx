@@ -2,9 +2,6 @@
 title: LangSmith Observability
 ---
 
-import observability from '/snippets/oss/observability.mdx';
-
-
 Traces are a series of steps that your application takes to go from input to output. Each of these individual steps is represented by a run. You can use [LangSmith](https://smith.langchain.com/) to visualize these execution steps. To use it, [enable tracing for your application](/langsmith/trace-with-langgraph). This enables you to do the following:
 
 * [Debug a locally running application](/langsmith/observability-studio#debug-langsmith-traces).
@@ -31,7 +28,148 @@ By default, the trace will be logged to the project with the name `default`. To 
 
 For more information, see [Trace with LangGraph](/langsmith/trace-with-langgraph).
 
-<observability />
+## Trace selectively
+
+You may opt to trace specific invocations or parts of your application using LangSmith's `tracing_context` context manager:
+
+:::python
+```python
+import langsmith as ls
+
+# This WILL be traced
+with ls.tracing_context(enabled=True):
+    agent.invoke({"messages": [{"role": "user", "content": "Send a test email to alice@example.com"}]})
+
+# This will NOT be traced (if LANGSMITH_TRACING is not set)
+agent.invoke({"messages": [{"role": "user", "content": "Send another email"}]})
+```
+:::
+
+:::js
+```ts
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+
+// This WILL be traced
+const tracer = new LangChainTracer();
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send a test email to alice@example.com"}]
+  },
+  { callbacks: [tracer] }
+);
+
+// This will NOT be traced (if LANGSMITH_TRACING is not set)
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send another email"}]
+  }
+);
+```
+:::
+
+## Log to a project
+
+<Accordion title="Statically">
+
+You can set a custom project name for your entire application by setting the `LANGSMITH_PROJECT` environment variable:
+
+```bash
+export LANGSMITH_PROJECT=my-agent-project
+```
+</Accordion>
+
+<Accordion title="Dynamically">
+
+You can set the project name programmatically for specific operations:
+
+:::python
+```python
+import langsmith as ls
+
+with ls.tracing_context(project_name="email-agent-test", enabled=True):
+    response = agent.invoke({
+        "messages": [{"role": "user", "content": "Send a welcome email"}]
+    })
+```
+:::
+
+:::js
+```ts
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+
+const tracer = new LangChainTracer({ projectName: "email-agent-test" });
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send a test email to alice@example.com"}]
+  },
+  { callbacks: [tracer] }
+);
+```
+:::
+</Accordion>
+
+## Add metadata to traces
+
+You can annotate your traces with custom metadata and tags:
+
+:::python
+```python
+response = agent.invoke(
+    {"messages": [{"role": "user", "content": "Send a welcome email"}]},
+    config={
+        "tags": ["production", "email-assistant", "v1.0"],
+        "metadata": {
+            "user_id": "user_123",
+            "session_id": "session_456",
+            "environment": "production"
+        }
+    }
+)
+```
+
+`tracing_context` also accepts tags and metadata for fine-grained control:
+
+```python
+with ls.tracing_context(
+    project_name="email-agent-test",
+    enabled=True,
+    tags=["production", "email-assistant", "v1.0"],
+    metadata={"user_id": "user_123", "session_id": "session_456", "environment": "production"}):
+    response = agent.invoke(
+        {"messages": [{"role": "user", "content": "Send a welcome email"}]}
+    )
+```
+:::
+
+:::js
+```ts
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+
+const tracer = new LangChainTracer({ projectName: "email-agent-test" });
+await agent.invoke(
+  {
+    messages: [{role: "user", content: "Send a test email to alice@example.com"}]
+  },
+  config: {
+    tags: ["production", "email-assistant", "v1.0"],
+    metadata: {
+      userId: "user123",
+      sessionId: "session456",
+      environment: "production"
+    }
+  },
+);
+
+```
+:::
+
+This custom metadata and tags will be attached to the trace in LangSmith.
+
+
+<Tip>
+To learn more about how to use traces to debug, evaluate, and monitor your agents, see the [LangSmith documentation](/langsmith/home).
+</Tip>
+
 
 ## Use anonymizers to prevent logging of sensitive data in traces
 

@@ -1,0 +1,80 @@
+---
+title: Anthropic middleware
+---
+
+Middleware specifically designed for Anthropic's Claude models. Learn more about [middleware](/oss/langchain/middleware/overview).
+
+| Middleware | Description |
+|------------|-------------|
+| [Prompt caching](#prompt-caching) | Reduce costs by caching repetitive prompt prefixes |
+
+## Prompt caching
+
+Reduce costs and latency by caching static or repetitive prompt content (like system prompts, tool definitions, and conversation history) on Anthropic's servers. This middleware implements a **conversational caching strategy** that places cache breakpoints after the most recent message, allowing the entire conversation history (including the latest user message) to be cached and reused in subsequent API calls.
+
+Prompt caching is useful for the following:
+
+- Applications with long, static system prompts that don't change between requests
+- Agents with many tool definitions that remain constant across invocations
+- Conversations where early message history is reused across multiple turns
+- High-volume deployments where reducing API costs and latency is critical
+
+<Info>
+    Learn more about [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#cache-limitations) strategies and limitations.
+</Info>
+
+```typescript
+import { createAgent, anthropicPromptCachingMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  prompt: "<Your long system prompt here>",
+  middleware: [anthropicPromptCachingMiddleware({ ttl: "5m" })],
+});
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="ttl" type="string" default="5m">
+    Time to live for cached content. Valid values: `'5m'` or `'1h'`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware caches content up to and including the latest message in each request. On subsequent requests within the TTL window (5 minutes or 1 hour), previously seen content is retrieved from cache rather than reprocessed, significantly reducing costs and latency.
+
+**How it works:**
+1. First request: System prompt, tools, and the user message *"Hi, my name is Bob"* are sent to the API and cached
+2. Second request: The cached content (system prompt, tools, and first message) is retrieved from cache. Only the new message *"What's my name?"* needs to be processed, plus the model's response from the first request
+3. This pattern continues for each turn, with each request reusing the cached conversation history
+
+```typescript
+import { createAgent, HumanMessage, anthropicPromptCachingMiddleware } from "langchain";
+
+const LONG_PROMPT = `
+Please be a helpful assistant.
+
+<Lots more context ...>
+`;
+
+const agent = createAgent({
+  model: "claude-sonnet-4-5-20250929",
+  prompt: LONG_PROMPT,
+  middleware: [anthropicPromptCachingMiddleware({ ttl: "5m" })],
+});
+
+// First invocation: Creates cache with system prompt, tools, and "Hi, my name is Bob"
+await agent.invoke({
+  messages: [new HumanMessage("Hi, my name is Bob")]
+});
+
+// Second invocation: Reuses cached system prompt, tools, and previous messages
+// Only processes the new message "What's my name?" and the previous AI response
+const result = await agent.invoke({
+  messages: [new HumanMessage("What's my name?")]
+});
+```
+
+</Accordion>
