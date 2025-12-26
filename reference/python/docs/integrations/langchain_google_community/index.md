@@ -8,7 +8,7 @@ title: Google (Community)
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-google-community)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-google-community)](https://pypistats.org/packages/langchain-google-community)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for Google Community. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/google) for conceptual guides, tutorials, and examples on using Google Community modules.
 
 ::: langchain_google_community

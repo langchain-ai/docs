@@ -168,6 +168,21 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
 
 If you only need to work on specific packages, you can comment out the others in `pyproject.dev.toml`.
 
+### Build a subset of the whole reference site
+
+For faster development and testing of specific sections, use the `serve_subset.py` script to serve only a subset of the documentation:
+
+```bash
+# Serve only the LangGraph documentation
+python serve_subset.py langgraph
+
+# Use a custom port
+python serve_subset.py langgraph --port 8080
+
+# Build without dirty reload (clean build)
+python serve_subset.py langgraph --clean
+```
+
 ---
 
 ## MkDocs/mkdocstrings Python Cross-Reference Linking Syntax
@@ -544,6 +559,14 @@ title: Chat models (Classic)
 
 # Chat models (Classic)
 ```
+
+---
+
+## Icons
+
+Icons from Material for MkDocs are available for use in documentation with integrated search. This includes thousands of icons from popular icon sets like Material Design Icons, FontAwesome, Octicons, and more.
+
+See the [Material for MkDocs Icons Reference](https://squidfunk.github.io/mkdocs-material/reference/icons-emojis/) for the complete icon catalog and usage instructions.
 
 ---
 

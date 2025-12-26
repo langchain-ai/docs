@@ -8,5 +8,4 @@ title: Nvidia AI Endpoints
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-nvidia-ai-endpoints)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-nvidia-ai-endpoints)](https://pypistats.org/packages/langchain-nvidia-ai-endpoints)
 
-!!! note
-    This package ref has not yet been fully migrated to v1.
+::: langchain_nvidia_ai_endpoints

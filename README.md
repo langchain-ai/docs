@@ -7,12 +7,6 @@
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
 
-> [!IMPORTANT]
->
-> The LangSmith API and [SDK](https://github.com/langchain-ai/langsmith-sdk) references are not yet fully consolidated to this repo. Visit their documentation:
-> * [`HTTP API Reference`](https://api.smith.langchain.com/redoc)
-> * [`JavaScript/TypeScript SDK reference`](https://docs.smith.langchain.com/reference/js)
-
 ---
 
 **Table of contents:**
@@ -35,7 +29,9 @@
 
 ## Contribute
 
-To contribute to LangChain documentation, follow the steps outlined in the [contributing guide](/oss/contributing/documentation). The contributing guide also explains our documentation types and their writing and quality standards.
+To contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
+
+For detailed information about setting up your development environment and contributing to documentation, see the [documentation contributing guide](https://docs.langchain.com/oss/python/contributing/documentation).
 
 > [!IMPORTANT]
 > For contributing to reference docs, see the `README.md` file in the `/reference/python` and `/reference/javascript` directories.
@@ -59,7 +55,7 @@ pyproject.toml            # Dependencies
 
 # --- reference.langchain.com -----------------------------------------
 reference/                # Reference docs build pipelines
-    dist/                 # Build docs (DO NOT EDIT)
+    dist/                 # Built docs (DO NOT EDIT)
     javascript/           # JS/TS reference build pipeline
     python/               # Python reference build pipeline and source
     package.json          # Vercel commands and dependencies
