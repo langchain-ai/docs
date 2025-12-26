@@ -8,7 +8,7 @@ title: Prompty
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-prompty)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-prompty)](https://pypistats.org/packages/langchain-prompty)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for Microsoft Prompty. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/microsoft) for conceptual guides, tutorials, and examples on using Prompty modules.
 
 ::: langchain_prompty

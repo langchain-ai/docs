@@ -13,7 +13,7 @@ title: Tavily
 
     For issues, please open an issue in the [langchain-tavily repo](https://github.com/tavily-ai/langchain-tavily/issues).
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for Tavily. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/tavily) for conceptual guides, tutorials, and examples on using Tavily modules.
 
 ::: langchain_tavily

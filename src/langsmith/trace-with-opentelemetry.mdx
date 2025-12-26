@@ -412,7 +412,7 @@ For exception events:
 
 ### Trace using the LangSmith SDK
 
-Use the LangSmith SDK's OpenTelemetry helper to configure export:
+Use the LangSmith SDK's OpenTelemetry helper to configure export. The following example [traces a Google ADK agent](/langsmith/trace-with-google-adk):
 
 ```python
 import asyncio
@@ -454,7 +454,137 @@ if __name__ == "__main__":
 You do not need to set OTEL environment variables or exporters. `configure()` wires them for LangSmith automatically; instrumentors (like `GoogleADKInstrumentor`) create the spans.
 </Note>
 
-5. View the trace in your LangSmith dashboard ([example](https://smith.langchain.com/public/106f5bed-edca-4357-91a5-80089252c9ed/r)).
+Here is an [example](https://smith.langchain.com/public/d6d47eeb-511e-4fda-ad17-2caa7bd7150b/r) of what the resulting trace looks like in LangSmith.
+
+### Add an attachment to a trace
+
+LangSmith supports [attaching files to traces](/langsmith/upload-files-with-traces). This is useful when building an agent with multimodal inputs or outputs. Attachments are also supported when tracing with OpenTelemetry.
+
+The example below [traces a Google ADK agent](/langsmith/trace-with-google-adk) and adds an attachment to the trace. It uses a combination of LangSmith's `OtelSpanProcessor` and a custom `AttachmentSpanProcessor` that uses [`on_end()`](https://opentelemetry-python.readthedocs.io/en/latest/sdk/trace.export.html#opentelemetry.sdk.trace.export.SimpleSpanProcessor.on_end) to add an image attachment to the parent span.
+
+
+```python
+import asyncio
+import base64
+import json
+from pathlib import Path
+from dotenv import load_dotenv
+from google.adk import Runner
+from google.adk.agents import LlmAgent
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider, SpanProcessor
+from langsmith.integrations.otel import OtelSpanProcessor
+
+
+class AttachmentSpanProcessor(SpanProcessor):
+    """Custom SpanProcessor to add attachments to invocation spans."""
+
+    def __init__(self):
+        self.attachment_data = None
+
+    def set_attachment(self, attachment_data):
+        self.attachment_data = attachment_data
+
+    def on_end(self, span):
+        if span.name == "invocation" and self.attachment_data:
+            attachments_json = json.dumps([self.attachment_data])
+            span._attributes["langsmith.attachments"] = attachments_json
+
+load_dotenv()
+
+# Set up TracerProvider manually
+provider = TracerProvider()
+trace.set_tracer_provider(provider)
+
+# Add attachment processor FIRST (runs before LangSmith processor)
+attachment_processor = AttachmentSpanProcessor()
+provider.add_span_processor(attachment_processor)
+
+# Add LangSmith processor SECOND (receives already-modified spans)
+langsmith_processor = OtelSpanProcessor(project="travel-assistant")
+provider.add_span_processor(langsmith_processor)
+
+def get_flight_info(destination: str, departure_date: str) -> dict:
+    """Get flight information for a destination."""
+    return {
+        "destination": destination,
+        "departure_date": departure_date,
+        "price": "$450",
+        "duration": "5h 30m",
+        "airline": "Example Airways"
+    }
+
+def get_hotel_recommendations(city: str, check_in: str) -> dict:
+    """Get hotel recommendations for a city."""
+    return {
+        "city": city,
+        "check_in": check_in,
+        "hotels": [
+            {"name": "Grand Plaza Hotel", "rating": 4.5, "price": "$120/night"},
+            {"name": "City Center Inn", "rating": 4.2, "price": "$95/night"}
+        ]
+    }
+
+async def main():
+    # Prepare the attachment
+    receipt_path = Path("receipt-template-example.png")
+    with open(receipt_path, "rb") as img_file:
+        image_bytes = img_file.read()
+        image_base64 = base64.b64encode(image_bytes).decode("ascii")
+
+    attachment_data = {
+        "name": "receipt-template-example",
+        "content": image_base64,
+        "mime_type": "image/jpeg",
+    }
+
+    attachment_processor.set_attachment(attachment_data)
+
+    # Create ADK agent
+    agent = LlmAgent(
+        name="travel_assistant",
+        tools=[get_flight_info, get_hotel_recommendations],
+        model="gemini-2.0-flash-exp",
+        instruction="You are a helpful travel assistant that can help with flights and hotels.",
+    )
+
+    # Set up session and runner
+    session_service = InMemorySessionService()
+    runner = Runner(
+        app_name="travel_app",
+        agent=agent,
+        session_service=session_service
+    )
+
+    await session_service.create_session(
+        app_name="travel_app",
+        user_id="traveler_456",
+        session_id="session_789"
+    )
+
+    # Send a message to the agent
+    new_message = types.Content(
+        parts=[types.Part(text="I need to book a flight to Paris for March 15th and find a good hotel.")],
+        role="user",
+    )
+
+    # Run the agent and process events
+    events = runner.run(
+        user_id="traveler_456",
+        session_id="session_789",
+        new_message=new_message,
+    )
+
+    for event in events:
+        print(event)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+Here is an [example](https://smith.langchain.com/public/9574f70a-b893-49fe-8c62-691bd114bf14/r) of what the resulting trace looks like in LangSmith.
+
 
 ## Advanced configuration
 

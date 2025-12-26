@@ -1,0 +1,232 @@
+---
+title: IBM watsonx.ai
+---
+
+This example shows how to use `langchain-ibm` `watsonx.ai` SQL Database Toolkit that uses Flight service.
+
+<Warning>
+Building Q&A systems of SQL databases requires executing model-generated SQL queries, which carries inherent security risks. Make sure that your database connection permissions are always scoped as narrowly as possible for your agent's needs. This will mitigate, though not eliminate, the risks of building a model-driven system.
+</Warning>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/toolkits/ibm/) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [`WatsonxSQLDatabaseToolkit`](https://reference.langchain.com/python/integrations/langchain_ibm/WatsonxToolkit/) | [`langchain-ibm`](https://reference.langchain.com/python/integrations/langchain_ibm/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-ibm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-ibm?style=flat-square&label=%20) |
+
+## Setup
+
+To access `langchain-ibm` SQL Database toolkit you'll need to create an IBM watsonx.ai account, get an API key, and install the `langchain-ibm` integration package.
+
+### Credentials
+
+This cell defines the WML credentials required to work with watsonx SQL Database Toolkit.
+
+**Action:** Provide the IBM Cloud user API key. For details, see
+[documentation](https://cloud.ibm.com/docs/account?topic=account-userapikey&interface=ui).
+
+```python
+import os
+from getpass import getpass
+
+watsonx_api_key = getpass()
+os.environ["WATSONX_APIKEY"] = watsonx_api_key
+```
+
+Additionaly you are able to pass additional secrets as an environment variable.
+
+```python
+import os
+
+os.environ["WATSONX_URL"] = "your service instance url"
+os.environ["WATSONX_TOKEN"] = "your token for accessing the CLOUD or CPD cluster"
+os.environ["WATSONX_PASSWORD"] = "your password for accessing the CPD cluster"
+os.environ["WATSONX_USERNAME"] = "your username for accessing the CPD cluster"
+os.environ["WATSONX_INSTANCE_ID"] = "your instance_id for accessing the CPD cluster"
+```
+
+### Installation
+
+The LangChain IBM integration lives in the `langchain-ibm` package:
+
+```python
+pip install -qU "langchain-ibm[sql-toolkit]"
+```
+
+## Instantiation
+
+To set up the SQL Database toolkit, you must first instantiate the `WatsonxSQLDatabase` class, which retrieves necessary information from IBM watsonx.ai database connection assets via the Flight SQL client. For more details on creating the Database connection Asset programmatically see a watsonx.ai Python SDK [documentation](https://ibm.github.io/watsonx-ai-python-sdk/v1.4.7/autoai_working_with_dataconnection.html#connection-asset-databaselocation).
+
+```python
+from langchain_ibm.utilities.sql_database import WatsonxSQLDatabase
+
+wx_sql_database = WatsonxSQLDatabase(
+    connection_id=postgres_sql_connection_id,
+    url="https://us-south.ml.cloud.ibm.com",
+    schema="public"
+    )
+```
+
+Alternatively, you can use Cloud Pak for Data credentials. For details, see [watsonx.ai software setup](https://ibm.github.io/watsonx-ai-python-sdk/setup_cpd.html).
+
+For certain requirements, there is an option to pass the IBM's [`APIClient`](https://ibm.github.io/watsonx-ai-python-sdk/base.html#apiclient) object into the `WatsonxSQLDatabase` class.
+
+```python
+from ibm_watsonx_ai import APIClient
+
+api_client = APIClient(...)
+
+wx_sql_database = WatsonxSQLDatabse(
+    watsonx_client=api_client,
+    connection_id=postgres_sql_connection_id,
+    schema="public"
+)
+```
+
+Finally, initialize the `WatsonxSQLDatabaseToolkit`.
+
+```python
+from langchain_ibm import ChatWatsonx
+
+llm = ChatWatsonx(...)
+
+from langchain_ibm.agent_toolkits.sql import WatsonxSQLDatabaseToolkit
+
+wx_sql_toolkit = WatsonxSQLDatabaseToolkit(
+    db=wx_sql_database,
+    llm=llm,
+)
+```
+
+## Tools
+
+### Get all tools
+
+Running `.get_tools` method, one can get all available tools as a list.
+
+```python
+wx_sql_toolkit.get_tools()
+```
+
+```text
+[QuerySQLDatabaseTool(description="Input to this tool is a detailed and correct SQL query, output is a result from the database. If the query is not correct, an error message will be returned. If an error is returned, rewrite the query, check the query, and try again. If you encounter an issue with Unknown column 'xxxx' in 'field list', use sql_db_schema to query the correct table fields.", db=<langchain_ibm.utilities.sql_database.WatsonxSQLDatabase object at 0x111c03810>),
+ InfoSQLDatabaseTool(description='Input to this tool is a comma-separated list of tables, output is the SQL statement with table metadata. Be sure that the tables actually exist by calling sql_db_list_tables first! Example Input: table1, table2, table3', db=<langchain_ibm.utilities.sql_database.WatsonxSQLDatabase object at 0x111c03810>),
+ ListSQLDatabaseTool(db=<langchain_ibm.utilities.sql_database.WatsonxSQLDatabase object at 0x111c03810>),
+ QuerySQLCheckerTool(description='Use this tool to double check if your query is correct before executing it. Always use this tool before executing a query with sql_db_query!', db=<langchain_ibm.utilities.sql_database.WatsonxSQLDatabase object at 0x111c03810>, llm=ChatWatsonx(model_id='ibm/granite-3-3-8b-instruct', apikey=SecretStr('**********'), params={}, watsonx_model=<ibm_watsonx_ai.foundation_models.inference.model_inference.ModelInference object at 0x12aa12ed0>, watsonx_client=<ibm_watsonx_ai.client.APIClient object at 0x12aa12ad0>), llm_chain=PromptTemplate(input_variables=['query', 'schema'], input_types={}, partial_variables={}, template='\n{query}\nDouble check the query above for common mistakes, including:\n- Using NOT IN with NULL values\n- Using UNION when UNION ALL should have been used\n- Using BETWEEN for exclusive ranges\n- Data type mismatch in predicates\n- Properly quoting identifiers\n- Using the correct number of arguments for functions\n- Casting to the correct data type\n- Using the proper columns for joins\n- Make sure that schema name `{schema}` is added to the table name, e.g. {schema}.table1\n\nIf there are any of the above mistakes, rewrite the query. If there are no mistakes, just reproduce the original query.\n\nOutput the final SQL query only.\n\nSQL Query: ')
+ | ChatWatsonx(model_id='ibm/granite-3-3-8b-instruct', apikey=SecretStr('**********'), params={}, watsonx_model=<ibm_watsonx_ai.foundation_models.inference.model_inference.ModelInference object at 0x12aa12ed0>, watsonx_client=<ibm_watsonx_ai.client.APIClient object at 0x12aa12ad0>))]
+```
+You can use the individual tools directly:
+
+```python
+from langchain_ibm.agent_toolkits.sql.tool import (
+    InfoSQLDatabaseTool,
+    ListSQLDatabaseTool,
+    QuerySQLDatabaseTool,
+    QuerySQLCheckerTool
+)
+```
+
+## Use within an agent
+
+```python
+from langchain_ibm import ChatWatsonx
+
+llm = ChatWatsonx(
+    model_id="meta-llama/llama-3-3-70b-instruct",
+    url="https://us-south.ml.cloud.ibm.com",
+    project_id="PASTE YOUR PROJECT_ID HERE",
+)
+```
+
+```python
+from langgraph.prebuilt import create_react_agent
+
+# Use one of the prompt from langchain hub
+from langchain import hub
+
+prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
+system_message = prompt_template.format(dialect="PostgreSQL", top_k=5)
+
+agent_executor = create_react_agent(llm, wx_sql_toolkit.get_tools(), prompt=system_message, debug=True)
+```
+
+```python
+example_query = "What city has the highest population?"
+
+events = agent.stream(
+    {"messages": [("user", example_query)]},
+    stream_mode="values",
+)
+for event in events:
+    event["messages"][-1].pretty_print()
+```
+
+```text
+================================[1m Human Message [0m=================================
+
+What city has the largest population?
+==================================[1m Ai Message [0m==================================
+Tool Calls:
+  sql_db_query (chatcmpl-tool-336c8be3bce64f44a7977c3053f36922)
+ Call ID: chatcmpl-tool-336c8be3bce64f44a7977c3053f36922
+  Args:
+    query: SELECT city FROM cities ORDER BY population DESC LIMIT 1
+=================================[1m Tool Message [0m=================================
+Name: sql_db_query
+
+Error: Flight returned internal error, with message: CDICO2021E: Statement could not be processed: SQL syntax error: [IBM][PostgreSQL JDBC Driver][PostgreSQL]column "city" does not exist. . The statement text is: SELECT city FROM cities ORDER BY population DESC LIMIT 1
+==================================[1m Ai Message [0m==================================
+Tool Calls:
+  sql_db_schema (chatcmpl-tool-2dc38420280c4960b13b0e5533634fd3)
+ Call ID: chatcmpl-tool-2dc38420280c4960b13b0e5533634fd3
+  Args:
+    table_names: cities
+=================================[1m Tool Message [0m=================================
+Name: sql_db_schema
+
+
+CREATE TABLE "public"."cities" (
+	"id" INTEGER NOT NULL,
+	"name" CHARACTER VARYING,
+	"population" INTEGER,
+	CONSTRAINT primary_key PRIMARY KEY (id)
+	)
+
+First 3 rows of table cities:
+
+ id   name  population
+  1 Warsaw     1790658
+  2 Kraków      803425
+  3   Łódź      658444
+==================================[1m Ai Message [0m==================================
+Tool Calls:
+  sql_db_query_checker (chatcmpl-tool-1ecbb02ce7ac47e186edbfff144eacdc)
+ Call ID: chatcmpl-tool-1ecbb02ce7ac47e186edbfff144eacdc
+  Args:
+    query: SELECT name FROM cities ORDER BY population DESC LIMIT 1
+=================================[1m Tool Message [0m=================================
+Name: sql_db_query_checker
+
+<p>The given query</p><div><div><div>SELECT name FROM cities ORDER BY population DESC LIMIT 1</div></div></div><p>appears to be syntactically correct but lacks schema specification if the table 'cities' is not in the default 'public' schema. Assuming it's under 'public', here's the complete query with schema specification:</p><div><div><div>SELECT name FROM public.cities ORDER BY population DESC LIMIT 1</div></div></div>
+==================================[1m Ai Message [0m==================================
+Tool Calls:
+  sql_db_query (chatcmpl-tool-d8e0eff8b07b40f593dc1b97e6280598)
+ Call ID: chatcmpl-tool-d8e0eff8b07b40f593dc1b97e6280598
+  Args:
+    query: SELECT name FROM public.cities ORDER BY population DESC LIMIT 1
+=================================[1m Tool Message [0m=================================
+Name: sql_db_query
+
+[('Warsaw',)]
+==================================[1m Ai Message [0m==================================
+
+The city with the largest population is Warsaw.
+```
+
+---
+
+## API reference
+
+For detailed documentation of all `WatsonxSQLDatabaseToolkit` features and configurations head to the [API reference](https://reference.langchain.com/python/integrations/langchain_ibm/WatsonxSQLDatabaseToolkit/).

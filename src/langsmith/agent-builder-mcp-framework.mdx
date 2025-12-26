@@ -1,14 +1,22 @@
 ---
 title: LangSmith Tool Server
-sidebarTitle: MCP Framework
-mode: wide
+sidebarTitle: MCP framework
 ---
 
-The LangSmith Tool Server is our MCP Framework that powers the tools available in the LangSmith Agent Builder. This framework enables you to build and deploy custom tools that can be integrated with your agents. It provides a standardized way to create, deploy, and manage tools with built-in authentication and authorization.
+The LangSmith Tool Server is a standalone MCP framework for building and deploying tools with built-in authentication and authorization. Use the Tool Server when you want to:
 
-The PyPi package that defines the framework is available [here](https://pypi.org/project/langsmith-tool-server/).
+- [Create custom tools](#create-a-custom-toolkit) that integrate with LangSmith's [Agent Auth](/langsmith/agent-auth) for OAuth authentication
+- [Build an MCP gateway](#use-as-an-mcp-gateway) for agents you're building yourself (outside of Agent Builder)
 
-## Quick start
+<Note>
+If you're using [Agent Builder](/langsmith/agent-builder), you don't need to interact with the Tool Server directly. Agent Builder provides [built-in tools](/langsmith/agent-builder-tools) and supports [remote MCP servers](/langsmith/agent-builder-tools#using-remote-mcp-servers) without requiring Tool Server setup.
+
+However, you can configure the associated tool server instance as an MCP server, which will allow you to use your custom MCP servers in your agent.
+</Note>
+
+Download the [PyPi package](https://pypi.org/project/langsmith-tool-server/) to get started.
+
+## Create a custom toolkit
 
 Install the LangSmith Tool Server and LangChain CLI:
 
@@ -64,9 +72,9 @@ langchain tools serve
 
 Your tool server will start on `http://localhost:8000`.
 
-## Simple client example
+## Call tools via MCP protocol
 
-Here's a simple example that lists available tools and calls the `add` tool:
+Below is an example that lists available tools and calls the `add` tool:
 
 ```python
 import asyncio
@@ -90,7 +98,32 @@ async def main():
 asyncio.run(main())
 ```
 
-## Adding OAuth authentication
+## Use as an MCP gateway
+
+The LangSmith Tool Server can act as an MCP gateway, aggregating tools from multiple MCP servers into a single endpoint. Configure MCP servers in your `toolkit.toml`:
+
+```toml
+[toolkit]
+name = "my-toolkit"
+tools = "./my_toolkit/__init__.py:TOOLS"
+
+[[mcp_servers]]
+name = "weather"
+transport = "streamable_http"
+url = "http://localhost:8001/mcp/"
+
+[[mcp_servers]]
+name = "math"
+transport = "stdio"
+command = "python"
+args = ["-m", "mcp_server_math"]
+```
+
+All tools from connected MCP servers are exposed through your server's `/mcp` endpoint. MCP tools are prefixed with their server name to avoid conflicts (e.g., `weather_get_forecast`, `math_add`).
+
+## Authenticate
+
+### OAuth for third-party APIs
 
 For tools that need to access third-party APIs (like Google, GitHub, Slack, etc.), you can use OAuth authentication with [Agent Auth](/langsmith/agent-auth).
 
@@ -121,30 +154,7 @@ Tools with `auth_provider` must:
 - Specify at least one scope
 - Use `context.token` to make authenticated API calls
 
-## Using as an MCP gateway
-
-The LangSmith Tool Server can act as an MCP gateway, aggregating tools from multiple MCP servers into a single endpoint. Configure MCP servers in your `toolkit.toml`:
-
-```toml
-[toolkit]
-name = "my-toolkit"
-tools = "./my_toolkit/__init__.py:TOOLS"
-
-[[mcp_servers]]
-name = "weather"
-transport = "streamable_http"
-url = "http://localhost:8001/mcp/"
-
-[[mcp_servers]]
-name = "math"
-transport = "stdio"
-command = "python"
-args = ["-m", "mcp_server_math"]
-```
-
-All tools from connected MCP servers are exposed through your server's `/mcp` endpoint. MCP tools are prefixed with their server name to avoid conflicts (e.g., `weather.get_forecast`, `math.add`).
-
-## Custom authentication
+### Custom request authentication
 
 Custom authentication allows you to validate requests and integrate with your identity provider. Define an authentication handler in your `auth.py` file:
 
@@ -170,3 +180,4 @@ async def authenticate(authorization: str = None) -> dict:
 ```
 
 The handler runs on every request and must return a dict with `identity` (and optionally `permissions`).
+

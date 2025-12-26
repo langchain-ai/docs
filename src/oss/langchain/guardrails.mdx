@@ -47,7 +47,7 @@ The PII middleware supports multiple strategies for handling detected PII:
 
 | Strategy | Description | Example |
 |----------|-------------|---------|
-| `redact` | Replace with `[REDACTED_TYPE]` | `[REDACTED_EMAIL]` |
+| `redact` | Replace with `[REDACTED_{PII_TYPE}]` | `[REDACTED_EMAIL]` |
 | `mask` | Partially obscure (e.g., last 4 digits) | `****-****-****-1234` |
 | `hash` | Replace with deterministic hash | `a8f5f167...` |
 | `block` | Raise exception when detected | Error thrown |
@@ -390,36 +390,39 @@ const contentFilterMiddleware = (bannedKeywords: string[]) => {
 
   return createMiddleware({
     name: "ContentFilterMiddleware",
-    beforeAgent: (state) => {
-      // Get the first user message
-      if (!state.messages || state.messages.length === 0) {
-        return;
-      }
-
-      const firstMessage = state.messages[0];
-      if (firstMessage._getType() !== "human") {
-        return;
-      }
-
-      const content = firstMessage.content.toString().toLowerCase();
-
-      // Check for banned keywords
-      for (const keyword of keywords) {
-        if (content.includes(keyword)) {
-          // Block execution before any processing
-          return {
-            messages: [
-              new AIMessage(
-                "I cannot process requests containing inappropriate content. Please rephrase your request."
-              )
-            ],
-            jumpTo: "end",
-          };
+    beforeAgent: {
+      hook: (state) => {
+        // Get the first user message
+        if (!state.messages || state.messages.length === 0) {
+          return;
         }
-      }
 
-      return;
-    },
+        const firstMessage = state.messages[0];
+        if (firstMessage._getType() !== "human") {
+          return;
+        }
+
+        const content = firstMessage.content.toString().toLowerCase();
+
+        // Check for banned keywords
+        for (const keyword of keywords) {
+          if (content.includes(keyword)) {
+            // Block execution before any processing
+            return {
+              messages: [
+                new AIMessage(
+                  "I cannot process requests containing inappropriate content. Please rephrase your request."
+                )
+              ],
+              jumpTo: "end",
+            };
+          }
+        }
+
+        return;
+      },
+      canJumpTo: ['end']
+    }
   });
 };
 
@@ -560,40 +563,43 @@ const safetyGuardrailMiddleware = () => {
 
   return createMiddleware({
     name: "SafetyGuardrailMiddleware",
-    afterAgent: async (state) => {
-      // Get the final AI response
-      if (!state.messages || state.messages.length === 0) {
+    afterAgent: {
+      hook: async (state) => {
+        // Get the final AI response
+        if (!state.messages || state.messages.length === 0) {
+          return;
+        }
+
+        const lastMessage = state.messages[state.messages.length - 1];
+        if (lastMessage._getType() !== "ai") {
+          return;
+        }
+
+        // Use a model to evaluate safety
+        const safetyPrompt = `Evaluate if this response is safe and appropriate.
+        Respond with only 'SAFE' or 'UNSAFE'.
+
+        Response: ${lastMessage.content.toString()}`;
+
+        const result = await safetyModel.invoke([
+          { role: "user", content: safetyPrompt }
+        ]);
+
+        if (result.content.toString().includes("UNSAFE")) {
+          return {
+            messages: [
+              new AIMessage(
+                "I cannot provide that response. Please rephrase your request."
+              )
+            ],
+            jumpTo: "end",
+          };
+        }
+
         return;
-      }
-
-      const lastMessage = state.messages[state.messages.length - 1];
-      if (lastMessage._getType() !== "ai") {
-        return;
-      }
-
-      // Use a model to evaluate safety
-      const safetyPrompt = `Evaluate if this response is safe and appropriate.
-      Respond with only 'SAFE' or 'UNSAFE'.
-
-      Response: ${lastMessage.content.toString()}`;
-
-      const result = await safetyModel.invoke([
-        { role: "user", content: safetyPrompt }
-      ]);
-
-      if (result.content.toString().includes("UNSAFE")) {
-        return {
-          messages: [
-            new AIMessage(
-              "I cannot provide that response. Please rephrase your request."
-            )
-          ],
-          jumpTo: "end",
-        };
-      }
-
-      return;
-    },
+      },
+      canJumpTo: ['end']
+    }
   });
 };
 

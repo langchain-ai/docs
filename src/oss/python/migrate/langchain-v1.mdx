@@ -1,6 +1,6 @@
 ---
 title: LangChain v1 migration guide
-sidebarTitle: v1 Migration guide
+sidebarTitle: LangChain v1
 ---
 
 This guide outlines the major changes between [LangChain v1](/oss/releases/langchain-v1) and previous versions.
@@ -48,7 +48,7 @@ If you were using any of the following from the `langchain` package, you'll need
 
     ```python v0 (old)
     # Chains
-    from langchain.chains import LLMChain
+    from langchain_classic.chains import LLMChain
 
     # Retrievers
     from langchain.retrievers import ...
@@ -93,7 +93,7 @@ The table below outlines what functionality has changed from @[`create_react_age
 | [Structured output](#structured-output) | prompted output removed, use `ToolStrategy`/`ProviderStrategy` |
 | [Streaming node name](#streaming-node-name-rename) | Node name changed from `"agent"` to `"model"` |
 | [Runtime context](#runtime-context) | Dependency injection via `context` argument instead of `config["configurable"]` |
-| [Namespace](#simplified-namespace) | Streamlined to focus on agent building blocks, legacy code moved to `langchain-classic` |
+| [Namespace](#simplified-package) | Streamlined to focus on agent building blocks, legacy code moved to `langchain-classic` |
 
 ### Import path
 
@@ -592,10 +592,52 @@ You can now configure the handling of tool errors with middleware implementing t
 
 <CodeGroup>
 ```python v1 (new)
-# Example coming soon
+from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
+from langchain.messages import ToolMessage
+
+
+@wrap_tool_call
+def handle_tool_errors(request, handler):
+    """Handle tool execution errors with custom messages."""
+    try:
+        return handler(request)
+    except Exception as e:
+        # Only handle errors that occur during tool execution due to invalid inputs
+        # that pass schema validation but fail at runtime (e.g., invalid SQL syntax).
+        # Do NOT handle:
+        # - Network failures (use tool retry middleware instead)
+        # - Incorrect tool implementation errors (should bubble up)
+        # - Schema mismatch errors (already auto-handled by the framework)
+        #
+        # Return a custom error message to the model
+        return ToolMessage(
+            content=f"Tool error: Please check your input and try again. ({str(e)})",
+            tool_call_id=request.tool_call["id"]
+        )
+
+agent = create_agent(
+    model="claude-sonnet-4-5-20250929",
+    tools=[check_weather, search_web],
+    middleware=[handle_tool_errors]
+)
 ```
 ```python v0 (old)
-# Example coming soon
+from langgraph.prebuilt import create_react_agent, ToolNode
+from langchain.messages import ToolMessage
+
+
+def handle_tool_error(error: Exception) -> str:
+    """Custom error handler function."""
+    return f"Tool error: Please check your input and try again. ({str(error)})"
+
+agent = create_react_agent(
+    model="claude-sonnet-4-5-20250929",
+    tools=ToolNode(
+        [check_weather, search_web],
+        handle_tool_errors=handle_tool_error  # [!code highlight]
+    )
+)
 ```
 </CodeGroup>
 
@@ -875,7 +917,7 @@ If you were using any of the following from the `langchain` package, you'll need
 
     ```python v0 (old)
     # Chains
-    from langchain.chains import LLMChain
+    from langchain_classic.chains import LLMChain
 
     # Retrievers
     from langchain.retrievers import ...
@@ -933,7 +975,7 @@ The `max_tokens` parameter in `langchain-anthropic` now defaults to higher value
 
 ### Legacy code moved to `langchain-classic`
 
-Existing functionality outside the focus of standard interfaces and agents has been moved to the [`langchain-classic`](https://pypi.org/project/langchain-classic) package. See the [Simplified namespace](#simplified-namespace) section for details on what's available in the core `langchain` package and what moved to `langchain-classic`.
+Existing functionality outside the focus of standard interfaces and agents has been moved to the [`langchain-classic`](https://pypi.org/project/langchain-classic) package. See the [Simplified namespace](#simplified-package) section for details on what's available in the core `langchain` package and what moved to `langchain-classic`.
 
 ### Removal of deprecated APIs
 
@@ -964,3 +1006,10 @@ The `example` parameter has been removed from @[`AIMessage`] objects. We recomme
 - The logic for merging message chunks (`AIMessageChunk.add`) has been updated with more sophisticated selection handling for the final id for the merged chunk. It prioritizes provider-assigned IDs over LangChain-generated IDs.
 - We now open files with `utf-8` encoding by default.
 - Standard tests now use multimodal content blocks.
+
+## Archived docs
+
+Old docs are archived for reference:
+
+- [v0.3 docs content](https://github.com/langchain-ai/langchain/tree/v0.3/docs/docs)
+- [v0.3 API reference](https://reference.langchain.com/v0.3/python/)

@@ -184,14 +184,14 @@ def table() -> str:
 def doc() -> str:
     return f"""\
 ---
-title: Integration packages
-sidebarTitle: Overview
+title: LangChain integrations packages
+sidebarTitle: LangChain integrations
 mode: "wide"
 ---
 {{/* File generated automatically by pipeline/tools/partner_pkg_table.py */}}
 {{/* Do not manually edit */}}
 
-LangChain Python offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
+LangChain offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
 
 <Columns cols={{3}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />

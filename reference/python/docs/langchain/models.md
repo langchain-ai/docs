@@ -1,6 +1,6 @@
 # Chat models
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
 
     This page contains **reference documentation** for chat models. See [the docs](https://docs.langchain.com/oss/python/langchain/models) for conceptual guides, tutorials, and examples on using chat models.
 

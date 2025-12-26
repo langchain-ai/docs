@@ -8,7 +8,7 @@ title: Groq
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-groq)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-groq)](https://pypistats.org/packages/langchain-groq)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for Groq. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/groq) for conceptual guides, tutorials, and examples on using Groq modules.
 
 ::: langchain_groq
