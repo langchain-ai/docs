@@ -8,7 +8,7 @@ title: Perplexity
 [![PyPI - License](https://img.shields.io/pypi/l/langchain-perplexity)](https://opensource.org/licenses/MIT)
 [![PyPI - Downloads](https://img.shields.io/pepy/dt/langchain-perplexity)](https://pypistats.org/packages/langchain-perplexity)
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for Perplexity. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/perplexity) for conceptual guides, tutorials, and examples on using Perplexity modules.
 
 ::: langchain_perplexity

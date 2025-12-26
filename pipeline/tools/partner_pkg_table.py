@@ -91,7 +91,7 @@ def _enrich_package(p: dict) -> dict | None:
         return None
 
     # Check if JS package exists (indicating JS support)
-    p["js_exists"] = bool(p.get("js"))
+    p["js_exists"] = bool(p.get("js")) and p.get("js") != "n/a"
 
     # Determine provider page URL
     default_provider_page = f"/oss/integrations/providers/{p['name_short']}/"
@@ -154,7 +154,13 @@ PACKAGES_SORTED = PACKAGES_SORTED[:50]
 
 def package_row(p: dict) -> str:
     """Generate a markdown table row for a package."""
-    js = f"[✅](https://www.npmjs.com/package/{p['js']})" if p["js_exists"] else "❌"
+    js_value = p.get("js")
+    if js_value and js_value != "n/a":
+        js = f"[✅](https://www.npmjs.com/package/{js_value})"
+    elif js_value == "n/a":
+        js = "N/A"
+    else:
+        js = "❌"
     link = p["provider_page"]
     title = p["name_title"]
     provider = f"[{title}]({link})" if link else title
@@ -178,14 +184,14 @@ def table() -> str:
 def doc() -> str:
     return f"""\
 ---
-title: Integration packages
-sidebarTitle: Overview
+title: LangChain integrations packages
+sidebarTitle: LangChain integrations
 mode: "wide"
 ---
 {{/* File generated automatically by pipeline/tools/partner_pkg_table.py */}}
 {{/* Do not manually edit */}}
 
-LangChain Python offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
+LangChain offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
 
 <Columns cols={{3}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />

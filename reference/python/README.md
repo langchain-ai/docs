@@ -168,6 +168,21 @@ The `pyproject.dev.toml` file expects repositories to be cloned in this structur
 
 If you only need to work on specific packages, you can comment out the others in `pyproject.dev.toml`.
 
+### Build a subset of the whole reference site
+
+For faster development and testing of specific sections, use the `serve_subset.py` script to serve only a subset of the documentation:
+
+```bash
+# Serve only the LangGraph documentation
+python serve_subset.py langgraph
+
+# Use a custom port
+python serve_subset.py langgraph --port 8080
+
+# Build without dirty reload (clean build)
+python serve_subset.py langgraph --clean
+```
+
 ---
 
 ## MkDocs/mkdocstrings Python Cross-Reference Linking Syntax
@@ -546,3 +561,57 @@ title: Chat models (Classic)
 ```
 
 ---
+
+## Icons
+
+Icons from Material for MkDocs are available for use in documentation with integrated search. This includes thousands of icons from popular icon sets like Material Design Icons, FontAwesome, Octicons, and more.
+
+See the [Material for MkDocs Icons Reference](https://squidfunk.github.io/mkdocs-material/reference/icons-emojis/) for the complete icon catalog and usage instructions.
+
+---
+
+## In-code documentation
+
+### Language and style
+
+> [!NOTE]
+> Use [Google-style docstrings](https://google.github.io/styleguide/pyguide.html) with complete type hints for all public functions. This documentation is parsed using [Griffe](https://mkdocstrings.github.io/griffe/reference/docstrings/#google-style).
+
+Follow these standards for all documentation:
+
+- **Voice**: Use second person ("you") for instructions
+- **Tense**: Use active voice and present tense
+- **Clarity**: Write clear, direct language for technical audiences
+- **Consistency**: Use consistent terminology throughout
+- **Conciseness**: Keep sentences concise while providing necessary context
+
+### Code examples
+
+> [!WARNING]
+> Always test code examples before publishing. Never include real API keys or secrets.
+
+Requirements for code examples:
+
+- **Completeness**: Include complete, runnable examples that users can copy and execute without errors
+- **Realism**: Use realistic data instead of placeholder values like "foo" or "example"
+- **Error handling**: Show proper error handling and edge case management
+- **Documentation**: Add explanatory comments for complex logic
+
+Example of a well-documented function:
+
+```python
+def filter_unknown_users(users: list[str], known_users: set[str]) -> list[str]:
+    """Filter out users that are not in the known users set.
+
+    Args:
+        users: List of user identifiers to filter.
+        known_users: Set of known/valid user identifiers.
+
+    Returns:
+        List of users that are not in the known_users set.
+
+    Raises:
+        ValueError: If users list contains invalid identifiers.
+    """
+    return [user for user in users if user not in known_users]
+```

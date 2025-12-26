@@ -22,7 +22,7 @@ However, you can configure LangSmith to use an external ClickHouse database for 
 <Note>
 Using the first two options (LangSmith-managed ClickHouse or ClickHouse Cloud) will provision a Clickhouse service OUTSIDE of your VPC. However, both options support private endpoints, meaning that you can direct traffic to the ClickHouse service without exposing it to the public internet (eg via AWS PrivateLink, or GCP Private Service Connect).
 
-Additionally, sensitive information can be configured to be not stored in Clickhouse. Please reach out to [support@langchain.dev](mailto:support@langchain.dev) for more information.
+Additionally, sensitive information can be configured to be not stored in Clickhouse. Please contact support via [support.langchain.com](https://support.langchain.com) for more information.
 </Note>
 
 ## Requirements
@@ -75,7 +75,7 @@ For an example setup of a replicated ClickHouse cluster, refer to the [replicate
 
 ## LangSmith-managed ClickHouse
 
-* If using LangSmith-managed ClickHouse, you will need to set up a VPC peering connection between the LangSmith VPC and the ClickHouse VPC. Please reach out to [support@langchain.dev](mailto:support@langchain.dev) for more information.
+* If using LangSmith-managed ClickHouse, you will need to set up a VPC peering connection between the LangSmith VPC and the ClickHouse VPC. Please contact support via [support.langchain.com](https://support.langchain.com) for more information.
 * You will also need to set up Blob Storage. You can read more about Blob Storage in the [Blob Storage documentation](/langsmith/self-host-blob-storage).
 
 <Note>
@@ -88,13 +88,13 @@ For more information, refer to the [managed ClickHouse](/langsmith/langsmith-man
 
 You will need to provide several parameters to your LangSmith installation to configure an external ClickHouse database. These parameters include:
 
-* Host: The hostname or IP address of the ClickHouse database
-* HTTP Port: The port that the ClickHouse database listens on for HTTP connections
-* Native Port: The port that the ClickHouse database listens on for [native connections](https://clickhouse.com/docs/en/interfaces/tcp)
-* Database: The name of the ClickHouse database that LangSmith should use
-* Username: The username to use to connect to the ClickHouse database
-* Password: The password to use to connect to the ClickHouse database
-* Cluster (Optional): The name of the ClickHouse cluster if using an external Clickhouse cluster. When set, LangSmith will run migrations on the cluster and replicate data across instances.
+* **Host**: The hostname or IP address of the ClickHouse database
+* **HTTP Port**: The port that the ClickHouse database listens on for HTTP connections
+* **Native Port**: The port that the ClickHouse database listens on for [native connections](https://clickhouse.com/docs/en/interfaces/tcp)
+* **Database**: The name of the ClickHouse database that LangSmith should use
+* **Username**: The username to use to connect to the ClickHouse database
+* **Password**: The password to use to connect to the ClickHouse database
+* **Cluster (Optional)**: The name of the ClickHouse cluster if using an external Clickhouse cluster. When set, LangSmith will run migrations on the cluster and replicate data across instances.
 
 <Warning>
 Important considerations for clustered deployments:
@@ -105,8 +105,8 @@ Important considerations for clustered deployments:
 
 * When using a clustered deployment, LangSmith will automatically:
 
-* Run database migrations across all nodes in the cluster
-* Configure tables for data replication across the cluster
+    * Run database migrations across all nodes in the cluster
+    * Configure tables for data replication across the cluster
 
 Note that while data is replicated across nodes, LangSmith does not configure distributed tables or handle query routing - queries will be directed to the specified host. You will need to handle any load balancing or query distribution at the infrastructure level if desired.
 </Warning>
@@ -146,3 +146,135 @@ CLICKHOUSE_CLUSTER=my_cluster_name # Optional: Set this if using an external Cli
 </CodeGroup>
 
 Once configured, you should be able to reinstall your LangSmith instance. If everything is configured correctly, your LangSmith instance should now be using your external ClickHouse database.
+
+## TLS with ClickHouse
+
+Use this section to configure TLS for ClickHouse connections. For mounting internal/public CAs so LangSmith trusts your ClickHouse server certificate, see [Configure custom TLS certificates](/langsmith/self-host-custom-tls-certificates#mount-internal-cas-for-tls).
+
+### Server TLS (one-way)
+
+To enable TLS for ClickHouse connections:
+
+- Set `tls: true` in your configuration (or use `tlsSecretKey` with an external secret).
+- Use the appropriate TLS ports (typically `8443` for HTTP and `9440` for native TCP connections).
+- Provide a CA bundle using `config.customCa.secretName` and `config.customCa.secretKey` if using an internal CA.
+
+<Warning>
+Mount a custom CA only when your ClickHouse server uses an internal or private CA. Publicly trusted CAs do not require this configuration.
+</Warning>
+
+<CodeGroup>
+
+```yaml Helm (server TLS)
+config:
+  customCa:
+    secretName: "langsmith-custom-ca"  # Secret containing your CA bundle
+    secretKey: "ca.crt"    # Key in the Secret with the CA bundle
+clickhouse:
+  external:
+    enabled: true
+    host: "your-clickhouse-host.example.com"
+    port: "8443"
+    nativePort: "9440"
+    user: "default"
+    password: "password"
+    database: "default"
+    tls: true
+```
+
+```yaml Kubernetes Secret (CA bundle)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langsmith-custom-ca
+type: Opaque
+stringData:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    <ROOT_OR_INTERMEDIATE_CA_CERT_CHAIN>
+    -----END CERTIFICATE-----
+```
+
+</CodeGroup>
+
+### Mutual TLS with client auth (mTLS)
+
+As of LangSmith helm chart version **0.12.29**, we support mTLS for ClickHouse clients. For server-side authentication in mTLS, use the [Server TLS steps](#server-tls-one-way) (custom CA) in addition to the following client certificate configuration.
+
+If your ClickHouse server requires client certificate authentication:
+
+- Provide a Secret with your client certificate and key.
+- Reference it via `clickhouse.external.clientCert.secretName` and specify the keys with `certSecretKey` and `keySecretKey`.
+
+<CodeGroup>
+
+```yaml Helm (client auth)
+clickhouse:
+  external:
+    enabled: true
+    host: "your-clickhouse-host.example.com"
+    port: "8443"
+    nativePort: "9440"
+    user: "default"
+    password: "password"
+    database: "default"
+    tls: true
+    clientCert:
+      secretName: "clickhouse-client-cert"
+      certSecretKey: "tls.crt"
+      keySecretKey: "tls.key"
+```
+
+```yaml Kubernetes Secret (client cert/key)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clickhouse-client-cert
+type: Opaque
+stringData:
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    <CLIENT_CERT>
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN PRIVATE KEY-----
+    <CLIENT_KEY>
+    -----END PRIVATE KEY-----
+```
+
+</CodeGroup>
+
+#### Non-TLS native port for migrations
+
+<Warning>
+When using mTLS with ClickHouse, you must **keep a non-TLS native (TCP) port** open for our migrations job, which runs on helm install and upgrade. The application itself will not communicate through this port, it is **only used by the migration job**.
+</Warning>
+
+By default, the migration job connects to port `9000` for migrations. If your ClickHouse instance uses a different non-TLS native port, you can configure it using the `CLICKHOUSE_MIGRATE_NATIVE_PORT` environment variable:
+
+```yaml
+backend:
+  clickhouseMigrations:
+    extraEnv:
+      - name: CLICKHOUSE_MIGRATE_NATIVE_PORT
+        value: "9000"  # Change to your non-TLS native port
+```
+
+#### Pod security context for certificate volumes
+
+The certificate volumes mounted for mTLS are protected by file access restrictions. To ensure all LangSmith pods can read the certificate files, you must set `fsGroup: 1000` in the pod security context.
+
+You can configure this in one of two ways:
+
+**Option 1: Use `commonPodSecurityContext`**
+
+Set the `fsGroup` at the top level to apply it to all pods:
+
+```yaml
+commonPodSecurityContext:
+  fsGroup: 1000
+```
+
+**Option 2: Add to individual pod security contexts**
+
+If you need more granular control, add the `fsGroup` to each pod's security context individually. See the [mTLS configuration example](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/examples/mtls_config.yaml) for a complete reference.

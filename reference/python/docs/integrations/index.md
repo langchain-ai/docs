@@ -8,8 +8,12 @@ Welcome! These pages include reference documentation for all `langchain-*` Pytho
 
 To learn more about integrations in LangChain, visit the [Integrations overview](https://docs.langchain.com/oss/python/integrations/providers/overview).
 
-!!! tip "Model Context Protocol (MCP) support"
-    To use MCP tools within LangChain and LangGraph applications, refer to [`langchain-mcp-adapters`](../langchain_mcp_adapters/index.md).
+!!! tip "Model Context Protocol (MCP)"
+    LangChain supports the Model Context Protocol (MCP). This lets external tools work with LangChain and LangGraph applications through a standard interface.
+
+    To use MCP tools in your project, see [`langchain-mcp-adapters`](../langchain_mcp_adapters/index.md).
+
+---
 
 ## Popular providers
 
@@ -38,14 +42,6 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
     Access Google Gemini models via the Google Gen AI SDK.
 
     [:octicons-arrow-right-24: Reference](./langchain_google_genai/index.md)
-
-- :simple-googlecloud:{ .lg .middle } __`langchain-google-vertexai`__
-
-    ---
-
-    Use Google's Vertex AI model platform.
-
-    [:octicons-arrow-right-24: Reference](./langchain_google_vertexai/index.md)
 
 - :material-aws:{ .lg .middle } __`langchain-aws`__
 
