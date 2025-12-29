@@ -1,0 +1,584 @@
+---
+title: Initialize chat models with init_chat_model
+description: Comprehensive guide to using init_chat_model for unified model initialization across providers
+---
+
+# Initialize chat models with init_chat_model
+
+The `init_chat_model` function provides a unified way to initialize chat models across different providers. It abstracts away provider-specific details and offers a consistent interface for model configuration.
+
+## What is init_chat_model?
+
+`init_chat_model` is a factory function that creates chat model instances from any supported provider using a standardized interface. Instead of importing provider-specific classes, you specify the model name and configuration, and the function handles the rest.
+
+**Key benefits:**
+
+- **Provider-agnostic code**: Write once, switch providers easily
+- **Consistent interface**: Same initialization pattern across all providers
+- **Runtime configuration**: Load model settings from environment variables or config files
+- **Automatic validation**: Catches configuration errors early with clear error messages
+- **Type safety**: Full type hints and IDE autocomplete support
+
+## When to use init_chat_model
+
+Use `init_chat_model` when you need:
+
+✅ **Multi-provider applications** - Support multiple LLM providers without code duplication
+
+✅ **Runtime configuration** - Load model settings from environment variables, config files, or user input
+
+✅ **Provider switching** - Easily test and compare different models
+
+✅ **Simplified imports** - Avoid managing multiple provider-specific imports
+
+**When to use provider-specific classes:**
+
+❌ Use provider-specific classes (e.g., `ChatOpenAI`, `ChatAnthropic`) when you need advanced provider-specific features not exposed through the unified interface.
+
+## Basic usage
+
+### Fixed model initialization
+
+Initialize a specific model with a fixed configuration:
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Initialize OpenAI model
+model = init_chat_model("gpt-4o", model_provider="openai", temperature=0.7)
+
+# Initialize Anthropic model
+model = init_chat_model(
+    "claude-sonnet-4-5-20250929",
+    model_provider="anthropic",
+    temperature=0.7
+)
+
+# Use the model
+response = model.invoke("Explain quantum computing in simple terms")
+print(response.content)
+```
+
+### Provider-agnostic initialization
+
+Write code that works with any provider:
+
+```python
+from langchain.chat_models import init_chat_model
+
+def create_agent(model_name: str, provider: str):
+    """Create an agent that works with any LLM provider."""
+    model = init_chat_model(
+        model_name,
+        model_provider=provider,
+        temperature=0
+    )
+    return model
+
+# Use with different providers
+openai_agent = create_agent("gpt-4o", "openai")
+anthropic_agent = create_agent("claude-sonnet-4-5-20250929", "anthropic")
+```
+
+### Runtime configurable models
+
+Load model configuration from environment variables:
+
+```python
+import os
+from langchain.chat_models import init_chat_model
+
+# Set in environment or .env file
+# LANGCHAIN_MODEL=gpt-4o
+# LANGCHAIN_PROVIDER=openai
+# LANGCHAIN_API_KEY=sk-...
+
+model = init_chat_model(
+    os.getenv("LANGCHAIN_MODEL"),
+    model_provider=os.getenv("LANGCHAIN_PROVIDER"),
+    api_key=os.getenv("LANGCHAIN_API_KEY"),
+    temperature=0.7
+)
+```
+
+## Advanced usage
+
+### Multiple models with prefixes
+
+Use multiple models in the same application with environment variable prefixes:
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Environment variables:
+# FAST_MODEL=gpt-4o-mini
+# FAST_PROVIDER=openai
+# SMART_MODEL=claude-sonnet-4-5-20250929
+# SMART_PROVIDER=anthropic
+
+fast_model = init_chat_model(
+    configurable_prefix="fast_",
+    temperature=0
+)
+
+smart_model = init_chat_model(
+    configurable_prefix="smart_",
+    temperature=0.7
+)
+
+# Use fast model for simple tasks
+quick_response = fast_model.invoke("Summarize this in one sentence: ...")
+
+# Use smart model for complex reasoning
+detailed_response = smart_model.invoke("Analyze this complex problem: ...")
+```
+
+### Tool binding (function calling)
+
+Bind tools to models for function calling:
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain_core.tools import tool
+
+@tool
+def get_weather(location: str) -> str:
+    """Get the current weather for a location."""
+    # Implementation here
+    return f"Weather in {location}: 72°F, sunny"
+
+@tool
+def search_web(query: str) -> str:
+    """Search the web for information."""
+    # Implementation here
+    return f"Search results for: {query}"
+
+# Initialize model with tools
+model = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
+    temperature=0
+)
+
+model_with_tools = model.bind_tools([get_weather, search_web])
+
+# Model can now call functions
+response = model_with_tools.invoke("What's the weather in San Francisco?")
+```
+
+### Streaming responses
+
+Stream model responses for better user experience:
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("gpt-4o", model_provider="openai")
+
+# Stream tokens as they're generated
+for chunk in model.stream("Write a short story about a robot"):
+    print(chunk.content, end="", flush=True)
+```
+
+### Batch processing
+
+Process multiple inputs efficiently:
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("gpt-4o", model_provider="openai")
+
+questions = [
+    "What is Python?",
+    "What is JavaScript?",
+    "What is Rust?"
+]
+
+# Process all questions in parallel
+responses = model.batch(questions)
+
+for question, response in zip(questions, responses):
+    print(f"Q: {question}")
+    print(f"A: {response.content}\n")
+```
+
+## Configuration options
+
+### Model parameters
+
+Common parameters supported across providers:
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    model="gpt-4o",
+    model_provider="openai",
+
+    # Generation parameters
+    temperature=0.7,        # Randomness (0.0 to 2.0)
+    max_tokens=1000,        # Maximum tokens in response
+    timeout=30.0,           # Request timeout in seconds
+    max_retries=2,          # Number of retries on failure
+
+    # API configuration
+    api_key="sk-...",       # Provider API key
+    base_url="https://...", # Custom API endpoint
+)
+```
+
+### Environment variable configuration
+
+Configure models using environment variables:
+
+```bash
+# Basic configuration
+export LANGCHAIN_MODEL=gpt-4o
+export LANGCHAIN_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+
+# Advanced configuration
+export LANGCHAIN_TEMPERATURE=0.7
+export LANGCHAIN_MAX_TOKENS=1000
+export LANGCHAIN_TIMEOUT=30
+```
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Automatically reads from environment variables
+model = init_chat_model()
+```
+
+### Prefix-based configuration
+
+Use prefixes to configure multiple models:
+
+```bash
+# Fast model configuration
+export FAST_MODEL=gpt-4o-mini
+export FAST_PROVIDER=openai
+export FAST_TEMPERATURE=0
+
+# Smart model configuration
+export SMART_MODEL=claude-sonnet-4-5-20250929
+export SMART_PROVIDER=anthropic
+export SMART_TEMPERATURE=0.7
+```
+
+```python
+from langchain.chat_models import init_chat_model
+
+fast_model = init_chat_model(configurable_prefix="fast_")
+smart_model = init_chat_model(configurable_prefix="smart_")
+```
+
+## Common mistakes and fixes
+
+### Missing model provider
+
+**❌ Wrong:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Error: Cannot determine provider from model name alone
+model = init_chat_model("my-custom-model")
+```
+
+**✅ Correct:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Always specify the provider
+model = init_chat_model("my-custom-model", model_provider="openai")
+
+# Or use environment variable
+# LANGCHAIN_PROVIDER=openai
+model = init_chat_model("my-custom-model")
+```
+
+**💡 Why:** The function cannot automatically determine which provider class to use without explicit provider information.
+
+### Invalid model name for provider
+
+**❌ Wrong:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Error: gpt-4o is not a valid Anthropic model
+model = init_chat_model("gpt-4o", model_provider="anthropic")
+```
+
+**✅ Correct:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Use correct model name for the provider
+model = init_chat_model("claude-sonnet-4-5-20250929", model_provider="anthropic")
+```
+
+**💡 Why:** Each provider has its own set of valid model names. The validation catches this early to prevent runtime errors.
+
+### Missing API key
+
+**❌ Wrong:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Error: No API key provided and none found in environment
+model = init_chat_model("gpt-4o", model_provider="openai")
+response = model.invoke("Hello")  # Fails here
+```
+
+**✅ Correct:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Option 1: Pass API key directly
+model = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
+    api_key="sk-..."
+)
+
+# Option 2: Set environment variable
+# export OPENAI_API_KEY=sk-...
+model = init_chat_model("gpt-4o", model_provider="openai")
+```
+
+**💡 Why:** API keys are required for authentication. Set them as environment variables for security.
+
+### Conflicting configuration
+
+**❌ Wrong:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Error: Cannot specify both model and configurable_prefix
+model = init_chat_model(
+    "gpt-4o",
+    configurable_prefix="fast_",
+    model_provider="openai"
+)
+```
+
+**✅ Correct:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Option 1: Use explicit model name
+model = init_chat_model("gpt-4o", model_provider="openai")
+
+# Option 2: Use prefix-based configuration
+# Requires: FAST_MODEL=gpt-4o, FAST_PROVIDER=openai
+model = init_chat_model(configurable_prefix="fast_")
+```
+
+**💡 Why:** You must choose either explicit configuration or prefix-based configuration, not both.
+
+### Using unsupported parameters
+
+**❌ Wrong:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Error: custom_param is not a valid parameter
+model = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
+    custom_param="value"  # Not supported
+)
+```
+
+**✅ Correct:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Use only supported parameters
+model = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
+    temperature=0.7,      # Supported
+    max_tokens=1000,      # Supported
+    timeout=30.0          # Supported
+)
+
+# For provider-specific parameters, use the provider class directly
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(
+    model="gpt-4o",
+    temperature=0.7,
+    custom_openai_param="value"  # Provider-specific parameter
+)
+```
+
+**💡 Why:** The unified interface only supports common parameters. Use provider-specific classes for advanced features.
+
+### Incorrect temperature range
+
+**❌ Wrong:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Error: Temperature must be between 0.0 and 2.0
+model = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
+    temperature=5.0  # Too high
+)
+```
+
+**✅ Correct:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Use valid temperature range
+model = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
+    temperature=0.7  # Between 0.0 and 2.0
+)
+```
+
+**💡 Why:** Temperature controls randomness and must be within valid ranges. Values outside this range are rejected.
+
+### Model name aliasing confusion
+
+**❌ Wrong:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Error: Model aliases are not supported
+model = init_chat_model("claude-sonnet-4-5", model_provider="anthropic")
+```
+
+**✅ Correct:**
+
+```python
+from langchain.chat_models import init_chat_model
+
+# Use full model identifiers
+model = init_chat_model(
+    "claude-sonnet-4-5-20250929",  # Full identifier with date
+    model_provider="anthropic"
+)
+```
+
+**💡 Why:** Always use full model names/identifiers as specified by the provider to avoid ambiguity.
+
+## Design rationale
+
+### Why centralized initialization?
+
+**Problem:** Provider fragmentation
+
+```python
+# Before: Different initialization patterns
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+# Each has different parameters and patterns
+openai_model = ChatOpenAI(model="gpt-4o", api_key="...")
+anthropic_model = ChatAnthropic(model_name="claude-3-5-sonnet-20241022", api_key="...")
+google_model = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key="...")
+```
+
+**Solution:** Unified interface
+
+```python
+# After: Consistent initialization pattern
+from langchain.chat_models import init_chat_model
+
+openai_model = init_chat_model("gpt-4o", model_provider="openai", api_key="...")
+anthropic_model = init_chat_model("claude-3-5-sonnet-20241022", model_provider="anthropic", api_key="...")
+google_model = init_chat_model("gemini-pro", model_provider="google-genai", api_key="...")
+```
+
+### Validation benefits
+
+Early validation catches configuration errors before runtime:
+
+```python
+# Validation catches errors immediately
+model = init_chat_model(
+    "invalid-model",
+    model_provider="openai"
+)  # Fails here with clear error message
+
+# Instead of failing later during invocation
+response = model.invoke("Hello")  # Would fail here without validation
+```
+
+### Tradeoffs
+
+**Advantages:**
+
+- Simplified provider switching
+- Consistent error handling
+- Reduced boilerplate code
+- Better runtime configuration support
+
+**Limitations:**
+
+- Cannot access all provider-specific features
+- Slightly more overhead for simple use cases
+- Additional abstraction layer to learn
+
+**When the centralized approach makes sense:**
+
+✅ Building multi-provider applications
+
+✅ Need runtime model configuration
+
+✅ Want consistent error handling
+
+✅ Prefer simplified imports
+
+## Supported providers
+
+The following providers are supported through `init_chat_model`:
+
+- **OpenAI** - `model_provider="openai"`
+- **Anthropic** - `model_provider="anthropic"`
+- **Google** - `model_provider="google-genai"`
+- **Azure OpenAI** - `model_provider="azure-openai"`
+- **Cohere** - `model_provider="cohere"`
+- **Bedrock** - `model_provider="bedrock"`
+- **VertexAI** - `model_provider="vertexai"`
+- **Groq** - `model_provider="groq"`
+- **Together** - `model_provider="together"`
+- **Mistral** - `model_provider="mistralai"`
+- **Hugging Face** - `model_provider="huggingface"`
+- **Ollama** - `model_provider="ollama"`
+
+For the complete list of supported providers and their specific model names, see the [chat model integrations](/oss/python/integrations/chat/index) page.
+
+## Related resources
+
+- [Chat model integrations](/oss/python/integrations/chat/index) - Browse all available chat model providers
+- [LangChain v1 migration guide](/oss/python/migrate/langchain-v1) - Migrate from v0 to v1 API
+- [LangChain v1 release notes](/oss/python/releases/langchain-v1) - What's new in v1
+- [Chat model API reference](https://reference.langchain.com/python/langchain/chat_models/index.html) - Detailed API documentation
+
+## Next steps
+
+- Learn about [tool binding and function calling](/oss/python/langchain/tools)
+- Explore [streaming responses](/oss/python/langchain/streaming)
+- Build [multi-agent systems](/oss/python/langchain/multi-agent/index) with multiple models
+- Deploy models with [LangSmith observability](/oss/python/langchain/observability)
