@@ -1,3 +1,7 @@
+@claude 
+@copilot
+@gemini
+@chatgpt4o
 # LangChain Docs
 
 🦜 **Welcome!** This repository contains the documentation build pipeline for LangChain projects.
