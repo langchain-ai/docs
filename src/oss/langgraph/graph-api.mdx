@@ -1167,121 +1167,99 @@ async function myNode(state: any, config: RunnableConfig): Promise<any> {
 
 #### Proactive recursion handling
 
-You can check the step counter and proactively route to a different node before hitting the limit. This allows for graceful degradation within your graph.
+LangGraph provides a `RemainingSteps` managed value that tracks how many steps remain before hitting the recursion limit. This allows for graceful degradation within your graph.
 
 :::python
 
 ```python
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, END
+from typing import Annotated, Literal
+from langgraph.graph import StateGraph, START, END
+from langgraph.managed import RemainingSteps
 
-def reasoning_node(state: dict, config: RunnableConfig) -> dict:
-    current_step = config["metadata"]["langgraph_step"]
-    recursion_limit = config["recursion_limit"]  # always present, defaults to 25
+class State(TypedDict):
+    messages: Annotated[list, lambda x, y: x + y]
+    remaining_steps: RemainingSteps  # Managed value - tracks steps until limit
 
-    # Check if we're approaching the limit (e.g., 80% threshold)
-    if current_step >= recursion_limit * 0.8:
-        return {
-            **state,
-            "route_to": "fallback",
-            "reason": "Approaching recursion limit"
-        }
+def reasoning_node(state: State) -> dict:
+    # RemainingSteps is automatically populated by LangGraph
+    remaining = state["remaining_steps"]
+
+    # Check if we're running low on steps
+    if remaining <= 2:
+        return {"messages": ["Approaching limit, wrapping up..."]}
 
     # Normal processing
-    return {"messages": state["messages"] + ["thinking..."]}
+    return {"messages": ["thinking..."]}
 
-def fallback_node(state: dict, config: RunnableConfig) -> dict:
+def route_decision(state: State) -> Literal["reasoning_node", "fallback_node"]:
+    """Route based on remaining steps"""
+    if state["remaining_steps"] <= 2:
+        return "fallback_node"
+    return "reasoning_node"
+
+def fallback_node(state: State) -> dict:
     """Handle cases where recursion limit is approaching"""
-    return {
-        **state,
-        "messages": state["messages"] + ["Reached complexity limit, providing best effort answer"]
-    }
-
-def route_based_on_state(state: dict) -> str:
-    if state.get("route_to") == "fallback":
-        return "fallback"
-    elif state.get("done"):
-        return END
-    return "reasoning"
+    return {"messages": ["Reached complexity limit, providing best effort answer"]}
 
 # Build graph
-graph = StateGraph(dict)
-graph.add_node("reasoning", reasoning_node)
-graph.add_node("fallback", fallback_node)
-graph.add_conditional_edges("reasoning", route_based_on_state)
-graph.add_edge("fallback", END)
-graph.set_entry_point("reasoning")
+builder = StateGraph(State)
+builder.add_node("reasoning_node", reasoning_node)
+builder.add_node("fallback_node", fallback_node)
+builder.add_edge(START, "reasoning_node")
+builder.add_conditional_edges("reasoning_node", route_decision)
+builder.add_edge("fallback_node", END)
 
-app = graph.compile()
+graph = builder.compile()
+
+# RemainingSteps works with any recursion_limit
+result = graph.invoke({"messages": []}, {"recursion_limit": 10})
 ```
 
 :::
 
 :::js
 
+Design your graph with explicit termination conditions, and catch `GraphRecursionError` as a safety net:
+
 ```typescript
-import { RunnableConfig } from "@langchain/core/runnables";
-import { StateGraph, END } from "@langchain/langgraph";
+import { StateGraph, END, GraphRecursionError } from "@langchain/langgraph";
 
 interface State {
   messages: string[];
-  route_to?: string;
-  reason?: string;
-  done?: boolean;
 }
 
-async function reasoningNode(
-  state: State,
-  config: RunnableConfig
-): Promise<Partial<State>> {
-  const currentStep = config.metadata?.langgraph_step ?? 0;
-  const recursionLimit = config.recursionLimit!; // always present, defaults to 25
-
-  // Check if we're approaching the limit (e.g., 80% threshold)
-  if (currentStep >= recursionLimit * 0.8) {
-    return {
-      ...state,
-      route_to: "fallback",
-      reason: "Approaching recursion limit"
-    };
-  }
-
-  // Normal processing
+async function reasoningNode(state: State): Promise<Partial<State>> {
+  // Normal processing - design your graph with explicit termination conditions
   return {
     messages: [...state.messages, "thinking..."]
   };
 }
 
-async function fallbackNode(
-  state: State,
-  config: RunnableConfig
-): Promise<Partial<State>> {
-  return {
-    ...state,
-    messages: [
-      ...state.messages,
-      "Reached complexity limit, providing best effort answer"
-    ]
-  };
-}
-
-function routeBasedOnState(state: State): string {
-  if (state.route_to === "fallback") {
-    return "fallback";
-  } else if (state.done) {
-    return END;
-  }
-  return "reasoning";
-}
-
-// Build graph
+// Build graph with explicit termination logic
 const graph = new StateGraph<State>({ channels: {} })
   .addNode("reasoning", reasoningNode)
-  .addNode("fallback", fallbackNode)
-  .addConditionalEdges("reasoning", routeBasedOnState)
-  .addEdge("fallback", END);
+  .addConditionalEdges("reasoning", (state) => {
+    // Add your termination condition here
+    if (state.messages.length >= 5) {
+      return END;
+    }
+    return "reasoning";
+  });
 
 const app = graph.compile();
+
+// Catch GraphRecursionError as a safety net
+try {
+  const result = await app.invoke(
+    { messages: [] },
+    { recursionLimit: 10 }
+  );
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    console.log("Recursion limit reached, handling gracefully");
+    // Handle the error - return partial results, notify user, etc.
+  }
+}
 ```
 
 :::
@@ -1293,33 +1271,50 @@ There are two main approaches to handling recursion limits: proactive (monitorin
 :::python
 
 ```python
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, END
+from typing import Annotated, Literal, TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.managed import RemainingSteps
 from langgraph.errors import GraphRecursionError
 
-# Proactive Approach (recommended)
-def agent_with_monitoring(state: dict, config: RunnableConfig) -> dict:
+class State(TypedDict):
+    messages: Annotated[list, lambda x, y: x + y]
+    remaining_steps: RemainingSteps
+
+# Proactive Approach (recommended) - using RemainingSteps
+def agent_with_monitoring(state: State) -> dict:
     """Proactively monitor and handle recursion within the graph"""
-    current_step = config["metadata"]["langgraph_step"]
-    recursion_limit = config["recursion_limit"]
+    remaining = state["remaining_steps"]
 
     # Early detection - route to internal handling
-    if current_step >= recursion_limit - 2:  # 2 steps before limit
+    if remaining <= 2:
         return {
-            **state,
-            "status": "recursion_limit_approaching",
-            "final_answer": "Reached iteration limit, returning partial result"
+            "messages": ["Approaching limit, returning partial result"]
         }
 
     # Normal processing
-    return {"messages": state["messages"] + [f"Step {current_step}"]}
+    return {"messages": [f"Processing... ({remaining} steps remaining)"]}
 
-# Reactive Approach (fallback)
+def route_decision(state: State) -> Literal["agent", END]:
+    if state["remaining_steps"] <= 2:
+        return END
+    return "agent"
+
+# Build graph
+builder = StateGraph(State)
+builder.add_node("agent", agent_with_monitoring)
+builder.add_edge(START, "agent")
+builder.add_conditional_edges("agent", route_decision)
+graph = builder.compile()
+
+# Proactive: Graph completes gracefully
+result = graph.invoke({"messages": []}, {"recursion_limit": 10})
+
+# Reactive Approach (fallback) - catching error externally
 try:
-    result = graph.invoke(initial_state, {"recursion_limit": 10})
+    result = graph.invoke({"messages": []}, {"recursion_limit": 10})
 except GraphRecursionError as e:
     # Handle externally after graph execution fails
-    result = fallback_handler(initial_state)
+    result = {"messages": ["Fallback: recursion limit exceeded"]}
 ```
 
 :::
@@ -1327,57 +1322,54 @@ except GraphRecursionError as e:
 :::js
 
 ```typescript
-import { RunnableConfig } from "@langchain/core/runnables";
-import { StateGraph, END } from "@langchain/langgraph";
-import { GraphRecursionError } from "@langchain/langgraph";
+import { StateGraph, END, GraphRecursionError } from "@langchain/langgraph";
 
 interface State {
   messages: string[];
-  status?: string;
-  final_answer?: string;
 }
 
-// Proactive Approach (recommended)
-async function agentWithMonitoring(
-  state: State,
-  config: RunnableConfig
-): Promise<Partial<State>> {
-  const currentStep = config.metadata?.langgraph_step ?? 0;
-  const recursionLimit = config.recursionLimit!;
-
-  // Early detection - route to internal handling
-  if (currentStep >= recursionLimit - 2) { // 2 steps before limit
-    return {
-      ...state,
-      status: "recursion_limit_approaching",
-      final_answer: "Reached iteration limit, returning partial result"
-    };
-  }
-
-  // Normal processing
+async function agent(state: State): Promise<Partial<State>> {
   return {
-    messages: [...state.messages, `Step ${currentStep}`]
+    messages: [...state.messages, "Processing..."]
   };
 }
 
-// Reactive Approach (fallback)
+// Build graph with explicit termination logic
+const builder = new StateGraph<State>({ channels: {} })
+  .addNode("agent", agent)
+  .addConditionalEdges("agent", (state) => {
+    // Design termination conditions into your graph
+    if (state.messages.length >= 5) {
+      return END;
+    }
+    return "agent";
+  });
+
+const graph = builder.compile();
+
+// Reactive Approach - catch GraphRecursionError as safety net
 try {
-  const result = await graph.invoke(initialState, { recursionLimit: 10 });
+  const result = await graph.invoke(
+    { messages: [] },
+    { recursionLimit: 10 }
+  );
 } catch (error) {
   if (error instanceof GraphRecursionError) {
     // Handle externally after graph execution fails
-    const result = await fallbackHandler(initialState);
+    console.log("Recursion limit exceeded, handling gracefully");
   }
 }
 ```
 
 :::
 
+:::python
+
 The key differences between these approaches are:
 
 | Approach | Detection | Handling | Control Flow |
 |----------|-----------|----------|--------------|
-| Proactive (using `langgraph_step`) | Before limit reached | Inside graph via conditional routing | Graph continues to completion node |
+| Proactive (using `RemainingSteps`) | Before limit reached | Inside graph via conditional routing | Graph continues to completion node |
 | Reactive (catching `GraphRecursionError`) | After limit exceeded | Outside graph in try/catch | Graph execution terminated |
 
 **Proactive advantages:**
@@ -1392,6 +1384,24 @@ The key differences between these approaches are:
 - Simpler implementation
 - No need to modify graph logic
 - Centralized error handling
+
+:::
+
+:::js
+
+The reactive approach catches `GraphRecursionError` after the limit is exceeded. Design your graph with explicit termination conditions to avoid hitting the limit in the first place.
+
+| Approach | Detection | Handling | Control Flow |
+|----------|-----------|----------|--------------|
+| Reactive (catching `GraphRecursionError`) | After limit exceeded | Outside graph in try/catch | Graph execution terminated |
+
+**Reactive advantages:**
+
+- Simple implementation
+- No need to modify graph logic
+- Centralized error handling
+
+:::
 
 #### Other available metadata
 
