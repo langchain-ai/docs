@@ -24,14 +24,14 @@ In addition, your vectors can benefit from all of Oracle Database’s most power
 
 If you are just starting with Oracle Database, consider exploring the [free Oracle 23 AI](https://www.oracle.com/database/free/#resources) which provides a great introduction to setting up your database environment. While working with the database, it is often advisable to avoid using the system user by default; instead, you can create your own user for enhanced security and customization. For detailed steps on user creation, refer to our [end-to-end guide](https://github.com/langchain-ai/langchain/blob/v0.3/cookbook/oracleai_demo.ipynb) which also shows how to set up a user in Oracle. Additionally, understanding user privileges is crucial for managing database security effectively. You can learn more about this topic in the official [Oracle guide](https://docs.oracle.com/en/database/oracle/oracle-database/19/admqs/administering-user-accounts-and-security.html#GUID-36B21D72-1BBB-46C9-A0C9-F0D2A8591B8D) on administering user accounts and security.
 
-### Prerequisites for using LangChain with Oracle AI Vector Search
+### Prerequisites
 
-You'll need to install `langchain-community` with `pip install -qU langchain-community` to use this integration
+You'll need to install `langchain-oracledb` to use this integration.
 
-Please install Oracle Python Client driver to use LangChain with Oracle AI Vector Search.
+The `python-oracledb` driver is installed automatically as a dependency of langchain-oracledb.
 
 ```python
-# pip install oracledb
+# python -m pip install -U langchain-oracledb
 ```
 
 ### Connect to Oracle AI Vector Search
@@ -41,28 +41,26 @@ The following sample code will show how to connect to Oracle Database. By defaul
 ```python
 import oracledb
 
-username = "username"
-password = "password"
-dsn = "ipaddress:port/orclpdb1"
+# Please update with your username, password, hostname, port and service_name
+username = "<username>"
+password = "<password>"
+dsn = "<hostname>:<port>/<service_name>"
 
-try:
-    connection = oracledb.connect(user=username, password=password, dsn=dsn)
-    print("Connection successful!")
-except Exception as e:
-    print("Connection failed!")
+connection = oracledb.connect(user=username, password=password, dsn=dsn)
+print("Connection successful!")
 ```
 
-### Import the required dependencies to use Oracle AI Vector Search
+### Import the required dependencies
 
 ```python
-from langchain_community.vectorstores import oraclevs
-from langchain_community.vectorstores.oraclevs import OracleVS
+from langchain_oracledb.vectorstores import oraclevs
+from langchain_oracledb.vectorstores.oraclevs import OracleVS
 from langchain_community.vectorstores.utils import DistanceStrategy
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 ```
 
-### Load Documents
+### Load documents
 
 ```python
 # Define a list of documents (The examples below are 5 random documents from Oracle Concepts Manual )
@@ -102,7 +100,7 @@ for doc in documents_json_list:
     documents_langchain.append(doc_langchain)
 ```
 
-### Create Vector Stores with different distance metrics using AI Vector Search
+### Create vector stores with different distance metrics
 
 First we will create three vector stores each with different distance functions. Since we have not created indices in them yet, they will just create tables for now. Later we will use these vector stores to create HNSW indicies. To understand more about the different types of indices Oracle AI Vector Search supports, refer to the following [guide](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/manage-different-categories-vector-indexes.html) .
 
@@ -167,7 +165,7 @@ vector_store_euclidean_ivf = OracleVS.from_documents(
 )
 ```
 
-### Demonstrating add and delete operations for texts, along with basic similarity search
+### Add and delete operations for texts, along with basic similarity search
 
 ```python
 def manage_texts(vector_stores):
@@ -212,7 +210,7 @@ vector_store_list = [
 manage_texts(vector_store_list)
 ```
 
-### Demonstrating index creation with specific parameters for each distance strategy
+### Index creation with specific parameters
 
 ```python
 def create_search_indices(connection):
@@ -293,7 +291,114 @@ def create_search_indices(connection):
 create_search_indices(connection)
 ```
 
-### Demonstrate advanced searches on all six vector stores, with and without attribute filtering – with filtering, we only select the document id 101 and nothing else
+### Advanced search
+
+Oracle Database 23ai supports pre-filtering, in-filtering, and post-filtering to enhance AI Vector Search capabilities. These filtering mechanisms allow users to apply constraints before, during, and after performing vector similarity searches, improving search performance and accuracy.
+
+Key Points about Filtering in Oracle 23ai:
+
+1. Pre-filtering
+    Applies traditional SQL filters to reduce the dataset before performing the vector similarity search.
+    Helps improve efficiency by limiting the amount of data processed by AI algorithms.
+2. In-filtering
+    Utilizes AI Vector Search to perform similarity searches directly on vector embeddings, using optimized indexes and algorithms.
+    Efficiently filters results based on vector similarity without requiring full dataset scans.
+3. Post-filtering
+    Applies additional SQL filtering to refine the results after the vector similarity search.
+    Allows further refinement based on business logic or additional metadata conditions.
+
+**Why is this Important?**
+
+* Performance Optimization: Pre-filtering significantly reduces query execution time, making searches on massive datasets more efficient.
+* Accuracy Enhancement: In-filtering ensures that vector searches are semantically meaningful, improving the quality of search results.
+
+#### Filter Details
+
+`OracleVS` supports a set of filters that can be applied to `metadata` fields using `filter` parameter. These filters allow you to select and refine data based on various criteria.
+
+**Available Filter Operators:**
+
+| Operator                   | Description                                                                                      |
+|----------------------------|--------------------------------------------------------------------------------------------------|
+| `\$exists`                 | Field exists.                                                                                    |
+| `\$eq`                     | Field value equals the operand value (`=`).                                                      |
+| `\$ne`                     | Field exists and value does not equal the operand value (`!=`).                                  |
+| `\$gt`                     | Field value is greater than the operand value (`>`).                                             |
+| `\$lt`                     | Field value is less than the operand value (`<`).                                                |
+| `\$gte`                    | Field value is greater than or equal to the operand value (`>=`).                                |
+| `\$lte`                    | Field value is less than or equal to the operand value (`<=`).                                   |
+| `\$between`                | Field value is between (or equal to) two values in the operand array.                            |
+| `\$startsWith`             | Field value starts with the operand value.                                                       |
+| `\$hasSubstring`           | Field value contains the operand as a substring.                                                 |
+| `\$instr`                  | Field value contains the operand as a substring.                                                 |
+| `\$regex`                  | Field value matches the given regular expression pattern.                                        |
+| `\$like`                   | Field value matches the operand pattern (using SQL-like syntax).                                 |
+| `\$in`                     | Field value equals at least one value in the operand array.                                      |
+| `\$nin`                    | Field exists, but its value is not equal to any in the operand array, or the field does not exist.|
+| `\$all`                    | Field value is an array containing all items from the operand array, or a scalar matching a single operand. |
+
+* You can combine these filters using logical operators:
+
+| Logical Operator   | Description          |
+|--------------------|----------------------|
+| `\$and`            | Logical AND          |
+| `\$or`             | Logical OR           |
+| `\$nor`            | Logical NOR          |
+
+**Example Filter:**
+
+```json
+{
+  "age": 65,
+  "name": {"$regex": "*rk"},
+  "$or": [
+    {
+      "$and": [
+        {"name": "Jason"},
+        {"drinks": {"$in": ["tea", "soda"]}}
+      ]
+    },
+    {
+      "$nor": [
+        {"age": {"$lt": 65}},
+        {"name": "Jason"}
+      ]
+    }
+  ]
+}
+```
+
+**Additional Usage Tips:**
+
+* You can omit `$and` when all filters in an object must be satisfied. These two are equivalent:
+
+```json
+{ "$and": [
+    { "name": { "$startsWith": "Fred" } },
+    { "salary": { "$gt": 10000, "$lte": 20000 } }
+]}
+```
+
+```json
+{
+  "name": { "$startsWith": "Fred" },
+  "salary": { "$gt": 10000, "$lte": 20000 }
+}
+```
+
+* The `$not` clause can negate a comparison operator:
+
+```json
+{ "address.zip": { "$not": { "$eq": "90001" } } }
+```
+
+* Using `field: scalar` is equivalent to `field: { "$eq": scalar }`:
+
+```json
+{ "animal": "cat" }
+```
+
+For more filter examples, refer to the [test specification](https://github.com/oracle/langchain-oracle/blob/main/libs/oracledb/tests/integration_tests/vectorstores/test_oraclevs.py).
 
 ```python
 # Conduct advanced searches after creating the indices
@@ -301,7 +406,23 @@ def conduct_advanced_searches(vector_stores):
     query = "How are LOBS stored in Oracle Database"
     # Constructing a filter for direct comparison against document metadata
     # This filter aims to include documents whose metadata 'id' is exactly '2'
-    filter_criteria = {"id": ["101"]}  # Direct comparison filter
+    db_filter = {
+        "$and": [
+            {"id": "101"},  # FilterCondition
+            {
+                "$or": [  # FilterGroup
+                    {"status": "approved"},
+                    {"link": "Document Example Test 2"},
+                    {
+                        "$and": [  # Nested FilterGroup
+                            {"status": "approved"},
+                            {"link": "Document Example Test 2"},
+                        ]
+                    },
+                ]
+            },
+        ]
+    }
 
     for i, vs in enumerate(vector_stores, start=1):
         print(f"\n--- Vector Store {i} Advanced Searches ---")
@@ -311,7 +432,7 @@ def conduct_advanced_searches(vector_stores):
 
         # Similarity search with a filter
         print("\nSimilarity search results with filter:")
-        print(vs.similarity_search(query, 2, filter=filter_criteria))
+        print(vs.similarity_search(query, 2, filter=db_filter))
 
         # Similarity search with relevance score
         print("\nSimilarity search with relevance score:")
@@ -319,7 +440,7 @@ def conduct_advanced_searches(vector_stores):
 
         # Similarity search with relevance score with filter
         print("\nSimilarity search with relevance score with filter:")
-        print(vs.similarity_search_with_score(query, 2, filter=filter_criteria))
+        print(vs.similarity_search_with_score(query, 2, filter=db_filter))
 
         # Max marginal relevance search
         print("\nMax marginal relevance search results:")
@@ -329,7 +450,7 @@ def conduct_advanced_searches(vector_stores):
         print("\nMax marginal relevance search results with filter:")
         print(
             vs.max_marginal_relevance_search(
-                query, 2, fetch_k=20, lambda_mult=0.5, filter=filter_criteria
+                query, 2, fetch_k=20, lambda_mult=0.5, filter=db_filter
             )
         )
 

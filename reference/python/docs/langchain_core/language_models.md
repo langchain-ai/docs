@@ -1,4 +1,3 @@
-<!-- `members: []` in order to show module docstring -->
 ::: langchain_core.language_models
     options:
       parameter_headings: true

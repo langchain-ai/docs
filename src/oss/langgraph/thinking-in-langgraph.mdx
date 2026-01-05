@@ -1,16 +1,17 @@
 ---
 title: Thinking in LangGraph
-description: Learn how to think about building agents with LangGraph by breaking down a customer support email agent into discrete steps
+description: Learn how to think about building agents with LangGraph
 ---
 
+When you build an agent with LangGraph, you will first break it apart into discrete steps called **nodes**. Then, you will describe the different decisions and transitions from each of your nodes. Finally, you connect nodes together through a shared **state** that each node can read from and write to.
 
-
-LangGraph can change how you think about the agents you build. When you build an agent with LangGraph, you will first break it apart into discrete steps called **nodes**. Then, you will describe the different decisions and transitions for each of your nodes. Finally, you will connect your nodes together through a shared **state** that each node can read from and write to. In this tutorial, we'll guide you through the thought process of building a customer support email agent with LangGraph.
+In this walkthrough, we'll guide you through the thought process of building a customer support email agent with LangGraph.
 
 ## Start with the process you want to automate
 
 Imagine that you need to build an AI agent that handles customer support emails. Your product team has given you these requirements:
 
+```txt
 The agent should:
 
 - Read incoming customer emails
@@ -27,12 +28,13 @@ Example scenarios to handle:
 3. Urgent billing issue: "I was charged twice for my subscription!"
 4. Feature request: "Can you add dark mode to the mobile app?"
 5. Complex technical issue: "Our API integration fails intermittently with 504 errors"
+```
 
 To implement an agent in LangGraph, you will usually follow the same five steps.
 
 ## Step 1: Map out your workflow as discrete steps
 
-Start by identifying the distinct steps in your process. Each step will become a **node** (a function that does one specific thing). Then sketch how these steps connect to each other.
+Start by identifying the distinct steps in your process. Each step will become a **node** (a function that does one specific thing). Then, sketch how these steps connect to each other.
 
 ```mermaid
 flowchart TD
@@ -54,20 +56,20 @@ flowchart TD
     I --> J[END]
 ```
 
-The arrows show possible paths, but the actual decision of which path to take happens inside each node.
+The arrows in this diagram show possible paths, but the actual decision of which path to take happens inside each node.
 
-Now that you've identified the components in your workflow, let's understand what each node needs to do:
+Now that we've identified the components in our workflow, let's understand what each node needs to do:
 
-- Read Email: Extract and parse the email content
-- Classify Intent: Use an LLM to categorize urgency and topic, then route to appropriate action
-- Doc Search: Query your knowledge base for relevant information
-- Bug Track: Create or update issue in tracking system
-- Draft Reply: Generate an appropriate response
-- Human Review: Escalate to human agent for approval or handling
-- Send Reply: Dispatch the email response
+- `Read Email`: Extract and parse the email content
+- `Classify Intent`: Use an LLM to categorize urgency and topic, then route to appropriate action
+- `Doc Search`: Query your knowledge base for relevant information
+- `Bug Track`: Create or update issue in tracking system
+- `Draft Reply`: Generate an appropriate response
+- `Human Review`: Escalate to human agent for approval or handling
+- `Send Reply`: Dispatch the email response
 
 <Tip>
-Notice that some nodes make decisions about where to go next (Classify Intent, Draft Reply, Human Review), while others always proceed to the same next step (Read Email always goes to Classify Intent, Doc Search always goes to Draft Reply).
+Notice that some nodes make decisions about where to go next (`Classify Intent`, `Draft Reply`, `Human Review`), while others always proceed to the same next step (`Read Email` always goes to `Classify Intent`, `Doc Search` always goes to `Draft Reply`).
 </Tip>
 
 ## Step 2: Identify what each step needs to do
@@ -75,80 +77,80 @@ Notice that some nodes make decisions about where to go next (Classify Intent, D
 For each node in your graph, determine what type of operation it represents and what context it needs to work properly.
 
 <CardGroup cols={2}>
-    <Card title="LLM Steps" icon="brain" href="#llm-steps">
+    <Card title="LLM steps" icon="brain" href="#llm-steps">
         Use when you need to understand, analyze, generate text, or make reasoning decisions
     </Card>
-    <Card title="Data Steps" icon="database" href="#data-steps">
+    <Card title="Data steps" icon="database" href="#data-steps">
         Use when you need to retrieve information from external sources
     </Card>
-    <Card title="Action Steps" icon="bolt" href="#action-steps">
+    <Card title="Action steps" icon="bolt" href="#action-steps">
         Use when you need to perform external actions
     </Card>
-    <Card title="User Input Steps" icon="user" href="#user-input-steps">
+    <Card title="User input steps" icon="user" href="#user-input-steps">
         Use when you need human intervention
     </Card>
 </CardGroup>
 
-### LLM Steps
+### LLM steps
 
 When a step needs to understand, analyze, generate text, or make reasoning decisions:
 
 <AccordionGroup>
-    <Accordion title="Classify Intent Node">
+    <Accordion title="Classify intent">
         - Static context (prompt): Classification categories, urgency definitions, response format
         - Dynamic context (from state): Email content, sender information
         - Desired outcome: Structured classification that determines routing
     </Accordion>
 
-    <Accordion title="Draft Reply Node">
+    <Accordion title="Draft reply">
         - Static context (prompt): Tone guidelines, company policies, response templates
         - Dynamic context (from state): Classification results, search results, customer history
         - Desired outcome: Professional email response ready for review
     </Accordion>
 </AccordionGroup>
 
-### Data Steps
+### Data steps
 
 When a step needs to retrieve information from external sources:
 
 <AccordionGroup>
-    <Accordion title="Document Search Node">
+    <Accordion title="Document search">
         - Parameters: Query built from intent and topic
         - Retry strategy: Yes, with exponential backoff for transient failures
         - Caching: Could cache common queries to reduce API calls
     </Accordion>
 
-    <Accordion title="Customer History Lookup">
+    <Accordion title="Customer history lookup">
         - Parameters: Customer email or ID from state
         - Retry strategy: Yes, but with fallback to basic info if unavailable
         - Caching: Yes, with time-to-live to balance freshness and performance
     </Accordion>
 </AccordionGroup>
 
-### Action Steps
+### Action steps
 
 When a step needs to perform an external action:
 
 <AccordionGroup>
-    <Accordion title="Send Reply Node">
-        - When to execute: After approval (human or automated)
+    <Accordion title="Send reply">
+        - When to execute node: After approval (human or automated)
         - Retry strategy: Yes, with exponential backoff for network issues
         - Should not cache: Each send is a unique action
     </Accordion>
 
-    <Accordion title="Bug Track Node">
-        - When to execute: Always when intent is "bug"
+    <Accordion title="Bug track">
+        - When to execute node: Always when intent is "bug"
         - Retry strategy: Yes, critical to not lose bug reports
         - Returns: Ticket ID to include in response
     </Accordion>
 </AccordionGroup>
 
-### User Input Steps
+### User input steps
 
 When a step needs human intervention:
 
 <AccordionGroup>
-    <Accordion title="Human Review Node">
+    <Accordion title="Human review node">
         - Context for decision: Original email, draft response, urgency, classification
         - Expected input format: Approval boolean plus optional edited response
         - When triggered: High urgency, complex issues, or quality concerns
@@ -164,19 +166,19 @@ State is the shared [memory](/oss/concepts/memory) accessible to all nodes in yo
 Ask yourself these questions about each piece of data:
 
 <CardGroup cols={2}>
-    <Card title="Include in State" icon="check">
+    <Card title="Include in state" icon="check">
         Does it need to persist across steps? If yes, it goes in state.
     </Card>
 
-    <Card title="Don't Store" icon="code">
+    <Card title="Don't store" icon="code">
         Can you derive it from other data? If yes, compute it when needed instead of storing it in state.
     </Card>
 </CardGroup>
 
 For our email agent, we need to track:
 
-- The original email and sender info (can't reconstruct these)
-- Classification results (needed by multiple downstream nodes)
+- The original email and sender info (can't reconstruct these later)
+- Classification results (needed by multiple later/downstream nodes)
 - Search results and customer data (expensive to re-fetch)
 - The draft response (needs to persist through review)
 - Execution metadata (for debugging and recovery)
@@ -184,14 +186,14 @@ For our email agent, we need to track:
 ### Keep state raw, format prompts on-demand
 
 <Tip>
-A key principle: your state should store raw data, not formatted text. Format prompts inside nodes when you need them.
+    A key principle: your state should store raw data, not formatted text. Format prompts inside nodes when you need them.
 </Tip>
 
 This separation means:
 
 - Different nodes can format the same data differently for their needs
 - You can change prompt templates without modifying your state schema
-- Debugging is clearer - you see exactly what data each node received
+- Debugging is clearer – you see exactly what data each node received
 - Your agent can evolve without breaking existing state
 
 Let's define our state:
@@ -264,7 +266,7 @@ type EmailClassificationType = z.infer<typeof EmailClassificationSchema>;
 
 :::
 
-Notice that the state contains only raw data - no prompt templates, no formatted strings, no instructions. The classification output is stored as a single dictionary, straight from the LLM.
+Notice that the state contains only raw data – no prompt templates, no formatted strings, no instructions. The classification output is stored as a single dictionary, straight from the LLM.
 
 ## Step 4: Build your nodes
 
@@ -480,7 +482,7 @@ We'll implement each node as a simple function. Remember: nodes take state, do w
     from langchain_openai import ChatOpenAI
     from langchain.messages import HumanMessage
 
-    llm = ChatOpenAI(model="gpt-4")
+    llm = ChatOpenAI(model="gpt-5-nano")
 
     def read_email(state: EmailAgentState) -> dict:
         """Extract and parse email content"""
@@ -972,7 +974,7 @@ initial_state = {
 config = {"configurable": {"thread_id": "customer_123"}}
 result = app.invoke(initial_state, config)
 # The graph will pause at human_review
-print(f"Draft ready for review: {result['draft_response'][:100]}...")
+print(f"human review interrupt:{result['__interrupt__']}")
 
 # When ready, provide human input to resume
 from langgraph.types import Command
