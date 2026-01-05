@@ -3,7 +3,15 @@ title: Prevent logging of sensitive data in traces
 sidebarTitle: Prevent logging of sensitive data in traces
 ---
 
-In some situations, you may need to prevent the inputs and outputs of your traces from being logged for privacy or security reasons. LangSmith provides a way to filter the inputs and outputs of your traces before they are sent to the LangSmith backend.
+When working with LangSmith traces, you may need to prevent sensitive information from being logged to maintain privacy and comply with security requirements. LangSmith provides multiple approaches to protect your data before it's sent to the backend:
+
+- [Completely hide inputs and outputs](#hide-inputs-and-outputs) using environment variables or @[Client] configuration.
+- [Hide metadata](#hide-metadata) to remove or transform run metadata.
+- [Apply rule-based masking](#rule-based-masking-of-inputs-and-outputs) with regex patterns or anonymization libraries to selectively redact sensitive information.
+- [Process inputs and outputs for individual functions](#processing-inputs-&-outputs-for-a-single-function) with function-level customization.
+- [Use third-party anonymizers](#examples) like Microsoft Presidio and Amazon Comprehend for advanced PII detection.
+
+## Hide inputs and outputs
 
 If you want to completely hide the inputs and outputs of your traces, you can set the following environment variables when running your application:
 
@@ -14,9 +22,9 @@ LANGSMITH_HIDE_OUTPUTS=true
 
 This works for both the LangSmith SDK (Python and TypeScript) and LangChain.
 
-You can also customize and override this behavior for a given `Client` instance. This can be done by setting the `hide_inputs` and `hide_outputs` parameters on the `Client` object (`hideInputs` and `hideOutputs` in TypeScript).
+You can also customize and override this behavior for a given @[Client] instance. This can be done by setting the `hide_inputs` and `hide_outputs` parameters on the @[Client] object (`hideInputs` and `hideOutputs` in TypeScript).
 
-For the example below, we will simply return an empty object for both `hide_inputs` and `hide_outputs`, but you can customize this to your needs.
+The following example returns an empty object for both `hide_inputs` and `hide_outputs`, but you can customize this to your needs:
 
 <CodeGroup>
 
@@ -85,6 +93,83 @@ await openaiClient.chat.completions.create({
 
 </CodeGroup>
 
+## Hide metadata
+
+The `hide_metadata` parameter allows you to control whether run metadata is hidden or transformed when tracing with the LangSmith Python SDK. Metadata is passed with the `extra` parameter when creating runs (e.g., `extra={"metadata": {...}}`). `hide_metadata` is useful for removing sensitive information, complying with privacy requirements, or reducing the amount of data sent to LangSmith. You can configure metadata hiding in two ways:
+
+- Using the SDK:
+
+    ```python
+    from langsmith import Client
+
+    client = Client(hide_metadata=True)
+    ```
+
+- Using environment variables:
+
+    ```bash
+    export LANGSMITH_HIDE_METADATA=true
+    ```
+
+The `hide_metadata` parameter accepts three types of values:
+
+- `True`: Completely removes all metadata (sends an empty dictionary).
+- `False` or `None`: Preserves metadata as-is (default behavior).
+- `Callable`: A custom function that transforms the metadata dictionary.
+
+When set, this parameter affects the `metadata` field in the `extra` parameter for all runs created or updated by the @[Client], including runs created through the `@traceable` decorator or LangChain integrations.
+
+### Hide all metadata
+
+Set `hide_metadata=True` to remove all metadata completely from runs sent to LangSmith:
+
+```python
+from langsmith import Client
+
+# Hide all metadata completely
+client = Client(hide_metadata=True)
+
+# Now when you create runs, metadata will be empty
+client.create_run(
+    "my_run",
+    inputs={"question": "What is 2+2?"},
+    run_type="llm",
+    extra={"metadata": {"user_id": "123", "session": "abc"}}
+)
+# The metadata sent to LangSmith will be {} instead of the provided metadata
+```
+
+### Custom transformation
+
+Use a callable function to selectively filter, redact, or modify metadata before it's sent to LangSmith:
+
+```python
+# Remove sensitive keys
+def hide_sensitive_metadata(metadata: dict) -> dict:
+    return {k: v for k, v in metadata.items() if not k.startswith("_private")}
+
+client = Client(hide_metadata=hide_sensitive_metadata)
+
+# Redact specific values
+def redact_emails(metadata: dict) -> dict:
+    import re
+    result = {}
+    for k, v in metadata.items():
+        if isinstance(v, str) and "@" in v:
+            result[k] = "[REDACTED_EMAIL]"
+        else:
+            result[k] = v
+    return result
+
+client = Client(hide_metadata=redact_emails)
+
+# Add transformation marker
+def add_marker(metadata: dict) -> dict:
+    return {**metadata, "transformed": True}
+
+client = Client(hide_metadata=add_marker)
+```
+
 ## Rule-based masking of inputs and outputs
 
 <Info>
@@ -94,11 +179,11 @@ This feature is available in the following LangSmith SDK versions:
 * TypeScript: 0.1.33 and above
 </Info>
 
-To mask specific data in inputs and outputs, you can use the `create_anonymizer` / `createAnonymizer` function and pass the newly created anonymizer when instantiating the client. The anonymizer can be either constructed from a list of regex patterns and the replacement values or from a function that accepts and returns a string value.
+To mask specific data in inputs and outputs, you can use the `create_anonymizer` / `createAnonymizer` function and pass the newly created anonymizer when instantiating the @[Client]. The anonymizer can be either constructed from a list of regex patterns and the replacement values or from a function that accepts and returns a string value.
 
 The anonymizer will be skipped for inputs if `LANGSMITH_HIDE_INPUTS = true`. Same applies for outputs if `LANGSMITH_HIDE_OUTPUTS = true`.
 
-However, if inputs or outputs are to be sent to client, the `anonymizer` method will take precedence over functions found in `hide_inputs` and `hide_outputs`. By default, the `create_anonymizer` will only look at maximum of 10 nesting levels deep, which can be configured via the `max_depth` parameter.
+However, if inputs or outputs are to be sent to @[Client], the `anonymizer` method will take precedence over functions found in `hide_inputs` and `hide_outputs`. By default, the `create_anonymizer` will only look at maximum of 10 nesting levels deep, which can be configured via the `max_depth` parameter.
 
 <CodeGroup>
 
@@ -257,13 +342,13 @@ await parent(inputs);
 
 </CodeGroup>
 
-## Processing Inputs & Outputs for a Single Function
+## Processing inputs and outputs for a single function
 
 <Info>
 The `process_outputs` parameter is available in LangSmith SDK version 0.1.98 and above for Python.
 </Info>
 
-In addition to client-level input and output processing, LangSmith provides function-level processing through the `process_inputs` and `process_outputs` parameters of the `@traceable` decorator.
+In addition to @[Client]-level input and output processing, LangSmith provides function-level processing through the `process_inputs` and `process_outputs` parameters of the `@traceable` decorator.
 
 These parameters accept functions that allow you to transform the inputs and outputs of a specific function before they are logged to LangSmith. This is useful for reducing payload size, removing sensitive information, or customizing how an object should be serialized and represented in LangSmith for a particular function.
 
@@ -309,11 +394,11 @@ async def async_function(key: str) -> int:
     return len(key)
 ```
 
-These function-level processors take precedence over client-level processors (`hide_inputs` and `hide_outputs`) when both are defined.
+These function-level processors take precedence over @[Client]-level processors (`hide_inputs` and `hide_outputs`) when both are defined.
 
-## Quick starts
+## Examples
 
-You can combine rule-based masking with various anonymizers to scrub sensitive information from inputs and outputs. In this how-to-guide, we'll cover working with regex, Microsoft Presidio, and Amazon Comprehend.
+You can combine rule-based masking with various anonymizers to scrub sensitive information from inputs and outputs. The following examples will cover working with regex, Microsoft Presidio, and Amazon Comprehend.
 
 ### Regex
 
@@ -383,7 +468,7 @@ def recursive_anonymize(data, depth=10):
 
 openai_client = wrap_openai(openai.Client())
 
-# Initialize the LangSmith client with the anonymization functions
+# Initialize the LangSmith @[Client] with the anonymization functions
 langsmith_client = Client(
     hide_inputs=recursive_anonymize, hide_outputs=recursive_anonymize
 )
@@ -493,7 +578,7 @@ def presidio_anonymize(data):
 
 openai_client = wrap_openai(openai.Client())
 
-# initialize the langsmith client with the anonymization functions
+# initialize the langsmith @[Client] with the anonymization functions
 langsmith_client = Client(
   hide_inputs=presidio_anonymize, hide_outputs=presidio_anonymize
 )
@@ -635,7 +720,7 @@ def comprehend_anonymize(data):
 
 openai_client = wrap_openai(openai.Client())
 
-# initialize the langsmith client with the anonymization functions
+# initialize the langsmith @[Client] with the anonymization functions
 langsmith_client = Client(
   hide_inputs=comprehend_anonymize, hide_outputs=comprehend_anonymize
 )
