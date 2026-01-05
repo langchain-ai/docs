@@ -12,7 +12,123 @@
   })(window, document, 'script', 'dataLayer', 'GTM-MBBX68ST');</script>
 <!-- End Google Tag Manager -->
 <!-- CookieYes Banner -->
-<script id="cookieyes" type="text/javascript" src="https://cdn-cookieyes.com/client_data/d2e859934c4309be824ea8bb/script.js"></script>
+ <!-- (Added functionality for instant nav support) -->
+<script>
+  (function() {
+    // === DEBUG MODE ===
+    var CKY_DEBUG = false;
+
+    function log(msg, data) {
+      if (CKY_DEBUG) {
+        var prefix = '[CookieYes Debug]';
+        if (data !== undefined) {
+          console.log(prefix, msg, data);
+        } else {
+          console.log(prefix, msg);
+        }
+      }
+    }
+
+    var ckyStylesBackup = null;
+
+    // Load CookieYes script on initial page load
+    function loadCookieYes() {
+      if (!document.getElementById('cookieyes')) {
+        log('Loading CookieYes script...');
+        var script = document.createElement('script');
+        script.id = 'cookieyes';
+        script.type = 'text/javascript';
+        script.src = 'https://cdn-cookieyes.com/client_data/d2e859934c4309be824ea8bb/script.js';
+        document.head.appendChild(script);
+      } else {
+        log('CookieYes script already exists, skipping load');
+      }
+    }
+
+    // Watch for CookieYes styles to be added and back them up
+    var observer = new MutationObserver(function(mutations) {
+      var ckyStyle = document.getElementById('cky-style');
+      if (ckyStyle && !ckyStylesBackup) {
+        ckyStylesBackup = ckyStyle.innerHTML;
+        log('Captured CookieYes styles, length:', ckyStylesBackup.length + ' chars');
+      }
+    });
+    observer.observe(document.head, { childList: true });
+
+    // Restore CookieYes styles after instant navigation if missing
+    function restoreCkyStyles() {
+      var ckyStyle = document.getElementById('cky-style');
+      var bannerExists = document.querySelector('.cky-consent-container, .cky-btn-revisit-wrapper');
+
+      log('Navigation detected - checking styles...', {
+        stylesExist: !!ckyStyle,
+        bannerExists: !!bannerExists,
+        backupAvailable: !!ckyStylesBackup
+      });
+
+      if (!ckyStyle && ckyStylesBackup) {
+        var style = document.createElement('style');
+        style.id = 'cky-style';
+        style.innerHTML = ckyStylesBackup;
+        document.head.appendChild(style);
+        log('Restored CookieYes styles successfully');
+      } else if (ckyStyle) {
+        log('Styles already present, no restore needed');
+      } else if (!ckyStylesBackup) {
+        log('WARNING: No backup available to restore!');
+      }
+    }
+
+    // Initial load
+    document.addEventListener('DOMContentLoaded', function() {
+      log('DOMContentLoaded fired');
+      loadCookieYes();
+    });
+
+    // Subscribe to MkDocs Material's document$ observable for instant navigation
+    // document$ is available after the theme's JS loads
+    var checkCount = 0;
+    var checkInterval = setInterval(function() {
+      checkCount++;
+      if (typeof document$ !== 'undefined') {
+        clearInterval(checkInterval);
+        log('Found document$ observable after ' + checkCount + ' checks');
+        document$.subscribe(function() {
+          log('document$ emitted (page navigation/load)');
+          restoreCkyStyles();
+        });
+      }
+    }, 100);
+
+    // Fallback: stop checking after 10 seconds
+    setTimeout(function() {
+      if (checkInterval) {
+        clearInterval(checkInterval);
+        log('WARNING: document$ not found after 10 seconds - instant nav support disabled');
+      }
+    }, 10000);
+
+    // Expose debug helpers to window for console access
+    window.__ckyDebug = {
+      getBackup: function() { return ckyStylesBackup; },
+      getBackupLength: function() { return ckyStylesBackup ? ckyStylesBackup.length : 0; },
+      checkStyles: function() {
+        var ckyStyle = document.getElementById('cky-style');
+        var banner = document.querySelector('.cky-consent-container, .cky-btn-revisit-wrapper');
+        return {
+          stylesInDOM: !!ckyStyle,
+          stylesLength: ckyStyle ? ckyStyle.innerHTML.length : 0,
+          bannerInDOM: !!banner,
+          backupLength: ckyStylesBackup ? ckyStylesBackup.length : 0
+        };
+      },
+      forceRestore: function() {
+        restoreCkyStyles();
+      }
+    };
+    log('Debug helpers available at window.__ckyDebug');
+  })();
+</script>
 {% endblock %}
 
 {# {% block announce %}
