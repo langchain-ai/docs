@@ -1,5 +1,5 @@
 ---
-title: Async Client (LangSmith)
+title: LangSmith Async Client
 ---
 
 # Async Client
