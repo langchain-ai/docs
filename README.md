@@ -71,7 +71,7 @@ The Mintlify docs pipeline is structured with `.mdx` source files in `/src` and 
 
 The `/src/docs.json` file is used to configure the Mintlify site navigation and settings. Refer to the [Mintlify documentation](https://www.mintlify.com/docs/organize/navigation) for detailed syntax and component usage.
 
-Documentation changes follow a PR workflow where all tests must pass before merging. See the [contributing guidelines](/oss/contributing/documentation) for more details.
+Documentation changes follow a PR workflow where all tests must pass before merging. See the [contributing guidelines](https://docs.langchain.com/oss/python/contributing/documentation) for more details.
 
 #### `reference.langchain.com`
 
@@ -138,7 +138,7 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 
 ### `docs dev` not working / running
 
-Re-do the [steps to set up your dev environment](#set-up-a-local-dev-environment), ensuring you have activated the virtual environment and installed all dependencies.
+Re-do the [steps to set up your dev environment](https://docs.langchain.com/oss/python/contributing/documentation#set-up-local-environment), ensuring you have activated the virtual environment and installed all dependencies.
 
 ### Mintlify `.venv` parsing error
 
