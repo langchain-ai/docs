@@ -138,7 +138,7 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 
 ### `docs dev` not working / running
 
-Re-do the [steps to set up your dev environment](#set-up-a-local-dev-environment), ensuring you have activated the virtual environment and installed all dependencies.
+Re-do the [steps to set up your dev environment](https://docs.langchain.com/oss/python/contributing/documentation#set-up-local-environment), ensuring you have activated the virtual environment and installed all dependencies.
 
 ### Mintlify `.venv` parsing error
 
