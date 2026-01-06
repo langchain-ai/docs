@@ -433,6 +433,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "classes/_langchain_langgraph.index.Command.html",
             "CompiledStateGraph": "classes/_langchain_langgraph.index.CompiledStateGraph.html",
             "createAgent": "functions/langchain.index.createAgent.html",
+            "createMiddleware": "functions/langchain.index.createMiddleware.html",
             "createReactAgent": "functions/_langchain_langgraph.prebuilt.createReactAgent.html",
             "createSupervisor": "functions/_langchain_langgraph-supervisor.createSupervisor.html",
             "entrypoint": "functions/_langchain_langgraph.index.entrypoint.html",

@@ -49,15 +49,73 @@ Update the LangSmith URL appropriately for self-hosted installations or organiza
 For the EU region, use `eu.api.smith.langchain.com`.
 </Note>
 
-<Note>
-**Permissions required**
+#### Permissions required
 
 Both the `backend` and `queue` services require write access to the destination bucket:
 
-- The `backend` service attempts to write a test file to the destination bucket when the export destination is created.
-It will delete the test file if it has permission to do so (delete access is optional).
+- The `backend` service attempts to write a test file to the destination bucket when the export destination is created. It will delete the test file if it has permission to do so (delete access is optional).
 - The `queue` service is responsible for bulk export execution and uploading the files to the bucket.
-</Note>
+
+**AWS S3 permissions**
+
+The minimal AWS S3 permission policy relies on the following permissions:
+
+- `s3:PutObject` (required): Allows writing Parquet files to the bucket.
+- `s3:DeleteObject` (optional): Cleans up test files during destination creation. If this permission isn't present, the file is left under the `/tmp` directory after destination creation.
+- `s3:GetObject` (optional but recommended): Verifies file size after writing.
+- `s3:AbortMultipartUpload` (optional but recommended): Avoids dangling multipart uploads.
+
+Minimal IAM policy example:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+      ]
+    }
+  ]
+}
+```
+
+Recommended IAM policy example with additional permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+      ]
+    }
+  ]
+}
+```
+
+**Google Cloud Storage (GCS) permissions**
+
+When using GCS with the S3-compatible XML API, the following IAM permissions are required:
+
+- `storage.objects.create` (required): Allows writing files to the bucket.
+- `storage.objects.delete` (optional): Cleans up test files during destination creation. If this permission isn't present, the file is left under the `/tmp` directory after destination creation.
+- `storage.objects.get` (optional but recommended): Verifies file size after writing.
+
+These permissions can be granted through the "Storage Object Admin" predefined role or a custom role.
+
+#### Create a destination
 
 The following example demonstrates how to create a destination using cURL. Replace the placeholder values with your actual configuration details.
 Note that credentials will be stored securely in an encrypted form in our system.
