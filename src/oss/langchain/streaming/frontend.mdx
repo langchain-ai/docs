@@ -1,0 +1,1138 @@
+---
+title: Frontend
+description: Build generative UIs with real-time streaming from LangChain agents, LangGraph graphs, and custom APIs
+---
+
+The `useStream` hook provides seamless integration with LangGraph streaming capabilities. It handles all the complexities of streaming, state management, and branching logic, letting you focus on building great generative UI experiences.
+
+<Note>
+While `useStream` is currently available for React via `@langchain/langgraph-sdk/react`, we are actively working on framework-specific packages including `@langchain/react`, `@langchain/vue`, and more. These packages will provide first-class support for each framework's patterns and conventions.
+</Note>
+
+## Installation
+
+Install the LangGraph SDK to use the `useStream` hook in your React application:
+
+:::js
+```bash
+npm install @langchain/langgraph-sdk
+```
+:::
+
+## Basic usage
+
+The `useStream` hook connects to any streaming API—whether that's a LangGraph agent running on a local server, a deployed LangSmith agent, or your own custom API endpoint.
+
+```tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+
+function Chat() {
+  const stream = useStream({
+    assistantId: "agent",
+    // Local development
+    apiUrl: "http://localhost:2024",
+    // Production deployment (LangSmith hosted)
+    // apiUrl: "https://your-deployment.us.langgraph.app"
+  });
+
+  const handleSubmit = (message: string) => {
+    stream.submit({ messages: [{ content: message, type: "human" }] });
+  };
+
+  return (
+    <div>
+      {stream.messages.map((message, idx) => (
+        <div key={message.id ?? idx}>
+          {message.type}: {message.content}
+        </div>
+      ))}
+
+      {stream.isLoading && <div>Loading...</div>}
+      {stream.error && <div>Error: {stream.error.message}</div>}
+    </div>
+  );
+}
+```
+
+<Tip>
+Learn how to [deploy your agents to LangSmith](/oss/langchain/deploy) for production-ready hosting with built-in observability, authentication, and scaling.
+</Tip>
+
+<Accordion title="useStream parameters">
+
+<ParamField body="assistantId" type="string" required>
+    The ID of the agent to connect to. When using LangSmith deployments, this must match the agent ID shown in your deployment dashboard. For custom API deployments or local development, this can be any string that your server uses to identify the agent.
+</ParamField>
+
+<ParamField body="apiUrl" type="string">
+    The URL of the LangGraph server. Defaults to `http://localhost:2024` for local development.
+</ParamField>
+
+<ParamField body="apiKey" type="string">
+    API key for authentication. Required when connecting to deployed agents on LangSmith.
+</ParamField>
+
+<ParamField body="threadId" type="string">
+    Connect to an existing thread instead of creating a new one. Useful for resuming conversations.
+</ParamField>
+
+<ParamField body="onThreadId" type="(id: string) => void">
+    Callback invoked when a new thread is created. Use this to persist the thread ID for later use.
+</ParamField>
+
+<ParamField body="onError" type="(error: Error) => void">
+    Callback invoked when an error occurs during streaming.
+</ParamField>
+
+<ParamField body="onFinish" type="(state: StateType) => void">
+    Callback invoked when the stream completes successfully with the final state.
+</ParamField>
+
+<ParamField body="onCustomEvent" type="(data: unknown, context: { mutate }) => void">
+    Handle custom events emitted from your agent using the `writer`. See [Custom streaming events](#custom-streaming-events).
+</ParamField>
+
+<ParamField body="onUpdateEvent" type="(data: unknown, context: { mutate }) => void">
+    Handle state update events for advanced use cases.
+</ParamField>
+
+<ParamField body="messagesKey" type="string" default="messages">
+    The key in the graph state that contains the messages array.
+</ParamField>
+
+<ParamField body="throttle" type="boolean" default="true">
+    Batch state updates for better rendering performance. Disable for immediate updates.
+</ParamField>
+
+<ParamField body="initialValues" type="StateType | null">
+    Initial state values to display while the first stream is loading.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="useStream return values">
+
+<ParamField body="messages" type="Message[]">
+    All messages in the current thread, including both human and AI messages.
+</ParamField>
+
+<ParamField body="values" type="StateType">
+    The current graph state values. Type is inferred from the agent or graph type parameter.
+</ParamField>
+
+<ParamField body="isLoading" type="boolean">
+    Whether a stream is currently in progress. Use this to show loading indicators.
+</ParamField>
+
+<ParamField body="error" type="Error | null">
+    Any error that occurred during streaming. `null` when no error.
+</ParamField>
+
+<ParamField body="interrupt" type="Interrupt | undefined">
+    Current interrupt requiring user input, such as human-in-the-loop approval requests.
+</ParamField>
+
+<ParamField body="toolCalls" type="ToolCallWithResult[]">
+    All tool calls across all messages, with their results and state (`pending`, `completed`, or `error`).
+</ParamField>
+
+<ParamField body="submit" type="(input, options?) => Promise<void>">
+    Submit new input to the agent. Pass `null` as input when resuming from an interrupt with a command.
+</ParamField>
+
+<ParamField body="stop" type="() => void">
+    Stop the current stream immediately.
+</ParamField>
+
+<ParamField body="getToolCalls" type="(message) => ToolCall[]">
+    Get all tool calls for a specific AI message.
+</ParamField>
+
+<ParamField body="getMessagesMetadata" type="(message) => MessageMetadata">
+    Get metadata for a message, including streaming info like `langgraph_node` for identifying the source node.
+</ParamField>
+
+</Accordion>
+
+## Type-safe streaming
+
+The `useStream` hook supports full type inference when used with agents created via @[`createAgent`] or graphs created with @[`StateGraph`]. Pass `typeof agent` or `typeof graph` as the type parameter to automatically infer tool call types.
+
+### With `createAgent`
+
+When using @[`createAgent`], tool call types are automatically inferred from the tools you register to your agent:
+
+:::js
+<CodeGroup>
+
+```typescript agent.ts
+import { createAgent, tool } from "langchain";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ location }) => `Weather in ${location}: Sunny, 72°F`,
+  {
+    name: "get_weather",
+    description: "Get weather for a location",
+    schema: z.object({
+      location: z.string().describe("The city to get weather for"),
+    }),
+  }
+);
+
+export const agent = createAgent({
+  model: "openai:gpt-4o-mini",
+  tools: [getWeather],
+});
+```
+
+```tsx Chat.tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+
+function Chat() {
+  // Tool calls are automatically typed from the agent's tools
+  const stream = useStream<typeof agent>({
+    assistantId: "agent",
+    apiUrl: "http://localhost:2024",
+  });
+
+  // stream.toolCalls[0].call.name is typed as "get_weather"
+  // stream.toolCalls[0].call.args is typed as { location: string }
+}
+```
+
+</CodeGroup>
+:::
+
+### With `StateGraph`
+
+For custom @[`StateGraph`] applications, the state types are inferred from the graph's annotation:
+
+:::js
+<CodeGroup>
+
+```typescript graph.ts
+import { StateGraph, MessagesAnnotation, START, END } from "@langchain/langgraph";
+import { ChatOpenAI } from "@langchain/openai";
+
+const model = new ChatOpenAI({ model: "gpt-4o-mini" });
+
+const workflow = new StateGraph(MessagesAnnotation)
+  .addNode("agent", async (state) => {
+    const response = await model.invoke(state.messages);
+    return { messages: [response] };
+  })
+  .addEdge(START, "agent")
+  .addEdge("agent", END);
+
+export const graph = workflow.compile();
+```
+
+```tsx Chat.tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { graph } from "./graph";
+
+function Chat() {
+  // State types are automatically inferred from the graph
+  const stream = useStream<typeof graph>({
+    assistantId: "my-graph",
+    apiUrl: "http://localhost:2024",
+  });
+
+  // stream.values is typed based on the graph's state annotation
+}
+```
+
+</CodeGroup>
+:::
+
+## Rendering tool calls
+
+Use `getToolCalls` to extract and render tool calls from AI messages. Tool calls include the call details, result (if completed), and state.
+
+:::js
+<CodeGroup>
+
+```tsx Chat.tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+import { ToolCallCard } from "./ToolCallCard";
+import { MessageBubble } from "./MessageBubble";
+
+function Chat() {
+  const stream = useStream<typeof agent>({
+    assistantId: "agent",
+    apiUrl: "http://localhost:2024",
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      {stream.messages.map((message, idx) => {
+        if (message.type === "ai") {
+          const toolCalls = stream.getToolCalls(message);
+
+          if (toolCalls.length > 0) {
+            return (
+              <div key={message.id ?? idx} className="flex flex-col gap-2">
+                {toolCalls.map((toolCall) => (
+                  <ToolCallCard key={toolCall.id} toolCall={toolCall} />
+                ))}
+              </div>
+            );
+          }
+        }
+
+        return <MessageBubble key={message.id ?? idx} message={message} />;
+      })}
+    </div>
+  );
+}
+```
+
+```tsx ToolCallCard.tsx
+import type { ToolCallWithResult } from "@langchain/langgraph-sdk/react";
+import type { ToolMessage } from "@langchain/langgraph-sdk";
+
+/**
+ * Helper to parse tool result safely
+ */
+function parseToolResult(result?: ToolMessage): {
+  status: string;
+  content: string;
+} {
+  if (!result) return { status: "pending", content: "" };
+  try {
+    return JSON.parse(result.content as string);
+  } catch {
+    return { status: "success", content: result.content as string };
+  }
+}
+
+/**
+ * Component that renders a tool call with its result.
+ */
+export function ToolCallCard({ toolCall }: { toolCall: ToolCallWithResult }) {
+  const { call, result, state } = toolCall;
+  const isLoading = state === "pending";
+  const parsedResult = parseToolResult(result);
+
+  // Render specific tool cards based on tool name
+  if (call.name === "get_weather") {
+    return (
+      <WeatherCard
+        call={call}
+        result={parsedResult}
+        isLoading={isLoading}
+      />
+    );
+  }
+
+  // Fallback for unknown tools
+  return (
+    <div className="bg-neutral-900 rounded-lg p-4 border border-neutral-800">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="flex-1">
+          <div className="text-sm font-medium text-white font-mono">
+            {call.name}
+          </div>
+          <div className="text-xs text-neutral-500">
+            {isLoading ? "Processing..." : "Completed"}
+          </div>
+        </div>
+      </div>
+      <pre className="text-xs bg-black rounded p-2 mb-2 overflow-x-auto">
+        {JSON.stringify(call.args, null, 2)}
+      </pre>
+      {result && (
+        <div className="text-sm rounded-lg p-3 bg-black text-neutral-300">
+          {parsedResult.content}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+```tsx WeatherCard.tsx
+import type { ToolCallFromTool } from "@langchain/langgraph-sdk";
+import type { getWeather } from "./tools";
+
+// Infer tool call type directly from the tool definition
+type GetWeatherToolCall = ToolCallFromTool<typeof getWeather>;
+
+/**
+ * Weather-specific tool card with rich UI.
+ * Uses ToolCallFromTool to infer args type from the tool schema.
+ */
+export function WeatherCard({
+  call,
+  result,
+  isLoading,
+}: {
+  call: GetWeatherToolCall;
+  result: { status: string; content: string };
+  isLoading: boolean;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-xl">
+      {/* Sky gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-sky-600 to-indigo-600" />
+
+      <div className="relative p-4">
+        <div className="flex items-center gap-2 text-white/80 text-xs mb-3">
+          {/* call.args is typed as { location: string } from the tool schema */}
+          <span className="font-medium">{call.args.location}</span>
+          {isLoading && <span className="ml-auto">Loading...</span>}
+        </div>
+
+        {result.status === "error" ? (
+          <div className="bg-red-500/20 rounded-lg p-3 text-red-200 text-sm">
+            {result.content}
+          </div>
+        ) : (
+          <div className="text-white text-lg font-medium">
+            {result.content || "Fetching weather..."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+```typescript tools.ts
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// Define the weather tool with a Zod schema
+export const getWeather = tool(
+  async ({ location }) => {
+    // Tool implementation
+    return JSON.stringify({ status: "success", content: `Weather in ${location}: Sunny, 72°F` });
+  },
+  {
+    name: "get_weather",
+    description: "Get the current weather for a location",
+    schema: z.object({
+      location: z.string().describe("The city and state, e.g. San Francisco, CA"),
+    }),
+  }
+);
+```
+
+</CodeGroup>
+:::
+
+## Custom streaming events
+
+Stream custom data from your agent using the `writer` in your tools or nodes. Handle these events in the UI with the `onCustomEvent` callback.
+
+:::js
+<CodeGroup>
+
+```typescript agent.ts
+import { tool, type ToolRuntime } from "langchain";
+import { z } from "zod";
+
+// Define your custom event types
+interface ProgressData {
+  type: "progress";
+  id: string;
+  message: string;
+  progress: number;
+}
+
+const analyzeDataTool = tool(
+  async ({ dataSource }, config: ToolRuntime) => {
+    const steps = ["Connecting...", "Fetching...", "Processing...", "Done!"];
+
+    for (let i = 0; i < steps.length; i++) {
+      // Emit progress events during execution
+      config.writer?.({
+        type: "progress",
+        id: `analysis-${Date.now()}`,
+        message: steps[i],
+        progress: ((i + 1) / steps.length) * 100,
+      } satisfies ProgressData);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    return JSON.stringify({ result: "Analysis complete" });
+  },
+  {
+    name: "analyze_data",
+    description: "Analyze data with progress updates",
+    schema: z.object({
+      dataSource: z.string().describe("Data source to analyze"),
+    }),
+  }
+);
+```
+
+```tsx Chat.tsx
+import { useState, useCallback } from "react";
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+
+interface ProgressData {
+  type: "progress";
+  id: string;
+  message: string;
+  progress: number;
+}
+
+function isProgressData(data: unknown): data is ProgressData {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "type" in data &&
+    (data as ProgressData).type === "progress"
+  );
+}
+
+function CustomStreamingUI() {
+  const [progressData, setProgressData] = useState<Map<string, ProgressData>>(
+    new Map()
+  );
+
+  const handleCustomEvent = useCallback((data: unknown) => {
+    if (isProgressData(data)) {
+      setProgressData((prev) => {
+        const updated = new Map(prev);
+        updated.set(data.id, data);
+        return updated;
+      });
+    }
+  }, []);
+
+  const stream = useStream<typeof agent>({
+    assistantId: "custom-streaming",
+    apiUrl: "http://localhost:2024",
+    onCustomEvent: handleCustomEvent,
+  });
+
+  return (
+    <div>
+      {/* Render progress cards */}
+      {Array.from(progressData.values()).map((data) => (
+        <div key={data.id} className="bg-neutral-800 rounded-lg p-4 mb-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-sm text-white">{data.message}</span>
+            <span className="text-xs text-neutral-400">{data.progress}%</span>
+          </div>
+          <div className="w-full bg-neutral-700 rounded-full h-2">
+            <div
+              className="bg-blue-500 h-2 rounded-full transition-all"
+              style={{ width: `${data.progress}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+</CodeGroup>
+:::
+
+## Multi-agent streaming
+
+When working with multi-agent systems or graphs with multiple nodes, use message metadata to identify which node generated each message. This is particularly useful when multiple LLMs run in parallel and you want to display their outputs with distinct visual styling.
+
+:::js
+<CodeGroup>
+
+```tsx Chat.tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+import { MessageBubble } from "./MessageBubble";
+
+// Node configuration for visual display
+const NODE_CONFIG: Record<string, { label: string; color: string }> = {
+  researcher_analytical: { label: "Analytical Research", color: "cyan" },
+  researcher_creative: { label: "Creative Research", color: "purple" },
+  researcher_practical: { label: "Practical Research", color: "emerald" },
+};
+
+function MultiAgentChat() {
+  const stream = useStream<typeof agent>({
+    assistantId: "parallel-research",
+    apiUrl: "http://localhost:2024",
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      {stream.messages.map((message, idx) => {
+        if (message.type !== "ai") {
+          return <MessageBubble key={message.id ?? idx} message={message} />;
+        }
+
+        // Get streaming metadata to identify the source node
+        const metadata = stream.getMessagesMetadata?.(message);
+        const nodeName =
+          (metadata?.streamMetadata?.langgraph_node as string) ||
+          (message as { name?: string }).name;
+
+        const config = nodeName ? NODE_CONFIG[nodeName] : null;
+
+        if (!config) {
+          return <MessageBubble key={message.id ?? idx} message={message} />;
+        }
+
+        return (
+          <div
+            key={message.id ?? idx}
+            className={`bg-${config.color}-950/30 border border-${config.color}-500/30 rounded-xl p-4`}
+          >
+            <div className={`text-sm font-semibold text-${config.color}-400 mb-2`}>
+              {config.label}
+            </div>
+            <div className="text-neutral-200 whitespace-pre-wrap">
+              {typeof message.content === "string" ? message.content : ""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+```typescript agent.ts
+import { ChatOpenAI } from "@langchain/openai";
+import { StateGraph, START, END, Send } from "@langchain/langgraph";
+import { withLangGraph } from "@langchain/langgraph/zod";
+import { BaseMessage, AIMessage } from "@langchain/core/messages";
+import { z } from "zod";
+
+// Use different model instances for variety
+const analyticalModel = new ChatOpenAI({ model: "gpt-4o-mini", temperature: 0.3 });
+const creativeModel = new ChatOpenAI({ model: "gpt-4o-mini", temperature: 0.9 });
+const practicalModel = new ChatOpenAI({ model: "gpt-4o-mini", temperature: 0.5 });
+
+// Define the state schema
+const StateAnnotation = z.object({
+  messages: withLangGraph(z.custom<BaseMessage[]>(), {
+    reducer: {
+      fn: (left: BaseMessage[], right: BaseMessage | BaseMessage[]) =>
+        Array.isArray(right) ? left.concat(right) : left.concat([right]),
+    },
+    default: () => [],
+  }),
+  topic: z.string().default(""),
+  analyticalResearch: z.string().default(""),
+  creativeResearch: z.string().default(""),
+  practicalResearch: z.string().default(""),
+});
+
+type State = z.infer<typeof StateAnnotation>;
+
+// Fan-out to parallel researchers
+function fanOutToResearchers(state: State): Send[] {
+  return [
+    new Send("researcher_analytical", state),
+    new Send("researcher_creative", state),
+    new Send("researcher_practical", state),
+  ];
+}
+
+async function dispatcherNode(state: State): Promise<Partial<State>> {
+  const lastMessage = state.messages.at(-1);
+  const topic = typeof lastMessage?.content === "string" ? lastMessage.content : "";
+  return { topic };
+}
+
+async function analyticalResearcherNode(state: State): Promise<Partial<State>> {
+  const response = await analyticalModel.invoke([
+    { role: "system", content: "You are an analytical research expert. Focus on data and evidence." },
+    { role: "user", content: `Research: ${state.topic}` },
+  ]);
+  return {
+    analyticalResearch: response.content as string,
+    messages: [new AIMessage({ content: response.content as string, name: "researcher_analytical" })],
+  };
+}
+
+// Similar nodes for creative and practical researchers...
+
+// Build the graph with parallel execution
+const workflow = new StateGraph(StateAnnotation)
+  .addNode("dispatcher", dispatcherNode)
+  .addNode("researcher_analytical", analyticalResearcherNode)
+  .addNode("researcher_creative", creativeResearcherNode)
+  .addNode("researcher_practical", practicalResearcherNode)
+  .addEdge(START, "dispatcher")
+  .addConditionalEdges("dispatcher", fanOutToResearchers)
+  .addEdge("researcher_analytical", END)
+  .addEdge("researcher_creative", END)
+  .addEdge("researcher_practical", END);
+
+export const agent = workflow.compile();
+```
+
+</CodeGroup>
+:::
+
+## Human-in-the-loop
+
+Handle interrupts when the agent requires human approval for tool execution.
+
+:::js
+<CodeGroup>
+
+```tsx Chat.tsx
+import { useState } from "react";
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { HITLRequest, HITLResponse } from "langchain";
+import type { agent } from "./agent";
+import { MessageBubble } from "./MessageBubble";
+
+function HumanInTheLoopChat() {
+  const stream = useStream<typeof agent, { InterruptType: HITLRequest }>({
+    assistantId: "human-in-the-loop",
+    apiUrl: "http://localhost:2024",
+  });
+
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Type assertion for interrupt value
+  const hitlRequest = stream.interrupt?.value as HITLRequest | undefined;
+
+  const handleApprove = async (index: number) => {
+    if (!hitlRequest) return;
+    setIsProcessing(true);
+
+    try {
+      const decisions: HITLResponse["decisions"] =
+        hitlRequest.actionRequests.map((_, i) =>
+          i === index ? { type: "approve" } : { type: "approve" }
+        );
+
+      await stream.submit(null, {
+        command: {
+          resume: { decisions } as HITLResponse,
+        },
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReject = async (index: number, reason: string) => {
+    if (!hitlRequest) return;
+    setIsProcessing(true);
+
+    try {
+      const decisions: HITLResponse["decisions"] =
+        hitlRequest.actionRequests.map((_, i) =>
+          i === index
+            ? { type: "reject", message: reason }
+            : { type: "reject", message: "Rejected along with other actions" }
+        );
+
+      await stream.submit(null, {
+        command: {
+          resume: { decisions } as HITLResponse,
+        },
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* Render messages */}
+      {stream.messages.map((message, idx) => (
+        <MessageBubble key={message.id ?? idx} message={message} />
+      ))}
+
+      {/* Render approval UI when interrupted */}
+      {hitlRequest && hitlRequest.actionRequests.length > 0 && (
+        <div className="bg-amber-900/20 border border-amber-500/30 rounded-xl p-4 mt-4">
+          <h3 className="text-amber-400 font-semibold mb-4">
+            Action requires approval
+          </h3>
+
+          {hitlRequest.actionRequests.map((action, idx) => (
+            <div
+              key={idx}
+              className="bg-neutral-900 rounded-lg p-4 mb-4 last:mb-0"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-mono text-white">
+                  {action.name}
+                </span>
+              </div>
+
+              <pre className="text-xs bg-black rounded p-2 mb-3 overflow-x-auto">
+                {JSON.stringify(action.args, null, 2)}
+              </pre>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleApprove(idx)}
+                  disabled={isProcessing}
+                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded disabled:opacity-50"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => handleReject(idx, "User rejected")}
+                  disabled={isProcessing}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+```typescript agent.ts
+import { createAgent, tool, humanInTheLoopMiddleware } from "langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { MemorySaver } from "@langchain/langgraph";
+import { z } from "zod";
+
+const model = new ChatOpenAI({ model: "gpt-4o-mini" });
+
+// Tool that requires human approval
+const sendEmail = tool(
+  async ({ to, subject, body }) => {
+    return {
+      status: "success",
+      content: `Email sent to ${to} with subject "${subject}"`,
+    };
+  },
+  {
+    name: "send_email",
+    description: "Send an email. Requires human approval.",
+    schema: z.object({
+      to: z.string().describe("Recipient email address"),
+      subject: z.string().describe("Email subject"),
+      body: z.string().describe("Email body"),
+    }),
+  }
+);
+
+// Tool that requires approval with limited options
+const deleteFile = tool(
+  async ({ path }) => {
+    return { status: "success", content: `File "${path}" deleted` };
+  },
+  {
+    name: "delete_file",
+    description: "Delete a file. Requires human approval.",
+    schema: z.object({
+      path: z.string().describe("File path to delete"),
+    }),
+  }
+);
+
+// Safe tool - no approval needed
+const readFile = tool(
+  async ({ path }) => {
+    return { status: "success", content: `Contents of ${path}...` };
+  },
+  {
+    name: "read_file",
+    description: "Read file contents. No approval needed.",
+    schema: z.object({
+      path: z.string().describe("File path to read"),
+    }),
+  }
+);
+
+// Create agent with HITL middleware
+export const agent = createAgent({
+  model,
+  tools: [sendEmail, deleteFile, readFile],
+  middleware: [
+    humanInTheLoopMiddleware({
+      interruptOn: {
+        // Email requires all decision types
+        send_email: {
+          allowedDecisions: ["approve", "edit", "reject"],
+          description: "📧 Review email before sending",
+        },
+        // Deletion only allows approve/reject
+        delete_file: {
+          allowedDecisions: ["approve", "reject"],
+          description: "🗑️ Confirm file deletion",
+        },
+        // Reading is safe - auto-approved
+        read_file: false,
+      },
+    }),
+  ],
+  // Required for HITL - persists state across interrupts
+  checkpointer: new MemorySaver(),
+});
+```
+
+</CodeGroup>
+:::
+
+## Reasoning models
+
+<Warning>
+Extended reasoning/thinking support is currently experimental. The streaming interface for reasoning tokens varies by provider (OpenAI vs Anthropic) and may change as we develop better abstractions.
+</Warning>
+
+When using models with extended reasoning capabilities (like OpenAI's reasoning models or Anthropic's extended thinking), the thinking process is embedded in the message content. You'll need to extract and display it separately.
+
+:::js
+<CodeGroup>
+
+```tsx Chat.tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { Message } from "@langchain/langgraph-sdk";
+import type { agent } from "./agent";
+import { getReasoningFromMessage, getTextContent } from "./utils";
+
+function ReasoningChat() {
+  const stream = useStream<typeof agent>({
+    assistantId: "reasoning-agent",
+    apiUrl: "http://localhost:2024",
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      {stream.messages.map((message, idx) => {
+        if (message.type === "ai") {
+          const reasoning = getReasoningFromMessage(message);
+          const textContent = getTextContent(message);
+
+          return (
+            <div key={message.id ?? idx}>
+              {/* Render reasoning bubble if present */}
+              {reasoning && (
+                <div className="mb-4">
+                  <div className="text-xs font-medium text-amber-400/80 mb-2">
+                    Reasoning
+                  </div>
+                  <div className="bg-amber-950/50 border border-amber-500/20 rounded-2xl px-4 py-3">
+                    <div className="text-sm text-amber-100/90 whitespace-pre-wrap">
+                      {reasoning}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Render text content */}
+              {textContent && (
+                <div className="text-neutral-100 whitespace-pre-wrap">
+                  {textContent}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        return <MessageBubble key={message.id ?? idx} message={message} />;
+      })}
+
+      {stream.isLoading && (
+        <div className="flex items-center gap-2 text-amber-400/70">
+          <span className="text-sm">Thinking...</span>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+```typescript utils.ts
+import type { Message, AIMessage } from "@langchain/langgraph-sdk";
+
+/**
+ * Extracts reasoning/thinking content from an AI message.
+ * Supports both OpenAI reasoning (additional_kwargs.reasoning.summary)
+ * and Anthropic extended thinking (content blocks with type "thinking").
+ */
+export function getReasoningFromMessage(message: Message): string | undefined {
+  type MessageWithExtras = AIMessage & {
+    additional_kwargs?: {
+      reasoning?: {
+        summary?: Array<{ type: string; text: string }>;
+      };
+    };
+    contentBlocks?: Array<{ type: string; thinking?: string }>;
+  };
+
+  const msg = message as MessageWithExtras;
+
+  // Check for OpenAI reasoning in additional_kwargs
+  if (msg.additional_kwargs?.reasoning?.summary) {
+    const content = msg.additional_kwargs.reasoning.summary
+      .filter((item) => item.type === "summary_text")
+      .map((item) => item.text)
+      .join("");
+
+    if (content.trim()) return content;
+  }
+
+  // Check for Anthropic thinking in contentBlocks
+  if (msg.contentBlocks?.length) {
+    const thinking = msg.contentBlocks
+      .filter((b) => b.type === "thinking" && b.thinking)
+      .map((b) => b.thinking)
+      .join("\n");
+
+    if (thinking) return thinking;
+  }
+
+  // Check for thinking in message.content array
+  if (Array.isArray(msg.content)) {
+    const thinking = msg.content
+      .filter((b): b is { type: "thinking"; thinking: string } =>
+        typeof b === "object" && b?.type === "thinking" && "thinking" in b
+      )
+      .map((b) => b.thinking)
+      .join("\n");
+
+    if (thinking) return thinking;
+  }
+
+  return undefined;
+}
+
+/**
+ * Extracts text content from a message.
+ */
+export function getTextContent(message: Message): string {
+  if (typeof message.content === "string") return message.content;
+
+  if (Array.isArray(message.content)) {
+    return message.content
+      .filter((c): c is { type: "text"; text: string } => c.type === "text")
+      .map((c) => c.text)
+      .join("");
+  }
+
+  return "";
+}
+```
+
+</CodeGroup>
+:::
+
+## Custom state types
+
+For custom LangGraph applications, embed your tool call types in your state's messages property.
+
+:::js
+```tsx
+import { Message } from "@langchain/langgraph-sdk";
+import { useStream } from "@langchain/langgraph-sdk/react";
+
+// Define your tool call types as a discriminated union
+type MyToolCalls =
+  | { name: "search"; args: { query: string }; id?: string }
+  | { name: "calculate"; args: { expression: string }; id?: string };
+
+// Embed tool call types in your state's messages
+interface MyGraphState {
+  messages: Message<MyToolCalls>[];
+  context?: string;
+}
+
+function CustomGraphChat() {
+  const stream = useStream<MyGraphState>({
+    assistantId: "my-graph",
+    apiUrl: "http://localhost:2024",
+  });
+
+  // stream.values is typed as MyGraphState
+  // stream.toolCalls[0].call.name is typed as "search" | "calculate"
+}
+```
+
+You can also specify additional type configuration for interrupts and configurable options:
+
+```tsx
+interface MyGraphState {
+  messages: Message<MyToolCalls>[];
+}
+
+function CustomGraphChat() {
+  const stream = useStream<
+    MyGraphState,
+    {
+      InterruptType: { question: string };
+      ConfigurableType: { userId: string };
+    }
+  >({
+    assistantId: "my-graph",
+    apiUrl: "http://localhost:2024",
+  });
+
+  // stream.interrupt is typed as { question: string } | undefined
+}
+```
+:::
+
+## Custom transport
+
+For custom API endpoints or non-standard deployments, use the `transport` option with `FetchStreamTransport` to connect to any streaming API.
+
+:::js
+```tsx
+import { useMemo } from "react";
+import { useStream, FetchStreamTransport } from "@langchain/langgraph-sdk/react";
+
+function CustomAPIChat({ apiKey }: { apiKey: string }) {
+  // Create transport with custom request handling
+  const transport = useMemo(() => {
+    return new FetchStreamTransport({
+      apiUrl: "/api/my-agent",
+      onRequest: async (url: string, init: RequestInit) => {
+        // Inject API key or other custom data into requests
+        const customBody = JSON.stringify({
+          ...(JSON.parse(init.body as string) || {}),
+          apiKey,
+        });
+
+        return {
+          ...init,
+          body: customBody,
+          headers: {
+            ...init.headers,
+            "X-Custom-Header": "value",
+          },
+        };
+      },
+    });
+  }, [apiKey]);
+
+  const stream = useStream({
+    transport,
+  });
+
+  // Use stream as normal
+  return (
+    <div>
+      {stream.messages.map((message, idx) => (
+        <MessageBubble key={message.id ?? idx} message={message} />
+      ))}
+    </div>
+  );
+}
+```
+:::
+
+## Related
+
+- [Streaming overview](/oss/langchain/streaming/overview) — Server-side streaming with LangChain agents
+- [Agent Chat UI](/oss/langchain/ui) — Pre-built chat interface for LangGraph agents
+- [Human-in-the-loop](/oss/langchain/human-in-the-loop) — Configuring interrupts for human review
+- [Multi-agent systems](/oss/langchain/multi-agent) — Building agents with multiple LLMs
