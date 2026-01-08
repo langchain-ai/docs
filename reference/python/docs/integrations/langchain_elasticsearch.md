@@ -13,3 +13,4 @@ title: Elasticsearch
 ::: langchain_elasticsearch._async.retrievers.AsyncElasticsearchRetriever
 ::: langchain_elasticsearch._async.cache.AsyncElasticsearchCache
 ::: langchain_elasticsearch._async.cache.AsyncElasticsearchEmbeddingsCache
+::: langchain_elasticsearch._async.chat_history.AsyncElasticsearchChatMessageHistory
