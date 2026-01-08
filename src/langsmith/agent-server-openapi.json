@@ -893,6 +893,46 @@
         }
       }
     },
+    "/threads/prune": {
+      "post": {
+        "tags": ["Threads"],
+        "summary": "Prune Threads",
+        "description": "Prune threads by ID. The 'delete' strategy removes threads entirely. The 'keep_latest' strategy prunes old checkpoints but keeps threads and their latest state (requires FF_USE_CORE_API=true).",
+        "operationId": "prune_threads_threads_prune_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadPruneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPruneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/threads/{thread_id}/state": {
       "get": {
         "tags": ["Threads"],
@@ -1326,6 +1366,17 @@
             },
             "name": "thread_id",
             "in": "path"
+          },
+          {
+            "description": "Comma-separated list of additional fields to include. Supported values: ttl",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Include",
+              "description": "Comma-separated list of additional fields to include."
+            },
+            "name": "include",
+            "in": "query"
           }
         ],
         "responses": {
@@ -4926,6 +4977,27 @@
             "type": "object",
             "title": "Interrupts",
             "description": "The current interrupts of the thread."
+          },
+          "ttl": {
+            "type": "object",
+            "title": "TTL Info",
+            "description": "TTL information if set for this thread. Only present when ?include=ttl is passed.",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "enum": ["delete", "keep_latest"],
+                "description": "The TTL strategy."
+              },
+              "ttl_minutes": {
+                "type": "number",
+                "description": "The TTL in minutes."
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the thread will expire."
+              }
+            }
           }
         },
         "type": "object",
@@ -4965,8 +5037,8 @@
             "properties": {
               "strategy": {
                 "type": "string",
-                "enum": ["delete"],
-                "description": "The TTL strategy. 'delete' removes the entire thread.",
+                "enum": ["delete", "keep_latest"],
+                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state (requires FF_USE_CORE_API=true).",
                 "default": "delete"
               },
               "ttl": {
@@ -5009,8 +5081,8 @@
             "properties": {
               "strategy": {
                 "type": "string",
-                "enum": ["delete"],
-                "description": "The TTL strategy. 'delete' removes the entire thread.",
+                "enum": ["delete", "keep_latest"],
+                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state (requires FF_USE_CORE_API=true).",
                 "default": "delete"
               },
               "ttl": {
@@ -5023,6 +5095,43 @@
         "type": "object",
         "title": "ThreadPatch",
         "description": "Payload for updating a thread."
+      },
+      "ThreadPruneRequest": {
+        "properties": {
+          "thread_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "title": "Thread IDs",
+            "description": "List of thread IDs to prune."
+          },
+          "strategy": {
+            "type": "string",
+            "enum": ["delete", "keep_latest"],
+            "title": "Strategy",
+            "description": "The prune strategy. 'delete' removes threads entirely. 'keep_latest' prunes old checkpoints but keeps threads and their latest state (requires FF_USE_CORE_API=true).",
+            "default": "delete"
+          }
+        },
+        "required": ["thread_ids"],
+        "type": "object",
+        "title": "ThreadPruneRequest",
+        "description": "Payload for pruning threads."
+      },
+      "ThreadPruneResponse": {
+        "properties": {
+          "pruned_count": {
+            "type": "integer",
+            "title": "Pruned Count",
+            "description": "Number of threads successfully pruned."
+          }
+        },
+        "required": ["pruned_count"],
+        "type": "object",
+        "title": "ThreadPruneResponse",
+        "description": "Response from pruning threads."
       },
       "ThreadStateCheckpointRequest": {
         "properties": {
