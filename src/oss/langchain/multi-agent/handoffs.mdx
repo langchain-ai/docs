@@ -386,12 +386,11 @@ const stateSchema = z.object({
 
 const transferToSales = tool(
   async (_, runtime: ToolRuntime<typeof stateSchema>) => {
-    const lastAiMessage = [...runtime.state.messages] // [!code highlight]
+    const lastAiMessage = runtime.state.messages // [!code highlight]
       .reverse() // [!code highlight]
       .find(AIMessage.isInstance); // [!code highlight]
 
-    const transferMessage = new ToolMessage({
-      // [!code highlight]
+    const transferMessage = new ToolMessage({ // [!code highlight]
       content: "Transferred to sales agent", // [!code highlight]
       tool_call_id: runtime.toolCallId, // [!code highlight]
     }); // [!code highlight]
@@ -575,8 +574,7 @@ import {
 } from "@langchain/langgraph";
 import { createAgent, AIMessage, ToolMessage } from "langchain";
 import { tool, ToolRuntime } from "@langchain/core/tools";
-import { InferInteropZodOutput } from "@langchain/core/utils/types";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // 1. Define state with active_agent tracker
 const MultiAgentState = MessagesZodState.extend({
@@ -588,9 +586,8 @@ const transferToSales = tool(
   async (_, runtime: ToolRuntime<typeof MultiAgentState>) => {
     const lastAiMessage = [...runtime.state.messages] // [!code highlight]
       .reverse() // [!code highlight]
-      .find((msg): msg is AIMessage => msg instanceof AIMessage); // [!code highlight]
-    const transferMessage = new ToolMessage({
-      // [!code highlight]
+      .find(AIMessage.isInstance); // [!code highlight]
+    const transferMessage = new ToolMessage({ // [!code highlight]
       content: "Transferred to sales agent from support agent", // [!code highlight]
       tool_call_id: runtime.toolCallId, // [!code highlight]
     }); // [!code highlight]
@@ -614,9 +611,8 @@ const transferToSupport = tool(
   async (_, runtime: ToolRuntime<typeof MultiAgentState>) => {
     const lastAiMessage = [...runtime.state.messages] // [!code highlight]
       .reverse() // [!code highlight]
-      .find((msg): msg is AIMessage => msg instanceof AIMessage); // [!code highlight]
-    const transferMessage = new ToolMessage({
-      // [!code highlight]
+      .find(AIMessage.isInstance); // [!code highlight]
+    const transferMessage = new ToolMessage({ // [!code highlight]
       content: "Transferred to support agent from sales agent", // [!code highlight]
       tool_call_id: runtime.toolCallId, // [!code highlight]
     }); // [!code highlight]
@@ -653,14 +649,14 @@ const supportAgent = createAgent({
 
 // 4. Create agent nodes that invoke the agents
 const callSalesAgent = async (
-  state: InferInteropZodOutput<typeof MultiAgentState>
+  state: z.infer<typeof MultiAgentState>
 ) => {
   const response = await salesAgent.invoke(state);
   return response;
 };
 
 const callSupportAgent = async (
-  state: InferInteropZodOutput<typeof MultiAgentState>
+  state: z.infer<typeof MultiAgentState>
 ) => {
   const response = await supportAgent.invoke(state);
   return response;
@@ -668,17 +664,16 @@ const callSupportAgent = async (
 
 // 5. Create router that checks if we should end or continue
 const routeAfterAgent = (
-  state: InferInteropZodOutput<typeof MultiAgentState>
+  state: z.infer<typeof MultiAgentState>
 ): "sales_agent" | "support_agent" | "__end__" => {
   const messages = state.messages ?? [];
 
   // Check the last message - if it's an AIMessage without tool calls, we're done
   if (messages.length > 0) {
     const lastMsg = messages[messages.length - 1];
-    if (lastMsg instanceof AIMessage && !lastMsg.tool_calls?.length) {
-      // [!code highlight]
+    if (lastMsg instanceof AIMessage && !lastMsg.tool_calls?.length) { // [!code highlight]
       return "__end__"; // [!code highlight]
-    }
+    } // [!code highlight]
   }
 
   // Otherwise route to the active agent
@@ -687,7 +682,7 @@ const routeAfterAgent = (
 };
 
 const routeInitial = (
-  state: InferInteropZodOutput<typeof MultiAgentState>
+  state: z.infer<typeof MultiAgentState>
 ): "sales_agent" | "support_agent" => {
   // Route to the active agent based on state, default to sales agent
   return (state.activeAgent ?? "sales_agent") as
@@ -699,24 +694,22 @@ const routeInitial = (
 const builder = new StateGraph(MultiAgentState)
   .addNode("sales_agent", callSalesAgent)
   .addNode("support_agent", callSupportAgent);
-
-// Start with conditional routing based on initial activeAgent
-builder.addConditionalEdges(START, routeInitial, [
-  "sales_agent",
-  "support_agent",
-]);
-
-// After each agent, check if we should end or route to another agent
-builder.addConditionalEdges("sales_agent", routeAfterAgent, [
-  "sales_agent",
-  "support_agent",
-  END,
-]);
-builder.addConditionalEdges("support_agent", routeAfterAgent, [
-  "sales_agent",
-  "support_agent",
-  END,
-]);
+  // Start with conditional routing based on initial activeAgent
+  .addConditionalEdges(START, routeInitial, [
+    "sales_agent",
+    "support_agent",
+  ])
+  // After each agent, check if we should end or route to another agent
+  .addConditionalEdges("sales_agent", routeAfterAgent, [
+    "sales_agent",
+    "support_agent",
+    END,
+  ]);
+  builder.addConditionalEdges("support_agent", routeAfterAgent, [
+    "sales_agent",
+    "support_agent",
+    END,
+  ]);
 
 const graph = builder.compile();
 const result = await graph.invoke({
