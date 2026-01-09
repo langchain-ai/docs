@@ -204,46 +204,46 @@ Again, remember to delete your job once you are done with it!
 ## Thread cleanup for stateless crons
 
 <Note>
-This feature requires LangGraph API version **0.5.18** or later, Python SDK **0.3.2** or later, or JavaScript SDK **1.4.0** or later.
+This feature requires LangGraph API version **0.5.18** or later and Python SDK **0.3.2** or later, or JavaScript SDK **1.4.0** or later.
 </Note>
 
-Control thread lifecycle using the `on_run_completed` parameter:
+Every time a stateless cron is triggered, a new thread is created. Control what happens to that thread after the run completes using the `on_run_completed` parameter:
 
 - **`"delete"`** (default): Automatically deletes the thread after the run completes.
-- **`"keep"`**: Preserves the thread for later retrieval. You are responsible for cleaning up these threads.
+- **`"keep"`**: Preserves the thread for later retrieval. You are responsible for cleaning up these threads. See [how to add TTLs to your application](/langsmith/configure-ttl) for the recommended approach.
 
 ### Example: Keeping threads for later retrieval
 
 <Tabs>
     <Tab title="Python">
     ```python
-    # Create a stateless cron that keeps threads after execution
+    # Create a stateless cron that keeps threads after execution.
+    # Configure checkpointer.ttl in langgraph.json to auto-delete old threads.
+    # See: https://docs.langchain.com/langsmith/configure-ttl
     cron_job = await client.crons.create(
         assistant_id,
         schedule="27 15 * * *",
         input={"messages": [{"role": "user", "content": "Daily report"}]},
-        on_run_completed="keep"  # Keep threads for later retrieval
+        on_run_completed="keep"
     )
 
     # You can later retrieve the runs and their results
     runs = await client.runs.search(
         metadata={"cron_id": cron_job["cron_id"]}
     )
-
-    # Remember to clean up old threads periodically
-    for run in old_runs:
-        await client.threads.delete(run["thread_id"])
     ```
     </Tab>
     <Tab title="Javascript">
     ```js
-    // Create a stateless cron that keeps threads after execution
+    // Create a stateless cron that keeps threads after execution.
+    // Configure checkpointer.ttl in langgraph.json to auto-delete old threads.
+    // See: https://docs.langchain.com/langsmith/configure-ttl
     const cronJob = await client.crons.create(
       assistantId,
       {
         schedule: "27 15 * * *",
         input: { messages: [{ role: "user", content: "Daily report" }] },
-        onRunCompleted: "keep"  // Keep threads for later retrieval
+        onRunCompleted: "keep"
       }
     );
 
@@ -251,16 +251,13 @@ Control thread lifecycle using the `on_run_completed` parameter:
     const runs = await client.runs.search({
       metadata: { cron_id: cronJob["cron_id"] }
     });
-
-    // Remember to clean up old threads periodically
-    for (const run of oldRuns) {
-      await client.threads.delete(run["thread_id"]);
-    }
     ```
     </Tab>
     <Tab title="CURL">
     ```bash
-    # Create a stateless cron that keeps threads
+    # Create a stateless cron that keeps threads after execution.
+    # Configure checkpointer.ttl in langgraph.json to auto-delete old threads.
+    # See: https://docs.langchain.com/langsmith/configure-ttl
     curl --request POST \
         --url <DEPLOYMENT_URL>/runs/crons \
         --header 'Content-Type: application/json' \
@@ -270,10 +267,6 @@ Control thread lifecycle using the `on_run_completed` parameter:
             "input": {"messages": [{"role": "user", "content": "Daily report"}]},
             "on_run_completed": "keep"
         }'
-
-    # Clean up old threads periodically
-    curl --request DELETE \
-        --url <DEPLOYMENT_URL>/threads/<THREAD_ID>
     ```
     </Tab>
 </Tabs>
