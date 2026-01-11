@@ -1,0 +1,122 @@
+---
+title: ContextGraph
+---
+
+> **What is ContextGraph?** [ContextGraph](https://github.com/akz4ol/contextgraph-integrations) is governance infrastructure for AI agents that provides audit trails, policy enforcement, and compliance reporting for every agent decision.
+
+## Tracing LangChain
+
+ContextGraph integrates with LangChain using the new middleware system (v1+) or legacy callbacks (< v1). The integration automatically logs every model call and tool execution to ContextGraph for audit trails and policy enforcement.
+
+You can configure the integration via constructor arguments or environment variables. Get your ContextGraph API key by signing up at [ContextGraph Cloud](https://contextgraph-api.fly.dev).
+
+### Using Middleware (LangChain v1+)
+
+LangChain v1 introduced middleware for `create_agent()`. This is the recommended approach for new projects.
+
+```bash
+pip install contextgraph-langchain
+```
+
+```python
+import os
+from langchain.agents import create_agent
+from contextgraph_middleware import contextgraph_middleware
+
+# Create agent with ContextGraph middleware
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[search_tool, calculator_tool],
+    middleware=contextgraph_middleware(
+        api_key=os.environ["CG_API_KEY"],
+        agent_id="my-research-agent"
+    )
+)
+
+# Every model call and tool execution is now logged
+result = agent.invoke({"input": "What's the weather in NYC?"})
+```
+
+### Using Callbacks (LangChain < 1.0)
+
+For older LangChain versions using `AgentExecutor`, use the callback handler:
+
+```python
+from langchain.agents import AgentExecutor
+from contextgraph_callback import ContextGraphCallback
+
+# Initialize the callback handler
+callback = ContextGraphCallback(
+    api_key=os.environ["CG_API_KEY"],
+    agent_id="my-langchain-agent"
+)
+
+# Add to your agent executor
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    callbacks=[callback]
+)
+
+# Run with tracing
+result = executor.invoke({"input": "What's the weather in NYC?"})
+```
+
+### Environment Variables
+
+```bash filename=".env"
+CG_API_KEY="your-api-key"
+CG_AGENT_ID="my-agent"
+```
+
+```python
+from contextgraph_middleware import contextgraph_middleware
+
+# Uses environment variables automatically
+middleware = contextgraph_middleware()
+```
+
+## What Gets Logged
+
+Every decision your agent makes is logged with full context:
+
+| Event | Decision Type | What's Captured |
+|-------|---------------|-----------------|
+| Model call | `model_call` | Message count, last message, response |
+| Tool execution | `tool_execution` | Tool name, input, output/error |
+
+## Policy Enforcement
+
+ContextGraph evaluates policies **before** your agent acts. Create policies to control agent behavior:
+
+```json
+{
+  "name": "block-dangerous-tools",
+  "condition": {
+    "and": [
+      { "field": "action", "in": ["shell_execute", "file_delete"] }
+    ]
+  },
+  "effect": "deny"
+}
+```
+
+This policy blocks any attempt to use `shell_execute` or `file_delete` tools.
+
+## Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `api_key` | `$CG_API_KEY` | ContextGraph API key |
+| `agent_id` | `$CG_AGENT_ID` | Registered agent ID |
+| `api_url` | `https://contextgraph-api.fly.dev` | API endpoint |
+| `log_model_calls` | `True` | Log model invocations |
+| `log_tool_calls` | `True` | Log tool executions |
+| `auto_approve` | `False` | Auto-approve decisions (for testing) |
+| `metadata` | `{}` | Additional metadata for all decisions |
+
+## Additional Resources
+
+- [ContextGraph Integrations (GitHub)](https://github.com/akz4ol/contextgraph-integrations)
+- [API Documentation](https://contextgraph-os.vercel.app)
+- [CrewAI Integration](https://github.com/akz4ol/contextgraph-integrations/tree/main/crewai)
