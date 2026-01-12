@@ -129,11 +129,25 @@ const modelWithTools = model.bindTools(tools);
 
 The graph's state is used to store the messages and the number of LLM calls.
 
+:::python
+
 <Tip>
     State in LangGraph persists throughout the agent's execution.
 
     The `Annotated` type with `operator.add` ensures that new messages are appended to the existing list rather than replacing it.
 </Tip>
+
+:::
+
+:::js
+
+<Tip>
+    State in LangGraph persists throughout the agent's execution.
+
+    The `MessagesAnnotation` constant includes a built-in reducer for appending messages. The `llmCalls` field uses `(x, y) => x + y` to accumulate the count.
+</Tip>
+
+:::
 
 :::python
 
@@ -151,17 +165,18 @@ class MessagesState(TypedDict):
 
 :::js
 ```typescript
-import { StateGraph, START, END } from "@langchain/langgraph";
-import { MessagesZodMeta } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import { type BaseMessage } from "@langchain/core/messages";
+import { StateGraph, START, END, MessagesAnnotation, Annotation } from "@langchain/langgraph";
 
-const MessagesState = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
-  llmCalls: z.number().optional(),
+const MessagesState = Annotation.Root({
+  ...MessagesAnnotation.spec,
+  llmCalls: Annotation<number>({
+    reducer: (x, y) => x + y,
+    default: () => 0,
+  }),
 });
+
+// Extract the state type for function signatures
+type MessagesStateType = typeof MessagesState.State;
 ```
 :::
 
@@ -198,15 +213,15 @@ def llm_call(state: dict):
 
 ```typescript
 import { SystemMessage } from "@langchain/core/messages";
-async function llmCall(state: z.infer<typeof MessagesState>) {
+async function llmCall(state: MessagesStateType) {
   return {
-    messages: await modelWithTools.invoke([
+    messages: [await modelWithTools.invoke([
       new SystemMessage(
         "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
       ),
       ...state.messages,
-    ]),
-    llmCalls: (state.llmCalls ?? 0) + 1,
+    ])],
+    llmCalls: 1,
   };
 }
 ```
@@ -237,11 +252,11 @@ def tool_node(state: dict):
 :::js
 
 ```typescript
-import { isAIMessage, ToolMessage } from "@langchain/core/messages";
-async function toolNode(state: z.infer<typeof MessagesState>) {
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
+async function toolNode(state: MessagesStateType) {
   const lastMessage = state.messages.at(-1);
 
-  if (lastMessage == null || !isAIMessage(lastMessage)) {
+  if (lastMessage == null || !AIMessage.isInstance(lastMessage)) {
     return { messages: [] };
   }
 
@@ -286,9 +301,13 @@ def should_continue(state: MessagesState) -> Literal["tool_node", END]:
 :::js
 
 ```typescript
-async function shouldContinue(state: z.infer<typeof MessagesState>) {
+async function shouldContinue(state: MessagesStateType) {
   const lastMessage = state.messages.at(-1);
-  if (lastMessage == null || !isAIMessage(lastMessage)) return END;
+
+  // Check if it's an AIMessage before accessing tool_calls
+  if (!lastMessage || !AIMessage.isInstance(lastMessage)) {
+    return END;
+  }
 
   // If the LLM makes a tool call, then perform an action
   if (lastMessage.tool_calls?.length) {
@@ -358,7 +377,7 @@ const result = await agent.invoke({
 });
 
 for (const message of result.messages) {
-  console.log(`[${message.getType()}]: ${message.text}`);
+  console.log(`[${message.type}]: ${message.text}`);
 }
 ```
 :::
@@ -580,40 +599,43 @@ const modelWithTools = model.bindTools(tools);
 
 // Step 2: Define state
 
-import { StateGraph, START, END } from "@langchain/langgraph";
-import { MessagesZodMeta } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import { type BaseMessage } from "@langchain/core/messages";
+import { StateGraph, START, END, MessagesAnnotation, Annotation } from "@langchain/langgraph";
 
-const MessagesState = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
-  llmCalls: z.number().optional(),
+const MessagesState = Annotation.Root({
+  ...MessagesAnnotation.spec,
+  llmCalls: Annotation<number>({
+    reducer: (x, y) => x + y,
+    default: () => 0,
+  }),
 });
+
+// Extract the state type for function signatures
+type MessagesStateType = typeof MessagesState.State;
 
 // Step 3: Define model node
 
 import { SystemMessage } from "@langchain/core/messages";
-async function llmCall(state: z.infer<typeof MessagesState>) {
+
+async function llmCall(state: MessagesStateType) {
   return {
-    messages: await modelWithTools.invoke([
+    messages: [await modelWithTools.invoke([
       new SystemMessage(
         "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
       ),
       ...state.messages,
-    ]),
-    llmCalls: (state.llmCalls ?? 0) + 1,
+    ])],
+    llmCalls: 1,
   };
 }
 
 // Step 4: Define tool node
 
-import { isAIMessage, ToolMessage } from "@langchain/core/messages";
-async function toolNode(state: z.infer<typeof MessagesState>) {
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
+
+async function toolNode(state: MessagesStateType) {
   const lastMessage = state.messages.at(-1);
 
-  if (lastMessage == null || !isAIMessage(lastMessage)) {
+  if (lastMessage == null || !AIMessage.isInstance(lastMessage)) {
     return { messages: [] };
   }
 
@@ -629,9 +651,13 @@ async function toolNode(state: z.infer<typeof MessagesState>) {
 
 // Step 5: Define logic to determine whether to end
 
-async function shouldContinue(state: z.infer<typeof MessagesState>) {
+async function shouldContinue(state: MessagesStateType) {
   const lastMessage = state.messages.at(-1);
-  if (lastMessage == null || !isAIMessage(lastMessage)) return END;
+
+  // Check if it's an AIMessage before accessing tool_calls
+  if (!lastMessage || !AIMessage.isInstance(lastMessage)) {
+    return END;
+  }
 
   // If the LLM makes a tool call, then perform an action
   if (lastMessage.tool_calls?.length) {
@@ -659,7 +685,7 @@ const result = await agent.invoke({
 });
 
 for (const message of result.messages) {
-  console.log(`[${message.getType()}]: ${message.text}`);
+  console.log(`[${message.type}]: ${message.text}`);
 }
 ```
 :::
@@ -893,7 +919,7 @@ for chunk in agent.stream(messages, stream_mode="updates"):
 :::js
 ```typescript
 import { addMessages } from "@langchain/langgraph";
-import { type BaseMessage, isAIMessage } from "@langchain/core/messages";
+import { type BaseMessage } from "@langchain/core/messages";
 
 const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
   let modelResponse = await callLlm(messages);
@@ -1122,7 +1148,7 @@ const callTool = task({ name: "callTool" }, async (toolCall: ToolCall) => {
 
 // Step 4: Define agent
 import { addMessages } from "@langchain/langgraph";
-import { type BaseMessage, isAIMessage } from "@langchain/core/messages";
+import { type BaseMessage } from "@langchain/core/messages";
 const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
   let modelResponse = await callLlm(messages);
 
@@ -1147,7 +1173,7 @@ import { HumanMessage } from "@langchain/core/messages";
 const result = await agent.invoke([new HumanMessage("Add 3 and 4.")]);
 
 for (const message of result) {
-  console.log(`[${message.getType()}]: ${message.text}`);
+  console.log(`[${message.type}]: ${message.text}`);
 }
 ```
 :::

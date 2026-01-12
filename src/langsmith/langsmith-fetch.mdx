@@ -19,18 +19,27 @@ pip install langsmith-fetch
 
 ## Setup
 
-Set your [LangSmith API key](/langsmith/create-account-api-key) and project name:
+1. Set your [LangSmith API key](/langsmith/create-account-api-key):
 
-```bash
-export LANGSMITH_API_KEY=lsv2_...
-export LANGSMITH_PROJECT=your-project-name
-```
+    ```bash
+    export LANGSMITH_API_KEY=lsv2_...
+    ```
 
-The CLI will automatically fetch traces or threads in `LANGSMITH_PROJECT`. Replace `your-project-name` with the name of your LangSmith project (if it doesn't exist, it will be created automatically on first use).
+1. Set your project name:
 
-<Note>
-`langsmith-fetch` only requires the `LANGSMITH_PROJECT` environment variable. It automatically looks up the project UUID and saves both to `~/.langsmith-cli/config.yaml`. You can also specify [a project by its UUID](#override-the-configured-tracing-project) via a CLI flag.
-</Note>
+    ```bash
+    export LANGSMITH_PROJECT=your-project-name
+    ```
+
+    The CLI will automatically fetch traces or threads in `LANGSMITH_PROJECT`. Replace `your-project-name` with the name of your LangSmith project (if it doesn't exist, it will be created automatically on first use).
+
+    To find your project UUID, refer to [Find project and trace IDs](#find-project-and-trace-ids).
+
+    When you set the `LANGSMITH_PROJECT` environment variable, `langsmith-fetch` automatically looks up the project UUID and saves both to `~/.langsmith-cli/config.yaml`. By default, you do not need to include the project UUID with `langsmith-fetch`. However, you can override the configured project by specifying [a different project UUID](#override-the-configured-tracing-project) via the `--project-uuid` CLI flag.
+
+    <Note>
+    To fetch a thread, `langsmith-fetch` **requires** a project UUID. Therefore, ensure that the `LANGSMITH_PROJECT` environment variable is set, or specify the `--project-uuid <project-id>` manually when you run [`langsmith-fetch thread <thread-id>`](#fetch-a-trace-or-thread).
+    </Note>
 
 ### Use with a coding agent
 
@@ -44,7 +53,7 @@ Many agents will use the `langsmith-fetch --help` command to understand how to u
 
 ## Find project and trace IDs
 
-In most cases, you won’t need to find IDs manually (the CLI uses your project name and latest traces by default). However, if you want to fetch a specific item by ID, you can find them in the [LangSmith UI](https://smith.langchain.com):
+In most cases, you won’t need to find IDs manually (the CLI uses your [environment's project name](#setup) and latest traces by default). However, if you want to fetch a specific item by ID, you can find the IDs in the [LangSmith UI](https://smith.langchain.com):
 
 - **Project UUID**: Each project has a unique ID (UUID). You can find it in the project's URL or by hovering over <Icon icon="link-simple"/> **ID** next to the project's name. This UUID can be used with the `--project-uuid` flag on CLI commands
 - **Trace ID**: Every trace (single execution) has an ID. In the **Runs** view, click on a specific run to see its Trace ID (copyable from the trace details panel). You can use `langsmith-fetch trace <trace-id>` to retrieve that exact trace if you have the ID.
@@ -79,7 +88,7 @@ The commands support additional flags to filter and format the output:
 | `-n, --limit <int>`         | `traces`, `threads`              | Maximum number of traces/threads to fetch. Use this to limit how many items you retrieve (e.g., the last 5 traces).                                                            | **1** (if not specified)                |
 | `--last-n-minutes <int>`    | `traces`, `threads`              | Only fetch items from the last N minutes. This is useful to get recent data (e.g.,`--last-n-minutes 30` for the past half hour).                                              | *(no time filter)*                      |
 | `--since <timestamp>`       | `traces`, `threads`              | Only fetch items since a specific time. Provide an ISO 8601 timestamp (e.g.,`2025-12-01T00:00:00Z`) to get data after that time.                                              | *(no time filter)*                      |
-| `--project-uuid <uuid>`     | `trace, thread, traces, threads` | Manually specify the project by UUID (overrides the `LANGSMITH_PROJECT` env setting). Use this if you want to fetch from a different project without changing your env var.   | From env/config                         |
+| `--project-uuid <uuid>`     | `trace, thread, traces, threads` | Manually specify the project by UUID to [override the `LANGSMITH_PROJECT` env setting](#override-the-configured-tracing-project). Use this if you want to fetch from a different project without changing your env var.   | From env/config                         |
 | `--filename-pattern <text>` | `traces`, `threads`              | Pattern for output filenames when saving multiple files. You can use placeholders like `{trace_id}`, `{thread_id}`, `{index}`.                                                | `{trace_id}.json` or `{thread_id}.json` |
 | `--format <type>`           | **All commands**                 | Output format: `pretty`, `json`, or `raw`. (Refer to [Output formats](#output-formats) for details.)                                                                              | `pretty`                                |
 | `--file <path>`             | `trace`, `thread`                | Save the fetched trace/thread to a file instead of printing it.                                                                                                               | *(stdout)*                              |
@@ -124,8 +133,11 @@ You can fetch a single thread or trace with the ID. The command will output to t
 ```bash
 langsmith-fetch trace <trace-id>
 ```
+
+To fetch a thread, `langsmith-fetch thread` also requires a project UUID. Ensure that the [`LANGSMITH_PROJECT` environment variable](#setup) is configured, or use the `--project-uuid` flag to define a thread's project:
+
 ```bash
-langsmith-fetch thread <thread-id>
+langsmith-fetch thread <thread-id> --project-uuid <project-id>
 ```
 
 ![Output from a single trace fetch in default pretty format](/langsmith/images/langsmith-fetch-output-single.png)
@@ -200,13 +212,19 @@ totals.'], 'sources':
 
 ### Override the configured tracing project
 
-To fetch traces from a different project than the one configured with `LANGSMITH_PROJECT`, use the `--project-uuid` option:
+To fetch traces from a different project than the one configured with `LANGSMITH_PROJECT`, use `--project-uuid`:
 
 ```bash
 langsmith-fetch traces --project-uuid <project-id> --limit 3
 ```
 
-Running this command will just fetch traces from that project, it will not modify the LangSmith project already configured in `~/.langsmith-cli/config.yaml`.
+Running this command will just fetch traces from that project, it will not modify the [LangSmith project](#setup) already configured in `~/.langsmith-cli/config.yaml`.
+
+You may also need to fetch a particular trace in a different project to the configured `LANGSMITH_PROJECT`. You can do this by including a `trace-id` and `project-id` with `langsmith-fetch`:
+
+```bash
+langsmith-fetch trace <trace-id> --project-uuid <project-id>
+```
 
 ### Export to files
 

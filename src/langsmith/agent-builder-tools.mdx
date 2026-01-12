@@ -1,7 +1,10 @@
 ---
-title: Supported tools
-sidebarTitle: Tools
+title: Tools
 ---
+
+You can access a variety of tools in Agent Builder, including [built-in tools](#built-in-tools) and [tools from remote MCP servers](#remote-mcp-server-tools).
+
+## Built-in tools
 
 Use these built-in tools to give your agents access to email, calendars, chat, project management, code hosting, spreadsheets/BI, search, social, and general web utilities.
 
@@ -132,3 +135,197 @@ Use these built-in tools to give your agents access to email, calendars, chat, p
     </ul>
   </Card>
 </CardGroup>
+
+## Remote MCP server tools
+
+An [_MCP (Model Context Protocol) server_](https://modelcontextprotocol.io/docs/getting-started/intro) exposes tools that an agent can call at runtime.
+
+A remote MCP server:
+
+- Runs outside of LangSmith (usually over HTTPS).
+- Owns its own authentication and authorization.
+- Acts as a bridge between your agent and an external system.
+
+LangSmith Agent Builder doesn’t execute these tools itself—it forwards requests to the MCP server and returns the results to the agent.
+
+### How it works
+
+- Agent Builder discovers tools from remote MCP servers via the standard MCP protocol.
+- Headers configured in your workspace are automatically attached when fetching tools or calling them. Headers are key-value pairs sent with every HTTP request to your MCP server. They're commonly used for authentication (like API keys or bearer tokens), but can also provide configuration information, content types, or custom metadata.
+- Tools from remote servers are available alongside built-in tools in Agent Builder.
+
+**Runtime**: Agent Builder automatically connects to your MCP server and uses its tools.
+
+```mermaid
+sequenceDiagram
+    participant Agent as Agent Builder
+    participant MCP as Remote MCP Server
+
+    Agent->>MCP: Discover available tools<br/>(with configured headers)
+    MCP-->>Agent: Return tool list
+
+    Note over Agent,MCP: Later, when agent needs a tool...
+
+    Agent->>MCP: Call tool<br/>(with configured headers)
+    MCP-->>Agent: Return result
+```
+
+The following sections show you how to connect a remote MCP server to Agent Builder:
+
+- [General configuration](#general-configuration): Step-by-step instructions for connecting any remote MCP server with authentication headers. Use this if you're familiar with MCP servers and want a quick reference.
+- [Example: Connecting a custom MCP server](#example-connecting-a-custom-mcp-server): A detailed walkthrough using a GitHub-based MCP server as an example. Use this if you want to see a complete end-to-end example with specific authentication details.
+
+### General configuration
+
+Configure remote MCP servers in your LangSmith [workspace](/langsmith/administration-overview#workspaces):
+
+<Steps>
+  <Step title="Navigate to MCP Server settings">
+    In the [LangSmith UI](https://smith.langchain.com), select **Settings** in the lower left corner, then choose **MCP Servers** from the left-hand navigation.
+  </Step>
+
+  <Step title="Add your MCP server">
+    Click **Add server** and enter the URL of your remote MCP server (for example, `https://mcp.example.com`).
+  </Step>
+
+  <Step title="Configure authentication headers (if required)">
+    If your MCP server requires authentication, add headers to authenticate requests. The most common pattern is using an Authorization bearer token:
+
+    - **Key**: `Authorization`
+    - **Value**: `Bearer {{SECRET_NAME}}`
+
+    **How it works:**
+    - The `{{SECRET_NAME}}` placeholder references a [workspace secret](/langsmith/agent-builder-setup#add-workspace-secrets) that stores your actual token value.
+    - At runtime, Agent Builder automatically replaces `{{SECRET_NAME}}` with the secret's value.
+    - The header is attached to all requests to your MCP server.
+
+    **Example:**
+    If you have a workspace secret named `MCP_TOKEN` with value `sk_abc123xyz`, configure:
+    - Key: `Authorization`
+    - Value: `Bearer {{MCP_TOKEN}}`
+
+    Agent Builder will send: `Authorization: Bearer sk_abc123xyz`
+
+    <Tip>
+    For instructions on adding workspace secrets, refer to [How to add workspace secrets](/langsmith/agent-builder-setup#how-to-add-workspace-secrets).
+    </Tip>
+
+    <Info>
+    You can add multiple headers if your MCP server requires additional authentication or configuration parameters. Each header key-value pair is sent with every request to the server.
+    </Info>
+  </Step>
+
+  <Step title="Save and verify">
+    Save your configuration. Agent Builder will automatically discover available tools from your MCP server and make them available in your agents. The configured headers are applied to both tool discovery requests and tool execution requests.
+  </Step>
+</Steps>
+
+<Note>
+Always use workspace secret placeholders (e.g., `{{MCP_TOKEN}}`) rather than hardcoding sensitive values directly in headers. Secrets are stored securely and resolved at runtime.
+</Note>
+
+### Update your MCP server URL
+
+<Warning>
+Changing the URL of a custom MCP server will break any agents that use tools from that server.
+</Warning>
+
+Agent Builder stores tool references by MCP server URL. If you update the URL of a custom MCP server, existing agents will fail when attempting to call those tools because the stored URL no longer matches.
+
+To update an MCP server URL:
+
+1. Update your MCP server URL in the workspace settings.
+2. For each agent using tools from that server:
+   - Remove the affected tools from the agent configuration.
+   - Re-add the tools (they will now reference the new URL).
+3. Test the agent to confirm tools work correctly.
+
+### Example: Connect a custom MCP server
+
+Here's a practical example of connecting Agent Builder to a GitHub MCP server that requires authentication:
+
+<Steps>
+  <Step title="Create a GitHub Authorization Token">
+
+    The MCP server needs permission to access GitHub on your behalf. You’ll do this using a **GitHub Personal Access Token (PAT)**.
+
+    1. Go to **GitHub → Settings → Developer settings**.
+    1. Open **Personal access tokens**.
+    1. Create a **Fine-grained token** (recommended).
+
+    Grant **read-only** permissions:
+    - **Contents**: Read
+    - **Issues**: Read
+    - **Pull requests**: Read
+
+    Once created, **copy the token**. You won’t be able to see it again.
+
+    <Tip>Treat this token like a password. You can rotate or revoke it at any time without changing your agent.</Tip>
+
+  </Step>
+
+  <Step title="Understand the required headers">
+
+    Remote MCP servers typically authenticate using HTTP headers.
+
+    For the GitHub MCP server, the required headers look like this:
+
+    ```http
+    Authorization: Bearer ghp_xxxxxxxxxxxxxxxxxxxx
+    Content-Type: application/json
+    User-Agent: langsmith-agent-builder
+    ```
+
+    - Authorization proves who you are.
+    - The MCP server validates the token.
+    - Every tool call from the agent includes these headers.
+
+    Agent Builder will attach these headers automatically once configured.
+
+</Step>
+
+  <Step title="Store the token as a workspace secret">
+    In the [LangSmith UI](https://smith.langchain.com):
+
+    1. Navigate to **Settings** > **Workspaces** > **Secrets**.
+    1. Click **Add secret**.
+    1. Name: `GITHUB_TOKEN` (or any descriptive name).
+    1. Value: Your authentication token.
+    1. Save the secret.
+  </Step>
+
+  <Step title="Configure the MCP server">
+    In **Settings** > **MCP Servers**:
+
+    1. Click **Add server**.
+    1. Add a **Name** for the MCP server.
+    1. **URL**: Enter your MCP server URL (e.g., `https://mcp-github.example.com`)
+    1. Add authentication header:
+       - Key: `Authorization`
+       - Value: `Bearer {{GITHUB_TOKEN}}`
+    1. Save the configuration.
+  </Step>
+
+  <Step title="Use tools in your agent">
+    The tools from your MCP server are now available in Agent Builder. When you create or edit an agent, you'll see these tools alongside the built-in tools. All requests to your MCP server will include the authentication header automatically.
+
+    Once connected, the workflow for this example looks like this:
+
+    1. The agent decides it needs GitHub data.
+    1. It selects a tool exposed by the MCP server.
+    1. LangSmith forwards the request to the remote MCP server.
+    1. The server authenticates using your token.
+    1. GitHub data is fetched and returned.
+    1. The agent receives structured results and continues reasoning.
+  </Step>
+</Steps>
+
+<Info>
+Different MCP servers may use different authentication methods:
+- `Authorization: Bearer {{TOKEN}}` (most common)
+- `X-API-Key: {{API_KEY}}`
+- Custom headers specific to your implementation
+- Multiple headers for authentication
+
+Always check your MCP server's documentation for the correct authentication header format.
+</Info>

@@ -51,6 +51,7 @@ class DocumentationBuilder:
             ".yaml",
             ".css",
             ".js",
+            ".txt",
         }
 
         # Mapping of language codes to full names for URLs
@@ -754,6 +755,10 @@ class DocumentationBuilder:
 
         # Snippets directory should be shared
         if "snippets" in relative_path.parts:
+            return True
+
+        # .well-known directory should be shared (security.txt, etc.)
+        if ".well-known" in relative_path.parts:
             return True
 
         # JavaScript and CSS files should be shared (used for custom scripts/styles)
