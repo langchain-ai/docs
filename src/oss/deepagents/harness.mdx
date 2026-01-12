@@ -38,14 +38,14 @@ The harness provides six tools for file system operations, making files first-cl
 
 ## Large tool result eviction
 
-The harness automatically dumps large tool results to the file system when they exceed a token threshold, preventing context window saturation.
+The [`FilesystemMiddleware`](/oss/deepagents/middleware) automatically evicts large tool results to the file system when they exceed a token threshold, preventing context window saturation.
 
 **How it works:**
 
-- Monitors tool call results for size (default threshold: 20,000 tokens)
-- When exceeded, writes the result to a file instead
-- Replaces the tool result with a concise reference to the file
-- Agent can later read the file if needed
+- Monitors tool call results for size (default threshold: 20,000 tokens, configurable via `tool_token_limit_before_evict`)
+- When exceeded, writes the result using the configured backend
+- Replaces the tool result with a truncated preview and file reference
+- Agent can read the full result from the file system as needed
 
 ## Pluggable storage backends
 
@@ -53,27 +53,29 @@ The harness abstracts file system operations behind a protocol, allowing differe
 
 **Available backends:**
 
-1. **StateBackend** - Ephemeral in-memory storage
-   - Files live in the agent's state (checkpointed with conversation)
-   - Persists within a thread but not across threads
-   - Useful for temporary working files
+1. **`StateBackend`** - Ephemeral in-memory storage
+    - Files live in the agent's state (checkpointed with conversation)
+    - Persists within a thread but not across threads
+    - Useful for temporary working files
 
-2. **FilesystemBackend** - Real filesystem access
-   - Read/write from actual disk
-   - Supports virtual mode (sandboxed to a root directory)
-   - Integrates with system tools (ripgrep for grep)
-   - Security features: path validation, size limits, symlink prevention
+2. **`FilesystemBackend`** - Real filesystem access
+    - Read/write from actual disk
+    - Supports virtual mode (sandboxed to a root directory)
+    - Integrates with system tools (ripgrep for grep)
+    - Security features: path validation, size limits, symlink prevention
 
-3. **StoreBackend** - Persistent cross-conversation storage
-   - Uses LangGraph's BaseStore for durability
-   - Namespaced per assistant_id
-   - Files persist across conversations
-   - Useful for long-term memory or knowledge bases
+3. **`StoreBackend`** - Persistent cross-conversation storage
+    - Uses LangGraph's BaseStore for durability
+    - Namespaced per `assistant_id`
+    - Files persist across conversations
+    - Useful for long-term memory or knowledge bases
 
-4. **CompositeBackend** - Route different paths to different backends
-   - Example: `/` → StateBackend, `/memories/` → StoreBackend
-   - Longest-prefix matching for routing
-   - Enables hybrid storage strategies
+4. **`CompositeBackend`** - Route different paths to different backends
+    - Example: `/` → StateBackend, `/memories/` → StoreBackend
+    - Longest-prefix matching for routing
+    - Enables hybrid storage strategies
+
+See [backends](/oss/deepagents/backends) for configuration details and examples.
 
 ## Task delegation (subagents)
 
@@ -107,8 +109,9 @@ The harness allows the main agent to create ephemeral "subagents" for isolated m
 The harness automatically compresses old conversation history when token usage becomes excessive.
 
 **Configuration:**
-- Triggers at 170,000 tokens
-- Keeps the most recent 6 messages intact
+- Triggers at 85% of the model's `max_input_tokens` from its [model profile](/oss/langchain/models#model-profiles)
+- Keeps 10% of tokens as recent context
+- Falls back to 170,000 tokens trigger / 6 messages kept if model profile is unavailable
 - Older messages are summarized by the model
 
 **Why it's useful:**
@@ -123,12 +126,12 @@ The harness fixes message history when tool calls are interrupted or cancelled b
 **The problem:**
 - Agent requests tool call: "Please run X"
 - Tool call is interrupted (user cancels, error, etc.)
-- Agent sees tool_call in AIMessage but no corresponding ToolMessage
+- Agent sees `tool_call` in `AIMessage` but no corresponding `ToolMessage`
 - This creates an invalid message sequence
 
 **The solution:**
-- Detects AIMessages with tool_calls that have no results
-- Creates synthetic ToolMessage responses indicating the call was cancelled
+- Detects `AIMessage` objects with `tool_calls` that have no results
+- Creates synthetic `ToolMessage` responses indicating the call was cancelled
 - Repairs the message history before agent execution
 
 **Why it's useful:**
@@ -141,19 +144,19 @@ The harness fixes message history when tool calls are interrupted or cancelled b
 The harness provides a `write_todos` tool that agents can use to maintain a structured task list.
 
 **Features:**
-- Track multiple tasks with statuses (pending, in_progress, completed)
+- Track multiple tasks with statuses (`'pending'`, `'in_progress'`, `'completed'`)
 - Persisted in agent state
 - Helps agent organize complex multi-step work
 - Useful for long-running tasks and planning
 
 
-## Human-in-the-Loop
+## Human-in-the-loop
 
-The harness pauses agent execution at specified tool calls to allow human approval/modification.
+The harness can pause agent execution at specified tool calls to allow human approval or modification. This feature is opt-in via the `interrupt_on` parameter.
 
 **Configuration:**
-- Map tool names to interrupt configurations
-- Example: `{"edit_file": True}` - pause before every edit
+- Pass `interrupt_on` to `create_deep_agent` with a mapping of tool names to interrupt configurations
+- Example: `interrupt_on={"edit_file": True}` pauses before every edit
 - Can provide approval messages or modify tool inputs
 
 **Why it's useful:**
@@ -169,7 +172,7 @@ The harness enables Anthropic's prompt caching feature to reduce redundant token
 **How it works:**
 - Caches portions of the prompt that repeat across turns
 - Significantly reduces latency and cost for long system prompts
-- Automatically skips for non-Anthropic models
+- Automatically skipped for non-Anthropic models
 
 **Why it's useful:**
 - System prompts (especially with filesystem docs) can be 5k+ tokens
