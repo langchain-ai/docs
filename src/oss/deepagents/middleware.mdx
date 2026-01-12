@@ -4,13 +4,19 @@ sidebarTitle: Middleware
 description: Understand the middleware that powers deep agents
 ---
 
-Deep agents are built with a modular middleware architecture. Deep agents have access to:
+Deep agents are built with a modular middleware architecture.
+Each feature is implemented as separate middleware.
+When you create a deep agent with `create_deep_agent`, the resulting deep agents automatically gets access to the following middleware:
 
-1. A planning tool
-2. A filesystem for storing context and long-term memories
-3. The ability to spawn subagents
+- [`TodoListMiddleware`](#to-do-list-middleware): Plan tasks and track progress
+- [`FilesystemMiddleware`](#filesystem-middleware): Perform file operations and context offloading (auto-saves large results)
+- [`SubAgentMiddleware`](#subagent-middleware): Delegate of tasks to isolated sub-agents
+- [`MemoryMiddleware`](#memory-middleware): Load memory from configured sources and inject it into system prompt
+- `SummarizationMiddleware`: Auto-summarize context that exceeds 170k tokens
+- `AnthropicPromptCachingMiddleware`: Cache system prompts to reduce costs (Anthropic only)
+- `PatchToolCallsMiddleware`: Fix dangling tool calls from interruptions
+- `HumanInTheLoopMiddleware`: Pause execution for human approval (requires `interrupt_on` config)
 
-Each feature is implemented as separate middleware. When you create a deep agent with `create_deep_agent`, we automatically attach `TodoListMiddleware`, `FilesystemMiddleware`, and `SubAgentMiddleware` to your agent.
 You can provide additional middleware to extend functionality, add tools, or implement custom hooks.
 
 ```mermaid
@@ -77,10 +83,13 @@ Context engineering is a main challenge in building effective agents. This is pa
 
 `FilesystemMiddleware` provides four tools for interacting with both short-term and long-term memory:
 
-- **ls**: List the files in the filesystem
-- **read_file**: Read an entire file or a certain number of lines from a file
-- **write_file**: Write a new file to the filesystem
-- **edit_file**: Edit an existing file in the filesystem
+- [**ls**](/oss/deepagents/harness#file-system-access): List the files in the filesystem
+- [**read_file**](/oss/deepagents/harness#file-system-access): Read an entire file or a certain number of lines from a file
+- [**write_file**](/oss/deepagents/harness#file-system-access): Write a new file to the filesystem
+- [**edit_file**](/oss/deepagents/harness#file-system-access): Edit an existing file in the filesystem
+- [**glob**](/oss/deepagents/harness#file-system-access)
+- [**grep**](/oss/deepagents/harness#file-system-access)
+- [**execute**\](/oss/deepagents/harness#file-system-access)
 
 :::python
 ```python
@@ -272,7 +281,7 @@ const agent = createAgent({
 ```
 :::
 
-A subagent is defined with a **name**, **description**, **system prompt**, and **tools**. You can also provide a subagent with a custom **model**, or with additional **middleware**. This can be particularly useful when you want to give the subagent an additional state key to share with the main agent.
+A [subagent](/oss/deepagents/subagents#subagent-dictionary-based) is defined with a **name**, **description**, **system prompt**, and **tools**. You can also provide a subagent with a custom **model**, or with additional **middleware**. This can be particularly useful when you want to give the subagent an additional state key to share with the main agent.
 
 For more complex use cases, you can also provide your own pre-built LangGraph graph as a subagent.
 
@@ -352,4 +361,23 @@ const agent = createAgent({
 ```
 :::
 
-In addition to any user-defined subagents, the main agent has access to a `general-purpose` subagent at all times. This subagent has the same instructions as the main agent and all the tools it has access to. The primary purpose of the `general-purpose` subagent is context isolation—the main agent can delegate a complex task to this subagent and get a concise answer back without bloat from intermediate tool calls.
+In addition to any user-defined subagents, the main agent has access to a [`general-purpose` subagent](/oss/deepagents/subagents#the-general-purpose-subagent) at all times. This subagent has the same instructions as the main agent and all the tools it has access to. The primary purpose of the `general-purpose` subagent is context isolation—the main agent can delegate a complex task to this subagent and get a concise answer back without bloat from intermediate tool calls.
+
+## Memory middleware
+
+Use [Agent.md files](https://agents.md/) to provide extra context to your deep agent.
+You can pass one or more file paths to the `memory` parameter when creating your deep agent:
+
+:::python
+```python
+from deepagents import create_deep_agent, MemoryMiddleware
+from deepagents.backends.filesystem import FilesystemBackend
+
+memory = MemoryMiddleware(
+    backend=FilesystemBackend(root_dir="/"),
+    sources=[ "~/.deepagents/AGENTS.md" ],
+)
+
+agent = create_deep_agent(middleware=[memory])
+```
+:::
