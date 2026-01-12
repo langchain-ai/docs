@@ -24,7 +24,6 @@ case "$MODE" in
         echo "  Activating pyproject.dev.toml"
         cp pyproject.dev.toml pyproject.toml
         echo "✓ Development configuration active (local editable installs)"
-        echo "  Run: make dev-install"
         ;;
 
     prod)
@@ -38,7 +37,6 @@ case "$MODE" in
             exit 1
         fi
         echo "✓ Production configuration active (git sources)"
-        echo "  Run: make prod-install"
         ;;
 
     status)

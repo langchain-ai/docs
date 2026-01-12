@@ -2,6 +2,422 @@
 title: Google Vertex AI Vector Search
 ---
 
+This page covers how to use Google Vertex AI Vector Search as a vector store in LangChain.
+
+## Overview
+
+[Google Vertex AI Vector Search](https://cloud.google.com/vertex-ai/docs/vector-search/overview) is a fully managed, high-scale, low-latency solution for finding similar vectors. It supports both exact and approximate nearest neighbor (ANN) search using Google's ScaNN (Scalable Nearest Neighbors) technology.
+
+Vertex AI Vector Search is available in two versions:
+
+- **[Vector Search 2.0](https://docs.cloud.google.com/vertex-ai/docs/vector-search-2/overview)**: Uses Collections to store Data Objects containing vectors, metadata, and content together. Provides a unified data model with simpler and quicker operations.
+- **[Vector Search 1.0](https://docs.cloud.google.com/vertex-ai/docs/vector-search/overview)**: Uses Indexes deployed to Endpoints with separate document storage in Google Cloud Storage or Datastore.
+
+Choose the section below based on which version you're using:
+- [Vector Search 2.0](#vector-search-20) - If you're using Collections
+- [Vector Search 1.0](#vector-search-10) - If you're using Indexes and Endpoints
+
+For migrating from Vertex AI Vector Search 1.0 to 2.0, see the [Migration Guide](https://cloud.google.com/vertex-ai/docs/vector-search-2/migration-from-vs-1_0).
+
+## Installation
+
+Install the LangChain Google Vertex AI integration:
+
+```bash
+pip install -U langchain-google-vertexai
+```
+
+---
+
+# Vector Search 2.0
+
+Vector Search 2.0 uses Collections to store Data Objects. Each Data Object contains vectors, metadata, and content in a unified structure.
+
+## Prerequisites
+
+- Google Cloud project with Vertex AI API and Vector Search APIs enabled
+
+    ```bash
+    gcloud services enable vectorsearch.googleapis.com aiplatform.googleapis.com --project "{PROJECT_ID}"
+    ```
+
+- Vector Search Collection created (see [Creating a Collection](#creating-a-collection-v2))
+- Appropriate IAM permissions (`Vertex AI User` role or equivalent)
+
+## Creating a Collection (V2)
+
+Before using Vector Search 2.0, you need to create a collection. Here's how to create a collection compatible with LangChain:
+
+```python
+from google.cloud import vectorsearch_v1beta
+
+# Configuration
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+COLLECTION_ID = "langchain-test-collection"
+
+# Create the Vector Search service client
+vector_search_service_client = vectorsearch_v1beta.VectorSearchServiceClient()
+
+# Create the collection with schema compatible with LangChain
+# IMPORTANT: To enable filtering, you must define filterable fields in data_schema.properties
+request = vectorsearch_v1beta.CreateCollectionRequest(
+    parent=f"projects/{PROJECT_ID}/locations/{LOCATION}",
+    collection_id=COLLECTION_ID,
+    collection={
+        "display_name": "LangChain Test Collection",
+        "description": "Collection for testing LangChain VectorSearchVectorStore with filtering",
+        "data_schema": {
+            "type": "object",
+            "properties": {
+                # Define fields you want to filter on
+                "source": {"type": "string"},
+                "category": {"type": "string"},
+                "page": {"type": "number"},
+                # Add more fields as needed for your specific use case
+            },
+        },
+        "vector_schema": {
+            # Vector field must be named "embedding" to match LangChain's default
+            "embedding": {
+                "dense_vector": {
+                    "dimensions": 768  # For text-embedding-005
+                }
+            },
+        },
+    },
+)
+
+print(f"Creating collection: {COLLECTION_ID}")
+operation = vector_search_service_client.create_collection(request=request)
+print(f"Operation started: {operation.operation.name}")
+print("Waiting for operation to complete...")
+
+result = operation.result()
+print(f"Collection created successfully!")
+print(f"Resource name: {result.name}")
+```
+
+**Important notes:**
+- The vector field must be named `"embedding"` to match LangChain's default (or use `vector_field_name` parameter)
+- Only fields defined in `data_schema.properties` can be used for filtering in V2
+- Dimensions should match your embedding model (768 for text-embedding-005)
+
+## Initialization
+
+```python
+from langchain_google_vertexai import VectorSearchVectorStore, VertexAIEmbeddings
+
+# Initialize embeddings
+embeddings = VertexAIEmbeddings(model_name="text-embedding-005")
+
+# Create vector store from a Collection
+# Use the same PROJECT_ID, LOCATION, and COLLECTION_ID from collection creation
+vector_store = VectorSearchVectorStore.from_components(
+    project_id=PROJECT_ID,
+    region=LOCATION,
+    collection_id=COLLECTION_ID,
+    embedding=embeddings,
+    api_version="v2",
+)
+```
+
+**Key parameters:**
+- `collection_id`: Your Vector Search Collection ID (required)
+- `api_version`: Must be set to `"v2"` (required)
+- `project_id`: GCP project ID (required)
+- `region`: GCP region where Collection exists (required)
+- `vector_field_name`: Name of the vector field in your Collection schema (default: `"embedding"`)
+
+## Adding Documents
+
+```python
+from langchain_core.documents import Document
+
+# Create documents
+docs = [
+    Document(
+        page_content="Google Vertex AI is a managed machine learning platform",
+        metadata={"source": "docs", "category": "AI"}
+    ),
+    Document(
+        page_content="LangChain integrates with Vertex AI Vector Search",
+        metadata={"source": "blog", "category": "integration"}
+    ),
+]
+
+# Add documents to vector store
+ids = vector_store.add_documents(docs)
+print(f"Added documents with IDs: {ids}")
+```
+
+### Adding Texts
+
+```python
+texts = [
+    "Vertex AI provides scalable ML infrastructure",
+    "Vector Search enables similarity search at scale",
+]
+
+metadatas = [
+    {"source": "website", "page": 1},
+    {"source": "website", "page": 2},
+]
+
+ids = vector_store.add_texts(texts=texts, metadatas=metadatas)
+```
+
+## Searching
+
+### Basic Similarity Search
+
+```python
+# Basic similarity search
+query = "What is Vertex AI?"
+results = vector_store.similarity_search(query, k=5)
+
+for doc in results:
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}\n")
+```
+
+### Similarity Search with Scores
+
+```python
+# Get similarity scores along with documents
+results_with_scores = vector_store.similarity_search_with_score(
+    "What is Vertex AI?",
+    k=5
+)
+
+for doc, score in results_with_scores:
+    print(f"Score: {score}")
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}\n")
+```
+
+### Search by Vector
+
+```python
+# Search using a pre-computed embedding
+embedding = embeddings.embed_query("Vertex AI features")
+
+results = vector_store.similarity_search_by_vector_with_score(embedding, k=5)
+
+for doc, score in results:
+    print(f"Score: {score}")
+    print(f"Content: {doc.page_content}\n")
+```
+
+## Filtering
+
+Vector Search 2.0 uses dict-based query syntax for filtering Data Objects:
+
+```python
+# Simple equality filter
+results = vector_store.similarity_search(
+    "AI features",
+    k=5,
+    filter={"source": {"$eq": "docs"}}
+)
+
+# Comparison operators
+results = vector_store.similarity_search(
+    "recent pages",
+    k=5,
+    filter={"page": {"$gte": 10}}
+)
+
+# Logical AND
+results = vector_store.similarity_search(
+    "AI documentation",
+    k=5,
+    filter={
+        "$and": [
+            {"source": {"$eq": "docs"}},
+            {"category": {"$eq": "AI"}}
+        ]
+    }
+)
+
+# Logical OR
+results = vector_store.similarity_search(
+    "documentation",
+    k=5,
+    filter={
+        "$or": [
+            {"source": {"$eq": "docs"}},
+            {"source": {"$eq": "blog"}}
+        ]
+    }
+)
+
+# Less than
+results = vector_store.similarity_search(
+    "early pages",
+    k=5,
+    filter={"page": {"$lt": 5}}
+)
+```
+
+**Supported operators:**
+- `$eq`: Equals
+- `$ne`: Not equals
+- `$lt`: Less than
+- `$lte`: Less than or equal
+- `$gt`: Greater than
+- `$gte`: Greater than or equal
+- `$and`: Logical AND
+- `$or`: Logical OR
+- `$not`: Logical NOT
+
+See the [Vector Search 2.0 query documentation](https://cloud.google.com/vertex-ai/docs/vector-search-2/query-search/query) for more details.
+
+## Delete Operations
+
+### Delete by IDs
+
+```python
+# Delete specific documents by ID
+ids_to_delete = ["id1", "id2", "id3"]
+vector_store.delete(ids=ids_to_delete)
+```
+
+### Delete by Metadata Filter
+
+**Note**: Delete by metadata filter has limitations in the current V2 API. The recommended approach is to:
+1. Use `similarity_search` with your filter to get document IDs
+2. Delete by IDs
+
+```python
+# Recommended: Search first, then delete by IDs
+results = vector_store.similarity_search(
+    "query",  # Use a broad query
+    k=1000,   # Get more results
+    filter={"source": {"$eq": "old_docs"}}
+)
+ids_to_delete = [doc.metadata.get("id") for doc in results if "id" in doc.metadata]
+vector_store.delete(ids=ids_to_delete)
+```
+
+Alternatively, if direct metadata deletion is supported in your environment:
+
+```python
+# Direct deletion by metadata (may have limitations)
+try:
+    vector_store.delete(metadata={"source": {"$eq": "old_docs"}})
+except Exception as e:
+    # Fall back to search-then-delete approach
+    print(f"Direct deletion failed: {e}")
+```
+
+## Advanced Features
+
+Vector Search 2.0 offers several advanced search capabilities that go beyond traditional dense vector search.
+
+### Semantic Search
+
+Semantic search automatically generates embeddings from your query text using Vertex AI models. Your collection must be configured with `vertex_embedding_config` in the vector schema.
+
+```python
+# Semantic search with auto-generated embeddings
+results = vector_store.semantic_search(
+    query="Tell me about animals",
+    k=5,
+    search_field="embedding",  # Vector field with auto-embedding config
+    task_type="RETRIEVAL_QUERY",  # Optimizes embeddings for search queries
+    filter={"category": {"$eq": "wildlife"}}  # Optional filtering
+)
+
+for doc in results:
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}\n")
+```
+
+**Task types:**
+- `RETRIEVAL_QUERY`: For search queries (default)
+- `RETRIEVAL_DOCUMENT`: For document indexing
+- `SEMANTIC_SIMILARITY`: For semantic similarity tasks
+- `CLASSIFICATION`: For classification tasks
+- `CLUSTERING`: For clustering tasks
+
+### Text Search
+
+Text search performs keyword/full-text matching on data fields without using embeddings.
+
+```python
+# Keyword search on data fields
+results = vector_store.text_search(
+    query="Python programming",
+    k=10,
+    data_field_names=["page_content", "title"]  # Fields to search in
+)
+
+for doc in results:
+    print(f"Content: {doc.page_content}\n")
+```
+
+!!! note
+    Text search does not support filters. Use `semantic_search()` or `similarity_search()` if you need filtering.
+
+### Hybrid Search
+
+Hybrid search combines semantic search (with auto-generated embeddings) and text search (keyword matching) using Reciprocal Rank Fusion (RRF) to produce optimally ranked results.
+
+```python
+# Hybrid search: semantic understanding + keyword matching
+results = vector_store.hybrid_search(
+    query="Men's outfit for beach",
+    k=10,
+    search_field="embedding",  # Vector field with auto-embedding config
+    data_field_names=["page_content"],  # Fields for text search
+    task_type="RETRIEVAL_QUERY",
+    filter={"price": {"$lt": 100}},  # Optional filter for semantic search
+    semantic_weight=1.0,  # Weight for semantic results
+    text_weight=1.0  # Weight for keyword results
+)
+
+for doc in results:
+    print(f"Content: {doc.page_content}\n")
+```
+
+**Weight parameters:**
+- Higher `semantic_weight`: Prioritizes semantic understanding
+- Higher `text_weight`: Prioritizes exact keyword matches
+- Equal weights (default): Balanced results
+
+Products appearing high in both semantic and text search results will rank highest in the merged results.
+
+See the [Vector Search 2.0 documentation](https://cloud.google.com/vertex-ai/docs/vector-search/overview) for more information.
+
+### Custom Vector Field Names
+
+If your Collection schema uses a custom field name for vectors:
+
+```python
+vector_store = VectorSearchVectorStore.from_components(
+    project_id="your-project-id",
+    region="us-central1",
+    collection_id="your-collection-id",
+    embedding=embeddings,
+    api_version="v2",
+    vector_field_name="custom_embedding_field",  # Match your schema
+)
+```
+
+## Additional Resources
+
+- [Vector Search 2.0 Overview](https://cloud.google.com/vertex-ai/docs/vector-search-2/overview)
+- [Vector Search 2.0 Collections](https://cloud.google.com/vertex-ai/docs/vector-search-2/collections/collections)
+- [Vector Search 2.0 Data Objects](https://cloud.google.com/vertex-ai/docs/vector-search-2/data-objects/data-objects)
+- [Vector Search 2.0 Search Guide](https://cloud.google.com/vertex-ai/docs/vector-search-2/query-search/search)
+- [Vector Search 2.0 Query Guide](https://cloud.google.com/vertex-ai/docs/vector-search-2/query-search/query)
+- [Vector Search 2.0 Migration Guide](https://cloud.google.com/vertex-ai/docs/vector-search-2/migration-from-vs-1_0)
+
+---
+
+# Vector Search 1.0
+
 This notebook shows how to use functionality related to the `Google Cloud Vertex AI Vector Search` vector database.
 
 > [Google Vertex AI Vector Search](https://cloud.google.com/vertex-ai/docs/vector-search/overview), formerly known as Vertex AI Matching Engine, provides the industry's leading high-scale low latency vector database. These vector databases are commonly referred to as vector similarity-matching or an approximate nearest neighbor (ANN) service.
@@ -11,7 +427,7 @@ This notebook shows how to use functionality related to the `Google Cloud Vertex
 > To see how to create an index refer to the section [Create Index and deploy it to an Endpoint](#create-index-and-deploy-it-to-an-endpoint)
 If you already have an index deployed , skip to [Create VectorStore from texts](#create-vector-store-from-texts)
 
-## Create Index and deploy it to an Endpoint
+## Create index and deploy it to an endpoint
 
 - This section demonstrates creating a new index and deploying it to an endpoint
 
@@ -52,7 +468,7 @@ aiplatform.init(project=PROJECT_ID, location=REGION, staging_bucket=BUCKET_URI)
 embedding_model = VertexAIEmbeddings(model_name="text-embedding-005")
 ```
 
-### Create an empty Index
+### Create an empty index
 
 **Note :** While creating an index you should specify an "index_update_method" from either a "BATCH_UPDATE" or "STREAM_UPDATE"
 > A batch index is for when you want to update your index in a batch, with data which has been stored over a set amount of time, like systems which are processed weekly or monthly. A streaming index is when you want index data to be updated as new data is added to your datastore, for instance, if you have a bookstore and want to show new inventory online as soon as possible. Which type you choose is important, since setup and requirements are different.
@@ -70,7 +486,7 @@ my_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
 )
 ```
 
-### Create an Endpoint
+### Create an endpoint
 
 ```python
 # Create an endpoint
@@ -79,7 +495,7 @@ my_index_endpoint = aiplatform.MatchingEngineIndexEndpoint.create(
 )
 ```
 
-### Deploy Index to the Endpoint
+### Deploy index to the endpoint
 
 ```python
 # NOTE : This operation can take upto 20 minutes
@@ -90,7 +506,7 @@ my_index_endpoint = my_index_endpoint.deploy_index(
 my_index_endpoint.deployed_indexes
 ```
 
-## Create Vector Store from texts
+## Create vector store from texts
 
 NOTE : If you have existing Index and Endpoints, you can load them using below code
 
@@ -140,7 +556,7 @@ vector_store = VectorSearchVectorStore.from_components(
 vector_store.add_texts(texts=texts)
 ```
 
-### OPTIONAL : You can also create vectore and store chunks in a Datastore
+### OPTIONAL : You can also create vectore and store chunks in a datastore
 
 ```python
 # NOTE : This operation can take upto 20 mins
@@ -274,7 +690,7 @@ vector_store.similarity_search(
 )
 ```
 
-### Use Vector Store as retriever
+### Use vector store as retriever
 
 ```python
 # Initialize the vectore_store as retriever
@@ -307,7 +723,7 @@ retriever.search_kwargs = {"filter": filters, "numeric_filter": numeric_filters}
 retriever.invoke("What are my options in breathable fabric?")
 ```
 
-### Use filters with retriever in Question Answering Chains
+### Use filters with retriever in question answering chains
 
 ```python
 from langchain_google_vertexai import VertexAI
@@ -337,7 +753,7 @@ print("REFERENCES")
 print(f"{response['source_documents']}")
 ```
 
-## Read , Chunk , Vectorise and Index PDFs
+## Read , chunk , vectorise and index PDFs
 
 ```python
 !pip install pypdf
@@ -402,7 +818,7 @@ vector_store = VectorSearchVectorStore.from_components(
 )
 ```
 
-## Hybrid Search
+## Hybrid search
 
 Vector Search supports hybrid search, a popular architecture pattern in information retrieval (IR) that combines both semantic search and keyword search (also called token-based search). With hybrid search, developers can take advantage of the best of the two approaches, effectively providing higher search quality.
 Click [here](https://cloud.google.com/vertex-ai/docs/vector-search/about-hybrid-search) to learn more.
