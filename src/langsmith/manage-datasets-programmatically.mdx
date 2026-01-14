@@ -98,6 +98,98 @@ await client.createExamples({
 });
 ```
 
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.core.JsonValue;
+import com.langchain.smith.errors.UnexpectedStatusCodeException;
+import com.langchain.smith.models.datasets.Dataset;
+import com.langchain.smith.models.datasets.DatasetCreateParams;
+import com.langchain.smith.models.datasets.DatasetListParams;
+import com.langchain.smith.models.examples.bulk.BulkCreateParams;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class CreateDatasetExample {
+    public static void main(String[] args) {
+        LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+
+        List<String[]> exampleInputs = List.of(
+            new String[]{"What is the largest mammal?", "The blue whale"},
+            new String[]{"What do mammals and birds have in common?", "They are both warm-blooded"},
+            new String[]{"What are reptiles known for?", "Having scales"},
+            new String[]{"What's the main characteristic of amphibians?", "They live both in water and on land"}
+        );
+
+        String datasetName = "Elementary Animal Questions";
+
+        Dataset dataset;
+        try {
+            dataset = client.datasets().create(
+                DatasetCreateParams.builder()
+                    .name(datasetName)
+                    .description("Questions and answers about animal phylogenetics")
+                    .build()
+            );
+        } catch (UnexpectedStatusCodeException e) {
+            // Dataset already exists, get it
+            if (e.statusCode() == 409) {
+                DatasetListParams listParams = DatasetListParams.builder()
+                    .name(datasetName)
+                    .build();
+                dataset = client.datasets().list(listParams).items().get(0);
+            } else {
+                throw e;
+            }
+        }
+
+        // Prepare inputs, outputs, and metadata for bulk creation
+        List<Map<String, String>> inputs = exampleInputs.stream()
+            .map(pair -> {
+                Map<String, String> input = new HashMap<>();
+                input.put("question", pair[0]);
+                return input;
+            })
+            .collect(Collectors.toList());
+
+        List<Map<String, String>> outputs = exampleInputs.stream()
+            .map(pair -> {
+                Map<String, String> output = new HashMap<>();
+                output.put("answer", pair[1]);
+                return output;
+            })
+            .collect(Collectors.toList());
+
+        List<Map<String, String>> metadata = exampleInputs.stream()
+            .map(pair -> {
+                Map<String, String> meta = new HashMap<>();
+                meta.put("source", "Wikipedia");
+                return meta;
+            })
+            .collect(Collectors.toList());
+
+        // Use the bulk createExamples method
+        BulkCreateParams.Builder bulkParamsBuilder = BulkCreateParams.builder();
+        for (int i = 0; i < inputs.size(); i++) {
+            bulkParamsBuilder.addBody(
+                BulkCreateParams.Body.builder()
+                    .datasetId(dataset.id())
+                    .inputs(JsonValue.from(inputs.get(i)))
+                    .outputs(JsonValue.from(outputs.get(i)))
+                    .metadata(JsonValue.from(metadata.get(i)))
+                    .build()
+            );
+        }
+
+        client.examples().bulk().create(bulkParamsBuilder.build());
+    }
+}
+
+
+```
+
 </CodeGroup>
 
 ### Create a dataset from traces
@@ -164,6 +256,131 @@ await client.createExamples({
 });
 ```
 
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.core.JsonValue;
+import com.langchain.smith.models.datasets.Dataset;
+import com.langchain.smith.models.datasets.DatasetCreateParams;
+import com.langchain.smith.models.examples.bulk.BulkCreateParams;
+import com.langchain.smith.models.runs.RunQueryParams;
+import com.langchain.smith.models.runs.RunQueryResponse;
+import java.util.ArrayList;
+import java.util.List;
+
+public class CreateDatasetExample {
+    public static void main(String[] args) {
+        LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+
+        String projectId = System.getenv("LANGSMITH_PROJECT_ID");
+        if (projectId == null || projectId.isEmpty()) {
+            System.err.println("Error: LANGSMITH_PROJECT_ID environment variable is required");
+            System.err.println("You can find your project ID in the LangSmith UI under Settings");
+            System.exit(1);
+        }
+
+        String datasetName = "Example Dataset";
+
+        System.out.println("Querying runs from project: " + projectId);
+        System.out.println("Filters: isRoot=true, error=false");
+
+        // Filter runs to add to the dataset
+        List<RunQueryResponse.Run> allRuns = new ArrayList<>();
+        String cursor = null;
+        int pageCount = 0;
+        try {
+            do {
+                pageCount++;
+                RunQueryParams.Builder paramsBuilder = RunQueryParams.builder()
+                    .addSession(projectId)
+                    .isRoot(true)
+                    .error(false)
+                    .limit(10L);
+
+                if (cursor != null) {
+                    paramsBuilder.cursor(cursor);
+                }
+
+                RunQueryResponse response = client.runs().query(paramsBuilder.build());
+                System.out.println("Page " + pageCount + ": Found " + response.runs().size() + " runs");
+                allRuns.addAll(response.runs());
+
+            // Get cursor for next page
+            try {
+                java.util.Map<String, com.langchain.smith.core.JsonValue> cursorProps = response.cursors()._additionalProperties();
+                if (cursorProps != null && cursorProps.containsKey("next")) {
+                    com.langchain.smith.core.JsonValue nextValue = cursorProps.get("next");
+                    if (nextValue != null && !nextValue.isNull() && !nextValue.isMissing()) {
+                        java.util.Optional<String> nextOpt = nextValue.asString();
+                        cursor = nextOpt.isPresent() ? nextOpt.get() : null;
+                    } else {
+                        cursor = null;
+                    }
+                } else {
+                    cursor = null;
+                }
+            } catch (Exception e) {
+                cursor = null;
+            }
+
+                if (response.runs().size() < 50) {
+                    cursor = null;
+                }
+            } while (cursor != null && !cursor.isEmpty());
+        } catch (Exception e) {
+            System.err.println("Error querying runs: " + e.getMessage());
+            e.printStackTrace();
+            System.err.println("\nTrying without filters...");
+            System.exit(1);
+        }
+
+        System.out.println("Total runs found: " + allRuns.size());
+
+        // Create dataset
+        Dataset dataset = client.datasets().create(
+            DatasetCreateParams.builder()
+                .name(datasetName)
+                .description("An example dataset")
+                .build()
+        );
+        System.out.println("Created dataset: " + dataset.name() + " (ID: " + dataset.id() + ")");
+
+        // Prepare inputs and outputs for bulk creation
+        BulkCreateParams.Builder bulkParamsBuilder = BulkCreateParams.builder();
+        int examplesWithData = 0;
+        for (RunQueryResponse.Run run : allRuns) {
+            if (run.inputs().isPresent() && run.outputs().isPresent()) {
+                // Get the additional properties maps which contain the actual data
+                java.util.Map<String, com.langchain.smith.core.JsonValue> inputsMap = run.inputs().get()._additionalProperties();
+                java.util.Map<String, com.langchain.smith.core.JsonValue> outputsMap = run.outputs().get()._additionalProperties();
+
+                // Convert Map<String, JsonValue> to regular Map for JsonValue.from()
+                // JsonValue.from() can handle Map<String, JsonValue> directly
+                bulkParamsBuilder.addBody(
+                    BulkCreateParams.Body.builder()
+                        .datasetId(dataset.id())
+                        .inputs(JsonValue.from(inputsMap))
+                        .outputs(JsonValue.from(outputsMap))
+                        .build()
+                );
+                examplesWithData++;
+            }
+        }
+
+        System.out.println("Prepared " + examplesWithData + " examples from " + allRuns.size() + " runs");
+
+        if (examplesWithData == 0) {
+            System.err.println("No runs have both inputs and outputs. Cannot create examples.");
+            System.exit(1);
+        }
+
+        // Use the bulk createExamples method
+        client.examples().bulk().create(bulkParamsBuilder.build());
+        System.out.println("Created " + examplesWithData + " examples in dataset");
+    }
+}
+```
+
 </CodeGroup>
 
 ### Create a dataset from a CSV file
@@ -209,6 +426,34 @@ const dataset = await client.uploadCsv({
   description: "Dataset created from a CSV file",
   dataType: "kv"
 });
+```
+
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.models.datasets.Dataset;
+import com.langchain.smith.models.datasets.DatasetUploadParams;
+import com.langchain.smith.models.datasets.DataType;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.List;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+Path csvFile = Paths.get("path/to/your/csvfile.csv");
+List<String> inputKeys = Arrays.asList("column1", "column2");
+List<String> outputKeys = Arrays.asList("output1", "output2");
+
+Dataset dataset = client.datasets().upload(
+    DatasetUploadParams.builder()
+        .file(csvFile)
+        .inputKeys(inputKeys)
+        .outputKeys(outputKeys)
+        .name("My CSV Dataset")
+        .description("Dataset created from a CSV file")
+        .dataType(DataType.KV)
+        .build()
+);
 ```
 
 </CodeGroup>
@@ -259,6 +504,13 @@ import { Client } from "langsmith";
 const client = new Client();
 ```
 
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+```
+
 </CodeGroup>
 
 ### Query all datasets
@@ -271,6 +523,13 @@ datasets = client.list_datasets()
 
 ```typescript TypeScript
 const datasets = await client.listDatasets();
+```
+
+```java Java
+import com.langchain.smith.models.datasets.DatasetListParams;
+
+DatasetListParams listParams = DatasetListParams.builder().build();
+var datasets = client.datasets().list(listParams);
 ```
 
 </CodeGroup>
@@ -291,6 +550,15 @@ const datasets = await client.listDatasets({
 });
 ```
 
+```java Java
+import com.langchain.smith.models.datasets.DatasetListParams;
+
+DatasetListParams listParams = DatasetListParams.builder()
+    .name("My Test Dataset 1")
+    .build();
+var datasets = client.datasets().list(listParams);
+```
+
 </CodeGroup>
 
 If you want to do a case-invariant substring search, try the following:
@@ -305,6 +573,15 @@ datasets = client.list_datasets(dataset_name_contains="some substring")
 const datasets = await client.listDatasets({
   datasetNameContains: "some substring"
 });
+```
+
+```java Java
+import com.langchain.smith.models.datasets.DatasetListParams;
+
+DatasetListParams listParams = DatasetListParams.builder()
+    .nameContains("some substring")
+    .build();
+var datasets = client.datasets().list(listParams);
 ```
 
 </CodeGroup>
@@ -323,6 +600,15 @@ datasets = client.list_datasets(data_type="kv")
 const datasets = await client.listDatasets({
   dataType: "kv"
 });
+```
+
+```java Java
+import com.langchain.smith.models.datasets.DatasetListParams;
+
+DatasetListParams listParams = DatasetListParams.builder()
+    .datatype(DataType.of("kv"))
+    .build();
+var datasets = client.datasets().list(listParams);
 ```
 
 </CodeGroup>
@@ -349,6 +635,13 @@ import { Client } from "langsmith";
 const client = new Client();
 ```
 
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+```
+
 </CodeGroup>
 
 ### List all examples for a dataset
@@ -365,6 +658,15 @@ examples = client.list_examples(dataset_id="c9ace0d8-a82c-4b6c-13d2-83401d68e9ab
 const examples = await client.listExamples({
   datasetId: "c9ace0d8-a82c-4b6c-13d2-83401d68e9ab"
 });
+```
+
+```java Java
+import com.langchain.smith.models.examples.ExampleListParams;
+
+ExampleListParams listParams = ExampleListParams.builder()
+    .dataset("c9ace0d8-a82c-4b6c-13d2-83401d68e9ab")
+    .build();
+var examples = client.examples().list(listParams);
 ```
 
 </CodeGroup>
@@ -413,6 +715,21 @@ const examples = await client.listExamples({
 });
 ```
 
+```java Java
+import com.langchain.smith.models.examples.ExampleListParams;
+import java.util.List;
+
+List<String> exampleIds = List.of(
+    "734fc6a0-c187-4266-9721-90b7a025751a",
+    "d6b4c1b9-6160-4d63-9b61-b034c585074f",
+    "4d31df4e-f9c3-4a6e-8b6c-65701c2fed13"
+);
+
+ExampleListParams listParams = ExampleListParams.builder()
+    .id(exampleIds)
+    .build();
+var examples = client.examples().list(listParams);
+```
 </CodeGroup>
 
 ### List examples by metadata
@@ -432,6 +749,16 @@ const examples = await client.listExamples({
   datasetName: datasetName,
   metadata: {foo: "bar"}
 });
+```
+
+```java Java
+import com.langchain.smith.models.examples.ExampleListParams;
+
+ExampleListParams listParams = ExampleListParams.builder()
+    .datasetId(datasetId)
+    .metadata("{\"foo\":\"bar\"}")
+    .build();
+var examples = client.examples().list(listParams);
 ```
 
 </CodeGroup>
@@ -464,6 +791,18 @@ const examples = await client.listExamples({
 });
 ```
 
+```java Java
+import com.langchain.smith.models.examples.ExampleListParams;
+
+String filter = "and(not(has(metadata, '{\"foo\": \"bar\"}')), exists(metadata, \"tenant_id\"))";
+
+ExampleListParams listParams = ExampleListParams.builder()
+    .datasetId(datasetId)
+    .filter(filter)
+    .build();
+var examples = client.examples().list(listParams);
+```
+
 </CodeGroup>
 
 ## Update examples
@@ -491,6 +830,35 @@ await client.updateExample(example.id, {
   metadata: { "foo": "bar" },
   split: "train",
 });
+```
+
+```java Java
+import com.langchain.smith.core.JsonValue;
+import com.langchain.smith.models.examples.ExampleUpdateParams;
+
+ // Create Inputs using the builder
+ExampleUpdateParams.Inputs inputsObj = ExampleUpdateParams.Inputs.builder()
+    .putAdditionalProperty("input", JsonValue.from("updated input"))
+    .build();
+
+// Create Outputs using the builder
+ExampleUpdateParams.Outputs outputsObj = ExampleUpdateParams.Outputs.builder()
+    .putAdditionalProperty("output", JsonValue.from("updated output"))
+    .build();
+
+// Create Metadata using the builder
+ExampleUpdateParams.Metadata metadataObj = ExampleUpdateParams.Metadata.builder()
+    .putAdditionalProperty("foo", JsonValue.from("bar"))
+    .build();
+
+ExampleUpdateParams updateParams = ExampleUpdateParams.builder()
+    .inputs(inputsObj)
+    .outputs(outputsObj)
+    .metadata(metadataObj)
+    .split("train")
+    .build();
+
+ExampleUpdateResponse updateResponse = client.examples().update(example.id(), updateParams);
 ```
 
 </CodeGroup>
@@ -531,6 +899,48 @@ await client.updateExamples([
     split: "training"
   },
 ]);
+```
+
+```java Java
+Map<String, String> inputs1 = new HashMap<>();
+inputs1.put("question", "What is the capital of France? (updated)");
+Map<String, String> outputs1 = new HashMap<>();
+outputs1.put("answer", "The capital of France is Paris.");
+Map<String, String> metadata1 = new HashMap<>();
+metadata1.put("source", "Wikipedia");
+metadata1.put("difficulty", "easy");
+
+Map<String, String> inputs2 = new HashMap<>();
+inputs2.put("question", "What is 2 + 2? (updated)");
+Map<String, String> outputs2 = new HashMap<>();
+outputs2.put("answer", "The answer is 4.");
+Map<String, String> metadata2 = new HashMap<>();
+metadata2.put("source", "Math textbook");
+metadata2.put("difficulty", "easy");
+
+BulkPatchAllParams.Builder bulkParamsBuilder = BulkPatchAllParams.builder();
+
+bulkParamsBuilder.addBody(
+    BulkPatchAllParams.Body.builder()
+        .id(example1.id())
+        .inputs(buildInputs(inputs1))
+        .outputs(buildOutputs(outputs1))
+        .metadata(buildMetadata(metadata1))
+        .splitOfStrings(Arrays.asList("training", "validation"))
+        .build()
+);
+
+bulkParamsBuilder.addBody(
+    BulkPatchAllParams.Body.builder()
+        .id(example2.id())
+        .inputs(buildInputs(inputs2))
+        .outputs(buildOutputs(outputs2))
+        .metadata(buildMetadata(metadata2))
+        .split("test")
+        .build()
+);
+
+client.examples().bulk().patchAll(bulkParamsBuilder.build());
 ```
 
 </CodeGroup>
