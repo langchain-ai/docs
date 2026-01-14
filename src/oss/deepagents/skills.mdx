@@ -1,0 +1,154 @@
+---
+title: Skills
+description: Learn how to extend your deep agent's capabilities with skills
+---
+
+You can use [Agent Skills](https://agentskills.io/) to provide your deep agent with new capabilities and expertise.
+
+## What are skills
+
+Skills are a directory of folders, where each folder has one or more files that contain context the agent can use:
+
+- a SKILL.md file containing instructions and metadata about the skill
+- additional scripts (optional)
+- additional reference info, such as docs (optional)
+- additional assets, such as templates and other resources (optional)
+
+## How do skills work
+
+When you create a deep agent, you can pass in a list of directories containing skills.
+As the agent starts, it reads through the frontmatter of each `SKILL.md` file.
+
+When the agent receives a prompt, the agent checks if it can use any skills while fulfilling the prompt.
+If it finds a matching prompt, it then reviews the rest of the skill files.
+This pattern of only reviewing the skill information when needed is called progressive disclosure.
+
+## Examples
+
+For example, you might have a skills folder that contains a skill to use a docs site in a certain way, as well as another skill to search the arXiv prepring repository of research papers:
+
+```plaintext
+    skills/
+    ├── langgraph-docs
+    │   └── SKILL.md
+    └── arxiv_search
+        ├── SKILL.md
+        └── arxiv_search.ts # code for searchign arXiv
+```
+
+The `SKILL.md` file always follows the same pattern, starting with metadata in the frontmatter and followed by the instructions for the skill.
+The following example shows a skill that gives instructions on how to provide relevant langgraph docs when prompted:
+
+```md
+---
+name: langgraph-docs
+description: Use this skill for requests related to LangGraph in order to fetch relevant documentation to provide accurate, up-to-date guidance.
+---
+
+# langgraph-docs
+
+## Overview
+
+This skill explains how to access LangGraph Python documentation to help answer questions and guide implementation.
+
+## Instructions
+
+### 1. Fetch the Documentation Index
+
+Use the fetch_url tool to read the following URL:
+https://docs.langchain.com/llms.txt
+
+This provides a structured list of all available documentation with descriptions.
+
+### 2. Select Relevant Documentation
+
+Based on the question, identify 2-4 most relevant documentation URLs from the index. Prioritize:
+
+- Specific how-to guides for implementation questions
+- Core concept pages for understanding questions
+- Tutorials for end-to-end examples
+- Reference docs for API details
+
+### 3. Fetch Selected Documentation
+
+Use the fetch_url tool to read the selected documentation URLs.
+
+### 4. Provide Accurate Guidance
+
+After reading the documentation, complete the users request.
+```
+
+For more example skills, see [Deep Agent example skills](https://github.com/langchain-ai/deepagentsjs/tree/main/examples/skills).
+
+## Usage
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends.filesystem import FilesystemBackend
+
+agent = create_deep_agent(
+    backend=FilesystemBackend(root_dir="/Users/user/{project}"),
+    skills=["/Users/user/{project}/skills/"],
+)
+```
+
+<ParamField body="skills" type="list[str]" optional>
+    List of skill source paths. Paths must be specified using forward slashes and are relative to the backend's root.
+    - When using StateBackend (default), provide skill files with `invoke(files={...})`.
+    - With FilesystemBackend, skills are loaded from disk relative to the backend's root_dir.
+
+    Later sources override earlier ones for skills with the same name (last one wins).
+</ParamField>
+
+:::
+
+
+:::js
+```typescript
+import {
+  createDeepAgent,
+  createSkillsMiddleware,
+  createSettings,
+  FilesystemBackend,
+} from "deepagents";
+
+const settings = createSettings({
+});
+
+const agent = await createDeepAgent({
+  backend: (config) =>
+    new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
+  middleware: [
+    createSkillsMiddleware({
+      skillsDir: "~/.deepagents/my-agent/skills",
+      assistantId: "my-agent",
+      projectSkillsDir: `/Users/user/{project}/.deepagents/skills`,
+    }),
+  ],
+});
+```
+
+<ParamField body="assistantId" type="str" required>
+    The agent identifier for path references in prompts.
+</ParamField>
+
+<ParamField body="skillsDir" type="str" required>
+    Path to the user-level skills directory. The user-level skills directory must be in a folder that has the same name as the `assistantId`.
+</ParamField>
+
+<ParamField body="projectSkillsDir" type="str" optional>
+    Path to the project-level skills directory. If skills use the same name as skills in the user-level directory the project-level skills override the user-level skills.
+</ParamField>
+
+:::
+
+To customize the middleware, see [Skills middleware](/oss/deepagents/middleware#skills-middleware).
+
+## When to use skills and tools
+
+These are a few general guidelines for using tools and skills:
+
+- Use skills when there is a lot of context to offload that context to the filesystem. This helps reduce the number of tokens in the system prompt.
+- Use tools if the agent does not have access to the file system.
+
