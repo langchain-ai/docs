@@ -6,35 +6,50 @@ title: Couchbase
 > that delivers unmatched versatility, performance, scalability, and financial value
 > for all of your cloud, mobile, AI, and edge computing applications.
 
-## Installation and setup
+If you want to see a detailed usage example, see [Couchbase Vector Store](/oss/integrations/vectorstores/couchbase).
 
-We have to install the `langchain-couchbase` package.
+## Installation and Setup
+
+Install the `langchain-couchbase` package along with embedding dependencies:
 
 <CodeGroup>
 ```bash pip
-pip install langchain-couchbase
+pip install langchain-couchbase langchain-openai
 ```
 
 ```bash uv
-uv add langchain-couchbase
+uv add langchain-couchbase langchain-openai
 ```
+
 </CodeGroup>
 
 ## Vector store
 
-See a [usage example](/oss/integrations/vectorstores/couchbase).
+Couchbase provides two different vector store implementations for LangChain:
+
+| Vector Store | Index Type | Minimum Version | Best For |
+|-------------|-----------|-----------------|----------|
+| `CouchbaseSearchVectorStore` | [Search Vector Index](https://docs.couchbase.com/server/current/vector-search/vector-search.html) | Couchbase Server 7.6+ | Hybrid searches combining vector similarity with Full-Text Search (FTS) and geospatial searches |
+| `CouchbaseQueryVectorStore` | [Hyperscale Vector Index](https://docs.couchbase.com/server/current/vector-index/hyperscale-vector-index.html) or [Composite Vector Index](https://docs.couchbase.com/server/current/vector-index/composite-vector-index.html) | Couchbase Server 8.0+ | Large-scale pure vector searches or searches combining vector similarity with scalar filters |
+
+### CouchbaseSearchVectorStore
 
 ```python
 from langchain_couchbase import CouchbaseSearchVectorStore
+from langchain_openai import OpenAIEmbeddings
 
 import getpass
+import os
 
-# Constants for the connection
+# Get credentials
 COUCHBASE_CONNECTION_STRING = getpass.getpass(
     "Enter the connection string for the Couchbase cluster: "
 )
 DB_USERNAME = getpass.getpass("Enter the username for the Couchbase cluster: ")
 DB_PASSWORD = getpass.getpass("Enter the password for the Couchbase cluster: ")
+OPENAI_API_KEY = getpass.getpass("Enter your OpenAI API key: ")
+
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
 # Create Couchbase connection object
 from datetime import timedelta
@@ -45,30 +60,71 @@ from couchbase.options import ClusterOptions
 
 auth = PasswordAuthenticator(DB_USERNAME, DB_PASSWORD)
 options = ClusterOptions(auth)
+options.apply_profile("wan_development")
 cluster = Cluster(COUCHBASE_CONNECTION_STRING, options)
 
 # Wait until the cluster is ready for use.
 cluster.wait_until_ready(timedelta(seconds=5))
 
+# Set up embeddings
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+
+# Create vector store
 vector_store = CouchbaseSearchVectorStore(
     cluster=cluster,
-    bucket_name=BUCKET_NAME,
-    scope_name=SCOPE_NAME,
-    collection_name=COLLECTION_NAME,
-    embedding=my_embeddings,
-    index_name=SEARCH_INDEX_NAME,
+    bucket_name="my_bucket",
+    scope_name="_default",
+    collection_name="_default",
+    embedding=embeddings,
+    index_name="my_search_index",
 )
 
 # Add documents
 texts = ["Couchbase is a NoSQL database", "LangChain is a framework for LLM applications"]
-vectorstore.add_texts(texts)
+vector_store.add_texts(texts)
 
 # Search
 query = "What is Couchbase?"
-docs = vectorstore.similarity_search(query)
+docs = vector_store.similarity_search(query)
 ```
 
 API Reference: [CouchbaseSearchVectorStore](https://couchbase-ecosystem.github.io/langchain-couchbase/langchain_couchbase.html#module-langchain_couchbase.vectorstores.search_vector_store)
+
+### CouchbaseQueryVectorStore
+
+```python
+from langchain_couchbase import CouchbaseQueryVectorStore
+from langchain_openai import OpenAIEmbeddings
+
+# (After setting up cluster connection as shown above)
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+
+vector_store = CouchbaseQueryVectorStore(
+    cluster=cluster,
+    bucket_name="my_bucket",
+    scope_name="_default",
+    collection_name="_default",
+    embedding=embeddings,
+    index_name="my_vector_index",
+)
+
+# Create index (if needed)
+vector_store.create_index(
+    index_type=IndexType.HYPERSCALE,
+    index_description="IVF,SQ8",
+    index_name="my_vector_index",
+)
+
+# Add documents and search
+vector_store.add_documents([
+    Document(page_content="Couchbase is a NoSQL database", metadata={"source": "couchbase"}),
+    Document(page_content="LangChain is a framework for LLM applications", metadata={"source": "langchain"}),
+])
+docs = vector_store.similarity_search("What is Couchbase?")
+```
+
+API Reference: [CouchbaseQueryVectorStore](https://couchbase-ecosystem.github.io/langchain-couchbase/langchain_couchbase.html#module-langchain_couchbase.vectorstores.query_vector_store)
 
 ## Document loader
 
@@ -104,14 +160,17 @@ docs = loader.load()
 ## LLM caches
 
 ### CouchbaseCache
+
 Use Couchbase as a cache for prompts and responses.
 
 To import this cache:
+
 ```python
 from langchain_couchbase.cache import CouchbaseCache
 ```
 
 To use this cache with your LLMs:
+
 ```python
 from langchain_core.globals import set_llm_cache
 
@@ -130,15 +189,18 @@ set_llm_cache(
 API Reference: [CouchbaseCache](https://couchbase-ecosystem.github.io/langchain-couchbase/langchain_couchbase.html#langchain_couchbase.cache.CouchbaseCache)
 
 ### CouchbaseSemanticCache
+
 Semantic caching allows users to retrieve cached prompts based on the semantic similarity between the user input and previously cached inputs. Under the hood it uses Couchbase as both a cache and a vectorstore.
 The CouchbaseSemanticCache needs a Search Index defined to work. Please look at the [usage example](/oss/integrations/vectorstores/couchbase) on how to set up the index.
 
 To import this cache:
+
 ```python
 from langchain_couchbase.cache import CouchbaseSemanticCache
 ```
 
 To use this cache with your LLMs:
+
 ```python
 from langchain_core.globals import set_llm_cache
 
@@ -152,13 +214,12 @@ set_llm_cache(
     CouchbaseSemanticCache(
         cluster=cluster,
         embedding = embeddings,
-        bucket_name=BUCKET_NAME,
-        scope_name=SCOPE_NAME,
-        collection_name=COLLECTION_NAME,
-        index_name=INDEX_NAME,
+        bucket_name="my_bucket",
+        scope_name="_default",
+        collection_name="_default",
+        index_name="my_search_index",
     )
 )
 ```
 
 API Reference: [CouchbaseSemanticCache](https://couchbase-ecosystem.github.io/langchain-couchbase/langchain_couchbase.html#langchain_couchbase.cache.CouchbaseSemanticCache)
-

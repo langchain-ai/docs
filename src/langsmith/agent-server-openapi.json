@@ -268,6 +268,17 @@
             },
             "name": "assistant_id",
             "in": "path"
+          },
+          {
+            "description": "If true, delete all threads with metadata.assistant_id matching this assistant, along with runs and checkpoints belonging to those threads. Auth filters are applied, so threads not visible to the user will not be deleted.",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Delete Threads"
+            },
+            "name": "delete_threads",
+            "in": "query"
           }
         ],
         "responses": {
@@ -3128,8 +3139,8 @@
     "/a2a/{assistant_id}": {
       "post": {
         "operationId": "post_a2a",
-        "summary": "A2A Post",
-        "description": "Communicate with an assistant using the Agent-to-Agent Protocol.\nSends a JSON-RPC 2.0 message to the assistant.\n\n- **Request**: Provide an object with `jsonrpc`, `id`, `method`, and optional `params`.\n- **Response**: Returns a JSON-RPC response with task information or error.\n\n**Supported Methods:**\n- `message/send`: Send a message to the assistant\n- `tasks/get`: Get the status and result of a task\n\n**Notes:**\n- Supports threaded conversations via thread context\n- Messages can contain text and data parts\n- Tasks run asynchronously and return completion status\n",
+        "summary": "A2A JSON-RPC",
+        "description": "Communicate with an assistant using the Agent-to-Agent (A2A) Protocol over JSON-RPC 2.0.\nThis endpoint accepts a JSON-RPC envelope and dispatches based on `method`.\n\n**Supported Methods:**\n- `message/send`: Send a message and wait for the final Task result.\n- `message/stream`: Send a message and receive Server-Sent Events (SSE) JSON-RPC responses.\n- `tasks/get`: Fetch the current state of a Task by ID.\n- `tasks/cancel`: Request cancellation (currently not supported; returns an error).\n\n**LangGraph Mapping:**\n- `message.contextId` maps to LangGraph `thread_id`.\n\n**Notes:**\n- Only `text` and `data` parts are supported; `file` parts are not.\n- If `message.contextId` is omitted, a new context is created.\n- Text parts require the assistant input schema to include a `messages` field.\n",
         "parameters": [
           {
             "name": "assistant_id",
@@ -3146,10 +3157,9 @@
             "in": "header",
             "required": true,
             "schema": {
-              "type": "string",
-              "enum": ["application/json"]
+              "type": "string"
             },
-            "description": "Must be application/json"
+            "description": "For `message/stream`, must include `text/event-stream`. For all other methods, use `application/json`."
           }
         ],
         "requestBody": {
@@ -3170,23 +3180,29 @@
                   },
                   "method": {
                     "type": "string",
-                    "enum": ["message/send", "tasks/get"],
+                    "enum": [
+                      "message/send",
+                      "message/stream",
+                      "tasks/get",
+                      "tasks/cancel"
+                    ],
                     "description": "The method to invoke"
                   },
                   "params": {
                     "type": "object",
-                    "description": "Method parameters",
+                    "description": "Method parameters; shape depends on the method.",
                     "oneOf": [
                       {
-                        "title": "Message Send Parameters",
+                        "title": "Message Send/Stream Parameters",
+                        "type": "object",
                         "properties": {
                           "message": {
                             "type": "object",
                             "properties": {
                               "role": {
                                 "type": "string",
-                                "enum": ["user", "assistant"],
-                                "description": "Message role"
+                                "enum": ["user", "agent"],
+                                "description": "A2A role for the message sender."
                               },
                               "parts": {
                                 "type": "array",
@@ -3201,7 +3217,8 @@
                                           "enum": ["text"]
                                         },
                                         "text": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "description": "Text content."
                                         }
                                       },
                                       "required": ["kind", "text"]
@@ -3215,56 +3232,156 @@
                                           "enum": ["data"]
                                         },
                                         "data": {
-                                          "type": "object"
+                                          "type": "object",
+                                          "description": "Structured JSON merged into the assistant input."
                                         }
                                       },
                                       "required": ["kind", "data"]
                                     }
                                   ]
                                 },
-                                "description": "Message parts"
+                                "description": "Message parts (text/data only)."
                               },
                               "messageId": {
                                 "type": "string",
-                                "description": "Unique message identifier"
+                                "description": "Client-generated message identifier."
+                              },
+                              "contextId": {
+                                "type": "string",
+                                "description": "Conversation context ID; maps to LangGraph thread_id."
+                              },
+                              "taskId": {
+                                "type": "string",
+                                "description": "Optional task ID. Currently ignored by this implementation."
                               }
                             },
                             "required": ["role", "parts", "messageId"]
-                          },
-                          "thread": {
-                            "type": "object",
-                            "properties": {
-                              "threadId": {
-                                "type": "string",
-                                "description": "Thread identifier for conversation context"
-                              }
-                            },
-                            "description": "Optional thread context"
                           }
                         },
                         "required": ["message"]
                       },
                       {
                         "title": "Task Get Parameters",
+                        "type": "object",
                         "properties": {
-                          "taskId": {
+                          "id": {
                             "type": "string",
-                            "description": "Task identifier to retrieve"
+                            "description": "Task (run) identifier to retrieve."
+                          },
+                          "contextId": {
+                            "type": "string",
+                            "description": "Context identifier (thread_id) for the task."
+                          },
+                          "historyLength": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10,
+                            "description": "Maximum number of history messages to include."
                           }
                         },
-                        "required": ["taskId"]
+                        "required": ["id", "contextId"]
+                      },
+                      {
+                        "title": "Task Cancel Parameters",
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Task (run) identifier to cancel."
+                          },
+                          "contextId": {
+                            "type": "string",
+                            "description": "Context identifier (thread_id) for the task."
+                          }
+                        },
+                        "required": ["id", "contextId"]
                       }
                     ]
                   }
                 },
                 "required": ["jsonrpc", "id", "method"]
+              },
+              "examples": {
+                "message_send": {
+                  "summary": "Send a message (synchronous)",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "1",
+                    "method": "message/send",
+                    "params": {
+                      "message": {
+                        "role": "user",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "text": "Hello from A2A"
+                          },
+                          {
+                            "kind": "data",
+                            "data": {
+                              "locale": "en-US"
+                            }
+                          }
+                        ],
+                        "messageId": "msg-1",
+                        "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003"
+                      }
+                    }
+                  }
+                },
+                "message_stream": {
+                  "summary": "Send a message (streaming)",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "2",
+                    "method": "message/stream",
+                    "params": {
+                      "message": {
+                        "role": "user",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "text": "Stream this response"
+                          }
+                        ],
+                        "messageId": "msg-2",
+                        "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003"
+                      }
+                    }
+                  }
+                },
+                "tasks_get": {
+                  "summary": "Get a task",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "3",
+                    "method": "tasks/get",
+                    "params": {
+                      "id": "run-uuid",
+                      "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003",
+                      "historyLength": 10
+                    }
+                  }
+                },
+                "tasks_cancel": {
+                  "summary": "Cancel a task (currently unsupported)",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "4",
+                    "method": "tasks/cancel",
+                    "params": {
+                      "id": "run-uuid",
+                      "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003"
+                    }
+                  }
+                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "JSON-RPC response",
+            "description": "JSON-RPC response for non-streaming methods. For `message/stream`, the response is an SSE stream of JSON-RPC envelopes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3295,12 +3412,64 @@
                     }
                   },
                   "required": ["jsonrpc", "id"]
+                },
+                "examples": {
+                  "task_result": {
+                    "summary": "Task result (message/send)",
+                    "value": {
+                      "jsonrpc": "2.0",
+                      "id": "1",
+                      "result": {
+                        "kind": "task",
+                        "id": "run-uuid",
+                        "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003",
+                        "status": {
+                          "state": "completed"
+                        },
+                        "artifacts": [
+                          {
+                            "artifactId": "artifact-uuid",
+                            "name": "Assistant Response",
+                            "parts": [
+                              {
+                                "kind": "text",
+                                "text": "Hello back"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "error_result": {
+                    "summary": "Error response",
+                    "value": {
+                      "jsonrpc": "2.0",
+                      "id": "1",
+                      "error": {
+                        "code": -32602,
+                        "message": "Invalid request: Missing required parameter: contextId"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE stream of JSON-RPC response objects."
+                },
+                "examples": {
+                  "stream_event": {
+                    "summary": "SSE data chunk (JSON-RPC)",
+                    "value": "data: {\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"kind\":\"status-update\",\"taskId\":\"run-uuid\",\"contextId\":\"f5bd2a40-74b6-4f7a-b649-ea3f09890003\",\"status\":{\"state\":\"working\"},\"final\":false}}\n\n"
+                  }
                 }
               }
             }
           },
           "400": {
-            "description": "Bad request - invalid JSON-RPC or missing Accept header"
+            "description": "Bad Request (invalid JSON-RPC, invalid params, or missing Accept header)."
           },
           "404": {
             "description": "Assistant not found"
@@ -4029,8 +4198,7 @@
                 "user_id",
                 "payload",
                 "next_run_date",
-                "metadata",
-                "now"
+                "metadata"
               ]
             },
             "title": "Select",
@@ -4895,7 +5063,6 @@
                 "updated_at",
                 "metadata",
                 "config",
-                "context",
                 "status",
                 "values",
                 "interrupts"
@@ -5582,9 +5749,16 @@
         }
       },
       "ErrorResponse": {
-        "type": "string",
+        "type": "object",
+        "required": ["detail"],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "Human-readable error message"
+          }
+        },
         "title": "ErrorResponse",
-        "description": "Error message returned from the server"
+        "description": "Error response returned from the server"
       },
       "ThreadCronCreate": {
         "properties": {

@@ -1,0 +1,176 @@
+---
+title: Workload isolation
+sidebarTitle: Workload isolation
+---
+
+LangSmith uses a hierarchical structure to organize your work: [_organizations_](/langsmith/administration-overview#organizations), [_workspaces_](/langsmith/administration-overview#workspaces), [_applications_](/langsmith/administration-overview#applications), and [_resources_](/langsmith/administration-overview#resources). This structure lets you balance collaboration with access control, allowing you to choose the right level of isolation for your team's needs.
+
+The LangSmith permission system builds on this hierarchy. With [role-based access control (RBAC)](/langsmith/rbac), user [permissions](/langsmith/organization-workspace-operations) are scoped to one or more workspaces, enforcing isolation between workspaces. With more fine-grained [attribute-based access control](/langsmith/organization-workspace-operations#access-policies) (ABAC in private preview), access can be further restricted or granted based on attributes such as tags or applications within a workspace (for example, allowing users to access only development resources or only resources associated with a specific application).
+
+This page explains three common approaches to organizing workspaces based on your team's isolation requirements:
+
+- [Team-centric workspaces](#team-centric-workspaces): Single workspace per team (recommended for most customers)
+- [Collaborative workspaces](#collaborative-workspaces): Multiple teams per workspace
+- [Project-isolated workspaces](#project-isolated-workspaces): Multiple workspaces per team (for strict isolation requirements)
+
+<Tip>
+For details on setting up organizations and workspaces, refer to [Set up hierarchy](/langsmith/set-up-hierarchy).
+</Tip>
+
+## Team-centric workspaces
+
+<Callout icon="check" iconType="solid" color="#C7D2FE">
+This is the default model and recommended choice for most customers.
+</Callout>
+
+This model (single workspace per team) uses a single organization as the top-level boundary. Within the organization, multiple workspaces are used to isolate different teams or business units. Each workspace represents a logical boundary for a specific team and governs which data and resources that team can access. Within a workspace, teams use multiple applications to group together resources that support the same agent. An application may also contain distinct resources, such as separate tracing projects, for development and production environments.
+
+```mermaid
+graph LR
+    Org[Organization]
+
+    WS1[Workspace: Team A]
+    WS2[Workspace: Team B]
+
+    App1A[Application]
+    App1B[Application]
+
+    DevA[Dev Tracing Project]
+    ProdA[Prod Tracing Project]
+    DatasetA[Dataset]
+
+    DevB[Dev Tracing Project]
+    ProdB[Prod Tracing Project]
+    DatasetB[Dataset]
+
+    Org --> WS1
+    Org --> WS2
+
+    WS1 --> App1A
+    WS2 --> App1B
+
+    App1A --> DevA
+    App1A --> ProdA
+    App1A --> DatasetA
+
+    App1B --> DevB
+    App1B --> ProdB
+    App1B --> DatasetB
+
+    classDef orgStyle fill:#E0E7FF,stroke:#4F46E5,stroke-width:2px,color:#1E1B4B
+    classDef wsStyle fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef appStyle fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef resourceStyle fill:#F3F4F6,stroke:#9CA3AF,stroke-width:1px,color:#374151
+
+    class Org orgStyle
+    class WS1,WS2 wsStyle
+    class App1A,App1B appStyle
+    class DevA,ProdA,DatasetA,DevB,ProdB,DatasetB resourceStyle
+```
+
+- **Pros:** A single workspace allows all team resources to be shared, making collaboration and iteration within a team straightforward. It also simplifies promotion from development to production. For example, the same [prompt](/langsmith/prompt-engineering) can be versioned and promoted to production using tags, without copying or duplication.
+- **Cons:** The primary trade-off is limited isolation between environments of the same team. Development, test, and production resources coexist within the same application, so teams must rely on tagging and conventions to avoid accidental impact on production. [RBAC](/langsmith/rbac) is scoped at the workspace level. [ABAC](/langsmith/organization-workspace-operations#access-policies) (private preview) provides more granular permissions within a workspace by restricting access based on resource attributes, such as allowing a user to access only development resources.
+
+## Collaborative workspaces
+
+In this model (multiple teams per workspace), multiple teams share a single workspace within an organization and use applications and [ABAC](/langsmith/organization-workspace-operations#access-policies) (private preview) to separate resources and govern access. As a result, shared resources such as [prompts](/langsmith/prompt-engineering) and [deployments](/langsmith/deployments) can be reused across teams, while access to sensitive resources like [traces](/langsmith/observability-concepts#traces) and [datasets](/langsmith/evaluation-concepts#datasets) is limited to the owning team.
+
+```mermaid
+graph LR
+    Org[Organization]
+
+    WS[Shared Workspace]
+
+    AppA[Application: Team A]
+    AppB[Application: Team B]
+
+    TracesA[Traces: Team A]
+    DatasetA[Dataset: Team A]
+    PromptA[Prompt: Shared]
+
+    TracesB[Traces: Team B]
+    DatasetB[Dataset: Team B]
+    PromptB[Prompt: Shared]
+
+    Org --> WS
+
+    WS --> AppA
+    WS --> AppB
+
+    AppA --> TracesA
+    AppA --> DatasetA
+    AppA --> PromptA
+
+    AppB --> TracesB
+    AppB --> DatasetB
+    AppB --> PromptB
+
+    classDef orgStyle fill:#E0E7FF,stroke:#4F46E5,stroke-width:2px,color:#1E1B4B
+    classDef wsStyle fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef appStyle fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef restrictedStyle fill:#FEE2E2,stroke:#DC2626,stroke-width:1px,color:#7F1D1D
+    classDef sharedStyle fill:#FEF3C7,stroke:#F59E0B,stroke-width:1px,color:#78350F
+
+    class Org orgStyle
+    class WS wsStyle
+    class AppA,AppB appStyle
+    class TracesA,DatasetA,TracesB,DatasetB restrictedStyle
+    class PromptA,PromptB sharedStyle
+```
+
+- **Pros:** Common resources such as prompts and deployments can be shared and reused across teams, increasing collaboration and reducing duplicated work. Unlike the team-centric workspace model, collaboration is not limited to a single team and can span all teams within the workspace.
+- **Cons:** Isolation between teams and environments is weaker than in multi-workspace models and depends on correct use of ABAC. Misconfigured tags or policies can expose sensitive [traces](/langsmith/observability-concepts#traces) or [datasets](/langsmith/evaluation-concepts#datasets) across teams, and managing permissions across multiple teams adds operational complexity.
+
+## Project-isolated workspaces
+
+<Callout icon="check" iconType="solid" color="#C7D2FE">
+This approach should be used only when strict isolation is required.
+</Callout>
+
+In this model (multiple workspaces per team), isolation is increased by creating multiple workspaces for a single team. Workspaces may be organized by project or by environment, such as separate development and production workspaces. Each workspace is fully isolated, with its own users, data, and resources, and access is strictly scoped to that workspace.
+
+```mermaid
+graph LR
+    Org[Organization]
+
+    WSDev[Workspace: Dev]
+    WSProd[Workspace: Prod]
+
+    AppDev[Application]
+    AppProd[Application]
+
+    TracesDev[Traces]
+    DatasetDev[Dataset]
+    DeploymentDev[Deployment]
+
+    TracesProd[Traces]
+    DatasetProd[Dataset]
+    DeploymentProd[Deployment]
+
+    Org --> WSDev
+    Org --> WSProd
+
+    WSDev --> AppDev
+    WSProd --> AppProd
+
+    AppDev --> TracesDev
+    AppDev --> DatasetDev
+    AppDev --> DeploymentDev
+
+    AppProd --> TracesProd
+    AppProd --> DatasetProd
+    AppProd --> DeploymentProd
+
+    classDef orgStyle fill:#E0E7FF,stroke:#4F46E5,stroke-width:2px,color:#1E1B4B
+    classDef wsStyle fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef appStyle fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef resourceStyle fill:#F3F4F6,stroke:#9CA3AF,stroke-width:1px,color:#374151
+
+    class Org orgStyle
+    class WSDev,WSProd wsStyle
+    class AppDev,AppProd appStyle
+    class TracesDev,DatasetDev,DeploymentDev,TracesProd,DatasetProd,DeploymentProd resourceStyle
+```
+
+- **Pros:** Strong isolation between teams, projects, and environments. Users with only access to the development workspace cannot view or access production data or any production resources, reducing the risk of accidental changes or cross-environment misuse.
+- **Cons:** Resources cannot be shared across workspaces. Reusing [prompts](/langsmith/prompt-engineering), [datasets](/langsmith/evaluation-concepts#datasets), or [experiments](/langsmith/evaluation-concepts#experiment), even when promoting an agent from development to production, requires manual copying between workspaces, which introduces friction and duplication.
