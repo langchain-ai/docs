@@ -1,0 +1,253 @@
+---
+title: Google BigQuery
+---
+
+> [Google BigQuery](https://cloud.google.com/bigquery) is a serverless and cost-effective enterprise data warehouse that works across clouds and scales with your data.
+
+## BigQuery Callback Handler
+
+The `BigQueryCallbackHandler` allows you to log events from LangChain to Google BigQuery. This is useful for monitoring, auditing, and analyzing the performance of your LLM applications.
+
+### Use cases
+
+- **Agent workflow debugging and analysis**: Capture a wide range of LangChain/LangGraph lifecycle events (LLM calls, tool usage) and agent-yielded events (user input, model responses), into a well-defined schema.
+- **High-volume analysis and debugging**: Logging operations are performed asynchronously using the Storage Write API to allow high throughput and low latency.
+- **Multimodal Analysis**: Log and analyze text, images, and other modalities. Large files are offloaded to GCS, making them accessible to BigQuery ML via Object Tables.
+- **Distributed Tracing**: Uses LangChain's native tracing identifiers (run_id, parent_run_id) to visualize agent execution flows.
+
+The agent event data recorded varies based on the LangChain/LangGraph event type.
+
+### Installation
+
+You need to install `langchain-google-community` with `bigquery` extra dependencies. For this example, you will also need `langchain-google-genai` and `langgraph`.
+
+```bash
+pip install "langchain-google-community[bigquery]" langchain langchain-google-genai langgraph
+```
+
+### Prerequisites
+
+1. **Google Cloud Project** with the **BigQuery API** enabled.
+2. **BigQuery Dataset**: Create a dataset to store logging tables before using the callback handler. The callback handler automatically creates the necessary events table within the dataset if the table does not exist.
+3. **Google Cloud Storage Bucket (Optional)**: If you plan to log multimodal content (images, audio, etc.), creating a GCS bucket is recommended for offloading large files.
+4. **Authentication**:
+    - Local: Run `gcloud auth application-default login`.
+    - Cloud: Ensure your service account has the required permissions.
+
+### IAM Permissions
+
+For the callback handler to work properly, the principal (e.g., service account, user account) under which the application is running needs these Google Cloud roles:
+
+- `roles/bigquery.jobUser` at Project Level to run BigQuery queries.
+- `roles/bigquery.dataEditor` at Table Level to write log/event data.
+- If using GCS offloading: `roles/storage.objectCreator` and `roles/storage.objectViewer` on the target bucket.
+
+
+### Configuration options
+
+You can customize the callback handler using `BigQueryLoggerConfig`.
+
+- **enabled** (bool, default: `True`): To disable the handler from logging data to the BigQuery table, set this parameter to `False`.
+- **clustering_fields** (List[str], default: `["event_type", "agent", "user_id"]`): The fields used to cluster the BigQuery table when it is automatically created.
+- **gcs_bucket_name** (Optional[str], default: `None`): The name of the GCS bucket to offload large content (images, blobs, large text) to. If not provided, large content may be truncated or replaced with placeholders.
+- **connection_id** (Optional[str], default: `None`): The BigQuery connection ID (e.g., `us.my-connection`) to use as the authorizer for ObjectRef columns. Required for using ObjectRef with BigQuery ML.
+- **max_content_length** (int, default: `500 * 1024`): The maximum length (in characters) of text content to store inline in BigQuery before offloading to GCS (if configured) or truncating. Default is 500 KB.
+- **batch_size** (int, default: `1`): The number of events to batch before writing to BigQuery.
+- **batch_flush_interval** (float, default: `1.0`): The maximum time (in seconds) to wait before flushing a partial batch.
+- **shutdown_timeout** (float, default: `10.0`): Seconds to wait for logs to flush during shutdown.
+- **event_allowlist** (Optional[List[str]], default: `None`): A list of event types to log. If `None`, all events are logged except those in `event_denylist`.
+- **event_denylist** (Optional[List[str]], default: `None`): A list of event types to skip logging.
+- **log_multi_modal_content** (bool, default: `True`): Whether to log detailed content parts (including GCS references).
+- **table_id** (str, default: `"agent_events_v2"`): The default table ID to use if not explicitly provided to the callback handler constructor.
+- **retry_config** (RetryConfig, default: `RetryConfig()`): Configuration for retry logic (max retries, delay, multiplier) when writing to BigQuery fails.
+- **queue_max_size** (int, default: `10000`): The maximum number of events to hold in the internal buffer queue before dropping new events.
+
+The following code sample shows how to define a configuration for the BigQuery callback handler, including a custom content formatter:
+
+```python
+import json
+import re
+from typing import Any
+
+from langchain_google_community.callbacks.bigquery_callback import (
+    BigQueryCallbackHandler,
+    BigQueryLoggerConfig
+)
+
+def redact_dollar_amounts(event_content: Any) -> str:
+    """
+    Custom formatter to redact dollar amounts (e.g., $600, $12.50)
+    and ensure JSON output if the input is a dict.
+    """
+    text_content = ""
+    # If the content is a dictionary (e.g., a list of messages), convert it to a JSON string first.
+    if isinstance(event_content, dict):
+        text_content = json.dumps(event_content)
+    else:
+        text_content = str(event_content)
+
+    # Regex to find dollar amounts: $ followed by digits, optionally with commas or decimals.
+    # Examples: $600, $1,200.50, $0.99
+    redacted_content = re.sub(r'\$\d+(?:,\d{3})*(?:\.\d+)?', 'xxx', text_content)
+
+    return redacted_content
+
+# 1. Configure BigQueryLoggerConfig
+config = BigQueryLoggerConfig(
+    enabled=True,
+    event_allowlist=["LLM_REQUEST", "LLM_RESPONSE"], # Only log these specific events
+    shutdown_timeout=10.0,   # Wait up to 10s for logs to flush on exit
+    max_content_length=500,  # Truncate content to 500 characters
+    content_formatter=redact_dollar_amounts, # Set the custom formatting function
+)
+
+# 2. Initialize the Callback Handler
+handler = BigQueryCallbackHandler(
+    project_id="your-project-id",
+    dataset_id="your_dataset",
+    table_id="your_table",
+    config=config
+)
+```
+
+### Schema and production setup¶
+The plugin automatically creates the table if it does not exist. However, for production, we recommend creating the table manually using the following DDL, which utilizes the JSON type for flexibility and REPEATED RECORDs for multimodal content.
+
+Recommended DDL:
+
+```sql
+CREATE TABLE `your-gcp-project-id.adk_agent_logs.agent_events_v2`
+(
+  timestamp TIMESTAMP NOT NULL OPTIONS(description="The UTC time at which the event was logged."),
+  event_type STRING OPTIONS(description="Indicates the type of event being logged (e.g., 'LLM_REQUEST', 'TOOL_COMPLETED')."),
+  agent STRING OPTIONS(description="The name of the ADK agent or author associated with the event."),
+  session_id STRING OPTIONS(description="A unique identifier to group events within a single conversation or user session."),
+  invocation_id STRING OPTIONS(description="A unique identifier for each individual agent execution or turn within a session."),
+  user_id STRING OPTIONS(description="The identifier of the user associated with the current session."),
+  trace_id STRING OPTIONS(description="OpenTelemetry trace ID for distributed tracing."),
+  span_id STRING OPTIONS(description="OpenTelemetry span ID for this specific operation."),
+  parent_span_id STRING OPTIONS(description="OpenTelemetry parent span ID to reconstruct hierarchy."),
+  content JSON OPTIONS(description="The event-specific data (payload) stored as JSON."),
+  content_parts ARRAY<STRUCT<
+    mime_type STRING,
+    uri STRING,
+    object_ref STRUCT<
+      uri STRING,
+      version STRING,
+      authorizer STRING,
+      details JSON
+    >,
+    text STRING,
+    part_index INT64,
+    part_attributes STRING,
+    storage_mode STRING
+  >> OPTIONS(description="Detailed content parts for multi-modal data."),
+  attributes JSON OPTIONS(description="Arbitrary key-value pairs for additional metadata."),
+  latency_ms JSON OPTIONS(description="Latency measurements (e.g., total_ms)."),
+  status STRING OPTIONS(description="The outcome of the event, typically 'OK' or 'ERROR'."),
+  error_message STRING OPTIONS(description="Populated if an error occurs."),
+  is_truncated BOOLEAN OPTIONS(description="Flag indicates if content was truncated.")
+)
+PARTITION BY DATE(timestamp)
+CLUSTER BY event_type, agent, user_id;
+```
+
+### Usage
+
+To use the `AsyncBigQueryCallbackHandler`, you need to instantiate it with your Google Cloud project ID, dataset ID, and table ID.
+
+If you want to log `session_id`, `user_id`, and `agent` fields to BigQuery, you must pass them via the `metadata` dictionary in the `config` object when invoking the chain or agent. This is required because these fields are not directly available in the standard LangChain callback events.
+
+The handler specifically extracts the following keys from `metadata`:
+- `session_id`
+- `user_id`
+- `agent`
+
+**Note**: Only these specific keywords are extracted from metadata for logging to the structured columns. Other metadata keys will not be logged.
+
+```python
+import asyncio
+import os
+from datetime import datetime
+
+from langchain_core.tools import tool
+from langchain_google_community.callbacks.bigquery_callback import AsyncBigQueryCallbackHandler
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.prebuilt import create_react_agent
+
+# 1. Define some tools for the agent
+@tool
+def get_current_time():
+    """Returns the current local time."""
+    return datetime.now().strftime("%H:%M:%S")
+
+@tool
+def get_weather(city: str):
+    """Returns the current weather for a specific city."""
+    return f"The weather in {city} is sunny and 25°C."
+
+async def run_example_async_agent(bq_project_id: str):
+    """Runs an asynchronous Agent with BigQuery logging."""
+
+    # Setup BigQuery logging details
+    dataset_id = "your_dataset_id"
+    table_id = "your_table_id"
+
+    print(f"--- Starting Async Agent Example ---")
+    print(f"Logging to: {bq_project_id}.{dataset_id}.{table_id}")
+
+    # Initialize the async callback handler
+    bigquery_handler = AsyncBigQueryCallbackHandler(
+        project_id=bq_project_id, dataset_id=dataset_id, table_id=table_id
+    )
+
+    try:
+        # Setup LLM and Tools
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro")
+        tools = [get_current_time, get_weather]
+
+        # Create the Agent (LangGraph ReAct implementation)
+        agent_executor = create_react_agent(llm, tools)
+
+        query = "What time is it now, and what is the weather like in New York?"
+        print(f"User Query: {query}")
+
+        # Run the agent asynchronously
+        # We use astream to process chunks, but you can also use ainvoke
+        async for chunk in agent_executor.astream(
+            {"messages": [("user", query)]},
+            config={
+                "callbacks": [bigquery_handler],  # Pass the handler here
+                "metadata": {
+                    "session_id": "agent-session-001",
+                    "user_id": "user-123",
+                    "agent": "weather-agent",
+                },
+            },
+        ):
+            # Print agent thoughts/actions as they happen
+            if "agent" in chunk:
+                print(f"🤖 Agent: {chunk['agent']['messages'][0].content}")
+            elif "tools" in chunk:
+                print(f"🛠️ Tool Output: {chunk['tools']['messages'][0].content}")
+
+        print("✅ Agent finished. Logs are being written in the background...")
+    finally:
+        # Ensure resources are cleaned up
+        await bigquery_handler.close()
+
+if __name__ == "__main__":
+    # Ensure GOOGLE_API_KEY is set in your environment
+    if "GOOGLE_API_KEY" not in os.environ:
+        raise ValueError("Please set the GOOGLE_API_KEY environment variable.")
+
+    project_id = "your-project-id"
+    asyncio.run(run_example_async_agent(project_id))
+```
+
+### Parameters
+
+- `project_id`: The ID of your Google Cloud project.
+- `dataset_id`: The ID of the BigQuery dataset.
+- `table_id`: (Optional) The ID of the BigQuery table to log to. If provided, this takes precedence over the `table_id` in `config`.
+- `config`: (Optional) Configuration using `BigQueryLoggerConfig`.
