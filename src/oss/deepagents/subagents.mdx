@@ -261,7 +261,52 @@ const agent = createDeepAgent({
 ## Streaming
 
 When streaming tracing information agents' names are available as `lc_agent_name` in metadata.
-For example, all agent runs executed by a subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in their metadata.
+When reviewing tracing information, you can use this metadata to differentiate which agent the data came from.
+
+The following example creates a deep agent with the name `main-agent` and a subagent with the name `research-agent`:
+
+```python
+import os
+from typing import Literal
+from tavily import TavilyClient
+from deepagents import create_deep_agent
+
+tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+
+def internet_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = False,
+):
+    """Run a web search"""
+    return tavily_client.search(
+        query,
+        max_results=max_results,
+        include_raw_content=include_raw_content,
+        topic=topic,
+    )
+
+research_subagent = {
+    "name": "research-agent",
+    "description": "Used to research more in depth questions",
+    "system_prompt": "You are a great researcher",
+    "tools": [internet_search],
+    "model": "claude-sonnet-4-5-20250929",  # Optional override, defaults to main agent model
+}
+subagents = [research_subagent]
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-5-20250929",
+    subagents=subagents,
+    name="main-agent"
+)
+```
+
+As you prompt your deepagents, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
+In this case the subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in any associated agent run metadata:
+
+![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
 
 ## The general-purpose subagent
 
