@@ -29,7 +29,25 @@
 
 ## Contribute
 
-To contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
+To run a local preview of the documentation:
+
+```bash
+git clone https://github.com/langchain-ai/docs.git
+```
+
+```bash
+cd docs
+```
+
+```bash
+make install
+```
+
+```bash
+make dev
+```
+
+For more information on how to o contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
 
 For detailed information about setting up your development environment and contributing to documentation, see the [documentation contributing guide](https://docs.langchain.com/oss/python/contributing/documentation).
 
@@ -71,7 +89,7 @@ The Mintlify docs pipeline is structured with `.mdx` source files in `/src` and 
 
 The `/src/docs.json` file is used to configure the Mintlify site navigation and settings. Refer to the [Mintlify documentation](https://www.mintlify.com/docs/organize/navigation) for detailed syntax and component usage.
 
-Documentation changes follow a PR workflow where all tests must pass before merging. See the [contributing guidelines](/oss/contributing/documentation) for more details.
+Documentation changes follow a PR workflow where all tests must pass before merging. See the [contributing guidelines](https://docs.langchain.com/oss/python/contributing/documentation) for more details.
 
 #### `reference.langchain.com`
 
@@ -138,7 +156,7 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 
 ### `docs dev` not working / running
 
-Re-do the [steps to set up your dev environment](#set-up-a-local-dev-environment), ensuring you have activated the virtual environment and installed all dependencies.
+Re-do the [steps to set up your dev environment](https://docs.langchain.com/oss/python/contributing/documentation#set-up-local-environment), ensuring you have activated the virtual environment and installed all dependencies.
 
 ### Mintlify `.venv` parsing error
 

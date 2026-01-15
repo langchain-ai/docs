@@ -203,6 +203,8 @@ LINK_MAPS: list[LinkMap] = [
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
+            "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
+            "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
             # LangGraph
             "RemoteGraph": "langsmith/deployment/remote_graph/",
             "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
