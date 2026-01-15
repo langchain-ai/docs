@@ -203,6 +203,8 @@ LINK_MAPS: list[LinkMap] = [
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
+            "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
+            "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
             # LangGraph
             "RemoteGraph": "langsmith/deployment/remote_graph/",
             "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
@@ -433,6 +435,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "classes/_langchain_langgraph.index.Command.html",
             "CompiledStateGraph": "classes/_langchain_langgraph.index.CompiledStateGraph.html",
             "createAgent": "functions/langchain.index.createAgent.html",
+            "createMiddleware": "functions/langchain.index.createMiddleware.html",
             "createReactAgent": "functions/_langchain_langgraph.prebuilt.createReactAgent.html",
             "createSupervisor": "functions/_langchain_langgraph-supervisor.createSupervisor.html",
             "entrypoint": "functions/_langchain_langgraph.index.entrypoint.html",

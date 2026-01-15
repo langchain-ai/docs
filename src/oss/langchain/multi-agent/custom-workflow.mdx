@@ -68,12 +68,16 @@ workflow = (
 :::
 :::js
 ```typescript
+import { z } from "zod";
 import { createAgent } from "langchain";
-import { StateGraph, START, END } from "@langchain/langgraph";
+import { StateGraph, START, END, MessagesZodState } from "@langchain/langgraph";
 
 const agent = createAgent({ model: "openai:gpt-4o", tools: [...] });
+const State = MessagesZodState.extend({
+  query: z.string(),
+});
 
-async function agentNode(state: typeof State.State) {
+async function agentNode(state: z.infer<typeof State>) {
   // A LangGraph node that invokes a LangChain agent
   const result = await agent.invoke({
     messages: [{ role: "user", content: state.query }]
@@ -209,7 +213,7 @@ print(result["answer"])
 import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
 import { createAgent, tool } from "langchain";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
-import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
 import * as z from "zod";
 
 const State = Annotation.Root({
@@ -249,7 +253,7 @@ const getLatestNews = tool(
   {
     name: "get_latest_news",
     description: "Get the latest WNBA news and updates",
-    schema: z.object({ query: z.string() })
+    schema: z.object({ query: z.string() }),
   }
 );
 
@@ -268,20 +272,22 @@ The knowledge base contains: team rosters, game results with scores, and player 
 Focus on specific player names, team names, or stat categories mentioned.`;
   const response = await model.withStructuredOutput(RewrittenQuery).invoke([
     { role: "system", content: systemPrompt },
-    { role: "user", content: state.question }
+    { role: "user", content: state.question },
   ]);
   return { rewrittenQuery: response.query };
 }
 
 async function retrieve(state: typeof State.State) {
   const docs = await retriever.invoke(state.rewrittenQuery);
-  return { documents: docs.map(doc => doc.pageContent) };
+  return { documents: docs.map((doc) => doc.pageContent) };
 }
 
 async function callAgent(state: typeof State.State) {
   const context = state.documents.join("\n\n");
   const prompt = `Context:\n${context}\n\nQuestion: ${state.question}`;
-  const response = await agent.invoke({ messages: [{ role: "user", content: prompt }] });
+  const response = await agent.invoke({
+    messages: [{ role: "user", content: prompt }],
+  });
   return { answer: response.messages.at(-1)?.contentBlocks };
 }
 
@@ -295,7 +301,9 @@ const workflow = new StateGraph(State)
   .addEdge("agent", END)
   .compile();
 
-const result = await workflow.invoke({ question: "Who won the 2024 WNBA Championship?" });
+const result = await workflow.invoke({
+  question: "Who won the 2024 WNBA Championship?",
+});
 console.log(result.answer);
 ```
 :::
