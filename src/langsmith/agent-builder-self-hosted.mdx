@@ -5,16 +5,19 @@ sidebarTitle: Agent Builder
 
 [Agent Builder](/langsmith/agent-builder) allows users to create, deploy, and manage AI agents directly within LangSmith. This page explains how to enable Agent Builder on a self-hosted LangSmith instance.
 
+<Info>
+Self-hosted Agent Builder requires self-hosted LangSmith, which is an add-on to the Enterprise plan. For more details, refer to [Pricing](https://www.langchain.com/pricing). [Contact our sales team](https://www.langchain.com/contact-sales) if you want to get a license key to trial LangSmith in your environment.
+</Info>
+
 ## Components
 
-Agent Builder consists of four main components:
+Agent Builder consists of the following components:
 
-| Component | Description |
-|-----------|-------------|
-| `agentBootstrap` | Core infrastructure for agent creation and management. |
-| `agentBuilder` | Parent service that coordinates tool and trigger execution. |
-| `toolServer` | Provides MCP tool execution for agents. |
-| `triggerServer` | Handles webhooks and scheduled triggers. |
+- `agentBootstrap`: Job that deploys the LangSmith Deployment (agent) needed for Agent Builder.
+- `agentBuilder`: Parent service that coordinates tool and trigger execution.
+    - `toolServer`: Provides MCP tool execution for agents.
+    - `triggerServer`: Handles webhooks and scheduled triggers.
+    - `agent`: The main agent that will handle agent generation and where all the assistants will be created.
 
 ## Enable Agent Builder
 
@@ -54,4 +57,165 @@ Store this key securely. If you lose it, any secrets stored by Agent Builder wil
 
 ## Enable OAuth tools and triggers (optional)
 
-To enable OAuth-based tools (like Gmail and Slack) and webhook triggers, additional configuration is required.
+To enable OAuth-based tools (like Gmail, Slack, GitHub), configure the `oauthProviderOrgId` and add provider IDs for each integration you want to enable. You can enable any combination of providers.
+
+### Available providers
+
+| Provider | Tools enabled | Trigger enabled | Setup guide |
+|----------|--------------|-----------------|---------------------|
+| `googleOAuthProvider` | Gmail, Google Calendar, Google Sheets, BigQuery | Gmail | [See below](#google-oauth-provider)
+| `slackOAuthProvider` | Slack | Slack | [See below](#slack-oauth-provider)
+| `githubOAuthProvider` | GitHub | - | -
+| `linkedinOAuthProvider` | LinkedIn | - | -
+| `linearOAuthProvider` | Linear | - | -
+
+### General configuration
+
+Add the following to your `values.yaml`. Include only the providers you need.
+
+```yaml
+agentBuilder:
+  enabled: true
+
+  # Organization ID where OAuth providers are configured
+  oauthProviderOrgId: "<your-org-id>"
+
+  oauth:
+    # Add provider IDs for integrations you want to enable
+    googleOAuthProvider: "<provider-id>"
+    githubOAuthProvider: "<provider-id>"
+    linkedinOAuthProvider: "<provider-id>"
+    linearOAuthProvider: "<provider-id>"
+
+    # Slack requires additional configuration
+    slackOAuthProvider: "<provider-id>"
+    slackSigningSecret: "<signing-secret>"
+    slackBotId: "<bot-id>"
+```
+
+### Provider setup guides
+
+<AccordionGroup>
+<Accordion title="Google OAuth provider" id="google-oauth-provider">
+
+<Steps>
+  <Step title="Create OAuth client in GCP">
+    Create a new OAuth client app (Web application) in [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+  </Step>
+
+  <Step title="Add redirect URLs">
+    Add the redirect URI from LangSmith to the OAuth client's **Authorized redirect URIs**.
+  </Step>
+
+  <Step title="Copy credentials">
+    Copy the **Client ID** and **Client Secret** from the GCP OAuth app.
+  </Step>
+
+  <Step title="Configure OAuth provider in LangSmith">
+    In LangSmith, go to **Settings > OAuth Providers** and add a new provider:
+    - **Client ID**: from GCP
+    - **Client Secret**: from GCP
+    - **Authorization URL**: `https://accounts.google.com/o/oauth2/auth`
+    - **Token URL**: `https://oauth2.googleapis.com/token`
+    - **Provider ID**: `google`
+  </Step>
+
+  <Step title="Deploy">
+    Add the LangSmith OAuth provider ID to your `values.yaml` and deploy:
+
+    ```yaml
+    agentBuilder:
+      oauthProviderOrgId: "<your-org-id>"
+      oauth:
+        googleOAuthProvider: "<provider-id>"
+    ```
+  </Step>
+</Steps>
+
+</Accordion>
+
+<Accordion title="Slack OAuth provider" id="slack-oauth-provider">
+
+Slack requires additional configuration beyond the provider ID.
+
+<Steps>
+  <Step title="Create a Slack app">
+    Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App**.
+  </Step>
+
+  <Step title="Add scopes">
+    In **OAuth & Permissions**, add the following scopes:
+    - `channels:history`
+    - `channels:read`
+    - `chat:write`
+    - `groups:history`
+    - `groups:read`
+    - `im:history`
+    - `im:read`
+    - `im:write`
+    - `mpim:history`
+    - `team:read`
+    - `users:read`
+    - `users:read.email`
+  </Step>
+
+  <Step title="Copy credentials from Slack">
+    Copy the **Client ID**, **Client Secret**, and **Signing Secret** from the Slack app settings.
+  </Step>
+
+  <Step title="Configure OAuth provider in LangSmith">
+    In LangSmith, go to **Settings > OAuth Providers** and add a new provider:
+    - **Client ID**: from Slack app
+    - **Client Secret**: from Slack app
+    - **Authorization URL**: `https://slack.com/oauth/v2/authorize`
+    - **Token URL**: `https://slack.com/api/oauth.v2.access`
+    - **Provider ID**: `slack`
+    - **Enable PKCE**: unchecked
+  </Step>
+
+  <Step title="Add redirect URI to Slack">
+    Copy the **Redirect URI** from LangSmith and add it to your Slack app under **OAuth & Permissions > Redirect URLs**.
+  </Step>
+
+  <Step title="Get the bot ID">
+    1. Get the bot token from **OAuth & Permissions** in your Slack app.
+    2. Run the following command:
+
+    ```bash
+    curl -X POST https://slack.com/api/auth.test \
+      -H "Authorization: Bearer <bot-token>"
+    ```
+
+    3. Copy the `bot_id` from the response.
+  </Step>
+
+  <Step title="Deploy LangSmith">
+    Add the following to your `values.yaml` and deploy:
+
+    ```yaml
+    agentBuilder:
+      oauthProviderOrgId: "<your-org-id>"
+      oauth:
+        slackOAuthProvider: "<provider-id>"
+        slackSigningSecret: "<signing-secret>"
+        slackBotId: "<bot-id>"
+    ```
+  </Step>
+
+  <Step title="Enable event subscriptions">
+    1. After deployment, go to **Event Subscriptions** in your Slack app and enable events. Slack will ping your app to verify the endpoint.
+    2. Add the following bot events:
+       - `message.channels`
+       - `message.groups`
+       - `message.im`
+       - `message.mpim`
+  </Step>
+
+  <Step title="Set up triggers and tools">
+    1. Add the Slack bot to the channel you want it to read from.
+    2. When configuring the Slack tool or trigger in Agent Builder, provide the **channel ID** and **channel name**.
+  </Step>
+</Steps>
+
+</Accordion>
+</AccordionGroup>
