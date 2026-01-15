@@ -198,6 +198,9 @@ LINK_MAPS: list[LinkMap] = [
             # Rate limiters
             "InMemoryRateLimiter": "langchain_core/rate_limiters/#langchain_core.rate_limiters.InMemoryRateLimiter",
             # LangSmith SDK
+            "langsmith": "langsmith/observability/sdk/",
+            "langsmith-python": "langsmith/observability/sdk/",
+            "langsmith-js": "https://reference.langchain.com/javascript/modules/langsmith.html",
             "Client": "langsmith/observability/sdk/client/#langsmith.client.Client",
             "Client.evaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.evaluate",
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
@@ -405,6 +408,10 @@ LINK_MAPS: list[LinkMap] = [
             # Text splitters
             "RecursiveCharacterTextSplitter": "classes/_langchain_textsplitters.RecursiveCharacterTextSplitter.html",
             "TokenTextSplitter": "classes/_langchain_textsplitters.TokenTextSplitter.html",
+            # LangSmith SDK
+            "langsmith": "modules/langsmith.html",
+            "langsmith-js": "modules/langsmith.html",
+            "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
             # LangGraph SDK references
             "Auth": "classes/_langchain_langgraph-sdk.auth.Auth.html",
             "client.runs.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
