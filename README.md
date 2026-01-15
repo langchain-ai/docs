@@ -29,7 +29,25 @@
 
 ## Contribute
 
-To contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
+To run a local preview of the documentation:
+
+```bash
+git clone https://github.com/langchain-ai/docs.git
+```
+
+```bash
+cd docs
+```
+
+```bash
+make install
+```
+
+```bash
+make dev
+```
+
+For more information on how to o contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
 
 For detailed information about setting up your development environment and contributing to documentation, see the [documentation contributing guide](https://docs.langchain.com/oss/python/contributing/documentation).
 
