@@ -89,6 +89,13 @@ print(result["__interrupt__"])
 # The resume payload becomes the return value of interrupt() inside the node
 graph.invoke(Command(resume=True), config=config)
 ```
+
+**Key points about resuming:**
+
+- You must use the **same thread ID** when resuming that was used when the interrupt occurred
+- The value passed to `Command(resume=...)` becomes the return value of the @[`interrupt`] call
+- The node restarts from the beginning of the node where the @[`interrupt`] was called when resumed, so any code before the @[`interrupt`] runs again
+- You can pass any JSON-serializable value as the resume value
 :::
 
 :::js
@@ -109,14 +116,14 @@ console.log(result.__interrupt__);
 // Command({ resume }) returns that value from interrupt() in the node
 await graph.invoke(new Command({ resume: true }), config);
 ```
-:::
 
 **Key points about resuming:**
 
 - You must use the **same thread ID** when resuming that was used when the interrupt occurred
-- The value passed to `Command(resume=...)` becomes the return value of the @[`interrupt`] call
+- The value passed to `new Command({ resume: ... })` becomes the return value of the @[`interrupt`] call
 - The node restarts from the beginning of the node where the @[`interrupt`] was called when resumed, so any code before the @[`interrupt`] runs again
 - You can pass any JSON-serializable value as the resume value
+:::
 
 ## Common patterns
 
@@ -155,7 +162,7 @@ def approval_node(state: State) -> Command[Literal["proceed", "cancel"]]:
 ```typescript
 import { interrupt, Command } from "@langchain/langgraph";
 
-function approvalNode(state: State): Command {
+const approvalNode: typeof State.Node = (state) => {
   // Pause execution; payload surfaces in result.__interrupt__
   const isApproved = interrupt({
     question: "Do you want to proceed?",
@@ -263,11 +270,12 @@ await graph.invoke(new Command({ resume: false }), config);
       START,
       END,
       StateGraph,
+      StateSchema,
       interrupt,
     } from "@langchain/langgraph";
     import * as z from "zod";
 
-    const State = z.object({
+    const State = new StateSchema({
       actionDetails: z.string(),
       status: z.enum(["pending", "approved", "rejected"]).nullable(),
     });
@@ -331,7 +339,7 @@ def review_node(state: State):
 ```typescript
 import { interrupt } from "@langchain/langgraph";
 
-function reviewNode(state: State) {
+const reviewNode: typeof State.Node = (state) => {
   // Pause and show the current content for review (surfaces in result.__interrupt__)
   const editedContent = interrupt({
     instruction: "Review and edit this content",
@@ -419,11 +427,12 @@ await graph.invoke(
       START,
       END,
       StateGraph,
+      StateSchema,
       interrupt,
     } from "@langchain/langgraph";
     import * as z from "zod";
 
-    const State = z.object({
+    const State = new StateSchema({
       generatedText: z.string(),
     });
 
@@ -624,6 +633,9 @@ This approach is useful when you want the approval logic to live with the tool i
       START,
       END,
       StateGraph,
+      StateSchema,
+      MessagesValue,
+      GraphNode,
       interrupt,
     } from "@langchain/langgraph";
     import * as z from "zod";
@@ -661,21 +673,18 @@ This approach is useful when you want the approval logic to live with the tool i
 
     const model = new ChatAnthropic({ model: "claude-sonnet-4-5-20250929" }).bindTools([sendEmailTool]);
 
-    const Message = z.object({
-      role: z.enum(["user", "assistant", "tool"]),
-      content: z.string(),
+    const State = new StateSchema({
+      messages: MessagesValue,
     });
 
-    const State = z.object({
-      messages: z.array(Message),
-    });
+    const agent: typeof State.Node = async (state) => {
+      // LLM may decide to call the tool; interrupt pauses before sending
+      const response = await model.invoke(state.messages);
+      return { messages: [response] };
+    };
 
     const graphBuilder = new StateGraph(State)
-      .addNode("agent", async (state) => {
-        // LLM may decide to call the tool; interrupt pauses before sending
-        const response = await model.invoke(state.messages);
-        return { messages: [...state.messages, response] };
-      })
+      .addNode("agent", agent)
       .addEdge(START, "agent")
       .addEdge("agent", END);
 
@@ -736,7 +745,7 @@ def get_age_node(state: State):
 ```typescript
 import { interrupt } from "@langchain/langgraph";
 
-function getAgeNode(state: State) {
+const getAgeNode: typeof State.Node = (state) => {
   let prompt = "What is your age?";
 
   while (true) {
@@ -816,11 +825,12 @@ Each time you resume the graph with invalid input, it will ask again with a clea
       START,
       END,
       StateGraph,
+      StateSchema,
       interrupt,
     } from "@langchain/langgraph";
     import * as z from "zod";
 
-    const State = z.object({
+    const State = new StateSchema({
       age: z.number().nullable(),
     });
 
@@ -923,32 +933,32 @@ The way that @[`interrupt`] pauses execution at the point of the call is by thro
 
 <CodeGroup>
 ```typescript Separating logic
-async function nodeA(state: State) {
-    // ✅ Good: interrupting first, then handling error conditions separately
-    const name = interrupt("What's your name?");
-    try {
-        await fetchData(); // This can fail
-    } catch (err) {
-        console.error(error);
-    }
-    return state;
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: interrupting first, then handling error conditions separately
+  const name = interrupt("What's your name?");
+  try {
+    await fetchData(); // This can fail
+  } catch (err) {
+    console.error(error);
+  }
+  return state;
 }
 ```
 ```typescript Conditionally handling errors
-async function nodeA(state: State) {
-    // ✅ Good: re-throwing the exception will
-    // allow the interrupt to be passed back to
-    // the graph
-    try {
-        const name = interrupt("What's your name?");
-        await fetchData(); // This can fail
-    } catch (err) {
-        if (error instanceof NetworkError) {
-            console.error(error);
-        }
-        throw error;
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: re-throwing the exception will
+  // allow the interrupt to be passed back to
+  // the graph
+  try {
+    const name = interrupt("What's your name?");
+    await fetchData(); // This can fail
+  } catch (err) {
+    if (error instanceof NetworkError) {
+      console.error(error);
     }
-    return state;
+    throw error;
+  }
+  return state;
 }
 ```
 </CodeGroup>
@@ -1043,32 +1053,32 @@ def node_a(state: State):
 :::js
 <CodeGroup>
 ```typescript Skipping interrupts
-async function nodeA(state: State) {
-    // ❌ Bad: conditionally skipping interrupts changes the order
-    const name = interrupt("What's your name?");
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ❌ Bad: conditionally skipping interrupts changes the order
+  const name = interrupt("What's your name?");
 
-    // On first run, this might skip the interrupt
-    // On resume, it might not skip it - causing index mismatch
-    if (state.needsAge) {
-        const age = interrupt("What's your age?");
-    }
+  // On first run, this might skip the interrupt
+  // On resume, it might not skip it - causing index mismatch
+  if (state.needsAge) {
+    const age = interrupt("What's your age?");
+  }
 
-    const city = interrupt("What's your city?");
+  const city = interrupt("What's your city?");
 
-    return { name, city };
+  return { name, city };
 }
 ```
 ```typescript Looping interrupts
-async function nodeA(state: State) {
-    // ❌ Bad: looping based on non-deterministic data
-    // The number of interrupts changes between executions
-    const results = [];
-    for (const item of state.dynamicList || []) {  // List might change between runs
-        const result = interrupt(`Approve ${item}?`);
-        results.push(result);
-    }
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ❌ Bad: looping based on non-deterministic data
+  // The number of interrupts changes between executions
+  const results = [];
+  for (const item of state.dynamicList || []) {  // List might change between runs
+    const result = interrupt(`Approve ${item}?`);
+    results.push(result);
+  }
 
-    return { results };
+  return { results };
 }
 ```
 </CodeGroup>
@@ -1109,25 +1119,25 @@ def node_a(state: State):
 :::js
 <CodeGroup>
 ```typescript Simple values
-async function nodeA(state: State) {
-    // ✅ Good: passing simple types that are serializable
-    const name = interrupt("What's your name?");
-    const count = interrupt(42);
-    const approved = interrupt(true);
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: passing simple types that are serializable
+  const name = interrupt("What's your name?");
+  const count = interrupt(42);
+  const approved = interrupt(true);
 
-    return { name, count, approved };
+  return { name, count, approved };
 }
 ```
 ```typescript Structured data
-async function nodeA(state: State) {
-    // ✅ Good: passing objects with simple values
-    const response = interrupt({
-        question: "Enter user details",
-        fields: ["name", "email", "age"],
-        currentValues: state.user || {}
-    });
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: passing objects with simple values
+  const response = interrupt({
+    question: "Enter user details",
+    fields: ["name", "email", "age"],
+    currentValues: state.user || {}
+  });
 
-    return { user: response };
+  return { user: response };
 }
 ```
 </CodeGroup>
@@ -1176,14 +1186,14 @@ function validateInput(value: string): boolean {
     return value.length > 0;
 }
 
-async function nodeA(state: State) {
-    // ❌ Bad: passing a function to interrupt
-    // The function cannot be serialized
-    const response = interrupt({
-        question: "What's your name?",
-        validator: validateInput  // This will fail
-    });
-    return { name: response };
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ❌ Bad: passing a function to interrupt
+  // The function cannot be serialized
+  const response = interrupt({
+    question: "What's your name?",
+    validator: validateInput  // This will fail
+  });
+  return { name: response };
 }
 ```
 ```typescript Class instances
@@ -1191,16 +1201,16 @@ class DataProcessor {
     constructor(private config: any) {}
 }
 
-async function nodeA(state: State) {
-    const processor = new DataProcessor({ mode: "strict" });
+const nodeA: GraphNode<typeof State> = async (state) => {
+  const processor = new DataProcessor({ mode: "strict" });
 
-    // ❌ Bad: passing a class instance to interrupt
-    // The instance cannot be serialized
-    const response = interrupt({
-        question: "Enter data to process",
-        processor: processor  // This will fail
-    });
-    return { result: response };
+  // ❌ Bad: passing a class instance to interrupt
+  // The instance cannot be serialized
+  const response = interrupt({
+    question: "Enter data to process",
+    processor: processor  // This will fail
+  });
+  return { result: response };
 }
 ```
 </CodeGroup>
@@ -1269,54 +1279,54 @@ def notification_node(state: State):
 :::js
 <CodeGroup>
 ```typescript Idempotent operations
-async function nodeA(state: State) {
-    // ✅ Good: using upsert operation which is idempotent
-    // Running this multiple times will have the same result
-    await db.upsertUser({
-        userId: state.userId,
-        status: "pending_approval"
-    });
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: using upsert operation which is idempotent
+  // Running this multiple times will have the same result
+  await db.upsertUser({
+    userId: state.userId,
+    status: "pending_approval"
+  });
 
-    const approved = interrupt("Approve this change?");
+  const approved = interrupt("Approve this change?");
 
-    return { approved };
+  return { approved };
 }
 ```
 ```typescript Side effects after interrupt
-async function nodeA(state: State) {
-    // ✅ Good: placing side effect after the interrupt
-    // This ensures it only runs once after approval is received
-    const approved = interrupt("Approve this change?");
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: placing side effect after the interrupt
+  // This ensures it only runs once after approval is received
+  const approved = interrupt("Approve this change?");
 
-    if (approved) {
-        await db.createAuditLog({
-            userId: state.userId,
-            action: "approved"
-        });
-    }
+  if (approved) {
+    await db.createAuditLog({
+      userId: state.userId,
+      action: "approved"
+    });
+  }
 
-    return { approved };
+  return { approved };
 }
 ```
 ```typescript Separating into different nodes
-async function approvalNode(state: State) {
-    // ✅ Good: only handling the interrupt in this node
-    const approved = interrupt("Approve this change?");
+const approvalNode: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: only handling the interrupt in this node
+  const approved = interrupt("Approve this change?");
 
-    return { approved };
+  return { approved };
 }
 
-async function notificationNode(state: State) {
-    // ✅ Good: side effect happens in a separate node
-    // This runs after approval, so it only executes once
-    if (state.approved) {
-        await sendNotification({
-            userId: state.userId,
-            status: "approved"
-        });
-    }
+const notificationNode: GraphNode<typeof State> = async (state) => {
+  // ✅ Good: side effect happens in a separate node
+  // This runs after approval, so it only executes once
+  if (state.approved) {
+    await sendNotification({
+      userId: state.userId,
+      status: "approved",
+    });
+  }
 
-    return state;
+  return state;
 }
 ```
 </CodeGroup>
@@ -1357,29 +1367,29 @@ def node_a(state: State):
 :::js
 <CodeGroup>
 ```typescript Creating records
-async function nodeA(state: State) {
-    // ❌ Bad: creating a new record before interrupt
-    // This will create duplicate records on each resume
-    const auditId = await db.createAuditLog({
-        userId: state.userId,
-        action: "pending_approval",
-        timestamp: new Date()
-    });
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ❌ Bad: creating a new record before interrupt
+  // This will create duplicate records on each resume
+  const auditId = await db.createAuditLog({
+    userId: state.userId,
+    action: "pending_approval",
+    timestamp: new Date()
+  });
 
-    const approved = interrupt("Approve this change?");
+  const approved = interrupt("Approve this change?");
 
-    return { approved, auditId };
+  return { approved, auditId };
 }
 ```
 ```typescript Appending to arrays
-async function nodeA(state: State) {
-    // ❌ Bad: appending to an array before interrupt
-    // This will add duplicate entries on each resume
-    await db.appendToHistory(state.userId, "approval_requested");
+const nodeA: GraphNode<typeof State> = async (state) => {
+  // ❌ Bad: appending to an array before interrupt
+  // This will add duplicate entries on each resume
+  await db.appendToHistory(state.userId, "approval_requested");
 
-    const approved = interrupt("Approve this change?");
+  const approved = interrupt("Approve this change?");
 
-    return { approved };
+  return { approved };
 }
 ```
 </CodeGroup>
@@ -1546,8 +1556,8 @@ To debug and test a graph, you can use static interrupts as breakpoints to step 
     </Tab>
 </Tabs>
 
-### Using LangGraph Studio
+### Using LangSmith Studio
 
-You can use [LangGraph Studio](/langsmith/studio) to set static interrupts in your graph in the UI before running the graph. You can also use the UI to inspect the graph state at any point in the execution.
+You can use [LangSmith Studio](/langsmith/studio) to set static interrupts in your graph in the UI before running the graph. You can also use the UI to inspect the graph state at any point in the execution.
 
 ![image](/oss/images/static-interrupt.png)

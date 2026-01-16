@@ -184,16 +184,11 @@ const graph = builder.compile({ checkpointer });
 
   ```typescript
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, MessagesZodMeta, START } from "@langchain/langgraph";
-  import { BaseMessage } from "@langchain/core/messages";
-  import { registry } from "@langchain/langgraph/zod";
-  import * as z from "zod";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
   import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 
-  const MessagesZodState = z.object({
-    messages: z
-      .array(z.custom<BaseMessage>())
-      .register(registry, MessagesZodMeta),
+  const State = new StateSchema({
+    messages: MessagesValue,
   });
 
   const model = new ChatAnthropic({ model: "claude-haiku-4-5-20251001" });
@@ -202,11 +197,13 @@ const graph = builder.compile({ checkpointer });
   const checkpointer = PostgresSaver.fromConnString(DB_URI);
   // await checkpointer.setup();
 
-  const builder = new StateGraph(MessagesZodState)
-    .addNode("call_model", async (state) => {
-      const response = await model.invoke(state.messages);
-      return { messages: [response] };
-    })
+  const callModel: GraphNode<typeof State> = async (state) => {
+    const response = await model.invoke(state.messages);
+    return { messages: [response] };
+  };
+
+  const builder = new StateGraph(State)
+    .addNode("call_model", callModel)
     .addEdge(START, "call_model");
 
   const graph = builder.compile({ checkpointer });
@@ -469,10 +466,10 @@ graph = builder.compile(checkpointer=checkpointer)  # [!code highlight]
 
 :::js
 ```typescript
-import { StateGraph, START, MemorySaver } from "@langchain/langgraph";
-import * as z from "zod";
+import { StateGraph, StateSchema, START, MemorySaver } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-const State = z.object({ foo: z.string() });
+const State = new StateSchema({ foo: z.string() });
 
 const subgraphBuilder = new StateGraph(State)
   .addNode("subgraph_node_1", (state) => {
@@ -745,18 +742,13 @@ const graph = builder.compile({ store });
 
   ```typescript
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, MessagesZodMeta, START, LangGraphRunnableConfig } from "@langchain/langgraph";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, LangGraphRunnableConfig } from "@langchain/langgraph";
   import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
   import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
-  import { BaseMessage } from "@langchain/core/messages";
-  import { registry } from "@langchain/langgraph/zod";
-  import * as z from "zod";
   import { v4 as uuidv4 } from "uuid";
 
-  const MessagesZodState = z.object({
-    messages: z
-      .array(z.custom<BaseMessage>())
-      .register(registry, MessagesZodMeta),
+  const State = new StateSchema({
+    messages: MessagesValue,
   });
 
   const model = new ChatAnthropic({ model: "claude-haiku-4-5-20251001" });
@@ -768,10 +760,7 @@ const graph = builder.compile({ store });
   // await store.setup();
   // await checkpointer.setup();
 
-  const callModel = async (
-    state: z.infer<typeof MessagesZodState>,
-    config: LangGraphRunnableConfig,
-  ) => {
+  const callModel: GraphNode<typeof State> = async (state, config) => {
     const userId = config.configurable?.userId;
     const namespace = ["memories", userId];
     const memories = await config.store?.search(namespace, { query: state.messages.at(-1)?.content });
@@ -792,7 +781,7 @@ const graph = builder.compile({ store });
     return { messages: [response] };
   };
 
-  const builder = new StateGraph(MessagesZodState)
+  const builder = new StateGraph(State)
     .addNode("call_model", callModel)
     .addEdge(START, "call_model");
 
@@ -1117,15 +1106,10 @@ const items = await store.search(["user_123", "memories"], {
 
     ```typescript
     import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
-    import { StateGraph, START, MessagesZodMeta, InMemoryStore } from "@langchain/langgraph";
-    import { BaseMessage } from "@langchain/core/messages";
-    import { registry } from "@langchain/langgraph/zod";
-    import * as z from "zod";
+    import { StateGraph, StateSchema, MessagesValue, GraphNode, START, InMemoryStore } from "@langchain/langgraph";
 
-    const MessagesZodState = z.object({
-        messages: z
-        .array(z.custom<BaseMessage>())
-        .register(registry, MessagesZodMeta),
+    const State = new StateSchema({
+      messages: MessagesValue,
     });
 
     const model = new ChatOpenAI({ model: "gpt-4o-mini" });
@@ -1133,44 +1117,44 @@ const items = await store.search(["user_123", "memories"], {
     // Create store with semantic search enabled
     const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
     const store = new InMemoryStore({
-        index: {
+      index: {
         embeddings,
         dims: 1536,
-        }
+      }
     });
 
     await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
     await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
 
-    const chat = async (state: z.infer<typeof MessagesZodState>, config) => {
-        // Search based on user's last message
-        const items = await config.store.search(
+    const chat: GraphNode<typeof State> = async (state, config) => {
+      // Search based on user's last message
+      const items = await config.store.search(
         ["user_123", "memories"],
         { query: state.messages.at(-1)?.content, limit: 2 }
-        );
-        const memories = items.map(item => item.value.text).join("\n");
-        const memoriesText = memories ? `## Memories of user\n${memories}` : "";
+      );
+      const memories = items.map(item => item.value.text).join("\n");
+      const memoriesText = memories ? `## Memories of user\n${memories}` : "";
 
-        const response = await model.invoke([
+      const response = await model.invoke([
         { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
         ...state.messages,
-        ]);
+      ]);
 
-        return { messages: [response] };
+      return { messages: [response] };
     };
 
-    const builder = new StateGraph(MessagesZodState)
-        .addNode("chat", chat)
-        .addEdge(START, "chat");
+    const builder = new StateGraph(State)
+      .addNode("chat", chat)
+      .addEdge(START, "chat");
     const graph = builder.compile({ store });
 
     for await (const [message, metadata] of await graph.stream(
-        { messages: [{ role: "user", content: "I'm hungry" }] },
-        { streamMode: "messages" }
+      { messages: [{ role: "user", content: "I'm hungry" }] },
+      { streamMode: "messages" }
     )) {
-        if (message.content) {
+      if (message.content) {
         console.log(message.content);
-        }
+      }
     }
     ```
     :::
@@ -1229,8 +1213,13 @@ To trim message history, use the [`trimMessages`](https://js.langchain.com/docs/
 
 ```typescript
 import { trimMessages } from "@langchain/core/messages";
+import { StateSchema, MessagesValue, GraphNode } from "@langchain/langgraph";
 
-const callModel = async (state: z.infer<typeof MessagesZodState>) => {
+const State = new StateSchema({
+  messages: MessagesValue,
+});
+
+const callModel: GraphNode<typeof State> = async (state) => {
   const messages = trimMessages(state.messages, {
     strategy: "last",
     maxTokens: 128,
@@ -1241,9 +1230,9 @@ const callModel = async (state: z.infer<typeof MessagesZodState>) => {
   return { messages: [response] };
 };
 
-const builder = new StateGraph(MessagesZodState)
+const builder = new StateGraph(State)
   .addNode("call_model", callModel);
-// ...
+  // ...
 ```
 :::
 
@@ -1296,21 +1285,17 @@ const builder = new StateGraph(MessagesZodState)
 
   :::js
   ```typescript
-  import { trimMessages, BaseMessage } from "@langchain/core/messages";
+  import { trimMessages } from "@langchain/core/messages";
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, START, MessagesZodMeta, MemorySaver } from "@langchain/langgraph";
-  import { registry } from "@langchain/langgraph/zod";
-  import * as z from "zod";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, MemorySaver } from "@langchain/langgraph";
 
-  const MessagesZodState = z.object({
-    messages: z
-      .array(z.custom<BaseMessage>())
-      .register(registry, MessagesZodMeta),
+  const State = new StateSchema({
+    messages: MessagesValue,
   });
 
   const model = new ChatAnthropic({ model: "claude-3-5-sonnet-20241022" });
 
-  const callModel = async (state: z.infer<typeof MessagesZodState>) => {
+  const callModel: GraphNode<typeof State> = async (state) => {
     const messages = trimMessages(state.messages, {
       strategy: "last",
       maxTokens: 128,
@@ -1323,7 +1308,7 @@ const builder = new StateGraph(MessagesZodState)
   };
 
   const checkpointer = new MemorySaver();
-  const builder = new StateGraph(MessagesZodState)
+  const builder = new StateGraph(State)
     .addNode("call_model", callModel)
     .addEdge(START, "call_model");
   const graph = builder.compile({ checkpointer });
@@ -1373,7 +1358,7 @@ def delete_messages(state):
 :::
 
 :::js
-To delete messages from the graph state, you can use the `RemoveMessage`. For `RemoveMessage` to work, you need to use a state key with @[`messagesStateReducer`][messagesStateReducer] [reducer](/oss/langgraph/graph-api#reducers), like `MessagesZodState`.
+To delete messages from the graph state, you can use the `RemoveMessage`. For `RemoveMessage` to work, you need to use a state key with @[`messagesStateReducer`][messagesStateReducer] [reducer](/oss/langgraph/graph-api#reducers), like `MessagesValue`.
 
 To remove specific messages:
 
@@ -1449,21 +1434,17 @@ When deleting messages, **make sure** that the resulting message history is vali
 
   :::js
   ```typescript
-  import { RemoveMessage, BaseMessage } from "@langchain/core/messages";
+  import { RemoveMessage } from "@langchain/core/messages";
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, START, MemorySaver, MessagesZodMeta } from "@langchain/langgraph";
-  import * as z from "zod";
-  import { registry } from "@langchain/langgraph/zod";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, MemorySaver } from "@langchain/langgraph";
 
-  const MessagesZodState = z.object({
-    messages: z
-      .array(z.custom<BaseMessage>())
-      .register(registry, MessagesZodMeta),
+  const State = new StateSchema({
+    messages: MessagesValue,
   });
 
   const model = new ChatAnthropic({ model: "claude-3-5-sonnet-20241022" });
 
-  const deleteMessages = (state: z.infer<typeof MessagesZodState>) => {
+  const deleteMessages: GraphNode<typeof State> = (state) => {
     const messages = state.messages;
     if (messages.length > 2) {
       // remove the earliest two messages
@@ -1472,12 +1453,12 @@ When deleting messages, **make sure** that the resulting message history is vali
     return {};
   };
 
-  const callModel = async (state: z.infer<typeof MessagesZodState>) => {
+  const callModel: GraphNode<typeof State> = async (state) => {
     const response = await model.invoke(state.messages);
     return { messages: [response] };
   };
 
-  const builder = new StateGraph(MessagesZodState)
+  const builder = new StateGraph(State)
     .addNode("call_model", callModel)
     .addNode("delete_messages", deleteMessages)
     .addEdge(START, "call_model")
@@ -1563,15 +1544,11 @@ def summarize_conversation(state: State):
 Prompting and orchestration logic can be used to summarize the message history. For example, in LangGraph you can include a `summary` key in the state alongside the `messages` key:
 
 ```typescript
-import { BaseMessage } from "@langchain/core/messages";
-import { MessagesZodMeta } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import * as z from "zod";
+import { StateSchema, MessagesValue, GraphNode } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-const State = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
+const State = new StateSchema({
+  messages: MessagesValue,
   summary: z.string().optional(),
 });
 ```
@@ -1581,7 +1558,7 @@ Then, you can generate a summary of the chat history, using any existing summary
 ```typescript
 import { RemoveMessage, HumanMessage } from "@langchain/core/messages";
 
-const summarizeConversation = async (state: z.infer<typeof State>) => {
+const summarizeConversation: GraphNode<typeof State> = async (state) => {
   // First, we get any existing summary
   const summary = state.summary || "";
 
@@ -1695,28 +1672,25 @@ const summarizeConversation = async (state: z.infer<typeof State>) => {
     SystemMessage,
     HumanMessage,
     RemoveMessage,
-    type BaseMessage
   } from "@langchain/core/messages";
   import {
-    MessagesZodMeta,
     StateGraph,
+    StateSchema,
+    MessagesValue,
+    GraphNode,
+    ConditionalEdgeRouter,
     START,
     END,
     MemorySaver,
   } from "@langchain/langgraph";
-  import { BaseMessage } from "@langchain/core/messages";
-  import { registry } from "@langchain/langgraph/zod";
   import * as z from "zod";
   import { v4 as uuidv4 } from "uuid";
 
   const memory = new MemorySaver();
 
-  // We will add a `summary` attribute (in addition to `messages` key,
-  // which MessagesZodState already has)
-  const GraphState = z.object({
-    messages: z
-      .array(z.custom<BaseMessage>())
-      .register(registry, MessagesZodMeta),
+  // We will add a `summary` attribute (in addition to `messages` key)
+  const GraphState = new StateSchema({
+    messages: MessagesValue,
     summary: z.string().default(""),
   });
 
@@ -1724,7 +1698,7 @@ const summarizeConversation = async (state: z.infer<typeof State>) => {
   const model = new ChatAnthropic({ model: "claude-haiku-4-5-20251001" });
 
   // Define the logic to call the model
-  const callModel = async (state: z.infer<typeof GraphState>) => {
+  const callModel: GraphNode<typeof GraphState> = async (state) => {
     // If a summary exists, we add this in as a system message
     const { summary } = state;
     let { messages } = state;
@@ -1741,7 +1715,7 @@ const summarizeConversation = async (state: z.infer<typeof State>) => {
   };
 
   // We now define the logic for determining whether to end or summarize the conversation
-  const shouldContinue = (state: z.infer<typeof GraphState>) => {
+  const shouldContinue: ConditionalEdgeRouter<typeof GraphState, "summarize_conversation"> = (state) => {
     const messages = state.messages;
     // If there are more than six messages, then we summarize the conversation
     if (messages.length > 6) {
@@ -1751,7 +1725,7 @@ const summarizeConversation = async (state: z.infer<typeof State>) => {
     return END;
   };
 
-  const summarizeConversation = async (state: z.infer<typeof GraphState>) => {
+  const summarizeConversation: GraphNode<typeof GraphState> = async (state) => {
     // First, we summarize the conversation
     const { summary, messages } = state;
     let summaryMessage: string;
@@ -2136,17 +2110,11 @@ await checkpointer.deleteThread(threadId);
 ```
 :::
 
-:::python
-## Prebuilt memory tools
-
-**LangMem** is a LangChain-maintained library that offers tools for managing long-term memories in your agent. See the [LangMem documentation](https://langchain-ai.github.io/langmem/) for usage examples.
-:::
-
 ## Database management
 
 If you are using any database-backed persistence implementation (such as Postgres or Redis) to store short and/or long-term memory, you will need to run migrations to set up the required schema before you can use it with your database.
 
 By convention, most database-specific libraries define a `setup()` method on the checkpointer or store instance that runs the required migrations. However, you should check with your specific implementation of @[`BaseCheckpointSaver`] or @[`BaseStore`] to confirm the exact method name and usage.
 
-We recommend running migrations as a dedicated deployment step, or you can ensure they're run as part of server startup. 
+We recommend running migrations as a dedicated deployment step, or you can ensure they're run as part of server startup.
 
