@@ -310,51 +310,52 @@ for step in prompt_chaining_workflow.stream("cats", stream_mode="updates"):
 :::js
 <CodeGroup>
 ```typescript Graph API
-import { StateGraph, Annotation } from "@langchain/langgraph";
+import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
 // Graph state
-const StateAnnotation = Annotation.Root({
-  topic: Annotation<string>,
-  joke: Annotation<string>,
-  improvedJoke: Annotation<string>,
-  finalJoke: Annotation<string>,
+const State = new StateSchema({
+  topic: z.string(),
+  joke: z.string(),
+  improvedJoke: z.string(),
+  finalJoke: z.string(),
 });
 
 // Define node functions
 
 // First LLM call to generate initial joke
-async function generateJoke(state: typeof StateAnnotation.State) {
+const generateJoke: GraphNode<typeof State> = async (state) => {
   const msg = await llm.invoke(`Write a short joke about ${state.topic}`);
   return { joke: msg.content };
-}
+};
 
 // Gate function to check if the joke has a punchline
-function checkPunchline(state: typeof StateAnnotation.State) {
+const checkPunchline: ConditionalEdgeRouter<typeof State, "improveJoke"> = (state) => {
   // Simple check - does the joke contain "?" or "!"
   if (state.joke?.includes("?") || state.joke?.includes("!")) {
     return "Pass";
   }
   return "Fail";
-}
+};
 
-  // Second LLM call to improve the joke
-async function improveJoke(state: typeof StateAnnotation.State) {
+// Second LLM call to improve the joke
+const improveJoke: GraphNode<typeof State> = async (state) => {
   const msg = await llm.invoke(
     `Make this joke funnier by adding wordplay: ${state.joke}`
   );
   return { improvedJoke: msg.content };
-}
+};
 
 // Third LLM call for final polish
-async function polishJoke(state: typeof StateAnnotation.State) {
+const polishJoke: GraphNode<typeof State> = async (state) => {
   const msg = await llm.invoke(
     `Add a surprising twist to this joke: ${state.improvedJoke}`
   );
   return { finalJoke: msg.content };
-}
+};
 
 // Build workflow
-const chain = new StateGraph(StateAnnotation)
+const chain = new StateGraph(State)
   .addNode("generateJoke", generateJoke)
   .addNode("improveJoke", improveJoke)
   .addNode("polishJoke", polishJoke)
@@ -581,47 +582,48 @@ for step in parallel_workflow.stream("cats", stream_mode="updates"):
 :::js
 <CodeGroup>
 ```typescript Graph API
-import { StateGraph, Annotation } from "@langchain/langgraph";
+import { StateGraph, StateSchema, GraphNode } from "@langchain/langgraph";
+import * as z from "zod";
 
 // Graph state
-const StateAnnotation = Annotation.Root({
-  topic: Annotation<string>,
-  joke: Annotation<string>,
-  story: Annotation<string>,
-  poem: Annotation<string>,
-  combinedOutput: Annotation<string>,
+const State = new StateSchema({
+  topic: z.string(),
+  joke: z.string(),
+  story: z.string(),
+  poem: z.string(),
+  combinedOutput: z.string(),
 });
 
 // Nodes
 // First LLM call to generate initial joke
-async function callLlm1(state: typeof StateAnnotation.State) {
+const callLlm1: GraphNode<typeof State> = async (state) => {
   const msg = await llm.invoke(`Write a joke about ${state.topic}`);
   return { joke: msg.content };
-}
+};
 
 // Second LLM call to generate story
-async function callLlm2(state: typeof StateAnnotation.State) {
+const callLlm2: GraphNode<typeof State> = async (state) => {
   const msg = await llm.invoke(`Write a story about ${state.topic}`);
   return { story: msg.content };
-}
+};
 
 // Third LLM call to generate poem
-async function callLlm3(state: typeof StateAnnotation.State) {
+const callLlm3: GraphNode<typeof State> = async (state) => {
   const msg = await llm.invoke(`Write a poem about ${state.topic}`);
   return { poem: msg.content };
-}
+};
 
 // Combine the joke, story and poem into a single output
-async function aggregator(state: typeof StateAnnotation.State) {
+const aggregator: GraphNode<typeof State> = async (state) => {
   const combined = `Here's a story, joke, and poem about ${state.topic}!\n\n` +
     `STORY:\n${state.story}\n\n` +
     `JOKE:\n${state.joke}\n\n` +
     `POEM:\n${state.poem}`;
   return { combinedOutput: combined };
-}
+};
 
 // Build workflow
-const parallelWorkflow = new StateGraph(StateAnnotation)
+const parallelWorkflow = new StateGraph(State)
   .addNode("callLlm1", callLlm1)
   .addNode("callLlm2", callLlm2)
   .addNode("callLlm3", callLlm3)
@@ -892,7 +894,7 @@ for step in router_workflow.stream("Write me a joke about cats", stream_mode="up
 :::js
 <CodeGroup>
 ```typescript Graph API
-import { StateGraph, Annotation } from "@langchain/langgraph";
+import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter } from "@langchain/langgraph";
 import * as z from "zod";
 
 // Schema for structured output to use as routing logic
@@ -906,15 +908,15 @@ const routeSchema = z.object({
 const router = llm.withStructuredOutput(routeSchema);
 
 // Graph state
-const StateAnnotation = Annotation.Root({
-  input: Annotation<string>,
-  decision: Annotation<string>,
-  output: Annotation<string>,
+const State = new StateSchema({
+  input: z.string(),
+  decision: z.string(),
+  output: z.string(),
 });
 
 // Nodes
 // Write a story
-async function llmCall1(state: typeof StateAnnotation.State) {
+const llmCall1: GraphNode<typeof State> = async (state) => {
   const result = await llm.invoke([{
     role: "system",
     content: "You are an expert storyteller.",
@@ -923,10 +925,10 @@ async function llmCall1(state: typeof StateAnnotation.State) {
     content: state.input
   }]);
   return { output: result.content };
-}
+};
 
 // Write a joke
-async function llmCall2(state: typeof StateAnnotation.State) {
+const llmCall2: GraphNode<typeof State> = async (state) => {
   const result = await llm.invoke([{
     role: "system",
     content: "You are an expert comedian.",
@@ -935,10 +937,10 @@ async function llmCall2(state: typeof StateAnnotation.State) {
     content: state.input
   }]);
   return { output: result.content };
-}
+};
 
 // Write a poem
-async function llmCall3(state: typeof StateAnnotation.State) {
+const llmCall3: GraphNode<typeof State> = async (state) => {
   const result = await llm.invoke([{
     role: "system",
     content: "You are an expert poet.",
@@ -947,9 +949,9 @@ async function llmCall3(state: typeof StateAnnotation.State) {
     content: state.input
   }]);
   return { output: result.content };
-}
+};
 
-async function llmCallRouter(state: typeof StateAnnotation.State) {
+const llmCallRouter: GraphNode<typeof State> = async (state) => {
   // Route the input to the appropriate node
   const decision = await router.invoke([
     {
@@ -963,22 +965,22 @@ async function llmCallRouter(state: typeof StateAnnotation.State) {
   ]);
 
   return { decision: decision.step };
-}
+};
 
 // Conditional edge function to route to the appropriate node
-function routeDecision(state: typeof StateAnnotation.State) {
+const routeDecision: ConditionalEdgeRouter<typeof State, "llmCall1" | "llmCall2" | "llmCall3"> = (state) => {
   // Return the node name you want to visit next
   if (state.decision === "story") {
     return "llmCall1";
   } else if (state.decision === "joke") {
     return "llmCall2";
-  } else if (state.decision === "poem") {
+  } else {
     return "llmCall3";
   }
-}
+};
 
 // Build workflow
-const routerWorkflow = new StateGraph(StateAnnotation)
+const routerWorkflow = new StateGraph(State)
   .addNode("llmCall1", llmCall1)
   .addNode("llmCall2", llmCall2)
   .addNode("llmCall3", llmCall3)
@@ -1417,30 +1419,31 @@ Markdown(state["final_report"])
 :::
 :::js
 ```typescript
-import { Annotation, StateGraph, Send } from "@langchain/langgraph";
+import { StateGraph, StateSchema, ReducedValue, GraphNode, Send } from "@langchain/langgraph";
+import * as z from "zod";
 
 // Graph state
-const StateAnnotation = Annotation.Root({
-  topic: Annotation<string>,
-  sections: Annotation<SectionsSchema[]>,
-  completedSections: Annotation<string[]>({
-    default: () => [],
-    reducer: (a, b) => a.concat(b),
-  }),
-  finalReport: Annotation<string>,
+const State = new StateSchema({
+  topic: z.string(),
+  sections: z.array(z.custom<SectionsSchema>()),
+  completedSections: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (a, b) => a.concat(b) }
+  ),
+  finalReport: z.string(),
 });
 
 // Worker state
-const WorkerStateAnnotation = Annotation.Root({
-  section: Annotation<SectionsSchema>,
-  completedSections: Annotation<string[]>({
-    default: () => [],
-    reducer: (a, b) => a.concat(b),
-  }),
+const WorkerState = new StateSchema({
+  section: z.custom<SectionsSchema>(),
+  completedSections: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (a, b) => a.concat(b) }
+  ),
 });
 
 // Nodes
-async function orchestrator(state: typeof StateAnnotation.State) {
+const orchestrator: GraphNode<typeof State> = async (state) => {
   // Generate queries
   const reportSections = await planner.invoke([
     { role: "system", content: "Generate a plan for the report." },
@@ -1448,9 +1451,9 @@ async function orchestrator(state: typeof StateAnnotation.State) {
   ]);
 
   return { sections: reportSections.sections };
-}
+};
 
-async function llmCall(state: typeof WorkerStateAnnotation.State) {
+const llmCall: GraphNode<typeof WorkerState> = async (state) => {
   // Generate section
   const section = await llm.invoke([
     {
@@ -1465,9 +1468,9 @@ async function llmCall(state: typeof WorkerStateAnnotation.State) {
 
   // Write the updated section to completed sections
   return { completedSections: [section.content] };
-}
+};
 
-async function synthesizer(state: typeof StateAnnotation.State) {
+const synthesizer: GraphNode<typeof State> = async (state) => {
   // List of completed sections
   const completedSections = state.completedSections;
 
@@ -1475,18 +1478,18 @@ async function synthesizer(state: typeof StateAnnotation.State) {
   const completedReportSections = completedSections.join("\n\n---\n\n");
 
   return { finalReport: completedReportSections };
-}
+};
 
 // Conditional edge function to create llm_call workers that each write a section of the report
-function assignWorkers(state: typeof StateAnnotation.State) {
+const assignWorkers: ConditionalEdgeRouter<typeof State, "llmCall"> = (state) => {
   // Kick off section writing in parallel via Send() API
   return state.sections.map((section) =>
     new Send("llmCall", { section })
   );
-}
+};
 
 // Build workflow
-const orchestratorWorker = new StateGraph(StateAnnotation)
+const orchestratorWorker = new StateGraph(State)
   .addNode("orchestrator", orchestrator)
   .addNode("llmCall", llmCall)
   .addNode("synthesizer", synthesizer)
@@ -1657,15 +1660,15 @@ for step in optimizer_workflow.stream("Cats", stream_mode="updates"):
 :::js
 <CodeGroup>
 ```typescript Graph API
+import { StateGraph, StateSchema, GraphNode, ConditionalEdgeRouter } from "@langchain/langgraph";
 import * as z from "zod";
-import { Annotation, StateGraph } from "@langchain/langgraph";
 
 // Graph state
-const StateAnnotation = Annotation.Root({
-  joke: Annotation<string>,
-  topic: Annotation<string>,
-  feedback: Annotation<string>,
-  funnyOrNot: Annotation<string>,
+const State = new StateSchema({
+  joke: z.string(),
+  topic: z.string(),
+  feedback: z.string(),
+  funnyOrNot: z.string(),
 });
 
 // Schema for structured output to use in evaluation
@@ -1682,7 +1685,7 @@ const feedbackSchema = z.object({
 const evaluator = llm.withStructuredOutput(feedbackSchema);
 
 // Nodes
-async function llmCallGenerator(state: typeof StateAnnotation.State) {
+const llmCallGenerator: GraphNode<typeof State> = async (state) => {
   // LLM generates a joke
   let msg;
   if (state.feedback) {
@@ -1693,26 +1696,26 @@ async function llmCallGenerator(state: typeof StateAnnotation.State) {
     msg = await llm.invoke(`Write a joke about ${state.topic}`);
   }
   return { joke: msg.content };
-}
+};
 
-async function llmCallEvaluator(state: typeof StateAnnotation.State) {
+const llmCallEvaluator: GraphNode<typeof State> = async (state) => {
   // LLM evaluates the joke
   const grade = await evaluator.invoke(`Grade the joke ${state.joke}`);
   return { funnyOrNot: grade.grade, feedback: grade.feedback };
-}
+};
 
 // Conditional edge function to route back to joke generator or end based upon feedback from the evaluator
-function routeJoke(state: typeof StateAnnotation.State) {
+const routeJoke: ConditionalEdgeRouter<typeof State, "llmCallGenerator"> = (state) => {
   // Route back to joke generator or end based upon feedback from the evaluator
   if (state.funnyOrNot === "funny") {
     return "Accepted";
-  } else if (state.funnyOrNot === "not funny") {
+  } else {
     return "Rejected + Feedback";
   }
-}
+};
 
 // Build workflow
-const optimizerWorkflow = new StateGraph(StateAnnotation)
+const optimizerWorkflow = new StateGraph(State)
   .addNode("llmCallGenerator", llmCallGenerator)
   .addNode("llmCallEvaluator", llmCallEvaluator)
   .addEdge("__start__", "llmCallGenerator")
@@ -2048,15 +2051,20 @@ const llmWithTools = llm.bindTools(tools);
 
 <CodeGroup>
 ```typescript Graph API
-import { MessagesAnnotation, StateGraph } from "@langchain/langgraph";
+import { StateGraph, StateSchema, MessagesValue, GraphNode, ConditionalEdgeRouter } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import {
   SystemMessage,
   ToolMessage
 } from "@langchain/core/messages";
 
+// Graph state
+const State = new StateSchema({
+  messages: MessagesValue,
+});
+
 // Nodes
-async function llmCall(state: typeof MessagesAnnotation.State) {
+const llmCall: GraphNode<typeof State> = async (state) => {
   // LLM decides whether to call a tool or not
   const result = await llmWithTools.invoke([
     {
@@ -2069,12 +2077,12 @@ async function llmCall(state: typeof MessagesAnnotation.State) {
   return {
     messages: [result]
   };
-}
+};
 
 const toolNode = new ToolNode(tools);
 
 // Conditional edge function to route to the tool node or end
-function shouldContinue(state: typeof MessagesAnnotation.State) {
+const shouldContinue: ConditionalEdgeRouter<typeof State, "toolNode"> = (state) => {
   const messages = state.messages;
   const lastMessage = messages.at(-1);
 
@@ -2084,10 +2092,10 @@ function shouldContinue(state: typeof MessagesAnnotation.State) {
   }
   // Otherwise, we stop (reply to the user)
   return "__end__";
-}
+};
 
 // Build workflow
-const agentBuilder = new StateGraph(MessagesAnnotation)
+const agentBuilder = new StateGraph(State)
   .addNode("llmCall", llmCall)
   .addNode("toolNode", toolNode)
   // Add edges to connect nodes
