@@ -184,6 +184,7 @@ LINK_MAPS: list[LinkMap] = [
             # Runnables
             "Runnable": "langchain_core/runnables/#langchain_core.runnables.Runnable",
             "RunnableConfig": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig",
+            "RunnableLambda": "langchain_core/runnables/#langchain_core.runnables.base.RunnableLambda",
             "RunnableConfig(max_concurrency)": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig.max_concurrency",
             # Retrievers
             "Retrievers": "langchain_core/retrievers/#langchain_core.retrievers.BaseRetriever",
