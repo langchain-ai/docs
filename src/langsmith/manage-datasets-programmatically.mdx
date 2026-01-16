@@ -107,7 +107,6 @@ import com.langchain.smith.models.datasets.Dataset;
 import com.langchain.smith.models.datasets.DatasetCreateParams;
 import com.langchain.smith.models.datasets.DatasetListParams;
 import com.langchain.smith.models.examples.bulk.BulkCreateParams;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -148,25 +147,19 @@ public class CreateDatasetExample {
         // Prepare inputs, outputs, and metadata for bulk creation
         List<Map<String, String>> inputs = exampleInputs.stream()
             .map(pair -> {
-                Map<String, String> input = new HashMap<>();
-                input.put("question", pair[0]);
-                return input;
+                return Maps.of("question", pair[0]);
             })
             .collect(Collectors.toList());
 
         List<Map<String, String>> outputs = exampleInputs.stream()
             .map(pair -> {
-                Map<String, String> output = new HashMap<>();
-                output.put("answer", pair[1]);
-                return output;
+                return Maps.of("answer", pair[1]);
             })
             .collect(Collectors.toList());
 
         List<Map<String, String>> metadata = exampleInputs.stream()
             .map(pair -> {
-                Map<String, String> meta = new HashMap<>();
-                meta.put("source", "Wikipedia");
-                return meta;
+                return Maps.of("source", "Wikipedia");
             })
             .collect(Collectors.toList());
 
@@ -271,26 +264,13 @@ import java.util.List;
 public class CreateDatasetExample {
     public static void main(String[] args) {
         LangsmithClient client = LangsmithOkHttpClient.fromEnv();
-
         String projectId = System.getenv("LANGSMITH_PROJECT_ID");
-        if (projectId == null || projectId.isEmpty()) {
-            System.err.println("Error: LANGSMITH_PROJECT_ID environment variable is required");
-            System.err.println("You can find your project ID in the LangSmith UI under Settings");
-            System.exit(1);
-        }
-
         String datasetName = "Example Dataset";
 
-        System.out.println("Querying runs from project: " + projectId);
-        System.out.println("Filters: isRoot=true, error=false");
-
-        // Filter runs to add to the dataset
         List<RunQueryResponse.Run> allRuns = new ArrayList<>();
         String cursor = null;
-        int pageCount = 0;
         try {
             do {
-                pageCount++;
                 RunQueryParams.Builder paramsBuilder = RunQueryParams.builder()
                     .addSession(projectId)
                     .isRoot(true)
@@ -302,27 +282,24 @@ public class CreateDatasetExample {
                 }
 
                 RunQueryResponse response = client.runs().query(paramsBuilder.build());
-                System.out.println("Page " + pageCount + ": Found " + response.runs().size() + " runs");
                 allRuns.addAll(response.runs());
 
-            // Get cursor for next page
-            try {
-                java.util.Map<String, com.langchain.smith.core.JsonValue> cursorProps = response.cursors()._additionalProperties();
-                if (cursorProps != null && cursorProps.containsKey("next")) {
-                    com.langchain.smith.core.JsonValue nextValue = cursorProps.get("next");
-                    if (nextValue != null && !nextValue.isNull() && !nextValue.isMissing()) {
-                        java.util.Optional<String> nextOpt = nextValue.asString();
-                        cursor = nextOpt.isPresent() ? nextOpt.get() : null;
+                // Get cursor for next page
+                try {
+                    Map<String, JsonValue> cursorProps = response.cursors()._additionalProperties();
+                    if (cursorProps != null && cursorProps.containsKey("next")) {
+                        JsonValue nextValue = cursorProps.get("next");
+                        if (nextValue != null && !nextValue.isNull() && !nextValue.isMissing()) {
+                            cursor = nextValue.asString().orElse(null);
+                        } else {
+                            cursor = null;
+                        }
                     } else {
                         cursor = null;
                     }
-                } else {
+                } catch (Exception e) {
                     cursor = null;
                 }
-            } catch (Exception e) {
-                cursor = null;
-            }
-
                 if (response.runs().size() < 50) {
                     cursor = null;
                 }
@@ -330,7 +307,6 @@ public class CreateDatasetExample {
         } catch (Exception e) {
             System.err.println("Error querying runs: " + e.getMessage());
             e.printStackTrace();
-            System.err.println("\nTrying without filters...");
             System.exit(1);
         }
 
@@ -343,7 +319,6 @@ public class CreateDatasetExample {
                 .description("An example dataset")
                 .build()
         );
-        System.out.println("Created dataset: " + dataset.name() + " (ID: " + dataset.id() + ")");
 
         // Prepare inputs and outputs for bulk creation
         BulkCreateParams.Builder bulkParamsBuilder = BulkCreateParams.builder();
@@ -351,11 +326,9 @@ public class CreateDatasetExample {
         for (RunQueryResponse.Run run : allRuns) {
             if (run.inputs().isPresent() && run.outputs().isPresent()) {
                 // Get the additional properties maps which contain the actual data
-                java.util.Map<String, com.langchain.smith.core.JsonValue> inputsMap = run.inputs().get()._additionalProperties();
-                java.util.Map<String, com.langchain.smith.core.JsonValue> outputsMap = run.outputs().get()._additionalProperties();
+                Map<String, JsonValue> inputsMap = run.inputs().get()._additionalProperties();
+                Map<String, JsonValue> outputsMap = run.outputs().get()._additionalProperties();
 
-                // Convert Map<String, JsonValue> to regular Map for JsonValue.from()
-                // JsonValue.from() can handle Map<String, JsonValue> directly
                 bulkParamsBuilder.addBody(
                     BulkCreateParams.Body.builder()
                         .datasetId(dataset.id())
@@ -374,7 +347,6 @@ public class CreateDatasetExample {
             System.exit(1);
         }
 
-        // Use the bulk createExamples method
         client.examples().bulk().create(bulkParamsBuilder.build());
         System.out.println("Created " + examplesWithData + " examples in dataset");
     }
@@ -436,13 +408,12 @@ import com.langchain.smith.models.datasets.DatasetUploadParams;
 import com.langchain.smith.models.datasets.DataType;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.List;
 
 LangsmithClient client = LangsmithOkHttpClient.fromEnv();
 Path csvFile = Paths.get("path/to/your/csvfile.csv");
-List<String> inputKeys = Arrays.asList("column1", "column2");
-List<String> outputKeys = Arrays.asList("output1", "output2");
+List<String> inputKeys = List.of("column1", "column2");
+List<String> outputKeys = List.of("output1", "output2");
 
 Dataset dataset = client.datasets().upload(
     DatasetUploadParams.builder()
@@ -902,21 +873,18 @@ await client.updateExamples([
 ```
 
 ```java Java
-Map<String, String> inputs1 = new HashMap<>();
-inputs1.put("question", "What is the capital of France? (updated)");
-Map<String, String> outputs1 = new HashMap<>();
-outputs1.put("answer", "The capital of France is Paris.");
-Map<String, String> metadata1 = new HashMap<>();
-metadata1.put("source", "Wikipedia");
-metadata1.put("difficulty", "easy");
+Map<String, String> inputs1 = Map.of("question", "What is the capital of France?")
+Map<String, String> outputs1 = Map.of("answer", "The capital of France is Paris.");
+Map<String, String> metadata1 = Map.of(
+    "source", "Wikipedia",
+    "difficulty", "easy"
+);
 
-Map<String, String> inputs2 = new HashMap<>();
-inputs2.put("question", "What is 2 + 2? (updated)");
-Map<String, String> outputs2 = new HashMap<>();
-outputs2.put("answer", "The answer is 4.");
-Map<String, String> metadata2 = new HashMap<>();
-metadata2.put("source", "Math textbook");
-metadata2.put("difficulty", "easy");
+Map<String, String> inputs2 = Map.of("question", "What is 2 + 2?");
+Map<String, String> outputs2 = Map.of("answer", "The answer is 4.");
+Map<String, String> metadata2 = Map.of(
+    "source", "Math textbook",
+    "difficulty", "easy");
 
 BulkPatchAllParams.Builder bulkParamsBuilder = BulkPatchAllParams.builder();
 

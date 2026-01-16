@@ -90,18 +90,18 @@ graph.invoke({"foo": "", "bar":[]}, config)
 
 :::js
 ```typescript
-import { StateGraph, START, END, MemorySaver } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import * as z from "zod";
+import { StateGraph, StateSchema, ReducedValue, START, END, MemorySaver } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-const State = z.object({
+const State = new StateSchema({
   foo: z.string(),
-  bar: z.array(z.string()).register(registry, {
-    reducer: {
-      fn: (x, y) => x.concat(y),
-    },
-    default: () => [] as string[],
-  }),
+  bar: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    {
+      inputSchema: z.array(z.string()),
+      reducer: (x, y) => x.concat(y),
+    }
+  ),
 });
 
 const workflow = new StateGraph(State)
@@ -120,41 +120,6 @@ const graph = workflow.compile({ checkpointer });
 
 const config = { configurable: { thread_id: "1" } };
 await graph.invoke({ foo: "", bar: [] }, config);
-```
-:::
-
-:::js
-```typescript
-import { StateGraph, START, END, MemorySaver } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import * as z from "zod";
-
-const State = z.object({
-  foo: z.string(),
-  bar: z.array(z.string()).register(registry, {
-    reducer: {
-      fn: (x, y) => x.concat(y),
-    },
-    default: () => [] as string[],
-  }),
-});
-
-const workflow = new StateGraph(State)
-  .addNode("nodeA", (state) => {
-    return { foo: "a", bar: ["a"] };
-  })
-  .addNode("nodeB", (state) => {
-    return { foo: "b", bar: ["b"] };
-  })
-  .addEdge(START, "nodeA")
-  .addEdge("nodeA", "nodeB")
-  .addEdge("nodeB", END);
-
-const checkpointer = new MemorySaver();
-const graph = workflow.compile({ checkpointer });
-
-const config = { configurable: { thread_id: "1" } };
-await graph.invoke({ foo: "" }, config);
 ```
 :::
 
@@ -521,17 +486,18 @@ class State(TypedDict):
 
 :::js
 ```typescript
-import { registry } from "@langchain/langgraph/zod";
+import { StateSchema, ReducedValue } from "@langchain/langgraph";
 import * as z from "zod";
 
-const State = z.object({
+const State = new StateSchema({
   foo: z.number(),
-  bar: z.array(z.string()).register(registry, {
-    reducer: {
-      fn: (x, y) => x.concat(y),
-    },
-    default: () => [] as string[],
-  }),
+  bar: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    {
+      inputSchema: z.array(z.string()),
+      reducer: (x, y) => x.concat(y),
+    }
+  ),
 });
 ```
 :::
@@ -909,21 +875,14 @@ def update_memory(state: MessagesState, config: RunnableConfig, *, store: BaseSt
 We can access the `memoryStore` and the `user_id` in _any node_ by accessing `config` and `store` as node arguments. Here's how we might use semantic search in a node to find relevant memories:
 
 ```typescript
-import { MessagesZodMeta, Runtime } from "@langchain/langgraph";
-import { BaseMessage } from "@langchain/core/messages";
-import { registry } from "@langchain/langgraph/zod";
-import * as z from "zod";
+import { StateSchema, MessagesValue, Runtime } from "@langchain/langgraph";
+import { v4 as uuidv4 } from "uuid";
 
-const MessagesZodState = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
+const MessagesState = new StateSchema({
+  messages: MessagesValue,
 });
 
-const updateMemory = async (
-  state: z.infer<typeof MessagesZodState>,
-  runtime: Runtime<{ user_id: string }>,
-) => {
+const updateMemory: GraphNode<typeof MessagesState> = async (state, runtime) => {
   // Get the user id from the config
   const userId = runtime.context?.user_id;
   if (!userId) throw new Error("User ID is required");
@@ -932,6 +891,7 @@ const updateMemory = async (
   const namespace = [userId, "memories"];
 
   // ... Analyze conversation and create a new memory
+  const memory = "Some memory content";
 
   // Create a new memory ID
   const memoryId = uuidv4();
@@ -993,19 +953,15 @@ def call_model(state: MessagesState, config: RunnableConfig, *, store: BaseStore
 
 :::js
 ```typescript
-const callModel = async (
-  state: z.infer<typeof MessagesZodState>,
-  config: LangGraphRunnableConfig,
-  store: BaseStore
-) => {
+const callModel: GraphNode<typeof MessagesState> = async (state, runtime) => {
   // Get the user id from the config
-  const userId = config.configurable?.user_id;
+  const userId = runtime.context?.user_id;
 
   // Namespace the memory
   const namespace = [userId, "memories"];
 
   // Search based on the most recent message
-  const memories = await store.search(namespace, {
+  const memories = await runtime.store?.search(namespace, {
     query: state.messages[state.messages.length - 1].content,
     limit: 3,
   });
@@ -1077,6 +1033,8 @@ Under the hood, checkpointing is powered by checkpointer objects that conform to
 * `@langchain/langgraph-checkpoint`: The base interface for checkpointer savers (@[`BaseCheckpointSaver`]) and serialization/deserialization interface (@[`SerializerProtocol`]). Includes in-memory checkpointer implementation (@[`MemorySaver`]) for experimentation. LangGraph comes with `@langchain/langgraph-checkpoint` included.
 * `@langchain/langgraph-checkpoint-sqlite`: An implementation of LangGraph checkpointer that uses SQLite database (@[`SqliteSaver`]). Ideal for experimentation and local workflows. Needs to be installed separately.
 * `@langchain/langgraph-checkpoint-postgres`: An advanced checkpointer that uses Postgres database (@[`PostgresSaver`]), used in LangSmith. Ideal for using in production. Needs to be installed separately.
+* `@langchain/langgraph-checkpoint-mongodb`: An advanced checkpointer that uses MongoDB database (@[`MongoDBSaver`]). Ideal for using in production. Needs to be installed separately.
+* `@langchain/langgraph-checkpoint-redis`: An advanced checkpointer that uses Redis database (@[`RedisSaver`]). Ideal for using in production. Needs to be installed separately.
 :::
 
 ### Checkpointer interface
@@ -1105,11 +1063,12 @@ Each checkpointer conforms to the @[`BaseCheckpointSaver`] interface and impleme
 * `.list` - List checkpoints that match a given configuration and filter criteria. This is used to populate state history in `graph.getStateHistory()`
 :::
 
+:::python
+
 ### Serializer
 
 When checkpointers save the graph state, they need to serialize the channel values in the state. This is done using serializer objects.
 
-:::python
 `langgraph_checkpoint` defines @[protocol][SerializerProtocol] for implementing serializers provides a default implementation (@[`JsonPlusSerializer`]) that handles a wide variety of types, including LangChain and LangGraph primitives, datetimes, enums and more.
 
 #### Serialization with `pickle`
@@ -1153,12 +1112,8 @@ checkpointer.setup()
 ```
 
 When running on LangSmith, encryption is automatically enabled whenever `LANGGRAPH_AES_KEY` is present, so you only need to provide the environment variable. Other encryption schemes can be used by implementing @[`CipherProtocol`] and supplying it to @[`EncryptedSerializer`].
-:::
 
-:::js
-`@langchain/langgraph-checkpoint` defines protocol for implementing serializers and provides a default implementation that handles a wide variety of types, including LangChain and LangGraph primitives, datetimes, enums and more.
 :::
-
 ## Capabilities
 
 ### Human-in-the-loop

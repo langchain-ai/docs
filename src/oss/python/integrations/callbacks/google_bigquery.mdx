@@ -8,25 +8,22 @@
 
 The `BigQueryCallbackHandler` allows you to log events from LangChain to Google BigQuery. This is useful for monitoring, auditing, and analyzing the performance of your LLM applications.
 
-!!! example "Preview release"
+<Note>
+  **Preview release**
 
-    This feature is in **Preview**. APIs and functionality are subject to change.
+  The BigQuery Callback Handler is in **Preview**. APIs and functionality are subject to change.
+  For more information, see the
+  [launch stage descriptions](https://cloud.google.com/products#product-launch-stages).
+</Note>
 
-!!! warning "BigQuery Storage Write API"
+<Warning>
+  **BigQuery Storage Write API**
 
-    This feature uses the **BigQuery Storage Write API**, which is a paid service.
-    For information on costs, see the
-    [BigQuery documentation](https://cloud.google.com/bigquery/pricing?e=48754805&hl=en#data-ingestion-pricing).
+  This feature uses the **BigQuery Storage Write API**, which is a paid service.
+  For information on costs, see the
+  [BigQuery documentation](https://cloud.google.com/bigquery/pricing?e=48754805&hl=en#data-ingestion-pricing).
+</Warning>
 
-## Use cases
-
-- **Agent workflow debugging and analysis**: Capture a wide range of LangChain/LangGraph lifecycle events (LLM calls, tool usage) and agent-yielded events (user input, model responses), into a well-defined schema.
-- **High-volume analysis and debugging**: Logging operations are performed asynchronously using the Storage Write API to allow high throughput and low latency.
-- **Multimodal Analysis**: Log and analyze text, images, and other modalities. Large files are offloaded to GCS, making them accessible to BigQuery ML via Object Tables.
-- **Distributed Tracing**: Uses LangChain's native tracing identifiers (run_id, parent_run_id) to visualize agent execution flows.
-
-The agent event data recorded varies based on the LangChain/LangGraph event type. For more
-information, see [Event types and payloads](#event-types-and-payloads).
 
 ## Installation
 
@@ -45,7 +42,7 @@ pip install "langchain-google-community[bigquery]" langchain langchain-google-ge
     - Local: Run `gcloud auth application-default login`.
     - Cloud: Ensure your service account has the required permissions.
 
-### IAM Permissions
+## IAM Permissions
 
 For the callback handler to work properly, the principal (e.g., service account, user account) under which the application is running needs these Google Cloud roles:
 
@@ -58,7 +55,7 @@ For the callback handler to work properly, the principal (e.g., service account,
 
 To use the `AsyncBigQueryCallbackHandler`, you need to instantiate it with your Google Cloud project ID, dataset ID, and table ID.
 
-If you want to log `session_id`, `user_id`, and `agent` fields to BigQuery, you must pass them via the `metadata` dictionary in the `config` object when invoking the chain or agent.
+If you want to log `session_id`, `user_id`, and `agent` fields to BigQuery, you must pass them via the `metadata` dictionary in the `config` object when invoking the chain or agent. If you do not have an `agent` field, we recommend creating and using different tables for different agents.
 
 ```python
 import asyncio
@@ -291,17 +288,19 @@ PARTITION BY DATE(timestamp)
 CLUSTER BY event_type, agent, user_id;
 ```
 
-### Event types and payloads
+## Event types and payloads
 
 The `content` column contains a **JSON** object specific to the `event_type`.
 The `content_parts` column provides a structured view of the content, especially useful for images or offloaded data.
 
-!!! note "Content Truncation"
 
-    - Variable content fields are truncated to `max_content_length` (configured in `BigQueryLoggerConfig`, default 500KB).
-    - If `gcs_bucket_name` is configured, large content is offloaded to GCS instead of being truncated, and a reference is stored in `content_parts.object_ref`.
+<Note>
+  **Content Truncation**
+  - Variable content fields are truncated to `max_content_length` (configured in `BigQueryLoggerConfig`, default 500KB).
+  - If `gcs_bucket_name` is configured, large content is offloaded to GCS instead of being truncated, and a reference is stored in `content_parts.object_ref`.
+</Note>
 
-#### LLM interactions
+### LLM interactions
 
 These events track the raw requests sent to and responses received from the LLM.
 
@@ -319,65 +318,79 @@ These events track the raw requests sent to and responses received from the LLM.
       <td><pre>LLM_REQUEST</pre></td>
       <td>
         <strong>Chat Model:</strong><br/>
-        <pre>
-&#123;
+```json
+{
   "messages": [
-    &#123;"content": "..."&#125;
+    {"content": "..."}
   ]
-&#125;
-        </pre>
+}
+```
         <strong>Legacy Model:</strong><br/>
-        <pre>
-&#123;
+```json
+{
   "prompts": ["..."]
-&#125;
-        </pre>
+}
+```
       </td>
       <td>
-        <pre>
-&#123;
+```json
+{
   "tags": ["tag1"],
   "model": "gemini-1.5-pro"
-&#125;
-        </pre>
+}
+```
       </td>
       <td>
-        <pre>
-&#123;
+```json
+{
   "messages": [
-    &#123;"content": "What is the weather?"&#125;
+    {"content": "What is the weather?"}
   ]
-&#125;
-        </pre>
+}
+```
       </td>
     </tr>
     <tr>
       <td><pre>LLM_RESPONSE</pre></td>
       <td>
-        <pre>"The weather is sunny."</pre>
+```json
+"The weather is sunny."
+```
         (Stored as JSON string)
       </td>
       <td>
-        <pre>
-&#123;
-  "usage": &#123;
+```json
+{
+  "usage": {
     "total_tokens": 20
-  &#125;
-&#125;
-        </pre>
+  }
+}
+```
       </td>
-      <td><pre>"The weather is sunny."</pre></td>
+      <td>
+```json
+"The weather is sunny."
+```
+      </td>
     </tr>
     <tr>
       <td><pre>LLM_ERROR</pre></td>
-      <td><pre>null</pre></td>
-      <td><pre>&#123;&#125;</pre></td>
-      <td><pre>null (See error_message column)</pre></td>
+      <td>
+        <pre>null</pre>
+      </td>
+      <td>
+```json
+{}
+```
+      </td>
+      <td>
+        <pre>null</pre>
+      </td>
     </tr>
   </tbody>
 </table>
 
-#### Tool usage
+### Tool usage
 
 These events track the execution of tools by the agent.
 
@@ -386,7 +399,6 @@ These events track the execution of tools by the agent.
     <tr>
       <th><strong>Event Type</strong></th>
       <th><strong>Content (JSON) Structure</strong></th>
-      <th><strong>Attributes (JSON)</strong></th>
     </tr>
   </thead>
   <tbody>
@@ -396,7 +408,6 @@ These events track the execution of tools by the agent.
         <strong>Input String:</strong><br/>
         <pre>"city='Paris'"</pre>
       </td>
-      <td><pre>&#123;&#125;</pre></td>
     </tr>
     <tr>
       <td><pre>TOOL_COMPLETED</pre></td>
@@ -404,19 +415,17 @@ These events track the execution of tools by the agent.
         <strong>Output String:</strong><br/>
         <pre>"25°C, Sunny"</pre>
       </td>
-      <td><pre>&#123;&#125;</pre></td>
     </tr>
     <tr>
       <td><pre>TOOL_ERROR</pre></td>
       <td>
         <pre>"Error: Connection timeout"</pre>
       </td>
-      <td><pre>&#123;&#125;</pre></td>
     </tr>
   </tbody>
 </table>
 
-#### Chain Execution
+### Chain Execution
 
 These events track the start and end of high-level chains/graphs.
 
@@ -455,7 +464,7 @@ These events track the start and end of high-level chains/graphs.
   </tbody>
 </table>
 
-#### Retriever usage
+### Retriever usage
 
 These events track the execution of retrievers.
 
@@ -495,7 +504,7 @@ These events track the execution of retrievers.
   </tbody>
 </table>
 
-#### Agent Actions
+### Agent Actions
 
 These events track specific actions taken by the agent.
 
@@ -531,7 +540,7 @@ These events track specific actions taken by the agent.
   </tbody>
 </table>
 
-#### Other Events
+### Other Events
 
 <table>
   <thead>
@@ -619,7 +628,29 @@ ORDER BY logs.timestamp DESC
 LIMIT 1;
 ```
 
-### 4. Querying Offloaded Content (Get Signed URLs)
+### 4. Analyze Span Hierarchy & Duration
+Visualize the execution flow and performance of your agent's operations (LLM calls, Tool usage) using span IDs.
+
+```sql
+SELECT
+  span_id,
+  parent_span_id,
+  event_type,
+  timestamp,
+  -- Extract duration from latency_ms for completed operations
+  CAST(JSON_VALUE(latency_ms, '$.total_ms') AS INT64) as duration_ms,
+  -- Identify the specific tool or operation
+  COALESCE(
+    JSON_VALUE(content, '$.tool'),
+    'LLM_CALL'
+  ) as operation
+FROM `your-gcp-project-id.adk_agent_logs.agent_events_v2`
+WHERE trace_id = 'your-trace-id'
+  AND event_type IN ('LLM_RESPONSE', 'TOOL_COMPLETED')
+ORDER BY timestamp ASC;
+```
+
+### 5. Querying Offloaded Content (Get Signed URLs)
 
 ```sql
 SELECT
@@ -635,6 +666,100 @@ UNNEST(content_parts) AS part
 WHERE part.storage_mode = 'GCS_REFERENCE'
 ORDER BY timestamp DESC
 LIMIT 10;
+```
+
+### 6. Advanced SQL Scenarios
+
+These advanced patterns demonstrate how to sessionize data, analyze tool usage, and perform root cause analysis using BigQuery ML.
+
+```sql
+-- 1. Sessionize Conversation History (Create View)
+-- Consolidates all events into a single row per session with a formatted history.
+CREATE OR REPLACE VIEW `your-project.your-dataset.agent_sessions` AS
+SELECT
+  session_id,
+  user_id,
+  MIN(timestamp) AS session_start,
+  MAX(timestamp) AS session_end,
+  ARRAY_AGG(
+    STRUCT(timestamp, event_type, TO_JSON_STRING(content) as content, error_message)
+    ORDER BY timestamp ASC
+  ) AS events,
+  STRING_AGG(
+      CASE
+          WHEN event_type = 'USER_MESSAGE_RECEIVED' THEN CONCAT('User: ', JSON_VALUE(content, '$.input'))
+          WHEN event_type = 'LLM_RESPONSE' THEN CONCAT('Agent: ', JSON_VALUE(content, '$.text'))
+          WHEN event_type = 'TOOL_STARTING' THEN CONCAT('SYS: Calling ', JSON_VALUE(content, '$.tool_name'))
+          WHEN event_type = 'TOOL_COMPLETED' THEN CONCAT('SYS: Result from ', JSON_VALUE(content, '$.tool_name'))
+          WHEN event_type = 'TOOL_ERROR' THEN CONCAT('SYS: ERROR in ', JSON_VALUE(content, '$.tool_name'))
+          ELSE NULL
+      END,
+      '\n' ORDER BY timestamp ASC
+  ) AS full_conversation
+FROM
+  `your-project.your-dataset.agent_events_v2`
+GROUP BY
+  session_id, user_id;
+
+-- 2. Tool Usage Analysis
+-- Extract tool names and count execution status
+SELECT
+  JSON_VALUE(content, '$.tool_name') AS tool_name,
+  event_type,
+  COUNT(*) as count
+FROM `your-project.your-dataset.agent_events_v2`
+WHERE event_type IN ('TOOL_STARTING', 'TOOL_COMPLETED', 'TOOL_ERROR')
+GROUP BY 1, 2
+ORDER BY tool_name, event_type;
+
+-- 3. Granular Cost & Token Estimation
+-- Estimate tokens based on content character length (approx 4 chars/token)
+SELECT
+  session_id,
+  COUNT(*) as interaction_count,
+  SUM(LENGTH(TO_JSON_STRING(content))) / 4 AS estimated_tokens,
+  -- Example cost: $0.0001 per 1k tokens
+  ROUND((SUM(LENGTH(TO_JSON_STRING(content))) / 4) / 1000 * 0.0001, 6) AS estimated_cost_usd
+FROM `your-project.your-dataset.agent_events_v2`
+GROUP BY session_id
+ORDER BY estimated_cost_usd DESC
+LIMIT 5;
+
+-- 4. AI-Powered Root Cause Analysis (Requires BigQuery ML)
+-- Use Gemini to analyze failed sessions
+SELECT
+  session_id,
+  AI.GENERATE(
+    ('Analyze this conversation and explain the failure root cause. Log: ', full_conversation),
+    connection_id => 'your-project.us.bqml_connection',
+    endpoint => 'gemini-2.5-flash'
+  ).result AS root_cause_explanation
+FROM `your-project.your-dataset.agent_sessions`
+WHERE error_message IS NOT NULL
+LIMIT 5;
+```
+
+## Conversational Analytics in BigQuery
+
+<Note>
+  **Conversational Analytics**
+
+  You can also use [BigQuery Conversational Analytics](https://cloud.google.com/bigquery/docs/conversational-analytics) to analyze your agent logs using natural language.
+  Just ask questions like:
+  * "Show me the error rate over time"
+  * "What are the most common tool calls?"
+  * "Identify sessions with high token usage"
+</Note>
+
+
+## Looker Studio Dashboard
+
+You can visualize your agent's performance using our pre-built [Looker Studio Dashboard template](https://lookerstudio.google.com/c/reporting/f1c5b513-3095-44f8-90a2-54953d41b125/page/8YdhF).
+
+To connect this dashboard to your own BigQuery table, use the following link format, replacing the placeholders with your specific project, dataset, and table IDs:
+
+```text
+https://lookerstudio.google.com/reporting/create?c.reportId=f1c5b513-3095-44f8-90a2-54953d41b125&ds.ds3.connector=bigQuery&ds.ds3.type=TABLE&ds.ds3.projectId=<your-project-id>&ds.ds3.datasetId=<your-dataset-id>&ds.ds3.tableId=<your-table-id>
 ```
 
 ## Additional resources
