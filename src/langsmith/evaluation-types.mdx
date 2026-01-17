@@ -1,15 +1,20 @@
 ---
 title: Evaluation types
-sidebarTitle: Evaluation types
+sidebarTitle: Overview
 ---
 
-LangSmith supports various evaluation types for different stages of development and deployment. Understanding when to use each helps build a comprehensive evaluation strategy.
+This page covers two aspects of evaluation in LangSmith:
+
+1. **[Evaluation types](#offline-evaluation-types)**: _When and why_ to evaluate. Offline evaluation types (benchmarking, unit tests, regression tests) for pre-deployment testing, and online evaluation types (monitoring, anomaly detection) for production.
+1. **[Evaluator implementations](#implementing-evaluations)**: _How_ to evaluate. The available evaluator approaches (LLM-as-judge, code, composite, summary, pairwise) and where to configure them (UI or SDK, offline or online).
+
+Understanding both aspects helps you build a comprehensive evaluation strategy that validates functionality before deployment and monitors quality in production.
 
 ## Offline evaluation types
 
 Offline evaluation tests applications on curated datasets before deployment. By running evaluations on examples with reference outputs, teams can compare versions, validate functionality, and build confidence before exposing changes to users.
 
-Run offline evaluations client-side using the LangSmith SDK ([Python](https://docs.smith.langchain.com/reference/python/reference) and [TypeScript](https://docs.smith.langchain.com/reference/js)) or server-side via the [Prompt Playground](/langsmith/observability-concepts#prompt-playground) or [automations](/langsmith/rules).
+Run offline evaluations client-side using the LangSmith SDK (@[Python][langsmith-python] or @[TypeScript][langsmith-js]) or server-side via the [Prompt Playground](/langsmith/prompt-engineering-concepts#prompt-playground) or by [binding evaluators to a dataset](/langsmith/bind-evaluator-to-dataset).
 
 ![Offline](/langsmith/images/offline.png)
 
@@ -26,6 +31,8 @@ Benchmarking requires dataset curation with gold-standard reference outputs and 
 _Unit tests_ verify the correctness of individual system components. In LLM contexts, [unit tests are often rule-based assertions](https://hamel.dev/blog/posts/evals/#level-1-unit-tests) on inputs or outputs (e.g., verifying LLM-generated code compiles, JSON loads successfully) that validate basic functionality.
 
 Unit tests typically expect consistent passing results, making them suitable for CI pipelines. When running in CI, configure caching to minimize LLM API calls and associated costs.
+
+For more details, refer to the [Pytest](/langsmith/pytest) and [Vitest/Jest](/langsmith/vitest-jest) pages.
 
 ### Regression tests
 
@@ -68,3 +75,56 @@ Identify outliers and edge cases that deviate from expected patterns. Online eva
 ### Production feedback loop
 
 Use insights from production to improve offline evaluation. Online evaluations surface real-world issues and usage patterns that may not appear in curated datasets. Failed production runs become candidates for dataset examples, creating an iterative cycle where production experience continuously refines testing coverage.
+
+## Implement evaluators
+
+The evaluation types above describe _when_ to evaluate. LangSmith provides several approaches for _how_ to implement evaluators that work across these evaluation types.
+
+### LLM-as-a-judge
+
+Use an LLM to score outputs based on criteria defined in a prompt. This approach works well for subjective qualities like tone, clarity, or semantic correctness that are difficult to capture with deterministic rules.
+
+Common use cases include assessing factual accuracy against reference outputs (offline) or checking for toxicity in production responses (online). For example, benchmarking a RAG system might use an LLM-as-judge evaluator to check semantic equivalence between generated and reference answers.
+
+Configure LLM-as-a-judge evaluators for:
+- Programmatic offline evaluation: [With the SDK](/langsmith/llm-as-judge-sdk)
+- Offline evaluation on datasets: [In the UI](/langsmith/llm-as-judge)
+- Online evaluation on production traces: [In the UI](/langsmith/online-evaluations-llm-as-judge)
+
+### Code evaluators
+
+Write deterministic, rule-based functions that check specific conditions. These evaluators execute custom logic to validate structure, check for patterns, or apply business rules.
+
+Code evaluators are particularly useful for unit tests—verifying generated code compiles, JSON parses correctly, or required fields are present. In regression testing, they can track consistency of structured outputs. For online monitoring, they catch format violations in real-time.
+
+Define code evaluators for:
+- Offline evaluation on datasets: [In the UI](/langsmith/code-evaluator-ui)
+- Programmatic offline evaluation: [With the SDK](/langsmith/code-evaluator-sdk)
+- Online evaluation on production traces: [In the UI](/langsmith/online-evaluations-code)
+
+### Composite evaluators
+
+Combine multiple evaluator scores into a single metric using weighted averages or sums. This creates aggregate quality scores that reflect multiple evaluation criteria simultaneously.
+
+For benchmarking, composite scores help compare versions on multiple dimensions (e.g., 70% accuracy + 20% clarity + 10% conciseness). In online monitoring, they provide single metrics for dashboards and alerts. For example, track overall chatbot quality as a weighted combination of helpfulness, correctness, and tone scores.
+
+Set up composite evaluators for:
+- Offline evaluation with predefined aggregation: [In the UI](/langsmith/composite-evaluators-ui)
+- Offline evaluation with custom aggregation logic: [With the SDK](/langsmith/composite-evaluators-sdk)
+- Online evaluation on production traces: [In the UI](/langsmith/online-evaluations-composite)
+
+### Summary evaluators
+
+Compute metrics across an entire experiment rather than individual examples. These evaluators receive all outputs from a dataset and calculate aggregate statistics like precision, recall, F1 scores, or distribution analysis.
+
+Summary evaluators are essential for benchmarking when you need dataset-level metrics—comparing overall performance across versions rather than example-by-example scores. They work exclusively with offline evaluation because they require processing complete datasets.
+
+Implement summary evaluators for:
+- Custom aggregation functions for offline evaluation: [With the SDK](/langsmith/summary)
+
+### Pairwise evaluators
+
+Compare outputs from two versions to determine relative quality. This approach, covered earlier under [pairwise evaluation](#pairwise-evaluation), helps when absolute scoring is difficult but determining "which is better" is straightforward.
+
+Run pairwise evaluations for:
+- Compare existing experiments: [With the SDK](/langsmith/evaluate-pairwise)
