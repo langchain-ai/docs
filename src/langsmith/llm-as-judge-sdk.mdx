@@ -1,0 +1,86 @@
+---
+title: How to define an LLM-as-a-judge evaluator
+sidebarTitle: LLM-as-a-judge
+---
+
+LLM applications can be challenging to evaluate since they often generate conversational text with no single correct answer.
+
+This guide shows you how to define an [LLM-as-a-judge evaluator](/langsmith/evaluation-concepts#llm-as-judge) for [offline evaluation](/langsmith/evaluation-concepts#offline-evaluation) using the [LangSmith SDK](https://reference.langchain.com/python/langsmith/observability/sdk).
+
+<Tip>
+For a quick start, use [pre-built evaluators](/langsmith/prebuilt-evaluators), which provide ready-to-use LLM-as-a-judge evaluators.
+</Tip>
+
+## Create your own LLM-as-a-judge evaluator
+
+For complete control of evaluator logic, create your own LLM-as-a-judge evaluator and run it using the LangSmith SDK ([Python](https://docs.smith.langchain.com/reference/python/reference) / [TypeScript](https://docs.smith.langchain.com/reference/js)).
+
+Requires `langsmith>=0.2.0`
+
+An LLM-as-a-judge evaluator consists of three key components:
+
+1. **Evaluator function**: A function that receives the example inputs and application outputs, then uses an LLM to score the quality. The function should return a boolean, number, string, or dictionary with score information.
+1. **Target function**: Your application logic being evaluated (wrapped with @[`@traceable`][@traceable] for observability).
+1. **Dataset and evaluation**: A dataset of test examples and the `evaluate()` function that runs your target function on each example and applies your evaluators.
+
+### Example
+
+```python
+from langsmith import evaluate, traceable, wrappers, Client
+from openai import OpenAI
+from pydantic import BaseModel
+
+# Wrap the OpenAI client to automatically trace all LLM calls
+oai_client = wrappers.wrap_openai(OpenAI())
+
+# 1. Define your evaluator function
+# This function receives the inputs and outputs from each test example
+def valid_reasoning(inputs: dict, outputs: dict) -> bool:
+    """Use an LLM to judge if the reasoning and the answer are consistent."""
+    # Define the evaluation criteria
+    instructions = """
+Given the following question, answer, and reasoning, determine if the reasoning
+for the answer is logically valid and consistent with the question and the answer."""
+
+    # Use structured output to get a boolean score
+    class Response(BaseModel):
+        reasoning_is_valid: bool
+
+    # Construct the prompt with the actual inputs and outputs
+    msg = f"Question: {inputs['question']}\nAnswer: {outputs['answer']}\nReasoning: {outputs['reasoning']}"
+
+    # Call the LLM to judge the output
+    response = oai_client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=[{"role": "system", "content": instructions}, {"role": "user", "content": msg}],
+        response_format=Response
+    )
+
+    # Return the boolean score
+    return response.choices[0].message.parsed.reasoning_is_valid
+
+# 2. Define your target function (the application being evaluated)
+# The @traceable decorator logs traces to LangSmith for debugging
+@traceable
+def dummy_app(inputs: dict) -> dict:
+    return {"answer": "hmm i'm not sure", "reasoning": "i didn't understand the question"}
+
+# 3. Create a dataset with test examples
+ls_client = Client()
+dataset = ls_client.create_dataset("big questions")
+examples = [
+    {"inputs": {"question": "how will the universe end"}},
+    {"inputs": {"question": "are we alone"}},
+]
+ls_client.create_examples(dataset_id=dataset.id, examples=examples)
+
+# 4. Run the evaluation
+# This runs dummy_app on each example and applies the valid_reasoning evaluator
+results = evaluate(
+    dummy_app,              # Your application function
+    data=dataset,           # Dataset to evaluate on
+    evaluators=[valid_reasoning]  # List of evaluator functions
+)
+```
+
+For more information on how to write a custom evaluator, refer to [How to define a code evaluator (SDK)](/langsmith/code-evaluator-sdk).

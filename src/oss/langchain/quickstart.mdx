@@ -2,17 +2,27 @@
 title: Quickstart
 ---
 
-
-
 This quickstart takes you from a simple setup to a fully functional AI agent in just a few minutes.
+
+<Tip>
+    **LangChain Docs MCP server**
+
+    If you're using an AI coding assistant or IDE (e.g. Claude Code or Cursor), you should install the [LangChain Docs MCP server](/use-these-docs) to get the most out of it. This ensures your agent has access to up-to-date LangChain documentation and examples.
+</Tip>
+
+## Requirements
+
+For these examples, you will need to:
+
+* [Install](/oss/langchain/install) the LangChain package
+* Set up a [Claude (Anthropic)](https://www.anthropic.com/) account and get an API key
+* Set the `ANTHROPIC_API_KEY` environment variable in your terminal
+
+Although these examples use Claude, you can use [any supported model](/oss/integrations/providers/overview) by changing the model name in the code and setting up the appropriate API key.
 
 ## Build a basic agent
 
 Start by creating a simple agent that can answer questions and call tools. The agent will use Claude Sonnet 4.5 as its language model, a basic weather function as a tool, and a simple prompt to guide its behavior.
-
-<Info>
-    For this example, you will need to set up a [Claude (Anthropic)](https://www.anthropic.com/) account and get an API key. Then, set the `ANTHROPIC_API_KEY` environment variable in your terminal.
-</Info>
 
 :::python
 ```python
@@ -149,8 +159,7 @@ Let's walk through each step:
         [Tools](/oss/langchain/tools) are functions your agent can call. Oftentimes tools will want to connect to external systems, and will rely on runtime configuration to do so. Notice here how the `getUserLocation` tool does exactly that:
 
         ```ts
-        import { type Runtime } from "@langchain/langgraph";
-        import { tool } from "langchain";
+        import { tool, type ToolRuntime } from "langchain";
         import * as z from "zod";
 
         const getWeather = tool(
@@ -164,7 +173,7 @@ Let's walk through each step:
           }
         );
 
-        type AgentRuntime = Runtime<{ user_id: string }>;
+        type AgentRuntime = ToolRuntime<unknown, { user_id: string }>;
 
         const getUserLocation = tool(
           (_, config: AgentRuntime) => {
@@ -208,7 +217,7 @@ Let's walk through each step:
         :::
     </Step>
     <Step title="Configure your model">
-        Set up your [language model](/oss/langchain/models) with the right [parameters](/oss/langchain/models#parameters) for your use case:
+        Set up your [language model](/oss/langchain/models) with the right parameters for your use case:
 
         :::python
 
@@ -235,6 +244,8 @@ Let's walk through each step:
         );
         ```
         :::
+
+        Depending on the model and provider chosen, initialization parameters may vary; refer to their reference pages for details.
     </Step>
     <Step title="Define response format">
         :::python
@@ -298,12 +309,14 @@ Let's walk through each step:
         :::python
 
         ```python
+        from langchain.agents.structured_output import ToolStrategy
+
         agent = create_agent(
             model=model,
             system_prompt=SYSTEM_PROMPT,
             tools=[get_user_location, get_weather_for_location],
             context_schema=Context,
-            response_format=ResponseFormat,
+            response_format=ToolStrategy(ResponseFormat),
             checkpointer=checkpointer
         )
 
@@ -389,6 +402,7 @@ from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool, ToolRuntime
 from langgraph.checkpoint.memory import InMemorySaver
+from langchain.agents.structured_output import ToolStrategy
 
 
 # Define system prompt
@@ -443,7 +457,7 @@ agent = create_agent(
     system_prompt=SYSTEM_PROMPT,
     tools=[get_user_location, get_weather_for_location],
     context_schema=Context,
-    response_format=ResponseFormat,
+    response_format=ToolStrategy(ResponseFormat),
     checkpointer=checkpointer
 )
 
@@ -482,8 +496,8 @@ print(response['structured_response'])
 
 :::js
 ```ts
-import { createAgent, tool, initChatModel } from "langchain";
-import { MemorySaver, type Runtime } from "@langchain/langgraph";
+import { createAgent, tool, initChatModel, type ToolRuntime } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
 import * as z from "zod";
 
 // Define system prompt
@@ -508,8 +522,10 @@ const getWeather = tool(
   }
 );
 
+type AgentRuntime = ToolRuntime<unknown, { user_id: string }>;
+
 const getUserLocation = tool(
-  (_, config: Runtime<{ user_id: string}>) => {
+  (_, config: AgentRuntime) => {
     const { user_id } = config.context;
     return user_id === "1" ? "Florida" : "SF";
   },
@@ -537,11 +553,11 @@ const checkpointer = new MemorySaver();
 
 // Create agent
 const agent = createAgent({
-  model: "claude-sonnet-4-5-20250929",
-  systemPrompt: systemPrompt,
-  tools: [getUserLocation, getWeather],
+  model,
+  systemPrompt,
   responseFormat,
   checkpointer,
+  tools: [getUserLocation, getWeather],
 });
 
 // Run agent

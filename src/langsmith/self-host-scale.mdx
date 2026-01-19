@@ -15,10 +15,10 @@ The table below provides an overview comparing different LangSmith configuration
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | <Tooltip tip="Number of users actively viewing traces on the frontend">Concurrent frontend users</Tooltip> | 5 | 5 | 50 | 20 | 50 |
 | <Tooltip tip="Number of traces being ingested via SDKs or API endpoints">Traces submitted per second</Tooltip> | 10 | 1000 | 10 | 100 | 1000 |
-| **Frontend replicas** | 1 (default) | 4 | 2 | 2 | 4 |
-| **Platform backend replicas** | 3 (default) | 20 | 3 (default) | 3 (default) | 20 |
-| **Queue replicas** | 3 (default) | 160 | 6 | 10 | 160 |
-| **Backend replicas** | 2 (default) | 5 | 40 | 16 | 50 |
+| **Frontend replicas**<br />(500m CPU, 1Gi per replica) | 1 (default) | 4 | 2 | 2 | 4 |
+| **Platform backend replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 20 | 3 (default) | 3 (default) | 20 |
+| **Queue replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 160 | 6 | 10 | 160 |
+| **Backend replicas**<br />(1 CPU, 2Gi per replica) | 2 (default) | 5 | 40 | 16 | 50 |
 | **Redis resources** | 8 Gi (default) | 200 Gi external | 8 Gi (default) | 13Gi external | 200 Gi external |
 | **ClickHouse resources** | 4 CPU<br />16 Gi (default) | 10 CPU<br />32Gi memory | 8 CPU<br />16 Gi per replica | 16 CPU<br />24Gi memory | 14 CPU<br />24 Gi per replica |
 | **ClickHouse setup** | Single instance | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> |
@@ -70,6 +70,43 @@ When scaling up the read path (trace querying), it is helpful to monitor the two
 - Move to a [replicated ClickHouse cluster](/langsmith/self-host-external-clickhouse#ha-replicated-clickhouse-cluster). Adding replicas of ClickHouse helps with read performance, but we recommend staying below 5 replicas (start with 3).
 
 For more precise guidance on how this translates to helm chart values, refer to the examples the following [section](#example-langsmith-configurations-for-scale). If you are unsure why your LangSmith instance cannot handle a certain load pattern, contact the LangChain team.
+
+## KEDA autoscaling for LangSmith queues
+
+<Note>
+Available in LangSmith v0.13.0 and later.
+</Note>
+
+We highly recommend installing [KEDA](https://keda.sh/) (Kubernetes Event-driven Autoscaling) on your cluster. KEDA enables the `queue` and `ingest-queue` services to scale automatically based on their queue backlog size, as well as CPU and memory. This results in more efficient resource utilization and better handling of traffic spikes.
+
+### Install KEDA
+
+```bash
+helm repo add kedacore https://kedacore.github.io/charts
+helm install keda kedacore/keda --namespace keda --create-namespace
+```
+
+### Configure KEDA autoscaling
+
+Once KEDA is installed, you can enable KEDA-based autoscaling for the `queue` and `ingest-queue` services in your `values.yaml`:
+
+```yaml
+queue:
+  autoscaling:
+    keda:
+      enabled: true
+
+ingestQueue:
+  autoscaling:
+    keda:
+      enabled: true
+```
+
+With KEDA enabled, the queue services will automatically scale up when their backlog grows and scale down when their backlog is processed. This is especially useful for handling variable trace ingestion loads without over-provisioning resources.
+
+<Note>
+You can also enable KEDA for other services (`backend`, `platformBackend`, etc) but they will still only scale with CPU and memory.
+</Note>
 
 ## Example LangSmith configurations for scale
 
@@ -130,14 +167,20 @@ platformBackend:
 #   maxReplicas: 20
 #   minReplicas: 8
 
-## Note that we are actively working on improving performance of this service to reduce the number of replicas.
+## KEDA autoscaling recommended for queue services
 queue:
-  deployment:
-    replicas: 160 # OR enable autoscaling to this level (example below)
-# autoscaling:
-#   enabled: true
-#   maxReplicas: 160
-#   minReplicas: 40
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 40
+      maxReplicaCount: 160
+
+ingestQueue:
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 5
+      maxReplicaCount: 20
 
 backend:
   deployment:
@@ -190,13 +233,20 @@ frontend:
   deployment:
     replicas: 2
 
+## KEDA autoscaling recommended for queue services
 queue:
-  deployment:
-    replicas: 6 # OR enable autoscaling to this level (example below)
-# autoscaling:
-#   enabled: true
-#   maxReplicas: 6
-#   minReplicas: 4
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 4
+      maxReplicaCount: 6
+
+ingestQueue:
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 1
+      maxReplicaCount: 5
 
 backend:
   deployment:
@@ -239,13 +289,20 @@ frontend:
   deployment:
     replicas: 2
 
+## KEDA autoscaling recommended for queue services
 queue:
-  deployment:
-    replicas: 10 # OR enable autoscaling to this level (example below)
-# autoscaling:
-#   enabled: true
-#   maxReplicas: 10
-#   minReplicas: 5
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 5
+      maxReplicaCount: 10
+
+ingestQueue:
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 1
+      maxReplicaCount: 5
 
 backend:
   deployment:
@@ -328,14 +385,20 @@ platformBackend:
 #   maxReplicas: 20
 #   minReplicas: 8
 
-## Note that we are actively working on improving performance of this service to reduce the number of replicas.
+## KEDA autoscaling recommended for queue services
 queue:
-  deployment:
-    replicas: 160 # OR enable autoscaling to this level (example below)
-# autoscaling:
-#   enabled: true
-#   maxReplicas: 160
-#   minReplicas: 40
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 40
+      maxReplicaCount: 160
+
+ingestQueue:
+  autoscaling:
+    keda:
+      enabled: true
+      minReplicaCount: 5
+      maxReplicaCount: 20
 
 backend:
   deployment:

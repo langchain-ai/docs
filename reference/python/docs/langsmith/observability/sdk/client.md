@@ -1,5 +1,5 @@
 ---
-title: Client (LangSmith)
+title: LangSmith Client
 ---
 
 ::: langsmith.client

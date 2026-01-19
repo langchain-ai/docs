@@ -2,8 +2,6 @@
 title: Agents
 ---
 
-
-
 Agents combine language models with [tools](/oss/langchain/tools) to create systems that can reason about tasks, decide which tools to use, and iteratively work towards solutions.
 
 :::python
@@ -68,16 +66,13 @@ The [model](/oss/langchain/models) is the reasoning engine of your agent. It can
 
 Static models are configured once when creating the agent and remain unchanged throughout execution. This is the most common and straightforward approach.
 
-To initialize a static model from a <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model_provider)">model identifier string</Tooltip>:
+To initialize a static model from a <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model)">model identifier string</Tooltip>:
 
 :::python
 ```python wrap
 from langchain.agents import create_agent
 
-agent = create_agent(
-    "gpt-5",
-    tools=tools
-)
+agent = create_agent("openai:gpt-5", tools=tools)
 ```
 :::
 :::js
@@ -85,7 +80,7 @@ agent = create_agent(
 import { createAgent } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5",
+  model: "openai:gpt-5",
   tools: []
 });
 ```
@@ -93,7 +88,7 @@ const agent = createAgent({
 
 :::python
 <Tip>
-    Model identifier strings support automatic inference (e.g., `"gpt-5"` will be inferred as `"openai:gpt-5"`). Refer to the @[reference][init_chat_model(model_provider)] to see a full list of model identifier string mappings.
+    Model identifier strings support automatic inference (e.g., `"gpt-5"` will be inferred as `"openai:gpt-5"`). Refer to the @[reference][init_chat_model(model)] to see a full list of model identifier string mappings.
 </Tip>
 
 For more control over the model configuration, initialize a model instance directly using the provider package. In this example, we use @[`ChatOpenAI`]. See [Chat models](/oss/integrations/chat) for other available chat model classes.
@@ -165,8 +160,7 @@ def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
     else:
         model = basic_model
 
-    request.model = model
-    return handler(request)
+    return handler(request.override(model=model))
 
 agent = create_agent(
     model=basic_model,  # Default model
@@ -207,7 +201,7 @@ const dynamicModelSelection = createMiddleware({
 const agent = createAgent({
   model: "gpt-4o-mini", // Base model (used when messageCount ≤ 10)
   tools,
-  middleware: [dynamicModelSelection] as const,
+  middleware: [dynamicModelSelection],
 });
 ```
 
@@ -235,6 +229,13 @@ For more information, see [Tools](/oss/langchain/tools).
 Pass a list of tools to the agent.
 
 :::python
+
+<Tip>
+Tools can be specified as plain Python functions or <Tooltip tip="A method that can suspend execution and resume at a later time">coroutines</Tooltip>.
+
+The [tool decorator](/oss/langchain/tools#create-tools) can be used to customize tool names, descriptions, argument schemas, and other properties.
+</Tip>
+
 ```python wrap
 from langchain.tools import tool
 from langchain.agents import create_agent
@@ -298,7 +299,7 @@ To customize how tool errors are handled, use the @[`@wrap_tool_call`] decorator
 ```python wrap
 from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
-from langchain_core.messages import ToolMessage
+from langchain.messages import ToolMessage
 
 
 @wrap_tool_call
@@ -343,9 +344,9 @@ import { createAgent, createMiddleware, ToolMessage } from "langchain";
 
 const handleToolErrors = createMiddleware({
   name: "HandleToolErrors",
-  wrapToolCall: (request, handler) => {
+  wrapToolCall: async (request, handler) => {
     try {
-      return handler(request);
+      return await handler(request);
     } catch (error) {
       // Return a custom error message to the model
       return new ToolMessage({
@@ -361,7 +362,7 @@ const agent = createAgent({
   tools: [
     /* ... */
   ],
-  middleware: [handleToolErrors] as const,
+  middleware: [handleToolErrors],
 });
 ```
 
@@ -373,7 +374,7 @@ The agent will return a @[`ToolMessage`] with the custom error message when a to
 Agents follow the ReAct ("Reasoning + Acting") pattern, alternating between brief reasoning steps with targeted tool calls and feeding the resulting observations into subsequent decisions until they can deliver a final answer.
 
 <Accordion title="Example of ReAct loop">
-Prompt: Identify the current most popular wireless headphones and verify availability.
+**Prompt:** Identify the current most popular wireless headphones and verify availability.
 
 ```
 ================================ Human Message =================================
@@ -458,7 +459,73 @@ const agent = createAgent({
 ```
 :::
 
+:::python
 When no @[`system_prompt`] is provided, the agent will infer its task from the messages directly.
+
+The @[`system_prompt`] parameter accepts either a `str` or a @[`SystemMessage`]. Using a `SystemMessage` gives you more control over the prompt structure, which is useful for provider-specific features like [Anthropic's prompt caching](/oss/integrations/chat/anthropic#prompt-caching):
+
+```python wrap
+from langchain.agents import create_agent
+from langchain.messages import SystemMessage, HumanMessage
+
+literary_agent = create_agent(
+    model="anthropic:claude-sonnet-4-5",
+    system_prompt=SystemMessage(
+        content=[
+            {
+                "type": "text",
+                "text": "You are an AI assistant tasked with analyzing literary works.",
+            },
+            {
+                "type": "text",
+                "text": "<the entire contents of 'Pride and Prejudice'>",
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
+    )
+)
+
+result = literary_agent.invoke(
+    {"messages": [HumanMessage("Analyze the major themes in 'Pride and Prejudice'.")]}
+)
+```
+
+The `cache_control` field with `{"type": "ephemeral"}` tells Anthropic to cache that content block, reducing latency and costs for repeated requests that use the same system prompt.
+:::
+
+:::js
+When no `systemPrompt` is provided, the agent will infer its task from the messages directly.
+
+The `systemPrompt` parameter accepts either a `string` or a `SystemMessage`. Using a `SystemMessage` gives you more control over the prompt structure, which is useful for provider-specific features like [Anthropic's prompt caching](/oss/integrations/chat/anthropic#prompt-caching):
+
+```ts wrap
+import { createAgent } from "langchain";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+
+const literaryAgent = createAgent({
+  model: "anthropic:claude-sonnet-4-5",
+  systemPrompt: new SystemMessage({
+    content: [
+      {
+        type: "text",
+        text: "You are an AI assistant tasked with analyzing literary works.",
+      },
+      {
+        type: "text",
+        text: "<the entire contents of 'Pride and Prejudice'>",
+        cache_control: { type: "ephemeral" }
+      }
+    ]
+  })
+});
+
+const result = await literaryAgent.invoke({
+  messages: [new HumanMessage("Analyze the major themes in 'Pride and Prejudice'.")]
+});
+```
+
+The `cache_control` field with `{ type: "ephemeral" }` tells Anthropic to cache that content block, reducing latency and costs for repeated requests that use the same system prompt.
+:::
 
 #### Dynamic system prompt
 
@@ -466,7 +533,7 @@ For more advanced use cases where you need to modify the system prompt based on 
 
 :::python
 
-The @[`@dynamic_prompt`] decorator creates middleware that generates system prompts dynamically based on the model request:
+The @[`@dynamic_prompt`] decorator creates middleware that generates system prompts based on the model request:
 
 ```python wrap
 from typing import TypedDict
@@ -567,7 +634,7 @@ await agent.invoke({
 
 For streaming steps and / or tokens from the agent, refer to the [streaming](/oss/langchain/streaming) guide.
 
-Otherwise, the agent follows the LangGraph [Graph API](/oss/langgraph/use-graph-api) and supports all associated methods.
+Otherwise, the agent follows the LangGraph [Graph API](/oss/langgraph/use-graph-api) and supports all associated methods, such as `stream` and `invoke`.
 
 ## Advanced concepts
 
@@ -575,11 +642,11 @@ Otherwise, the agent follows the LangGraph [Graph API](/oss/langgraph/use-graph-
 
 :::python
 
-In some situations, you may want the agent to return an output in a specific format. LangChain provides strategies for structured output via the @[`response_format`][ModelRequest(response_format)] parameter.
+In some situations, you may want the agent to return an output in a specific format. LangChain provides strategies for structured output via the @[`response_format`][create_agent(response_format)] parameter.
 
 #### ToolStrategy
 
-`ToolStrategy` uses artificial tool calling to generate structured output. This works with any model that supports tool calling:
+`ToolStrategy` uses artificial tool calling to generate structured output. This works with any model that supports tool calling. `ToolStrategy` should be used when provider-native structured output (via [`ProviderStrategy`](#ProviderStrategy)) is not available or reliable.
 
 ```python wrap
 from pydantic import BaseModel
@@ -608,7 +675,7 @@ result["structured_response"]
 
 #### ProviderStrategy
 
-`ProviderStrategy` uses the model provider's native structured output generation. This is more reliable but only works with providers that support native structured output (e.g., OpenAI):
+`ProviderStrategy` uses the model provider's native structured output generation. This is more reliable but only works with providers that support native structured output:
 
 ```python wrap
 from langchain.agents.structured_output import ProviderStrategy
@@ -660,7 +727,7 @@ console.log(result.structuredResponse);
 ```
 :::
 <Tip>
-To learn about structured output, see [Structured output](/oss/langchain/structured-output).
+    To learn about structured output, see [Structured output](/oss/langchain/structured-output).
 </Tip>
 
 ### Memory
@@ -677,12 +744,6 @@ There are two ways to define custom state:
 1. Via [middleware](/oss/langchain/middleware) (preferred)
 2. Via @[`state_schema`] on @[`create_agent`]
 
-<Note>
-Defining custom state via middleware is preferred over defining it via @[`state_schema`] on @[`create_agent`] because it allows you to keep state extensions conceptually scoped to the relevant middleware and tools.
-
-@[`state_schema`] is still supported for backwards compatibility on @[`create_agent`].
-</Note>
-
 #### Defining state via middleware
 
 Use middleware to define custom state when your custom state needs to be accessed by specific middleware hooks and tools attached to said middleware.
@@ -690,6 +751,7 @@ Use middleware to define custom state when your custom state needs to be accesse
 ```python
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
+from typing import Any
 
 
 class CustomState(AgentState):
@@ -745,25 +807,33 @@ As of `langchain 1.0`, custom state schemas **must** be `TypedDict` types. Pydan
 :::
 :::js
 ```ts wrap
-import * as z from "zod";
-import { MessagesZodState } from "@langchain/langgraph";
-import { createAgent, type BaseMessage } from "langchain";
+import { z } from "zod/v4";
+import { StateSchema, MessagesValue } from "@langchain/langgraph";
+import { createAgent } from "langchain";
 
-const customAgentState = z.object({
-  messages: MessagesZodState.shape.messages,
+const CustomAgentState = new StateSchema({
+  messages: MessagesValue,
   userPreferences: z.record(z.string(), z.string()),
 });
 
-const CustomAgentState = createAgent({
+const customAgent = createAgent({
   model: "gpt-4o",
   tools: [],
-  stateSchema: customAgentState,
+  stateSchema: CustomAgentState,
 });
 ```
 :::
 
+:::python
+<Note>
+    Defining custom state via middleware is preferred over defining it via @[`state_schema`] on @[`create_agent`] because it allows you to keep state extensions conceptually scoped to the relevant middleware and tools.
+
+    @[`state_schema`] is still supported for backwards compatibility on @[`create_agent`].
+</Note>
+:::
+
 <Tip>
-To learn more about memory, see [Memory](/oss/concepts/memory). For information on implementing long-term memory that persists across sessions, see [Long-term memory](/oss/langchain/long-term-memory).
+    To learn more about memory, see [Memory](/oss/concepts/memory). For information on implementing long-term memory that persists across sessions, see [Long-term memory](/oss/langchain/long-term-memory).
 </Tip>
 
 ### Streaming
@@ -822,7 +892,7 @@ For more details on streaming, see [Streaming](/oss/langchain/streaming).
 - Implement dynamic model selection based on state or context
 - Add custom logging, monitoring, or analytics
 
-Middleware integrates seamlessly into the agent's execution graph, allowing you to intercept and modify data flow at key points without changing the core agent logic.
+Middleware integrates seamlessly into the agent's execution, allowing you to intercept and modify data flow at key points without changing the core agent logic.
 
 :::python
 <Tip>

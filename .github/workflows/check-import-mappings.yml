@@ -1,0 +1,224 @@
+---
+name: Check Import Mappings
+
+on:
+  schedule:
+    # Run every 3 days at midnight UTC
+    - cron: "0 0 */3 * *"
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-mappings:
+    name: Check langchain_core re-exports in langchain
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          uv sync --group test
+
+      - name: Validate environment
+        run: |
+          # Security: Validate Python environment
+          python3 --version
+          uv --version
+
+          # Validate script exists and is not too large
+          SCRIPT_PATH="scripts/check_import_mappings.py"
+          if [ ! -f "${SCRIPT_PATH}" ]; then
+            echo "Error: Script not found: ${SCRIPT_PATH}"
+            exit 1
+          fi
+
+          SCRIPT_SIZE=$(stat -f%z "${SCRIPT_PATH}" 2>/dev/null || stat -c%s "${SCRIPT_PATH}" 2>/dev/null || echo "0")
+          if [ "${SCRIPT_SIZE}" -gt 1048576 ]; then  # 1MB limit
+            echo "Error: Script file too large"
+            exit 1
+          fi
+
+      - name: Check import mappings
+        run: |
+          set +e  # Don't exit on error
+          timeout 2700 uv run scripts/check_import_mappings.py  # 45 minute timeout
+          EXIT_CODE=$?
+          set -e  # Re-enable exit on error
+
+          if [ $EXIT_CODE -eq 124 ]; then
+            echo "Error: Import mapping check timed out"
+            exit 1
+          elif [ $EXIT_CODE -ne 0 ]; then
+            echo "Error: Import mapping check failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+
+      - name: Validate output file
+        run: |
+          MAPPINGS_FILE="scripts/import_mappings.json"
+
+          if [ ! -f "${MAPPINGS_FILE}" ]; then
+            echo "Error: Import mappings file not generated"
+            exit 1
+          fi
+
+          # Check file size
+          FILE_SIZE=$(stat -f%z "${MAPPINGS_FILE}" 2>/dev/null || stat -c%s "${MAPPINGS_FILE}" 2>/dev/null || echo "0")
+          if [ "${FILE_SIZE}" -gt 10485760 ]; then  # 10MB limit
+            echo "Error: Generated file too large"
+            exit 1
+          fi
+
+          if [ "${FILE_SIZE}" -eq 0 ]; then
+            echo "Error: Generated file is empty"
+            exit 1
+          fi
+
+          # Basic JSON validation
+          if ! python3 -m json.tool "${MAPPINGS_FILE}" > /dev/null 2>&1; then
+            echo "Error: Generated file is not valid JSON"
+            exit 1
+          fi
+
+          echo "Import mappings file validated successfully (${FILE_SIZE} bytes)"
+
+      - name: Upload import mappings as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: import-mappings
+          path: |
+            scripts/import_mappings.json
+          retention-days: 7
+
+  commit-mappings:
+    name: PR updated import mappings
+    needs: check-mappings
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Download updated files
+        uses: actions/download-artifact@v4
+        with:
+          name: import-mappings
+          path: .
+
+      - name: Validate downloaded file
+        run: |
+          MAPPINGS_FILE="scripts/import_mappings.json"
+
+          if [ ! -f "${MAPPINGS_FILE}" ]; then
+            echo "Error: Downloaded file not found"
+            exit 1
+          fi
+
+          FILE_SIZE=$(stat -f%z "${MAPPINGS_FILE}" 2>/dev/null || stat -c%s "${MAPPINGS_FILE}" 2>/dev/null || echo "0")
+          if [ "${FILE_SIZE}" -gt 10485760 ]; then  # 10MB limit
+            echo "Error: Downloaded file too large"
+            exit 1
+          fi
+
+          # JSON validation
+          if ! python3 -m json.tool "${MAPPINGS_FILE}" > /dev/null 2>&1; then
+            echo "Error: Downloaded file is not valid JSON"
+            exit 1
+          fi
+
+      - name: PR with changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check for changes
+          if [ ! -f scripts/import_mappings.json ]; then
+            echo "No import mappings file found"
+            exit 0
+          fi
+
+          if [ ! -s scripts/import_mappings.json ]; then
+            echo "Empty import mappings file"
+            exit 0
+          fi
+
+          # Validate timestamp format for branch name
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          if ! echo "${TIMESTAMP}" | grep -E '^[0-9]{8}-[0-9]{6}$' > /dev/null; then
+            echo "Error: Invalid timestamp format"
+            exit 1
+          fi
+
+          # Create branch with timestamp
+          BRANCH_NAME="chore/update-import-mappings-${TIMESTAMP}"
+
+          # Validate branch name contains only safe characters
+          if ! echo "${BRANCH_NAME}" | grep -E '^[a-zA-Z0-9/_.-]+$' > /dev/null; then
+            echo "Error: Invalid branch name characters"
+            exit 1
+          fi
+
+          git checkout -b "${BRANCH_NAME}"
+
+          # Commit changes
+          git add scripts/import_mappings.json
+
+          # Check if there are staged changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "$(cat <<'EOF'
+          chore: update `langchain_core` import mappings
+
+          🤖 Automated analysis of `langchain_core` re-exports in `langchain` package
+
+          Generated with GitHub Actions workflow `check-import-mappings.yml`
+          EOF
+          )"
+
+          git push -u origin "${BRANCH_NAME}"
+          gh pr create \
+            --title "chore: update `langchain_core` import mappings" \
+            --body "$(cat <<'EOF'
+          ## Summary
+          Automated analysis of `langchain_core` re-exports in `langchain` package
+
+          ## Details
+          - Analyzes latest releases of `langchain` and `langchain_core` from PyPI
+          - Identifies all members re-exported from `langchain_core` in `langchain` public `__init__` files
+          - Stores results in `import_mappings.json`
+          - Generated by GitHub Actions workflow `check-import-mappings.yml`
+          - Scheduled to run every 3 days at midnight UTC
+
+          🤖 This PR was created automatically by GitHub Actions
+          EOF
+          )" \
+            --base main \
+            --head "${BRANCH_NAME}"
+
+          echo "✅ PR created successfully with branch: ${BRANCH_NAME}"
+
+      - name: Security cleanup
+        if: always()
+        run: |
+          find . -name "*.tmp" -delete 2>/dev/null || true
+          find . -name "*.temp" -delete 2>/dev/null || true

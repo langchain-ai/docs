@@ -9,21 +9,49 @@ This guide walks you through creating your first deep agent with planning, file 
 
 Before you begin, make sure you have an API key from a model provider (e.g., Anthropic, OpenAI).
 
+<Note>
+    Deep agents require a model that supports [tool calling](/oss/concepts/tool-calling). See [customization](/oss/deepagents/customization#model) for how to configure your model.
+</Note>
+
 ### Step 1: Install dependencies
 
+:::python
 <CodeGroup>
     ```bash pip
     pip install deepagents tavily-python
     ```
 
     ```bash uv
+    uv init
     uv add deepagents tavily-python
+    uv sync
     ```
 
     ```bash poetry
     poetry add deepagents tavily-python
     ```
 </CodeGroup>
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npm install deepagents langchain @langchain/core @langchain/tavily
+    ```
+
+    ```bash yarn
+    yarn add deepagents langchain @langchain/core @langchain/tavily
+    ```
+
+    ```bash pnpm
+    pnpm add deepagents langchain @langchain/core @langchain/tavily
+    ```
+</CodeGroup>
+:::
+
+<Note>
+    This guide uses [Tavily](https://tavily.com/) as an example search provider, but you can substitute any search API (e.g., DuckDuckGo, SerpAPI, Brave Search).
+</Note>
 
 ### Step 2: Set up your API keys
 
@@ -61,12 +89,59 @@ def internet_search(
 
 :::js
 ```typescript
-// TODO: Add JS implementation
+import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query,
+    maxResults = 5,
+    topic = "general",
+    includeRawContent = false,
+  }: {
+    query: string;
+    maxResults?: number;
+    topic?: "general" | "news" | "finance";
+    includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+      includeRawContent,
+      topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search",
+    description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z
+        .number()
+        .optional()
+        .default(5)
+        .describe("Maximum number of results to return"),
+      topic: z
+        .enum(["general", "news", "finance"])
+        .optional()
+        .default("general")
+        .describe("Search topic category"),
+      includeRawContent: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Whether to include raw content"),
+    }),
+  },
+);
 ```
 :::
 
 ### Step 4: Create a deep agent
 
+:::python
 ```python
 # System prompt to steer the agent to be an expert researcher
 research_instructions = """You are an expert researcher. Your job is to conduct thorough research and then write a polished report.
@@ -83,15 +158,50 @@ agent = create_deep_agent(
     system_prompt=research_instructions
 )
 ```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+
+// System prompt to steer the agent to be an expert researcher
+const researchInstructions = `You are an expert researcher. Your job is to conduct thorough research and then write a polished report.
+
+You have access to an internet search tool as your primary means of gathering information.
+
+## \`internet_search\`
+
+Use this to run an internet search for a given query. You can specify the max number of results to return, the topic, and whether raw content should be included.
+`;
+
+const agent = createDeepAgent({
+  tools: [internetSearch],
+  systemPrompt: researchInstructions,
+});
+```
+:::
 
 ### Step 5: Run the agent
 
+:::python
 ```python
 result = agent.invoke({"messages": [{"role": "user", "content": "What is langgraph?"}]})
 
 # Print the agent's response
 print(result["messages"][-1].content)
 ```
+:::
+
+:::js
+```typescript
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "What is langgraph?" }],
+});
+
+// Print the agent's response
+console.log(result.messages[result.messages.length - 1].content);
+```
+:::
 
 ## What happened?
 

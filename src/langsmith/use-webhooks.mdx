@@ -135,7 +135,7 @@ For example, if your server listens for webhook events at `https://my-server.app
 
 ## Webhook payload
 
-LangSmith sends webhook notifications in the format of a [Run](/langsmith/assistants#execution). See the [API Reference](https://langchain-ai.github.io/langgraph/cloud/reference/api/api_ref.html#tag/assistants) for details. The request payload includes run input, configuration, and other metadata in the `kwargs` field.
+LangSmith sends webhook notifications in the format of a [Run](/langsmith/assistants#execution). See the [API Reference](https://docs.langchain.com/langsmith/server-api-ref#tag/assistants) for details. The request payload includes run input, configuration, and other metadata in the `kwargs` field.
 
 ## Secure webhooks
 
@@ -146,6 +146,87 @@ https://my-server.app/my-webhook-endpoint?token=YOUR_SECRET_TOKEN
 ```
 
 Your server should extract and validate this token before processing requests.
+
+## Add headers to webhook requests
+
+<Note>
+Available in `langgraph-api>=0.5.36`.
+</Note>
+
+You can configure static headers to include with all outbound webhook requests. This is useful for authentication, routing, or passing metadata to your webhook endpoint.
+
+Add a `webhooks.headers` configuration to your `langgraph.json` file:
+
+```json
+{
+  "webhooks": {
+    "headers": {
+      "X-Custom-Header": "my-value",
+      "X-Environment": "production"
+    }
+  }
+}
+```
+
+### Use environment variables in headers
+
+To include secrets or environment-specific values without checking them into your configuration file, use the `${{ env.VAR }}` template syntax:
+
+```json
+{
+  "webhooks": {
+    "headers": {
+      "Authorization": "Bearer ${{ env.LG_WEBHOOK_TOKEN }}"
+    }
+  }
+}
+```
+
+For security, only environment variables starting with `LG_WEBHOOK_` can be referenced by default. This prevents accidentally leaking unrelated environment variables. You can customize this prefix using `env_prefix`:
+
+```json
+{
+  "webhooks": {
+    "env_prefix": "MY_APP_",
+    "headers": {
+      "Authorization": "Bearer ${{ env.MY_APP_SECRET }}"
+    }
+  }
+}
+```
+
+<Note>
+Missing required environment variables will block server startup, ensuring you don't deploy with incomplete configuration.
+</Note>
+
+## Restrict webhook destinations
+
+<Note>
+Available in `langgraph-api>=0.5.36`.
+</Note>
+
+For security or compliance purposes, you can restrict which URLs are valid webhook destinations using the `webhooks.url` configuration:
+
+```json
+{
+  "webhooks": {
+    "url": {
+      "allowed_domains": ["*.mycompany.com", "api.trusted-service.com"],
+      "require_https": true
+    }
+  }
+}
+```
+
+Available options:
+
+| Option | Description |
+|--------|-------------|
+| `allowed_domains` | Hostname allowlist. Supports wildcards for subdomains (e.g., `*.mycompany.com`). |
+| `require_https` | Reject `http://` URLs when `true`. |
+| `allowed_ports` | Explicit port allowlist. Defaults to 443 (https) and 80 (http). |
+| `disable_loopback` | Disallow relative URLs (internal loopback calls) when `true`. |
+| `max_url_length` | Maximum permitted URL length in characters. |
 
 ## Disable webhooks
 

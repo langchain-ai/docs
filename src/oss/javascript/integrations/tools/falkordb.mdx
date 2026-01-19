@@ -1,0 +1,207 @@
+---
+title: FalkorDB
+description: Use FalkorDB's ultra-fast graph database with LangChain for natural language queries over knowledge graphs using Cypher
+sidebar_label: FalkorDB
+---
+
+# FalkorDB LangChain JS/TS integration
+
+The [@falkordb/langchain-ts](https://www.npmjs.com/package/@falkordb/langchain-ts) package enables developers to use FalkorDB's ultra-fast graph database alongside their LangChain applications. What this means in practice is that your application can now take natural language questions, automatically generate the corresponding Cypher queries, pull the relevant context from your graph database, and return responses in plain language. The entire translation layer gets handled for you.
+
+The package fits into existing LangChain workflows, so if you are already using that framework for other AI capabilities, this becomes another tool in your stack. FalkorDB's low latency characteristics combine with LangChain's language model integration to provide quick responses.
+
+### About FalkorDB
+
+An ultra-fast, multi-tenant **graph database** powering Generative AI, Agent Memory, Cloud Security, and Fraud Detection. [FalkorDB](https://falkordb.com) is the first queryable Property Graph Database to leverage sparse matrices for representing the adjacency matrix in graphs and linear algebra for querying.
+
+
+## Installation
+
+```bash npm2yarn
+npm install @falkordb/langchain-ts falkordb
+```
+
+You'll also need LangChain and a language model:
+
+```bash npm2yarn
+npm install langchain @langchain/openai
+```
+
+## Quick start
+
+### 1. Start FalkorDB
+
+The easiest way to run FalkorDB is with Docker:
+
+```bash
+docker run -p 6379:6379 -it --rm falkordb/falkordb:latest
+```
+
+### 2. Basic usage
+
+```typescript
+import { FalkorDBGraph } from "@falkordb/langchain-ts";
+import { ChatOpenAI } from "@langchain/openai";
+import { GraphCypherQAChain } from "@langchain/community/chains/graph_qa/cypher";
+
+// Initialize FalkorDB connection
+const graph = await FalkorDBGraph.initialize({
+  host: "localhost",
+  port: 6379,
+  graph: "movies" // Your graph name
+});
+
+// Set up the language model
+const model = new ChatOpenAI({ temperature: 0 });
+
+// Create and populate the graph with some data
+await graph.query(
+  "CREATE (a:Actor {name:'Bruce Willis'})" +
+  "-[:ACTED_IN]->(:Movie {title: 'Pulp Fiction'})"
+);
+
+// Refresh the graph schema
+await graph.refreshSchema();
+
+// Create a graph QA chain
+const chain = GraphCypherQAChain.fromLLM({
+  llm: model,
+  graph: graph as any, // Type assertion for LangChain compatibility
+});
+
+// Ask questions about your graph
+const response = await chain.run("Who played in Pulp Fiction?");
+console.log(response);
+// Output: Bruce Willis played in Pulp Fiction.
+
+// Clean up
+await graph.close();
+```
+
+## API reference
+
+### FalkorDBGraph
+
+#### `initialize(config: FalkorDBGraphConfig): Promise<FalkorDBGraph>`
+
+Creates and initializes a new FalkorDB connection.
+
+**Config Options:**
+
+- `host` (string, optional): Database host. Default: `"localhost"`
+- `port` (number, optional): Database port. Default: `6379`
+- `graph` (string, optional): Graph name to use
+- `url` (string, optional): Alternative connection URL format
+- `enhancedSchema` (boolean, optional): Enable enhanced schema details. Default: `false`
+
+**Example:**
+```typescript
+const graph = await FalkorDBGraph.initialize({
+  host: "localhost",
+  port: 6379,
+  graph: "myGraph",
+  enhancedSchema: true
+});
+```
+
+#### `query(query: string): Promise<any>`
+
+Executes a Cypher query on the graph.
+
+```typescript
+const result = await graph.query(
+  "MATCH (n:Person) RETURN n.name LIMIT 10"
+);
+```
+
+#### `refreshSchema(): Promise<void>`
+
+Updates the graph schema information.
+
+```typescript
+await graph.refreshSchema();
+console.log(graph.getSchema());
+```
+
+#### `getSchema(): string`
+
+Returns the current graph schema as a formatted string.
+
+#### `getStructuredSchema(): StructuredSchema`
+
+Returns the structured schema object containing node properties, relationship properties, and relationships.
+
+#### `close(): Promise<void>`
+
+Closes the database connection.
+
+```typescript
+await graph.close();
+```
+
+## Advanced usage
+
+### Custom cypher queries
+
+```typescript
+const graph = await FalkorDBGraph.initialize({
+  host: "localhost",
+  port: 6379,
+  graph: "movies"
+});
+
+// Complex query
+const result = await graph.query(`
+  MATCH (a:Actor)-[:ACTED_IN]->(m:Movie)
+  WHERE m.year > 2000
+  RETURN a.name, m.title, m.year
+  ORDER BY m.year DESC
+  LIMIT 10
+`);
+
+console.log(result.data);
+```
+
+### Multiple queries
+
+```typescript
+await graph.executeQueries([
+  "CREATE (p:Person {name: 'Alice'})",
+  "CREATE (p:Person {name: 'Bob'})",
+  "MATCH (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'}) CREATE (a)-[:KNOWS]->(b)"
+]);
+```
+
+### Working with schema
+
+```typescript
+await graph.refreshSchema();
+
+// Get formatted schema
+const schema = graph.getSchema();
+console.log(schema);
+
+// Get structured schema
+const structuredSchema = graph.getStructuredSchema();
+console.log(structuredSchema.nodeProps);
+console.log(structuredSchema.relationships);
+```
+
+## Requirements
+
+- Node.js >= 18
+- FalkorDB server running (Redis-compatible)
+- LangChain >= 0.1.0
+
+## Examples
+
+For more examples, see the [@falkordb/langchain-ts repository](https://github.com/FalkorDB/FalkorDB-Langchain-js) on GitHub.
+
+## License
+
+MIT
+
+## Support
+
+- [GitHub Issues](https://github.com/FalkorDB/FalkorDB-Langchain-js/issues)
+- Website: https://www.falkordb.com/

@@ -1,0 +1,271 @@
+---
+title: ChatParallelWeb
+description: Get started using Parallel [chat models](/oss/langchain/models) in LangChain.
+---
+
+Parallel provides real-time web research capabilities through an OpenAI-compatible chat interface, allowing your AI applications to access current information from the web.
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all features and configuration options, head to the @[`ChatParallelWeb`] API reference.
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS/TS Support | Downloads | Latest Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| @[`ChatParallelWeb`] | @[`langchain-parallel`] | ✅ | ❌ | <a href="https://pypi.org/project/langchain-parallel/" target="_blank"><img src="https://static.pepy.tech/badge/langchain-parallel/month" alt="Downloads per month" noZoom height="100" class="rounded" /></a> | <a href="https://pypi.org/project/langchain-parallel/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-parallel?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | Image input | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+
+## Setup
+
+To access Parallel models you'll need to install the `langchain-parallel` integration package and acquire a [Parallel](https://platform.parallel.ai) API key.
+
+### Installation
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-parallel
+    ```
+    ```bash uv
+    uv add langchain-parallel
+    ```
+</CodeGroup>
+
+### Credentials
+
+Head to [Parallel](https://platform.parallel.ai) to sign up and generate an API key. Once you've done this set the `PARALLEL_API_KEY` environment variable in your environment:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PARALLEL_API_KEY"):
+    os.environ["PARALLEL_API_KEY"] = getpass.getpass("Enter your Parallel API key: ")
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate responses. The default model is `"speed"` which provides fast responses:
+
+```python
+from langchain_parallel import ChatParallelWeb
+
+llm = ChatParallelWeb(
+    model="speed",
+    # temperature=0.7,
+    # max_tokens=None,
+    # timeout=None,
+    # max_retries=2,
+    # api_key="...",  # If you prefer to pass api key in directly
+    # base_url="https://api.parallel.ai",
+    # other params...
+)
+```
+
+See the @[`ChatParallelWeb`] API Reference for the full set of available model parameters.
+
+<Note>
+    **OpenAI compatibility**
+
+    Parallel supports many OpenAI-compatible parameters for easy migration (e.g., `response_format`, `tools`, `top_p`), though most are ignored by the Parallel API. See the [OpenAI Compatibility](#openai-compatibility) section for more details.
+</Note>
+
+---
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant with access to real-time web information.",
+    ),
+    ("human", "What are the latest developments in AI?"),
+]
+ai_msg = llm.invoke(messages)
+ai_msg
+```
+
+```text
+AIMessage(content='Here\'s a summary of the latest AI news and breakthroughs as of ...', additional_kwargs={}, response_metadata={'model': 'speed', 'finish_reason': 'stop', 'created': 1764043410}, id='run--3866fa98-6ac9-4585-8d23-99c5542b582b-0')
+```
+
+```python
+print(ai_msg.content)
+```
+
+```text
+Here's a summary of the latest AI news and breakthroughs as of...
+```
+
+---
+
+## Chaining
+
+We can chain our model with a prompt template like so:
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate(
+    [
+        (
+            "system",
+            "You are a helpful research assistant with access to real-time web information. "
+            "Provide comprehensive answers about {topic} with current data.",
+        ),
+        ("human", "{question}"),
+    ]
+)
+
+chain = prompt | llm
+chain.invoke(
+    {
+        "topic": "artificial intelligence",
+        "question": "What are the most significant AI breakthroughs in 2025?",
+    }
+)
+```
+
+```text
+AIMessage(content="Based on the provided search results, here's a summary of the significant AI breakthroughs and trends...", additional_kwargs={}, response_metadata={'model': 'speed', 'finish_reason': 'stop', 'created': 1764043419}, id='run--9c521362-6724-4299-9e65-0565ec13d997-0')
+```
+---
+
+## Streaming
+
+ChatParallelWeb supports streaming responses for real-time output:
+
+```python
+for chunk in llm.stream(messages):
+    print(chunk.content, end="")
+```
+
+---
+
+## Async
+
+You can also use async operations:
+
+```python
+# Async invoke
+ai_msg = await llm.ainvoke(messages)
+
+# Async streaming
+async for chunk in llm.astream(messages):
+    print(chunk.content, end="")
+```
+
+---
+
+## Token usage
+
+<Note>
+    **No token usage tracking**
+
+    Parallel does not currently provide token usage metadata. The `usage_metadata` field will be `None`.
+</Note>
+
+```python
+ai_msg = llm.invoke(messages)
+print(ai_msg.usage_metadata)
+```
+
+```text
+None
+```
+
+---
+
+## Response metadata
+
+Access response metadata from the API:
+
+```python
+ai_msg = llm.invoke(messages)
+print(ai_msg.response_metadata)
+```
+
+```python
+{'model': 'speed', 'finish_reason': 'stop', 'created': 1703123456}
+```
+
+---
+
+## Error handling
+
+The integration provides enhanced error handling for common scenarios:
+
+```python
+from langchain_parallel import ChatParallelWeb
+
+try:
+    llm = ChatParallelWeb(api_key="invalid-key")
+    response = llm.invoke([("human", "Hello")])
+except ValueError as e:
+    if "Authentication failed" in str(e):
+        print("Invalid API key provided")
+    elif "Rate limit exceeded" in str(e):
+        print("API rate limit exceeded, please try again later")
+```
+
+---
+
+## OpenAI compatibility
+
+<Info>
+    **OpenAI-compatible API**
+
+    ChatParallelWeb is fully compatible with many [OpenAI Chat Completions API](https://platform.openai.com/docs/api-reference/chat) parameters, making migration seamless. However, most advanced parameters (like `response_format`, `tools`, `top_p`) are accepted but ignored by the Parallel API.
+</Info>
+
+```python
+llm = ChatParallelWeb(
+    model="speed",
+    # These parameters are accepted but ignored by Parallel
+    response_format={"type": "json_object"},
+    tools=[{"type": "function", "function": {"name": "example"}}],
+    tool_choice="auto",
+    top_p=1.0,
+    frequency_penalty=0.0,
+    presence_penalty=0.0,
+    logit_bias={},
+    seed=42,
+    user="user-123"
+)
+```
+
+---
+
+## Message handling
+
+The integration automatically handles message formatting and merges consecutive messages of the same type to satisfy API requirements:
+
+```python
+from langchain.messages import HumanMessage, SystemMessage
+
+# These consecutive system messages will be automatically merged
+messages = [
+    SystemMessage("You are a helpful assistant."),
+    SystemMessage("Always be polite and concise."),
+    HumanMessage("What is the weather like today?")
+]
+
+# Automatically merged to single system message before API call
+response = llm.invoke(messages)
+```
+
+---
+
+## API reference
+
+For detailed documentation of all features and configuration options, head to the @[`ChatParallelWeb`] API reference or or the [Parallel chat API quickstart](https://docs.parallel.ai/chat-api/chat-quickstart).

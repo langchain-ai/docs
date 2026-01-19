@@ -80,7 +80,7 @@ process.env.ANTHROPIC_API_KEY = "YOUR_API_KEY";
 :::
 
 <Tip>
-Sign up for [LangSmith](https://smith.langchain.com) to quickly spot issues and improve the performance of your LangGraph projects. LangSmith lets you use trace data to debug, test, and monitor your LLM apps built with LangGraph.
+    Sign up for [LangSmith](https://smith.langchain.com) to quickly spot issues and improve the performance of your LangGraph projects. LangSmith lets you use trace data to debug, test, and monitor your LLM apps built with LangGraph. You can also [fetch traces from LangSmith](/langsmith/export-traces#fetch-a-single-run-by-id) to replay and debug production issues locally.
 </Tip>
 
 :::python
@@ -139,11 +139,10 @@ graph
 ```typescript
 import { v4 as uuidv4 } from "uuid";
 import * as z from "zod";
-import { StateGraph, START, END } from "@langchain/langgraph";
+import { StateGraph, StateSchema, GraphNode, START, END, MemorySaver } from "@langchain/langgraph";
 import { ChatAnthropic } from "@langchain/anthropic";
-import { MemorySaver } from "@langchain/langgraph";
 
-const State = z.object({
+const State = new StateSchema({
   topic: z.string().optional(),
   joke: z.string().optional(),
 });
@@ -153,19 +152,23 @@ const model = new ChatAnthropic({
   temperature: 0,
 });
 
+const generateTopic: GraphNode<typeof State> = async (state) => {
+  // LLM call to generate a topic for the joke
+  const msg = await model.invoke("Give me a funny topic for a joke");
+  return { topic: msg.content };
+};
+
+const writeJoke: GraphNode<typeof State> = async (state) => {
+  // LLM call to write a joke based on the topic
+  const msg = await model.invoke(`Write a short joke about ${state.topic}`);
+  return { joke: msg.content };
+};
+
 // Build workflow
 const workflow = new StateGraph(State)
   // Add nodes
-  .addNode("generateTopic", async (state) => {
-    // LLM call to generate a topic for the joke
-    const msg = await model.invoke("Give me a funny topic for a joke");
-    return { topic: msg.content };
-  })
-  .addNode("writeJoke", async (state) => {
-    // LLM call to write a joke based on the topic
-    const msg = await model.invoke(`Write a short joke about ${state.topic}`);
-    return { joke: msg.content };
-  })
+  .addNode("generateTopic", generateTopic)
+  .addNode("writeJoke", writeJoke)
   // Add edges to connect nodes
   .addEdge(START, "generateTopic")
   .addEdge("generateTopic", "writeJoke")
