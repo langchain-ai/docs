@@ -82,14 +82,32 @@ For more example skills, see [Deep Agent example skills](https://github.com/lang
 
 ## Usage
 
+Pass the skills directory when creating your deep agent:
+
+<Warning>
+Currently, deep agents do not implement fine-grained permissions.
+`FilesystemBackend` enables write and read access to the **whole** file system.
+We strongly recommend using [human-in-the-loop workflows](/oss/deepagents/human-in-the-loop) if you are using FilesystemBackend.
+</Warning>
+
 :::python
 ```python
 from deepagents import create_deep_agent
+from langgraph.checkpoint.memory import MemorySaver
 from deepagents.backends.filesystem import FilesystemBackend
+
+# Checkpointer is REQUIRED for human-in-the-loop
+checkpointer = MemorySaver()
 
 agent = create_deep_agent(
     backend=FilesystemBackend(root_dir="/Users/user/{project}"),
     skills=["/Users/user/{project}/skills/"],
+    interrupt_on={
+        "write_file": True,  # Default: approve, edit, reject
+        "read_file": False,  # No interrupts needed
+        "edit_file": True    # Default: approve, edit, reject
+    },
+    checkpointer=checkpointer,  # Required!
 )
 ```
 
@@ -112,6 +130,7 @@ import {
   createSettings,
   FilesystemBackend,
 } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
 
 const settings = createSettings({
 });
@@ -119,13 +138,13 @@ const settings = createSettings({
 const agent = await createDeepAgent({
   backend: (config) =>
     new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
-  middleware: [
-    createSkillsMiddleware({
-      skillsDir: "~/.deepagents/my-agent/skills",
-      assistantId: "my-agent",
-      projectSkillsDir: `/Users/user/{project}/.deepagents/skills`,
-    }),
-  ],
+  skills: [path.join(process.cwd(), ".deepagents/skills")],
+  interruptOn: {
+    read_file: true,
+    write_file: true,
+    delete_file: true,
+  },
+  checkpointer, // Required!
 });
 ```
 
@@ -142,8 +161,6 @@ const agent = await createDeepAgent({
 </ParamField>
 
 :::
-
-To customize the middleware, see [Skills middleware](/oss/deepagents/middleware#skills-middleware).
 
 ## When to use skills and tools
 
