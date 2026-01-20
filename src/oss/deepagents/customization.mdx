@@ -210,16 +210,55 @@ This progressive disclosure reduces the amount of tokens and context the agent h
 
 For example skills see [Deep Agent example skills](https://github.com/langchain-ai/deepagentsjs/tree/main/examples/skills).
 
-<Warning>
-Currently, the deepagents library does not implement fine-grained permissions.
-`FilesystemBackend` enables write and read access to the **whole** file system.
-We strongly recommend using [human-in-the-loop workflows](/oss/deepagents/human-in-the-loop) if you are using FilesystemBackend.
-</Warning>
-
 To add skills to your deep agent, pass them as an argument to `create_deep_agent`:
 
 :::python
-```python
+
+<CodeGroup>
+
+```python StateBackend
+from pathlib import Path
+
+from deepagents import create_deep_agent
+from deepagents.backends.utils import create_file_data
+from langgraph.checkpoint.memory import MemorySaver
+
+checkpointer = MemorySaver()
+
+skills_dir = Path("skills")
+skills_files = {}
+
+for file_path in skills_dir.rglob("*"):
+    if file_path.is_file():
+        file_content = file_path.read_text(encoding="utf-8")
+        file_data = create_file_data(file_content)
+        relative_path = file_path.relative_to(skills_dir.parent)
+        virtual_path = f"/{relative_path}"
+        skills_files[virtual_path] = file_data
+
+agent = create_deep_agent(
+    skills=["./skills/"],
+    checkpointer=checkpointer,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is langgraph?",
+            }
+        ],
+        # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
+        "files": {
+            **skills_files
+        },
+    },
+    config={"configurable": {"thread_id": "12345"}},
+)
+```
+
+```python FilesystemBackend
 from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import MemorySaver
 from deepagents.backends.filesystem import FilesystemBackend
@@ -237,11 +276,77 @@ agent = create_deep_agent(
     },
     checkpointer=checkpointer,  # Required!
 )
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is langgraph?",
+            }
+        ]
+    },
+    config={"configurable": {"thread_id": "12345"}},
+)
 ```
+
+```python StoreBackend
+from pathlib import Path
+
+from deepagents import create_deep_agent
+from deepagents.backends import StoreBackend
+from deepagents.backends.utils import create_file_data
+from langgraph.store.memory import InMemoryStore
+
+store = InMemoryStore()
+skills_dir = Path("skills")
+
+for file_path in skills_dir.rglob("*"):
+    if file_path.is_file():
+        file_content = file_path.read_text(encoding="utf-8")
+        file_data = create_file_data(file_content)
+        relative_path = file_path.relative_to(skills_dir)
+        store.put(
+            namespace=("filesystem",),
+            key=f"/skills/{relative_path}",
+            value=file_data
+        )
+
+agent = create_deep_agent(
+    backend=(lambda rt: StoreBackend(rt)),
+    store=store,
+    skills=["./skills/"]
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is langgraph?",
+            }
+        ],
+        # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
+        "files": {
+            **skills_files
+        },
+    },
+    config={"configurable": {"thread_id": "12345"}},
+)
+```
+
+</CodeGroup>
+
 :::
 
 :::js
-```typescript
+
+<CodeGroup>
+
+```typescript StateBackend
+```
+
+```typescript FilesystemBackend
 import {
   createDeepAgent,
   createSkillsMiddleware,
@@ -265,4 +370,10 @@ const agent = await createDeepAgent({
   checkpointer, // Required!
 });
 ```
+
+```typescript StoreBackend
+```
+
+</CodeGroup>
+
 :::
