@@ -217,24 +217,19 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
 <CodeGroup>
 
 ```python StateBackend
-from pathlib import Path
-
+from urllib.request import urlopen
 from deepagents import create_deep_agent
-from deepagents.backends.utils import create_file_data
 from langgraph.checkpoint.memory import MemorySaver
 
 checkpointer = MemorySaver()
 
-skills_dir = Path("skills")
 skills_files = {}
 
-for file_path in skills_dir.rglob("*"):
-    if file_path.is_file():
-        file_content = file_path.read_text(encoding="utf-8")
-        file_data = create_file_data(file_content)
-        relative_path = file_path.relative_to(skills_dir.parent)
-        virtual_path = f"/{relative_path}"
-        skills_files[virtual_path] = file_data
+skill_url = "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md"
+with urlopen(skill_url) as response:
+    skill_content = response.read().decode('utf-8')
+
+skills_files["/skills/langgraph-docs/SKILL.md"] = skill_content
 
 agent = create_deep_agent(
     skills=["./skills/"],
@@ -289,26 +284,23 @@ result = agent.invoke(
 ```
 
 ```python StoreBackend
-from pathlib import Path
-
+from urllib.request import urlopen
 from deepagents import create_deep_agent
 from deepagents.backends import StoreBackend
-from deepagents.backends.utils import create_file_data
 from langgraph.store.memory import InMemoryStore
 
-store = InMemoryStore()
-skills_dir = Path("skills")
 
-for file_path in skills_dir.rglob("*"):
-    if file_path.is_file():
-        file_content = file_path.read_text(encoding="utf-8")
-        file_data = create_file_data(file_content)
-        relative_path = file_path.relative_to(skills_dir)
-        store.put(
-            namespace=("filesystem",),
-            key=f"/skills/{relative_path}",
-            value=file_data
-        )
+store = InMemoryStore()
+
+skill_url = "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md"
+with urlopen(skill_url) as response:
+    skill_content = response.read().decode('utf-8')
+
+store.put(
+    namespace=("filesystem",),
+    key="/skills/langgraph-docs/SKILL.md",
+    value=skill_content
+)
 
 agent = create_deep_agent(
     backend=(lambda rt: StoreBackend(rt)),
@@ -338,10 +330,10 @@ result = agent.invoke(
 <CodeGroup>
 
 ```typescript StateBackend
-import path from "path";
-import { readFile, readdir } from "fs/promises";
 import { createDeepAgent, type FileData } from "deepagents";
-import { MemorySaver } from "@langchain/langgraph";
+import { MemorySaver, Command } from "@langchain/langgraph";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 
 const checkpointer = new MemorySaver();
 
@@ -354,36 +346,14 @@ function createFileData(content: string): FileData {
   };
 }
 
-// Recursively get all files in a directory
-async function getAllFiles(dirPath: string): Promise<string[]> {
-  const files: string[] = [];
-  const entries = await readdir(dirPath, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      const subFiles = await getAllFiles(fullPath);
-      files.push(...subFiles);
-    } else if (entry.isFile()) {
-      files.push(fullPath);
-    }
-  }
-
-  return files;
-}
-
-const skillsDir = path.join(process.cwd(), ".deepagents/skills");
 const skillsFiles: Record<string, FileData> = {};
 
-const allFiles = await getAllFiles(skillsDir);
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
 
-for (const filePath of allFiles) {
-  const fileContent = await readFile(filePath, "utf-8");
-  const fileData = createFileData(fileContent);
-  const relativeToSkillsDir = path.relative(skillsDir, filePath);
-  const virtualPath = `/skills/${relativeToSkillsDir.replace(/\\/g, "/")}`;
-  skillsFiles[virtualPath] = fileData;
-}
+skillsFiles["/skills/langgraph-docs/SKILL.md"] = createFileData(skillContent);
 
 const agent = await createDeepAgent({
   checkpointer,
@@ -455,8 +425,6 @@ let result = await agent.invoke(
 ```
 
 ```typescript StoreBackend
-import path from "path";
-import { readFile, readdir } from "fs/promises";
 import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
 import {
   InMemoryStore,
@@ -476,34 +444,14 @@ function createFileData(content: string): FileData {
   };
 }
 
-// Recursively get all files in a directory
-async function getAllFiles(dirPath: string): Promise<string[]> {
-  const files: string[] = [];
-  const entries = await readdir(dirPath, { withFileTypes: true });
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
 
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      const subFiles = await getAllFiles(fullPath);
-      files.push(...subFiles);
-    } else if (entry.isFile()) {
-      files.push(fullPath);
-    }
-  }
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
+const fileData = createFileData(skillContent);
 
-  return files;
-}
-
-const skillsDir = path.join(process.cwd(), ".deepagents/skills");
-const allFiles = await getAllFiles(skillsDir);
-
-for (const filePath of allFiles) {
-  const fileContent = await readFile(filePath, "utf-8");
-  const fileData = createFileData(fileContent);
-  const relativeToSkillsDir = path.relative(skillsDir, filePath);
-  const virtualPath = `/skills/${relativeToSkillsDir.replace(/\\/g, "/")}`;
-  await store.put(["filesystem"], virtualPath, fileData);
-}
+await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
 
 const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
   return new StoreBackend({
@@ -537,9 +485,6 @@ let result = await agent.invoke(
   },
   config
 );
-
-// Print the agent's response
-console.log(result.messages[result.messages.length - 1].content);
 ```
 
 </CodeGroup>
