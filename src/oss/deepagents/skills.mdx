@@ -84,14 +84,52 @@ For more example skills, see [Deep Agent example skills](https://github.com/lang
 
 Pass the skills directory when creating your deep agent:
 
-<Warning>
-Currently, the deepagents library does not implement fine-grained permissions.
-`FilesystemBackend` enables write and read access to the **whole** file system.
-We strongly recommend using [human-in-the-loop workflows](/oss/deepagents/human-in-the-loop) if you are using FilesystemBackend.
-</Warning>
-
 :::python
-```python
+<CodeGroup>
+
+```python StateBackend
+from pathlib import Path
+
+from deepagents import create_deep_agent
+from deepagents.backends.utils import create_file_data
+from langgraph.checkpoint.memory import MemorySaver
+
+checkpointer = MemorySaver()
+
+skills_dir = Path("skills")
+skills_files = {}
+
+for file_path in skills_dir.rglob("*"):
+    if file_path.is_file():
+        file_content = file_path.read_text(encoding="utf-8")
+        file_data = create_file_data(file_content)
+        relative_path = file_path.relative_to(skills_dir.parent)
+        virtual_path = f"/{relative_path}"
+        skills_files[virtual_path] = file_data
+
+agent = create_deep_agent(
+    skills=["./skills/"],
+    checkpointer=checkpointer,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is langgraph?",
+            }
+        ],
+        # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
+        "files": {
+            **skills_files
+        },
+    },
+    config={"configurable": {"thread_id": "12345"}},
+)
+```
+
+```python FilesystemBackend
 from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import MemorySaver
 from deepagents.backends.filesystem import FilesystemBackend
@@ -109,7 +147,66 @@ agent = create_deep_agent(
     },
     checkpointer=checkpointer,  # Required!
 )
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is langgraph?",
+            }
+        ]
+    },
+    config={"configurable": {"thread_id": "12345"}},
+)
 ```
+
+```python StoreBackend
+from pathlib import Path
+
+from deepagents import create_deep_agent
+from deepagents.backends import StoreBackend
+from deepagents.backends.utils import create_file_data
+from langgraph.store.memory import InMemoryStore
+
+store = InMemoryStore()
+skills_dir = Path("skills")
+
+for file_path in skills_dir.rglob("*"):
+    if file_path.is_file():
+        file_content = file_path.read_text(encoding="utf-8")
+        file_data = create_file_data(file_content)
+        relative_path = file_path.relative_to(skills_dir)
+        store.put(
+            namespace=("filesystem",),
+            key=f"/skills/{relative_path}",
+            value=file_data
+        )
+
+agent = create_deep_agent(
+    backend=(lambda rt: StoreBackend(rt)),
+    store=store,
+    skills=["./skills/"]
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is langgraph?",
+            }
+        ],
+        # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
+        "files": {
+            **skills_files
+        },
+    },
+    config={"configurable": {"thread_id": "12345"}},
+)
+```
+
+</CodeGroup>
 
 <ParamField body="skills" type="list[str]" optional>
     List of skill source paths. Paths must be specified using forward slashes and are relative to the backend's root.
@@ -121,9 +218,84 @@ agent = create_deep_agent(
 
 :::
 
-
 :::js
-```typescript
+<CodeGroup>
+
+```typescript StateBackend
+import path from "path";
+import { readFile, readdir } from "fs/promises";
+import { createDeepAgent, type FileData } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
+
+const checkpointer = new MemorySaver();
+
+function createFileData(content: string): FileData {
+  const now = new Date().toISOString();
+  return {
+    content: content.split("\n"),
+    created_at: now,
+    modified_at: now,
+  };
+}
+
+// Recursively get all files in a directory
+async function getAllFiles(dirPath: string): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await readdir(dirPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      const subFiles = await getAllFiles(fullPath);
+      files.push(...subFiles);
+    } else if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+const skillsDir = path.join(process.cwd(), ".deepagents/skills");
+const skillsFiles: Record<string, FileData> = {};
+
+const allFiles = await getAllFiles(skillsDir);
+
+for (const filePath of allFiles) {
+  const fileContent = await readFile(filePath, "utf-8");
+  const fileData = createFileData(fileContent);
+  const relativeToSkillsDir = path.relative(skillsDir, filePath);
+  const virtualPath = `/skills/${relativeToSkillsDir.replace(/\\/g, "/")}`;
+  skillsFiles[virtualPath] = fileData;
+}
+
+const agent = await createDeepAgent({
+  checkpointer,
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+  skills: ["/skills/"],
+});
+
+const config = {
+  configurable: {
+    thread_id: `thread-${Date.now()}`,
+  },
+};
+
+let result = await agent.invoke(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "what is langraph? Use the langgraph-docs skill if available.",
+      },
+    ],
+    files: skillsFiles,
+  } as any,
+  config
+);
+```
+
+```typescript FilesystemBackend
 import {
   createDeepAgent,
   createSkillsMiddleware,
@@ -146,18 +318,124 @@ const agent = await createDeepAgent({
   },
   checkpointer, // Required!
 });
+
+const config = {
+  configurable: {
+    thread_id: `thread-${Date.now()}`,
+  },
+};
+
+let result = await agent.invoke(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "what is langraph? Use the langgraph-docs skill if available.",
+      },
+    ]
+  } as any,
+  config
+);
 ```
 
-<ParamField body="assistantId" type="str" required>
-    The agent identifier for path references in prompts.
-</ParamField>
+```typescript StoreBackend
+import path from "path";
+import { readFile, readdir } from "fs/promises";
+import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
+import {
+  InMemoryStore,
+  MemorySaver,
+  type BaseStore,
+} from "@langchain/langgraph";
 
-<ParamField body="skillsDir" type="str" required>
-    Path to the user-level skills directory. The user-level skills directory must be in a folder that has the same name as the `assistantId`.
-</ParamField>
+const checkpointer = new MemorySaver();
+const store = new InMemoryStore();
 
-<ParamField body="projectSkillsDir" type="str" optional>
-    Path to the project-level skills directory. If skills use the same name as skills in the user-level directory the project-level skills override the user-level skills.
+function createFileData(content: string): FileData {
+  const now = new Date().toISOString();
+  return {
+    content: content.split("\n"),
+    created_at: now,
+    modified_at: now,
+  };
+}
+
+// Recursively get all files in a directory
+async function getAllFiles(dirPath: string): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await readdir(dirPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      const subFiles = await getAllFiles(fullPath);
+      files.push(...subFiles);
+    } else if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+const skillsDir = path.join(process.cwd(), ".deepagents/skills");
+const allFiles = await getAllFiles(skillsDir);
+
+for (const filePath of allFiles) {
+  const fileContent = await readFile(filePath, "utf-8");
+  const fileData = createFileData(fileContent);
+  const relativeToSkillsDir = path.relative(skillsDir, filePath);
+  const virtualPath = `/skills/${relativeToSkillsDir.replace(/\\/g, "/")}`;
+  await store.put(["filesystem"], virtualPath, fileData);
+}
+
+const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
+  return new StoreBackend({
+    state: config.state,
+    store: config.store ?? store,
+  });
+};
+
+const agent = await createDeepAgent({
+  backend: backendFactory,
+  store: store,
+  checkpointer,
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+  skills: ["/skills/"],
+});
+
+const config = {
+  configurable: {
+    thread_id: `thread-${Date.now()}`,
+  },
+};
+
+let result = await agent.invoke(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "what is langraph? Use the langgraph-docs skill if available.",
+      },
+    ],
+  },
+  config
+);
+
+// Print the agent's response
+console.log(result.messages[result.messages.length - 1].content);
+
+```
+
+</CodeGroup>
+
+<ParamField body="skills" type="list[str]" optional>
+    List of skill source paths.
+    Paths must be specified using forward slashes and are relative to the backend's root.
+    - When using StateBackend (default), provide skill files with `invoke(files={...})`.
+    - With FilesystemBackend, skills are loaded from disk relative to the backend's root_dir.
+
+    Later sources override earlier ones for skills with the same name (last one wins).
 </ParamField>
 
 :::
