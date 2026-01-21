@@ -1,0 +1,370 @@
+---
+title: SpiceDB Permission Tools
+sidebar_label: SpiceDB
+---
+
+# SpiceDB Permission Tools
+
+The `langchain-spicedb` package provides LangChain tools that enable agents to check SpiceDB permissions before taking actions. These tools are particularly useful for building agentic RAG systems where the agent needs to verify access permissions before retrieving or operating on resources.
+
+## Installation
+
+```bash
+pip install langchain-spicedb
+```
+
+## Setup
+
+<Tip>
+  These tools require a running SpiceDB instance. See the [SpiceDB provider page](/oss/python/integrations/providers/spicedb) for setup instructions.
+</Tip>
+
+### Environment Setup
+
+```python
+import os
+
+# SpiceDB connection details
+os.environ["SPICEDB_ENDPOINT"] = "localhost:50051"
+os.environ["SPICEDB_TOKEN"] = "sometoken"
+```
+
+## Tools
+
+### SpiceDBPermissionTool
+
+Check if a single user has permission to access a specific resource.
+
+#### Initialization
+
+```python
+from langchain_spicedb import SpiceDBPermissionTool
+
+permission_tool = SpiceDBPermissionTool(
+    spicedb_endpoint="localhost:50051",
+    spicedb_token="sometoken",
+    resource_type="article",
+    subject_type="user",
+    fail_open=False,
+)
+```
+
+#### Parameters
+
+- **spicedb_endpoint** (str): SpiceDB server address (default: "localhost:50051")
+- **spicedb_token** (str): Pre-shared key for SpiceDB authentication
+- **resource_type** (str): SpiceDB resource type (e.g., "document", "article")
+- **subject_type** (str): SpiceDB subject type (default: "user")
+- **fail_open** (bool): If True, allow access on errors; if False, deny on errors (default: False)
+- **use_tls** (bool): Whether to use TLS for SpiceDB connection (default: False)
+
+#### Usage with Agents
+
+```python
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_spicedb import SpiceDBPermissionTool
+
+# Create the permission checking tool
+permission_tool = SpiceDBPermissionTool(
+    spicedb_endpoint="localhost:50051",
+    spicedb_token="sometoken",
+    resource_type="article",
+)
+
+# Create agent with the tool
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+
+prompt = PromptTemplate.from_template(
+    """You are a security-aware assistant.
+    Before accessing any document, ALWAYS check if the user has permission
+    using the check_spicedb_permission tool.
+
+    You have access to the following tools:
+    {tools}
+
+    Use the following format:
+    Question: the input question
+    Thought: you should always think about what to do
+    Action: the action to take, should be one of [{tool_names}]
+    Action Input: the input to the action
+    Observation: the result of the action
+    ... (this Thought/Action/Action Input/Observation can repeat N times)
+    Thought: I now know the final answer
+    Final Answer: the final answer to the original input question
+
+    Question: {input}
+    Thought: {agent_scratchpad}"""
+)
+
+tools = [permission_tool]
+agent = create_react_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# Agent checks permissions before proceeding
+result = agent_executor.invoke({
+    "input": "Can user alice view document doc1?"
+})
+
+print(result["output"])
+# Output: "Yes, user alice can view document doc1" or "No, user alice cannot view document doc1"
+```
+
+#### Direct Tool Usage
+
+```python
+# Check if alice can view doc1
+result = await permission_tool._arun(
+    subject_id="alice",
+    resource_id="doc1",
+    permission="view"
+)
+
+print(result)  # "true" or "false"
+
+# Check edit permission
+result = await permission_tool._arun(
+    subject_id="alice",
+    resource_id="doc1",
+    permission="edit"
+)
+```
+
+### SpiceDBBulkPermissionTool
+
+Check permissions for multiple resources at once - useful when an agent needs to verify access to several documents before proceeding.
+
+#### Initialization
+
+```python
+from langchain_spicedb import SpiceDBBulkPermissionTool
+
+bulk_tool = SpiceDBBulkPermissionTool(
+    spicedb_endpoint="localhost:50051",
+    spicedb_token="sometoken",
+    resource_type="article",
+    subject_type="user",
+)
+```
+
+#### Parameters
+
+Same as `SpiceDBPermissionTool` (see above).
+
+#### Usage with Agents
+
+```python
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain_openai import ChatOpenAI
+from langchain_spicedb import SpiceDBBulkPermissionTool
+
+# Create the bulk permission checking tool
+bulk_tool = SpiceDBBulkPermissionTool(
+    spicedb_endpoint="localhost:50051",
+    spicedb_token="sometoken",
+    resource_type="article",
+)
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+
+tools = [bulk_tool]
+agent = create_react_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# Agent checks multiple documents at once
+result = agent_executor.invoke({
+    "input": "Which of these documents can alice access: doc1, doc2, doc3?"
+})
+
+print(result["output"])
+# Output: "alice can access: doc1, doc3"
+```
+
+#### Direct Tool Usage
+
+```python
+# Check multiple resources at once
+result = await bulk_tool._arun(
+    subject_id="alice",
+    resource_ids="doc1,doc2,doc3",  # Comma-separated IDs
+    permission="view"
+)
+
+print(result)
+# Output: "alice can access: doc1, doc3" or "alice cannot access any of the requested resources"
+```
+
+## How Agents Decide to Call These Tools
+
+Agents use the tool **name** and **description** to decide when to invoke them:
+
+### Tool Names
+
+- `check_spicedb_permission` - Single permission check
+- `check_spicedb_bulk_permissions` - Bulk permission check
+
+### Tool Descriptions
+
+Both tools have detailed descriptions that guide the agent:
+
+- **When to use**: "Use this tool before retrieving sensitive documents or taking actions that require authorization"
+- **What it does**: Checks if a user has permission to access a resource
+- **What it returns**: "true"/"false" or list of accessible resources
+
+### Influencing Tool Usage
+
+To make agents more likely to check permissions:
+
+1. **System Prompt**: Include explicit security guidance
+   ```python
+   prompt = PromptTemplate.from_template(
+       """You are a security-conscious assistant.
+       Before accessing any document, ALWAYS check if the user has permission
+       using the check_spicedb_permission tool."""
+   )
+   ```
+
+2. **Lower Temperature**: Use temperature=0 for more deterministic behavior
+   ```python
+   llm = ChatOpenAI(model="gpt-4", temperature=0)
+   ```
+
+3. **ReAct Agents**: Use ReAct pattern which is better at following tool descriptions
+   ```python
+   agent = create_react_agent(llm, tools, prompt)
+   ```
+
+4. **Few-Shot Examples**: Include examples in the prompt showing the tool being used
+
+## Input Schema
+
+### SpiceDBPermissionTool
+
+```python
+{
+    "subject_id": "alice",       # User ID to check (required)
+    "resource_id": "doc1",       # Resource ID - ONLY the ID portion, not "article doc1" (required)
+    "permission": "view"         # Permission to check (default: "view")
+}
+```
+
+<Warning>
+  **Important**: The `resource_id` should be ONLY the ID portion, without the resource type prefix.
+
+  ✅ Correct: `resource_id="doc1"`
+
+  ❌ Incorrect: `resource_id="article doc1"` or `resource_id="article:doc1"`
+</Warning>
+
+### SpiceDBBulkPermissionTool
+
+```python
+{
+    "subject_id": "alice",           # User ID to check (required)
+    "resource_ids": "doc1,doc2,doc3", # Comma-separated IDs - ONLY ID portions (required)
+    "permission": "view"             # Permission to check (default: "view")
+}
+```
+
+## Error Handling
+
+### Fail Closed (Default)
+
+By default, tools fail closed - if there's an error checking permissions, access is denied:
+
+```python
+tool = SpiceDBPermissionTool(
+    spicedb_endpoint="localhost:50051",
+    spicedb_token="sometoken",
+    resource_type="article",
+    fail_open=False,  # Default
+)
+```
+
+### Fail Open
+
+For development or specific use cases:
+
+```python
+tool = SpiceDBPermissionTool(
+    spicedb_endpoint="localhost:50051",
+    spicedb_token="sometoken",
+    resource_type="article",
+    fail_open=True,  # Allow access on errors
+)
+```
+
+## Complete Example: Secure Document Agent
+
+```python
+import os
+from dotenv import load_dotenv
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_spicedb import SpiceDBPermissionTool, SpiceDBBulkPermissionTool
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Setup
+os.environ["SPICEDB_ENDPOINT"] = "localhost:50051"
+os.environ["SPICEDB_TOKEN"] = "sometoken"
+
+# Create tools
+permission_tool = SpiceDBPermissionTool(
+    spicedb_endpoint=os.environ["SPICEDB_ENDPOINT"],
+    spicedb_token=os.environ["SPICEDB_TOKEN"],
+    resource_type="article",
+)
+
+bulk_permission_tool = SpiceDBBulkPermissionTool(
+    spicedb_endpoint=os.environ["SPICEDB_ENDPOINT"],
+    spicedb_token=os.environ["SPICEDB_TOKEN"],
+    resource_type="article",
+)
+
+# Create agent with tool-calling (better than ReAct for structured inputs)
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a security-aware document assistant.
+    ALWAYS verify user permissions before accessing documents using the permission tools.
+    Respond with whether the user has access and which documents they can view."""),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+tools = [permission_tool, bulk_permission_tool]
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# Run agent
+result = agent_executor.invoke({
+    "input": "Can alice view documents doc1, doc2, and doc3?"
+})
+
+print(result["output"])
+```
+
+## API Reference
+
+### SpiceDBPermissionTool
+
+- **name**: `"check_spicedb_permission"`
+- **description**: Checks if a user has permission to access a resource
+- **args_schema**: `SpiceDBPermissionInput`
+- **return_type**: `str` ("true" or "false")
+
+### SpiceDBBulkPermissionTool
+
+- **name**: `"check_spicedb_bulk_permissions"`
+- **description**: Checks if a user has permission to access multiple resources
+- **args_schema**: `SpiceDBBulkPermissionInput`
+- **return_type**: `str` (comma-separated list of accessible resources or denial message)
+
+## Related Components
+
+- [SpiceDB Provider Overview](/oss/python/integrations/providers/spicedb)
+- [SpiceDB Retriever](/oss/python/integrations/retrievers/langchain-spicedb)
