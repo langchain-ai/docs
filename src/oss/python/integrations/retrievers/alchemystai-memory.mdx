@@ -1,0 +1,178 @@
+---
+title: Alchemyst AI Memory
+description: "Integrate Alchemyst AI Memory into your LangChain Python Application"
+---
+
+# Alchemyst AI Memory
+
+The [**Alchemyst AI Memory**](https://getalchemystai.com) enables your LangChain applications to maintain persistent, long-term memory across sessions. It sources and stores information using the Alchemyst platform, providing a unified interface for preserving conversation context.
+
+## Why use LangChain with Alchemyst AI?
+
+[LangChain](https://python.langchain.com/) is a popular open-source framework for building context-aware AI applications. It lets you chain together LLMs, memory, and tools to create powerful, production-ready AI agents.
+
+However, standard LangChain memory is often ephemeral—stored in RAM or simple databases that don't scale well with complex context. **Alchemyst AI's LangChain integration** provides a persistent memory layer that:
+
+* **Persists across sessions**: Users can return days later, and the agent remembers where they left off.
+* **Semantic Retrieval**: Instead of just passing the last $N$ messages, Alchemyst retrieves the most *relevant* history based on the current user input.
+* **Isolates Context**: Uses session IDs to strictly segregate user data.
+
+With Alchemyst, you simply plug in the memory class, and the platform handles the storage, indexing, and retrieval of conversation history.
+
+## Setup
+
+1. If you don't have an account, [sign up for a new account](https://platform.getalchemystai.com/signup) on the Alchemyst Platform.
+2. After logging in, go to [**Alchemyst Platform Settings**](https://platform.getalchemystai.com/settings) to get your API keys.
+
+<Tip>
+See [this section for general instructions on installing LangChain packages](/oss/langchain/install).
+</Tip>
+
+<CodeGroup>
+
+```bash pip
+pip install alchemyst-langchain alchemystai langchain langchain-openai
+```
+
+```bash poetry
+poetry add alchemyst-langchain alchemystai langchain langchain-openai
+```
+
+</CodeGroup>
+
+<Note>
+**NOTE**: In accordance with the release cycle of LangChain 1.0 release, we have decided to maintain the project separately, as discussed with the maintainers of LangChain Community as well.
+</Note>
+
+## Usage
+
+### As Memory
+
+The `AlchemystMemory` class acts as a drop-in replacement for standard LangChain memory classes (like `ConversationBufferMemory`). It automatically handles:
+
+**Loading Variables**: Searching for relevant past context before the LLM generates a response.
+
+**Saving Context**: Storing the new User-AI turn into the Alchemyst cloud.
+
+**Key Parameters**:
+
+* `api_key`: Your Alchemyst AI API Key.
+* `session_id`: A unique identifier for the conversation (e.g., a user ID or UUID). This ensures that memory is isolated to a specific conversation or user.
+
+### Example: Persistent Conversation
+
+This example demonstrates how to use `AlchemystMemory` with a `ConversationChain`. Even if you restart the script, the memory persists because it is stored in the Alchemyst cloud.
+
+```python
+import os
+import uuid
+from alchemyst_langchain import AlchemystMemory
+from langchain_openai import ChatOpenAI
+from langchain.chains import ConversationChain
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+def main():
+    # 1. Define a session ID (in production, this would come from your user/client)
+    # Using a static ID here to demonstrate persistence across runs
+    session_id = "demo-session-user-123"
+    print(f"Using Session ID: {session_id}")
+
+    # 2. Initialize Alchemyst Memory
+    memory = AlchemystMemory(
+        api_key=os.getenv("ALCHEMYST_AI_API_KEY"),
+        session_id=session_id
+    )
+
+    # 3. Initialize LLM
+    llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+    # 4. Create the Chain
+    # The chain automatically calls memory.load_memory_variables() before generation
+    # and memory.save_context() after generation.
+    chain = ConversationChain(llm=llm, memory=memory)
+
+    # 5. Interact
+    user_input = "Hi, my name is Anuran. I am a Python developer from Bangalore."
+    print(f"\nUser: {user_input}")
+    
+    response = chain.invoke({"input": user_input})
+    print(f"AI:   {response['response']}")
+
+    # --- Simulating a later interaction ---
+    
+    print("\n[... Some time passes ...]\n")
+    
+    # Even if we create a fresh chain, the memory is fetched from Alchemyst
+    new_input = "What is my job and where do I live?"
+    print(f"User: {new_input}")
+    
+    response_2 = chain.invoke({"input": new_input})
+    print(f"AI:   {response_2['response']}")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Using with LCEL (LangChain Expression Language)
+
+For more control, you can use `AlchemystMemory` within a custom LCEL chain.
+
+```python
+import os
+import uuid
+from alchemyst_langchain import AlchemystMemory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+async def main():
+    session_id = str(uuid.uuid4())
+    
+    memory = AlchemystMemory(
+        api_key=os.getenv("ALCHEMYST_AI_API_KEY"),
+        session_id=session_id
+    )
+    
+    model = ChatOpenAI(model="gpt-4")
+
+    # AlchemystMemory returns a string history by default
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful assistant. Use the provided history for context."),
+        ("system", "History:\n{history}"),
+        ("human", "{input}"),
+    ])
+
+    # Define chain
+    chain = (
+        RunnablePassthrough.assign(
+            history=lambda x: memory.load_memory_variables(x)["history"]
+        )
+        | prompt
+        | model
+    )
+
+    # Invoke
+    inputs = {"input": "I am planning a trip to Japan."}
+    response = await chain.ainvoke(inputs)
+    
+    # Manually save context (required when using LCEL without a wrapper class)
+    await memory.save_context(inputs, {"output": response.content})
+    
+    print(response.content)
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```
+
+## Support and feedback
+
+For support, feedback, or to report issues, please visit the [Alchemyst AI Documentation](https://docs.getalchemystai.com), where you'll find the latest contact and community information.
+
+You can also:
+* Join the [Discord community](https://getalchemystai.com/docs/join-discord)
+* Check out the [GitHub repository](https://github.com/alchemyst-ai/langchain-python)
+* Contact support at [anuran@getalchemystai.com](mailto:anuran@getalchemystai.com)
