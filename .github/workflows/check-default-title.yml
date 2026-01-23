@@ -1,0 +1,94 @@
+---
+name: Check for Default Title
+
+on:
+  issues:
+    types: [opened, edited]
+  pull_request_target:
+    types: [opened, edited]
+
+jobs:
+  check-default-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Check title and comment if default
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const isIssue = context.eventName === 'issues';
+            const item = isIssue ? context.payload.issue : context.payload.pull_request;
+            const title = item.title;
+            const itemNumber = item.number;
+            const itemType = isIssue ? 'issue' : 'pull request';
+
+            // Check for default placeholder text in title
+            const hasDefaultTitle =
+              title.includes('<Please write a comprehensive title>') ||
+              title.toLowerCase().includes('documentation issue');
+
+            if (!hasDefaultTitle) {
+              console.log(`Title is descriptive: "${title}"`);
+              return;
+            }
+
+            console.log(`Default title detected: "${title}"`);
+
+            // Check if we've already commented on this item
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: itemNumber,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('<!-- default-title-check -->')
+            );
+
+            if (botComment) {
+              console.log('Already commented on this item, skipping.');
+              return;
+            }
+
+            // Add comment explaining they need a descriptive title
+            const commentBody = `<!-- default-title-check -->
+
+**Please update the title of this ${itemType}.**
+
+The current title contains the default placeholder text. A descriptive title helps maintainers understand and prioritize your ${itemType}.
+
+**Good titles:**
+- "Missing example for streaming with tool calls"
+- "Typo in LangGraph quickstart guide"
+- "Add documentation for SummarizationMiddleware"
+
+**Please edit the title** to briefly describe your ${itemType}. Until then, this ${itemType} may not receive attention from maintainers.
+
+Thank you for contributing!`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: itemNumber,
+              body: commentBody,
+            });
+
+            // Add a label to make it easy to filter
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: itemNumber,
+                labels: ['needs-title'],
+              });
+            } catch (error) {
+              // Label might not exist, that's okay
+              console.log('Could not add label (may not exist):', error.message);
+            }
+
+            console.log(`Commented on ${itemType} #${itemNumber}`);
