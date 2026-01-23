@@ -51,16 +51,6 @@ To learn more about integrations in LangChain, visit the [Integrations overview]
 
     [:octicons-arrow-right-24: Reference](./langchain_aws.md)
 
-- :material-aws:{ .lg .middle } __`langchain-amazon-nova`__
-
-    ---
-
-    Access Amazon Nova foundation models via the Nova API.
-
-    [:octicons-arrow-right-24: Reference](./langchain_amazon_nova/index.md)
-
-</div>
-
 - :simple-huggingface:{ .lg .middle } __`langchain-huggingface`__
 
     ---
