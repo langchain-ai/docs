@@ -84,6 +84,17 @@ const url = hub.push("joke-generator", {
 console.log(url);
 ```
 
+```java Java
+import com.langchain.smith.models.prompts.PromptPushParams;
+import com.langchain.smith.models.prompts.Prompt;
+
+Prompt prompt = Prompt.builder()
+    .name("joke-generator")
+    .object(prompt)
+    .build();
+var url = client.prompts().push(prompt);
+```
+
 </CodeGroup>
 
 You can also push a prompt as a RunnableSequence of a prompt and a model. This is useful for storing the model configuration you want to use with this prompt. The provider must be supported by the LangSmith playground. (see settings here: [Supported Providers](https://langsmith.com/playground))
@@ -167,8 +178,17 @@ import { ChatOpenAI } from "@langchain/openai";
 
 const prompt = await hub.pull("joke-generator");
 const model = new ChatOpenAI({ model: "gpt-4o-mini" });
-const chain = prompt.pipe(model);
+const chain = prompt.pipe(model);ggs
 await chain.invoke({"topic": "cats"});
+```
+
+```java Java
+RepoListPage jokePrompts = client.repos().list(
+    RepoListParams.builder()
+        .query("joke")
+        .isPublic(RepoListParams.IsPublic.FALSE)
+        .build()
+);
 ```
 
 </CodeGroup>
@@ -243,6 +263,196 @@ For pulling prompts, if you are using Node.js or an environment that supports dy
 
 If you are in a non-Node environment, "includeModel" is not supported for non-OpenAI models and you should use the base `langchain/hub` entrypoint.
 </Note>
+
+## Prompt caching
+
+<Note>
+We recommend enabling prompt caching in production environments to reduce latency and API calls. The cache uses a stale-while-revalidate pattern, ensuring your application always gets a fast response while keeping prompts up-to-date in the background.
+</Note>
+
+The LangSmith SDK includes built-in in-memory caching for prompts. When enabled, pulled prompts are cached in memory, reducing latency and API calls for frequently used prompts. The cache persists for the lifetime of the client instance.
+
+**Requirements:**
+- Python SDK: `langsmith >= 0.6.1`
+- TypeScript SDK: `langsmith >= 0.4.5`
+
+### Default behavior
+
+Caching is **disabled by default**. When enabled, the default settings are:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_size` | 100 | Maximum number of prompts to cache |
+| `ttl_seconds` | 3600 (1 hour) | Time before a cached prompt is considered stale |
+| `refresh_interval_seconds` | 60 | How often to check for stale prompts |
+
+### Enabling the cache
+
+Pass `cache=True` to enable caching with default settings, or pass a `Cache` instance for custom configuration:
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client, Cache
+
+# Enable with default settings
+client = Client(cache=True)
+
+# Or configure custom cache settings
+my_cache = Cache(
+    max_size=100,
+    ttl_seconds=3600,
+)
+client = Client(cache=my_cache)
+
+# First pull - fetches from API and caches
+prompt = client.pull_prompt("joke-generator")
+
+# Subsequent pulls - returns cached version instantly
+prompt = client.pull_prompt("joke-generator")
+
+# Check cache metrics
+print(f"Cache hits: {client.cache.metrics.hits}")
+print(f"Cache misses: {client.cache.metrics.misses}")
+print(f"Hit rate: {client.cache.metrics.hit_rate:.1%}")
+```
+
+```typescript TypeScript
+import { Client, Cache } from "langsmith";
+
+// Enable with default settings
+const client = new Client({ cache: true });
+
+// Or configure custom cache settings
+const myCache = new Cache({
+  maxSize: 100,
+  ttlSeconds: 3600,
+});
+const client2 = new Client({ cache: myCache });
+
+// First pull - fetches from API and caches
+const prompt = await client.pullPrompt("joke-generator");
+
+// Subsequent pulls - returns cached version instantly
+const prompt2 = await client.pullPrompt("joke-generator");
+
+// Check cache metrics
+console.log(`Cache hits: ${client.cache?.metrics.hits}`);
+console.log(`Cache misses: ${client.cache?.metrics.misses}`);
+console.log(`Hit rate: ${(client.cache?.hitRate ?? 0 * 100).toFixed(1)}%`);
+```
+
+</CodeGroup>
+
+### Skipping the cache
+
+To bypass the cache and fetch a fresh prompt from the API, use the `skip_cache` parameter:
+
+<CodeGroup>
+
+```python Python
+# Force a fresh fetch, ignoring any cached version
+prompt = client.pull_prompt("joke-generator", skip_cache=True)
+```
+
+```typescript TypeScript
+// Force a fresh fetch, ignoring any cached version
+const prompt = await client.pullPrompt("joke-generator", { skipCache: true });
+```
+
+</CodeGroup>
+
+This is useful when you need to ensure you have the latest version of a prompt, such as after making changes in the LangSmith UI.
+
+### Offline mode
+
+For environments with limited or no network connectivity, you can pre-populate the cache and use it offline. Set `ttl_seconds` to `None` (Python) or `null` (TypeScript) to prevent cache entries from expiring.
+
+**Step 1: Export your prompts to a cache file (while online)**
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client, Cache
+
+# Create client with caching enabled
+client = Client(cache=True)
+
+# Pull the prompts you need
+client.pull_prompt("prompt-1")
+client.pull_prompt("prompt-2")
+client.pull_prompt("prompt-3")
+
+# Export cache to a file
+client.cache.dump("prompts_cache.json")
+client.cleanup()
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+// Create client with caching enabled
+const client = new Client({ cache: true });
+
+// Pull the prompts you need
+await client.pullPrompt("prompt-1");
+await client.pullPrompt("prompt-2");
+await client.pullPrompt("prompt-3");
+
+// Export cache to a file
+client.cache?.dump("prompts_cache.json");
+client.cleanup();
+```
+
+</CodeGroup>
+
+**Step 2: Load the cache file in your offline environment**
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client, Cache
+
+# Create cache with infinite TTL (never expire)
+my_cache = Cache(ttl_seconds=None)
+my_cache.load("prompts_cache.json")
+
+client = Client(cache=my_cache)
+
+# Uses cached version without any API calls
+prompt = client.pull_prompt("prompt-1")
+```
+
+```typescript TypeScript
+import { Client, Cache } from "langsmith";
+
+// Create cache with infinite TTL (never expire)
+const myCache = new Cache({ ttlSeconds: null });
+myCache.load("prompts_cache.json");
+
+const client = new Client({ cache: myCache });
+
+// Uses cached version without any API calls
+const prompt = await client.pullPrompt("prompt-1");
+```
+
+</CodeGroup>
+
+### Cleanup
+
+When you're done using the client, call `cleanup()` to stop the background refresh task:
+
+<CodeGroup>
+
+```python Python
+client.cleanup()
+```
+
+```typescript TypeScript
+client.cleanup();
+```
+
+</CodeGroup>
 
 ## Use a prompt without LangChain
 
@@ -402,6 +612,35 @@ client.likePrompt("efriis/my-first-prompt");
 
 // Unlike a prompt
 client.unlikePrompt("efriis/my-first-prompt");
+```
+
+```java Java
+// List all prompts in my workspace
+RepoListPage prompts = client.repos().list();
+for (RepoWithLookups prompt : prompts.repos()) {
+    System.out.println(prompt.repoHandle());
+}
+
+// List my private prompts that include "joke"
+RepoListPage jokePrompts = client.repos().list(
+    RepoListParams.builder()
+        .query("joke")
+        .isPublic(RepoListParams.IsPublic.FALSE)
+        .build()
+);
+
+// Delete a prompt
+String promptId = "joke-generator";
+String[] parts = promptId.split("/", 2);
+String owner = parts.length > 1 ? parts[0] : "-";
+String repo = parts.length > 1 ? parts[1] : promptId;
+
+client.repos().delete(
+    RepoDeleteParams.builder()
+        .owner(owner)
+        .repo(repo)
+        .build()
+);
 ```
 
 </CodeGroup>

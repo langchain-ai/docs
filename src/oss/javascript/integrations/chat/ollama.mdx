@@ -16,17 +16,17 @@ Ollama allows you to use a wide range of models with different capabilities. Som
 
 For a complete list of supported models and model variants, see the [Ollama model library](https://ollama.com/search) and search by tag.
 
-| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ollama) | Downloads | Version |
-| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
-| [ChatOllama](https://api.js.langchain.com/classes/langchain_ollama.ChatOllama.html) | [`@langchain/ollama`](https://www.npmjs.com/package/@langchain/ollama) | ✅ | beta | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/ollama?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/ollama?style=flat-square&label=%20&) |
+| Class | Package | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ollama) | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| [ChatOllama](https://api.js.langchain.com/classes/langchain_ollama.ChatOllama.html) | [`@langchain/ollama`](https://www.npmjs.com/package/@langchain/ollama) | beta | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/ollama?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/ollama?style=flat-square&label=%20&) |
 
 ### Model features
 
 See the links in the table headers below for guides on how to use specific features.
 
-| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | JSON mode | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
-| :---: | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
-| ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 
 ## Setup
 
@@ -85,7 +85,7 @@ const aiMsg = await llm.invoke([
 aiMsg
 ```
 
-```output
+```text
 AIMessage {
   "content": "Je adore le programmation.\n\n(Note: \"programmation\" is the feminine form of the noun in French, but if you want to use the masculine form, it would be \"le programme\" instead.)",
   "additional_kwargs": {},
@@ -115,7 +115,7 @@ AIMessage {
 console.log(aiMsg.content)
 ```
 
-```output
+```text
 Je adore le programmation.
 
 (Note: "programmation" is the feminine form of the noun in French, but if you want to use the masculine form, it would be "le programme" instead.)
@@ -153,7 +153,7 @@ const resultFromTool = await llmWithTools.invoke(
 console.log(resultFromTool);
 ```
 
-```output
+```text
 AIMessage {
   "content": "",
   "additional_kwargs": {},
@@ -188,95 +188,68 @@ AIMessage {
 }
 ```
 
-### `.withStructuredOutput`
+## Structured output
 
-For [models that support tool calling](https://ollama.com/search?c=tools), you can also call `.withStructuredOutput()` to get a structured output from the tool.
+Ollama natively supports [structured output](https://docs.ollama.com/capabilities/structured-outputs) for all models, allowing you to force the model to return a specific format by calling `.withStructuredOutput()`.
 
 ```typescript
 import { ChatOllama } from "@langchain/ollama";
-import * as z from "zod";
+import { z } from "zod";
+
+// Define the schema
+const Country = z.object({
+  name: z.string(),
+  capital: z.string(),
+  languages: z.array(z.string()),
+});
 
 // Define the model
-const llmForWSO = new ChatOllama({
-  model: "llama3-groq-tool-use",
+const llm = new ChatOllama({
+  model: "llama3.1",
+  temperature: 0,
 });
 
-// Define the tool schema you'd like the model to use.
-const schemaForWSO = z.object({
-  location: z.string().describe("The city and state, e.g. San Francisco, CA"),
-});
+// Pass the schema to enforce a specific output format
+const structuredLlm = llm.withStructuredOutput(Country);
 
-// Pass the schema to the withStructuredOutput method to bind it to the model.
-const llmWithStructuredOutput = llmForWSO.withStructuredOutput(schemaForWSO, {
-  name: "get_current_weather",
-});
-
-const resultFromWSO = await llmWithStructuredOutput.invoke(
-  "What's the weather like today in San Francisco? Ensure you use the 'get_current_weather' tool."
-);
-console.log(resultFromWSO);
+const result = await structuredLlm.invoke("Tell me about Canada.");
+console.log(result);
 ```
 
 ```output
-{ location: 'San Francisco, CA' }
+{
+  name: 'Canada',
+  capital: 'Ottawa',
+  languages: [ 'English', 'French' ]
+}
 ```
 
-### JSON mode
-
-Ollama also supports a JSON mode for all chat models that coerces model outputs to only return JSON. Here's an example of how this can be useful for extraction:
+If you prefer to use structured output via tool calling, pass the `method: "functionCalling"` option:
 
 ```typescript
 import { ChatOllama } from "@langchain/ollama";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { z } from "zod";
 
-const promptForJsonMode = ChatPromptTemplate.fromMessages([
-  [
-    "system",
-    `You are an expert translator. Format all responses as JSON objects with two keys: "original" and "translated".`,
-  ],
-  ["human", `Translate "{input}" into {language}.`],
-]);
-
-const llmJsonMode = new ChatOllama({
-  baseUrl: "http://localhost:11434", // Default value
-  model: "llama3",
-  format: "json",
+// Define the schema
+const Sentence = z.object({
+  nouns: z.array(z.string()),
 });
 
-const chainForJsonMode = promptForJsonMode.pipe(llmJsonMode);
-
-const resultFromJsonMode = await chainForJsonMode.invoke({
-  input: "I love programming",
-  language: "German",
+// Define the model
+const llm = new ChatOllama({
+  model: "llama3.1",
+  temperature: 0,
 });
 
-console.log(resultFromJsonMode);
+// Use structured output via tool calling
+const structuredLlm = llm.withStructuredOutput(Sentence, { method: "functionCalling" });
+
+const result = await structuredLlm.invoke("Extract all nouns: A cat named Luna who is 5 years old and loves playing with yarn. She has grey fur");
+console.log(result);
 ```
 
 ```output
-AIMessage {
-  "content": "{\n\"original\": \"I love programming\",\n\"translated\": \"Ich liebe Programmierung\"\n}",
-  "additional_kwargs": {},
-  "response_metadata": {
-    "model": "llama3",
-    "created_at": "2024-08-01T17:24:54.35568Z",
-    "done_reason": "stop",
-    "done": true,
-    "total_duration": 1754811583,
-    "load_duration": 1297200208,
-    "prompt_eval_count": 47,
-    "prompt_eval_duration": 128532000,
-    "eval_count": 20,
-    "eval_duration": 318519000
-  },
-  "tool_calls": [],
-  "invalid_tool_calls": [],
-  "usage_metadata": {
-    "input_tokens": 47,
-    "output_tokens": 20,
-    "total_tokens": 67
-  }
-}
+{ nouns: [ 'cat', 'Luna', 'years', 'yarn', 'fur' ] }
 ```
 
 ## Multimodal models
@@ -311,7 +284,7 @@ const multiModalRes = await llmForMultiModal.invoke([
 console.log(multiModalRes);
 ```
 
-```output
+```text
 AIMessage {
   "content": " The image shows a hot dog in a bun, which appears to be a footlong. It has been cooked or grilled to the point where it's browned and possibly has some blackened edges, indicating it might be slightly overcooked. Accompanying the hot dog is a bun that looks toasted as well. There are visible char marks on both the hot dog and the bun, suggesting they have been cooked directly over a source of heat, such as a grill or broiler. The background is white, which puts the focus entirely on the hot dog and its bun. ",
   "additional_kwargs": {},
