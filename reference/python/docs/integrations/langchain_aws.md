@@ -11,7 +11,7 @@ title: AWS
 !!! note
     This package ref has not yet been fully migrated to v1.
 
-!!! warning "Reference docs"
+!!! note "Reference docs"
     This page contains **reference documentation** for AWS. See [the docs](https://docs.langchain.com/oss/python/integrations/providers/aws) for conceptual guides, tutorials, and examples on using AWS modules.
 
 ::: langchain_aws

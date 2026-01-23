@@ -66,7 +66,7 @@ The first thing you do when you define a graph is define the `State` of the grap
 :::
 
 :::js
-The first thing you do when you define a graph is define the `State` of the graph. The `State` consists of the [schema of the graph](#schema) as well as [`reducer` functions](#reducers) which specify how to apply updates to the state. The schema of the `State` will be the input schema to all `Nodes` and `Edges` in the graph, and can be either a Zod schema or a schema built using `Annotation.Root`. All `Nodes` will emit updates to the `State` which are then applied using the specified `reducer` function.
+The first thing you do when you define a graph is define the `State` of the graph. The `State` consists of the [schema of the graph](#schema) as well as [`reducer` functions](#reducers) which specify how to apply updates to the state. The schema of the `State` will be the input schema to all `Nodes` and `Edges` in the graph. You define state using the `StateSchema` class, which accepts any [standard schemas](https://standardschema.dev/) (like [Zod](https://zod.dev/)) for individual fields along with special value types like `ReducedValue` and `MessagesValue`. All `Nodes` will emit updates to the `State` which are then applied using the specified `reducer` function.
 :::
 
 ### Schema
@@ -78,7 +78,54 @@ By default, the graph will have the same input and output schemas. If you want t
 :::
 
 :::js
-The main documented way to specify the schema of a graph is by using Zod schemas. However, we also support using the `Annotation` API to define the schema of the graph.
+The main way to specify the schema of a graph is by using the `StateSchema` class. Each field in the schema can be:
+
+- A **Standard schema** for simple fields (becomes a "last value" channel that overwrites on update)
+- A **`ReducedValue`** for fields that need a custom reducer function (when nodes are run in parallel)
+- A **`MessagesValue`** for chat message lists (prebuilt with message-aware reducer)
+- An **`UntrackedValue`** for transient state that should not be checkpointed
+
+```typescript
+import {
+  StateSchema,
+  ReducedValue,
+  MessagesValue,
+  UntrackedValue
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const AgentState = new StateSchema({
+  // Prebuilt messages value with built-in reducer
+  messages: MessagesValue,
+
+  // Simple fields use Zod schemas directly
+  currentStep: z.string(),
+
+  // Fields with defaults
+  retryCount: z.number().default(0),
+
+  // Custom reducer for accumulating values
+  allSteps: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    {
+      inputSchema: z.string(),
+      reducer: (current, newStep) => [...current, newStep],
+    }
+  ),
+
+  // Transient state not saved to checkpoints
+  tempCache: new UntrackedValue(z.record(z.string(), z.unknown())),
+});
+
+// Type extraction
+type State = typeof AgentState.State;   // Full state type
+type Update = typeof AgentState.Update; // Partial update type
+
+// Use in graph
+const graph = new StateGraph(AgentState)
+  .addNode("myNode", ...)
+  .compile();
+```
 
 By default, the graph will have the same input and output schemas. If you want to change this, you can also specify explicit input and output schemas directly. This is useful when you have a lot of keys, and some are explicitly for input and others for output.
 :::
@@ -144,21 +191,24 @@ graph.invoke({"user_input":"My"})
 :::js
 
 ```typescript
-const InputState = z.object({
+import { StateSchema, GraphNode } from "@langchain/langgraph";
+import * as z from "zod";
+
+const InputState = new StateSchema({
   userInput: z.string(),
 });
 
-const OutputState = z.object({
+const OutputState = new StateSchema({
   graphOutput: z.string(),
 });
 
-const OverallState = z.object({
+const OverallState = new StateSchema({
   foo: z.string(),
   userInput: z.string(),
   graphOutput: z.string(),
 });
 
-const PrivateState = z.object({
+const PrivateState = new StateSchema({
   bar: z.string(),
 });
 
@@ -227,7 +277,7 @@ There are two subtle and important points to note here:
 
 Reducers are key to understanding how updates from nodes are applied to the `State`. Each key in the `State` has its own independent reducer function. If no reducer function is explicitly specified then it is assumed that all updates to that key should override it. There are a few different types of reducers, starting with the default type of reducer:
 
-#### Default Reducer
+#### Default reducer
 
 These two examples show how to use the default reducer:
 
@@ -246,7 +296,10 @@ class State(TypedDict):
 :::js
 
 ```typescript Example A
-const State = z.object({
+import { StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
   foo: z.number(),
   bar: z.array(z.string()),
 });
@@ -282,21 +335,19 @@ In this example, we've used the `Annotated` type to specify a reducer function (
 :::js
 
 ```typescript Example B
-import * as z from "zod";
-import { registry } from "@langchain/langgraph/zod";
+import { StateSchema, ReducedValue } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-const State = z.object({
+const State = new StateSchema({
   foo: z.number(),
-  bar: z.array(z.string()).register(registry, {
-    reducer: {
-      fn: (x, y) => x.concat(y),
-    },
-    default: () => [] as string[],
-  }),
+  bar: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
 });
 ```
 
-In this example, we've used [Zod 4 registries](https://zod.dev/metadata) to specify a reducer function for the second key (`bar`). Note that the first key remains unchanged. Let's assume the input to the graph is `{ foo: 1, bar: ["hi"] }`. Let's then assume the first `Node` returns `{ foo: 2 }`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{ foo: 2, bar: ["hi"] }`. If the second node returns `{ bar: ["bye"] }` then the `State` would then be `{ foo: 2, bar: ["hi", "bye"] }`. Notice here that the `bar` key is updated by adding the two arrays together.
+In this example, we've used `ReducedValue` to specify a reducer function for the second key (`bar`). Note that the first key remains unchanged. Let's assume the input to the graph is `{ foo: 1, bar: ["hi"] }`. Let's then assume the first `Node` returns `{ foo: 2 }`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{ foo: 2, bar: ["hi"] }`. If the second node returns `{ bar: ["bye"] }` then the `State` would then be `{ foo: 2, bar: ["hi", "bye"] }`. Notice here that the `bar` key is updated by concatenating the two arrays together.
 :::
 
 :::python
@@ -306,7 +357,152 @@ In some cases, you may want to bypass a reducer and directly overwrite a state v
 </Tip>
 :::
 
-### Working with Messages in Graph State
+:::js
+### Untracked values
+
+`UntrackedValue` is used for state fields that should exist during graph execution but should **never be checkpointed**. When a graph resumes from a checkpoint, untracked values will be reset to their initial state (or be unavailable).
+
+This is useful for:
+- **Database connections** that can't be serialized
+- **Temporary caches** that should be rebuilt on resume
+- **Large objects** you don't want to persist
+- **Runtime-only configuration** that should be passed fresh each time
+
+```typescript
+import { StateSchema, UntrackedValue, MessagesValue } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  messages: MessagesValue,
+
+  // Untracked: throws if multiple nodes write in same step (guard: true is default)
+  dbConnection: new UntrackedValue<DatabaseConnection>(),
+
+  // Untracked with guard: false allows multiple writes, keeps last value
+  tempCache: new UntrackedValue(
+    z.record(z.string(), z.unknown()),
+    { guard: false }
+  ),
+
+  // Untracked without a schema (for maximum flexibility)
+  runtimeConfig: new UntrackedValue(),
+});
+```
+
+**Behavior:**
+- During execution: Values are stored and accessible like normal state
+- On checkpoint: Untracked values are **excluded** from the checkpoint data
+- On resume: Untracked values start fresh (empty or with their default value)
+- With `guard: true` (default): Throws error if multiple nodes write in the same step
+- With `guard: false`: Multiple writes allowed, last value wins
+
+<Warning>
+Don't use `UntrackedValue` for data you need to persist across interrupts or time travel. Use regular state fields or `ReducedValue` for persistent data.
+</Warning>
+
+### Type utilities
+
+LangGraph provides several type utilities for better TypeScript type safety when defining nodes and conditional edges.
+
+#### `GraphNode`
+
+Use `GraphNode` to type node functions defined outside the graph builder:
+
+```typescript
+import { GraphNode, StateSchema, Command } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  count: z.number().default(0),
+  result: z.string(),
+});
+
+// Basic node - receives state, returns partial update
+const incrementNode: GraphNode<typeof State> = (state) => {
+  return { count: state.count + 1 };
+};
+
+// Async node
+const fetchNode: GraphNode<typeof State> = async (state, config) => {
+  const response = await fetch(`/api/data/${state.count}`);
+  return { result: await response.text() };
+};
+
+// Node with Command routing - specify valid destinations
+const routerNode: GraphNode<typeof State, "process" | "done"> = (state) => {
+  if (state.count >= 10) {
+    return new Command({ goto: "done" });
+  }
+  return new Command({
+    update: { count: state.count + 1 },
+    goto: "process"
+  });
+};
+```
+
+#### `State.Node` shorthand
+
+Each `StateSchema` instance has a `Node` property that provides a shorthand for typing nodes:
+
+```typescript
+const State = new StateSchema({
+  messages: MessagesValue,
+  step: z.string(),
+});
+
+// These are equivalent:
+const myNode1: GraphNode<typeof State> = (state) => ({ step: "done" });
+const myNode2: typeof State.Node = (state) => ({ step: "done" });
+```
+
+#### `ConditionalEdgeRouter`
+
+Use `ConditionalEdgeRouter` for routing functions in conditional edges (no state updates, just routing):
+
+```typescript
+import { ConditionalEdgeRouter, END } from "@langchain/langgraph";
+
+const State = new StateSchema({
+  shouldContinue: z.boolean(),
+  step: z.string(),
+});
+
+// Router returns node name(s) or END
+const router: ConditionalEdgeRouter<typeof State, "process" | "summarize"> = (state) => {
+  if (!state.shouldContinue) {
+    return END;
+  }
+  return state.step === "initial" ? "process" : "summarize";
+};
+
+// Use in graph
+graph.addConditionalEdges("check", router);
+```
+
+#### `StateSchema.State` and `StateSchema.Update`
+
+Extract the state and update types from a schema for use in custom type definitions:
+
+```typescript
+import { StateSchema } from "@langchain/langgraph";
+
+const MyStateSchema = new StateSchema({
+  messages: MessagesValue,
+  count: z.number().default(0),
+});
+
+// Extract the full state type
+type MyState = MyStateSchema.State;
+// { messages: BaseMessage[], count: number }
+
+// Extract the update type (partial, with reducer input types)
+type MyUpdate = MyStateSchema.Update;
+// { messages?: Messages, count?: number }
+```
+
+:::
+
+### Working with messages in graph state
 
 #### Why use messages?
 
@@ -314,7 +510,7 @@ Most modern LLM providers have a chat model interface that accepts a list of mes
 
 To read more about what message objects are, please refer to the [Messages conceptual guide](/oss/langchain/messages).
 
-#### Using Messages in your Graph
+#### Using messages in your graph
 
 :::python
 In many cases, it is helpful to store prior conversation history as a list of messages in your graph state. To do so, we can add a key (channel) to the graph state that stores a list of `Message` objects and annotate it with a reducer function (see `messages` key in the example below). The reducer function is vital to telling the graph how to update the list of `Message` objects in the state with each state update (for example, when a node sends an update). If you don't specify a reducer, every state update will overwrite the list of messages with the most recently provided value. If you wanted to simply append messages to the existing list, you could use `operator.add` as a reducer.
@@ -323,9 +519,12 @@ However, you might also want to manually update messages in your graph state (e.
 :::
 
 :::js
-In many cases, it is helpful to store prior conversation history as a list of messages in your graph state. To do so, we can add a key (channel) to the graph state that stores a list of `Message` objects and annotate it with a reducer function (see `messages` key in the example below). The reducer function is vital to telling the graph how to update the list of `Message` objects in the state with each state update (for example, when a node sends an update). If you don't specify a reducer, every state update will overwrite the list of messages with the most recently provided value. If you wanted to simply append messages to the existing list, you could use a function that concatenates arrays as a reducer.
+In many cases, it is helpful to store prior conversation history as a list of messages in your graph state. To do so, you can use the prebuilt `MessagesValue` which provides a message-aware reducer that handles message IDs, updates, and deletions automatically.
 
-However, you might also want to manually update messages in your graph state (e.g. human-in-the-loop). If you were to use a simple concatenation function, the manual state updates you send to the graph would be appended to the existing list of messages, instead of updating existing messages. To avoid that, you need a reducer that can keep track of message IDs and overwrite existing messages, if updated. To achieve this, you can use the prebuilt `messagesStateReducer` function or `MessagesZodMeta` when state schema is defined with Zod. For brand new messages, it will simply append to existing list, but it will also handle the updates for existing messages correctly.
+The `MessagesValue` reducer is vital to telling the graph how to update the list of `Message` objects in the state with each state update. If you don't specify a reducer, every state update will overwrite the list of messages with the most recently provided value. `MessagesValue` handles this correctly: for brand new messages, it appends to the existing list, and for existing messages (matched by ID), it updates them in place.
+
+<Tip>`MessagesValue` is actually a special case of `ReducedValue`, preconfigured with an internal `messagesStateReducer` that handles message lists and updates. This provides convenient, message-aware state management for chat message history in LangGraph graphs.</Tip>
+
 :::
 
 #### Serialization
@@ -360,7 +559,7 @@ class GraphState(TypedDict):
 :::
 
 :::js
-In addition to keeping track of message IDs, `MessagesZodMeta` will also try to deserialize messages into LangChain `Message` objects whenever a state update is received on the `messages` channel. This allows sending graph inputs / state updates in the following format:
+In addition to keeping track of message IDs, `MessagesValue` will also try to deserialize messages into LangChain `Message` objects whenever a state update is received on the `messages` channel. This allows sending graph inputs / state updates in the following format:
 
 ```typescript
 // this is supported
@@ -374,30 +573,27 @@ In addition to keeping track of message IDs, `MessagesZodMeta` will also try to 
 }
 ```
 
-Since the state updates are always deserialized into LangChain `Messages` when using `MessagesZodMeta`, you should use dot notation to access message attributes, like `state.messages[state.messages.length - 1].content`. Below is an example of a graph that uses `MessagesZodMeta`:
+Since the state updates are always deserialized into LangChain `Messages` when using `MessagesValue`, you should use dot notation to access message attributes, like `state.messages.at(-1).content`. Below is an example of a graph that uses `MessagesValue`:
 
 ```typescript
-import { StateGraph, MessagesZodMeta } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import * as z from "zod";
+import { StateGraph, StateSchema, MessagesValue } from "@langchain/langgraph";
 
-const MessagesZodState = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
+const State = new StateSchema({
+  messages: MessagesValue,
 });
 
-const graph = new StateGraph(MessagesZodState)
+const graph = new StateGraph(State)
   ...
 ```
 
-`MessagesZodState` is defined with a single `messages` key which is a list of @[`BaseMessage`] objects and uses the appropriate reducer. Typically, there is more state to track than just messages, so we see people extend this state and add more fields, like:
+The `messages` field is defined as a `MessagesValue` which is a list of @[`BaseMessage`] objects with a built-in reducer. Typically, there is more state to track than just messages, so we see people extend this state and add more fields, like:
 
 ```typescript
-const State = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
+import { StateSchema, MessagesValue } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  messages: MessagesValue,
   documents: z.array(z.string()),
 });
 ```
@@ -476,32 +672,37 @@ In LangGraph, nodes are typically functions (sync or async) that accept the foll
 1. `state` – The [state](#state) of the graph
 2. `config` – A @[`RunnableConfig`] object that contains configuration information like `thread_id` and tracing information like `tags`
 
-You can add nodes to a graph using the `addNode` method.
+You can add nodes to a graph using the `addNode` method. For better type safety, use the `GraphNode` type utility or `State.Node` to type your node functions:
 
 ```typescript
-import { StateGraph } from "@langchain/langgraph";
-import { RunnableConfig } from "@langchain/core/runnables";
+import { StateGraph, StateSchema, GraphNode } from "@langchain/langgraph";
 import * as z from "zod";
 
-const State = z.object({
+const State = new StateSchema({
   input: z.string(),
   results: z.string(),
 });
 
-const builder = new StateGraph(State);
-  .addNode("myNode", (state, config) => {
-    console.log("In node: ", config?.configurable?.user_id);
-    return { results: `Hello, ${state.input}!` };
-  })
-  addNode("otherNode", (state) => {
-    return state;
-  })
+// Option 1: Use GraphNode type utility
+const myNode: GraphNode<typeof State> = (state, config) => {
+  console.log("In node: ", config?.configurable?.user_id);
+  return { results: `Hello, ${state.input}!` };
+};
+
+// Option 2: Use State.Node shorthand
+const otherNode: typeof State.Node = (state) => {
+  return state;
+};
+
+const builder = new StateGraph(State)
+  .addNode("myNode", myNode)
+  .addNode("otherNode", otherNode)
   ...
 ```
 
 :::
 
-Behind the scenes, functions are converted to [`RunnableLambda`](https://python.langchain.com/api_reference/core/runnables/langchain_core.runnables.base.RunnableLambda.html), which add batch and async support to your function, along with native tracing and debugging.
+Behind the scenes, functions are converted to @[`RunnableLambda`], which add batch and async support to your function, along with native tracing and debugging.
 
 If you add a node to a graph without specifying a name, it will be given a default name equivalent to the function name.
 
@@ -523,7 +724,7 @@ builder.addNode(myNode);
 
 :::
 
-### `START` Node
+### `START` node
 
 The @[`START`] Node is a special node that represents the node that sends user input to the graph. The main purpose for referencing this node is to determine which nodes should be called first.
 
@@ -547,7 +748,7 @@ graph.addEdge(START, "nodeA");
 
 :::
 
-### `END` Node
+### `END` node
 
 The `END` Node is a special node that represents a terminal node. This node is referenced when you want to denote which edges have no actions after they are done.
 
@@ -571,7 +772,7 @@ graph.addEdge("nodeA", END);
 
 :::
 
-### Node Caching
+### Node caching
 
 :::python
 LangGraph supports caching of tasks/nodes based on the input to the node. To use caching:
@@ -630,27 +831,23 @@ LangGraph supports caching of tasks/nodes based on the input to the node. To use
   - `ttl`, the time to live for the cache in seconds. If not specified, the cache will never expire.
 
 ```typescript
-import { StateGraph, MessagesZodMeta } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import * as z from "zod";
+import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
 import { InMemoryCache } from "@langchain/langgraph-checkpoint";
+import { z } from "zod/v4";
 
-const MessagesZodState = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
+const State = new StateSchema({
+  x: z.number(),
+  result: z.number(),
 });
 
-const graph = new StateGraph(MessagesZodState)
-  .addNode(
-    "expensive_node",
-    async () => {
-      // Simulate an expensive operation
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      return { result: 10 };
-    },
-    { cachePolicy: { ttl: 3 } }
-  )
+const expensiveNode: GraphNode<typeof State> = async (state) => {
+  // Simulate an expensive operation
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  return { result: state.x * 2 };
+};
+
+const graph = new StateGraph(State)
+  .addNode("expensive_node", expensiveNode, { cachePolicy: { ttl: 3 } })
   .addEdge(START, "expensive_node")
   .compile({ cache: new InMemoryCache() });
 
@@ -673,7 +870,7 @@ Edges define how the logic is routed and how the graph decides to stop. This is 
 
 A node can have multiple outgoing edges. If a node has multiple outgoing edges, **all** of those destination nodes will be executed in parallel as a part of the next superstep.
 
-### Normal Edges
+### Normal edges
 
 :::python
 If you **always** want to go from node A to node B, you can use the @[`add_edge`] method directly.
@@ -693,7 +890,7 @@ graph.addEdge("nodeA", "nodeB");
 
 :::
 
-### Conditional Edges
+### Conditional edges
 
 :::python
 If you want to **optionally** route to one or more edges (or optionally terminate), you can use the @[`add_conditional_edges`] method. This method accepts the name of a node and a "routing function" to call after that node is executed:
@@ -830,7 +1027,9 @@ To support this design pattern, LangGraph supports returning @[`Send`] objects f
 import { Send } from "@langchain/langgraph";
 
 graph.addConditionalEdges("nodeA", (state) => {
-  return state.subjects.map((subject) => new Send("generateJoke", { subject }));
+  return state.subjects.map(
+    (subject) => new Send("generateJoke", { subject })
+  );
 });
 ```
 
@@ -858,6 +1057,27 @@ def my_node(state: State) -> Command[Literal["my_other_node"]]:
     if state["foo"] == "bar":
         return Command(update={"foo": "baz"}, goto="my_other_node")
 ```
+
+Note that @[`Command`] only adds dynamic edges, while static edges will still execute. In other words, @[`Command`] doesn't override static edges.
+
+```python
+def node_a(state: State) -> Command[Literal["my_other_node"]]:
+   if state["foo"] == "bar":
+       return Command(update={"foo": "baz"}, goto="my_other_node")
+
+# Add a static edge from "node_a" to "node_b"
+graph.add_edge("node_a", "node_b")
+
+# Command will NOT prevent "node_a" from going to "node_b"
+```
+
+In the example above, **"node_a"** will go to both **"node_b"** and **"my_other_node"**.
+
+<Note>
+
+When returning @[`Command`] in your node functions, you must add return type annotations with the list of node names the node is routing to, e.g. `Command[Literal["my_other_node"]]`. This is necessary for the graph rendering and tells LangGraph that `my_node` can navigate to `my_other_node`.
+
+</Note>
 
 :::
 
@@ -890,6 +1110,26 @@ graph.addNode("myNode", (state) => {
 });
 ```
 
+Note that @[Command] only adds dynamic edges, while static edges will still execute. In other words, @[Command] doesn't override static edges.
+
+```typescript
+graph.addNode("nodeA", (state) => {
+ if (state.foo === "bar") {
+   return new Command({
+     update: { foo: "baz" },
+     goto: "myOtherNode",
+   });
+ }
+});
+
+// Add a static edge from "nodeA" to "nodeB"
+graph.addEdge("nodeA", "nodeB")
+
+// Command will NOT prevent "nodeA" from going to "nodeB"
+```
+
+In the example above, **"nodeA"** will go to both **"nodeB"** and **"myOtherNode"**.
+
 When using @[`Command`] in your node functions, you must add the `ends` parameter when adding the node to specify which nodes it can route to:
 
 ```typescript
@@ -900,17 +1140,11 @@ builder.addNode("myNode", myNode, {
 
 :::
 
-<Note>
-
-When returning @[`Command`] in your node functions, you must add return type annotations with the list of node names the node is routing to, e.g. `Command[Literal["my_other_node"]]`. This is necessary for the graph rendering and tells LangGraph that `my_node` can navigate to `my_other_node`.
-
-</Note>
-
 Check out this [how-to guide](/oss/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command) for an end-to-end example of how to use @[`Command`].
 
-### When should I use Command instead of conditional edges?
+### When should I use command instead of conditional edges?
 
-- Use @[`Command`] when you need to **both** update the graph state **and** route to a different node. For example, when implementing [multi-agent handoffs](/oss/langchain/multi-agent#handoffs) where it's important to route to a different agent and pass some information to that agent.
+- Use @[`Command`] when you need to **both** update the graph state **and** route to a different node. For example, when implementing [multi-agent handoffs](/oss/langchain/multi-agent/handoffs) where it's important to route to a different agent and pass some information to that agent.
 - Use [conditional edges](#conditional-edges) to route between nodes conditionally without updating the state.
 
 ### Navigating to a node in a parent graph
@@ -963,32 +1197,7 @@ When you send updates from a subgraph node to a parent graph node for a key that
 
 :::
 
-:::js
-If you are using [subgraphs](/oss/langgraph/use-subgraphs), you might want to navigate from a node within a subgraph to a different subgraph (i.e. a different node in the parent graph). To do so, you can specify `graph: Command.PARENT` in `Command`:
-
-```typescript
-import { Command } from "@langchain/langgraph";
-
-graph.addNode("myNode", (state) => {
-  return new Command({
-    update: { foo: "bar" },
-    goto: "otherSubgraph", // where `otherSubgraph` is a node in the parent graph
-    graph: Command.PARENT,
-  });
-});
-```
-
-<Note>
-
-Setting `graph` to `Command.PARENT` will navigate to the closest parent graph.
-
-When you send updates from a subgraph node to a parent graph node for a key that's shared by both parent and subgraph [state schemas](#schema), you **must** define a [reducer](#reducers) for the key you're updating in the parent graph state.
-
-</Note>
-
-:::
-
-This is particularly useful when implementing [multi-agent handoffs](/oss/langchain/multi-agent#handoffs).
+This is particularly useful when implementing [multi-agent handoffs](/oss/langchain/multi-agent/handoffs).
 
 Check out [this guide](/oss/langgraph/use-graph-api#navigate-to-a-node-in-a-parent-graph) for detail.
 
@@ -1050,7 +1259,13 @@ graph.invoke(inputs, context={"llm_provider": "anthropic"})
 
 :::js
 ```typescript
+import { StateGraph, StateSchema } from "@langchain/langgraph";
 import * as z from "zod";
+
+const State = new StateSchema({
+  input: z.string(),
+  output: z.string(),
+});
 
 const ContextSchema = z.object({
   llm: z.union([z.literal("openai"), z.literal("anthropic")]),
@@ -1082,15 +1297,13 @@ def node_a(state: State, runtime: Runtime[ContextSchema]):
 
 :::js
 ```typescript
-import { Runtime } from "@langchain/langgraph";
+import { Runtime, GraphNode } from "@langchain/langgraph";
 import * as z from "zod";
 
-const nodeA = (
-  state: z.infer<typeof State>,
-  runtime: Runtime<z.infer<typeof ContextSchema>>,
-) => {
+const nodeA: GraphNode<typeof State> = (state, config) => {
   const llm = getLLM(runtime.context?.llm);
   // ...
+  return {};
 };
 ```
 :::
@@ -1100,8 +1313,8 @@ See [this guide](/oss/langgraph/use-graph-api#add-runtime-configuration) for a f
 :::js
 
 ```typescript
-graph.addNode("myNode", (state, runtime) => {
-  const llmType = runtime.context?.llm || "openai";
+graph.addNode("myNode", (state, config) => {
+  const llmType = config.context?.llm || "openai";
   const llm = getLLM(llmType);
   return { results: `Hello, ${state.input}!` };
 });
@@ -1112,7 +1325,7 @@ graph.addNode("myNode", (state, runtime) => {
 ### Recursion limit
 
 :::python
-The recursion limit sets the maximum number of [super-steps](#graphs) the graph can execute during a single execution. Once the limit is reached, LangGraph will raise `GraphRecursionError`. By default this value is set to 25 steps. The recursion limit can be set on any graph at runtime, and is passed to `invoke`/`stream` via the config dictionary. Importantly, `recursion_limit` is a standalone `config` key and should not be passed inside the `configurable` key as all other user-defined configuration. See the example below:
+The recursion limit sets the maximum number of [super-steps](#graphs) the graph can execute during a single execution. Once the limit is reached, LangGraph will raise `GraphRecursionError`. Starting in version 1.0.6, the deafult recursion limit is set to 1000 steps. The recursion limit can be set on any graph at runtime, and is passed to `invoke`/`stream` via the config dictionary. Importantly, `recursion_limit` is a standalone `config` key and should not be passed inside the `configurable` key as all other user-defined configuration. See the example below:
 
 ```python
 graph.invoke(inputs, config={"recursion_limit": 5}, context={"llm": "anthropic"})
@@ -1181,7 +1394,7 @@ def my_node(state: dict, config: RunnableConfig) -> dict:
 import { RunnableConfig } from "@langchain/core/runnables";
 import { StateGraph } from "@langchain/langgraph";
 
-async function myNode(state: any, config: RunnableConfig): Promise<any> {
+const myNode: GraphNode<typeof State> = async (state, config) => {
   const currentStep = config.metadata?.langgraph_step;
   console.log(`Currently on step: ${currentStep}`);
   return state;
@@ -1190,123 +1403,111 @@ async function myNode(state: any, config: RunnableConfig): Promise<any> {
 
 :::
 
-#### Proactive recursion handling
-
-You can check the step counter and proactively route to a different node before hitting the limit. This allows for graceful degradation within your graph.
-
 :::python
 
+#### Proactive recursion handling
+
+LangGraph provides a `RemainingSteps` managed value that tracks how many steps remain before hitting the recursion limit. This allows for graceful degradation within your graph.
+
 ```python
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, END
+from typing import Annotated, Literal
+from langgraph.graph import StateGraph, START, END
+from langgraph.managed import RemainingSteps
 
-def reasoning_node(state: dict, config: RunnableConfig) -> dict:
-    current_step = config["metadata"]["langgraph_step"]
-    recursion_limit = config["recursion_limit"]  # always present, defaults to 25
+class State(TypedDict):
+    messages: Annotated[list, lambda x, y: x + y]
+    remaining_steps: RemainingSteps  # Managed value - tracks steps until limit
 
-    # Check if we're approaching the limit (e.g., 80% threshold)
-    if current_step >= recursion_limit * 0.8:
-        return {
-            **state,
-            "route_to": "fallback",
-            "reason": "Approaching recursion limit"
-        }
+def reasoning_node(state: State) -> dict:
+    # RemainingSteps is automatically populated by LangGraph
+    remaining = state["remaining_steps"]
+
+    # Check if we're running low on steps
+    if remaining <= 2:
+        return {"messages": ["Approaching limit, wrapping up..."]}
 
     # Normal processing
-    return {"messages": state["messages"] + ["thinking..."]}
+    return {"messages": ["thinking..."]}
 
-def fallback_node(state: dict, config: RunnableConfig) -> dict:
+def route_decision(state: State) -> Literal["reasoning_node", "fallback_node"]:
+    """Route based on remaining steps"""
+    if state["remaining_steps"] <= 2:
+        return "fallback_node"
+    return "reasoning_node"
+
+def fallback_node(state: State) -> dict:
     """Handle cases where recursion limit is approaching"""
-    return {
-        **state,
-        "messages": state["messages"] + ["Reached complexity limit, providing best effort answer"]
-    }
-
-def route_based_on_state(state: dict) -> str:
-    if state.get("route_to") == "fallback":
-        return "fallback"
-    elif state.get("done"):
-        return END
-    return "reasoning"
+    return {"messages": ["Reached complexity limit, providing best effort answer"]}
 
 # Build graph
-graph = StateGraph(dict)
-graph.add_node("reasoning", reasoning_node)
-graph.add_node("fallback", fallback_node)
-graph.add_conditional_edges("reasoning", route_based_on_state)
-graph.add_edge("fallback", END)
-graph.set_entry_point("reasoning")
+builder = StateGraph(State)
+builder.add_node("reasoning_node", reasoning_node)
+builder.add_node("fallback_node", fallback_node)
+builder.add_edge(START, "reasoning_node")
+builder.add_conditional_edges("reasoning_node", route_decision)
+builder.add_edge("fallback_node", END)
 
-app = graph.compile()
+graph = builder.compile()
+
+# RemainingSteps works with any recursion_limit
+result = graph.invoke({"messages": []}, {"recursion_limit": 10})
 ```
 
 :::
 
 :::js
 
+Design your graph with explicit termination conditions, and catch `GraphRecursionError` as a safety net:
+
 ```typescript
-import { RunnableConfig } from "@langchain/core/runnables";
-import { StateGraph, END } from "@langchain/langgraph";
+import {
+  StateGraph,
+  StateSchema,
+  ReducedValue,
+  GraphNode,
+  ConditionalEdgeRouter,
+  END,
+  GraphRecursionError
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-interface State {
-  messages: string[];
-  route_to?: string;
-  reason?: string;
-  done?: boolean;
-}
+const State = new StateSchema({
+  messages: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+});
 
-async function reasoningNode(
-  state: State,
-  config: RunnableConfig
-): Promise<Partial<State>> {
-  const currentStep = config.metadata?.langgraph_step ?? 0;
-  const recursionLimit = config.recursionLimit!; // always present, defaults to 25
-
-  // Check if we're approaching the limit (e.g., 80% threshold)
-  if (currentStep >= recursionLimit * 0.8) {
+// Build graph with explicit termination logic
+const graph = new StateGraph(State)
+  .addNode("reasoning", async (state) => {
+    // Normal processing - design your graph with explicit termination conditions
     return {
-      ...state,
-      route_to: "fallback",
-      reason: "Approaching recursion limit"
+      messages: ["thinking..."]
     };
-  }
-
-  // Normal processing
-  return {
-    messages: [...state.messages, "thinking..."]
-  };
-}
-
-async function fallbackNode(
-  state: State,
-  config: RunnableConfig
-): Promise<Partial<State>> {
-  return {
-    ...state,
-    messages: [
-      ...state.messages,
-      "Reached complexity limit, providing best effort answer"
-    ]
-  };
-}
-
-function routeBasedOnState(state: State): string {
-  if (state.route_to === "fallback") {
-    return "fallback";
-  } else if (state.done) {
-    return END;
-  }
-  return "reasoning";
-}
-
-// Build graph
-const graph = new StateGraph<State>({ channels: {} })
-  .addNode("reasoning", reasoningNode)
-  .addNode("fallback", fallbackNode)
-  .addConditionalEdges("reasoning", routeBasedOnState)
-  .addEdge("fallback", END);
+  })
+  .addConditionalEdges("reasoning", (state) => {
+    // Add your termination condition here
+    if (state.messages.length >= 5) {
+      return END;
+    }
+    return "reasoning";
+  });
 
 const app = graph.compile();
+
+// Catch GraphRecursionError as a safety net
+try {
+  const result = await app.invoke(
+    { messages: [] },
+    { recursionLimit: 10 }
+  );
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    console.log("Recursion limit reached, handling gracefully");
+    // Handle the error - return partial results, notify user, etc.
+  }
+}
 ```
 
 :::
@@ -1318,33 +1519,50 @@ There are two main approaches to handling recursion limits: proactive (monitorin
 :::python
 
 ```python
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph, END
+from typing import Annotated, Literal, TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.managed import RemainingSteps
 from langgraph.errors import GraphRecursionError
 
-# Proactive Approach (recommended)
-def agent_with_monitoring(state: dict, config: RunnableConfig) -> dict:
+class State(TypedDict):
+    messages: Annotated[list, lambda x, y: x + y]
+    remaining_steps: RemainingSteps
+
+# Proactive Approach (recommended) - using RemainingSteps
+def agent_with_monitoring(state: State) -> dict:
     """Proactively monitor and handle recursion within the graph"""
-    current_step = config["metadata"]["langgraph_step"]
-    recursion_limit = config["recursion_limit"]
+    remaining = state["remaining_steps"]
 
     # Early detection - route to internal handling
-    if current_step >= recursion_limit - 2:  # 2 steps before limit
+    if remaining <= 2:
         return {
-            **state,
-            "status": "recursion_limit_approaching",
-            "final_answer": "Reached iteration limit, returning partial result"
+            "messages": ["Approaching limit, returning partial result"]
         }
 
     # Normal processing
-    return {"messages": state["messages"] + [f"Step {current_step}"]}
+    return {"messages": [f"Processing... ({remaining} steps remaining)"]}
 
-# Reactive Approach (fallback)
+def route_decision(state: State) -> Literal["agent", END]:
+    if state["remaining_steps"] <= 2:
+        return END
+    return "agent"
+
+# Build graph
+builder = StateGraph(State)
+builder.add_node("agent", agent_with_monitoring)
+builder.add_edge(START, "agent")
+builder.add_conditional_edges("agent", route_decision)
+graph = builder.compile()
+
+# Proactive: Graph completes gracefully
+result = graph.invoke({"messages": []}, {"recursion_limit": 10})
+
+# Reactive Approach (fallback) - catching error externally
 try:
-    result = graph.invoke(initial_state, {"recursion_limit": 10})
+    result = graph.invoke({"messages": []}, {"recursion_limit": 10})
 except GraphRecursionError as e:
     # Handle externally after graph execution fails
-    result = fallback_handler(initial_state)
+    result = {"messages": ["Fallback: recursion limit exceeded"]}
 ```
 
 :::
@@ -1352,57 +1570,65 @@ except GraphRecursionError as e:
 :::js
 
 ```typescript
-import { RunnableConfig } from "@langchain/core/runnables";
-import { StateGraph, END } from "@langchain/langgraph";
-import { GraphRecursionError } from "@langchain/langgraph";
+import {
+  StateGraph,
+  StateSchema,
+  ReducedValue,
+  GraphNode,
+  ConditionalEdgeRouter,
+  END,
+  GraphRecursionError
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-interface State {
-  messages: string[];
-  status?: string;
-  final_answer?: string;
-}
+const State = new StateSchema({
+  messages: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+});
 
-// Proactive Approach (recommended)
-async function agentWithMonitoring(
-  state: State,
-  config: RunnableConfig
-): Promise<Partial<State>> {
-  const currentStep = config.metadata?.langgraph_step ?? 0;
-  const recursionLimit = config.recursionLimit!;
 
-  // Early detection - route to internal handling
-  if (currentStep >= recursionLimit - 2) { // 2 steps before limit
+// Build graph with explicit termination logic
+const builder = new StateGraph(State)
+  .addNode("agent", async (state) => {
     return {
-      ...state,
-      status: "recursion_limit_approaching",
-      final_answer: "Reached iteration limit, returning partial result"
+      messages: ["Processing..."]
     };
-  }
+  })
+  .addConditionalEdges("agent", (state) => {
+    // Design termination conditions into your graph
+    if (state.messages.length >= 5) {
+      return END;
+    }
+    return "agent";
+  });
 
-  // Normal processing
-  return {
-    messages: [...state.messages, `Step ${currentStep}`]
-  };
-}
+const graph = builder.compile();
 
-// Reactive Approach (fallback)
+// Reactive Approach - catch GraphRecursionError as safety net
 try {
-  const result = await graph.invoke(initialState, { recursionLimit: 10 });
+  const result = await graph.invoke(
+    { messages: [] },
+    { recursionLimit: 10 }
+  );
 } catch (error) {
   if (error instanceof GraphRecursionError) {
     // Handle externally after graph execution fails
-    const result = await fallbackHandler(initialState);
+    console.log("Recursion limit exceeded, handling gracefully");
   }
 }
 ```
 
 :::
 
+:::python
+
 The key differences between these approaches are:
 
 | Approach | Detection | Handling | Control Flow |
 |----------|-----------|----------|--------------|
-| Proactive (using `langgraph_step`) | Before limit reached | Inside graph via conditional routing | Graph continues to completion node |
+| Proactive (using `RemainingSteps`) | Before limit reached | Inside graph via conditional routing | Graph continues to completion node |
 | Reactive (catching `GraphRecursionError`) | After limit exceeded | Outside graph in try/catch | Graph execution terminated |
 
 **Proactive advantages:**
@@ -1417,6 +1643,24 @@ The key differences between these approaches are:
 - Simpler implementation
 - No need to modify graph logic
 - Centralized error handling
+
+:::
+
+:::js
+
+The reactive approach catches `GraphRecursionError` after the limit is exceeded. Design your graph with explicit termination conditions to avoid hitting the limit in the first place.
+
+| Approach | Detection | Handling | Control Flow |
+|----------|-----------|----------|--------------|
+| Reactive (catching `GraphRecursionError`) | After limit exceeded | Outside graph in try/catch | Graph execution terminated |
+
+**Reactive advantages:**
+
+- Simple implementation
+- No need to modify graph logic
+- Centralized error handling
+
+:::
 
 #### Other available metadata
 
@@ -1444,10 +1688,7 @@ def inspect_metadata(state: dict, config: RunnableConfig) -> dict:
 Along with `langgraph_step`, the following metadata is also available in `config.metadata`:
 
 ```typescript
-async function inspectMetadata(
-  state: any,
-  config: RunnableConfig
-): Promise<any> {
+const inspectMetadata: GraphNode<typeof State> = async (state, config) => {
   const metadata = config.metadata;
 
   console.log(`Step: ${metadata?.langgraph_step}`);

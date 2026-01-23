@@ -3,8 +3,6 @@ title: Guardrails
 description: Implement safety checks and content filtering for your agents
 ---
 
-
-
 Guardrails help you build safe, compliant AI applications by validating and filtering content at key points in your agent's execution. They can detect sensitive information, enforce content policies, validate outputs, and prevent unsafe behaviors before they cause problems.
 
 Common use cases include:
@@ -17,22 +15,22 @@ Common use cases include:
 You can implement guardrails using [middleware](/oss/langchain/middleware) to intercept execution at strategic points - before the agent starts, after it completes, or around model and tool calls.
 
 <div style={{ display: "flex", justifyContent: "center" }}>
-  <img
-    src="/oss/images/middleware_final.png"
-    alt="Middleware flow diagram"
-    className="rounded-lg"
-  />
+    <img
+        src="/oss/images/middleware_final.png"
+        alt="Middleware flow diagram"
+        className="rounded-lg"
+    />
 </div>
 
 Guardrails can be implemented using two complementary approaches:
 
 <CardGroup cols={2}>
-  <Card title="Deterministic guardrails" icon="list-check">
-    Use rule-based logic like regex patterns, keyword matching, or explicit checks. Fast, predictable, and cost-effective, but may miss nuanced violations.
-  </Card>
-  <Card title="Model-based guardrails" icon="brain">
-    Use LLMs or classifiers to evaluate content with semantic understanding. Catch subtle issues that rules miss, but are slower and more expensive.
-  </Card>
+    <Card title="Deterministic guardrails" icon="list-check">
+        Use rule-based logic like regex patterns, keyword matching, or explicit checks. Fast, predictable, and cost-effective, but may miss nuanced violations.
+    </Card>
+    <Card title="Model-based guardrails" icon="brain">
+        Use LLMs or classifiers to evaluate content with semantic understanding. Catch subtle issues that rules miss, but are slower and more expensive.
+    </Card>
 </CardGroup>
 
 LangChain provides both built-in guardrails (e.g., [PII detection](#pii-detection), [human-in-the-loop](#human-in-the-loop)) and a flexible middleware system for building custom guardrails using either approach.
@@ -49,7 +47,7 @@ The PII middleware supports multiple strategies for handling detected PII:
 
 | Strategy | Description | Example |
 |----------|-------------|---------|
-| `redact` | Replace with `[REDACTED_TYPE]` | `[REDACTED_EMAIL]` |
+| `redact` | Replace with `[REDACTED_{PII_TYPE}]` | `[REDACTED_EMAIL]` |
 | `mask` | Partially obscure (e.g., last 4 digits) | `****-****-****-1234` |
 | `hash` | Replace with deterministic hash | `a8f5f167...` |
 | `block` | Raise exception when detected | Error thrown |
@@ -88,7 +86,7 @@ agent = create_agent(
 
 # When user provides PII, it will be handled according to the strategy
 result = agent.invoke({
-    "messages": [{"role": "user", "content": "My email is john.doe@example.com and card is 4532-1234-5678-9010"}]
+    "messages": [{"role": "user", "content": "My email is john.doe@example.com and card is 5105-1051-0510-5100"}]
 })
 ```
 :::
@@ -127,7 +125,7 @@ const agent = createAgent({
 const result = await agent.invoke({
   messages: [{
     role: "user",
-    content: "My email is john.doe@example.com and card is 4532-1234-5678-9010"
+    content: "My email is john.doe@example.com and card is 5105-1051-0510-5100"
   }]
 });
 ```
@@ -392,36 +390,39 @@ const contentFilterMiddleware = (bannedKeywords: string[]) => {
 
   return createMiddleware({
     name: "ContentFilterMiddleware",
-    beforeAgent: (state) => {
-      // Get the first user message
-      if (!state.messages || state.messages.length === 0) {
-        return;
-      }
-
-      const firstMessage = state.messages[0];
-      if (firstMessage._getType() !== "human") {
-        return;
-      }
-
-      const content = firstMessage.content.toString().toLowerCase();
-
-      // Check for banned keywords
-      for (const keyword of keywords) {
-        if (content.includes(keyword)) {
-          // Block execution before any processing
-          return {
-            messages: [
-              new AIMessage(
-                "I cannot process requests containing inappropriate content. Please rephrase your request."
-              )
-            ],
-            jumpTo: "end",
-          };
+    beforeAgent: {
+      hook: (state) => {
+        // Get the first user message
+        if (!state.messages || state.messages.length === 0) {
+          return;
         }
-      }
 
-      return;
-    },
+        const firstMessage = state.messages[0];
+        if (firstMessage._getType() !== "human") {
+          return;
+        }
+
+        const content = firstMessage.content.toString().toLowerCase();
+
+        // Check for banned keywords
+        for (const keyword of keywords) {
+          if (content.includes(keyword)) {
+            // Block execution before any processing
+            return {
+              messages: [
+                new AIMessage(
+                  "I cannot process requests containing inappropriate content. Please rephrase your request."
+                )
+              ],
+              jumpTo: "end",
+            };
+          }
+        }
+
+        return;
+      },
+      canJumpTo: ['end']
+    }
   });
 };
 
@@ -454,7 +455,7 @@ Use "after agent" hooks to validate final outputs once before returning to the u
 ```python title="Class syntax"
 from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
 from langgraph.runtime import Runtime
-from langchain_core.messages import AIMessage
+from langchain.messages import AIMessage
 from langchain.chat_models import init_chat_model
 from typing import Any
 
@@ -484,13 +485,7 @@ class SafetyGuardrailMiddleware(AgentMiddleware):
         result = self.safety_model.invoke([{"role": "user", "content": safety_prompt}])
 
         if "UNSAFE" in result.content:
-            return {
-                "messages": [{
-                    "role": "assistant",
-                    "content": "I cannot provide that response. Please rephrase your request."
-                }],
-                "jump_to": "end"
-            }
+            last_message.content = "I cannot provide that response. Please rephrase your request."
 
         return None
 
@@ -511,7 +506,7 @@ result = agent.invoke({
 ```python title="Decorator syntax"
 from langchain.agents.middleware import after_agent, AgentState, hook_config
 from langgraph.runtime import Runtime
-from langchain_core.messages import AIMessage
+from langchain.messages import AIMessage
 from langchain.chat_models import init_chat_model
 from typing import Any
 
@@ -537,13 +532,7 @@ def safety_guardrail(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
     result = safety_model.invoke([{"role": "user", "content": safety_prompt}])
 
     if "UNSAFE" in result.content:
-        return {
-            "messages": [{
-                "role": "assistant",
-                "content": "I cannot provide that response. Please rephrase your request."
-            }],
-            "jump_to": "end"
-        }
+        last_message.content = "I cannot provide that response. Please rephrase your request."
 
     return None
 
@@ -574,40 +563,43 @@ const safetyGuardrailMiddleware = () => {
 
   return createMiddleware({
     name: "SafetyGuardrailMiddleware",
-    afterAgent: async (state) => {
-      // Get the final AI response
-      if (!state.messages || state.messages.length === 0) {
+    afterAgent: {
+      hook: async (state) => {
+        // Get the final AI response
+        if (!state.messages || state.messages.length === 0) {
+          return;
+        }
+
+        const lastMessage = state.messages[state.messages.length - 1];
+        if (lastMessage._getType() !== "ai") {
+          return;
+        }
+
+        // Use a model to evaluate safety
+        const safetyPrompt = `Evaluate if this response is safe and appropriate.
+        Respond with only 'SAFE' or 'UNSAFE'.
+
+        Response: ${lastMessage.content.toString()}`;
+
+        const result = await safetyModel.invoke([
+          { role: "user", content: safetyPrompt }
+        ]);
+
+        if (result.content.toString().includes("UNSAFE")) {
+          return {
+            messages: [
+              new AIMessage(
+                "I cannot provide that response. Please rephrase your request."
+              )
+            ],
+            jumpTo: "end",
+          };
+        }
+
         return;
-      }
-
-      const lastMessage = state.messages[state.messages.length - 1];
-      if (lastMessage._getType() !== "ai") {
-        return;
-      }
-
-      // Use a model to evaluate safety
-      const safetyPrompt = `Evaluate if this response is safe and appropriate.
-      Respond with only 'SAFE' or 'UNSAFE'.
-
-      Response: ${lastMessage.content.toString()}`;
-
-      const result = await safetyModel.invoke([
-        { role: "user", content: safetyPrompt }
-      ]);
-
-      if (result.content.toString().includes("UNSAFE")) {
-        return {
-          messages: [
-            new AIMessage(
-              "I cannot provide that response. Please rephrase your request."
-            )
-          ],
-          jumpTo: "end",
-        };
-      }
-
-      return;
-    },
+      },
+      canJumpTo: ['end']
+    }
   });
 };
 

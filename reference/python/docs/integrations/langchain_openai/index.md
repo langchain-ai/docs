@@ -71,4 +71,12 @@ title: OpenAI
 
     [:octicons-arrow-right-24: Reference](./BaseChatOpenAI.md)
 
+- :material-middleware:{ .lg .middle } __Middleware__
+
+    ---
+
+    OpenAI-specific middleware for moderation and safety.
+
+    [:octicons-arrow-right-24: Reference](./middleware.md)
+
 </div>

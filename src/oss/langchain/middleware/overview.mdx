@@ -1,0 +1,84 @@
+---
+title: Overview
+description: Control and customize agent execution at every step
+---
+
+Middleware provides a way to more tightly control what happens inside the agent. Middleware is useful for the following:
+
+- Tracking agent behavior with logging, analytics, and debugging.
+- Transforming prompts, [tool selection](/oss/langchain/middleware/built-in#llm-tool-selector), and output formatting.
+- Adding [retries](/oss/langchain/middleware/built-in#tool-retry), [fallbacks](/oss/langchain/middleware/built-in#model-fallback), and early termination logic.
+- Applying [rate limits](/oss/langchain/middleware/built-in#model-call-limit), guardrails, and [PII detection](/oss/langchain/middleware/built-in#pii-detection).
+
+:::python
+Add middleware by passing them to @[`create_agent`]:
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware, HumanInTheLoopMiddleware
+
+agent = create_agent(
+    model="gpt-4o",
+    tools=[...],
+    middleware=[
+        SummarizationMiddleware(...),
+        HumanInTheLoopMiddleware(...)
+    ],
+)
+```
+:::
+
+:::js
+Add middleware by passing them to `createAgent`:
+
+```typescript
+import {
+  createAgent,
+  summarizationMiddleware,
+  humanInTheLoopMiddleware,
+} from "langchain";
+
+const agent = createAgent({
+  model: "gpt-4o",
+  tools: [...],
+  middleware: [summarizationMiddleware, humanInTheLoopMiddleware],
+});
+```
+:::
+
+## The agent loop
+
+The core agent loop involves calling a model, letting it choose tools to execute, and then finishing when it calls no more tools:
+
+<img
+    src="/oss/images/core_agent_loop.png"
+    alt="Core agent loop diagram"
+    style={{height: "200px", width: "auto", justifyContent: "center"}}
+    className="rounded-lg block mx-auto"
+/>
+
+Middleware exposes hooks before and after each of those steps:
+
+<img
+    src="/oss/images/middleware_final.png"
+    alt="Middleware flow diagram"
+    style={{height: "300px", width: "auto", justifyContent: "center"}}
+    className="rounded-lg mx-auto"
+/>
+
+## Additional resources
+
+<CardGroup cols={2}>
+    <Card title="Built-in middleware" icon="box" href="/oss/langchain/middleware/built-in">
+        Explore built-in middleware for common use cases.
+    </Card>
+    <Card title="Custom middleware" icon="code" href="/oss/langchain/middleware/custom">
+        Build your own middleware with hooks and decorators.
+    </Card>
+    <Card title="Middleware API reference" icon="book" href="https://reference.langchain.com/python/langchain/middleware/">
+        Complete API reference for middleware.
+    </Card>
+    <Card title="Testing agents" icon="scale-unbalanced" href="/oss/langchain/test">
+        Test your agents with LangSmith.
+    </Card>
+</CardGroup>

@@ -1,6 +1,6 @@
 ---
 title: LangChain v1 migration guide
-sidebarTitle: Migration guide
+sidebarTitle: LangChain v1
 ---
 
 This guide outlines the major changes between [LangChain v1](/oss/releases/langchain-v1) and previous versions.
@@ -48,7 +48,7 @@ If you were using any of the following from the `langchain` package, you'll need
 
     ```python v0 (old)
     # Chains
-    from langchain.chains import LLMChain
+    from langchain_classic.chains import LLMChain
 
     # Retrievers
     from langchain.retrievers import ...
@@ -93,7 +93,7 @@ The table below outlines what functionality has changed from @[`create_react_age
 | [Structured output](#structured-output) | prompted output removed, use `ToolStrategy`/`ProviderStrategy` |
 | [Streaming node name](#streaming-node-name-rename) | Node name changed from `"agent"` to `"model"` |
 | [Runtime context](#runtime-context) | Dependency injection via `context` argument instead of `config["configurable"]` |
-| [Namespace](#simplified-namespace) | Streamlined to focus on agent building blocks, legacy code moved to `langchain-classic` |
+| [Namespace](#simplified-package) | Streamlined to focus on agent building blocks, legacy code moved to `langchain-classic` |
 
 ### Import path
 
@@ -270,7 +270,7 @@ agent = create_agent(
     middleware=[
         SummarizationMiddleware(  # [!code highlight]
             model="claude-sonnet-4-5-20250929",  # [!code highlight]
-            max_tokens_before_summary=1000  # [!code highlight]
+            trigger={"tokens": 1000}  # [!code highlight]
         )  # [!code highlight]
     ]  # [!code highlight]
 )
@@ -310,12 +310,16 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 agent = create_agent(
     model="claude-sonnet-4-5-20250929",
     tools=[read_email, send_email],
-    middleware=[HumanInTheLoopMiddleware(
-        interrupt_on={
-            "send_email": True,
-            "description": "Please review this email before sending"
-        },
-    )]
+    middleware=[
+        HumanInTheLoopMiddleware(
+            interrupt_on={
+                "send_email": {
+                    "description": "Please review this email before sending",
+                    "allowed_decisions": ["approve", "reject"]
+                }
+            }
+        )
+    ]
 )
 ```
 
@@ -364,7 +368,7 @@ class CustomState(AgentState):
 
 @tool  # [!code highlight]
 def greet(
-    runtime: ToolRuntime[CustomState]
+    runtime: ToolRuntime[None, CustomState]
 ) -> str:
     """Use this to greet the user by name."""
     user_name = runtime.state.get("user_name", "Unknown")  # [!code highlight]
@@ -458,7 +462,7 @@ from typing_extensions import Annotated
 from pydantic import BaseModel
 from langgraph.graph import StateGraph
 from langgraph.graph.messages import add_messages
-from langchain_core.messages import AnyMessage
+from langchain.messages import AnyMessage
 
 
 class AgentState(BaseModel):  # [!code highlight]
@@ -488,24 +492,23 @@ This functionality has been ported to the middleware interface in v1.
 ```python v1 (new)
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
-    AgentMiddleware, ModelRequest, ModelRequestHandler
+    AgentMiddleware, ModelRequest
 )
-from langchain.messages import AIMessage
+from langchain.agents.middleware.types import ModelResponse
 from langchain_openai import ChatOpenAI
-
+from typing import Callable
 
 basic_model = ChatOpenAI(model="gpt-5-nano")
 advanced_model = ChatOpenAI(model="gpt-5")
 
 class DynamicModelMiddleware(AgentMiddleware):
 
-    def wrap_model_call(self, request: ModelRequest, handler: ModelRequestHandler) -> AIMessage:
+    def wrap_model_call(self, request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]) -> ModelResponse:
         if len(request.state.messages) > self.messages_threshold:
             model = advanced_model
         else:
             model = basic_model
-
-        return handler(request.replace(model=model))
+        return handler(request.override(model=model))
 
     def __init__(self, messages_threshold: int) -> None:
         self.messages_threshold = messages_threshold
@@ -589,10 +592,52 @@ You can now configure the handling of tool errors with middleware implementing t
 
 <CodeGroup>
 ```python v1 (new)
-# Example coming soon
+from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
+from langchain.messages import ToolMessage
+
+
+@wrap_tool_call
+def handle_tool_errors(request, handler):
+    """Handle tool execution errors with custom messages."""
+    try:
+        return handler(request)
+    except Exception as e:
+        # Only handle errors that occur during tool execution due to invalid inputs
+        # that pass schema validation but fail at runtime (e.g., invalid SQL syntax).
+        # Do NOT handle:
+        # - Network failures (use tool retry middleware instead)
+        # - Incorrect tool implementation errors (should bubble up)
+        # - Schema mismatch errors (already auto-handled by the framework)
+        #
+        # Return a custom error message to the model
+        return ToolMessage(
+            content=f"Tool error: Please check your input and try again. ({str(e)})",
+            tool_call_id=request.tool_call["id"]
+        )
+
+agent = create_agent(
+    model="claude-sonnet-4-5-20250929",
+    tools=[check_weather, search_web],
+    middleware=[handle_tool_errors]
+)
 ```
 ```python v0 (old)
-# Example coming soon
+from langgraph.prebuilt import create_react_agent, ToolNode
+from langchain.messages import ToolMessage
+
+
+def handle_tool_error(error: Exception) -> str:
+    """Custom error handler function."""
+    return f"Tool error: Please check your input and try again. ({str(error)})"
+
+agent = create_react_agent(
+    model="claude-sonnet-4-5-20250929",
+    tools=ToolNode(
+        [check_weather, search_web],
+        handle_tool_errors=handle_tool_error  # [!code highlight]
+    )
+)
 ```
 </CodeGroup>
 
@@ -872,7 +917,7 @@ If you were using any of the following from the `langchain` package, you'll need
 
     ```python v0 (old)
     # Chains
-    from langchain.chains import LLMChain
+    from langchain_classic.chains import LLMChain
 
     # Retrievers
     from langchain.retrievers import ...
@@ -915,7 +960,7 @@ def bind_tools(
 ```
 </CodeGroup>
 
-### Default message format for OpenAI Responses API
+### Default message format for OpenAI responses API
 
 When interacting with the Responses API, `langchain-openai` now defaults to storing response items in message `content`. To restore previous behavior, set the `LC_OUTPUT_VERSION` environment variable to `v0`, or specify `output_version="v0"` when instantiating @[`ChatOpenAI`].
 
@@ -930,7 +975,7 @@ The `max_tokens` parameter in `langchain-anthropic` now defaults to higher value
 
 ### Legacy code moved to `langchain-classic`
 
-Existing functionality outside the focus of standard interfaces and agents has been moved to the [`langchain-classic`](https://pypi.org/project/langchain-classic) package. See the [Simplified namespace](#simplified-namespace) section for details on what's available in the core `langchain` package and what moved to `langchain-classic`.
+Existing functionality outside the focus of standard interfaces and agents has been moved to the [`langchain-classic`](https://pypi.org/project/langchain-classic) package. See the [Simplified namespace](#simplified-package) section for details on what's available in the core `langchain` package and what moved to `langchain-classic`.
 
 ### Removal of deprecated APIs
 
@@ -961,3 +1006,10 @@ The `example` parameter has been removed from @[`AIMessage`] objects. We recomme
 - The logic for merging message chunks (`AIMessageChunk.add`) has been updated with more sophisticated selection handling for the final id for the merged chunk. It prioritizes provider-assigned IDs over LangChain-generated IDs.
 - We now open files with `utf-8` encoding by default.
 - Standard tests now use multimodal content blocks.
+
+## Archived docs
+
+Old docs are archived for reference:
+
+- [v0.3 docs content](https://github.com/langchain-ai/langchain/tree/v0.3/docs/docs)
+- [v0.3 API reference](https://reference.langchain.com/v0.3/python/)

@@ -28,31 +28,28 @@ build:
 	@echo "Syncing dependencies..."
 	@uv sync
 	@./install-mkdocs.sh
-	@if [ "$$VERCEL" = "1" ] && [ -n "$$MKDOCS_INSIDERS" ]; then \
-		echo "Building with Insiders plugins enabled..."; \
-		ENABLE_INSIDERS_PLUGINS=true uv run --no-sync python -m mkdocs build -c -f mkdocs.yml; \
-	else \
-		echo "Building without Insiders plugins..."; \
-		uv run --no-sync python -m mkdocs build -c -f mkdocs.yml; \
-	fi
+	@echo "Building documentation..."
+	@uv run --no-sync python -m mkdocs build -c -f mkdocs.yml
 
 # To preview what the docs will look like when built
 serve-clean-docs:
 	@./install-mkdocs.sh
-	@if [ "$$VERCEL" = "1" ] && [ -n "$$MKDOCS_INSIDERS" ]; then \
-		ENABLE_INSIDERS_PLUGINS=true uv run --no-sync python -m mkdocs serve -c -f mkdocs.yml --strict; \
-	else \
-		uv run --no-sync python -m mkdocs serve -c -f mkdocs.yml --strict; \
-	fi
+	@port=8000; \
+	while lsof -ti:$$port > /dev/null 2>&1; do \
+		port=$$((port + 1)); \
+	done; \
+	echo "Starting MkDocs server on port $$port..."; \
+	uv run --no-sync python -m mkdocs serve -c -f mkdocs.yml --strict -a 127.0.0.1:$$port
 
 # For local development; uses --dirty to avoid rebuilding unchanged files
 serve-docs:
 	@./install-mkdocs.sh
-	@if [ "$$VERCEL" = "1" ] && [ -n "$$MKDOCS_INSIDERS" ]; then \
-		ENABLE_INSIDERS_PLUGINS=true uv run --no-sync python -m mkdocs serve -f mkdocs.yml --dirty; \
-	else \
-		uv run --no-sync python -m mkdocs serve -f mkdocs.yml --dirty; \
-	fi
+	@port=8000; \
+	while lsof -ti:$$port > /dev/null 2>&1; do \
+		port=$$((port + 1)); \
+	done; \
+	echo "Starting MkDocs server on port $$port..."; \
+	uv run --no-sync python -m mkdocs serve -f mkdocs.yml --dirty -a 127.0.0.1:$$port
 
 # format-docs:
 # 	uv run ruff format docs

@@ -31,4 +31,12 @@ title: Anthropic
 
     [:octicons-arrow-right-24: Reference](./AnthropicLLM.md)
 
+- :material-middleware:{ .lg .middle } __Middleware__
+
+    ---
+
+    Anthropic-specific middleware for Claude models.
+
+    [:octicons-arrow-right-24: Reference](./middleware.md)
+
 </div>
