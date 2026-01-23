@@ -2,13 +2,15 @@
 title: OpenDataLoader PDF
 ---
 
-**Safe, Open, High-Performance — PDF for AI**
+**PDF Parsing for RAG** — Convert to Markdown & JSON, Fast, Local, No GPU
 
-[OpenDataLoader PDF](https://github.com/opendataloader-project/opendataloader-pdf) converts PDFs into JSON, Markdown or Html — ready to feed into modern AI stacks (LLMs, vector search, and RAG).
+[OpenDataLoader PDF](https://github.com/opendataloader-project/opendataloader-pdf) converts PDFs into **LLM-ready Markdown and JSON** with accurate reading order, table extraction, and bounding boxes — all running locally on your machine.
 
-It reconstructs document layout (headings, lists, tables, and reading order) so the content is easier to chunk, index, and query.
-Powered by fast, heuristic, rule-based inference, it runs entirely on your local machine and delivers high-throughput processing for large document sets.
-AI-safety is enabled by default and automatically filters likely prompt-injection content embedded in PDFs to reduce downstream risk.
+**Why developers choose OpenDataLoader:**
+- **Deterministic** — Same input always produces same output (no LLM hallucinations)
+- **Fast** — Process 100+ pages per second on CPU
+- **Private** — 100% local, zero data transmission
+- **Accurate** — Bounding boxes for every element, correct multi-column reading order
 
 ## Overview
 
@@ -27,9 +29,8 @@ AI-safety is enabled by default and automatically filters likely prompt-injectio
 The `OpenDataLoaderPDFLoader` component enables you to parse PDFs into structured @[`Document`] objects.
 
 ## Requirements
-- Python >= 3.9
+- Python >= 3.10
 - Java 11 or newer available on the system `PATH`
-- opendataloader-pdf >= 1.1.1
 
 ## Installation
 ```bash
@@ -52,14 +53,85 @@ for doc in documents:
 
 ## Parameters
 
-| Parameter                | Type                  | Required   | Default      | Description                                                                                                        |
-|--------------------------|-----------------------| ---------- |--------------|--------------------------------------------------------------------------------------------------------------------|
-| `file_path`              | `List[str]`           | ✅ Yes     | —            | One or more PDF file paths or directories to process.                                                              |
-| `format`                 | `str`                 | No         | `None`       | Output formats (e.g. `"json"`, `"html"`, `"markdown"`, `"text"`).                                                  |
-| `quiet`                  | `bool`                | No         | `False`      | Suppresses CLI logging output when `True`.                                                                         |
-| `content_safety_off`     | `Optional[List[str]]` | No         | `None`       | List of content safety filters to disable (e.g. `"all"`, `"hidden-text"`, `"off-page"`, `"tiny"`, `"hidden-ocg"`). |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `file_path` | `str \| List[str]` | — | **(Required)** PDF file path(s) or directories |
+| `format` | `str` | `"text"` | Output format: `"text"`, `"markdown"`, `"json"`, `"html"` |
+| `split_pages` | `bool` | `True` | Split into separate Documents per page |
+| `quiet` | `bool` | `False` | Suppress console logging |
+| `password` | `str` | `None` | Password for encrypted PDFs |
+| `use_struct_tree` | `bool` | `False` | Use PDF structure tree (tagged PDFs) |
+| `table_method` | `str` | `"default"` | `"default"` (border-based) or `"cluster"` (border + clustering) |
+| `reading_order` | `str` | `"xycut"` | `"xycut"` or `"off"` |
+| `keep_line_breaks` | `bool` | `False` | Preserve original line breaks |
+| `image_output` | `str` | `"off"` | `"off"`, `"embedded"` (Base64), or `"external"` |
+| `image_format` | `str` | `"png"` | `"png"` or `"jpeg"` |
+| `content_safety_off` | `List[str]` | `None` | Disable safety filters: `"hidden-text"`, `"off-page"`, `"tiny"`, `"hidden-ocg"`, `"all"` |
+| `replace_invalid_chars` | `str` | `None` | Replacement for invalid characters |
 
-## Additional Resources
+## Usage examples
+
+### Output formats
+
+```python
+# Plain text (default) - best for simple RAG
+loader = OpenDataLoaderPDFLoader(file_path="doc.pdf", format="text")
+
+# Markdown - preserves headings, lists, tables
+loader = OpenDataLoaderPDFLoader(file_path="doc.pdf", format="markdown")
+
+# JSON - structured data with bounding boxes
+loader = OpenDataLoaderPDFLoader(file_path="doc.pdf", format="json")
+
+# HTML - styled output
+loader = OpenDataLoaderPDFLoader(file_path="doc.pdf", format="html")
+```
+
+### Tagged PDF support
+
+For accessible PDFs with structure tags (common in government/legal documents):
+
+```python
+loader = OpenDataLoaderPDFLoader(
+    file_path="accessible_document.pdf",
+    use_struct_tree=True  # Use native PDF structure
+)
+```
+
+### Password-Protected PDFs
+
+```python
+loader = OpenDataLoaderPDFLoader(
+    file_path="encrypted.pdf",
+    password="secret123"
+)
+```
+
+### Image handling
+
+```python
+# Images are excluded by default (image_output="off")
+# This is optimal for text-based RAG pipelines
+
+# Embed images as Base64 (for multimodal RAG)
+loader = OpenDataLoaderPDFLoader(
+    file_path="doc.pdf",
+    format="markdown",
+    image_output="embedded",
+    image_format="jpeg"  # or "png"
+)
+```
+
+## Document metadata
+
+Each returned `Document` includes metadata:
+
+```python
+doc.metadata
+# {'source': 'document.pdf', 'format': 'text', 'page': 1}
+```
+
+## Additional resources
 
 - [LangChain OpenDataLoader PDF integration GitHub](https://github.com/opendataloader-project/langchain-opendataloader-pdf)
 - [LangChain OpenDataLoader PDF integration PyPI package](https://pypi.org/project/langchain-opendataloader-pdf/)
