@@ -1,0 +1,511 @@
+# Anakin Tools for LangChain
+
+This guide provides a quick overview for getting started with the Anakin tools for LangChain. The Anakin integration provides three powerful tools for web scraping, AI-powered search, and agentic research. For detailed documentation, head to the [Anakin API reference](https://pypi.org/project/langchain-anakin/).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: |  :---: | :---: |
+| [AnakinScrapeTool](https://pypi.org/project/langchain-anakin/) | [langchain-anakin](https://pypi.org/project/langchain-anakin/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-anakin?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-anakin?style=flat-square&label=%20) |
+| [AnakinSearchTool](https://pypi.org/project/langchain-anakin/) | [langchain-anakin](https://pypi.org/project/langchain-anakin/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-anakin?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-anakin?style=flat-square&label=%20) |
+| [AnakinAgenticSearchTool](https://pypi.org/project/langchain-anakin/) | [langchain-anakin](https://pypi.org/project/langchain-anakin/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-anakin?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-anakin?style=flat-square&label=%20) |
+
+### Features
+
+- 🌐 **Web Scraping** - Extract structured data from any website with automatic polling
+- 🔍 **AI-Powered Search** - Get instant answers with citations using Perplexity AI
+- 🤖 **Agentic Search** - Multi-stage AI pipeline that searches, scrapes, and extracts structured data
+- ⚡ **Async Operations** - Automatic polling for long-running operations
+- 🎯 **Type-Safe** - Full Pydantic model support with type hints
+- 🔐 **Simple Authentication** - API key-based authentication
+- 🌍 **Proxy Support** - Country-specific proxy routing for scraping
+- ♻️ **Cache Control** - Force fresh scraping or use cached results
+
+---
+
+## Setup
+
+To access the Anakin tools, you'll need to create an Anakin account, get an API key, and install the `langchain-anakin` integration package.
+
+### Credentials
+
+First, sign up at [Anakin.io](https://anakin.io) to get your API key, then set it as an environment variable:
+
+```python
+import getpass
+import os
+
+if "ANAKIN_API_KEY" not in os.environ:
+    os.environ["ANAKIN_API_KEY"] = getpass.getpass("Enter your Anakin API key: ")
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability and tracing of your tool calls. To enable automated tracing, set your [LangSmith](https://docs.langchain.com/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The Anakin tools live in the `langchain-anakin` package:
+
+```bash
+# Using pip
+pip install -U langchain-anakin
+
+# Using uv
+uv add langchain-anakin
+```
+
+---
+
+## Tool 1: AnakinScrapeTool
+
+### Overview
+
+The `AnakinScrapeTool` scrapes websites and extracts structured data including HTML, markdown, and automatically generated JSON data.
+
+### Instantiation
+
+```python
+from langchain_anakin import AnakinScrapeTool
+
+scrape_tool = AnakinScrapeTool(
+    api_key=os.environ["ANAKIN_API_KEY"],
+    base_url="https://api.anakin.io"  # Optional, defaults to this value
+)
+```
+
+### Direct Invocation
+
+```python
+# Basic scraping
+result = scrape_tool.invoke({
+    "url": "https://example.com/product"
+})
+
+print(result)
+```
+
+### With Options
+
+```python
+# Scraping with custom options
+result = scrape_tool.invoke({
+    "url": "https://example.com/product",
+    "country": "uk",           # Use UK proxy
+    "force_fresh": True,       # Bypass cache
+    "max_wait_time": 300,      # Wait up to 5 minutes
+    "poll_interval": 3         # Check status every 3 seconds
+})
+```
+
+### As a ToolCall
+
+```python
+# Model-generated tool call
+model_generated_tool_call = {
+    "args": {
+        "url": "https://example.com",
+        "country": "us",
+        "force_fresh": False
+    },
+    "id": "call_123",
+    "name": scrape_tool.name,
+    "type": "tool_call",
+}
+result = scrape_tool.invoke(model_generated_tool_call)
+```
+
+### Within an Agent
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.agents import initialize_agent, AgentType
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+tools = [scrape_tool]
+
+agent = initialize_agent(
+    tools=tools,
+    llm=llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    verbose=True
+)
+
+# Use the agent
+response = agent.invoke({
+    "input": "Scrape https://example.com and summarize the main content"
+})
+```
+
+---
+
+## Tool 2: AnakinSearchTool
+
+### Overview
+
+The `AnakinSearchTool` performs AI-powered searches using Perplexity AI, providing instant answers with citations and sources.
+
+### Instantiation
+
+```python
+from langchain_anakin import AnakinSearchTool
+
+search_tool = AnakinSearchTool(
+    api_key=os.environ["ANAKIN_API_KEY"]
+)
+```
+
+### Direct Invocation
+
+```python
+# Basic search
+result = search_tool.invoke({
+    "query": "What are the latest trends in artificial intelligence?"
+})
+
+print(result)
+```
+
+### With Options
+
+```python
+# Search with more results
+result = search_tool.invoke({
+    "query": "Compare Python vs JavaScript for web development",
+    "max_results": 10  # Return up to 10 results
+})
+```
+
+### As a ToolCall
+
+```python
+# Model-generated tool call
+model_generated_tool_call = {
+    "args": {
+        "query": "What is the current world population?",
+        "max_results": 5
+    },
+    "id": "call_456",
+    "name": search_tool.name,
+    "type": "tool_call",
+}
+result = search_tool.invoke(model_generated_tool_call)
+```
+
+### Within an Agent
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.agents import initialize_agent, AgentType
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+tools = [search_tool]
+
+agent = initialize_agent(
+    tools=tools,
+    llm=llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    verbose=True
+)
+
+# Use the agent
+response = agent.invoke({
+    "input": "Research the latest developments in quantum computing and provide a summary"
+})
+```
+
+---
+
+## Tool 3: AnakinAgenticSearchTool
+
+### Overview
+
+The `AnakinAgenticSearchTool` implements an advanced multi-stage AI pipeline that automatically:
+1. Searches for relevant information
+2. Identifies and scrapes citation sources
+3. Extracts structured data using AI
+4. Generates a comprehensive summary
+
+### Instantiation
+
+```python
+from langchain_anakin import AnakinAgenticSearchTool
+
+agentic_tool = AnakinAgenticSearchTool(
+    api_key=os.environ["ANAKIN_API_KEY"]
+)
+```
+
+### Direct Invocation
+
+```python
+# Basic agentic search
+result = agentic_tool.invoke({
+    "prompt": "Find pricing information for the top 5 CRM platforms"
+})
+
+print(result)
+```
+
+### With Options
+
+```python
+# Agentic search with custom settings
+result = agentic_tool.invoke({
+    "prompt": "Analyze the electric vehicle market including major players and market share",
+    "use_browser": True,       # Use browser for more reliable scraping
+    "max_wait_time": 600,      # Wait up to 10 minutes
+    "poll_interval": 5         # Check status every 5 seconds
+})
+```
+
+### As a ToolCall
+
+```python
+# Model-generated tool call
+model_generated_tool_call = {
+    "args": {
+        "prompt": "Compare features and pricing of Salesforce, HubSpot, and Zoho",
+        "use_browser": True
+    },
+    "id": "call_789",
+    "name": agentic_tool.name,
+    "type": "tool_call",
+}
+result = agentic_tool.invoke(model_generated_tool_call)
+```
+
+### Within an Agent
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.agents import initialize_agent, AgentType
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+tools = [agentic_tool]
+
+agent = initialize_agent(
+    tools=tools,
+    llm=llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    verbose=True
+)
+
+# Use the agent
+response = agent.invoke({
+    "input": "Perform comprehensive research on project management software including features, pricing, and user reviews"
+})
+```
+
+---
+
+## Using Multiple Anakin Tools Together
+
+You can combine all three tools in a single agent for powerful research capabilities:
+
+```python
+from langchain_anakin import (
+    AnakinScrapeTool,
+    AnakinSearchTool,
+    AnakinAgenticSearchTool
+)
+from langchain_openai import ChatOpenAI
+from langchain.agents import initialize_agent, AgentType
+
+# Initialize all tools
+scrape_tool = AnakinScrapeTool(api_key=os.environ["ANAKIN_API_KEY"])
+search_tool = AnakinSearchTool(api_key=os.environ["ANAKIN_API_KEY"])
+agentic_tool = AnakinAgenticSearchTool(api_key=os.environ["ANAKIN_API_KEY"])
+
+# Create agent with all tools
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+tools = [scrape_tool, search_tool, agentic_tool]
+
+agent = initialize_agent(
+    tools=tools,
+    llm=llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    verbose=True
+)
+
+# The agent can now intelligently choose which tool to use
+response = agent.invoke({
+    "input": "Find the top 3 AI companies in 2026, then scrape their websites for detailed information"
+})
+```
+
+---
+
+## Tool Parameters Reference
+
+### AnakinScrapeTool Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `url` | str | ✅ | - | The URL to scrape |
+| `country` | str | ❌ | "us" | Country code for proxy routing (e.g., us, uk, de) |
+| `force_fresh` | bool | ❌ | False | Bypass cache and force fresh scrape |
+| `max_wait_time` | int | ❌ | 300 | Maximum seconds to wait for completion |
+| `poll_interval` | int | ❌ | 3 | Seconds between status checks |
+
+### AnakinSearchTool Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | str | ✅ | - | The search query or question |
+| `max_results` | int | ❌ | 5 | Maximum number of results to return |
+
+### AnakinAgenticSearchTool Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `prompt` | str | ✅ | - | The search prompt for agentic analysis |
+| `use_browser` | bool | ❌ | True | Use browser for scraping (more reliable) |
+| `max_wait_time` | int | ❌ | 600 | Maximum seconds to wait for completion |
+| `poll_interval` | int | ❌ | 5 | Seconds between status checks |
+
+---
+
+## Use Cases
+
+### Web Scraping
+- Extract product information from e-commerce sites
+- Monitor website changes and updates
+- Gather structured data from web pages
+- Scrape article content for analysis
+
+### AI-Powered Search
+- Research and fact-checking
+- Competitive intelligence gathering
+- Real-time information retrieval
+- Content research for writing
+- Answer complex questions with citations
+
+### Agentic Search
+- Comprehensive market research
+- Competitive analysis with structured data
+- Lead generation with data enrichment
+- Automated report data collection
+- Multi-source information synthesis
+
+---
+
+## Error Handling
+
+All tools return descriptive error messages. You can handle errors like this:
+
+```python
+try:
+    result = scrape_tool.invoke({"url": "https://invalid-url.com"})
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+For graceful error handling in agents, enable the `handle_parsing_errors` flag:
+
+```python
+agent = initialize_agent(
+    tools=tools,
+    llm=llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    handle_parsing_errors=True,
+    verbose=True
+)
+```
+
+---
+
+## Performance Tips
+
+1. **Caching**: By default, scraping results are cached. Set `force_fresh=True` only when needed.
+
+2. **Timeouts**: Adjust `max_wait_time` based on your use case:
+   - Quick pages: 60-120 seconds
+   - Complex pages: 300+ seconds
+   - Agentic search: 600+ seconds
+
+3. **Polling Intervals**: Longer intervals reduce API calls:
+   - Scraping: 3-5 seconds
+   - Agentic search: 5-10 seconds
+
+4. **Country Proxies**: Use country-specific proxies when scraping geo-restricted content:
+   ```python
+   result = scrape_tool.invoke({
+       "url": "https://example.com",
+       "country": "uk"  # Use UK proxy
+   })
+   ```
+
+---
+
+## Advanced Examples
+
+### Sequential Tool Usage
+
+```python
+# Step 1: Search for information
+search_result = search_tool.invoke({
+    "query": "Best Python web frameworks 2026"
+})
+
+# Step 2: Scrape top result (in practice, extract URL from search_result)
+scrape_result = scrape_tool.invoke({
+    "url": "https://framework-site.com"
+})
+
+# Step 3: Deep analysis
+analysis = agentic_tool.invoke({
+    "prompt": "Compare Django, Flask, and FastAPI features and performance"
+})
+```
+
+### Custom Workflow with Agent
+
+```python
+from langchain.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a research assistant. Use the available tools to gather comprehensive information."),
+    ("user", "{input}")
+])
+
+agent = initialize_agent(
+    tools=[scrape_tool, search_tool, agentic_tool],
+    llm=llm,
+    agent=AgentType.OPENAI_FUNCTIONS,
+    verbose=True
+)
+
+result = agent.invoke({
+    "input": "Research the top 3 competitors in the CRM space, including their pricing, features, and market position"
+})
+```
+
+---
+
+## API Reference
+
+For detailed documentation of all Anakin tool features and configurations, visit:
+
+- **PyPI Package**: [https://pypi.org/project/langchain-anakin/](https://pypi.org/project/langchain-anakin/)
+- **Anakin API Docs**: [https://anakin.io/docs](https://anakin.io/docs)
+- **GitHub Repository**: [https://github.com/Anakin-Inc/langchain-anakin](https://github.com/Anakin-Inc/langchain-anakin)
+
+---
+
+## Support
+
+- **Email**: anakin@anakininc.com
+- **Website**: [https://anakin.io](https://anakin.io)
+- **Issues**: [GitHub Issues](https://github.com/Anakin-Inc/langchain-anakin/issues)
+
+---
+
+## License
+
+MIT License - see the [LICENSE](https://github.com/Anakin-Inc/langchain-anakin/blob/main/LICENSE) file for details.
