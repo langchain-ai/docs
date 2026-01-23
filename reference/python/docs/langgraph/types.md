@@ -2,6 +2,7 @@
     options:
       members:
         - All
+        - Checkpointer
         - StreamMode
         - StreamWriter
         - RetryPolicy
