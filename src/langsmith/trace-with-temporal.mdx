@@ -1,0 +1,720 @@
+---
+title: Trace with Temporal
+sidebarTitle: Temporal
+---
+
+[Temporal](https://temporal.io/) is a durable execution platform that enables developers to build resilient distributed applications. This guide shows you how to trace Temporal workflows and activities in LangSmith using OpenTelemetry.
+
+LangSmith supports OpenTelemetry (OTEL) trace ingestion, which integrates seamlessly with Temporal's native OpenTelemetry interceptors. This enables full distributed tracing across your workflow executions, activities, and any LLM calls within them.
+
+## Prerequisites
+
+- A [LangSmith account](https://smith.langchain.com/) and API key
+- Temporal server running (local or cloud)
+- OpenTelemetry SDK for your language
+
+## Environment Variables
+
+Set these environment variables for all implementations:
+
+| Variable            | Required | Description                                                                  |
+| ------------------- | -------- | ---------------------------------------------------------------------------- |
+| `LANGSMITH_API_KEY` | Yes      | Your LangSmith API key from [Settings](https://smith.langchain.com/settings) |
+| `LANGSMITH_PROJECT` | No       | Project name (defaults to `"default"`)                                       |
+
+:::info
+For EU region or self-hosted LangSmith installations, also set:
+- `LANGCHAIN_BASE_URL` - Your LangSmith instance URL
+:::
+
+---
+
+## Go
+
+Go uses the `langsmith-go` SDK with Temporal's OpenTelemetry interceptors to automatically trace workflows and activities.
+
+### Installation
+
+```bash
+go get github.com/langchain-ai/langsmith-go@v0.1.0-alpha.7
+go get go.temporal.io/sdk
+go get go.temporal.io/sdk/contrib/opentelemetry
+```
+
+### Setup
+
+The integration has three main steps:
+
+1. Initialize the LangSmith tracer
+2. Create Temporal's OpenTelemetry interceptor
+3. Register the interceptor with your Temporal client and worker
+
+#### Initialize Tracer
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/langchain-ai/langsmith-go"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/opentelemetry"
+	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/worker"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Initialize LangSmith tracer (reads LANGSMITH_API_KEY and LANGSMITH_PROJECT)
+	ls, err := langsmith.NewTracer(
+		langsmith.WithServiceName("temporal-worker"),
+	)
+	if err != nil {
+		log.Fatal("Failed to initialize LangSmith tracer:", err)
+	}
+	defer ls.Shutdown(ctx)
+
+	// Create Temporal tracing interceptor
+	tracer := ls.Tracer("temporal-app")
+	tracingInterceptor, err := opentelemetry.NewTracingInterceptor(
+		opentelemetry.TracerOptions{Tracer: tracer},
+	)
+	if err != nil {
+		log.Fatal("Failed to create tracing interceptor:", err)
+	}
+
+	// Create Temporal client with tracing
+	c, err := client.Dial(client.Options{
+		Interceptors: []interceptor.ClientInterceptor{tracingInterceptor},
+	})
+	if err != nil {
+		log.Fatal("Failed to create Temporal client:", err)
+	}
+	defer c.Close()
+
+	// Create worker with tracing (uses same client)
+	w := worker.New(c, "my-task-queue", worker.Options{})
+	w.RegisterWorkflow(MyWorkflow)
+	w.RegisterActivity(MyActivity)
+
+	// Start worker
+	if err := w.Run(worker.InterruptCh()); err != nil {
+		log.Fatal("Worker failed:", err)
+	}
+}
+```
+
+#### Define Workflow and Activity
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/workflow"
+)
+
+// MyWorkflow executes an activity
+func MyWorkflow(ctx workflow.Context, input string) (string, error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var result string
+	err := workflow.ExecuteActivity(ctx, MyActivity, input).Get(ctx, &result)
+	return result, err
+}
+
+// MyActivity processes input with custom span attributes
+func MyActivity(ctx context.Context, input string) (string, error) {
+	logger := activity.GetLogger(ctx)
+	logger.Info("Processing", "input", input)
+
+	// Get the span created by Temporal's interceptor
+	span := trace.SpanFromContext(ctx)
+
+	// Add Gen AI attributes for LangSmith visibility
+	span.SetAttributes(
+		attribute.String("gen_ai.prompt", input),
+		attribute.String("gen_ai.operation.name", "chat"),
+	)
+
+	result := fmt.Sprintf("Processed: %s", input)
+
+	// Set completion attribute
+	span.SetAttributes(
+		attribute.String("gen_ai.completion", result),
+	)
+
+	return result, nil
+}
+```
+
+#### Execute Workflow
+
+```go
+// In a separate function or client application
+func executeWorkflow() {
+	ctx := context.Background()
+
+	// Initialize tracer for client
+	ls, err := langsmith.NewTracer(
+		langsmith.WithServiceName("temporal-client"),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer ls.Shutdown(ctx)
+
+	// Create client with tracing
+	tracer := ls.Tracer("temporal-app")
+	tracingInterceptor, err := opentelemetry.NewTracingInterceptor(
+		opentelemetry.TracerOptions{Tracer: tracer},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	c, err := client.Dial(client.Options{
+		Interceptors: []interceptor.ClientInterceptor{tracingInterceptor},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer c.Close()
+
+	// Execute workflow
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "my-workflow-1",
+		TaskQueue: "my-task-queue",
+	}
+
+	we, err := c.ExecuteWorkflow(ctx, workflowOptions, MyWorkflow, "Hello World")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var result string
+	if err := we.Get(ctx, &result); err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Workflow result: %s", result)
+}
+```
+
+---
+
+## Python
+
+Python uses the `temporalio` SDK with OpenTelemetry interceptors, exporting traces to LangSmith via OTLP.
+
+### Installation
+
+```bash
+pip install temporalio
+pip install langsmith
+pip install opentelemetry-sdk
+pip install opentelemetry-exporter-otlp-proto-http
+```
+
+### Setup
+
+#### Initialize Tracer
+
+```python
+import asyncio
+import os
+from datetime import timedelta
+
+from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource, SERVICE_NAME
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+from temporalio import activity, workflow
+from temporalio.client import Client
+from temporalio.contrib.opentelemetry import TracingInterceptor
+from temporalio.worker import Worker
+
+
+def init_tracer_provider() -> TracerProvider:
+    """Initialize OpenTelemetry with LangSmith exporter."""
+
+    # Create OTLP exporter for LangSmith
+    exporter = OTLPSpanExporter(
+        endpoint="https://api.smith.langchain.com/otel/v1/traces",
+        headers={
+            "x-api-key": os.environ.get("LANGSMITH_API_KEY", ""),
+            "Langsmith-Project": os.environ.get("LANGSMITH_PROJECT", "default"),
+        },
+    )
+
+    # Create TracerProvider with resource attributes
+    resource = Resource.create({
+        SERVICE_NAME: "temporal-worker",
+    })
+
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+
+    # Set as global provider
+    trace.set_tracer_provider(provider)
+
+    return provider
+```
+
+#### Define Workflow and Activity
+
+```python
+@activity.defn
+async def process_activity(input: str) -> str:
+    """Activity that processes input with custom span attributes."""
+    activity.logger.info(f"Processing: {input}")
+
+    # Get current span and add Gen AI attributes
+    span = trace.get_current_span()
+    span.set_attribute("gen_ai.prompt", input)
+    span.set_attribute("gen_ai.operation.name", "chat")
+
+    result = f"Processed: {input}"
+
+    span.set_attribute("gen_ai.completion", result)
+
+    return result
+
+
+@workflow.defn
+class MyWorkflow:
+    @workflow.run
+    async def run(self, input: str) -> str:
+        return await workflow.execute_activity(
+            process_activity,
+            input,
+            start_to_close_timeout=timedelta(seconds=10),
+        )
+```
+
+#### Run Worker
+
+```python
+async def main():
+    # Initialize tracing
+    provider = init_tracer_provider()
+
+    try:
+        # Create Temporal client with tracing interceptor
+        client = await Client.connect(
+            "localhost:7233",
+            interceptors=[TracingInterceptor()],
+        )
+
+        # Run worker
+        worker = Worker(
+            client,
+            task_queue="my-task-queue",
+            workflows=[MyWorkflow],
+            activities=[process_activity],
+        )
+
+        print("Starting worker...")
+        await worker.run()
+
+    finally:
+        # Shutdown tracer provider to flush traces
+        provider.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+#### Execute Workflow (Separate Script)
+
+```python
+import asyncio
+from temporalio.client import Client
+from temporalio.contrib.opentelemetry import TracingInterceptor
+
+# Import the same tracer setup
+from worker import init_tracer_provider
+
+
+async def main():
+    provider = init_tracer_provider()
+
+    try:
+        client = await Client.connect(
+            "localhost:7233",
+            interceptors=[TracingInterceptor()],
+        )
+
+        # Execute workflow
+        result = await client.execute_workflow(
+            MyWorkflow.run,
+            "Hello World",
+            id="my-workflow-1",
+            task_queue="my-task-queue",
+        )
+        print(f"Workflow result: {result}")
+
+    finally:
+        provider.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+---
+
+## TypeScript / JavaScript
+
+TypeScript uses the `@temporalio/sdk` with OpenTelemetry interceptors to send traces to LangSmith.
+
+### Installation
+
+```bash
+npm install @temporalio/client @temporalio/worker @temporalio/activity @temporalio/workflow
+npm install @temporalio/interceptors-opentelemetry
+npm install @opentelemetry/sdk-node @opentelemetry/sdk-trace-node
+npm install @opentelemetry/exporter-trace-otlp-http
+npm install @opentelemetry/resources @opentelemetry/semantic-conventions
+```
+
+### Setup
+
+#### Initialize Tracer (tracer.ts)
+
+```typescript
+import { Resource } from '@opentelemetry/resources';
+import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+
+export function initTracerProvider(): NodeTracerProvider {
+  // Create OTLP exporter for LangSmith
+  const exporter = new OTLPTraceExporter({
+    url: 'https://api.smith.langchain.com/otel/v1/traces',
+    headers: {
+      'x-api-key': process.env.LANGSMITH_API_KEY || '',
+      'Langsmith-Project': process.env.LANGSMITH_PROJECT || 'default',
+    },
+  });
+
+  // Create TracerProvider
+  const provider = new NodeTracerProvider({
+    resource: new Resource({
+      [ATTR_SERVICE_NAME]: 'temporal-worker',
+    }),
+  });
+
+  provider.addSpanProcessor(new BatchSpanProcessor(exporter));
+  provider.register();
+
+  return provider;
+}
+```
+
+#### Define Workflow (workflows.ts)
+
+```typescript
+import { proxyActivities } from '@temporalio/workflow';
+import type * as activities from './activities';
+
+const { processActivity } = proxyActivities<typeof activities>({
+  startToCloseTimeout: '10 seconds',
+});
+
+export async function myWorkflow(input: string): Promise<string> {
+  return await processActivity(input);
+}
+```
+
+#### Define Activity (activities.ts)
+
+```typescript
+import { log } from '@temporalio/activity';
+import { trace } from '@opentelemetry/api';
+
+export async function processActivity(input: string): Promise<string> {
+  log.info('Processing', { input });
+
+  // Get current span and add Gen AI attributes
+  const span = trace.getActiveSpan();
+  span?.setAttribute('gen_ai.prompt', input);
+  span?.setAttribute('gen_ai.operation.name', 'chat');
+
+  const result = `Processed: ${input}`;
+
+  span?.setAttribute('gen_ai.completion', result);
+
+  return result;
+}
+```
+
+#### Run Worker (worker.ts)
+
+```typescript
+import { Worker, NativeConnection } from '@temporalio/worker';
+import { Resource } from '@opentelemetry/resources';
+import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
+import {
+  makeWorkflowExporter,
+  OpenTelemetryActivityInboundInterceptor,
+} from '@temporalio/interceptors-opentelemetry';
+import { trace } from '@opentelemetry/api';
+
+import * as activities from './activities';
+import { initTracerProvider } from './tracer';
+
+async function run() {
+  const provider = initTracerProvider();
+
+  try {
+    const connection = await NativeConnection.connect({
+      address: 'localhost:7233',
+    });
+
+    const worker = await Worker.create({
+      connection,
+      namespace: 'default',
+      taskQueue: 'my-task-queue',
+      workflowsPath: require.resolve('./workflows'),
+      activities,
+      sinks: {
+        exporter: makeWorkflowExporter(
+          trace.getTracer('temporal-app'),
+          new Resource({ [ATTR_SERVICE_NAME]: 'temporal-worker' })
+        ),
+      },
+      interceptors: {
+        activity: [() => ({ inbound: new OpenTelemetryActivityInboundInterceptor() })],
+      },
+    });
+
+    console.log('Starting worker...');
+    await worker.run();
+  } finally {
+    await provider.shutdown();
+  }
+}
+
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+#### Execute Workflow (client.ts)
+
+```typescript
+import { Client, Connection } from '@temporalio/client';
+import { initTracerProvider } from './tracer';
+
+async function run() {
+  // Initialize tracing
+  const provider = initTracerProvider();
+
+  try {
+    const connection = await Connection.connect({ address: 'localhost:7233' });
+    const client = new Client({ connection });
+
+    const result = await client.workflow.execute('myWorkflow', {
+      taskQueue: 'my-task-queue',
+      workflowId: 'my-workflow-1',
+      args: ['Hello World'],
+    });
+
+    console.log('Workflow result:', result);
+  } finally {
+    await provider.shutdown();
+  }
+}
+
+run().catch(console.error);
+```
+
+---
+
+## Viewing Traces in LangSmith
+
+Once configured, traces will appear in your LangSmith project:
+
+1. Navigate to [smith.langchain.com](https://smith.langchain.com/)
+2. Select your project
+3. View traces in the **Tracing** tab
+4. Click on individual traces to see the full span hierarchy
+
+---
+
+## Configuration Options
+
+### Custom Service Name
+
+Set a custom service name to distinguish different Temporal workers or services:
+
+**Go:**
+```go
+ls, err := langsmith.NewTracer(
+    langsmith.WithServiceName("my-temporal-worker"),
+)
+```
+
+**Python:**
+```python
+resource = Resource.create({
+    SERVICE_NAME: "my-temporal-worker",
+})
+```
+
+**TypeScript:**
+```typescript
+const provider = new NodeTracerProvider({
+  resource: new Resource({
+    [ATTR_SERVICE_NAME]: 'my-temporal-worker',
+  }),
+});
+```
+
+### Custom Span Attributes
+
+Add custom attributes to enrich your traces:
+
+**Go:**
+```go
+import "go.opentelemetry.io/otel/attribute"
+
+span := trace.SpanFromContext(ctx)
+span.SetAttributes(
+    attribute.String("user.id", userID),
+    attribute.String("workflow.version", "v2"),
+)
+```
+
+**Python:**
+```python
+from opentelemetry import trace
+
+span = trace.get_current_span()
+span.set_attribute("user.id", user_id)
+span.set_attribute("workflow.version", "v2")
+```
+
+**TypeScript:**
+```typescript
+import { trace } from '@opentelemetry/api';
+
+const span = trace.getActiveSpan();
+span?.setAttribute('user.id', userId);
+span?.setAttribute('workflow.version', 'v2');
+```
+
+### Sampling Configuration
+
+For high-volume workflows, configure sampling to reduce trace volume:
+
+**Go:**
+```go
+// Note: langsmith.NewTracer() uses default sampling
+// For custom sampling, use the TracerProvider directly
+tp := sdktrace.NewTracerProvider(
+    sdktrace.WithBatcher(exporter),
+    sdktrace.WithSampler(sdktrace.TraceIDRatioBased(0.1)), // 10% sampling
+)
+```
+
+**Python:**
+```python
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+
+provider = TracerProvider(
+    resource=resource,
+    sampler=TraceIdRatioBased(0.1),  # 10% sampling
+)
+```
+
+**TypeScript:**
+```typescript
+import { TraceIdRatioBasedSampler } from '@opentelemetry/sdk-trace-base';
+
+const provider = new NodeTracerProvider({
+  resource: resource,
+  sampler: new TraceIdRatioBasedSampler(0.1), // 10% sampling
+});
+```
+
+---
+
+## Troubleshooting
+
+### Traces Not Appearing
+
+1. **Verify API key**: Ensure `LANGSMITH_API_KEY` is set correctly
+2. **Check endpoint**: Confirm you're using `https://api.smith.langchain.com/otel/v1/traces`
+3. **Flush on shutdown**: Call `provider.shutdown()` to flush pending spans before the application exits
+4. **Check project**: Verify traces are sent to the correct project (default is `"default"`)
+
+### Missing Activity Spans
+
+Ensure the tracing interceptor is configured on both the client and worker:
+- **Client**: Needs interceptor for starting workflows
+- **Worker**: Needs interceptor for executing activities
+
+### Context Propagation Issues
+
+Verify propagators are configured correctly:
+- **Go**: `langsmith.NewTracer()` automatically configures propagators
+- **Python/TypeScript**: Ensure OpenTelemetry SDK is properly initialized with trace propagators
+
+### Worker Shutdown Hangs
+
+If traces aren't flushing, ensure you're calling the shutdown method with proper timeout:
+
+**Go:**
+```go
+defer ls.Shutdown(context.Background())
+```
+
+**Python:**
+```python
+finally:
+    provider.shutdown()
+```
+
+**TypeScript:**
+```typescript
+finally {
+  await provider.shutdown();
+}
+```
+
+---
+
+## Next Steps
+
+- [Learn about LangSmith tracing concepts](https://docs.langchain.com/langsmith/concepts/tracing)
+- [Explore OpenTelemetry semantic conventions](https://docs.langchain.com/langsmith/trace-with-opentelemetry#attribute-mapping)
+
+---
+
+## Additional Resources
+
+- [Temporal Documentation](https://docs.temporal.io/)
+- [Temporal Go SDK](https://github.com/temporalio/sdk-go)
+- [Temporal Python SDK](https://github.com/temporalio/sdk-python)
+- [Temporal TypeScript SDK](https://github.com/temporalio/sdk-typescript)
+- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
+- [LangSmith Go SDK](https://github.com/langchain-ai/langsmith-go)
