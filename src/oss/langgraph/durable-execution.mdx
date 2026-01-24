@@ -20,13 +20,7 @@ To leverage durable execution in LangGraph, you need to:
 1. Enable [persistence](/oss/langgraph/persistence) in your workflow by specifying a [checkpointer](/oss/langgraph/persistence#checkpointer-libraries) that will save workflow progress.
 2. Specify a [thread identifier](/oss/langgraph/persistence#threads) when executing a workflow. This will track the execution history for a particular instance of the workflow.
 
-:::python
-1. Wrap any non-deterministic operations (e.g., random number generation) or operations with side effects (e.g., file writes, API calls) inside @[`task`] to ensure that when a workflow is resumed, these operations are not repeated for the particular run, and instead their results are retrieved from the persistence layer. For more information, see [Determinism and Consistent Replay](#determinism-and-consistent-replay).
-:::
-
-:::js
 1. Wrap any non-deterministic operations (e.g., random number generation) or operations with side effects (e.g., file writes, API calls) inside @[tasks][task] to ensure that when a workflow is resumed, these operations are not repeated for the particular run, and instead their results are retrieved from the persistence layer. For more information, see [Determinism and Consistent Replay](#determinism-and-consistent-replay).
-:::
 
 ## Determinism and consistent replay
 
@@ -40,15 +34,8 @@ To ensure that your workflow is deterministic and can be consistently replayed, 
 * **Encapsulate Non-Deterministic Operations:** Wrap any code that might yield non-deterministic results (e.g., random number generation) inside **tasks** or **nodes**. This ensures that, upon resumption, the workflow follows the exact recorded sequence of steps with the same outcomes.
 * **Use Idempotent Operations**: When possible ensure that side effects (e.g., API calls, file writes) are idempotent. This means that if an operation is retried after a failure in the workflow, it will have the same effect as the first time it was executed. This is particularly important for operations that result in data writes. In the event that a **task** starts but fails to complete successfully, the workflow's resumption will re-run the **task**, relying on recorded outcomes to maintain consistency. Use idempotency keys or verify existing results to avoid unintended duplication, ensuring a smooth and predictable workflow execution.
 
-:::python
 For some examples of pitfalls to avoid, see the [Common Pitfalls](/oss/langgraph/functional-api#common-pitfalls) section in the functional API, which shows
 how to structure your code using **tasks** to avoid these issues. The same principles apply to the @[StateGraph (Graph API)][StateGraph].
-:::
-
-:::js
-For some examples of pitfalls to avoid, see the [Common Pitfalls](/oss/langgraph/functional-api#common-pitfalls) section in the functional API, which shows
-how to structure your code using **tasks** to avoid these issues. The same principles apply to the @[StateGraph (Graph API)][StateGraph].
-:::
 
 ## Durability modes
 
@@ -65,18 +52,18 @@ graph.stream(
 
 :::js
 ```typescript
-graph.stream(
-    {"input": "test"},
-    durability="sync"
+await graph.stream(
+  { input: "test" },
+  { durability: "sync" }
 )
 ```
 :::
 
 The durability modes, from least to most durable, are as follows:
 
-* `"exit"`: Changes are persisted only when graph execution exits (either successfully, with an error, or due to an interrupt). This provides the best performance for long-running graphs but means intermediate state is not saved, so you cannot recover from system failures (e.g., process crashes) that occur mid-execution.
-* `"async"`: Changes are persisted asynchronously while the next step executes. This provides good performance and durability, but there's a small risk that checkpoints might not be written if the process crashes during execution.
-* `"sync"`: Changes are persisted synchronously before the next step starts. This ensures that every checkpoint is written before continuing execution, providing high durability at the cost of some performance overhead.
+* `"exit"`: LangGraph persists changes only when graph execution exits either successfully, with an error, or due to a human in the loop interrupt. This provides the best performance for long-running graphs but means intermediate state is not saved, so you cannot recover from system failures (like process crashes) that occur mid-execution.
+* `"async"`: LangGraph persists changes asynchronously while the next step executes. This provides good performance and durability, but there's a small risk that LangGraph does not write checkpoints if the process crashes during execution.
+* `"sync"`: LangGraph persists changes synchronously before the next step starts. This ensures that LangGraph writes every checkpoint before continuing execution, providing high durability at the cost of some performance overhead.
 
 ## Using tasks in nodes
 
@@ -187,18 +174,17 @@ If a [node](/oss/langgraph/graph-api#nodes) contains multiple operations, you ma
 <Tabs>
     <Tab title="Original">
     ```typescript
-    import { StateGraph, START, END } from "@langchain/langgraph";
-    import { MemorySaver } from "@langchain/langgraph";
+    import { StateGraph, StateSchema, GraphNode, START, END, MemorySaver } from "@langchain/langgraph";
     import { v4 as uuidv4 } from "uuid";
     import * as z from "zod";
 
-    // Define a Zod schema to represent the state
-    const State = z.object({
+    // Define a StateSchema to represent the state
+    const State = new StateSchema({
       url: z.string(),
       result: z.string().optional(),
     });
 
-    const callApi = async (state: z.infer<typeof State>) => {
+    const callApi: GraphNode<typeof State> = async (state) => {
       const response = await fetch(state.url);  // [!code highlight]
       const text = await response.text();
       const result = text.slice(0, 100); // Side-effect
@@ -229,14 +215,12 @@ If a [node](/oss/langgraph/graph-api#nodes) contains multiple operations, you ma
     </Tab>
     <Tab title="With task">
     ```typescript
-    import { StateGraph, START, END } from "@langchain/langgraph";
-    import { MemorySaver } from "@langchain/langgraph";
-    import { task } from "@langchain/langgraph";
+    import { StateGraph, StateSchema, GraphNode, START, END, MemorySaver, task } from "@langchain/langgraph";
     import { v4 as uuidv4 } from "uuid";
     import * as z from "zod";
 
-    // Define a Zod schema to represent the state
-    const State = z.object({
+    // Define a StateSchema to represent the state
+    const State = new StateSchema({
       urls: z.array(z.string()),
       results: z.array(z.string()).optional(),
     });
@@ -247,7 +231,7 @@ If a [node](/oss/langgraph/graph-api#nodes) contains multiple operations, you ma
       return text.slice(0, 100);
     });
 
-    const callApi = async (state: z.infer<typeof State>) => {
+    const callApi: GraphNode<typeof State> = async (state) => {
       const requests = state.urls.map((url) => makeRequest(url));  // [!code highlight]
       const results = await Promise.all(requests);
       return {
@@ -294,16 +278,7 @@ Once you have enabled durable execution in your workflow, you can resume executi
 
 ## Starting points for resuming workflows
 
-:::python
-* If you're using a @[StateGraph (Graph API)][StateGraph], the starting point is the beginning of the [**node**](/oss/langgraph/graph-api#nodes) where execution stopped.
-* If you're making a subgraph call inside a node, the starting point will be the **parent** node that called the subgraph that was halted.
-  Inside the subgraph, the starting point will be the specific [**node**](/oss/langgraph/graph-api#nodes) where execution stopped.
-* If you're using the Functional API, the starting point is the beginning of the [**entrypoint**](/oss/langgraph/functional-api#entrypoint) where execution stopped.
-:::
-
-:::js
 * If you're using a [StateGraph (Graph API)](/oss/langgraph/graph-api), the starting point is the beginning of the [**node**](/oss/langgraph/graph-api#nodes) where execution stopped.
 * If you're making a subgraph call inside a node, the starting point will be the **parent** node that called the subgraph that was halted.
   Inside the subgraph, the starting point will be the specific [**node**](/oss/langgraph/graph-api#nodes) where execution stopped.
 * If you're using the Functional API, the starting point is the beginning of the [**entrypoint**](/oss/langgraph/functional-api#entrypoint) where execution stopped.
-:::

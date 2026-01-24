@@ -4,36 +4,48 @@ title: Couchbase
 
 [Couchbase](http://couchbase.com/) is an award-winning distributed NoSQL cloud database that delivers unmatched versatility, performance, scalability, and financial value for all of your cloud, mobile, AI, and edge computing applications. Couchbase embraces AI with coding assistance for developers and vector search for their applications.
 
-Vector Search is a part of the [Full Text Search Service](https://docs.couchbase.com/server/current/learn/services-and-indexes/services/search-service.html) (Search Service) in Couchbase.
+Couchbase provides two different vector store implementations for LangChain:
 
-This tutorial explains how to use Vector Search in Couchbase. You can work with either [Couchbase Capella](https://www.couchbase.com/products/capella/) and your self-managed Couchbase Server.
+| Vector Store | Index Type | Minimum Version | Best For |
+|-------------|-----------|-----------------|----------|
+| `CouchbaseQueryVectorStore` | [Hyperscale Vector Index](https://docs.couchbase.com/server/current/vector-index/hyperscale-vector-index.html) or [Composite Vector Index](https://docs.couchbase.com/server/current/vector-index/composite-vector-index.html) | Couchbase Server 8.0+ | Large-scale pure vector searches or searches combining vector similarity with scalar filters |
+| `CouchbaseSearchVectorStore` | [Search Vector Index](https://docs.couchbase.com/server/current/vector-search/vector-search.html) | Couchbase Server 7.6+ | Hybrid searches combining vector similarity with Full-Text Search (FTS) and geospatial searches |
+
+This tutorial explains how to use Vector Search in Couchbase. You can work with either [Couchbase Capella](https://www.couchbase.com/products/capella/) or your self-managed Couchbase Server.
 
 ## Setup
 
-To access the `CouchbaseSearchVectorStore` you first need to install the `langchain-couchbase` partner package:
+To access the Couchbase vector stores you first need to install the `langchain-couchbase` partner package:
 
-```python
-pip install -qU langchain-couchbase
+```bash
+pip install langchain-couchbase langchain-openai langchain-community
 ```
 
 ### Credentials
 
-Head over to the Couchbase [website](https://cloud.couchbase.com) and create a new connection, making sure to save your database username and password:
+Head over to the Couchbase [website](https://cloud.couchbase.com) and create a new connection, making sure to save your database username and password.
+
+You will also need an OpenAI API key for the embeddings. Get one from [OpenAI](https://platform.openai.com/api-keys).
 
 ```python
 import getpass
+import os
 
 COUCHBASE_CONNECTION_STRING = getpass.getpass(
     "Enter the connection string for the Couchbase cluster: "
 )
 DB_USERNAME = getpass.getpass("Enter the username for the Couchbase cluster: ")
 DB_PASSWORD = getpass.getpass("Enter the password for the Couchbase cluster: ")
+OPENAI_API_KEY = getpass.getpass("Enter your OpenAI API key: ")
+
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 ```
 
 ```text
 Enter the connection string for the Couchbase cluster:  ········
 Enter the username for the Couchbase cluster:  ········
 Enter the password for the Couchbase cluster:  ········
+Enter your OpenAI API key:  ········
 ```
 
 If you want to get best in-class automated tracing of your model calls you can also set your [LangSmith](https://docs.langchain.com/langsmith/home) API key by uncommenting below:
@@ -43,11 +55,7 @@ os.environ["LANGSMITH_TRACING"] = "true"
 # os.environ["LANGSMITH_API_KEY"] = getpass.getpass()
 ```
 
-## Initialization
-
-Before instantiating we need to create a connection.
-
-### Create couchbase connection object
+## Create Couchbase Connection Object
 
 We create a connection to the Couchbase cluster initially and then pass the cluster object to the Vector Store.
 
@@ -64,6 +72,7 @@ from couchbase.options import ClusterOptions
 
 auth = PasswordAuthenticator(DB_USERNAME, DB_PASSWORD)
 options = ClusterOptions(auth)
+options.apply_profile("wan_development")
 cluster = Cluster(COUCHBASE_CONNECTION_STRING, options)
 
 # Wait until the cluster is ready for use.
@@ -78,31 +87,285 @@ For this example, we are using the default scope & collections.
 BUCKET_NAME = "langchain_bucket"
 SCOPE_NAME = "_default"
 COLLECTION_NAME = "_default"
-SEARCH_INDEX_NAME = "langchain-test-index"
 ```
 
-For details on how to create a Search index with support for Vector fields, please refer to the documentation.
+---
 
-- [Couchbase Capella](https://docs.couchbase.com/cloud/vector-search/create-vector-search-index-ui.html)
+## CouchbaseQueryVectorStore
 
-- [Couchbase Server](https://docs.couchbase.com/server/current/vector-search/create-vector-search-index-ui.html)
+`CouchbaseQueryVectorStore` enables the usage of Couchbase for Vector Search using the Query and Indexing Service. It supports two different types of vector indexes:
 
-### Simple instantiation
+- **Hyperscale Vector Index** - Optimized for pure vector searches on large datasets (billions of documents). Best for content discovery, recommendations, and applications requiring high accuracy with low memory footprint. Hyperscale Vector indexes compare vectors and scalar values simultaneously.
 
-Below, we create the vector store object with the cluster information and the search index name.
+- **Composite Vector Index** - Combines a Global Secondary Index (GSI) with a vector column. Ideal for searches combining vector similarity with scalar filters where scalars filter out large portions of the dataset. Composite Vector indexes apply scalar filters first, then perform vector searches on the filtered results.
 
-<EmbeddingTabs/>
+For guidance on choosing the right index type, see [Choose the Right Vector Index](https://docs.couchbase.com/cloud/vector-index/use-vector-indexes.html).
+
+**Requirements:** Couchbase Server version 8.0 and above.
+
+For more information on indexes, see:
+
+- [Hyperscale Vector Index documentation](https://docs.couchbase.com/server/current/vector-index/hyperscale-vector-index.html)
+- [Composite Vector Index documentation](https://docs.couchbase.com/server/current/vector-index/composite-vector-index.html)
+
+### Initialization
+
+Below, we create the vector store object with the cluster information and the distance metric.
+
+First, set up the embeddings (if not already done):
 
 ```python
-# | output: false
-# | echo: false
 from langchain_openai import OpenAIEmbeddings
 
 embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 ```
 
+Then create the vector store:
+
 ```python
-from langchain_couchbase.vectorstores import CouchbaseSearchVectorStore
+from langchain_couchbase import CouchbaseQueryVectorStore
+from langchain_couchbase.vectorstores import DistanceStrategy
+
+vector_store = CouchbaseQueryVectorStore(
+    cluster=cluster,
+    bucket_name=BUCKET_NAME,
+    scope_name=SCOPE_NAME,
+    collection_name=COLLECTION_NAME,
+    embedding=embeddings,
+    distance_metric=DistanceStrategy.DOT,
+)
+```
+
+### Distance Strategies
+
+The `CouchbaseQueryVectorStore` supports the following distance strategies via the `DistanceStrategy` enum:
+
+| Strategy | Description |
+|----------|-------------|
+| `DistanceStrategy.DOT` | Dot product similarity |
+| `DistanceStrategy.COSINE` | Cosine similarity |
+| `DistanceStrategy.EUCLIDEAN` | Euclidean distance (equivalent to L2) |
+| `DistanceStrategy.EUCLIDEAN_SQUARED` | Squared Euclidean distance (equivalent to L2_SQUARED) |
+
+### Specify the Text & Embeddings Field
+
+You can optionally specify the text & embeddings field for the document using the `text_key` and `embedding_key` fields.
+
+```python
+vector_store_specific = CouchbaseQueryVectorStore(
+    cluster=cluster,
+    bucket_name=BUCKET_NAME,
+    scope_name=SCOPE_NAME,
+    collection_name=COLLECTION_NAME,
+    embedding=embeddings,
+    distance_metric=DistanceStrategy.COSINE,
+    text_key="text",
+    embedding_key="embedding",
+)
+```
+
+### Manage vector store
+
+Once you have created your vector store, we can interact with it by adding and deleting different items.
+
+**Add items to vector store**
+
+We can add items to our vector store by using the `add_documents` function.
+
+```python
+from uuid import uuid4
+
+from langchain_core.documents import Document
+
+document_1 = Document(page_content="foo", metadata={"baz": "bar"})
+document_2 = Document(page_content="thud", metadata={"bar": "baz"})
+document_3 = Document(page_content="i will be deleted :(")
+
+documents = [document_1, document_2, document_3]
+ids = ["1", "2", "3"]
+vector_store.add_documents(documents=documents, ids=ids)
+```
+
+**Create Vector Index**
+
+**Important:** The vector index must be created **after** adding documents to the vector store. Use the `create_index()` method after adding your documents to enable efficient vector searches.
+
+```python
+from langchain_couchbase.vectorstores import IndexType
+
+# Create a Hyperscale Vector Index
+vector_store.create_index(
+    index_type=IndexType.HYPERSCALE,
+    index_description="IVF,SQ8",
+)
+```
+
+Or create a Composite Vector Index:
+
+```python
+# Create a Composite Vector Index
+vector_store.create_index(
+    index_type=IndexType.COMPOSITE,
+    index_description="IVF,SQ8",
+)
+```
+
+**Delete items from vector store**
+
+```python
+vector_store.delete(ids=["3"])
+```
+
+### Query vector store
+
+**Similarity search**
+
+Performing a simple similarity search can be done as follows:
+
+```python
+results = vector_store.similarity_search(query="thud", k=1)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+```text
+* thud [{'bar': 'baz'}]
+```
+
+**Similarity search with filter**
+
+You can filter results using a SQL++ WHERE clause with the `where_str` parameter:
+
+```python
+results = vector_store.similarity_search(
+    query="thud", k=1, where_str="metadata.bar = 'baz'"
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+```text
+* thud [{'bar': 'baz'}]
+```
+
+**Similarity search with score**
+
+You can fetch the distance scores for the results by calling the `similarity_search_with_score` method. Lower distances indicate more similar documents.
+
+```python
+results = vector_store.similarity_search_with_score(query="qux", k=1)
+for doc, score in results:
+    print(f"* [DIST={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+```text
+* [DIST=-0.500724] foo [{'baz': 'bar'}]
+```
+
+### Async Operations
+
+`CouchbaseQueryVectorStore` supports async operations:
+
+```python
+# add documents
+await vector_store.aadd_documents(documents=documents, ids=ids)
+
+# delete documents
+await vector_store.adelete(ids=["3"])
+
+# search
+results = await vector_store.asimilarity_search(query="thud", k=1)
+
+# search with score
+results = await vector_store.asimilarity_search_with_score(query="qux", k=1)
+for doc, score in results:
+    print(f"* [DIST={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+```text
+* [DIST=-0.500724] foo [{'baz': 'bar'}]
+```
+
+### Use as Retriever
+
+You can transform the vector store into a retriever:
+
+```python
+retriever = vector_store.as_retriever(
+    search_kwargs={"k": 1, "fetch_k": 2, "lambda_mult": 0.5},
+)
+retriever.invoke("thud")
+```
+
+```python
+[Document(id='2', metadata={'bar': 'baz'}, page_content='thud')]
+```
+
+### Create from texts
+
+You can create a `CouchbaseQueryVectorStore` directly from a list of texts:
+
+```python
+texts = ["hello", "world"]
+
+vectorstore = CouchbaseQueryVectorStore.from_texts(
+    texts,
+    embedding=embeddings,
+    cluster=cluster,
+    bucket_name=BUCKET_NAME,
+    scope_name=SCOPE_NAME,
+    collection_name=COLLECTION_NAME,
+    distance_metric=DistanceStrategy.COSINE,
+)
+```
+
+---
+
+## CouchbaseSearchVectorStore
+
+`CouchbaseSearchVectorStore` enables the usage of Couchbase for Vector Search using [Search Vector Indexes](https://docs.couchbase.com/server/current/vector-search/vector-search.html). Search Vector Indexes combine a Couchbase Search index with a vector column, allowing hybrid searches that combine vector searches with Full-Text Search (FTS) and geospatial searches.
+
+**Requirements:** Couchbase Server version 7.6 and above.
+
+For details on how to create a Search index with support for Vector fields, please refer to the documentation:
+
+- [Couchbase Capella](https://docs.couchbase.com/cloud/vector-search/create-vector-search-index-ui.html)
+- [Couchbase Server](https://docs.couchbase.com/server/current/vector-search/create-vector-search-index-ui.html)
+
+### Search Index Field Mappings for This Tutorial
+
+To follow along with the examples in this documentation, your Search index should include mappings for the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | text | The document text content |
+| `embedding` | vector | The vector embedding field (dimensions: 3072 for `text-embedding-3-large`) |
+| `metadata` | object (child mapping) | The metadata object with child fields like `source`, `author`, `rating`, `date` |
+
+**Notes:**
+
+- The vector field dimensions must match your embedding model (3072 for `text-embedding-3-large` used in this tutorial)
+- The metadata child fields (`source`, `author`, `rating`, `date`) are needed for the hybrid query examples
+- You can customize field names using the `text_key` and `embedding_key` parameters when initializing the vector store
+
+### Initialization
+
+Below, we create the vector store object with the cluster information and the search index name.
+
+First, set up the embeddings:
+
+```python
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+```
+
+Then create the vector store:
+
+```python
+from langchain_couchbase import CouchbaseSearchVectorStore
+
+SEARCH_INDEX_NAME = "langchain-test-index"
 
 vector_store = CouchbaseSearchVectorStore(
     cluster=cluster,
@@ -131,11 +394,11 @@ vector_store_specific = CouchbaseSearchVectorStore(
 )
 ```
 
-## Manage vector store
+### Manage vector store
 
 Once you have created your vector store, we can interact with it by adding and deleting different items.
 
-### Add items to vector store
+**Add items to vector store**
 
 We can add items to our vector store by using the `add_documents` function.
 
@@ -224,7 +487,7 @@ vector_store.add_documents(documents=documents, ids=uuids)
  'd21c7feb-ad47-4e7d-84c5-785afb189160']
 ```
 
-### Delete items from vector store
+**Delete items from vector store**
 
 ```python
 vector_store.delete(ids=[uuids[-1]])
@@ -234,13 +497,11 @@ vector_store.delete(ids=[uuids[-1]])
 True
 ```
 
-## Query vector store
+### Query vector store
 
 Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
 
-### Query directly
-
-#### Similarity search
+**Similarity search**
 
 Performing a simple similarity search can be done as follows:
 
@@ -258,7 +519,7 @@ for res in results:
 * LangGraph is the best framework for building stateful, agentic applications! [{'source': 'tweet'}]
 ```
 
-#### Similarity search with score
+**Similarity search with Score**
 
 You can also fetch the scores for the results by calling the `similarity_search_with_score` method.
 
@@ -269,7 +530,7 @@ for res, score in results:
 ```
 
 ```text
-* [SIM=0.553112] The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees. [{'source': 'news'}]
+* [SIM=0.553213] The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees. [{'source': 'news'}]
 ```
 
 ### Filtering results
@@ -297,9 +558,9 @@ for res, score in results:
 ```
 
 ```text
-* The stock market is down 500 points today due to fears of a recession. [{'source': 'news'}] 0.3873019218444824
-* Robbers broke into the city bank and stole $1 million in cash. [{'source': 'news'}] 0.20637212693691254
-* The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees. [{'source': 'news'}] 0.10404900461435318
+* The stock market is down 500 points today due to fears of a recession. [{'source': 'news'}] 0.38733142614364624
+* Robbers broke into the city bank and stole $1 million in cash. [{'source': 'news'}] 0.20637883245944977
+* The weather forecast for tomorrow is cloudy and overcast, with a high of 62 degrees. [{'source': 'news'}] 0.10403035581111908
 ```
 
 ### Specifying fields to return
@@ -337,8 +598,8 @@ filter_on_source = search.MatchQuery("news", field="metadata.source")
 retriever.invoke("Stealing from the bank is a crime", filter=filter_on_source)
 ```
 
-```text
-[Document(id='c7082b74-b385-4c4b-bbe5-0740909c01db', metadata={'source': 'news'}, page_content='Robbers broke into the city bank and stole $1 million in cash.')]
+```python
+[Document(id='b480c9c6-b7df-4a22-ac2e-19287af7562d', metadata={'source': 'news'}, page_content='Robbers broke into the city bank and stole $1 million in cash.')]
 ```
 
 ### Hybrid queries
@@ -350,43 +611,58 @@ The results will be based on the combination of the results from both Vector Sea
 To perform hybrid searches, there is an optional parameter, `search_options` that can be passed to all the similarity searches.
 The different search/query possibilities for the `search_options` can be found [here](https://docs.couchbase.com/server/current/search/search-request-params.html#query-object).
 
-#### Create diverse metadata for hybrid search
+**Create Diverse Metadata for Hybrid Search**
 
-In order to simulate hybrid search, let us create some random metadata from the existing documents.
-We uniformly add three fields to the metadata, `date` between 2010 & 2020, `rating` between 1 & 5 and `author` set to either John Doe or Jane Doe.
+In order to demonstrate hybrid search, let us create documents with diverse metadata. We add three fields to the metadata: `date` between 2010 & 2020, `rating` between 1 & 5, and `author` set to either John Doe or Jane Doe.
 
 ```python
-from langchain_community.document_loaders import TextLoader
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_core.documents import Document
 
-loader = TextLoader("../../how_to/state_of_the_union.txt")
-documents = loader.load()
-text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=0)
-docs = text_splitter.split_documents(documents)
+# Create documents with diverse metadata for hybrid search examples
+hybrid_docs = [
+    Document(
+        page_content="The new AI model shows impressive performance on benchmark tests.",
+        metadata={"source": "tech", "date": "2019-01-01", "rating": 5, "author": "John Doe"},
+    ),
+    Document(
+        page_content="Stock markets showed mixed results today with tech sector leading gains.",
+        metadata={"source": "finance", "date": "2017-01-01", "rating": 3, "author": "Jane Doe"},
+    ),
+    Document(
+        page_content="The annual developer conference announced new framework updates.",
+        metadata={"source": "tech", "date": "2018-01-01", "rating": 4, "author": "John Doe"},
+    ),
+    Document(
+        page_content="Weather patterns indicate a mild winter ahead for the region.",
+        metadata={"source": "weather", "date": "2016-01-01", "rating": 2, "author": "Jane Doe"},
+    ),
+    Document(
+        page_content="The new smartphone release features advanced camera technology.",
+        metadata={"source": "tech", "date": "2020-01-01", "rating": 4, "author": "John Doe"},
+    ),
+    Document(
+        page_content="Economic indicators suggest steady growth in the coming quarter.",
+        metadata={"source": "finance", "date": "2017-01-01", "rating": 3, "author": "Jane Doe"},
+    ),
+]
 
-# Adding metadata to documents
-for i, doc in enumerate(docs):
-    doc.metadata["date"] = f"{range(2010, 2020)[i % 10]}-01-01"
-    doc.metadata["rating"] = range(1, 6)[i % 5]
-    doc.metadata["author"] = ["John Doe", "Jane Doe"][i % 2]
+vector_store.add_documents(hybrid_docs)
 
-vector_store.add_documents(docs)
-
-query = "What did the president say about Ketanji Brown Jackson"
+query = "Tell me about technology news"
 results = vector_store.similarity_search(query)
 print(results[0].metadata)
 ```
 
 ```python
-{'author': 'John Doe', 'date': '2016-01-01', 'rating': 2, 'source': '../../how_to/state_of_the_union.txt'}
+{'author': 'John Doe', 'date': '2020-01-01', 'rating': 4, 'source': 'tech'}
 ```
 
-### Query by exact value
+**Query by Exact Value**
 
 We can search for exact matches on a textual field like the author in the `metadata` object.
 
 ```python
-query = "What did the president say about Ketanji Brown Jackson"
+query = "What are the latest technology updates?"
 results = vector_store.similarity_search(
     query,
     search_options={"query": {"field": "metadata.author", "match": "John Doe"}},
@@ -396,19 +672,17 @@ print(results[0])
 ```
 
 ```python
-page_content='One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court.
-
-And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.' metadata={'author': 'John Doe'}
+page_content='The new smartphone release features advanced camera technology.' metadata={'author': 'John Doe'}
 ```
 
-### Query by partial match
+**Query by Partial Match**
 
 We can search for partial matches by specifying a fuzziness for the search. This is useful when you want to search for slight variations or misspellings of a search query.
 
 Here, "Jae" is close (fuzziness of 1) to "Jane".
 
 ```python
-query = "What did the president say about Ketanji Brown Jackson"
+query = "What are the financial market updates?"
 results = vector_store.similarity_search(
     query,
     search_options={
@@ -420,23 +694,21 @@ print(results[0])
 ```
 
 ```python
-page_content='A former top litigator in private practice. A former federal public defender. And from a family of public school educators and police officers. A consensus builder. Since she’s been nominated, she’s received a broad range of support—from the Fraternal Order of Police to former judges appointed by Democrats and Republicans.
-
-And if we are to advance liberty and justice, we need to secure the Border and fix the immigration system.' metadata={'author': 'Jane Doe'}
+page_content='Stock markets showed mixed results today with tech sector leading gains.' metadata={'author': 'Jane Doe'}
 ```
 
-### Query by date range query
+**Query by Date Range Query**
 
 We can search for documents that are within a date range query on a date field like `metadata.date`.
 
 ```python
-query = "Any mention about independence?"
+query = "What happened in the markets?"
 results = vector_store.similarity_search(
     query,
     search_options={
         "query": {
             "start": "2016-12-31",
-            "end": "2017-01-02",
+            "end": "2018-01-02",
             "inclusive_start": True,
             "inclusive_end": False,
             "field": "metadata.date",
@@ -447,28 +719,20 @@ print(results[0])
 ```
 
 ```python
-page_content='And with 75% of adult Americans fully vaccinated and hospitalizations down by 77%, most Americans can remove their masks, return to work, stay in the classroom, and move forward safely.
-
-We achieved this because we provided free vaccines, treatments, tests, and masks.
-
-Of course, continuing this costs money.
-
-I will soon send Congress a request.
-
-The vast majority of Americans have used these tools and may want to again, so I expect Congress to pass it quickly.' metadata={'author': 'Jane Doe', 'date': '2017-01-01', 'rating': 3, 'source': '../../how_to/state_of_the_union.txt'}
+page_content='Stock markets showed mixed results today with tech sector leading gains.' metadata={'author': 'Jane Doe', 'date': '2017-01-01', 'rating': 3, 'source': 'finance'}
 ```
 
-### Query by numeric range query
+**Query by Numeric Range Query**
 
 We can search for documents that are within a range for a numeric field like `metadata.rating`.
 
 ```python
-query = "Any mention about independence?"
+query = "What are the economic indicators for the coming quarter?"
 results = vector_store.similarity_search_with_score(
     query,
     search_options={
         "query": {
-            "min": 3,
+            "min": 4,
             "max": 5,
             "inclusive_min": True,
             "inclusive_max": True,
@@ -480,24 +744,24 @@ print(results[0])
 ```
 
 ```text
-(Document(id='3a90405c0f5b4c09a6646259678f1f61', metadata={'author': 'John Doe', 'date': '2014-01-01', 'rating': 5, 'source': '../../how_to/state_of_the_union.txt'}, page_content='In this Capitol, generation after generation, Americans have debated great questions amid great strife, and have done great things. \n\nWe have fought for freedom, expanded liberty, defeated totalitarianism and terror. \n\nAnd built the strongest, freest, and most prosperous nation the world has ever known. \n\nNow is the hour. \n\nOur moment of responsibility. \n\nOur test of resolve and conscience, of history itself.'), 0.3573387440020518)
+(Document(id='6aeb8413bce340bc893f175cefbb64b3', metadata={'author': 'Jane Doe', 'date': '2017-01-01', 'rating': 3, 'source': 'finance'}, page_content='Economic indicators suggest steady growth in the coming quarter.'), 0.7944117188453674)
 ```
 
-### Combining multiple search queries
+**Combining Multiple Search Queries**
 
 Different search queries can be combined using AND (conjuncts) or OR (disjuncts) operators.
 
-In this example, we are checking for documents with a rating between 3 & 4 and dated between 2015 & 2018.
+In this example, we are checking for documents with a rating between 3 & 4 and dated in 2017.
 
 ```python
-query = "Any mention about independence?"
+query = "Tell me about finance"
 results = vector_store.similarity_search_with_score(
     query,
     search_options={
         "query": {
             "conjuncts": [
                 {"min": 3, "max": 4, "inclusive_max": True, "field": "metadata.rating"},
-                {"start": "2016-12-31", "end": "2017-01-02", "field": "metadata.date"},
+                {"start": "2016-12-31", "end": "2018-01-01", "field": "metadata.date"},
             ]
         }
     },
@@ -506,7 +770,7 @@ print(results[0])
 ```
 
 ```text
-(Document(id='7115a704877a46ad94d661dd9c81cbc3', metadata={'author': 'Jane Doe', 'date': '2017-01-01', 'rating': 3, 'source': '../../how_to/state_of_the_union.txt'}, page_content='And with 75% of adult Americans fully vaccinated and hospitalizations down by 77%, most Americans can remove their masks, return to work, stay in the classroom, and move forward safely. \n\nWe achieved this because we provided free vaccines, treatments, tests, and masks. \n\nOf course, continuing this costs money. \n\nI will soon send Congress a request. \n\nThe vast majority of Americans have used these tools and may want to again, so I expect Congress to pass it quickly.'), 0.6898253780130769)
+(Document(id='0c9af73370c1483caddf9941440edb50', metadata={'author': 'Jane Doe', 'date': '2017-01-01', 'rating': 3, 'source': 'finance'}, page_content='Stock markets showed mixed results today with tech sector leading gains.'), 0.7275013146103568)
 ```
 
 **Note**
@@ -515,16 +779,16 @@ The hybrid search results might contain documents that do not satisfy all the se
 The score is a sum of both the vector search score and the queries in the hybrid search. If the Vector Search score is high, the combined score will be more than the results that match all the queries in the hybrid search.
 To avoid such results, please use the `filter` parameter instead of hybrid search.
 
-### Combining hybrid search query with filters
+**Combining Hybrid Search Query with Filters**
 
 Hybrid Search can be combined with filters to get the best of both hybrid search and the filters for results matching the requirements.
 
-In this example, we are checking for documents with a rating between 3 & 5 and matching the string "independence" in the text field.
+In this example, we are checking for documents with a rating between 3 & 5 and matching the string "market" in the text field.
 
 ```python
-filter_text = search.MatchQuery("independence", field="text")
+filter_text = search.MatchQuery("market", field="text")
 
-query = "Any mention about independence?"
+query = "Tell me about market updates"
 results = vector_store.similarity_search_with_score(
     query,
     search_options={
@@ -543,29 +807,47 @@ print(results[0])
 ```
 
 ```text
-(Document(id='23bb51b4e4d54a94ab0a95e72be8428c', metadata={'author': 'John Doe', 'date': '2012-01-01', 'rating': 3, 'source': '../../how_to/state_of_the_union.txt'}, page_content='And we remain clear-eyed. The Ukrainians are fighting back with pure courage. But the next few days weeks, months, will be hard on them.  \n\nPutin has unleashed violence and chaos.  But while he may make gains on the battlefield – he will pay a continuing high price over the long run. \n\nAnd a proud Ukrainian people, who have known 30 years  of independence, have repeatedly shown that they will not tolerate anyone who tries to take their country backwards.'), 0.30549919644400614)
+(Document(id='0c9af73370c1483caddf9941440edb50', metadata={'author': 'Jane Doe', 'date': '2017-01-01', 'rating': 3, 'source': 'finance'}, page_content='Stock markets showed mixed results today with tech sector leading gains.'), 0.4503188681265006)
 ```
 
-### Other queries
+**Other Queries**
 
 Similarly, you can use any of the supported Query methods like Geo Distance, Polygon Search, Wildcard, Regular Expressions, etc in the `search_options` parameter. Please refer to the documentation for more details on the available query methods and their syntax.
 
 - [Couchbase Capella](https://docs.couchbase.com/cloud/search/search-request-params.html#query-object)
 - [Couchbase Server](https://docs.couchbase.com/server/current/search/search-request-params.html#query-object)
 
+---
+
 ## Usage for retrieval-augmented generation
 
-For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+For guides on how to use these vector stores for retrieval-augmented generation (RAG), see the following sections:
 
 - [Tutorials](/oss/langchain/rag)
 - [How-to: Question and answer with RAG](https://python.langchain.com/docs/how_to/#qa-with-rag)
 - [Retrieval conceptual docs](https://python.langchain.com/docs/concepts/retrieval)
 
-## Frequently asked questions
+---
+
+## Frequently Asked Questions
 
 ### Question: Should I create the search index before creating the CouchbaseSearchVectorStore object?
 
-Yes, currently you need to create the Search index before creating the `CouchbaseSearchVectoreStore` object.
+Yes, you need to create the Search index before creating the `CouchbaseSearchVectorStore` object.
+
+### Question: Should I create the index before or after adding documents to CouchbaseQueryVectorStore?
+
+For `CouchbaseQueryVectorStore`, you should create the index **after** adding documents using the `create_index()` method. This is different from `CouchbaseSearchVectorStore`.
+
+### Question: What is the difference between CouchbaseSearchVectorStore and CouchbaseQueryVectorStore?
+
+| Feature | CouchbaseSearchVectorStore | CouchbaseQueryVectorStore |
+|---------|---------------------------|--------------------------|
+| Minimum Version | Couchbase Server 7.6+ | Couchbase Server 8.0+ |
+| Index Type | Search Vector Index | Hyperscale or Composite Vector Index |
+| Index Creation | Before vector store creation | After adding documents |
+| Filtering | `SearchQuery` objects | SQL++ WHERE clauses (`where_str`) |
+| Best For | Hybrid searches (vector + FTS + geo) | Large-scale pure vector searches or vector + scalar filters |
 
 ### Question: I am not seeing all the fields that I specified in my search results
 
@@ -603,4 +885,7 @@ Both filters and hybrid search queries have the same capabilites with slightly d
 
 ## API reference
 
-For detailed documentation of all `CouchbaseSearchVectorStore` features and configurations head to the [API reference](https://couchbase-ecosystem.github.io/langchain-couchbase/langchain_couchbase.html#module-langchain_couchbase.vectorstores.search_vector_store)
+For detailed documentation of all features and configurations:
+
+- [`CouchbaseSearchVectorStore` API reference](https://couchbase-ecosystem.github.io/langchain-couchbase/langchain_couchbase.html#module-langchain_couchbase.vectorstores.search_vector_store)
+- [`CouchbaseQueryVectorStore` API reference](https://couchbase-ecosystem.github.io/langchain-couchbase/langchain_couchbase.html#module-langchain_couchbase.vectorstores.query_vector_store)
