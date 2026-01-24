@@ -195,18 +195,12 @@ class CustomDumper(yaml.SafeDumper):
     creating a subset navigation), it needs to write the modified configuration back to
     a new YAML file while preserving the original custom tags.
 
-    Without this, tags like `!ENV [ENABLE_INSIDERS_PLUGINS, false]` or
+    Without this, tags like `!ENV [VAR_NAME, default]` or
     `!!python/name:material.extensions.emoji.to_svg` would be lost during the YAML
     serialization process.
 
-    Example:
-        ```yaml
-        - group:
-            enabled: !ENV [ENABLE_INSIDERS_PLUGINS, false]
-        ```
-
-    This dumper ensures the `!ENV` tag is preserved in the output `mkdocs.subset.yml`
-    file so MkDocs can still process environment variables correctly.
+    This dumper ensures special YAML tags are preserved in the output `mkdocs.subset.yml`
+    file so MkDocs can still process them correctly.
     """
 
 

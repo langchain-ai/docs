@@ -1,0 +1,84 @@
+---
+title: Open Agent Spec
+---
+
+This page covers all LangChain integrations with [Open Agent Specification](https://oracle.github.io/agent-spec).
+
+Open Agent Spec is a framework-agnostic declarative language from Oracle for defining agentic systems. It allows to define agents and workflows in a portable JSON/YAML format that can be executed across different runtimes.
+
+## Installation and setup
+
+You can refer to the [installation guide](https://oracle.github.io/agent-spec/installation.html) to install `pyagentspec`.
+
+You can subsequently install the LangGraph Adapter through its extra dependency:
+```bash
+pip install "pyagentspec[langgraph]"
+```
+
+## LangGraph adapter
+The **LangGraph Adapter** allows for instantiation and execution of Open Agent Spec configurations using LangGraph.
+The `AgentSpecLoader` class is responsible for loading Agent Spec configurations (in JSON or YAML format) and instantiating them as runnable agents within the LangGraph environment. It also includes support for mapping of declared tools to corresponding Python functions.
+
+The following example shows the creation of a simple Agent Spec Agent and its conversion into a LangGraph assistant.
+Starting from the Agent Spec Agent creation:
+
+```python
+# Create a Agent Spec agent
+from pyagentspec.agent import Agent
+from pyagentspec.llms.openaicompatibleconfig import OpenAiCompatibleConfig
+from pyagentspec.property import FloatProperty
+from pyagentspec.tools import ServerTool
+
+subtraction_tool = ServerTool(
+    name="subtraction-tool",
+    description="subtract two numbers together",
+    inputs=[FloatProperty(title="a"), FloatProperty(title="b")],
+    outputs=[FloatProperty(title="difference")],
+)
+
+agentspec_llm_config = OpenAiCompatibleConfig(
+    name="llama-3.3-70b-instruct",
+    model_id="/storage/models/Llama-3.3-70B-Instruct",
+    url="url.to.my.llm",
+)
+
+agentspec_agent = Agent(
+    name="agentspec_tools_test",
+    description="agentspec_tools_test",
+    llm_config=agentspec_llm_config,
+    system_prompt="Perform subtraction with the given tool.",
+    tools=[subtraction_tool],
+)
+```
+
+The Agent can be subsequently exported to JSON:
+```python
+# Export the Agent Spec configuration
+from pyagentspec.serialization import AgentSpecSerializer
+
+agentspec_config = AgentSpecSerializer().to_json(agentspec_agent)
+```
+
+And converted into a LangGraph assistant using `AgentSpecLoader`.
+The example also showcases the mapping of the tool and the execution of a conversation. 
+
+```python
+# Load and run the Agent Spec configuration with LangGraph
+from pyagentspec.adapters.langgraph import AgentSpecLoader
+
+def subtract(a: float, b: float) -> float:
+    return a - b
+
+async def main():
+    loader = AgentSpecLoader(tool_registry={"subtraction-tool": subtract})
+    assistant = loader.load_json(agentspec_config)
+
+    while True:
+        user_input = input("USER >> ")
+        if user_input == "exit":
+            break
+        result = await assistant.ainvoke(
+            input={"messages": [{"role": "user", "content": user_input}]},
+        )
+        print(f"AGENT >> {result['messages'][-1].content}")
+```

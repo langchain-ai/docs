@@ -1,0 +1,157 @@
+---
+title: Ampersend
+description: Enable LangChain agents to pay for and use remote AI agent services.
+---
+
+[Ampersend](https://ampersend.ai) enables LangChain agents to pay for and use remote AI agent services. Payments are handled transparently via the [x402](https://www.x402.org/) protocol, with [A2A](https://google.github.io/A2A/) as the communication layer.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| A2AToolkit | `langchain-ampersend` | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-ampersend?style=flat-square&label=%20) |
+
+### Tool features
+
+1. **a2a_get_agent_details** - Get capabilities of the remote agent
+2. **a2a_send_message** - Send messages to the remote agent (payments handled automatically)
+
+### Key features
+
+- **Spend controls**: Pluggable payment authorization with limits and policies
+- **Transparent payments**: x402 protocol handles payment negotiation automatically
+
+---
+
+## Setup
+
+### Installation
+
+Install the `langchain-ampersend` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-ampersend
+    ```
+    ```python uv
+    uv add langchain-ampersend
+    ```
+</CodeGroup>
+
+### Credentials
+
+The toolkit requires a session key and smart account address, which you can obtain from the [Ampersend dashboard](https://app.ampersend.ai).
+
+```python Set up credentials icon="key"
+import os
+
+SESSION_KEY = os.environ.get("AMPERSEND_SESSION_KEY")  # 0x...
+SMART_ACCOUNT_ADDRESS = os.environ.get("AMPERSEND_SMART_ACCOUNT_ADDRESS")  # 0x...
+```
+
+---
+
+## Instantiation
+
+```python Initialize toolkit icon="robot"
+from langchain_ampersend import (
+    A2AToolkit,
+    AmpersendTreasurer,
+    ApiClient,
+    ApiClientOptions,
+    SmartAccountConfig,
+    SmartAccountWallet,
+)
+
+# Setup wallet
+wallet = SmartAccountWallet(
+    config=SmartAccountConfig(
+        session_key=SESSION_KEY,
+        smart_account_address=SMART_ACCOUNT_ADDRESS,
+    )
+)
+
+# Setup treasurer
+treasurer = AmpersendTreasurer(
+    api_client=ApiClient(
+        options=ApiClientOptions(
+            base_url="https://api.ampersend.ai",
+            session_key_private_key=SESSION_KEY,
+        )
+    ),
+    wallet=wallet,
+)
+
+# Create toolkit
+toolkit = A2AToolkit(
+    remote_agent_url="https://agent.example.com",
+    treasurer=treasurer,
+)
+
+await toolkit.initialize()
+```
+
+---
+
+## Invocation
+
+Send a message to the remote agent:
+
+```python Send message icon="message"
+tools = toolkit.get_tools()
+send_tool = tools[1]  # a2a_send_message
+response = await send_tool.ainvoke({"message": "Analyze the sales trends in Q4"})
+print(response)
+```
+
+---
+
+## Use within an agent
+
+```python Create agent icon="robot"
+from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
+
+# Initialize the LLM
+llm = ChatAnthropic(model="claude-sonnet-4-20250514")
+
+# Get tools from the toolkit
+tools = toolkit.get_tools()
+
+# Create the agent
+agent = create_agent(llm, tools)
+```
+
+Example usage:
+
+```python Run agent icon="rocket"
+result = await agent.ainvoke({
+    "messages": [("user", "What can this agent do, and then ask it to analyze recent trends")]
+})
+
+# The agent will call the remote agent and handle payments automatically
+```
+
+---
+
+## How payments work
+
+When the remote agent requires payment (HTTP 402), the toolkit:
+
+1. Receives the payment requirement
+2. Calls the treasurer to authorize the payment
+3. Signs the payment with the configured wallet
+4. Retries the request with the payment attached
+
+This is transparent to your LangChain agent.
+
+The `AmpersendTreasurer` provides managed payment sessions with spend limits and analytics. Alternative treasurer implementations are available in `ampersend_sdk`.
+
+---
+
+## API reference
+
+- [Ampersend Documentation](https://docs.ampersend.ai)
+- [x402 Protocol Specification](https://www.x402.org/)
