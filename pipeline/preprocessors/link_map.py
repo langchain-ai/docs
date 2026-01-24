@@ -184,6 +184,7 @@ LINK_MAPS: list[LinkMap] = [
             # Runnables
             "Runnable": "langchain_core/runnables/#langchain_core.runnables.Runnable",
             "RunnableConfig": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig",
+            "RunnableLambda": "langchain_core/runnables/#langchain_core.runnables.base.RunnableLambda",
             "RunnableConfig(max_concurrency)": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig.max_concurrency",
             # Retrievers
             "Retrievers": "langchain_core/retrievers/#langchain_core.retrievers.BaseRetriever",
@@ -198,11 +199,18 @@ LINK_MAPS: list[LinkMap] = [
             # Rate limiters
             "InMemoryRateLimiter": "langchain_core/rate_limiters/#langchain_core.rate_limiters.InMemoryRateLimiter",
             # LangSmith SDK
+            "langsmith": "langsmith/observability/sdk/",
+            "langsmith-python": "langsmith/observability/sdk/",
+            "langsmith-js": "https://reference.langchain.com/javascript/modules/langsmith.html",
             "Client": "langsmith/observability/sdk/client/#langsmith.client.Client",
             "Client.evaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.evaluate",
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
+            "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
+            "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
+            "traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "@traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
             # LangGraph
             "RemoteGraph": "langsmith/deployment/remote_graph/",
             "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
@@ -401,6 +409,10 @@ LINK_MAPS: list[LinkMap] = [
             # Text splitters
             "RecursiveCharacterTextSplitter": "classes/_langchain_textsplitters.RecursiveCharacterTextSplitter.html",
             "TokenTextSplitter": "classes/_langchain_textsplitters.TokenTextSplitter.html",
+            # LangSmith SDK
+            "langsmith": "modules/langsmith.html",
+            "langsmith-js": "modules/langsmith.html",
+            "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
             # LangGraph SDK references
             "Auth": "classes/_langchain_langgraph-sdk.auth.Auth.html",
             "client.runs.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
@@ -433,6 +445,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "classes/_langchain_langgraph.index.Command.html",
             "CompiledStateGraph": "classes/_langchain_langgraph.index.CompiledStateGraph.html",
             "createAgent": "functions/langchain.index.createAgent.html",
+            "createMiddleware": "functions/langchain.index.createMiddleware.html",
             "createReactAgent": "functions/_langchain_langgraph.prebuilt.createReactAgent.html",
             "createSupervisor": "functions/_langchain_langgraph-supervisor.createSupervisor.html",
             "entrypoint": "functions/_langchain_langgraph.index.entrypoint.html",

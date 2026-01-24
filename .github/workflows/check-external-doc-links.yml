@@ -1,0 +1,43 @@
+---
+name: Check for External Doc Links
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.md"
+      - "**/*.mdx"
+
+jobs:
+  check-external-doc-links:
+    name: Block links to old doc sites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for links to js.langchain.com and python.langchain.com
+        run: |
+          # Get the diff of added lines only (lines starting with +, excluding the +++ header)
+          ADDED_LINES=$(git diff origin/${{ github.base_ref }}...HEAD --diff-filter=ACMR -- '*.md' '*.mdx' | grep -E '^\+' | grep -v '^\+\+\+' || true)
+
+          # Check if any added lines contain links to the old doc sites
+          if echo "$ADDED_LINES" | grep -qE '(js\.langchain\.com|python\.langchain\.com)'; then
+            echo "❌ This PR adds links to deprecated documentation sites."
+            echo ""
+            echo "Links to js.langchain.com and python.langchain.com are not allowed."
+            echo "Please use relative links to reference documentation within this repository."
+            echo ""
+            echo "Matches found:"
+            echo "$ADDED_LINES" | grep -E '(js\.langchain\.com|python\.langchain\.com)' | head -20
+            exit 1
+          else
+            echo "✅ No links to deprecated doc sites found in added content."
+          fi

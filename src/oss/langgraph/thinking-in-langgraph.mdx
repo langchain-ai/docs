@@ -233,6 +233,7 @@ class EmailAgentState(TypedDict):
 :::js
 
 ```typescript
+import { StateSchema } from "@langchain/langgraph";
 import * as z from "zod";
 
 // Define the structure for email classification
@@ -243,7 +244,7 @@ const EmailClassificationSchema = z.object({
   summary: z.string(),
 });
 
-const EmailAgentState = z.object({
+const EmailAgentState = new StateSchema({
   // Raw email data
   emailContent: z.string(),
   senderEmail: z.string(),
@@ -254,17 +255,17 @@ const EmailAgentState = z.object({
 
   // Raw search/API results
   searchResults: z.array(z.string()).optional(),  // List of raw document chunks
-  customerHistory: z.record(z.any()).optional(),  // Raw customer data from CRM
+  customerHistory: z.record(z.string(), z.any()).optional(),  // Raw customer data from CRM
 
   // Generated content
   responseText: z.string().optional(),
 });
 
-type EmailAgentStateType = z.infer<typeof EmailAgentState>;
 type EmailClassificationType = z.infer<typeof EmailClassificationSchema>;
 ```
 
 :::
+
 
 Notice that the state contains only raw data – no prompt templates, no formatted strings, no instructions. The classification output is stored as a single dictionary, straight from the LLM.
 
@@ -317,11 +318,11 @@ Different errors need different handling strategies:
     import type { RetryPolicy } from "@langchain/langgraph";
 
     workflow.addNode(
-    "searchDocumentation",
-    searchDocumentation,
-    {
+      "searchDocumentation",
+      searchDocumentation,
+      {
         retryPolicy: { maxAttempts: 3, initialInterval: 1.0 },
-    },
+      },
     );
     ```
 
@@ -355,22 +356,22 @@ Different errors need different handling strategies:
     :::js
 
     ```typescript
-    import { Command } from "@langchain/langgraph";
+    import { Command, GraphNode } from "@langchain/langgraph";
 
-    async function executeTool(state: State) {
-    try {
+    const executeTool: GraphNode<typeof State> = async (state, config) => {
+      try {
         const result = await runTool(state.toolCall);
         return new Command({
-        update: { toolResult: result },
-        goto: "agent",
+          update: { toolResult: result },
+          goto: "agent",
         });
-    } catch (error) {
+      } catch (error) {
         // Let the LLM see what went wrong and try again
         return new Command({
-        update: { toolResult: `Tool error: ${error}` },
-        goto: "agent"
+          update: { toolResult: `Tool error: ${error}` },
+          goto: "agent"
         });
-    }
+      }
     }
     ```
 
@@ -407,25 +408,25 @@ Different errors need different handling strategies:
     :::js
 
     ```typescript
-    import { Command, interrupt } from "@langchain/langgraph";
+    import { Command, GraphNode, interrupt } from "@langchain/langgraph";
 
-    async function lookupCustomerHistory(state: State) {
-    if (!state.customerId) {
+    const lookupCustomerHistory: GraphNode<typeof State> = async (state, config) => {
+      if (!state.customerId) {
         const userInput = interrupt({
-        message: "Customer ID needed",
-        request: "Please provide the customer's account ID to look up their subscription history",
+          message: "Customer ID needed",
+          request: "Please provide the customer's account ID to look up their subscription history",
         });
         return new Command({
-        update: { customerId: userInput.customerId },
-        goto: "lookupCustomerHistory",
+          update: { customerId: userInput.customerId },
+          goto: "lookupCustomerHistory",
         });
-    }
-    // Now proceed with the lookup
-    const customerData = await fetchCustomerHistory(state.customerId);
-    return new Command({
+      }
+      // Now proceed with the lookup
+      const customerData = await fetchCustomerHistory(state.customerId);
+      return new Command({
         update: { customerHistory: customerData },
         goto: "draftResponse",
-    });
+      });
     }
     ```
 
@@ -451,12 +452,14 @@ Different errors need different handling strategies:
     :::js
 
     ```typescript
-    async function sendReply(state: EmailAgentStateType): Promise<void> {
-    try {
+    import { Command, GraphNode } from "@langchain/langgraph";
+
+    const sendReply: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      try {
         await emailService.send(state.responseText);
-    } catch (error) {
+      } catch (error) {
         throw error;  // Surface unexpected errors
-    }
+      }
     }
     ```
 
@@ -532,56 +535,56 @@ We'll implement each node as a simple function. Remember: nodes take state, do w
     :::js
 
     ```typescript
-    import { StateGraph, START, END, Command } from "@langchain/langgraph";
+    import { StateGraph, START, END, GraphNode, Command } from "@langchain/langgraph";
     import { HumanMessage } from "@langchain/core/messages";
     import { ChatAnthropic } from "@langchain/anthropic";
 
     const llm = new ChatAnthropic({ model: "claude-sonnet-4-5-20250929" });
 
-    async function readEmail(state: EmailAgentStateType) {
-    // Extract and parse email content
-    // In production, this would connect to your email service
-    console.log(`Processing email: ${state.emailContent}`);
-    return {};
+    const readEmail: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      // Extract and parse email content
+      // In production, this would connect to your email service
+      console.log(`Processing email: ${state.emailContent}`);
+      return {};
     }
 
-    async function classifyIntent(state: EmailAgentStateType) {
-    // Use LLM to classify email intent and urgency, then route accordingly
+    const classifyIntent: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      // Use LLM to classify email intent and urgency, then route accordingly
 
-    // Create structured LLM that returns EmailClassification object
-    const structuredLlm = llm.withStructuredOutput(EmailClassificationSchema);
+      // Create structured LLM that returns EmailClassification object
+      const structuredLlm = llm.withStructuredOutput(EmailClassificationSchema);
 
-    // Format the prompt on-demand, not stored in state
-    const classificationPrompt = `
-    Analyze this customer email and classify it:
+      // Format the prompt on-demand, not stored in state
+      const classificationPrompt = `
+      Analyze this customer email and classify it:
 
-    Email: ${state.emailContent}
-    From: ${state.senderEmail}
+      Email: ${state.emailContent}
+      From: ${state.senderEmail}
 
-    Provide classification including intent, urgency, topic, and summary.
-    `;
+      Provide classification including intent, urgency, topic, and summary.
+      `;
 
-    // Get structured response directly as object
-    const classification = await structuredLlm.invoke(classificationPrompt);
+      // Get structured response directly as object
+      const classification = await structuredLlm.invoke(classificationPrompt);
 
-    // Determine next node based on classification
-    let nextNode: "searchDocumentation" | "humanReview" | "draftResponse" | "bugTracking";
+      // Determine next node based on classification
+      let nextNode: "searchDocumentation" | "humanReview" | "draftResponse" | "bugTracking";
 
-    if (classification.intent === "billing" || classification.urgency === "critical") {
+      if (classification.intent === "billing" || classification.urgency === "critical") {
         nextNode = "humanReview";
-    } else if (classification.intent === "question" || classification.intent === "feature") {
+      } else if (classification.intent === "question" || classification.intent === "feature") {
         nextNode = "searchDocumentation";
-    } else if (classification.intent === "bug") {
+      } else if (classification.intent === "bug") {
         nextNode = "bugTracking";
-    } else {
+      } else {
         nextNode = "draftResponse";
-    }
+      }
 
-    // Store classification as a single object in state
-    return new Command({
+      // Store classification as a single object in state
+      return new Command({
         update: { classification },
         goto: nextNode,
-    });
+      });
     }
     ```
 
@@ -638,49 +641,49 @@ We'll implement each node as a simple function. Remember: nodes take state, do w
     :::js
 
     ```typescript
-    async function searchDocumentation(state: EmailAgentStateType) {
-    // Search knowledge base for relevant information
+    import { Command, GraphNode } from "@langchain/langgraph";
 
-    // Build search query from classification
-    const classification = state.classification!;
-    const query = `${classification.intent} ${classification.topic}`;
+    const searchDocumentation: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      // Search knowledge base for relevant information
 
-    let searchResults: string[];
+      // Build search query from classification
+      const classification = state.classification!;
+      const query = `${classification.intent} ${classification.topic}`;
 
-    try {
+      let searchResults: string[];
+
+      try {
         // Implement your search logic here
         // Store raw search results, not formatted text
         searchResults = [
-        "Reset password via Settings > Security > Change Password",
-        "Password must be at least 12 characters",
-        "Include uppercase, lowercase, numbers, and symbols",
+          "Reset password via Settings > Security > Change Password",
+          "Password must be at least 12 characters",
+          "Include uppercase, lowercase, numbers, and symbols",
         ];
-    } catch (error) {
+      } catch (error) {
         // For recoverable search errors, store error and continue
         searchResults = [`Search temporarily unavailable: ${error}`];
-    }
+      }
 
-    return new Command({
+      return new Command({
         update: { searchResults },  // Store raw results or error
         goto: "draftResponse",
-    });
+      });
     }
 
-    async function bugTracking(state: EmailAgentStateType) {
-    // Create or update bug tracking ticket
+    const bugTracking: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      // Create or update bug tracking ticket
 
-    // Create ticket in your bug tracking system
-    const ticketId = "BUG-12345";  // Would be created via API
+      // Create ticket in your bug tracking system
+      const ticketId = "BUG-12345";  // Would be created via API
 
-    return new Command({
+      return new Command({
         update: { searchResults: [`Bug ticket ${ticketId} created`] },
         goto: "draftResponse",
-    });
+      });
     }
     ```
-
     :::
-
     </Accordion>
 
     <Accordion title="Response nodes" icon="pen-to-square">
@@ -776,90 +779,90 @@ We'll implement each node as a simple function. Remember: nodes take state, do w
     ```typescript
     import { Command, interrupt } from "@langchain/langgraph";
 
-    async function draftResponse(state: EmailAgentStateType) {
-    // Generate response using context and route based on quality
+    const draftResponse: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      // Generate response using context and route based on quality
 
-    const classification = state.classification!;
+      const classification = state.classification!;
 
-    // Format context from raw state data on-demand
-    const contextSections: string[] = [];
+      // Format context from raw state data on-demand
+      const contextSections: string[] = [];
 
-    if (state.searchResults) {
+      if (state.searchResults) {
         // Format search results for the prompt
         const formattedDocs = state.searchResults.map(doc => `- ${doc}`).join("\n");
         contextSections.push(`Relevant documentation:\n${formattedDocs}`);
-    }
+      }
 
-    if (state.customerHistory) {
+      if (state.customerHistory) {
         // Format customer data for the prompt
         contextSections.push(`Customer tier: ${state.customerHistory.tier ?? "standard"}`);
-    }
+      }
 
-    // Build the prompt with formatted context
-    const draftPrompt = `
-    Draft a response to this customer email:
-    ${state.emailContent}
+      // Build the prompt with formatted context
+      const draftPrompt = `
+      Draft a response to this customer email:
+      ${state.emailContent}
 
-    Email intent: ${classification.intent}
-    Urgency level: ${classification.urgency}
+      Email intent: ${classification.intent}
+      Urgency level: ${classification.urgency}
 
-    ${contextSections.join("\n\n")}
+      ${contextSections.join("\n\n")}
 
-    Guidelines:
-    - Be professional and helpful
-    - Address their specific concern
-    - Use the provided documentation when relevant
-    `;
+      Guidelines:
+      - Be professional and helpful
+      - Address their specific concern
+      - Use the provided documentation when relevant
+      `;
 
-    const response = await llm.invoke([new HumanMessage(draftPrompt)]);
+      const response = await llm.invoke([new HumanMessage(draftPrompt)]);
 
-    // Determine if human review needed based on urgency and intent
-    const needsReview = (
+      // Determine if human review needed based on urgency and intent
+      const needsReview = (
         classification.urgency === "high" ||
         classification.urgency === "critical" ||
         classification.intent === "complex"
-    );
+      );
 
-    // Route to appropriate next node
-    const nextNode = needsReview ? "humanReview" : "sendReply";
+      // Route to appropriate next node
+      const nextNode = needsReview ? "humanReview" : "sendReply";
 
-    return new Command({
+      return new Command({
         update: { responseText: response.content.toString() },  // Store only the raw response
         goto: nextNode,
-    });
+      });
     }
 
-    async function humanReview(state: EmailAgentStateType) {
-    // Pause for human review using interrupt and route based on decision
-    const classification = state.classification!;
+    const humanReview: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      // Pause for human review using interrupt and route based on decision
+      const classification = state.classification!;
 
-    // interrupt() must come first - any code before it will re-run on resume
-    const humanDecision = interrupt({
+      // interrupt() must come first - any code before it will re-run on resume
+      const humanDecision = interrupt({
         emailId: state.emailId,
         originalEmail: state.emailContent,
         draftResponse: state.responseText,
         urgency: classification.urgency,
         intent: classification.intent,
         action: "Please review and approve/edit this response",
-    });
+      });
 
-    // Now process the human's decision
-    if (humanDecision.approved) {
+      // Now process the human's decision
+      if (humanDecision.approved) {
         return new Command({
-        update: { responseText: humanDecision.editedResponse || state.responseText },
-        goto: "sendReply",
+          update: { responseText: humanDecision.editedResponse || state.responseText },
+          goto: "sendReply",
         });
-    } else {
+      } else {
         // Rejection means human will handle directly
         return new Command({ update: {}, goto: END });
-    }
+      }
     }
 
-    async function sendReply(state: EmailAgentStateType): Promise<{}> {
-    // Send the email response
-    // Integrate with email service
-    console.log(`Sending reply: ${state.responseText!.substring(0, 100)}...`);
-    return {};
+    const sendReply: GraphNode<typeof EmailAgentState> = async (state, config) => {
+      // Send the email response
+      // Integrate with email service
+      console.log(`Sending reply: ${state.responseText!.substring(0, 100)}...`);
+      return {};
     }
     ```
 
@@ -1008,10 +1011,11 @@ const config = { configurable: { thread_id: "customer_123" } };
 const result = await app.invoke(initialState, config);
 // The graph will pause at human_review
 console.log(`Draft ready for review: ${result.responseText?.substring(0, 100)}...`);
-
-// When ready, provide human input to resume
+```
+```typescript
 import { Command } from "@langchain/langgraph";
 
+// When ready, provide human input to resume
 const humanResponse = new Command({
   resume: {
     approved: true,
