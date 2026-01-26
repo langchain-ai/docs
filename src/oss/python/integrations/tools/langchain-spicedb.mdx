@@ -19,7 +19,7 @@ pip install langchain-spicedb
   These tools require a running SpiceDB instance. See the [SpiceDB provider page](/oss/python/integrations/providers/spicedb) for setup instructions.
 </Tip>
 
-### Environment Setup
+### Environment setup
 
 ```python
 import os
@@ -58,12 +58,11 @@ permission_tool = SpiceDBPermissionTool(
 - **fail_open** (bool): If True, allow access on errors; if False, deny on errors (default: False)
 - **use_tls** (bool): Whether to use TLS for SpiceDB connection (default: False)
 
-#### Usage with Agents
+#### Usage with agents
 
 ```python
-from langchain.agents import create_react_agent, AgentExecutor
+from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import PromptTemplate
 from langchain_spicedb import SpiceDBPermissionTool
 
 # Create the permission checking tool
@@ -76,42 +75,24 @@ permission_tool = SpiceDBPermissionTool(
 # Create agent with the tool
 llm = ChatOpenAI(model="gpt-4", temperature=0)
 
-prompt = PromptTemplate.from_template(
-    """You are a security-aware assistant.
-    Before accessing any document, ALWAYS check if the user has permission
-    using the check_spicedb_permission tool.
-
-    You have access to the following tools:
-    {tools}
-
-    Use the following format:
-    Question: the input question
-    Thought: you should always think about what to do
-    Action: the action to take, should be one of [{tool_names}]
-    Action Input: the input to the action
-    Observation: the result of the action
-    ... (this Thought/Action/Action Input/Observation can repeat N times)
-    Thought: I now know the final answer
-    Final Answer: the final answer to the original input question
-
-    Question: {input}
-    Thought: {agent_scratchpad}"""
+agent = create_agent(
+    llm,
+    tools=[permission_tool],
+    system_prompt="""You are a security-aware assistant.
+Before accessing any document, ALWAYS check if the user has permission
+using the check_spicedb_permission tool."""
 )
 
-tools = [permission_tool]
-agent = create_react_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-
 # Agent checks permissions before proceeding
-result = agent_executor.invoke({
-    "input": "Can user alice view document doc1?"
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Can user alice view document doc1?"}]
 })
 
-print(result["output"])
+print(result["messages"][-1].content)
 # Output: "Yes, user alice can view document doc1" or "No, user alice cannot view document doc1"
 ```
 
-#### Direct Tool Usage
+#### Direct tool usage
 
 ```python
 # Check if alice can view doc1
@@ -152,10 +133,10 @@ bulk_tool = SpiceDBBulkPermissionTool(
 
 Same as `SpiceDBPermissionTool` (see above).
 
-#### Usage with Agents
+#### Usage with agents
 
 ```python
-from langchain.agents import create_react_agent, AgentExecutor
+from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_spicedb import SpiceDBBulkPermissionTool
 
@@ -168,20 +149,22 @@ bulk_tool = SpiceDBBulkPermissionTool(
 
 llm = ChatOpenAI(model="gpt-4", temperature=0)
 
-tools = [bulk_tool]
-agent = create_react_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+agent = create_agent(
+    llm,
+    tools=[bulk_tool],
+    system_prompt="You are a helpful assistant. Check permissions before accessing documents."
+)
 
 # Agent checks multiple documents at once
-result = agent_executor.invoke({
-    "input": "Which of these documents can alice access: doc1, doc2, doc3?"
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Which of these documents can alice access: doc1, doc2, doc3?"}]
 })
 
-print(result["output"])
+print(result["messages"][-1].content)
 # Output: "alice can access: doc1, doc3"
 ```
 
-#### Direct Tool Usage
+#### Direct tool usage
 
 ```python
 # Check multiple resources at once
@@ -195,16 +178,16 @@ print(result)
 # Output: "alice can access: doc1, doc3" or "alice cannot access any of the requested resources"
 ```
 
-## How Agents Decide to Call These Tools
+## How agents decide to call these tools
 
 Agents use the tool **name** and **description** to decide when to invoke them:
 
-### Tool Names
+### Tool names
 
 - `check_spicedb_permission` - Single permission check
 - `check_spicedb_bulk_permissions` - Bulk permission check
 
-### Tool Descriptions
+### Tool descriptions
 
 Both tools have detailed descriptions that guide the agent:
 
@@ -212,7 +195,7 @@ Both tools have detailed descriptions that guide the agent:
 - **What it does**: Checks if a user has permission to access a resource
 - **What it returns**: "true"/"false" or list of accessible resources
 
-### Influencing Tool Usage
+### Influencing tool usage
 
 To make agents more likely to check permissions:
 
@@ -230,9 +213,9 @@ To make agents more likely to check permissions:
    llm = ChatOpenAI(model="gpt-4", temperature=0)
    ```
 
-3. **ReAct Agents**: Use ReAct pattern which is better at following tool descriptions
+3. **Clear system prompts**: Provide explicit instructions for tool usage
    ```python
-   agent = create_react_agent(llm, tools, prompt)
+   agent = create_agent(llm, tools, system_prompt="Always check permissions before accessing documents.")
    ```
 
 4. **Few-Shot Examples**: Include examples in the prompt showing the tool being used
@@ -267,9 +250,9 @@ To make agents more likely to check permissions:
 }
 ```
 
-## Error Handling
+## Error handling
 
-### Fail Closed (Default)
+### Fail closed (default)
 
 By default, tools fail closed - if there's an error checking permissions, access is denied:
 
@@ -282,7 +265,7 @@ tool = SpiceDBPermissionTool(
 )
 ```
 
-### Fail Open
+### Fail open
 
 For development or specific use cases:
 
@@ -295,14 +278,13 @@ tool = SpiceDBPermissionTool(
 )
 ```
 
-## Complete Example: Secure Document Agent
+## Complete example: Secure document agent
 
 ```python
 import os
 from dotenv import load_dotenv
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_spicedb import SpiceDBPermissionTool, SpiceDBBulkPermissionTool
 
 # Load environment variables from .env file
@@ -325,30 +307,26 @@ bulk_permission_tool = SpiceDBBulkPermissionTool(
     resource_type="article",
 )
 
-# Create agent with tool-calling (better than ReAct for structured inputs)
+# Create agent
 llm = ChatOpenAI(model="gpt-4", temperature=0)
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are a security-aware document assistant.
-    ALWAYS verify user permissions before accessing documents using the permission tools.
-    Respond with whether the user has access and which documents they can view."""),
-    ("human", "{input}"),
-    ("placeholder", "{agent_scratchpad}"),
-])
-
-tools = [permission_tool, bulk_permission_tool]
-agent = create_tool_calling_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+agent = create_agent(
+    llm,
+    tools=[permission_tool, bulk_permission_tool],
+    system_prompt="""You are a security-aware document assistant.
+ALWAYS verify user permissions before accessing documents using the permission tools.
+Respond with whether the user has access and which documents they can view."""
+)
 
 # Run agent
-result = agent_executor.invoke({
-    "input": "Can alice view documents doc1, doc2, and doc3?"
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Can alice view documents doc1, doc2, and doc3?"}]
 })
 
-print(result["output"])
+print(result["messages"][-1].content)
 ```
 
-## API Reference
+## API reference
 
 ### SpiceDBPermissionTool
 
@@ -364,7 +342,7 @@ print(result["output"])
 - **args_schema**: `SpiceDBBulkPermissionInput`
 - **return_type**: `str` (comma-separated list of accessible resources or denial message)
 
-## Related Components
+## Related components
 
 - [SpiceDB Provider Overview](/oss/python/integrations/providers/spicedb)
 - [SpiceDB Retriever](/oss/python/integrations/retrievers/langchain-spicedb)
