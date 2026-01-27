@@ -244,6 +244,12 @@ const SOURCES: Source[] = [
       },
     ],
   },
+  {
+    package: "deepagents",
+    path: "libs/deepagents",
+    repo: "langchain-ai/deepagentsjs",
+    branch: "main",
+  }
 ];
 
 const ROOT_TYPEDOC_CONFIG: TypeDocOptions = {

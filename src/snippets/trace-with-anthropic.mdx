@@ -1,7 +1,7 @@
-The `wrap_anthropic` methods in Python allows you to wrap your Anthropic client in order to automatically log traces -- no decorator or function wrapping required! Using the wrapper ensures that messages, including tool calls and multimodal content blocks will be rendered nicely in LangSmith. The wrapper works seamlessly with the `@traceable` decorator or `traceable` function and you can use both in the same application.
+The Anthropic wrapper methods in Python (@[`wrap_anthropic`][wrap_anthropic]) and Typescript ([`wrapAnthropic`](https://reference.langchain.com/javascript/functions/langsmith.wrappers_anthropic.wrapAnthropic.html)) allow you to wrap your Anthropic client in order to log traces automatically. Using the wrapper ensures that messages, including tool calls and multimodal content blocks will be rendered nicely in LangSmith. The wrapper works seamlessly alongside the `@traceable` decorator (Python) or `traceable` function (TypeScript), so you can trace your Anthropic calls with the wrapper and trace other parts of your application with the decorator or function.
 
 <Note>
-The `LANGSMITH_TRACING` environment variable must be set to `'true'` in order for traces to be logged to LangSmith, even when using `wrap_anthropic`. This allows you to toggle tracing on and off without changing your code.
+The `LANGSMITH_TRACING` environment variable must be set to `'true'` in order for traces to be logged to LangSmith, even when using `wrap_anthropic` or `wrapAnthropic`. This allows you to toggle tracing on and off without changing your code.
 
 Additionally, you will need to set the `LANGSMITH_API_KEY` environment variable to your API key (see [Setup](/) for more information).
 
@@ -10,33 +10,62 @@ If your LangSmith API key is linked to multiple workspaces, set the `LANGSMITH_W
 By default, the traces will be logged to a project named `default`. To log traces to a different project, see [this section](/langsmith/log-traces-to-project).
 </Note>
 
-```python
+<CodeGroup>
+
+```python Python
 import anthropic
 from langsmith import traceable
 from langsmith.wrappers import wrap_anthropic
 
 client = wrap_anthropic(anthropic.Anthropic())
 
-# You can also wrap the async client as well
-# async_client = wrap_anthropic(anthropic.AsyncAnthropic())
-
 @traceable(run_type="tool", name="Retrieve Context")
 def my_tool(question: str) -> str:
-    return "During this morning's meeting, we solved all world conflict."
+  return "During this morning's meeting, we solved all world conflict."
 
 @traceable(name="Chat Pipeline")
 def chat_pipeline(question: str):
-    context = my_tool(question)
-    messages = [
-        { "role": "user", "content": f"Question: {question}\nContext: {context}"}
-    ]
-    messages = client.messages.create(
+  context = my_tool(question)
+  messages = [
+      { "role": "user", "content": f"Question: {question}\nContext: {context}"}
+  ]
+  message = client.messages.create(
       model="claude-sonnet-4-5-20250929",
       messages=messages,
       max_tokens=1024,
       system="You are a helpful assistant. Please respond to the user's request only based on the given context."
-    )
-    return messages
+  )
+  return message
 
 chat_pipeline("Can you summarize this morning's meetings?")
 ```
+
+```typescript TypeScript
+import Anthropic from "@anthropic-ai/sdk";
+import { traceable } from "langsmith/traceable";
+import { wrapAnthropic } from "langsmith/wrappers/anthropic";
+
+const client = wrapAnthropic(new Anthropic());
+
+const myTool = traceable(async (question: string) => {
+  return "During this morning's meeting, we solved all world conflict.";
+}, { name: "Retrieve Context", run_type: "tool" });
+
+const chatPipeline = traceable(async (question: string) => {
+  const context = await myTool(question);
+  const messages = [
+      { role: "user", content: `Question: ${question}\nContext: ${context}` }
+  ];
+  const message = await client.messages.create({
+      model: "claude-sonnet-4-5-20250929",
+      messages: messages,
+      max_tokens: 1024,
+      system: "You are a helpful assistant. Please respond to the user's request only based on the given context."
+  });
+  return message;
+}, { name: "Chat Pipeline" });
+
+await chatPipeline("Can you summarize this morning's meetings?");
+```
+
+</CodeGroup>

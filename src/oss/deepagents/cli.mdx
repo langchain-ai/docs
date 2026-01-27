@@ -4,7 +4,10 @@ sidebarTitle: Use the CLI
 description: Interactive command-line interface for building with Deep Agents
 ---
 
-A terminal interface for building agents with persistent memory. Agents maintain context across sessions, learn project conventions, and execute code with approval controls.
+The Deep Agents CLI is an open source coding assistant that runs in your terminal and retains persistent memory.
+Your CLI agents maintain context across sessions, learn project conventions, use customizable skills, and execute code with approval controls.
+
+![Deep Agents CLI](/oss/images/deepagents/deepagents-cli.png)
 
 The Deep Agents CLI has the following built-in capabilities:
 
@@ -15,41 +18,77 @@ The Deep Agents CLI has the following built-in capabilities:
 * <Icon icon="list-check" size={16} /> **Task planning and tracking** - break down complex tasks into discrete steps and track progress through the built-in todo system.
 * <Icon icon="brain" size={16} /> **Memory storage and retrieval** - store and retrieve information across sessions, enabling agents to remember project conventions and learned patterns.
 * <Icon icon="head-side" size={16} /> **Human-in-the-loop** - require human approval for sensitive tool operations.
+* <Icon icon="puzzle-piece" size={16} /> **Skills** - extend agent capabilities with custom expertise and instructions stored in skill directories.
+
+<Accordion title="Full list of built-in tools">
+## Built-in tools
+
+The agent comes with the following built-in tools which are available without configuration:
+
+| Tool | Description | Human-in-the-Loop |
+|------|-------------|-------------------|
+| `ls` | List files and directories | - |
+| `read_file` | Read contents of a file | - |
+| `write_file` | Create or overwrite a file | Required<sup>1</sup> |
+| `edit_file` | Make targeted edits to existing files | Required<sup>1</sup> |
+| `glob` | Find files matching a pattern (e.g., `**/*.py`) | - |
+| `grep` | Search for text patterns across files | - |
+| `shell` | Execute shell commands (local mode) | Required<sup>1</sup> |
+| `execute` | Execute commands in remote sandbox (sandbox mode) | Required<sup>1</sup> |
+| `web_search` | Search the web using Tavily API | Required<sup>1</sup> |
+| `fetch_url` | Fetch and convert web pages to markdown | Required<sup>1</sup> |
+| `task` | Delegate work to subagents for parallel execution | Required<sup>1</sup> |
+| `write_todos` | Create and manage task lists for complex work | - |
+
+<sup>1</sup>: Potentially destructive operations require user approval before execution.
+To bypass human approval, you can toggle auto-approve or start the deep agent with the `auto-approve` option:
+
+ ```bash
+ deepagents --auto-approve
+ ```
+</Accordion>
 
 <Tip>
 [Watch the demo video](https://youtu.be/IrnacLa9PJc?si=3yUnPbxnm2yaqVQb) to see how the Deep Agents CLI works.
 </Tip>
 
-## Quick start
+## Quickstart
 
 <Steps>
-  <Step title="Set your API key" icon="key">
-    Export as an environment variable:
+    <Step title="Set your API key" icon="key">
+        Export as an environment variable:
 
-    ```bash
-    export ANTHROPIC_API_KEY="your-api-key"
-    ```
+        ```bash
+        export ANTHROPIC_API_KEY="your-api-key"
+        ```
 
-    Or create a `.env` file in your project root:
+        Or create a `.env` file in your project root:
 
-    ```bash
-    ANTHROPIC_API_KEY=your-api-key
-    ```
-  </Step>
+        ```bash
+        ANTHROPIC_API_KEY=your-api-key
+        ```
+    </Step>
 
-  <Step title="Run the CLI" icon="terminal">
-    ```bash
-    uvx deepagents-cli
-    ```
-  </Step>
+    <Step title="Run the CLI" icon="terminal">
+        <CodeGroup>
+            ```bash Install globally
+            uv tool install deepagents-cli
+            deepagents
+            ```
 
-  <Step title="Give the agent a task" icon="message">
-    ```bash
-    > Create a Python script that prints "Hello, World!"
-    ```
+            ```bash Run (without global install)
+            uvx deepagents-cli
+            ```
+        </CodeGroup>
+    </Step>
 
-    The agent proposes changes with diffs for your approval before modifying files.
-  </Step>
+    <Step title="Give the agent a task" icon="message">
+        ```txt
+        > Create a Python script that prints "Hello, World!"
+        ```
+
+        The agent proposes changes with diffs for your approval before modifying files.
+    </Step>
 </Steps>
 
 <Accordion title="Additional installation and configuration options">
@@ -63,12 +102,23 @@ pip install deepagents-cli
 ```bash uv
 uv add deepagents-cli
 ```
+
 </CodeGroup>
 
-The CLI uses Anthropic Claude Sonnet 4 by default. To use OpenAI:
+The CLI automatically selects a provider based on which API keys are available. If multiple keys are set, it uses the first match in this order:
+
+| Priority | API key | Default model |
+|----------|---------|---------------|
+| 1st | `OPENAI_API_KEY` | `gpt-5.2` |
+| 2nd | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5-20250929` |
+| 3rd | `GOOGLE_API_KEY` | `gemini-3-pro-preview` |
+
+To use a different model, pass the `--model` flag explicitly.
+The CLI auto-detects the provider from the model name and requires the corresponding API key. The active model is displayed at startup.
+For example, to use Claude Opus 4.5:
 
 ```bash
-export OPENAI_API_KEY="your-key"
+deepagents --model claude-opus-4-5-20251101
 ```
 
 Enable web search (optional):
@@ -80,72 +130,136 @@ export TAVILY_API_KEY="your-key"
 API keys can be set as environment variables or in a `.env` file.
 </Accordion>
 
+## Tracing with LangSmith
+
+Enable LangSmith tracing to see agent operations in your LangSmith dashboard:
+
+1. Enable LangSmith tracing:
+
+   ```bash
+   export LANGCHAIN_TRACING=true
+   export LANGCHAIN_API_KEY="your-api-key"
+   ```
+
+1. Configure agent tracing for deep agent operations such as tool calls and agent decisions:
+
+   ```bash
+   export DEEPAGENTS_LANGSMITH_PROJECT="my-deep-agent-execution"
+   ```
+
+1. If you are building a LangChain app with deep agents, and want to separate agent traces from your app's traces, also configure `LANGSMITH_PROJECT`:
+
+   ```bash
+   export LANGSMITH_PROJECT="my-app-calls-to-langchain"
+   ```
+
+When configured, the CLI displays:
+
+```sh
+✓ LangSmith tracing: 'my-project'
+```
+
 ## Configuration
 
-<AccordionGroup>
-  <Accordion title="Command-line options" icon="flag">
-    | Option                 | Description                                                 |
-    |------------------------|-------------------------------------------------------------|
-    | `--agent NAME`         | Use named agent with separate memory                        |
-    | `--auto-approve`       | Skip tool confirmation prompts (toggle with `Ctrl+T`)       |
-    | `--sandbox TYPE`       | Execute in remote sandbox: `modal`, `daytona`, or `runloop` |
-    | `--sandbox-id ID`      | Reuse existing sandbox                                      |
-    | `--sandbox-setup PATH` | Run setup script in sandbox                                 |
-  </Accordion>
+Each agent has its own configuration directory at `~/.deepagents/<agent_name>/`.
+The default agent name is `agent`.
+As you start the agent if no folder for that agent name exists then it's created at that path `~/.deepagents/<new_agent>/`.
 
-  <Accordion title="CLI commands" icon="terminal">
-    | Command                              | Description                            |
-    |--------------------------------------|----------------------------------------|
-    | `deepagents list`                    | List all agents                        |
-    | `deepagents help`                    | Show help                              |
-    | `deepagents reset --agent NAME`      | Clear agent memory and reset to default|
-    | `deepagents reset --agent NAME --target SOURCE` | Copy memory from another agent |
-  </Accordion>
+```bash
+# List all configured agents
+deepagents list
+
+# Use a specific agent configuration
+deepagents --agent mybot
+
+# Use a specific model (auto-detects provider)
+deepagents --model claude-sonnet-4-5-20250929
+deepagents --model gpt-4o
+
+# Auto-approve tool usage (skip human-in-the-loop prompts)
+deepagents --auto-approve
+
+# Execute code in a remote sandbox
+deepagents --sandbox modal        # or runloop, daytona
+deepagents --sandbox-id dbx_123   # reuse existing sandbox
+```
+
+<AccordionGroup>
+    <Accordion title="Command-line options" icon="flag">
+        | Option                 | Description                                                 |
+        |------------------------|-------------------------------------------------------------|
+        | `--agent NAME`         | Use named agent with separate memory                        |
+        | `--auto-approve`       | Skip tool confirmation prompts (toggle with `Ctrl+T`)       |
+        | `--resume`, `-r`       | Resume most recent session |
+        | `--sandbox TYPE`       | Execute in [remote sandbox](#use-remote-sandboxes): `modal`, `daytona`, or `runloop` |
+        | `--sandbox-id ID`      | Reuse existing sandbox                                      |
+        | `--sandbox-setup PATH` | Run setup script in sandbox                                 |
+        | `--version`            | Display version |
+    </Accordion>
+
+    <Accordion title="CLI commands" icon="terminal">
+        | Command                              | Description                            |
+        |--------------------------------------|----------------------------------------|
+        | `deepagents list`                    | List all agents                        |
+        | `deepagents skills`                  | Manage agent skills - create, list, and view skill information |
+        | `deepagents help`                    | Show help                              |
+        | `deepagents reset --agent NAME`      | Clear agent memory and reset to default|
+        | `deepagents reset --agent NAME --target SOURCE` | Copy memory from another agent |
+        | `deepagents threads list`            | List all sessions                      |
+        | `deepagents threads delete ID`       | Delete a session                       |
+    </Accordion>
 </AccordionGroup>
 
 ## Interactive mode
 
+Type naturally as you would in a chat interface.
+The agent will use its built-in tools, skills, and memory to help you with tasks.
+
 <AccordionGroup>
-  <Accordion title="Slash commands" icon="slash">
-    Use these commands within the CLI session:
+    <Accordion title="Slash commands" icon="slash">
+        Use these commands within the CLI session:
 
-    - `/tokens` - Display token usage
-    - `/clear` - Clear conversation history
-    - `/exit` - Exit the CLI
-  </Accordion>
+        - `/remember` - Review conversation and update memory and skills
+        - `/tokens` - Display token usage
+        - `/clear` - Clear conversation history
+        - `/exit` or `/quit` - Exit the CLI
+        - `/help` - Show help
+        - `/threads` - Show session info
+        - `/version` - Show version
+    </Accordion>
 
-  <Accordion title="Bash commands" icon="terminal">
-    Execute shell commands directly by prefixing with `!`:
+    <Accordion title="Bash commands" icon="terminal">
+        Execute shell commands directly by prefixing with `!`:
 
-    ```bash
-    !git status
-    !npm test
-    !ls -la
-    ```
-  </Accordion>
+        ```bash
+        !git status
+        !npm test
+        !ls -la
+        ```
+    </Accordion>
 
-  <Accordion title="Keyboard shortcuts" icon="keyboard">
-    | Shortcut    | Action              |
-    |-------------|---------------------|
-    | `Enter`     | Submit              |
-    | `Alt+Enter` | Newline             |
-    | `Ctrl+E`    | External editor     |
-    | `Ctrl+T`    | Toggle auto-approve |
-    | `Ctrl+C`    | Interrupt           |
-    | `Ctrl+D`    | Exit                |
-  </Accordion>
+    <Accordion title="Keyboard shortcuts" icon="keyboard">
+        | Shortcut | Action |
+        |-|-|
+        | `Enter` | Submit |
+        | `Ctrl+J` or `Option+Enter` (Mac) or `Alt+Enter` (Windows) | Newline |
+        | `Ctrl+E` | External editor |
+        | `Shift+Tab` | Toggle auto-approve |
+        | `@filename` | Auto-complete files and inject content |
+        | `Ctrl+C` | Interrupt |
+        | `Ctrl+D` | Exit |
+    </Accordion>
 </AccordionGroup>
 
+## Teach your agent project conventions
 
-## Set project conventions with memories
-
-Agents store information in `~/.deepagents/AGENT_NAME/memories/` as markdown files using a memory-first protocol:
+As you use the agent, it automatically stores information in `~/.deepagents/<agent_name>/memories/` as markdown files using a memory-first protocol:
 
 1. **Research**: Searches memory for relevant context before starting tasks
 2. **Response**: Checks memory when uncertain during execution
 3. **Learning**: Automatically saves new information for future sessions
 
-Organize memories by topic with descriptive filenames:
+The agent organizes its memories by topic with descriptive filenames:
 
 ```
 ~/.deepagents/backend-dev/memories/
@@ -154,7 +268,7 @@ Organize memories by topic with descriptive filenames:
 └── deployment-process.md
 ```
 
-Teach the agent conventions once:
+When you teach the agent conventions:
 
 ```bash
 uvx deepagents-cli --agent backend-dev
@@ -167,6 +281,55 @@ It remembers for future sessions:
 > Create a /users endpoint
 # Applies conventions without prompting
 ```
+
+## Customize your deep agent
+
+There are two primary ways to customize any agent:
+
+- **Memory**: Global and project-specific `AGENTS.md` files which are loaded in full at session start.
+  Use memory for general coding style and preferences.
+
+- **Skills**: Global and project-specific context, conventions, guidelines, or instructions.
+  Use skills for context that is only required when performing specific tasks.
+
+### Provide project or user context
+
+[`AGENTS.md` files](https://agents.md/) files provide persistent memory that is always loaded at session start.
+
+You can provide global user memory for the agent in `~/.deepagents/<agent_name>/AGENTS.md`.
+This file is always loaded when you start a new deep agent session.
+The agent may also read its memory files when answering project-specific questions or when you reference past work or patterns.
+
+For project-specific memory, you can add context to `.deepagents/AGENTS.md` in any project's root folder as long as the project uses git.
+When you start the CLI from anywhere within the project's folder, the CLI will find the project's root folder by checking for a containing `.git` folder.
+
+Both global and project-level `AGENTS.md` files are loaded together and appended to the system prompt at startup.
+The agent will update them as you use the agent and provide it with additional information on how it should behave, feedback on its work, or instructions to remember something.
+The agent will also update its memory if it identifies patterns or preferences from your interactions.
+
+If you would like to explicitly prompt your deep agent to update skills and memory based on the current context from the thread use the `/remember` command which loads a custom instruction to review the context and perform updates.
+
+To add more structured project knowledge in additional memory files, you can add them in `.deepagents/` and reference them in the `AGENTS.md` file.
+You must reference additional files in the `AGENTS.md` file for the agent to be aware of these files.
+The additional files will not be read on startup but the agent can reference and update them when needed.
+
+<Accordion title="When to use global vs. project `AGENTS.md`">
+**Global `AGENTS.md`** (`~/.deepagents/agent/AGENTS.md`)
+
+- Your personality, style, and universal coding preferences
+- General tone and communication style
+- Universal coding preferences (formatting, type hints, etc.)
+- Tool usage patterns that apply everywhere
+- Workflows and methodologies that don't change per-project
+
+**Project `AGENTS.md`** (`.deepagents/AGENTS.md` in project root)
+
+- Project-specific context and conventions
+- Project architecture and design patterns
+- Coding conventions specific to this codebase
+- Testing strategies and deployment processes
+- Team guidelines and project structure
+</Accordion>
 
 ## Use remote sandboxes
 
@@ -224,5 +387,94 @@ To use a remote sandbox, follow these steps:
     Store secrets in a local `.env` file for the setup script to access.
 
 <Warning>
-  Sandboxes isolate code execution, but agents remain vulnerable to prompt injection with untrusted inputs. Use human-in-the-loop approval, short-lived secrets, and trusted setup scripts only. Note that sandbox APIs are evolving rapidly, and we expect more providers to support proxies that help mitigate prompt injection and secrets management concerns.
+    Sandboxes isolate code execution, but agents remain vulnerable to prompt injection with untrusted inputs. Use human-in-the-loop approval, short-lived secrets, and trusted setup scripts only.
+
+    Note that sandbox APIs are evolving rapidly, and we expect more providers to support proxies that help mitigate prompt injection and secrets management concerns.
 </Warning>
+
+## Use skills
+
+Skills are reusable agent capabilities that provide specialized workflows and domain knowledge.
+You can use [skills](/oss/deepagents/skills) to provide your deep agent with new capabilities and expertise.
+Deep agent skills follow the [Agent Skills standard](https://agentskills.io/).
+Once you have added skills your deep agent will automatically make use of them and update them as you use the agent and provide it with additional information.
+
+If you would like to explicitly prompt your deep agent to update skills and memory based on the current context from the thread use the `/remember` command which loads a custom instruction to review the context and perform updates.
+
+### Add skills
+
+1. Start by creating a skill:
+
+   <Tabs>
+       <Tab title="User skill">
+           ```bash
+           deepagents skills create test-skill
+           ```
+
+           This will generate the correct the following files in your `~/.deepagents/<agent_name>` folder:
+       </Tab>
+       <Tab title="Project skill">
+           ```bash
+           deepagents skills create test-skill --project
+           ```
+
+           This will generate the correct the following files in your `~/{project}/.deepagents/skills` folder:
+       </Tab>
+   </Tabs>
+
+   ```plaintext
+   skills/
+   └── test-skill
+       └── SKILL.md
+   ```
+
+1. Open the generated `SKILL.md` and edit the file to include your instructions.
+
+1. Optionally add additional scripts or other resources to the `test-skill` folder.
+   For more information, see [Examples](/oss/deepagents/skills#examples).
+
+If you already have a skills folder with containing skills files, you can also copy them directly to the agent's folder:
+
+```bash
+mkdir -p ~/.deepagents/<agent_name>/skills
+cp -r examples/skills/web-research ~/.deepagents/<agent_name>/skills/
+```
+
+At startup, the CLI scans the `~/.deepagents/<agent_name>/skills/` and `.deepagents/skills/` directories.
+For project-specific skills, the project's root folder must have a `.git` folder.
+When you start the CLI from anywhere within the project's folder, the CLI will find the project's root folder by checking for a containing `.git` folder.
+
+For each skill, the CLI reads the name and the description from the `SKILL.md` file's frontmatter.
+As you use the CLI, if a task matches the skill's description, the agent will read the skill file and follow its instructions.
+
+### List skills
+
+To see the lists you have installed, run:
+
+<Tabs>
+    <Tab title="User skill">
+        ```bash
+        deepagents skills list
+        ```
+    </Tab>
+    <Tab title="Project skill">
+        ```bash
+        deepagents skills list --project
+        ```
+    </Tab>
+</Tabs>
+
+To get more information for a specific skill, run:
+
+<Tabs>
+    <Tab title="User skill">
+        ```bash
+        deepagents skills info test-skill
+        ```
+    </Tab>
+    <Tab title="Project skill">
+        ```bash
+        deepagents skills info test-skill --project
+        ```
+    </Tab>
+</Tabs>

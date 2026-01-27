@@ -68,19 +68,18 @@ def transfer_to_specialist(runtime) -> Command:
 :::
 :::js
 ```typescript
-import { tool } from "@langchain/core/tools";
+import { tool, ToolMessage, type ToolRuntime } from "langchain";
 import { Command } from "@langchain/langgraph";
-import { ToolMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
 const transferToSpecialist = tool(
-  async (_, config) => {
+  async (_, config: ToolRuntime<typeof StateSchema>) => {
     return new Command({
       update: {
         messages: [
           new ToolMessage({  // [!code highlight]
             content: "Transferred to specialist",
-            tool_call_id: config.toolCall?.id!  // [!code highlight]
+            tool_call_id: config.toolCallId  // [!code highlight]
           })
         ],
         currentStep: "specialist"  // Triggers behavior change
@@ -147,32 +146,31 @@ def record_warranty_status(
 :::
 :::js
 ```typescript
-import { tool } from "@langchain/core/tools";
+import { tool, ToolMessage, type ToolRuntime } from "langchain";
 import { Command } from "@langchain/langgraph";
-import { ToolMessage } from "@langchain/core/messages";
 import { z } from "zod";
 
 const recordWarrantyStatus = tool(
-  async ({ status }, config) => {
+  async ({ status }, config: ToolRuntime<typeof StateSchema>) => {
     return new Command({
       update: {
         messages: [
           new ToolMessage({
             content: `Warranty status recorded: ${status}`,
-            tool_call_id: config.toolCall?.id!
-          })
+            tool_call_id: config.toolCallId,
+          }),
         ],
         warrantyStatus: status,
-        currentStep: "specialist"  // Update state to trigger transition
-      }
+        currentStep: "specialist", // Update state to trigger transition
+      },
     });
   },
   {
     name: "record_warranty_status",
     description: "Record warranty status and transition to next step.",
     schema: z.object({
-      status: z.string()
-    })
+      status: z.string(),
+    }),
   }
 );
 ```
@@ -254,75 +252,80 @@ agent = create_agent(
 :::
 :::js
 ```typescript
-import { tool, createAgent, AgentState } from "langchain";
-import { wrapModelCall, ModelRequest, ModelResponse } from "langchain/agents/middleware";
-import { Command } from "@langchain/langgraph";
-import { ToolMessage } from "langchain/messages";
-import * as z from "zod";
+import {
+  createAgent,
+  createMiddleware,
+  tool,
+  ToolMessage,
+  type ToolRuntime,
+} from "langchain";
+import { Command, MemorySaver } from "@langchain/langgraph";
+import { z } from "zod";
 
 // 1. Define state with current_step tracker
-const SupportState = z.object({  // [!code highlight]
-  currentStep: z.string().default("triage"),  // [!code highlight]
-  warrantyStatus: z.string().optional()
+const SupportState = z.object({ // [!code highlight]
+  currentStep: z.string().default("triage"), // [!code highlight]
+  warrantyStatus: z.string().optional(),
 });
 
 // 2. Tools update currentStep via Command
 const recordWarrantyStatus = tool(
-  async ({ status }, config) => {
-    return new Command({  // [!code highlight]
-      update: {  // [!code highlight]
-        messages: [  // [!code highlight]
+  async ({ status }, config: ToolRuntime<typeof SupportState>) => {
+    return new Command({ // [!code highlight]
+      update: { // [!code highlight]
+        messages: [ // [!code highlight]
           new ToolMessage({
             content: `Warranty status recorded: ${status}`,
-            tool_call_id: config.toolCall?.id!
-          })
+            tool_call_id: config.toolCallId,
+          }),
         ],
         warrantyStatus: status,
         // Transition to next step
-        currentStep: "specialist",  // [!code highlight]
-      }
+        currentStep: "specialist", // [!code highlight]
+      },
     });
   },
   {
     name: "record_warranty_status",
     description: "Record warranty status and transition",
-    schema: z.object({ status: z.string() })
+    schema: z.object({ status: z.string() }),
   }
 );
 
 // 3. Middleware applies dynamic configuration based on currentStep
-const applyStepConfig = wrapModelCall(  // [!code highlight]
-  async (request: ModelRequest, handler) => {
-    const step = request.state.currentStep || "triage";  // [!code highlight]
+const applyStepConfig = createMiddleware({
+  name: "applyStepConfig",
+  stateSchema: SupportState, // [!code highlight]
+  wrapModelCall: async (request, handler) => {
+    const step = request.state.currentStep || "triage"; // [!code highlight]
 
     // Map steps to their configurations
     const configs = {
       triage: {
         prompt: "Collect warranty information...",
-        tools: [recordWarrantyStatus]
+        tools: [recordWarrantyStatus],
       },
       specialist: {
         prompt: `Provide solutions based on warranty: ${request.state.warrantyStatus}`,
-        tools: [provideSolution, escalate]
-      }
+        tools: [provideSolution, escalate],
+      },
     };
 
-    const config = configs[step];
-    request = request.override({  // [!code highlight]
-      systemPrompt: config.prompt,  // [!code highlight]
-      tools: config.tools  // [!code highlight]
+    const config = configs[step as keyof typeof configs];
+    return handler({
+      ...request,
+      systemPrompt: config.prompt,
+      tools: config.tools,
     });
-    return handler(request);
-  }
-);
+  },
+});
 
 // 4. Create agent with middleware
 const agent = createAgent({
   model,
   tools: [recordWarrantyStatus, provideSolution, escalate],
-  stateSchema: SupportState,
-  middleware: [applyStepConfig],  // [!code highlight]
-  checkpointer: new InMemorySaver()  // Persist state across turns  // [!code highlight]
+  middleware: [applyStepConfig], // [!code highlight]
+  checkpointer: new MemorySaver(), // Persist state across turns  // [!code highlight]
 });
 ```
 :::
@@ -367,33 +370,43 @@ def transfer_to_sales(
 :::
 :::js
 ```typescript
-import { tool, ToolRuntime } from "@langchain/core/tools";
-import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  tool,
+  BaseMessage,
+  ToolMessage,
+  AIMessage,
+  type ToolRuntime,
+} from "langchain";
 import { Command } from "@langchain/langgraph";
 import { z } from "zod";
 
+const stateSchema = z.object({
+  messages: z.array(z.instanceof(BaseMessage)),
+});
+
 const transferToSales = tool(
-  async (_, { runtime }: { runtime: ToolRuntime }) => {
-    const lastAiMessage = [...runtime.state.messages]  // [!code highlight]
-      .reverse()  // [!code highlight]
-      .find((msg): msg is AIMessage => msg instanceof AIMessage);  // [!code highlight]
-    const transferMessage = new ToolMessage({  // [!code highlight]
-      content: "Transferred to sales agent",  // [!code highlight]
-      tool_call_id: runtime.toolCallId  // [!code highlight]
-    });  // [!code highlight]
+  async (_, runtime: ToolRuntime<typeof stateSchema>) => {
+    const lastAiMessage = runtime.state.messages // [!code highlight]
+      .reverse() // [!code highlight]
+      .find(AIMessage.isInstance); // [!code highlight]
+
+    const transferMessage = new ToolMessage({ // [!code highlight]
+      content: "Transferred to sales agent", // [!code highlight]
+      tool_call_id: runtime.toolCallId, // [!code highlight]
+    }); // [!code highlight]
     return new Command({
       goto: "sales_agent",
       update: {
         activeAgent: "sales_agent",
-        messages: [lastAiMessage, transferMessage].filter(Boolean),  // [!code highlight]
+        messages: [lastAiMessage, transferMessage].filter(Boolean), // [!code highlight]
       },
-      graph: Command.PARENT
+      graph: Command.PARENT,
     });
   },
   {
     name: "transfer_to_sales",
     description: "Transfer to the sales agent.",
-    schema: z.object({})
+    schema: z.object({}),
   }
 );
 ```
@@ -552,68 +565,70 @@ for msg in result["messages"]:
 
 :::js
 ```typescript
-import { StateGraph, START, END, MessagesAnnotation, Annotation, Command } from "@langchain/langgraph";
-import { createAgent } from "langchain";
+import {
+  StateGraph,
+  START,
+  END,
+  MessagesZodState,
+  Command,
+} from "@langchain/langgraph";
+import { createAgent, AIMessage, ToolMessage } from "langchain";
 import { tool, ToolRuntime } from "@langchain/core/tools";
-import { AIMessage, ToolMessage } from "@langchain/core/messages";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // 1. Define state with active_agent tracker
-const MultiAgentState = Annotation.Root({
-  ...MessagesAnnotation.spec,
-  activeAgent: Annotation<string | undefined>({
-    reducer: (x, y) => y ?? x,
-  })
+const MultiAgentState = MessagesZodState.extend({
+  activeAgent: z.string().optional(),
 });
 
 // 2. Create handoff tools
 const transferToSales = tool(
-  async (_, { runtime }: { runtime: ToolRuntime }) => {
-    const lastAiMessage = [...runtime.state.messages]  // [!code highlight]
-      .reverse()  // [!code highlight]
-      .find((msg): msg is AIMessage => msg instanceof AIMessage);  // [!code highlight]
-    const transferMessage = new ToolMessage({  // [!code highlight]
-      content: "Transferred to sales agent from support agent",  // [!code highlight]
-      tool_call_id: runtime.toolCallId  // [!code highlight]
-    });  // [!code highlight]
+  async (_, runtime: ToolRuntime<typeof MultiAgentState>) => {
+    const lastAiMessage = [...runtime.state.messages] // [!code highlight]
+      .reverse() // [!code highlight]
+      .find(AIMessage.isInstance); // [!code highlight]
+    const transferMessage = new ToolMessage({ // [!code highlight]
+      content: "Transferred to sales agent from support agent", // [!code highlight]
+      tool_call_id: runtime.toolCallId, // [!code highlight]
+    }); // [!code highlight]
     return new Command({
       goto: "sales_agent",
       update: {
         activeAgent: "sales_agent",
-        messages: [lastAiMessage, transferMessage].filter(Boolean),  // [!code highlight]
+        messages: [lastAiMessage, transferMessage].filter(Boolean), // [!code highlight]
       },
-      graph: Command.PARENT
+      graph: Command.PARENT,
     });
   },
   {
     name: "transfer_to_sales",
     description: "Transfer to the sales agent.",
-    schema: z.object({})
+    schema: z.object({}),
   }
 );
 
 const transferToSupport = tool(
-  async (_, { runtime }: { runtime: ToolRuntime }) => {
-    const lastAiMessage = [...runtime.state.messages]  // [!code highlight]
-      .reverse()  // [!code highlight]
-      .find((msg): msg is AIMessage => msg instanceof AIMessage);  // [!code highlight]
-    const transferMessage = new ToolMessage({  // [!code highlight]
-      content: "Transferred to support agent from sales agent",  // [!code highlight]
-      tool_call_id: runtime.toolCallId  // [!code highlight]
-    });  // [!code highlight]
+  async (_, runtime: ToolRuntime<typeof MultiAgentState>) => {
+    const lastAiMessage = [...runtime.state.messages] // [!code highlight]
+      .reverse() // [!code highlight]
+      .find(AIMessage.isInstance); // [!code highlight]
+    const transferMessage = new ToolMessage({ // [!code highlight]
+      content: "Transferred to support agent from sales agent", // [!code highlight]
+      tool_call_id: runtime.toolCallId, // [!code highlight]
+    }); // [!code highlight]
     return new Command({
       goto: "support_agent",
       update: {
         activeAgent: "support_agent",
-        messages: [lastAiMessage, transferMessage].filter(Boolean),  // [!code highlight]
+        messages: [lastAiMessage, transferMessage].filter(Boolean), // [!code highlight]
       },
-      graph: Command.PARENT
+      graph: Command.PARENT,
     });
   },
   {
     name: "transfer_to_support",
     description: "Transfer to the support agent.",
-    schema: z.object({})
+    schema: z.object({}),
   }
 );
 
@@ -621,38 +636,44 @@ const transferToSupport = tool(
 const salesAgent = createAgent({
   model: "anthropic:claude-sonnet-4-20250514",
   tools: [transferToSupport],
-  prompt: "You are a sales agent. Help with sales inquiries. If asked about technical issues or support, transfer to the support agent."
+  systemPrompt:
+    "You are a sales agent. Help with sales inquiries. If asked about technical issues or support, transfer to the support agent.",
 });
 
 const supportAgent = createAgent({
   model: "anthropic:claude-sonnet-4-20250514",
   tools: [transferToSales],
-  prompt: "You are a support agent. Help with technical issues. If asked about pricing or purchasing, transfer to the sales agent."
+  systemPrompt:
+    "You are a support agent. Help with technical issues. If asked about pricing or purchasing, transfer to the sales agent.",
 });
 
 // 4. Create agent nodes that invoke the agents
-const callSalesAgent = async (state: typeof MultiAgentState.State) => {
+const callSalesAgent = async (
+  state: z.infer<typeof MultiAgentState>
+) => {
   const response = await salesAgent.invoke(state);
   return response;
 };
 
-const callSupportAgent = async (state: typeof MultiAgentState.State) => {
+const callSupportAgent = async (
+  state: z.infer<typeof MultiAgentState>
+) => {
   const response = await supportAgent.invoke(state);
   return response;
 };
 
 // 5. Create router that checks if we should end or continue
 const routeAfterAgent = (
-  state: typeof MultiAgentState.State
+  state: z.infer<typeof MultiAgentState>
 ): "sales_agent" | "support_agent" | "__end__" => {
   const messages = state.messages ?? [];
 
   // Check the last message - if it's an AIMessage without tool calls, we're done
   if (messages.length > 0) {
     const lastMsg = messages[messages.length - 1];
-    if (lastMsg instanceof AIMessage && !lastMsg.tool_calls?.length) {  // [!code highlight]
-      return "__end__";  // [!code highlight]
-    }
+    if (lastMsg instanceof AIMessage && !lastMsg.tool_calls?.length) { // [!code highlight]
+      return "__end__"; // [!code highlight]
+    } // [!code highlight]
   }
 
   // Otherwise route to the active agent
@@ -661,44 +682,47 @@ const routeAfterAgent = (
 };
 
 const routeInitial = (
-  state: typeof MultiAgentState.State
+  state: z.infer<typeof MultiAgentState>
 ): "sales_agent" | "support_agent" => {
   // Route to the active agent based on state, default to sales agent
-  return (state.activeAgent ?? "sales_agent") as "sales_agent" | "support_agent";
+  return (state.activeAgent ?? "sales_agent") as
+    | "sales_agent"
+    | "support_agent";
 };
 
 // 6. Build the graph
 const builder = new StateGraph(MultiAgentState)
   .addNode("sales_agent", callSalesAgent)
   .addNode("support_agent", callSupportAgent);
-
-// Start with conditional routing based on initial activeAgent
-builder.addConditionalEdges(START, routeInitial, ["sales_agent", "support_agent"]);
-
-// After each agent, check if we should end or route to another agent
-builder.addConditionalEdges(
-  "sales_agent",
-  routeAfterAgent,
-  ["sales_agent", "support_agent", END]
-);
-builder.addConditionalEdges(
-  "support_agent",
-  routeAfterAgent,
-  ["sales_agent", "support_agent", END]
-);
+  // Start with conditional routing based on initial activeAgent
+  .addConditionalEdges(START, routeInitial, [
+    "sales_agent",
+    "support_agent",
+  ])
+  // After each agent, check if we should end or route to another agent
+  .addConditionalEdges("sales_agent", routeAfterAgent, [
+    "sales_agent",
+    "support_agent",
+    END,
+  ]);
+  builder.addConditionalEdges("support_agent", routeAfterAgent, [
+    "sales_agent",
+    "support_agent",
+    END,
+  ]);
 
 const graph = builder.compile();
 const result = await graph.invoke({
   messages: [
     {
       role: "user",
-      content: "Hi, I'm having trouble with my account login. Can you help?"
-    }
-  ]
+      content: "Hi, I'm having trouble with my account login. Can you help?",
+    },
+  ],
 });
 
 for (const msg of result.messages) {
-  msg.pretty_print();
+  console.log(msg.content);
 }
 ```
 :::
@@ -749,6 +773,38 @@ def transfer_to_sales(runtime: ToolRuntime) -> Command:
 ```
 :::
 
+:::js
+```typescript
+const transferToSales = tool(
+  async (_, runtime: ToolRuntime<typeof MultiAgentState>) => {
+    // Get the AI message that triggered this handoff
+    const lastAiMessage = runtime.state.messages.at(-1);
+
+    // Create an artificial tool response to complete the pair
+    const transferMessage = new ToolMessage({
+      content: "Transferred to sales agent",
+      tool_call_id: runtime.toolCallId,
+    });
+
+    return new Command({
+      goto: "sales_agent",
+      update: {
+        activeAgent: "sales_agent",
+        // Pass only these two messages, not the full subagent history
+        messages: [lastAiMessage, transferMessage],
+      },
+      graph: Command.PARENT,
+    });
+  },
+  {
+    name: "transfer_to_sales",
+    description: "Transfer to the sales agent.",
+    schema: z.object({}),
+  }
+);
+```
+:::
+
 <Note>
 **Why not pass all subagent messages?** While you could include the full subagent conversation in the handoff, this often creates problems. The receiving agent may become confused by irrelevant internal reasoning, and token costs increase unnecessarily. By passing only the handoff pair, you keep the parent graph's context focused on high-level coordination. If the receiving agent needs additional context, consider summarizing the subagent's work in the ToolMessage content instead of passing raw message history.
 </Note>
@@ -757,7 +813,7 @@ def transfer_to_sales(runtime: ToolRuntime) -> Command:
 
 When returning control to the user (ending the agent's turn), ensure the final message is an `AIMessage`. This maintains valid conversation history and signals to the user interface that the agent has finished its work.
 
-## Implementation Considerations
+## Implementation considerations
 
 As you design your multi-agent system, consider:
 
