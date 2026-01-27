@@ -9,6 +9,79 @@ rss: true
 **Subscribe**: Our changelog includes an [RSS feed](https://docs.langchain.com/oss/javascript/releases/changelog/rss.xml) that can integrate with [Slack](https://slack.com/help/articles/218688467-Add-RSS-feeds-to-Slack), [email](https://zapier.com/apps/email/integrations/rss/1441/send-new-rss-feed-entries-via-email), Discord bots like [Readybot](https://readybot.io/) or [RSS Feeds to Discord Bot](https://rss.app/en/bots/rssfeeds-discord-bot), and other subscription tools.
 </Callout>
 
+<Update label="Jan 14, 2026" tags={["langgraph"]}>
+    ## v1.1.0
+
+    ### `@langchain/langgraph`
+
+    Introducing **StateSchema** - a cleaner, library-agnostic way to define graph state that works with any [Standard Schema](https://github.com/standard-schema/standard-schema)-compliant validation library.
+
+    ### Standard JSON Schema support
+
+    LangGraph now supports [Standard JSON Schema](https://standardschema.dev/json-schema), an open specification implemented by Zod 4, Valibot, ArkType, and other schema libraries. This means you can use your preferred validation library without lock-in:
+
+    ```typescript
+    import { z } from "zod"; // or valibot, arktype, etc.
+    import { StateSchema, ReducedValue, MessagesValue } from "@langchain/langgraph";
+
+    const AgentState = new StateSchema({
+      messages: MessagesValue,
+      currentStep: z.string(),
+      count: z.number().default(0),
+      history: new ReducedValue(
+        z.array(z.string()).default(() => []),
+        {
+          inputSchema: z.string(),
+          reducer: (current, next) => [...current, next],
+        }
+      ),
+    });
+
+    // Type-safe state and update types
+    type State = typeof AgentState.State;
+    type Update = typeof AgentState.Update;
+
+    const graph = new StateGraph(AgentState)
+      .addNode("agent", (state) => ({ count: state.count + 1 }))
+      .addEdge(START, "agent")
+      .addEdge("agent", END)
+      .compile();
+    ```
+
+    ### New state value primitives
+
+    * **ReducedValue**: Define fields with custom reducers for accumulating values. Supports separate input and output schemas for type-safe reducer inputs.
+    * **UntrackedValue**: Define transient state that exists during execution but is never checkpointed - useful for database connections, caches, or runtime-only configuration.
+    * **MessagesValue**: A prebuilt `ReducedValue` for chat messages with the standard messages reducer.
+
+    ### Type helper exports
+
+    New exported type utilities for typing functions outside the graph builder:
+
+    * `GraphNode<Schema, Nodes?, Config?>` - Type node functions with full inference
+    * `ConditionalEdgeRouter<Schema, Nodes?>` - Type conditional edge routers
+
+    ```typescript
+    // Type standalone node functions
+    const myNode: GraphNode<typeof AgentState> = (state, config) => {
+      return { count: state.count + 1 };
+    };
+
+    // Use schema type helpers directly
+    const processState = (state: typeof AgentState.State) => {
+      console.log(state.count);
+    };
+    ```
+
+    The existing `Annotation` and zod-based API continues to work unchanged - `StateSchema` is an additional option for those who prefer schema-first definitions.
+
+    <Card title="Learn more about StateSchema" icon="book" href="/oss/javascript/langgraph/graph-api#schema">
+      See the full documentation for defining graph state with StateSchema, ReducedValue, and UntrackedValue.
+    </Card>
+    <Card title="Learn about type utilities" icon="code" href="/oss/javascript/langgraph/graph-api#type-utilities">
+      Use GraphNode and ConditionalEdgeRouter to type functions outside the graph builder.
+    </Card>
+</Update>
 <Update label="Dec 12, 2025" tags={["langchain", "@langchain/openai", "@langchain/anthropic", "@langchain/ollama", "@langchain/community", "@langchain/xai", "@langchain/tavily", "@langchain/mongodb", "@langchain/mcp-adapters", "@langchain/google-common", "@langchain/core"]}>
     ## v1.2.0
     ### `langchain`

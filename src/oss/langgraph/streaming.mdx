@@ -95,10 +95,10 @@ for await (const chunk of await graph.stream(inputs, {
 
   :::js
   ```typescript
-  import { StateGraph, START, END } from "@langchain/langgraph";
-  import * as z from "zod";
+  import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
+  import { z } from "zod/v4";
 
-  const State = z.object({
+  const State = new StateSchema({
     topic: z.string(),
     joke: z.string(),
   });
@@ -198,10 +198,10 @@ graph = (
 
 :::js
 ```typescript
-import { StateGraph, START, END } from "@langchain/langgraph";
-import * as z from "zod";
+import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-const State = z.object({
+const State = new StateSchema({
   topic: z.string(),
   joke: z.string(),
 });
@@ -358,11 +358,11 @@ for await (const chunk of await graph.stream(
 
   :::js
   ```typescript
-  import { StateGraph, START } from "@langchain/langgraph";
-  import * as z from "zod";
+  import { StateGraph, StateSchema, START } from "@langchain/langgraph";
+  import { z } from "zod/v4";
 
   // Define subgraph
-  const SubgraphState = z.object({
+  const SubgraphState = new StateSchema({
     foo: z.string(), // note that this key is shared with the parent graph state
     bar: z.string(),
   });
@@ -379,7 +379,7 @@ for await (const chunk of await graph.stream(
   const subgraph = subgraphBuilder.compile();
 
   // Define parent graph
-  const ParentState = z.object({
+  const ParentState = new StateSchema({
     foo: z.string(),
   });
 
@@ -524,17 +524,17 @@ The streamed output from [`messages` mode](#supported-stream-modes) is a tuple `
 
 ```typescript
 import { ChatOpenAI } from "@langchain/openai";
-import { StateGraph, START } from "@langchain/langgraph";
+import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
 import * as z from "zod";
 
-const MyState = z.object({
+const MyState = new StateSchema({
   topic: z.string(),
   joke: z.string().default(""),
 });
 
 const model = new ChatOpenAI({ model: "gpt-4o-mini" });
 
-const callModel = async (state: z.infer<typeof MyState>) => {
+const callModel: GraphNode<typeof MyState> = async (state) => {
   // Call the LLM to generate a joke about a topic
   // Note that message events are emitted even when the LLM is run using .invoke rather than .stream
   const modelResponse = await model.invoke([
@@ -682,7 +682,7 @@ for await (const [msg, metadata] of await graph.stream(
   :::js
   ```typescript
   import { ChatOpenAI } from "@langchain/openai";
-  import { StateGraph, START } from "@langchain/langgraph";
+  import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
   import * as z from "zod";
 
   // The jokeModel is tagged with "joke"
@@ -696,31 +696,33 @@ for await (const [msg, metadata] of await graph.stream(
     tags: ["poem"]
   });
 
-  const State = z.object({
+  const State = new StateSchema({
     topic: z.string(),
     joke: z.string(),
     poem: z.string(),
   });
 
+  const callModel: GraphNode<typeof State> = async (state) => {
+    const topic = state.topic;
+    console.log("Writing joke...");
+
+    const jokeResponse = await jokeModel.invoke([
+      { role: "user", content: `Write a joke about ${topic}` }
+    ]);
+
+    console.log("\n\nWriting poem...");
+    const poemResponse = await poemModel.invoke([
+      { role: "user", content: `Write a short poem about ${topic}` }
+    ]);
+
+    return {
+      joke: jokeResponse.content,
+      poem: poemResponse.content
+    };
+  };
+
   const graph = new StateGraph(State)
-    .addNode("callModel", async (state) => {
-      const topic = state.topic;
-      console.log("Writing joke...");
-
-      const jokeResponse = await jokeModel.invoke([
-        { role: "user", content: `Write a joke about ${topic}` }
-      ]);
-
-      console.log("\n\nWriting poem...");
-      const poemResponse = await poemModel.invoke([
-        { role: "user", content: `Write a short poem about ${topic}` }
-      ]);
-
-      return {
-        joke: jokeResponse.content,
-        poem: poemResponse.content
-      };
-    })
+    .addNode("callModel", callModel)
     .addEdge(START, "callModel")
     .compile();
 
@@ -837,32 +839,36 @@ for await (const [msg, metadata] of await graph.stream(
   :::js
   ```typescript
   import { ChatOpenAI } from "@langchain/openai";
-  import { StateGraph, START } from "@langchain/langgraph";
+  import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
   import * as z from "zod";
 
   const model = new ChatOpenAI({ model: "gpt-4o-mini" });
 
-  const State = z.object({
+  const State = new StateSchema({
     topic: z.string(),
     joke: z.string(),
     poem: z.string(),
   });
 
+  const writeJoke: GraphNode<typeof State> = async (state) => {
+    const topic = state.topic;
+    const jokeResponse = await model.invoke([
+      { role: "user", content: `Write a joke about ${topic}` }
+    ]);
+    return { joke: jokeResponse.content };
+  };
+
+  const writePoem: GraphNode<typeof State> = async (state) => {
+    const topic = state.topic;
+    const poemResponse = await model.invoke([
+      { role: "user", content: `Write a short poem about ${topic}` }
+    ]);
+    return { poem: poemResponse.content };
+  };
+
   const graph = new StateGraph(State)
-    .addNode("writeJoke", async (state) => {
-      const topic = state.topic;
-      const jokeResponse = await model.invoke([
-        { role: "user", content: `Write a joke about ${topic}` }
-      ]);
-      return { joke: jokeResponse.content };
-    })
-    .addNode("writePoem", async (state) => {
-      const topic = state.topic;
-      const poemResponse = await model.invoke([
-        { role: "user", content: `Write a short poem about ${topic}` }
-      ]);
-      return { poem: poemResponse.content };
-    })
+    .addNode("writeJoke", writeJoke)
+    .addNode("writePoem", writePoem)
     // write both the joke and the poem concurrently
     .addEdge(START, "writeJoke")
     .addEdge(START, "writePoem")
@@ -969,20 +975,22 @@ To send **custom user-defined data** from inside a LangGraph node or tool, follo
 <Tabs>
     <Tab title="node">
     ```typescript
-    import { StateGraph, START, LangGraphRunnableConfig } from "@langchain/langgraph";
+    import { StateGraph, StateSchema, GraphNode, START, LangGraphRunnableConfig } from "@langchain/langgraph";
     import * as z from "zod";
 
-    const State = z.object({
+    const State = new StateSchema({
       query: z.string(),
       answer: z.string(),
     });
 
+    const node: GraphNode<typeof State> = async (state, config) => {
+      // Use the writer to emit a custom key-value pair (e.g., progress update)
+      config.writer({ custom_key: "Generating custom data inside node" });
+      return { answer: "some data" };
+    };
+
     const graph = new StateGraph(State)
-      .addNode("node", async (state, config) => {
-        // Use the writer to emit a custom key-value pair (e.g., progress update)
-        config.writer({ custom_key: "Generating custom data inside node" });
-        return { answer: "some data" };
-      })
+      .addNode("node", node)
       .addEdge(START, "node")
       .compile();
 
@@ -1073,12 +1081,12 @@ You can use `streamMode: "custom"` to stream data from **any LLM API** — even 
 This lets you integrate raw LLM clients or external services that provide their own streaming interfaces, making LangGraph highly flexible for custom setups.
 
 ```typescript
-import { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { StateGraph, GraphNode, StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
 
-const callArbitraryModel = async (
-  state: any,
-  config: LangGraphRunnableConfig
-) => {
+const State = new StateSchema({ result: z.string() });
+
+const callArbitraryModel: GraphNode<typeof State> = async (state, config) => {
   // Example node that calls an arbitrary model and streams the output
   // Assume you have a streaming client that yields chunks
   // Generate LLM tokens using your custom streaming client
@@ -1227,9 +1235,8 @@ for await (const chunk of await graph.stream(
 
   :::js
   ```typescript
-  import { StateGraph, START, MessagesZodMeta, LangGraphRunnableConfig } from "@langchain/langgraph";
-  import { BaseMessage } from "@langchain/core/messages";
-  import { registry } from "@langchain/langgraph/zod";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, LangGraphRunnableConfig } from "@langchain/langgraph";
+  import { tool } from "@langchain/core/tools";
   import * as z from "zod";
   import OpenAI from "openai";
 
@@ -1284,35 +1291,35 @@ for await (const chunk of await graph.stream(
     }
   );
 
-  const State = z.object({
-    messages: z
-      .array(z.custom<BaseMessage>())
-      .register(registry, MessagesZodMeta),
+  const State = new StateSchema({
+    messages: MessagesValue,
   });
+
+  const callTool: GraphNode<typeof State> = async (state) => {
+    const aiMessage = state.messages.at(-1);
+    const toolCall = aiMessage.tool_calls?.at(-1);
+
+    const functionName = toolCall?.function?.name;
+    if (functionName !== "get_items") {
+      throw new Error(`Tool ${functionName} not supported`);
+    }
+
+    const functionArguments = toolCall?.function?.arguments;
+    const args = JSON.parse(functionArguments);
+
+    const functionResponse = await getItems.invoke(args);
+    const toolMessage = {
+      tool_call_id: toolCall.id,
+      role: "tool",
+      name: functionName,
+      content: functionResponse,
+    };
+    return { messages: [toolMessage] };
+  };
 
   const graph = new StateGraph(State)
     // this is the tool-calling graph node
-    .addNode("callTool", async (state) => {
-      const aiMessage = state.messages.at(-1);
-      const toolCall = aiMessage.tool_calls?.at(-1);
-
-      const functionName = toolCall?.function?.name;
-      if (functionName !== "get_items") {
-        throw new Error(`Tool ${functionName} not supported`);
-      }
-
-      const functionArguments = toolCall?.function?.arguments;
-      const args = JSON.parse(functionArguments);
-
-      const functionResponse = await getItems.invoke(args);
-      const toolMessage = {
-        tool_call_id: toolCall.id,
-        role: "tool",
-        name: functionName,
-        content: functionResponse,
-      };
-      return { messages: [toolMessage] };
-    })
+    .addNode("callTool", callTool)
     .addEdge(START, "callTool")
     .compile();
   ```

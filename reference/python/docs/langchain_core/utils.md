@@ -7,3 +7,4 @@
       members:
         - convert_to_json_schema
         - convert_to_openai_tool
+        - convert_to_openai_messages
