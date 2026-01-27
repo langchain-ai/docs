@@ -5,6 +5,15 @@ sidebarTitle: Connect to an external Redis database
 
 LangSmith uses Redis to back our queuing/caching operations. By default, LangSmith Self-Hosted will use an internal Redis instance. However, you can configure LangSmith to use an external Redis instance. By configuring an external Redis instance, you can more easily manage backups, scaling, and other operational tasks for your Redis instance.
 
+<Tip>
+**If you're using a managed Redis service**, we recommend:
+- [Amazon ElastiCache](https://aws.amazon.com/elasticache/redis/) (AWS)
+- [Google Cloud Memorystore](https://cloud.google.com/memorystore) (GCP)
+- [Azure Cache for Redis](https://azure.microsoft.com/en-us/services/cache/) (Azure)
+
+For cloud-specific IAM/Workload Identity authentication, refer to the [IAM authentication section](#iam-authentication).
+</Tip>
+
 ## Requirements
 
 * A provisioned Redis instance that your LangSmith instance will have network access to. We recommend using a managed Redis service like:
@@ -336,38 +345,31 @@ As of LangSmith helm chart version **0.12.34**, we support IAM authentication fo
 IAM authentication is supported for both standalone Redis and Redis Cluster configurations. However, not all cloud providers support IAM authentication for all Redis offerings. Check your cloud provider's documentation to verify IAM support for your specific Redis setup (e.g., GCP only supports IAM for Memorystore Cluster, not standalone Memorystore).
 </Note>
 
-### Supported providers
+<Tabs>
+  <Tab title="AWS">
 
-| Provider | Redis Service | Documentation |
-|----------|---------------|---------------|
-| AWS | ElastiCache for Redis | [IAM authentication](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/auth-iam.html) |
-| GCP | Memorystore for Redis | [IAM authentication](https://docs.cloud.google.com/memorystore/docs/cluster/about-iam-auth) |
-| Azure | Azure Cache for Redis | [Microsoft Entra authentication](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-azure-active-directory-for-authentication) |
+### ElastiCache for Redis IAM authentication
 
-### Prerequisites
+ElastiCache for Redis supports [IAM authentication](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/auth-iam.html), which allows you to authenticate using AWS IAM credentials instead of Redis AUTH passwords.
 
-1. **Configure workload identity** in your Kubernetes cluster. See your cloud provider's documentation:
-   - [AWS IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) or [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)
-   - [GCP Workload Identity](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity)
-   - [Azure Workload Identity](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview)
+#### Prerequisites
 
-2. **Enable IAM authentication** on your Redis instance and grant access to your workload identity. Refer to your cloud provider's documentation linked above.
+1. **Configure workload identity** in your Kubernetes cluster using [AWS IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) or [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)
+2. **Enable IAM authentication** on your ElastiCache instance and grant access to your workload identity
 
-3. **Annotate your Kubernetes ServiceAccounts and Deployments/Jobs** with the workload identity binding per your cloud provider's requirements.
+#### Configuration
 
-### Configuration
+**Standalone Redis:**
 
-To enable IAM authentication, set the `iamAuthProvider` field and use an IAM-compatible connection string (with identity as username, no password):
-
-```yaml Helm
+```yaml
 redis:
   external:
     enabled: true
     existingSecretName: "redis-secret"
-    iamAuthProvider: "azure"  # or "gcp" or "aws"
+    iamAuthProvider: "aws"
 ```
 
-```yaml Kubernetes Secret
+```yaml
 apiVersion: v1
 kind: Secret
 metadata:
@@ -375,52 +377,187 @@ metadata:
 type: Opaque
 stringData:
   # IAM connection URL - identity as username, no password
-  connection_url: "rediss://<identity>@<host>:6380"
+  connection_url: "rediss://<iam-identity>@<elasticache-host>:6380"
 ```
 
-### Redis cluster with IAM authentication
+**Redis Cluster:**
 
-For Redis Cluster with IAM authentication, configure both the cluster settings and IAM provider:
-
-```yaml Helm
+```yaml
 redis:
   external:
     enabled: true
     existingSecretName: "redis-cluster-secret"
-    iamAuthProvider: "gcp"  # or "aws" or "azure"
+    iamAuthProvider: "aws"
     cluster:
       enabled: true
       nodeUrisSecretKey: "redis_cluster_node_uris"
       tlsEnabled: true
 ```
 
-### Required annotations
+#### Required annotations
 
-You must apply the ServiceAccount annotations and pod labels required by your cloud provider's workload identity to all LangSmith components that connect to Redis. This includes:
+You must apply the ServiceAccount annotations required by AWS IRSA to all LangSmith components that connect to Redis:
 
 **Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`
 
-Example for the backend service (repeat for other services listed above):
+Example configuration:
 
-<CodeGroup>
-
-```yaml AWS
+```yaml
 backend:
   serviceAccount:
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<role-name>"
-...
+
+queue:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<role-name>"
+
+platformBackend:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<role-name>"
+
+hostBackend:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<role-name>"
 ```
 
-```yaml GCP
+See the [Helm values reference](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml) for the full list of configurable services.
+
+  </Tab>
+  <Tab title="GCP">
+
+### Memorystore for Redis IAM authentication
+
+Memorystore for Redis supports [IAM authentication](https://docs.cloud.google.com/memorystore/docs/cluster/about-iam-auth) for **Cluster instances only** (not standalone Memorystore). This allows you to authenticate using GCP service accounts.
+
+<Note>
+IAM authentication is only available for Memorystore Cluster, not standalone Memorystore instances.
+</Note>
+
+#### Prerequisites
+
+1. **Configure workload identity** in your Kubernetes cluster using [GCP Workload Identity](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity)
+2. **Enable IAM authentication** on your Memorystore Cluster and grant access to your workload identity
+
+#### Configuration
+
+**Memorystore Cluster with IAM:**
+
+```yaml
+redis:
+  external:
+    enabled: true
+    existingSecretName: "redis-cluster-secret"
+    iamAuthProvider: "gcp"
+    cluster:
+      enabled: true
+      nodeUrisSecretKey: "redis_cluster_node_uris"
+      tlsEnabled: true
+```
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-cluster-secret
+type: Opaque
+stringData:
+  redis_cluster_node_uris: '["redis://node-0:6379","redis://node-1:6379","redis://node-2:6379"]'
+```
+
+#### Required annotations
+
+You must apply the ServiceAccount annotations required by GCP Workload Identity to all LangSmith components that connect to Redis:
+
+**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`
+
+Example configuration:
+
+```yaml
 backend:
   serviceAccount:
     annotations:
       iam.gke.io/gcp-service-account: "<service-account>@<project>.iam.gserviceaccount.com"
-...
+
+queue:
+  serviceAccount:
+    annotations:
+      iam.gke.io/gcp-service-account: "<service-account>@<project>.iam.gserviceaccount.com"
+
+platformBackend:
+  serviceAccount:
+    annotations:
+      iam.gke.io/gcp-service-account: "<service-account>@<project>.iam.gserviceaccount.com"
+
+hostBackend:
+  serviceAccount:
+    annotations:
+      iam.gke.io/gcp-service-account: "<service-account>@<project>.iam.gserviceaccount.com"
 ```
 
-```yaml Azure
+See the [Helm values reference](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml) for the full list of configurable services.
+
+  </Tab>
+  <Tab title="Azure">
+
+### Azure Cache for Redis with Microsoft Entra authentication
+
+Azure Cache for Redis supports [Microsoft Entra authentication](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-azure-active-directory-for-authentication), which allows you to authenticate using Azure managed identities.
+
+#### Prerequisites
+
+1. **Configure workload identity** in your Kubernetes cluster using [Azure Workload Identity](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview)
+2. **Enable Microsoft Entra authentication** on your Azure Cache for Redis and grant access to your workload identity
+
+#### Configuration
+
+**Standalone Redis:**
+
+```yaml
+redis:
+  external:
+    enabled: true
+    existingSecretName: "redis-secret"
+    iamAuthProvider: "azure"
+```
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+type: Opaque
+stringData:
+  # IAM connection URL - managed identity as username, no password
+  connection_url: "rediss://<managed-identity>@<azure-redis-host>:6380"
+```
+
+**Redis Cluster:**
+
+```yaml
+redis:
+  external:
+    enabled: true
+    existingSecretName: "redis-cluster-secret"
+    iamAuthProvider: "azure"
+    cluster:
+      enabled: true
+      nodeUrisSecretKey: "redis_cluster_node_uris"
+      tlsEnabled: true
+```
+
+#### Required annotations
+
+You must apply the ServiceAccount annotations and pod labels required by Azure Workload Identity to all LangSmith components that connect to Redis:
+
+**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`
+
+Example configuration:
+
+```yaml
 backend:
   serviceAccount:
     annotations:
@@ -428,9 +565,33 @@ backend:
   deployment:
     labels:
       azure.workload.identity/use: "true"
-...
+
+queue:
+  serviceAccount:
+    annotations:
+      azure.workload.identity/client-id: "<managed-identity-client-id>"
+  deployment:
+    labels:
+      azure.workload.identity/use: "true"
+
+platformBackend:
+  serviceAccount:
+    annotations:
+      azure.workload.identity/client-id: "<managed-identity-client-id>"
+  deployment:
+    labels:
+      azure.workload.identity/use: "true"
+
+hostBackend:
+  serviceAccount:
+    annotations:
+      azure.workload.identity/client-id: "<managed-identity-client-id>"
+  deployment:
+    labels:
+      azure.workload.identity/use: "true"
 ```
 
-</CodeGroup>
+See the [Helm values reference](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml) for the full list of configurable services.
 
-See the [Helm values reference](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml) for the full list of configurable services and their annotation/label options.
+  </Tab>
+</Tabs>
