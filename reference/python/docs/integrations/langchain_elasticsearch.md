@@ -14,3 +14,9 @@ title: Elasticsearch
 ::: langchain_elasticsearch._async.cache.AsyncElasticsearchCache
 ::: langchain_elasticsearch._async.cache.AsyncElasticsearchEmbeddingsCache
 ::: langchain_elasticsearch._async.chat_history.AsyncElasticsearchChatMessageHistory
+::: langchain_elasticsearch._sync.embeddings.AsyncElasticsearchEmbeddings
+::: langchain_elasticsearch._sync.vectorstores.AsyncElasticsearchStore
+::: langchain_elasticsearch._sync.retrievers.AsyncElasticsearchRetriever
+::: langchain_elasticsearch._sync.cache.AsyncElasticsearchCache
+::: langchain_elasticsearch._sync.cache.AsyncElasticsearchEmbeddingsCache
+::: langchain_elasticsearch._sync.chat_history.AsyncElasticsearchChatMessageHistory
