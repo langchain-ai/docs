@@ -158,7 +158,8 @@ class SupportState(AgentState):  # [!code highlight]
 
 :::js
 ```typescript
-import { z } from "zod";
+import { StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
 
 // Define the possible workflow steps
 const SupportStepSchema = z.enum(["warranty_collector", "issue_classifier", "resolution_specialist"]);  // [!code highlight]
@@ -166,7 +167,7 @@ const WarrantyStatusSchema = z.enum(["in_warranty", "out_of_warranty"]);
 const IssueTypeSchema = z.enum(["hardware", "software"]);
 
 // State for customer support workflow
-const SupportStateSchema = z.object({  // [!code highlight]
+const SupportState = new StateSchema({  // [!code highlight]
   currentStep: SupportStepSchema.optional(),  // [!code highlight]
   warrantyStatus: WarrantyStatusSchema.optional(),
   issueType: IssueTypeSchema.optional(),
@@ -249,7 +250,7 @@ import { tool, ToolMessage, type ToolRuntime } from "langchain";
 import { Command } from "@langchain/langgraph";
 
 const recordWarrantyStatus = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({ // [!code highlight]
       update: { // [!code highlight]
         messages: [
@@ -274,7 +275,7 @@ const recordWarrantyStatus = tool(
 );
 
 const recordIssueType = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({ // [!code highlight]
       update: { // [!code highlight]
         messages: [
@@ -519,7 +520,7 @@ import { createMiddleware } from "langchain";
 
 const applyStepMiddleware = createMiddleware({
   name: "applyStep",
-  stateSchema: SupportStateSchema,
+  stateSchema: SupportState,
   wrapModelCall: async (request, handler) => {
     // Get current step (defaults to warranty_collector for first interaction)
     const currentStep = request.state.currentStep ?? "warranty_collector"; // [!code highlight]
@@ -613,7 +614,7 @@ const model = new ChatOpenAI({
 const agent = createAgent({
   model,
   tools: allTools,
-  stateSchema: SupportStateSchema,  // [!code highlight]
+  stateSchema: SupportState,  // [!code highlight]
   middleware: [applyStepMiddleware],  // [!code highlight]
   checkpointer: new MemorySaver(),  // [!code highlight]
 });
@@ -856,7 +857,7 @@ import { MemorySaver } from "@langchain/langgraph";
 const agent = createAgent({
   model,
   tools: allTools,
-  stateSchema: SupportStateSchema,
+  stateSchema: SupportState,
   middleware: [
     applyStepMiddleware,
     new SummarizationMiddleware({  // [!code highlight]
@@ -1250,10 +1251,10 @@ if __name__ == "__main__":
 ```typescript
 import { createMiddleware, createAgent } from "langchain";
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { v4 as uuidv4 } from "uuid";
 import { tool, ToolMessage, type ToolRuntime, HumanMessage } from "langchain";
-import { Command, MemorySaver } from "@langchain/langgraph";
+import { Command, MemorySaver, StateSchema } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 
 // Define the possible workflow steps
@@ -1266,15 +1267,14 @@ const WarrantyStatusSchema = z.enum(["in_warranty", "out_of_warranty"]);
 const IssueTypeSchema = z.enum(["hardware", "software"]);
 
 // State for customer support workflow
-const SupportStateSchema = z.object({
-
+const SupportState = new StateSchema({
   currentStep: SupportStepSchema.optional(),
   warrantyStatus: WarrantyStatusSchema.optional(),
   issueType: IssueTypeSchema.optional(),
 });
 
 const recordWarrantyStatus = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({
 
       update: {
@@ -1301,7 +1301,7 @@ const recordWarrantyStatus = tool(
 );
 
 const recordIssueType = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({
 
       update: {
@@ -1412,7 +1412,7 @@ const STEP_CONFIG = {
 
 const applyStepMiddleware = createMiddleware({
   name: "applyStep",
-  stateSchema: SupportStateSchema,
+  stateSchema: SupportState,
   wrapModelCall: async (request, handler) => {
     // Get current step (defaults to warranty_collector for first interaction)
     const currentStep = request.state.currentStep ?? "warranty_collector";

@@ -489,14 +489,17 @@ result = agent.invoke({
 
 ```typescript
 import { createMiddleware, createAgent, HumanMessage } from "langchain";
-import * as z from "zod";
+import { StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const CustomState = new StateSchema({
+  modelCallCount: z.number().default(0),
+  userId: z.string().optional(),
+});
 
 const callCounterMiddleware = createMiddleware({
   name: "CallCounterMiddleware",
-  stateSchema: z.object({
-    modelCallCount: z.number().default(0),
-    userId: z.string().optional(),
-  }),
+  stateSchema: CustomState,
   beforeModel: {
     canJumpTo: ["end"],
     hook: (state) => {
@@ -530,14 +533,19 @@ State fields can be either public or private. Fields that start with an undersco
 This is useful for storing internal middleware state that shouldn't be exposed to the caller, such as temporary tracking variables or internal flags:
 
 ```typescript
+import { StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const PrivateState = new StateSchema({
+  // Public field - included in invoke result
+  publicCounter: z.number().default(0),
+  // Private field - excluded from invoke result
+  _internalFlag: z.boolean().default(false),
+});
+
 const middleware = createMiddleware({
   name: "ExampleMiddleware",
-  stateSchema: z.object({
-    // Public field - included in invoke result
-    publicCounter: z.number().default(0),
-    // Private field - excluded from invoke result
-    _internalFlag: z.boolean().default(false),
-  }),
+  stateSchema: PrivateState,
   afterModel: (state) => {
     // Both fields are accessible during execution
     if (state._internalFlag) {

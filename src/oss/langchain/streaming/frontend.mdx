@@ -1581,10 +1581,9 @@ function MultiAgentChat() {
 
 ```typescript agent.ts
 import { ChatOpenAI } from "@langchain/openai";
-import { StateGraph, START, END, Send } from "@langchain/langgraph";
-import { withLangGraph } from "@langchain/langgraph/zod";
-import { BaseMessage, AIMessage } from "@langchain/core/messages";
-import { z } from "zod";
+import { StateGraph, START, END, Send, StateSchema, MessagesValue } from "@langchain/langgraph";
+import { AIMessage } from "@langchain/core/messages";
+import { z } from "zod/v4";
 
 // Use different model instances for variety
 const analyticalModel = new ChatOpenAI({ model: "gpt-4.1-mini", temperature: 0.3 });
@@ -1592,21 +1591,15 @@ const creativeModel = new ChatOpenAI({ model: "gpt-4.1-mini", temperature: 0.9 }
 const practicalModel = new ChatOpenAI({ model: "gpt-4.1-mini", temperature: 0.5 });
 
 // Define the state schema
-const StateAnnotation = z.object({
-  messages: withLangGraph(z.custom<BaseMessage[]>(), {
-    reducer: {
-      fn: (left: BaseMessage[], right: BaseMessage | BaseMessage[]) =>
-        Array.isArray(right) ? left.concat(right) : left.concat([right]),
-    },
-    default: () => [],
-  }),
+const StateAnnotation = new StateSchema({
+  messages: MessagesValue,
   topic: z.string().default(""),
   analyticalResearch: z.string().default(""),
   creativeResearch: z.string().default(""),
   practicalResearch: z.string().default(""),
 });
 
-type State = z.infer<typeof StateAnnotation>;
+type State = typeof StateAnnotation.State;
 
 // Fan-out to parallel researchers
 function fanOutToResearchers(state: State): Send[] {
