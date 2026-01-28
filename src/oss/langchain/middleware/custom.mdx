@@ -108,14 +108,17 @@ import { createMiddleware, AIMessage } from "langchain";
 const createMessageLimitMiddleware = (maxMessages: number = 50) => {
   return createMiddleware({
     name: "MessageLimitMiddleware",
-    beforeModel: (state) => {
-      if (state.messages.length === maxMessages) {
-        return {
-          messages: [new AIMessage("Conversation limit reached.")],
-          jumpTo: "end",
-        };
+    beforeModel: {
+      canJumpTo: ["end"],
+      hook: (state) => {
+        if (state.messages.length === maxMessages) {
+          return {
+            messages: [new AIMessage("Conversation limit reached.")],
+            jumpTo: "end",
+          };
+        }
+        return;
       }
-      return;
     },
     afterModel: (state) => {
       const lastMessage = state.messages[state.messages.length - 1];
@@ -494,11 +497,15 @@ const callCounterMiddleware = createMiddleware({
     modelCallCount: z.number().default(0),
     userId: z.string().optional(),
   }),
-  beforeModel: (state) => {
-    if (state.modelCallCount > 10) {
-      return { jumpTo: "end" };
-    }
-    return;
+  beforeModel: {
+    canJumpTo: ["end"],
+    hook: (state) => {
+      if (state.modelCallCount > 10) {
+        return { jumpTo: "end" };
+      }
+
+      return;
+    },
   },
   afterModel: (state) => {
     return { modelCallCount: state.modelCallCount + 1 };
