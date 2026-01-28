@@ -1,0 +1,229 @@
+---
+title: Trace with Deep Agents
+sidebarTitle: Deep Agents
+---
+
+[`deepagents`](/oss/python/deepagents/overview) is an open-source agent framework built on top of LangGraph, designed for complex, multi-step tasks that require planning, tool usage, and sub-agent delegation. Deep agents supports native LangSmith tracing.
+
+This guide shows you how to enable LangSmith tracing for deep agents, view traces in the LangSmith UI, and (optionally) customize trace configuration for more advanced use cases.
+
+
+## Installation
+
+Install `deepagents` in your Python environment:
+
+```bash
+pip install deepagents
+```
+
+`deepagents` requires:
+
+- Python 3.9+.
+- An LLM that supports tool calling (for example, OpenAI or Anthropic models).
+- For tracing, a [LangSmith account and API key](/langsmith/create-account-api-key) (free to sign up).
+
+<Note>
+You do not need to install the `langsmith` Python package to trace deep agents. `deepagents` is built on LangGraph, which includes native LangSmith tracing support. As long as the LangSmith environment variables are set, traces are sent automatically.
+
+The `langsmith` package is only required if you want [programmatic control over tracing](#customize-langsmith-tracing) (for example, using `tracing_context`, adding custom metadata, or querying runs from Python).
+</Note>
+
+## Setup
+
+You can find your LangSmith API key and project name in the [LangSmith UI](https://smith.langchain.com) under **Settings**:
+
+```bash
+export LANGSMITH_API_KEY=<your-langsmith-api-key>
+export LANGSMITH_TRACING=true
+export LANGSMITH_PROJECT=<your-project-name>
+```
+
+## Create a trace
+
+Once tracing is enabled via environment variables, Deep Agents will automatically emit traces to LangSmith. For example:
+
+```python
+from __future__ import annotations
+
+from datetime import date
+from typing import List, Dict, Any
+
+from deepagents import create_deep_agent
+
+def compute_compound_interest(
+    principal: float,
+    annual_rate: float,
+    years: int,
+    compounds_per_year: int = 12,
+) -> Dict[str, Any]:
+    """Compute compound interest and return a small, trace-friendly result object."""
+    r = annual_rate
+    n = compounds_per_year
+    t = years
+    amount = principal * (1 + r / n) ** (n * t)
+    interest = amount - principal
+    return {
+        "principal": principal,
+        "annual_rate": annual_rate,
+        "years": years,
+        "compounds_per_year": n,
+        "ending_balance": round(amount, 2),
+        "interest_earned": round(interest, 2),
+    }
+
+def format_bullets(title: str, bullets: List[str]) -> str:
+    """Format a short markdown summary."""
+    lines = [f"## {title}", *[f"- {b}" for b in bullets]]
+    return "\n".join(lines)
+
+agent = create_deep_agent(
+    tools=[compute_compound_interest, format_bullets],
+    system_prompt=(
+        "You are a careful assistant. "
+        "When solving problems, use tools when they help. "
+        "Return a concise final answer."
+    ),
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "I have $2,500. If I invest it at 6% annual interest compounded monthly "
+                    "for 5 years, what’s the ending balance and interest earned?\n\n"
+                    "Then summarize the result as 3 bullets."
+                ),
+            }
+        ]
+    }
+)
+
+print(result)
+```
+
+Your trace tree in the [LangSmith UI](https://smith.langchain.com) will show the following structure:
+
+- Agent (top-level).
+- LLM call where the agent decides to use a tool.
+- Tool run: `compute_compound_interest`:
+    - shows tool inputs (principal, annual_rate, etc.).
+    - shows tool output (ending_balance, interest_earned).
+- LLM call interpreting the tool output.
+- Tool run: `format_bullets`:
+    - shows the bullet strings and formatted markdown.
+
+The resulting trace contains multiple nested spans, which allows you to follow the agent’s reasoning, tool usage, and interpretation flow in the LangSmith UI.
+
+## Customize LangSmith tracing
+
+By default, Deep Agents traces are emitted automatically when LangSmith tracing is enabled via environment variables. You can use the @[LangSmith SDK][langsmith-python] directly to customize your tracing, such as scoping traces to part of your code, attaching tags or metadata, or overriding the project name.
+
+Install and use `langsmith` if you want to:
+
+- Trace only specific agent invocations.
+- Add custom tags or metadata for filtering in the UI.
+- Override the project name at runtime.
+
+```bash
+pip install langsmith
+```
+
+This example invokes the same deep agent twice:
+
+- The first invocation is untraced, because it runs outside of `tracing_context`.
+- The second invocation is traced, because it runs inside `tracing_context(enabled=True, ...)`.
+
+You can selectively trace only part of your workflow, without enabling global tracing for your entire process with `LANGSMITH_TRACING=true`:
+
+```python
+from typing import List, Dict, Any
+
+import langsmith as ls
+from deepagents import create_deep_agent
+
+
+def compute_compound_interest(
+    principal: float,
+    annual_rate: float,
+    years: int,
+    compounds_per_year: int = 12,
+) -> Dict[str, Any]:
+    """Compute compound interest and return ending balance and interest earned."""
+    r = annual_rate
+    n = compounds_per_year
+    t = years
+    amount = principal * (1 + r / n) ** (n * t)
+    interest = amount - principal
+    return {
+        "principal": principal,
+        "annual_rate": annual_rate,
+        "years": years,
+        "ending_balance": round(amount, 2),
+        "interest_earned": round(interest, 2),
+    }
+
+
+def format_bullets(title: str, bullets: List[str]) -> str:
+    """Format a title and bullet list as short markdown."""
+    lines = [f"## {title}", *[f"- {b}" for b in bullets]]
+    return "\n".join(lines)
+
+
+agent = create_deep_agent(
+    tools=[compute_compound_interest, format_bullets],
+    system_prompt=(
+        "You are a careful assistant. "
+        "Use tools when they help and return a concise final answer."
+    ),
+)
+
+# ----------------------------
+# Untraced invocation
+# ----------------------------
+agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Calculate the ending balance for $2,500 at 6% annual interest "
+                    "compounded monthly for 5 years."
+                ),
+            }
+        ]
+    }
+)
+
+# ----------------------------
+# Traced invocation
+# ----------------------------
+with ls.tracing_context(
+    enabled=True,
+    project_name="deepagents-demo",
+    tags=["deepagents", "scoped-tracing"],
+    metadata={"example": "partial-workflow"},
+):
+    agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Calculate the ending balance for $2,500 at 6% annual interest "
+                        "compounded monthly for 5 years, then summarize the result "
+                        "as three bullets."
+                    ),
+                }
+            ]
+        }
+    )
+```
+
+The `tracing_context` block enables tracing and also configures how the trace is recorded and organized in LangSmith:
+
+- `enabled=True` explicitly enables tracing for the duration of the block, even if `LANGSMITH_TRACING` is unset or set to `false`.
+- `project_name="deepagents-demo"` routes traces from this block to the specified [LangSmith project](/langsmith/log-traces-to-project). This overrides `LANGSMITH_PROJECT` for runs created within the context.
+- `tags=[...]` attaches tags to the recorded runs. [Tags](/langsmith/add-metadata-tags) appear in the [LangSmith UI](https://smith.langchain.com), which you can use to filter and group traces.
+- `metadata={...}` attaches arbitrary structured metadata (for example, environment, experiment name, or feature flag).
