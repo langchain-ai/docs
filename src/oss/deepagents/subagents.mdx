@@ -44,24 +44,55 @@ Subagents solve the **context bloat problem**. When agents use tools with large 
 For most use cases, define subagents as dictionaries:
 
 **Required fields:**
-- **name** (`str`): Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool.
-- **description** (`str`): What this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate.
-- **system_prompt** (`str`): Instructions for the subagent. Include tool usage guidance and output format requirements.
-- **tools** (`List[Callable]`): Tools the subagent can use. Keep this minimal and include only what's needed.
+
+<ParamField body="name" type="str" required>
+    Unique identifier for the subagent.
+    The main agent uses this name when calling the `task()` tool.
+    The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents.
+</ParamField>
+
+<ParamField body="description" type="str" required>
+    What this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate.
+</ParamField>
+
+<ParamField body="system_prompt" type="str" required>
+    Instructions for the subagent. Include tool usage guidance and output format requirements.
+</ParamField>
+
+<ParamField body="tools" type="list[Callable]" required>
+    Tools the subagent can use. Keep this minimal and include only what's needed.
+</ParamField>
 
 **Optional fields:**
-- **model** (`str | BaseChatModel`): Override the main agent's model. Use the format `"provider:model-name"` (for example, `"openai:gpt-4o"`).
-- **middleware** (`List[Middleware]`): Additional middleware for custom behavior, logging, or rate limiting.
-- **interrupt_on** (`Dict[str, bool]`): Configure human-in-the-loop for specific tools. Requires a checkpointer.
+
+<ParamField body="model" type="str | BaseChatModel">
+    Override the main agent's model. Use the format `'provider:model-name'` (for example, `'openai:gpt-4o'`).
+</ParamField>
+
+<ParamField body="middleware" type="list[Middleware]">
+    Additional middleware for custom behavior, logging, or rate limiting.
+</ParamField>
+
+<ParamField body="interrupt_on" type="dict[str, bool]">
+    Configure human-in-the-loop for specific tools. Requires a checkpointer.
+</ParamField>
 
 ### CompiledSubAgent
 
 For complex workflows, use a pre-built LangGraph graph:
 
-**Fields:**
-- **name** (`str`): Unique identifier
-- **description** (`str`): What this subagent does
-- **runnable** (`Runnable`): A compiled LangGraph graph (must call `.compile()` first)
+<ParamField body="name" type="str" required>
+    Unique identifier for the subagent.
+    The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents.
+</ParamField>
+
+<ParamField body="description" type="str" required>
+    What this subagent does.
+</ParamField>
+
+<ParamField body="runnable" type="Runnable" required>
+    A compiled LangGraph graph (must call `.compile()` first).
+</ParamField>
 
 ## Using SubAgent
 
@@ -165,7 +196,10 @@ const agent = createDeepAgent({
 
 ## Using CompiledSubAgent
 
-For more complex use cases, you can provide your own pre-built LangGraph graph as a subagent:
+For more complex use cases, you can provide your custom subagents.
+You can create a custom subagent using LangChain's `create_agent` or by making a custom LangGraph graph using the [graph API](https://github.com/langchain-ai/docs/pull/).
+
+If you're creating a custom LangGraph graph, make sure that the graph has a [state key called `"messages"`](/oss/langgraph/quickstart#2-define-state):
 
 :::python
 ```python
@@ -226,6 +260,56 @@ const agent = createDeepAgent({
 });
 ```
 :::
+
+## Streaming
+
+When streaming tracing information agents' names are available as `lc_agent_name` in metadata.
+When reviewing tracing information, you can use this metadata to differentiate which agent the data came from.
+
+The following example creates a deep agent with the name `main-agent` and a subagent with the name `research-agent`:
+
+```python
+import os
+from typing import Literal
+from tavily import TavilyClient
+from deepagents import create_deep_agent
+
+tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+
+def internet_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = False,
+):
+    """Run a web search"""
+    return tavily_client.search(
+        query,
+        max_results=max_results,
+        include_raw_content=include_raw_content,
+        topic=topic,
+    )
+
+research_subagent = {
+    "name": "research-agent",
+    "description": "Used to research more in depth questions",
+    "system_prompt": "You are a great researcher",
+    "tools": [internet_search],
+    "model": "claude-sonnet-4-5-20250929",  # Optional override, defaults to main agent model
+}
+subagents = [research_subagent]
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-5-20250929",
+    subagents=subagents,
+    name="main-agent"
+)
+```
+
+As you prompt your deepagents, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
+In this case the subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in any associated agent run metadata:
+
+![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
 
 ## The general-purpose subagent
 

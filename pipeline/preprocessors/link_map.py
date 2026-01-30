@@ -30,6 +30,8 @@ LINK_MAPS: list[LinkMap] = [
             "langchain.embeddings": "langchain/embeddings",
             "langchain_core": "langchain_core/",
             "langchain-core": "langchain_core/",
+            "langchain-text-splitters": "langchain_text_splitters/",
+            "langchain_text_splitters": "langchain_text_splitters/",
             # Agents
             "create_agent": "langchain/agents/#langchain.agents.create_agent",
             "create_agent(tools)": "langchain/agents/#langchain.agents.create_agent(tools)",
@@ -74,6 +76,7 @@ LINK_MAPS: list[LinkMap] = [
             "ContextSize": "langchain/middleware/#langchain.agents.middleware.summarization.ContextSize",
             # Messages
             "AIMessage": "langchain/messages/#langchain.messages.AIMessage",
+            "AIMessage.tool_calls": "langchain/messages/#langchain.messages.AIMessage.tool_calls",
             "AIMessageChunk": "langchain/messages/#langchain.messages.AIMessageChunk",
             "ToolMessage": "langchain/messages/#langchain.messages.ToolMessage",
             "SystemMessage": "langchain/messages/#langchain.messages.SystemMessage",
@@ -111,10 +114,11 @@ LINK_MAPS: list[LinkMap] = [
             "AzureOpenAI": "integrations/langchain_openai/AzureOpenAI",
             "OpenAIEmbeddings": "integrations/langchain_openai/OpenAIEmbeddings",
             "AzureOpenAIEmbeddings": "integrations/langchain_openai/AzureOpenAIEmbeddings",
-            "convert_to_openai_tool": "langchain_core/utils/#langchain_core.utils.function_calling.convert_to_openai_tool",
             # langchain-anthropic
             "langchain-anthropic": "integrations/langchain_anthropic",
             "ChatAnthropic": "integrations/langchain_anthropic/ChatAnthropic",
+            "ChatAnthropic.bind_tools": "integrations/langchain_anthropic/ChatAnthropic/#langchain_anthropic.chat_models.ChatAnthropic.bind_tools",
+            "ChatAnthropic.get_num_tokens_from_messages": "integrations/langchain_anthropic/ChatAnthropic/#langchain_anthropic.chat_models.ChatAnthropic.get_num_tokens_from_messages",
             "AnthropicLLM": "integrations/langchain_anthropic/AnthropicLLM",
             "AnthropicPromptCachingMiddleware": "integrations/langchain_anthropic/middleware/#langchain_anthropic.middleware.AnthropicPromptCachingMiddleware",
             # langchain-google
@@ -141,6 +145,10 @@ LINK_MAPS: list[LinkMap] = [
             "ChatParallelWeb": "integrations/langchain_parallel/ChatParallelWeb",
             "ParallelWebSearchTool": "integrations/langchain_parallel/ParallelWebSearchTool",
             "ParallelExtractTool": "integrations/langchain_parallel/ParallelExtractTool",
+            # langchain-amazon-nova
+            "langchain-amazon-nova": "integrations/langchain_amazon_nova",
+            "ChatAmazonNova": "integrations/langchain_amazon_nova/#langchain_amazon_nova.ChatAmazonNova",
+            "langchain_amazon_nova": "integrations/langchain_amazon_nova",
             # Models
             "init_chat_model": "langchain/models/#langchain.chat_models.init_chat_model",
             "init_chat_model(model)": "langchain/models/#langchain.chat_models.init_chat_model(model)",
@@ -161,6 +169,7 @@ LINK_MAPS: list[LinkMap] = [
             "@tool": "langchain/tools/#langchain.tools.tool",
             "BaseTool": "langchain/tools/#langchain.tools.BaseTool",
             "ToolRuntime": "langchain/tools/#langchain.tools.ToolRuntime",
+            "convert_to_openai_tool": "langchain_core/utils/#langchain_core.utils.function_calling.convert_to_openai_tool",
             # Embeddings
             "init_embeddings": "langchain_core/embeddings/#langchain_core.embeddings.embeddings.Embeddings",
             "Embeddings": "langchain_core/embeddings/#langchain_core.embeddings.embeddings.Embeddings",
@@ -175,6 +184,7 @@ LINK_MAPS: list[LinkMap] = [
             # Runnables
             "Runnable": "langchain_core/runnables/#langchain_core.runnables.Runnable",
             "RunnableConfig": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig",
+            "RunnableLambda": "langchain_core/runnables/#langchain_core.runnables.base.RunnableLambda",
             "RunnableConfig(max_concurrency)": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig.max_concurrency",
             # Retrievers
             "Retrievers": "langchain_core/retrievers/#langchain_core.retrievers.BaseRetriever",
@@ -189,12 +199,21 @@ LINK_MAPS: list[LinkMap] = [
             # Rate limiters
             "InMemoryRateLimiter": "langchain_core/rate_limiters/#langchain_core.rate_limiters.InMemoryRateLimiter",
             # LangSmith SDK
+            "langsmith": "langsmith/observability/sdk/",
+            "langsmith-python": "langsmith/observability/sdk/",
+            "langsmith-js": "https://reference.langchain.com/javascript/modules/langsmith.html",
             "Client": "langsmith/observability/sdk/client/#langsmith.client.Client",
             "Client.evaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.evaluate",
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
+            "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
+            "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
+            "traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "@traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
             # LangGraph
+            "RemoteGraph": "langsmith/deployment/remote_graph/",
+            "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
             "get_stream_writer": "langgraph/config/#langgraph.config.get_stream_writer",
             "StateGraph": "langgraph/graphs/#langgraph.graph.state.StateGraph",
             "StateGraph.compile": "langgraph/graphs/#langgraph.graph.state.StateGraph.compile",
@@ -249,9 +268,12 @@ LINK_MAPS: list[LinkMap] = [
             "AssistantsClient": "langsmith/deployment/sdk/#langgraph_sdk.client.AssistantsClient",
             "AssistantsClient.create": "langsmith/deployment/sdk/#langgraph_sdk.client.AssistantsClient.create",
             "AssistantsClient.update": "langsmith/deployment/sdk/#langgraph_sdk.client.AssistantsClient.update",
+            "LangGraphSDK": "langsmith/deployment/sdk/",
             "ThreadsClient": "langsmith/deployment/sdk/#langgraph_sdk.client.ThreadsClient",
             "ThreadsClient.create": "langsmith/deployment/sdk/#langgraph_sdk.client.ThreadsClient.create",
             "ThreadsClient.copy": "langsmith/deployment/sdk/#langgraph_sdk.client.ThreadsClient.copy",
+            "ThreadsClient.get": "langsmith/deployment/sdk/#langgraph_sdk.client.ThreadsClient.get",
+            "ThreadsClient.get_state": "langsmith/deployment/sdk/#langgraph_sdk.client.ThreadsClient.get_state",
             "ThreadsClient.search": "langsmith/deployment/sdk/#langgraph_sdk.client.ThreadsClient.search",
             "ThreadsClient.get_history": "langsmith/deployment/sdk/#langgraph_sdk.client.ThreadsClient.get_history",
             "RunsClient": "langsmith/deployment/sdk/#langgraph_sdk.client.RunsClient",
@@ -327,6 +349,20 @@ LINK_MAPS: list[LinkMap] = [
             "entrypoint.final": "langgraph/func/#langgraph.func.entrypoint.final",
             # Configuration
             "langgraph.json": "cloud/reference/cli/#configuration-file",
+            # MCP stuff
+            "MultiServerMCPClient": "langchain_mcp_adapters/#langchain_mcp_adapters.client.MultiServerMCPClient",
+            "load_mcp_tools": "langchain_mcp_adapters/#langchain_mcp_adapters.tools.load_mcp_tools",
+            "load_mcp_prompt": "langchain_mcp_adapters/#langchain_mcp_adapters.prompts.load_mcp_prompt",
+            "load_mcp_resources": "langchain_mcp_adapters/#langchain_mcp_adapters.resources.load_mcp_resources",
+            "MCPToolArtifact": "langchain_mcp_adapters/#langchain_mcp_adapters.tools.MCPToolArtifact",
+            "ToolCallInterceptor": "langchain_mcp_adapters/#langchain_mcp_adapters.interceptors.ToolCallInterceptor",
+            "CallbackContext": "langchain_mcp_adapters/#langchain_mcp_adapters.callbacks.CallbackContext",
+            "Callbacks": "langchain_mcp_adapters/#langchain_mcp_adapters.callbacks.Callbacks",
+            "Connection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.Connection",
+            "McpHttpClientFactory": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.McpHttpClientFactory",
+            "StdioConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StdioConnection",
+            "StreamableHttpConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StreamableHttpConnection",
+            "WebsocketConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.WebsocketConnection",
         },
     },
     {
@@ -373,6 +409,10 @@ LINK_MAPS: list[LinkMap] = [
             # Text splitters
             "RecursiveCharacterTextSplitter": "classes/_langchain_textsplitters.RecursiveCharacterTextSplitter.html",
             "TokenTextSplitter": "classes/_langchain_textsplitters.TokenTextSplitter.html",
+            # LangSmith SDK
+            "langsmith": "modules/langsmith.html",
+            "langsmith-js": "modules/langsmith.html",
+            "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
             # LangGraph SDK references
             "Auth": "classes/_langchain_langgraph-sdk.auth.Auth.html",
             "client.runs.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
@@ -405,6 +445,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "classes/_langchain_langgraph.index.Command.html",
             "CompiledStateGraph": "classes/_langchain_langgraph.index.CompiledStateGraph.html",
             "createAgent": "functions/langchain.index.createAgent.html",
+            "createMiddleware": "functions/langchain.index.createMiddleware.html",
             "createReactAgent": "functions/_langchain_langgraph.prebuilt.createReactAgent.html",
             "createSupervisor": "functions/_langchain_langgraph-supervisor.createSupervisor.html",
             "entrypoint": "functions/_langchain_langgraph.index.entrypoint.html",
@@ -427,10 +468,14 @@ LINK_MAPS: list[LinkMap] = [
             "Runtime": "interfaces/_langchain_langgraph.index.Runtime.html",
             "ToolNode": "classes/_langchain_langgraph.prebuilt.ToolNode.html",
             # LangSmith Deployment SDK - JS
+            "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html",
             "ThreadsClient.create": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#create",
             "ThreadsClient.copy": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#copy",
+            "ThreadsClient.get": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#get",
+            "ThreadsClient.get_state": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#getstate",
             "ThreadsClient.search": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#search",
+            "ThreadsClient.get_history": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#gethistory",
             "ThreadsClient.getHistory": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#gethistory",
             "AssistantsClient": "classes/_langchain_langgraph-sdk.client.AssistantsClient.html",
             "AssistantsClient.create": "classes/_langchain_langgraph-sdk.client.AssistantsClient.html#create",
@@ -443,6 +488,37 @@ LINK_MAPS: list[LinkMap] = [
             "toolRetryMiddleware": "functions/langchain.index.toolRetryMiddleware.html",
             "modelRetryMiddleware": "functions/langchain.index.modelRetryMiddleware.html",
             "systemPrompt": "types/langchain.index.CreateAgentParams.html#systemprompt",
+            "openAIModerationMiddleware": "classes/_langchain_openai.middleware.OpenAIModerationMiddleware.html",
+        },
+    },
+    {
+        # LangSmith Deployment Agent Server API - Python scope
+        "host": "https://langchain-ai.github.io/langgraph/cloud/reference/api/",
+        "scope": "python",
+        "links": {
+            "AssistantsAPI": "api_ref.html#tag/assistants",
+            "ThreadsAPI": "api_ref.html#tag/threads",
+            "ThreadsAPI.create": "api_ref.html#tag/threads/post/threads",
+            "ThreadsAPI.copy": "api_ref.html#tag/threads/post/threads/{thread_id}/copy",
+            "ThreadsAPI.get": "api_ref.html#tag/threads/get/threads/{thread_id}",
+            "ThreadsAPI.get_state": "api_ref.html#tag/threads/get/threads/{thread_id}/state",
+            "ThreadsAPI.search": "api_ref.html#tag/threads/post/threads/search",
+            "ThreadsAPI.get_history": "api_ref.html#tag/threads/post/threads/{thread_id}/history",
+        },
+    },
+    {
+        # LangSmith Deployment Agent Server API - JS scope
+        "host": "https://langchain-ai.github.io/langgraph/cloud/reference/api/",
+        "scope": "js",
+        "links": {
+            "AssistantsAPI": "api_ref.html#tag/assistants",
+            "ThreadsAPI": "api_ref.html#tag/threads",
+            "ThreadsAPI.create": "api_ref.html#tag/threads/post/threads",
+            "ThreadsAPI.copy": "api_ref.html#tag/threads/post/threads/{thread_id}/copy",
+            "ThreadsAPI.get": "api_ref.html#tag/threads/get/threads/{thread_id}",
+            "ThreadsAPI.get_state": "api_ref.html#tag/threads/get/threads/{thread_id}/state",
+            "ThreadsAPI.search": "api_ref.html#tag/threads/post/threads/search",
+            "ThreadsAPI.get_history": "api_ref.html#tag/threads/post/threads/{thread_id}/history",
         },
     },
 ]

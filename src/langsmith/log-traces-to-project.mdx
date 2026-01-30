@@ -134,4 +134,404 @@ rt.end({outputs: chatCompletion});
 await rt.patchRun();
 ```
 
+```java Client
+import com.langchain.smith.otel.OtelConfig;
+import com.langchain.smith.otel.OtelSpanCreator;
+import com.langchain.smith.otel.OtelTraceExporter;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.Tracer;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Simple example: Send a single OpenTelemetry trace to LangSmith.
+ *
+ * Usage:
+ *   export LANGSMITH_API_KEY=your_api_key
+ *   export LANGSMITH_PROJECT=your_project_name  # Optional, defaults to "default"
+ */
+public class OtelLangSmithSimpleExample {
+    public static void main(String[] args) throws Exception {
+        // Get API key and project name
+        String apiKey = System.getenv("LANGSMITH_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            System.err.println("ERROR: LANGSMITH_API_KEY environment variable is required!");
+            return;
+        }
+
+        String projectName = System.getenv("LANGSMITH_PROJECT");
+        if (projectName == null || projectName.isEmpty()) {
+            projectName = "default";
+        }
+
+        // Configure exporter
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-api-key", apiKey);
+        headers.put("Langsmith-Project", projectName);
+
+        OtelConfig config = OtelConfig.builder()
+                .enabled(true)
+                .endpoint("https://api.smith.langchain.com/otel/v1/traces")
+                .headers(headers)
+                .timeout(Duration.ofSeconds(30))
+                .serviceName("langsmith-java-simple")
+                .build();
+
+        OtelTraceExporter exporter = OtelTraceExporter.fromConfig(config);
+        Tracer tracer = exporter.getTracer();
+
+        // Create a simple span
+        Span span = OtelSpanCreator.createLlmSpan(
+                tracer, "simple.llm.call", "openai", "gpt-4", projectName, null);
+
+        try {
+            OtelSpanCreator.setInput(span, "Hello, world!");
+            Thread.sleep(100); // Simulate processing
+            OtelSpanCreator.setOutput(span, "Hello! How can I help you?");
+            OtelSpanCreator.setTokenUsage(span, 5, 8);
+            span.setStatus(StatusCode.OK);
+        } finally {
+            span.end();
+        }
+
+        // Flush and shutdown
+        exporter.flush().join(5, java.util.concurrent.TimeUnit.SECONDS);
+        exporter.shutdown().join(2, java.util.concurrent.TimeUnit.SECONDS);
+
+        System.out.println("✓ Trace sent to LangSmith!");
+    }
+}
+```
+
 </CodeGroup>
+
+## Set the destination workspace dynamically
+
+If you need to dynamically route traces to different LangSmith [workspaces](/langsmith/administration-overview#workspaces) based on runtime configuration (e.g., routing different users or tenants to separate workspaces), Python users can use workspace-specific LangSmith clients with `tracing_context`, while TypeScript users can pass a custom client to `traceable` or use `LangChainTracer` with callbacks.
+
+This approach is useful for multi-tenant applications where you want to isolate traces by customer, environment, or team at the workspace level.
+
+### Prerequisites
+
+- A [LangSmith API key](/langsmith/create-account-api-key) with access to multiple workspaces.
+- The [workspace IDs](/langsmith/set-up-hierarchy#set-up-a-workspace) for each target workspace.
+
+### Generic cross-workspace tracing
+
+Use this approach for general applications where you want to dynamically route traces to different workspaces based on runtime logic (e.g., customer ID, tenant, or environment).
+
+**Key components:**
+
+1. Initialize separate `Client` instances for each workspace with their respective `workspace_id`.
+2. Use `tracing_context` (Python) or pass the workspace-specific `client` to `traceable` (TypeScript) to route traces.
+3. Pass workspace configuration through your application's runtime config.
+
+<CodeGroup>
+
+```python Python
+import os
+import contextlib
+from langsmith import Client, traceable, tracing_context
+
+# API key with access to multiple workspaces
+api_key = os.getenv("LS_CROSS_WORKSPACE_KEY")
+
+# Initialize clients for different workspaces
+workspace_a_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_A_ID>"  # e.g., "abc123..."
+)
+
+workspace_b_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_B_ID>"  # e.g., "def456..."
+)
+
+# Example: Route based on customer ID
+def get_workspace_client(customer_id: str):
+    """Route to appropriate workspace based on customer."""
+    if customer_id.startswith("premium_"):
+        return workspace_a_client, "premium-customer-traces"
+    else:
+        return workspace_b_client, "standard-customer-traces"
+
+@traceable
+def process_request(data: dict, customer_id: str):
+    """Process a customer request with workspace-specific tracing."""
+    # Your business logic here
+    return {"status": "success", "data": data}
+
+# Use tracing_context to route to the appropriate workspace
+def handle_customer_request(customer_id: str, request_data: dict):
+    client, project_name = get_workspace_client(customer_id)
+
+    # Everything within this context will be traced to the selected workspace
+    with tracing_context(enabled=True, client=client, project_name=project_name):
+        result = process_request(request_data, customer_id)
+
+    return result
+
+# Example usage
+handle_customer_request("premium_user_123", {"query": "Hello"})
+handle_customer_request("standard_user_456", {"query": "Hi"})
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+
+// API key with access to multiple workspaces
+const apiKey = process.env.LS_CROSS_WORKSPACE_KEY;
+
+// Initialize clients for different workspaces
+const workspaceAClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_A_ID>", // e.g., "abc123..."
+});
+
+const workspaceBClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_B_ID>", // e.g., "def456..."
+});
+
+// Example: Route based on customer ID
+function getWorkspaceClient(customerId: string): {
+  client: Client;
+  projectName: string;
+} {
+  if (customerId.startsWith("premium_")) {
+    return {
+      client: workspaceAClient,
+      projectName: "premium-customer-traces",
+    };
+  } else {
+    return {
+      client: workspaceBClient,
+      projectName: "standard-customer-traces",
+    };
+  }
+}
+
+// Route traces to the appropriate workspace by passing the client to traceable
+async function handleCustomerRequest(
+  customerId: string,
+  requestData: Record<string, any>
+) {
+  const { client, projectName } = getWorkspaceClient(customerId);
+
+  // Create a traceable function with the workspace-specific client
+  const processRequest = traceable(
+    async (data: Record<string, any>, customerId: string) => {
+      // Your business logic here
+      return { status: "success", data };
+    },
+    {
+      name: "process_request",
+      client,
+      project_name: projectName,
+    }
+  );
+
+  return await processRequest(requestData, customerId);
+}
+
+// Example usage
+await handleCustomerRequest("premium_user_123", { query: "Hello" });
+await handleCustomerRequest("standard_user_456", { query: "Hi" });
+```
+
+</CodeGroup>
+
+### Override default workspace for LangSmith deployments
+
+When [deploying agents](/langsmith/deployments) to LangSmith, you can override the default workspace that traces are sent to by using a graph lifespan context manager. This is useful when you want to route traces from a deployed agent to different workspaces based on runtime configuration passed through the `config` parameter.
+
+<CodeGroup>
+
+```python Python
+import os
+import contextlib
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph
+from langgraph.graph.state import RunnableConfig
+from langsmith import Client, tracing_context
+
+# API key with access to multiple workspaces
+api_key = os.getenv("LS_CROSS_WORKSPACE_KEY")
+
+# Initialize clients for different workspaces
+workspace_a_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_A_ID>"
+)
+
+workspace_b_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_B_ID>"
+)
+
+# Define configuration schema for workspace routing
+class Configuration(TypedDict):
+    workspace_id: str
+
+# Define the graph state
+class State(TypedDict):
+    response: str
+
+def greeting(state: State, config: RunnableConfig) -> State:
+    """Generate a workspace-specific greeting."""
+    workspace_id = config.get("configurable", {}).get("workspace_id", "workspace_a")
+
+    if workspace_id == "workspace_a":
+        response = "Hello from Workspace A!"
+    elif workspace_id == "workspace_b":
+        response = "Hello from Workspace B!"
+    else:
+        response = "Hello from the default workspace!"
+
+    return {"response": response}
+
+# Build the base graph
+base_graph = (
+    StateGraph(state_schema=State, config_schema=Configuration)
+    .add_node("greeting", greeting)
+    .set_entry_point("greeting")
+    .set_finish_point("greeting")
+    .compile()
+)
+
+@contextlib.asynccontextmanager
+async def graph(config):
+    """Dynamically route traces to different workspaces based on configuration."""
+    # Extract workspace_id from the configuration
+    workspace_id = config.get("configurable", {}).get("workspace_id", "workspace_a")
+
+    # Route to the appropriate workspace
+    if workspace_id == "workspace_a":
+        client = workspace_a_client
+        project_name = "production-traces"
+    elif workspace_id == "workspace_b":
+        client = workspace_b_client
+        project_name = "development-traces"
+    else:
+        client = workspace_a_client
+        project_name = "default-traces"
+
+    # Apply the tracing context for the selected workspace
+    with tracing_context(enabled=True, client=client, project_name=project_name):
+        yield base_graph
+
+# Usage: Invoke with different workspace configurations
+# await graph({"configurable": {"workspace_id": "workspace_a"}})
+# await graph({"configurable": {"workspace_id": "workspace_b"}})
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import { StateGraph, Annotation } from "@langchain/langgraph";
+
+// API key with access to multiple workspaces
+const apiKey = process.env.LS_CROSS_WORKSPACE_KEY;
+
+// Initialize clients for different workspaces
+const workspaceAClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_A_ID>", // e.g., "abc123..."
+});
+
+const workspaceBClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_B_ID>", // e.g., "def456..."
+});
+
+// Define the graph state
+const StateAnnotation = Annotation.Root({
+  response: Annotation<string>(),
+});
+
+async function greeting(state: typeof StateAnnotation.State, config: any) {
+  const workspaceId = config?.configurable?.workspace_id || "workspace_a";
+
+  let response: string;
+  if (workspaceId === "workspace_a") {
+    response = "Hello from Workspace A!";
+  } else if (workspaceId === "workspace_b") {
+    response = "Hello from Workspace B!";
+  } else {
+    response = "Hello from the default workspace!";
+  }
+
+  return { response };
+}
+
+// Build the base graph
+const baseGraph = new StateGraph(StateAnnotation)
+  .addNode("greeting", greeting)
+  .addEdge("__start__", "greeting")
+  .addEdge("greeting", "__end__")
+  .compile();
+
+// Helper to get workspace-specific client and project
+function getWorkspaceConfig(workspaceId: string): {
+  client: Client;
+  projectName: string;
+} {
+  if (workspaceId === "workspace_a") {
+    return { client: workspaceAClient, projectName: "production-traces" };
+  } else if (workspaceId === "workspace_b") {
+    return { client: workspaceBClient, projectName: "development-traces" };
+  }
+  return { client: workspaceAClient, projectName: "default-traces" };
+}
+
+// Invoke the graph with workspace-specific tracing
+async function invokeWithWorkspaceTracing(
+  workspaceId: string,
+  input: typeof StateAnnotation.State
+) {
+  const { client, projectName } = getWorkspaceConfig(workspaceId);
+
+  // Create a LangChainTracer with the workspace-specific client
+  const tracer = new LangChainTracer({
+    client,
+    projectName,
+  });
+
+  // Invoke the graph with the tracer attached via callbacks
+  // All traces will be routed to the selected workspace
+  return await baseGraph.invoke(input, {
+    configurable: { workspace_id: workspaceId },
+    callbacks: [tracer],
+  });
+}
+
+// Example usage
+await invokeWithWorkspaceTracing("workspace_a", { response: "" });
+await invokeWithWorkspaceTracing("workspace_b", { response: "" });
+```
+
+</CodeGroup>
+
+### Key points
+
+- **Generic cross-workspace tracing**: Use `tracing_context` (Python) or pass a workspace-specific `client` to `traceable` (TypeScript) to dynamically route traces to different workspaces.
+- **LangGraph cross-workspace tracing**: For [LangGraph applications](/oss/langgraph/overview), use `LangChainTracer` with the workspace-specific client and attach it via the `callbacks` parameter.
+- **LangSmith deployment override**: Use a graph lifespan context manager (Python) to override the default deployment workspace based on runtime configuration.
+- Each `Client` instance maintains its own connection to a specific workspace via the `workspaceId` parameter.
+- You can customize both the workspace and project name for each route.
+- This pattern works with any LangSmith-compatible tracing (LangChain, OpenAI, custom functions, etc.).
+
+<Note>
+When deploying with cross-workspace tracing, ensure your API key has the necessary permissions for all target workspaces. For LangSmith deployments, you must add an API key with cross-workspace access to your environment variables (e.g., `LS_CROSS_WORKSPACE_KEY`) to override the default service key generated by your deployment.
+</Note>
