@@ -24,18 +24,18 @@ export SONIOX_API_KEY=your_api_key
 
 ### Basic transcription
 
-Transcribe audio files using the `SonioxAudioTranscriptLoader`:
+Example how to transcribe audio file using the `SonioxAudioTranscriptLoader` and generate the summary with an LLM.
 
 ```typescript
 import { SonioxAudioTranscriptLoader } from "@soniox/langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
-// Fetch the file
-const response = await fetch("https://github.com/soniox/soniox_examples/raw/refs/heads/master/speech_to_text/assets/coffee_shop.mp3");
-const audioBuffer = await response.bytes(); // Uint8Array
-
+const audioFileUrl = "https://soniox.com/media/examples/coffee_shop.mp3";
 const loader = new SonioxAudioTranscriptLoader(
   {
-    audio: audioBuffer, // Or you can pass in a URL string
+    audio: audioFileUrl,
   },
   {
     language_hints: ["en"],
@@ -44,66 +44,155 @@ const loader = new SonioxAudioTranscriptLoader(
   }
 );
 
+console.log(`Transcribing ${audioFileUrl}...`);
+const docs = await loader.load();
+
+const transcriptText = docs[0].pageContent;
+console.log(`Transcript: ${transcriptText}`);
+
+// Create a chain to summarize the transcript
+const prompt = ChatPromptTemplate.fromTemplate(
+  "Write a concise summary of the following speech:\n\n{transcript}"
+);
+
+const chain = prompt
+  .pipe(new ChatOpenAI({ model: "gpt-5-mini" }))
+  .pipe(new StringOutputParser());
+
+const summary = await chain.invoke({ transcript: transcriptText });
+console.log(summary);
+```
+
+You can also transcribe audio from binary data:
+
+```typescript
+// Fetch the file
+const response = await fetch("https://github.com/soniox/soniox_examples/raw/refs/heads/master/speech_to_text/assets/coffee_shop.mp3");
+const audioBuffer = await response.bytes(); // Uint8Array
+
+const loader = new SonioxAudioTranscriptLoader({
+    audio: audioBuffer,
+})
+
 const docs = await loader.load();
 console.log(docs[0].pageContent); // Transcribed text
 ```
 
-### Two-way translation
-
-Transcribe and translate between two languages simultaneously:
-
-```typescript
-const loader = new SonioxAudioTranscriptLoader(
-  {
-    audio: audioBuffer,
-  },
-  {
-    translation: {
-      type: "two_way",
-      language_a: "en",
-      language_b: "es"
-    },
-    language_hints: ["en", "es"],
-  }
-);
-
-const docs = await loader.load();
-```
-
-### One-way translation
+### Translation
 
 Translate from any detected language to a target language:
 
 ```typescript
 const loader = new SonioxAudioTranscriptLoader(
   {
-    audio: audioBuffer,
+    audio: audioFileUrl,
   },
   {
     translation: {
       type: "one_way",
-      target_language: "fr"
+      target_language: "fr",
     },
-    language_hints: ["en"]
+    language_hints: ["en"],
+  }
+);
+
+const docs = await loader.load();
+
+let originalText = "";
+let translatedText = "";
+
+for (const token of docs[0].metadata.tokens) {
+  if (token.translation_status === "translation") {
+    translatedText += token.text;
+  } else {
+    originalText += token.text;
+  }
+}
+
+console.log(originalText);
+console.log(translatedText);
+```
+
+You can also transcribe and translate between two languages simultaneously using `two_way` translation type. Learn more about translation [here](https://soniox.com/docs/stt/async/async-translation).
+
+### Language hints
+
+Soniox automatically detects and transcribes speech in [**60+ languages**](https://soniox.com/docs/stt/concepts/supported-languages). When you know which languages are likely to appear in your audio, provide `language_hints` to improve accuracy by biasing recognition toward those languages.
+
+Language hints **do not restrict** recognition — they only **bias** the model toward the specified languages, while still allowing other languages to be detected if present.
+
+```typescript
+const loader = new SonioxAudioTranscriptLoader(
+  {
+    audio: audioFileUrl,
+  },
+  {
+    language_hints: ["en", "es"],
   }
 );
 
 const docs = await loader.load();
 ```
 
-## Advanced usage
+For more details, see the [Soniox language hints documentation](https://soniox.com/docs/stt/concepts/language-hints).
 
-### Language hints
+### Speaker diarization
 
-Provide [language hints](https://soniox.com/docs/stt/concepts/language-hints) to improve transcription accuracy:
+Enable speaker identification to distinguish between different speakers:
 
 ```typescript
 const loader = new SonioxAudioTranscriptLoader(
   {
-    audio: audioBuffer,
+    audio: audioFileUrl,
   },
   {
-    language_hints: ["en", "es"],
+    enable_speaker_diarization: true,
+  }
+);
+
+const docs = await loader.load();
+
+// Access speaker information in the metadata
+let currentSpeaker = null;
+let output = "";
+for (const token of docs[0].metadata.tokens) {
+  if (currentSpeaker !== token.speaker) {
+    currentSpeaker = token.speaker;
+    output += `\nSpeaker ${currentSpeaker}: ${token.text.trimStart()}`;
+  } else {
+    output += token.text;
+  }
+}
+console.log(output);
+
+// Analyze the conversation
+const prompt = ChatPromptTemplate.fromTemplate(
+  `Analyze the following conversation between speakers.
+Identify the intent of each speaker.
+
+Conversation:
+{conversation}`
+);
+
+const chain = prompt
+  .pipe(new ChatOpenAI({ model: "gpt-5-mini" }))
+  .pipe(new StringOutputParser());
+
+const analysis = await chain.invoke({ conversation: output });
+console.log(analysis);
+```
+
+### Language identification
+
+Enable automatic language detection and identification:
+
+```typescript
+const loader = new SonioxAudioTranscriptLoader(
+  {
+    audio: audioFileUrl,
+  },
+  {
+    enable_language_identification: true,
   }
 );
 ```
@@ -132,6 +221,8 @@ const loader = new SonioxAudioTranscriptLoader(
   }
 );
 ```
+
+For more details, see the [Soniox context documentation](https://soniox.com/docs/stt/concepts/context).
 
 ## API reference
 
@@ -179,13 +270,37 @@ Browse the [documentation](https://soniox.com/docs/stt/api-reference/transcripti
 The `load()` method returns an array containing a single `Document` object:
 
 ```typescript
-Document {
+type Document {
   pageContent: string, // The transcribed text
   metadata: SonioxTranscriptResponse // Full transcript with metadata
 }
 ```
 
 The metadata includes transcribed text, speaker information (if diarization enabled), language information (if identification enabled), translation data (if translation enabled), and timing information.
+
+```typescript
+type SonioxTranscriptResponse = {
+  id: string;
+  text?: string | null;
+  tokens?: SonioxTranscriptToken[] | null;
+}
+```
+
+Token type:
+
+```typescript
+type SonioxTranscriptToken = {
+  text: string;
+  start_ms?: number | null;
+  end_ms?: number | null;
+  confidence?: number | null;
+  speaker?: number | string | null;
+  language?: string | null;
+  translation_status?: string | null;
+};
+```
+
+You can learn more about the `SonioxTranscriptResponse` type in the [Soniox REST API Reference](https://soniox.com/docs/stt/api-reference/transcriptions/get_transcription_transcript).
 
 ## Related
 
