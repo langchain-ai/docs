@@ -1,4 +1,4 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix broken-links build-references preview-references format-check
+.PHONY: all dev build format lint test install clean lint_md lint_md_fix broken-links build-references preview-references format-check check-curly-quotes fix-curly-quotes
 
 # Default target
 all: help
@@ -91,6 +91,14 @@ preview-references: check-pnpm
 	@echo "Previewing references..."
 	cd reference && pnpm i && pnpm run preview
 
+check-curly-quotes:
+	@echo "Checking for curly quotes..."
+	@./scripts/check_curly_quotes.sh
+
+fix-curly-quotes:
+	@echo "Fixing curly quotes..."
+	@./scripts/fix_curly_quotes.sh
+
 help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
@@ -102,6 +110,8 @@ help:
 	@echo "  make lint               - Lint code"
 	@echo "  make lint_md            - Lint markdown files"
 	@echo "  make lint_md_fix        - Lint and fix markdown files"
+	@echo "  make check-curly-quotes - Check for curly/smart quotes"
+	@echo "  make fix-curly-quotes   - Replace curly quotes with straight quotes"
 	@echo "  make test               - Run tests"
 	@echo "  make install            - Install dependencies"
 	@echo "  make clean              - Clean build artifacts"
