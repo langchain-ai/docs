@@ -23,7 +23,7 @@ def setup_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
+        handlers=[logging.StreamHandler(sys.stderr)],
     )
 
 

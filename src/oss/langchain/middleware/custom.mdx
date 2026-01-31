@@ -108,14 +108,17 @@ import { createMiddleware, AIMessage } from "langchain";
 const createMessageLimitMiddleware = (maxMessages: number = 50) => {
   return createMiddleware({
     name: "MessageLimitMiddleware",
-    beforeModel: (state) => {
-      if (state.messages.length === maxMessages) {
-        return {
-          messages: [new AIMessage("Conversation limit reached.")],
-          jumpTo: "end",
-        };
+    beforeModel: {
+      canJumpTo: ["end"],
+      hook: (state) => {
+        if (state.messages.length === maxMessages) {
+          return {
+            messages: [new AIMessage("Conversation limit reached.")],
+            jumpTo: "end",
+          };
+        }
+        return;
       }
-      return;
     },
     afterModel: (state) => {
       const lastMessage = state.messages[state.messages.length - 1];
@@ -494,11 +497,15 @@ const callCounterMiddleware = createMiddleware({
     modelCallCount: z.number().default(0),
     userId: z.string().optional(),
   }),
-  beforeModel: (state) => {
-    if (state.modelCallCount > 10) {
-      return { jumpTo: "end" };
-    }
-    return;
+  beforeModel: {
+    canJumpTo: ["end"],
+    hook: (state) => {
+      if (state.modelCallCount > 10) {
+        return { jumpTo: "end" };
+      }
+
+      return;
+    },
   },
   afterModel: (state) => {
     return { modelCallCount: state.modelCallCount + 1 };
@@ -965,7 +972,7 @@ const toolMonitoringMiddleware = createMiddleware({
 
 ### Dynamically selecting tools
 
-Select relevant tools at runtime to improve performance and accuracy.
+Select relevant tools at runtime to improve performance and accuracy. This section covers filtering pre-registered tools. For registering tools that are discovered at runtime (e.g., from MCP servers), see [Runtime tool registration](/oss/langchain/agents#dynamic-tools).
 
 **Benefits:**
 - **Shorter prompts** - Reduce complexity by exposing only relevant tools

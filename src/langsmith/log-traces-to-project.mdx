@@ -134,6 +134,77 @@ rt.end({outputs: chatCompletion});
 await rt.patchRun();
 ```
 
+```java Client
+import com.langchain.smith.otel.OtelConfig;
+import com.langchain.smith.otel.OtelSpanCreator;
+import com.langchain.smith.otel.OtelTraceExporter;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.Tracer;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Simple example: Send a single OpenTelemetry trace to LangSmith.
+ *
+ * Usage:
+ *   export LANGSMITH_API_KEY=your_api_key
+ *   export LANGSMITH_PROJECT=your_project_name  # Optional, defaults to "default"
+ */
+public class OtelLangSmithSimpleExample {
+    public static void main(String[] args) throws Exception {
+        // Get API key and project name
+        String apiKey = System.getenv("LANGSMITH_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            System.err.println("ERROR: LANGSMITH_API_KEY environment variable is required!");
+            return;
+        }
+
+        String projectName = System.getenv("LANGSMITH_PROJECT");
+        if (projectName == null || projectName.isEmpty()) {
+            projectName = "default";
+        }
+
+        // Configure exporter
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-api-key", apiKey);
+        headers.put("Langsmith-Project", projectName);
+
+        OtelConfig config = OtelConfig.builder()
+                .enabled(true)
+                .endpoint("https://api.smith.langchain.com/otel/v1/traces")
+                .headers(headers)
+                .timeout(Duration.ofSeconds(30))
+                .serviceName("langsmith-java-simple")
+                .build();
+
+        OtelTraceExporter exporter = OtelTraceExporter.fromConfig(config);
+        Tracer tracer = exporter.getTracer();
+
+        // Create a simple span
+        Span span = OtelSpanCreator.createLlmSpan(
+                tracer, "simple.llm.call", "openai", "gpt-4", projectName, null);
+
+        try {
+            OtelSpanCreator.setInput(span, "Hello, world!");
+            Thread.sleep(100); // Simulate processing
+            OtelSpanCreator.setOutput(span, "Hello! How can I help you?");
+            OtelSpanCreator.setTokenUsage(span, 5, 8);
+            span.setStatus(StatusCode.OK);
+        } finally {
+            span.end();
+        }
+
+        // Flush and shutdown
+        exporter.flush().join(5, java.util.concurrent.TimeUnit.SECONDS);
+        exporter.shutdown().join(2, java.util.concurrent.TimeUnit.SECONDS);
+
+        System.out.println("✓ Trace sent to LangSmith!");
+    }
+}
+```
+
 </CodeGroup>
 
 ## Set the destination workspace dynamically

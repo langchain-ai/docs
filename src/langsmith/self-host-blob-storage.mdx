@@ -8,6 +8,15 @@ By default, LangSmith stores run inputs, outputs, errors, manifests, extras, and
 1. In high trace environments, inputs, outputs, errors, manifests, extras, and events may balloon the size of your databases.
 2. If using LangSmith Managed ClickHouse, you may want sensitive information in blob storage that resides in your environment. To alleviate this, LangSmith supports storing run inputs, outputs, errors, manifests, extras, events, and attachments in an external blob storage system.
 
+<Tip>
+**For cloud-specific setup**, choose your platform:
+- [Amazon S3 (AWS)](#amazon-s3)
+- [Google Cloud Storage (GCP)](#google-cloud-storage)
+- [Azure Blob Storage](#azure-blob-storage)
+
+For complete cloud-specific setup and architecture guides, see [AWS](/langsmith/aws-self-hosted), [GCP](/langsmith/gcp-self-hosted), or [Azure](/langsmith/azure-self-hosted).
+</Tip>
+
 ## Requirements
 
 <Note>
@@ -33,6 +42,9 @@ Azure blob storage is available in Helm chart versions 0.8.9 and greater. [Delet
   * For Google Cloud Storage, this will be the URL of the GCS endpoint. Something like: `https://storage.googleapis.com`
 
 ## Authentication
+
+<Tabs>
+  <Tab title="AWS">
 
 ### Amazon S3
 
@@ -61,39 +73,51 @@ To authenticate to [Amazon S3](https://aws.amazon.com/s3/), you will need to cre
 
 Once you have the correct policy, there are three ways to authenticate with Amazon S3:
 
-1. [**(Recommended) IAM Role for Service Account**](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html): You can create an IAM role for your LangSmith instance and attach the policy to that role. You can then provide the role to LangSmith. This is the recommended way to authenticate with Amazon S3 in production.
+1. [IAM Roles for Service Accounts (IRSA)](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (Recommended): You can create an IAM role for your LangSmith instance and attach the policy to that role. This is the recommended way to authenticate with Amazon S3 in production.
+    1. You will need to create an IAM role with the policy attached.
+    1. You will need to allow LangSmith service accounts to assume the role. The `langsmith-queue`, `langsmith-backend`, and `langsmith-platform-backend` service accounts will need to be able to assume the role.
+        <Warning>
+        The service account names will be different if you are using a custom release name. You can find the service account names by running `kubectl get serviceaccounts` in your cluster.
+        </Warning>
+    1. You will need to provide the role ARN to LangSmith. You can do this by adding the `eks.amazonaws.com/role-arn: "<role_arn>"` annotation to the `queue`, `backend`, and `platform-backend` services in your Helm Chart installation.
 
-   1. You will need to create an IAM role with the policy attached.
-   2. You will need to allow LangSmith service accounts to assume the role. The `langsmith-queue`, `langsmith-backend`, and `langsmith-platform-backend` service accounts will need to be able to assume the role.
-            <Warning>
-            The service account names will be different if you are using a custom release name. You can find the service account names by running `kubectl get serviceaccounts` in your cluster.
-            </Warning>
-   3. You will need to provide the role ARN to LangSmith. You can do this by adding the `eks.amazonaws.com/role-arn: "<role_arn>"` annotation to the `queue`, `backend`, and `platform-backend` services in your Helm Chart installation.
+2. [Access Key and Secret Key](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html): You can provide LangSmith with an access key and secret key. This is the simplest way to authenticate with Amazon S3. However, it is not recommended for production use as it is less secure.
+    1. You will need to create a user with the policy attached. Then you can provision an access key and secret key for that user.
 
-2. [**Access Key and Secret Key**](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html): You can provide LangSmith with an access key and secret key. This is the simplest way to authenticate with Amazon S3. However, it is not recommended for production use as it is less secure.
-   1. You will need to create a user with the policy attached. Then you can provision an access key and secret key for that user.
+3. [VPC Endpoint Access](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html): You can enable access to your S3 bucket via a VPC endpoint, which allows traffic to flow securely from your VPC to your S3 bucket.
+    1. You'll need to provision a VPC endpoint and configure it to allow access to your S3 bucket.
+    1. You can refer to our [public Terraform modules](https://github.com/langchain-ai/terraform/blob/main/modules/aws/s3/main.tf#L12) for guidance and an example of configuring this.
 
-3. [**VPC Endpoint Access**](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html): You can enable access to your S3 bucket via a VPC endpoint, which allows traffic to flow securely from your VPC to your S3 bucket.
+### KMS encryption header support
 
-   1. You'll need to provision a VPC endpoint and configure it to allow access to your S3 bucket.
-   2. You can refer to our [public Terraform modules](https://github.com/langchain-ai/terraform/blob/main/modules/aws/s3/main.tf#L12) for guidance and an example of configuring this.
-
-#### KMS encryption header support for S3
 Starting with LangSmith Helm chart version **0.11.24**, you can pass a KMS encryption key header and enforce a specific KMS key for writes by providing its ARN. To enable this, set the following values in your Helm chart:
-```yaml Helm
+
+```yaml
 config:
   blobStorage:
     kmsEncryptionEnabled: true
     kmsKeyArn: <your_kms_key_arn>
 ```
 
-### Google cloud Storage
+  </Tab>
+  <Tab title="GCP">
+
+### Google Cloud Storage
 
 To authenticate with [Google Cloud Storage](https://cloud.google.com/storage?hl=en), you will need to create a [`service account`](https://cloud.google.com/iam/docs/service-account-overview) with the necessary permissions to access your bucket.
 
 Your service account will need the `Storage Admin` role or a custom role with equivalent permissions. This can be scoped to the bucket that LangSmith will be using.
 
 Once you have a provisioned service account, you will need to generate a [`HMAC key`](https://cloud.google.com/storage/docs/authentication/hmackeys) for that service account. This key and secret will be used to authenticate with Google Cloud Storage.
+
+<Note>
+Google Cloud Storage (GCS) exposes an S3-compatible API. When using GCS, set the blob storage engine to "S3", configure the `apiURL` to your GCS endpoint (for example, `https://storage.googleapis.com`), and authenticate using a service account HMAC access key and secret (using `accessKey` and `accessKeySecret`).
+
+You must use **HMAC** access key and secret for GCS. We do not support service account annotations.
+</Note>
+
+  </Tab>
+  <Tab title="Azure">
 
 ### Azure Blob Storage
 
@@ -108,6 +132,9 @@ To authenticate with [Azure Blob Storage](https://azure.microsoft.com/en-us/prod
 Some deployments may need further customization of the connection configuration using a Service URL Override instead of the default service URL (`https://<storage_account_name>.blob.core.windows.net/`). For example, this override is necessary in order to use a different blob storage domain (e.g. government or china).
 </Note>
 
+  </Tab>
+</Tabs>
+
 ## CH search
 
 By default, LangSmith will still store tokens for search in ClickHouse. If you are using LangSmith Managed Clickhouse, you may want to disable this feature to avoid sending potentially sensitive information to ClickHouse. You can do this in your blob storage configuration.
@@ -115,12 +142,6 @@ By default, LangSmith will still store tokens for search in ClickHouse. If you a
 ## Configuration
 
 After creating your bucket and obtaining the necessary credentials, you can configure LangSmith to use your blob storage system.
-
-<Note>
-Google Cloud Storage (GCS) exposes an S3-compatible API. When using GCS, set the blob storage engine to "S3", configure the <code>apiURL</code> to your GCS endpoint (for example, <code>https://storage.googleapis.com</code>), and authenticate using a service account HMAC access key and secret (using `accessKey` and `accessKeySecret`).
-
-You must use **HMAC** access key and secret for GCS. We do not support service account annotations.
-</Note>
 
 <CodeGroup>
 
@@ -198,59 +219,68 @@ The following TTL prefix are used:
 
 If you have customized the TTLs in your LangSmith configuration, you will need to adjust the TTLs in your blob storage configuration to match.
 
-### Amazon S3
+<Tabs>
+  <Tab title="AWS">
+
+### Amazon S3 lifecycle rules
 
 If using S3 for your blob storage, you will need to setup a filter lifecycle configuration that matches the prefixes above. You can find information for this [in the Amazon Documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html#intro-lifecycle-rules-filter).
 
 As an example, if you are using Terraform to manage your S3 bucket, you would setup something like this:
 
 ```hcl
-  rule {
-    id      = "short-term-ttl"
-    prefix  = "ttl_s/"
-    enabled = true
-    expiration {
-      days = 14
-    }
+rule {
+  id      = "short-term-ttl"
+  prefix  = "ttl_s/"
+  enabled = true
+  expiration {
+    days = 14
   }
-  rule {
-    id      = "long-term-ttl"
-    prefix  = "ttl_l/"
-    enabled = true
-    expiration {
-      days = 400
-    }
+}
+rule {
+  id      = "long-term-ttl"
+  prefix  = "ttl_l/"
+  enabled = true
+  expiration {
+    days = 400
   }
+}
 ```
 
-### Google cloud Storage
+  </Tab>
+  <Tab title="GCP">
+
+### Google Cloud Storage lifecycle rules
 
 You will need to setup lifecycle conditions for your GCS buckets that you are using. You can find information for this [in the Google Documentation](https://cloud.google.com/storage/docs/lifecycle#conditions), specifically using matchesPrefix.
 
 As an example, if you are using Terraform to manage your GCS bucket, you would setup something like this:
 
 ```hcl
-  lifecycle_rule {
-    condition {
-      age            = 14
-      matches_prefix = ["ttl_s"]
-    }
-    action {
-      type = "Delete"
-    }
+lifecycle_rule {
+  condition {
+    age            = 14
+    matches_prefix = ["ttl_s"]
   }
-  lifecycle_rule {
-    condition {
-      age            = 400
-      matches_prefix = ["ttl_l"]
-    }
-    action {
-      type = "Delete"
-    }
+  action {
+    type = "Delete"
   }
+}
+lifecycle_rule {
+  condition {
+    age            = 400
+    matches_prefix = ["ttl_l"]
+  }
+  action {
+    type = "Delete"
+  }
+}
 ```
 
-### Azure blob storage
+  </Tab>
+  <Tab title="Azure">
+
+### Azure blob storage lifecycle management
 
 You will need to configure a [lifecycle management policy](https://learn.microsoft.com/en-us/azure/storage/blobs/lifecycle-management-policy-configure) on the container in order to expire objects matching the prefixes above.
 
@@ -301,3 +331,6 @@ resource "azurerm_storage_management_policy" "example" {
   }
 }
 ```
+
+  </Tab>
+</Tabs>

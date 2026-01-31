@@ -6,6 +6,7 @@
 * 🛠️ `reference.langchain.com` is home to the API reference docs for LangChain, LangGraph, LangSmith, and LangChain integration packages (e.g., [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/)). These are static sites built from the source code and deployed to [Vercel](https://vercel.com).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
+* 💬 [`chat.langchain.com`](https://chat.langchain.com) is an AI-powered assistant that can answer questions about LangChain documentation.
 
 ---
 
@@ -29,7 +30,25 @@
 
 ## Contribute
 
-To contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
+To run a local preview of the documentation:
+
+```bash
+git clone https://github.com/langchain-ai/docs.git
+```
+
+```bash
+cd docs
+```
+
+```bash
+make install
+```
+
+```bash
+make dev
+```
+
+For more information on how to contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
 
 For detailed information about setting up your development environment and contributing to documentation, see the [documentation contributing guide](https://docs.langchain.com/oss/python/contributing/documentation).
 
