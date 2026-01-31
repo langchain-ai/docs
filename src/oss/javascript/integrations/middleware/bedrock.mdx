@@ -1,0 +1,79 @@
+---
+title: AWS Bedrock middleware
+---
+
+Middleware specifically designed for AWS Bedrock models. Learn more about [middleware](/oss/langchain/middleware/overview).
+
+| Middleware | Description |
+|------------|-------------|
+| [Prompt caching](#prompt-caching) | Reduce costs by caching repetitive prompt prefixes |
+
+## Prompt caching
+
+Reduce costs and latency by automatically caching static or repetitive prompt content for supported Bedrock models (like Claude 3.5 Sonnet/Haiku). This middleware automatically identifies the last cacheable message in your history and adds the required `ephemeral` flag.
+
+Prompt caching is useful for the following:
+
+- Applications with long, static system prompts
+- Agents with many tool definitions
+- Long conversations where history is reused
+
+<Info>
+    Learn more about [AWS Bedrock prompt caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) strategies and pricing.
+</Info>
+
+```typescript
+import { BedrockChat } from "@langchain/community/chat_models/bedrock";
+import { bedrockPromptCachingMiddleware } from "langchain/agents/middleware/provider/bedrock";
+
+const model = new BedrockChat({
+  model: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  region: "us-east-1",
+  credentials: {
+    accessKeyId: process.env.BEDROCK_AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.BEDROCK_AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+const modelWithCaching = bedrockPromptCachingMiddleware({
+  minMessagesToCache: 2,
+})(model);
+<Accordion title="Configuration options">
+
+<ParamField body="enableCaching" type="boolean" default="true"> Whether to enable caching. If false, the middleware passes messages through unchanged. </ParamField>
+
+<ParamField body="minMessagesToCache" type="number" default="2"> Minimum number of messages required in the history before caching is applied. This prevents caching on very short conversations where it might not be cost-effective. </ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware automatically detects the last cacheable message (User, System, or AI) in the conversation history and applies the ephemeral cache control block to it.
+
+```typescript
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { BedrockChat } from "@langchain/community/chat_models/bedrock";
+import { bedrockPromptCachingMiddleware } from "langchain/agents/middleware/provider/bedrock";
+
+// 1. Setup the model
+const model = new BedrockChat({
+  model: "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  region: "us-east-1",
+});
+
+// 2. Add the middleware
+const cachedModel = bedrockPromptCachingMiddleware({
+  minMessagesToCache: 2
+})(model);
+
+const messages = [
+  new SystemMessage("You are a helpful AI assistant with access to a large library of documents."),
+  new HumanMessage("Summarize the following text: ... [Large Text] ..."),
+];
+
+// 3. Invoke
+// The middleware will automatically tag the last message for caching
+const response = await cachedModel.invoke(messages);
+
+console.log(response.content);
+</Accordion>
