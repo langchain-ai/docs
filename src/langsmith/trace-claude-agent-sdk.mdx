@@ -17,13 +17,14 @@ pip install "langsmith[claude-agent-sdk]"
 ```bash uv
 uv add "langsmith[claude-agent-sdk]"
 ```
+
 </CodeGroup>
 
 ## Quickstart
 
 To enable LangSmith tracing for your Claude Agent SDK application, call `configure_claude_agent_sdk()` at the start of your application:
 
-```python
+```python Python
 import asyncio
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -87,8 +88,49 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+```typescript TypeScript
+import * as originalSdk from "@anthropic-ai/claude-agent-sdk";
+import { wrapClaudeAgentSDK } from "langsmith/experimental/anthropic";
+import { z } from "zod/v4";
+
+const sdk = wrapClaudeAgentSDK(originalSdk);
+
+const getWeather = sdk.tool("get_weather", "Gets the current weather for a given city", { city: z.string() }, async ({ city }) => {
+    const weatherData = {
+        "San Francisco": "Foggy, 62°F",
+        "New York": "Sunny, 75°F",
+        London: "Rainy, 55°F",
+        Tokyo: "Clear, 68°F",
+    };
+
+    const weather = weatherData[city] ?? "Weather data not available";
+    return { content: [{ type: "text", text: weather }] };
+});
+
+const weatherServer = sdk.createSdkMcpServer({
+    name: "weather",
+    version: "1.0.0",
+    tools: [getWeather],
+});
+
+const query = sdk.query({
+    prompt: "What's the weather like in San Francisco and Tokyo?",
+    options: {
+        model: "claude-sonnet-4-5-20250929",
+        systemPrompt: "You are a friendly travel assistant who helps with weather information.",
+        mcpServers: { weather: weatherServer },
+        allowedTools: ["mcp__weather__get_weather"],
+    },
+});
+
+for await (const chunk of query) {
+    console.log(chunk);
+}
+```
+
 Once configured, all Claude Agent SDK operations will be automatically traced to LangSmith, including:
-- Agent queries and responses
-- Tool invocations and results
-- Claude model interactions
-- MCP server operations
+
+-   Agent queries and responses
+-   Tool invocations and results
+-   Claude model interactions
+-   MCP server operations

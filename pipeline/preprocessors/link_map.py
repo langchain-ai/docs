@@ -202,6 +202,7 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith": "langsmith/observability/sdk/",
             "langsmith-python": "langsmith/observability/sdk/",
             "langsmith-js": "https://reference.langchain.com/javascript/modules/langsmith.html",
+            "wrapGemini": "https://reference.langchain.com/javascript/functions/langsmith.wrappers_gemini.wrapGemini.html",
             "Client": "langsmith/observability/sdk/client/#langsmith.client.Client",
             "Client.evaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.evaluate",
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
@@ -209,8 +210,11 @@ LINK_MAPS: list[LinkMap] = [
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
             "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
             "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
+            "wrap_gemini": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_gemini",
             "traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
             "@traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "langsmith_extra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
+            "SupportsLangsmithExtra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
             # LangGraph
             "RemoteGraph": "langsmith/deployment/remote_graph/",
             "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
@@ -413,6 +417,7 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith": "modules/langsmith.html",
             "langsmith-js": "modules/langsmith.html",
             "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
+            "wrapGemini": "functions/langsmith.wrappers_gemini.wrapGemini.html",
             # LangGraph SDK references
             "Auth": "classes/_langchain_langgraph-sdk.auth.Auth.html",
             "client.runs.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
