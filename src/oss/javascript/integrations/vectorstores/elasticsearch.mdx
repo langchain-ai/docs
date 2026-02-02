@@ -6,7 +6,8 @@ title: Elasticsearch
 **Compatibility**: Only available on Node.js.
 </Tip>
 
-[Elasticsearch](https://github.com/elastic/elasticsearch) is a distributed, RESTful search engine optimized for speed and relevance on production-scale workloads. It supports also vector search using the [k-nearest neighbor](https://en.wikipedia.org/wiki/K-nearest_neighbors_algorithm) (kNN) algorithm and also [custom models for Natural Language Processing](https://www.elastic.co/blog/how-to-deploy-nlp-text-embeddings-and-vector-search) (NLP).
+[Elasticsearch](https://github.com/elastic/elasticsearch) is a distributed, RESTful search engine optimized for speed and relevance on production-scale workloads. It supports vector search using the [k-nearest neighbor](https://en.wikipedia.org/wiki/K-nearest_neighbors_algorithm) (kNN) algorithm and also [custom models for Natural Language Processing](https://www.elastic.co/blog/how-to-deploy-nlp-text-embeddings-and-vector-search) (NLP).
+
 You can read more about the support of vector search in Elasticsearch [here](https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html).
 
 This guide provides a quick overview for getting started with Elasticsearch [vector stores](/oss/integrations/vectorstores). For detailed documentation of all `ElasticVectorSearch` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_vectorstores_elasticsearch.ElasticVectorSearch.html).
@@ -19,7 +20,9 @@ This guide provides a quick overview for getting started with Elasticsearch [vec
 | :--- | :--- | :---: | :---: |
 | [`ElasticVectorSearch`](https://api.js.langchain.com/classes/langchain_community_vectorstores_elasticsearch.ElasticVectorSearch.html) | [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
 
-## Setup
+## Installation and setup
+
+### Install packages
 
 To use Elasticsearch vector stores, you'll need to install the `@langchain/community` integration package.
 
@@ -39,15 +42,83 @@ pnpm add @langchain/community @elastic/elasticsearch @langchain/openai @langchai
 ```
 </CodeGroup>
 
-### Credentials
+### Setup Elasticsearch
 
-To use Elasticsearch vector stores, you'll need to have an Elasticsearch instance running.
+There are three ways to get started with Elasticsearch:
 
-You can use the [official Docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html) to get started, or you can use [Elastic Cloud](https://www.elastic.co/cloud/), Elastic's official cloud service.
+#### Option 1: start-local (recommended for development)
+
+The quickest way to set up Elasticsearch locally for development and testing is using the [`start-local`](https://github.com/elastic/start-local) script. This script sets up Elasticsearch and Kibana in Docker with a single command.
+
+```bash
+curl -fsSL https://elastic.co/start-local | sh
+```
+
+This script creates an `elastic-start-local` folder containing:
+- Configuration files for Elasticsearch and Kibana
+- A `.env` file with connection details and credentials
+
+After running the script, you can find your credentials in the `.env` file:
+
+```bash
+cd elastic-start-local
+cat .env
+```
+
+The `.env` file contains `ES_LOCAL_URL` and `ES_LOCAL_API_KEY` that you can use to connect:
+
+```typescript
+const config: ClientOptions = {
+  node: process.env.ES_LOCAL_URL ?? "http://localhost:9200",
+  auth: {
+    apiKey: process.env.ES_LOCAL_API_KEY,
+  },
+};
+```
+
+To stop and start the services:
+
+```bash
+# Stop the services
+./elastic-start-local/stop.sh
+
+# Start the services
+./elastic-start-local/start.sh
+
+# Uninstall completely
+./elastic-start-local/uninstall.sh
+```
+
+For more information, see the [start-local GitHub repository](https://github.com/elastic/start-local).
+
+#### Option 2: Docker (manual setup)
+
+You can use the [official Docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html) to get started. Run a single-node Elasticsearch instance with security disabled. This is not recommended for production use.
+
+```bash
+docker run -p 9200:9200 -e "discovery.type=single-node" -e "xpack.security.enabled=false" -e "xpack.security.http.ssl.enabled=false" docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+```
+
+#### Option 3: Elastic Cloud
+
+[Elastic Cloud](https://cloud.elastic.co/) is a managed Elasticsearch service. You can sign up for a [free trial](https://www.elastic.co/cloud/cloud-trial-overview).
+
+1. [Create a deployment](https://www.elastic.co/guide/en/cloud/current/ec-create-deployment.html)
+2. Get your Cloud ID:
+    1. In the [Elastic Cloud console](https://cloud.elastic.co), click "Manage" next to your deployment
+    2. Copy the Cloud ID and paste it into your configuration
+3. Create an API key:
+    1. In the [Elastic Cloud console](https://cloud.elastic.co), click "Open" next to your deployment
+    2. In the left-hand side menu, go to "Stack Management", then to "API Keys"
+    3. Click "Create API key"
+    4. Enter a name for the API key and click "Create"
+    5. Copy the API key and paste it into your configuration
 
 For connecting to Elastic Cloud you can read the documentation reported [here](https://www.elastic.co/guide/en/kibana/current/api-keys.html) for obtaining an API key.
 
-If you are using OpenAI embeddings for this guide, you'll need to set your OpenAI key as well:
+### Credentials
+
+If you are using OpenAI embeddings for this guide, you'll need to set your OpenAI key:
 
 ```typescript
 process.env.OPENAI_API_KEY = "YOUR_API_KEY";
@@ -60,9 +131,13 @@ If you want to get automated tracing of your model calls you can also set your [
 // process.env.LANGSMITH_API_KEY="your-api-key"
 ```
 
-## Instantiation
+## ElasticVectorSearch
 
-Instatiating Elasticsearch will vary depending on where your instance is hosted.
+The `ElasticVectorSearch` class provides Elasticsearch as a vector store with support for both standard vector search and hybrid search.
+
+### Instantiation
+
+Instantiating Elasticsearch will vary depending on where your instance is hosted.
 
 ```typescript
 import {
@@ -108,13 +183,137 @@ const clientArgs: ElasticClientArgs = {
 const vectorStore = new ElasticVectorSearch(embeddings, clientArgs);
 ```
 
-## Hybrid search
+### addDocuments
+
+Add documents to the vector store.
+
+```typescript
+import type { Document } from "@langchain/core/documents";
+
+const document1: Document = {
+  pageContent: "The powerhouse of the cell is the mitochondria",
+  metadata: { source: "https://example.com" }
+};
+
+const document2: Document = {
+  pageContent: "Buildings are made out of brick",
+  metadata: { source: "https://example.com" }
+};
+
+const document3: Document = {
+  pageContent: "Mitochondria are made out of lipids",
+  metadata: { source: "https://example.com" }
+};
+
+const document4: Document = {
+  pageContent: "The 2024 Olympics are in Paris",
+  metadata: { source: "https://example.com" }
+}
+
+const documents = [document1, document2, document3, document4];
+
+await vectorStore.addDocuments(documents, { ids: ["1", "2", "3", "4"] });
+```
+
+```text
+[ '1', '2', '3', '4' ]
+```
+
+### delete
+
+Delete documents from the vector store by ID.
+
+```typescript
+await vectorStore.delete({ ids: ["4"] });
+```
+
+### similaritySearch
+
+Perform a similarity search to find documents similar to a query.
+
+```typescript
+const filter = [{
+  operator: "match",
+  field: "source",
+  value: "https://example.com",
+}];
+
+const similaritySearchResults = await vectorStore.similaritySearch("biology", 2, filter);
+
+for (const doc of similaritySearchResults) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
+}
+```
+
+```text
+* The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
+* Mitochondria are made out of lipids [{"source":"https://example.com"}]
+```
+
+The vector store supports [Elasticsearch filter syntax](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-filter-context.html) operators.
+
+### similaritySearchWithScore
+
+Perform a similarity search and return scores.
+
+```typescript
+const similaritySearchWithScoreResults = await vectorStore.similaritySearchWithScore("biology", 2, filter)
+
+for (const [doc, score] of similaritySearchWithScoreResults) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
+}
+```
+
+```text
+* [SIM=0.374] The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
+* [SIM=0.370] Mitochondria are made out of lipids [{"source":"https://example.com"}]
+```
+
+### asRetriever
+
+Transform the vector store into a retriever for use in chains.
+
+```typescript
+const retriever = vectorStore.asRetriever({
+  // Optional filter
+  filter: filter,
+  k: 2,
+});
+await retriever.invoke("biology");
+```
+
+```javascript
+[
+  Document {
+    pageContent: 'The powerhouse of the cell is the mitochondria',
+    metadata: { source: 'https://example.com' },
+    id: undefined
+  },
+  Document {
+    pageContent: 'Mitochondria are made out of lipids',
+    metadata: { source: 'https://example.com' },
+    id: undefined
+  }
+]
+```
+
+## HybridRetrievalStrategy
 
 <Tip>
 Hybrid search requires Elasticsearch 8.9+ for RRF (Reciprocal Rank Fusion) support.
 </Tip>
 
 Hybrid search combines kNN vector search with BM25 full-text search using Reciprocal Rank Fusion (RRF) to improve search relevance. This is useful when you want to leverage both semantic similarity and keyword matching.
+
+### Configuration options
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :---: | :--- |
+| `rankWindowSize` | `number` | `100` | Number of documents to consider for RRF |
+| `rankConstant` | `number` | `60` | RRF constant for score normalization |
+| `textField` | `string` | `"text"` | Field to use for BM25 full-text search |
+
+### Basic usage
 
 To enable hybrid search, pass a `HybridRetrievalStrategy` to the constructor:
 
@@ -145,123 +344,70 @@ const results = await hybridVectorStore.similaritySearch(
   5
 );
 ```
-## Manage vector store
 
-### Add items to vector store
+### Complete hybrid search example
 
 ```typescript
-import type { Document } from "@langchain/core/documents";
+import { Client, ClientOptions } from "@elastic/elasticsearch";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import {
+  ElasticClientArgs,
+  ElasticVectorSearch,
+  HybridRetrievalStrategy,
+} from "@langchain/community/vectorstores/elasticsearch";
+import { Document } from "@langchain/core/documents";
 
-const document1: Document = {
-  pageContent: "The powerhouse of the cell is the mitochondria",
-  metadata: { source: "https://example.com" }
+// Configure Elasticsearch client
+const config: ClientOptions = {
+  node: process.env.ES_LOCAL_URL ?? "http://127.0.0.1:9200",
 };
-
-const document2: Document = {
-  pageContent: "Buildings are made out of brick",
-  metadata: { source: "https://example.com" }
-};
-
-const document3: Document = {
-  pageContent: "Mitochondria are made out of lipids",
-  metadata: { source: "https://example.com" }
-};
-
-const document4: Document = {
-  pageContent: "The 2024 Olympics are in Paris",
-  metadata: { source: "https://example.com" }
+if (process.env.ES_LOCAL_API_KEY) {
+  config.auth = {
+    apiKey: process.env.ES_LOCAL_API_KEY,
+  };
 }
 
-const documents = [document1, document2, document3, document4];
+const embeddings = new OpenAIEmbeddings();
 
-await vectorStore.addDocuments(documents, { ids: ["1", "2", "3", "4"] });
+// Create vector store with hybrid search strategy
+const clientArgs: ElasticClientArgs = {
+  client: new Client(config),
+  indexName: "test_hybrid_search",
+  strategy: new HybridRetrievalStrategy({
+    rankWindowSize: 100,
+    rankConstant: 60,
+    textField: "text",
+  }),
+};
+
+const vectorStore = new ElasticVectorSearch(embeddings, clientArgs);
+
+// Add documents
+await vectorStore.addDocuments([
+  new Document({
+    pageContent: "Running improves cardiovascular health and endurance",
+    metadata: { category: "fitness" },
+  }),
+  new Document({
+    pageContent: "Proper hydration prevents muscle cramps during exercise",
+    metadata: { category: "fitness" },
+  }),
+  new Document({
+    pageContent: "Stretching before running reduces injury risk",
+    metadata: { category: "fitness" },
+  }),
+]);
+
+// Search using hybrid (vector + BM25)
+const results = await vectorStore.similaritySearch(
+  "how to prevent muscle soreness while running",
+  3
+);
+
+console.log(results);
 ```
 
-```python
-[ '1', '2', '3', '4' ]
-```
-
-### Delete items from vector store
-
-You can delete values from the store by passing the same id you passed in:
-
-```typescript
-await vectorStore.delete({ ids: ["4"] });
-```
-
-## Query vector store
-
-Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
-
-### Query directly
-
-Performing a simple similarity search can be done as follows:
-
-```typescript
-const filter = [{
-  operator: "match",
-  field: "source",
-  value: "https://example.com",
-}];
-
-const similaritySearchResults = await vectorStore.similaritySearch("biology", 2, filter);
-
-for (const doc of similaritySearchResults) {
-  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
-}
-```
-
-```text
-* The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
-* Mitochondria are made out of lipids [{"source":"https://example.com"}]
-```
-
-The vector store supports [Elasticsearch filter syntax](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-filter-context.html) operators.
-
-If you want to execute a similarity search and receive the corresponding scores you can run:
-
-```typescript
-const similaritySearchWithScoreResults = await vectorStore.similaritySearchWithScore("biology", 2, filter)
-
-for (const [doc, score] of similaritySearchWithScoreResults) {
-  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
-}
-```
-
-```text
-* [SIM=0.374] The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
-* [SIM=0.370] Mitochondria are made out of lipids [{"source":"https://example.com"}]
-```
-
-### Query by turning into retriever
-
-You can also transform the vector store into a [retriever](/oss/langchain/retrieval) for easier usage in your chains.
-
-```typescript
-const retriever = vectorStore.asRetriever({
-  // Optional filter
-  filter: filter,
-  k: 2,
-});
-await retriever.invoke("biology");
-```
-
-```javascript
-[
-  Document {
-    pageContent: 'The powerhouse of the cell is the mitochondria',
-    metadata: { source: 'https://example.com' },
-    id: undefined
-  },
-  Document {
-    pageContent: 'Mitochondria are made out of lipids',
-    metadata: { source: 'https://example.com' },
-    id: undefined
-  }
-]
-```
-
-### Usage for retrieval-augmented generation
+## Usage for retrieval-augmented generation
 
 For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
 
@@ -274,3 +420,8 @@ For guides on how to use this vector store for retrieval-augmented generation (R
 ## API reference
 
 For detailed documentation of all `ElasticVectorSearch` features and configurations head to the [API reference](https://api.js.langchain.com/classes/langchain_community_vectorstores_elasticsearch.ElasticVectorSearch.html).
+
+## Related resources
+
+- [Elasticsearch vector search documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html)
+- [start-local GitHub repository](https://github.com/elastic/start-local)

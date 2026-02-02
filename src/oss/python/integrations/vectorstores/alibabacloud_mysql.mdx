@@ -1,0 +1,370 @@
+---
+title: Alibaba Cloud MySQL
+---
+
+>[Alibaba Cloud MySQL](https://www.alibabacloud.com/product/apsaradb-for-rds-mysql) is a fully managed relational database service that provides high availability, scalability, and security.
+
+>Alibaba Cloud MySQL provides deep integration for enterprise-level vector data processing. It natively supports storing and computing vector data of up to 16,383 dimensions. The service integrates mainstream vector operation functions and uses a highly optimized Hierarchical Navigable Small World (HNSW) algorithm to deliver efficient approximate nearest neighbor searches. This feature also supports creating indexes on full-dimension vector columns.
+
+This guide provides a quick overview for getting started with the alibabacloud-mysql [vector store](/oss/integrations/vectorstores#overview). For a detailed listing of all alibabacloud-mysql vector store features, paramaters, and configurations, head to the [langchain-alibabacloud-mysql](https://github.com/wangkuahai/langchain-alibabacloud-mysql).
+
+## Setup
+
+To access the alibabacloud-mysql vector store, you'll need to [create an Alibaba Cloud RDS for MySQL instance](https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-mysql/step-1-create-an-apsaradb-rds-for-mysql-instance-and-configure-databases) with minor version 8.0.36 or higher, [open the vector feature](https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-mysql/vector-storage-1#:~:text=restarting%20the%20instance.-,Enable%20and%20use%20the%20feature,-Note), [make it accessible](https://www.alibabacloud.com/help/en/rds/apsaradb-rds-for-mysql/step-2-connect-to-an-apsaradb-rds-for-mysql-instance), and install the `langchain-alibabacloud-mysql` integration package.
+
+### Credentials
+
+To connect to your Alibaba Cloud RDS MySQL instance, you'll need to set the following environment variables:
+
+- `ALIBABACLOUD_MYSQL_HOST`: Your RDS MySQL host address
+- `ALIBABACLOUD_MYSQL_PORT`: MySQL port (default: 3306)
+- `ALIBABACLOUD_MYSQL_USER`: MySQL username
+- `ALIBABACLOUD_MYSQL_PASSWORD`: MySQL password
+- `ALIBABACLOUD_MYSQL_DATABASE`: Database name
+
+### Installation
+
+The LangChain alibabacloud-mysql integration lives in the `langchain-alibabacloud-mysql` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-alibabacloud-mysql
+    ```
+    ```python uv
+    uv add langchain-alibabacloud-mysql
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Now we can instantiate the vector store with your RDS MySQL connection informations:
+
+```python Initialize vector store icon="database"
+import os
+from langchain_alibabacloud_mysql import AlibabaCloudMySQL
+from langchain_community.embeddings import DashScopeEmbeddings
+
+# Initialize DashScope embeddings (Alibaba Cloud's embedding service)
+embeddings = DashScopeEmbeddings(
+    model="text-embedding-v4",
+    dashscope_api_key=os.environ.get("DASHSCOPE_API_KEY"),
+)
+# Or you can use OpenAI embeddings
+# embeddings = OpenAIEmbeddings()
+
+# Initialize vector store
+vector_store = AlibabaCloudMySQL(
+    host=os.environ.get("ALIBABACLOUD_MYSQL_HOST", "localhost"),
+    port=int(os.environ.get("ALIBABACLOUD_MYSQL_PORT", "3306")),
+    user=os.environ.get("ALIBABACLOUD_MYSQL_USER", "root"),
+    password=os.environ.get("ALIBABACLOUD_MYSQL_PASSWORD", ""),
+    database=os.environ.get("ALIBABACLOUD_MYSQL_DATABASE", "test"),
+    embedding=embeddings,
+    table_name="langchain_vectors",
+    distance_strategy="cosine",  # or "euclidean"
+    hnsw_m=6,  # HNSW index M parameter (3-200)
+)
+```
+
+<Note>
+To instantiate the vector store, you need to provide an embedding model. You can use DashScope embeddings (recommended for Alibaba Cloud) or other embedding models (OpenAI, etc.) integrated into LangChain.
+If you choose to use dashscope model, you can get your api key [here](https://modelstudio.console.aliyun.com/?tab=dashboard#/api-key), and set it in the following codes.
+</Note>
+
+---
+
+## Manage vector store
+
+### Add items
+
+```python Add documents icon="folder-plus"
+from langchain_core.documents import Document
+
+document_1 = Document(page_content="Alibaba", metadata={"source": "https://example.com"})
+document_2 = Document(page_content="Cloud", metadata={"source": "https://example.com"})
+document_3 = Document(page_content="RDS for MySQL", metadata={"source": "https://example.com"})
+documents = [document_1, document_2, document_3]
+
+vector_store.add_documents(documents=documents, ids=["1", "2", "3"])
+```
+
+### Update items
+
+```python Update document by ID icon="pencil"
+updated_document = Document(
+    page_content="Alibaba Cloud", metadata={"source": "https://another-example.com"}
+)
+
+vector_store.update_documents(document_id="1", document=updated_document)
+```
+
+### Delete items
+
+```python Delete documents by IDs icon="trash"
+vector_store.delete(ids=["3"])
+```
+
+---
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Directly
+
+Performing a simple similarity search can be done as follows:
+
+```python Similarity search icon="folder-tree"
+results = vector_store.similarity_search(
+    query="mysql", k=1, filter={"source": "https://example.com"}
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```python Similarity search with scores icon="star-half-stroke"
+results = vector_store.similarity_search_with_score(
+    query="mysql", k=1, filter={"source": "https://example.com"}
+)
+for doc, score in results:
+    print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### By turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+```python Create retriever icon="robot"
+retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 1})
+retriever.invoke("alibaba")
+```
+
+---
+
+## Features
+
+Alibaba Cloud MySQL vector store supports most standard vector store features:
+
+| **Feature** | **Supported** |
+|-------------|---------------|
+| **Delete by ID** | ✅ |
+| **Filtering** | ✅ |
+| **Search by Vector** | ✅ |
+| **Search with score** | ✅ |
+| **Async** | ✅ |
+| **Passes Standard Tests** | ✅ |
+| **Multi Tenancy** | ❌ |
+| **IDs in add Documents** | ✅ |
+
+
+### Metadata filtering
+
+You can filter search results by metadata using dictionary-style filters:
+
+```python Filter by metadata icon="filter"
+# Search with metadata filter
+results = vector_store.similarity_search(
+    query="technology",
+    k=5,
+    filter={"category": "tech", "year": {"$gte": 2023}}
+)
+```
+
+Supported filter operators:
+
+- `$eq`: Equal to
+- `$ne`: Not equal to
+- `$gt`: Greater than
+- `$gte`: Greater than or equal to
+- `$lt`: Less than
+- `$lte`: Less than or equal to
+- `$in`: In list
+- `$nin`: Not in list
+- `$like`: LIKE pattern matching
+
+### Maximal Marginal Relevance (MMR) search
+
+MMR search provides diverse results by balancing relevance and diversity:
+
+```python MMR search icon="chart-simple"
+results = vector_store.max_marginal_relevance_search(
+    query="artificial intelligence",
+    k=4,
+    fetch_k=20,  # Number of candidates to consider
+    lambda_mult=0.5,  # 0 = max diversity, 1 = max relevance
+)
+```
+
+### Batch operations
+
+Efficiently add multiple documents at once:
+
+```python Batch add documents icon="folder-plus"
+texts = ["Document 1", "Document 2", "Document 3"]
+metadatas = [
+    {"source": "doc1.pdf"},
+    {"source": "doc2.pdf"},
+    {"source": "doc3.pdf"},
+]
+ids = vector_store.add_texts(texts, metadatas=metadatas)
+```
+
+### Get documents by IDs
+
+Retrieve specific documents by their IDs:
+
+```python Get by IDs icon="tags"
+documents = vector_store.get_by_ids(["id1", "id2", "id3"])
+for doc in documents:
+    print(f"{doc.page_content} - {doc.metadata}")
+```
+
+### Count and clear
+
+Get the total number of vectors or clear all data:
+
+```python Count and clear icon="server"
+# Count total vectors
+count = vector_store.count()
+print(f"Total vectors: {count}")
+
+# Clear all vectors
+vector_store.clear()
+```
+
+### Async operations
+
+AlibabaCloud MySQL vector store supports async operations for all major methods:
+
+- `aadd_texts()` - Add texts asynchronously
+- `aadd_documents()` - Add documents asynchronously
+- `asimilarity_search()` - Similarity search asynchronously
+- `asimilarity_search_with_score()` - Similarity search with scores asynchronously
+- `amax_marginal_relevance_search()` - MMR search asynchronously
+- `adelete()` - Delete vectors asynchronously
+- `aget_by_ids()` - Get documents by IDs asynchronously
+- `aclear()` - Clear all vectors asynchronously
+- `acount()` - Count vectors asynchronously
+- `aclose()` - Close connection pool asynchronously
+
+---
+
+## Usage for retrieval-augmented generation
+
+Retrieval-Augmented Generation (RAG) combines vector search with language model generation to provide contextual, accurate answers based on your documents.
+
+### Basic RAG workflow
+
+Here's a complete example of building a RAG application with Alibaba Cloud MySQL:
+
+```python RAG example icon="magnifying-glass"
+import os
+from langchain_alibabacloud_mysql import AlibabaCloudMySQL
+from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.chat_models.tongyi import ChatTongyi
+from langchain_classic.chains import create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
+
+# Step 1: Initialize embeddings and vector store
+embeddings = DashScopeEmbeddings(
+    model="text-embedding-v4",
+    dashscope_api_key=os.environ.get("DASHSCOPE_API_KEY"),
+)
+
+vector_store = AlibabaCloudMySQL(
+    host=os.environ.get("ALIBABACLOUD_MYSQL_HOST", "localhost"),
+    port=int(os.environ.get("ALIBABACLOUD_MYSQL_PORT", "3306")),
+    user=os.environ.get("ALIBABACLOUD_MYSQL_USER", "root"),
+    password=os.environ.get("ALIBABACLOUD_MYSQL_PASSWORD", ""),
+    database=os.environ.get("ALIBABACLOUD_MYSQL_DATABASE", "test"),
+    embedding=embeddings,
+    table_name="langchain_vectors_rag",
+)
+
+# Step 2: Load and split documents
+loader = WebBaseLoader("https://lilianweng.github.io/posts/2023-06-23-agent/")
+docs = loader.load()
+
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200,
+)
+splits = text_splitter.split_documents(docs)
+
+# Step 3: Add documents to vector store
+vector_store.add_documents(documents=splits)
+
+# Step 4: Create retriever
+retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+
+# Step 5: Create RAG chain
+llm = ChatTongyi()
+
+prompt = ChatPromptTemplate.from_template(
+    """Answer the following question based only on the provided context:
+
+Context: {context}
+
+Question: {input}"""
+)
+
+document_chain = create_stuff_documents_chain(llm, prompt)
+rag_chain = create_retrieval_chain(retriever, document_chain)
+
+# Step 6: Query
+response = rag_chain.invoke({"input": "What is task decomposition?"})
+print(response["answer"])
+```
+
+### Using retriever with agents
+
+You can also use the vector store as a retrieval tool in an agent:
+
+```python RAG agent icon="robot"
+from langchain.agents import create_agent
+from langchain.tools import tool
+
+@tool
+def retrieve_context(query: str) -> str:
+    """Retrieve information to help answer a query."""
+    retrieved_docs = vector_store.similarity_search(query, k=2)
+    return "\n\n".join(
+        f"Source: {doc.metadata}\nContent: {doc.page_content}"
+        for doc in retrieved_docs
+    )
+
+tools = [retrieve_context]
+llm = ChatTongyi()
+agent = create_agent(
+    llm,
+    tools,
+    system_prompt="You have access to a tool that retrieves context. Use it to help answer user queries.",
+)
+
+response = agent.invoke({"messages": [{"role": "user", "content": "What is task decomposition?"}]})
+```
+
+For more RAG guides and patterns, see:
+
+- [Build a RAG app with LangChain](/oss/langchain/rag)
+- [Agentic RAG](/oss/langgraph/agentic-rag)
+- [Retrieval docs](/oss/langchain/retrieval)
+
+For detailed RAG demo with Alibaba Cloud MySQL and more examples, see:
+
+- [RAG with Alibaba Cloud MySQL demo](https://github.com/wangkuahai/langchain-alibabacloud-mysql/blob/main/libs/alibabacloud_mysql/tests/demo_tests/RAG-agent.py)
+- [Filter query demo](https://github.com/wangkuahai/langchain-alibabacloud-mysql/blob/main/libs/alibabacloud_mysql/tests/demo_tests/filter-query.py)
+- [Semantic search demo](https://github.com/wangkuahai/langchain-alibabacloud-mysql/blob/main/libs/alibabacloud_mysql/tests/demo_tests/semantic-search.py)
+
+---
+
+## API reference
+
+We will update the API reference soon, please refer to the [langchain-alibabacloud-mysql](https://github.com/wangkuahai/langchain-alibabacloud-mysql) for more details.
