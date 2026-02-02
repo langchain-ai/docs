@@ -260,7 +260,7 @@ import {
   type ToolRuntime,
 } from "langchain";
 import { Command, MemorySaver, StateSchema } from "@langchain/langgraph";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // 1. Define state with current_step tracker
 const SupportState = new StateSchema({ // [!code highlight]
@@ -570,6 +570,8 @@ import {
   StateSchema,
   MessagesValue,
   Command,
+  ConditionalEdgeRouter,
+  GraphNode,
 } from "@langchain/langgraph";
 import { createAgent, AIMessage, ToolMessage } from "langchain";
 import { tool, ToolRuntime } from "@langchain/core/tools";
@@ -648,31 +650,28 @@ const supportAgent = createAgent({
 });
 
 // 4. Create agent nodes that invoke the agents
-const callSalesAgent = async (
-  state: typeof MultiAgentState.State
-) => {
+const callSalesAgent: GraphNode<typeof MultiAgentState.State> = async (state) => {
   const response = await salesAgent.invoke(state);
   return response;
 };
 
-const callSupportAgent = async (
-  state: typeof MultiAgentState.State
-) => {
+const callSupportAgent: GraphNode<typeof MultiAgentState.State> = async (state) => {
   const response = await supportAgent.invoke(state);
   return response;
 };
 
 // 5. Create router that checks if we should end or continue
-const routeAfterAgent = (
-  state: typeof MultiAgentState.State
-): "sales_agent" | "support_agent" | "__end__" => {
+const routeAfterAgent: ConditionalEdgeRouter<
+  typeof MultiAgentState.State,
+  "sales_agent" | "support_agent"
+> = (state) => {
   const messages = state.messages ?? [];
 
   // Check the last message - if it's an AIMessage without tool calls, we're done
   if (messages.length > 0) {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg instanceof AIMessage && !lastMsg.tool_calls?.length) { // [!code highlight]
-      return "__end__"; // [!code highlight]
+      return END; // [!code highlight]
     } // [!code highlight]
   }
 
@@ -681,9 +680,10 @@ const routeAfterAgent = (
   return active as "sales_agent" | "support_agent";
 };
 
-const routeInitial = (
-  state: typeof MultiAgentState.State
-): "sales_agent" | "support_agent" => {
+const routeInitial: ConditionalEdgeRouter<
+  typeof MultiAgentState.State,
+  "sales_agent" | "support_agent"
+> = (state) => {
   // Route to the active agent based on state, default to sales agent
   return (state.activeAgent ?? "sales_agent") as
     | "sales_agent"
