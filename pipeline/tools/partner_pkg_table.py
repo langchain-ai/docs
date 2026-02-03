@@ -184,7 +184,7 @@ def table() -> str:
 def doc() -> str:
     return f"""\
 ---
-title: LangChain integrations overview for LangChain
+title: LangChain Python integrations overview
 sidebarTitle: LangChain integrations
 mode: "wide"
 ---
