@@ -3,7 +3,9 @@ title: ChatAmazonNova
 description: Get started using Amazon Nova [chat models](/oss/langchain/models) in LangChain.
 ---
 
-This guide provides a quick overview for getting started with Amazon Nova chat models. Amazon Nova models are OpenAI-compatible and accessed via the OpenAI SDK pointed at Nova's endpoint, providing seamless integration with LangChain's standard interfaces.
+This guide provides a quick overview for getting started with Amazon Nova chat models. Amazon Nova models are OpenAI-compatible and accessed via the OpenAI SDK pointed at Nova's endpoint, providing seamless integration with LangChain's standard interfaces. The Amazon Nova API is free tier with rate limits.
+
+For production deployments requiring higher throughput and enterprise features, consider using Amazon Nova models via [Amazon Bedrock](/oss/python/integrations/chat/bedrock).
 
 You can find information about Amazon Nova's models, their features, and API details in the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
 
@@ -19,19 +21,19 @@ You can find information about Amazon Nova's models, their features, and API det
 
 ### Integration details
 
-| Class | Package | <Tooltip tip="Can run on local hardware" cta="Learn more" href="/oss/langchain/models#local-models">Local</Tooltip> | Serializable | JS/TS Support | Downloads | Latest Version |
-| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
-| @[`ChatAmazonNova`] | @[`langchain-amazon-nova`] | ❌ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-amazon-nova?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-amazon-nova?style=flat-square&label=%20) |
+| Class | Package | Serializable | JS/TS Support | Downloads | Latest Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| @[`ChatAmazonNova`] | @[`langchain-amazon-nova`] | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-amazon-nova?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-amazon-nova?style=flat-square&label=%20) |
 
 ### Model features
 
-| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | JSON mode | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| ✅ | ❌ | ❌ | Model-dependent | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | Model-dependent | ❌ | Model-dependent (Nova 2) | ✅ | ✅ | ✅ | ❌ |
 
 ## Setup
 
-To access Amazon Nova models, you'll need to obtain API credentials and install the @[`langchain-amazon-nova`] integration package.
+To access Amazon Nova models, you'll need to [obtain API credentials](https://nova.amazon.com/dev) and install the @[`langchain-amazon-nova`] integration package.
 
 ### Installation
 
@@ -95,13 +97,13 @@ messages = [
         "system",
         "You are a helpful assistant that translates English to French. Translate the user sentence.",
     ),
-    ("human", "I love programming."),
+    ("user", "I love programming."),
 ]
 ai_msg = model.invoke(messages)
 ai_msg
 ```
 
-```output
+```text
 AIMessage(content="J'adore la programmation.", response_metadata={'model': 'nova-2-lite-v1', 'finish_reason': 'stop'}, id='run-12345678-1234-1234-1234-123456789abc', usage_metadata={'input_tokens': 29, 'output_tokens': 8, 'total_tokens': 37})
 ```
 
@@ -109,7 +111,7 @@ AIMessage(content="J'adore la programmation.", response_metadata={'model': 'nova
 print(ai_msg.content)
 ```
 
-```output
+```text
 J'adore la programmation.
 ```
 
@@ -132,7 +134,7 @@ for chunk in model.stream(messages):
     print(chunk.content, end="", flush=True)
 ```
 
-```output
+```text
 J'adore la programmation.
 ```
 
@@ -175,7 +177,7 @@ response = model_with_tools.invoke("What's the weather in Paris?")
 print(response.tool_calls)
 ```
 
-```output
+```text
 [{'name': 'GetWeather', 'args': {'location': 'Paris'}, 'id': 'call_abc123', 'type': 'tool_call'}]
 ```
 
@@ -185,7 +187,7 @@ You can also access tool calls specifically in a standard format using the `tool
 response.tool_calls
 ```
 
-```output
+```text
 [{'name': 'GetWeather',
   'args': {'location': 'Paris'},
   'id': 'call_abc123',
@@ -208,34 +210,249 @@ model_with_tools = model.bind_tools([get_weather])
 response = model_with_tools.invoke("What's the weather in San Francisco?")
 ```
 
-### Strict tool binding
+### Controlling tool choice
 
-By default, @[`BaseChatModel.bind_tools`] validates that the model supports tool calling. To disable this validation:
+Amazon Nova supports controlling when the model should use tools via the `tool_choice` parameter:
 
 ```python
-model_with_tools = model.bind_tools([GetWeather], strict=False)
+# Model decides whether to call tools (default)
+model_auto = model.bind_tools([get_weather], tool_choice="auto")
+
+# Model must call a tool
+model_required = model.bind_tools([get_weather], tool_choice="required")
+
+# Model cannot call tools
+model_none = model.bind_tools([get_weather], tool_choice="none")
 ```
+
+<Warning>
+    **Nova's tool_choice values**
+
+    Amazon Nova supports `tool_choice` values of `"auto"`, `"required"`, and `"none"`. Unlike some other providers, Nova does not support `tool_choice="any"` or specifying a specific tool name as the choice value.
+</Warning>
+
+The `tool_choice="required"` option is particularly useful for ensuring the model always uses tools, such as in structured output scenarios.
+
 
 ## System tools
 
-Amazon Nova provides built-in system tools that can be enabled by passing them to the model initialization. See the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation) for available system tools and their capabilities.
+Amazon Nova provides built-in system tools that enhance the model's capabilities with integrated functionality. These tools are enabled by passing them to the model initialization or as invocation parameters.
+
+### Available system tools
+
+Amazon Nova supports the following built-in tools:
+
+#### Web grounding (nova_grounding)
+
+The grounding tool allows the model to search the web and ground its responses with real-time information from external sources.
 
 ```python
 from langchain_amazon_nova import ChatAmazonNova
 
-model = ChatAmazonNova(
+model_with_grounding = ChatAmazonNova(
+    model="nova-2-lite-v1",
+    system_tools=["nova_grounding"],
+)
+
+response = model_with_grounding.invoke("What are the latest developments in AI?")
+```
+
+The grounding tool will automatically search for relevant information and include citations in the response.
+
+#### Code interpreter (nova_code_interpreter)
+
+The code interpreter tool enables the model to write and execute Python code in a sandboxed environment, useful for mathematical computations, data analysis, and code generation tasks.
+
+```python
+from langchain_amazon_nova import ChatAmazonNova
+
+model_with_code = ChatAmazonNova(
+    model="nova-2-lite-v1",
+    system_tools=["nova_code_interpreter"],
+)
+
+response = model_with_code.invoke("Calculate the fibonacci sequence up to the 10th number")
+```
+
+The code interpreter executes code securely and returns both the code and its output.
+
+### Combining system tools
+
+You can enable multiple system tools simultaneously:
+
+```python
+from langchain_amazon_nova import ChatAmazonNova
+
+model_with_tools = ChatAmazonNova(
     model="nova-2-lite-v1",
     system_tools=["nova_grounding", "nova_code_interpreter"],
 )
+
+response = model_with_tools.invoke(
+    "Search for the current price of Bitcoin and calculate its 7-day moving average"
+)
+```
+
+The model will automatically determine which tool(s) to use based on the query.
+
+### System tools as invocation parameters
+
+You can also specify system tools at invocation time instead of during initialization:
+
+```python
+from langchain_amazon_nova import ChatAmazonNova
+
+model = ChatAmazonNova(model="nova-2-lite-v1")
+
+# Enable grounding for this specific call
+response = model.invoke(
+    "What's the weather today?",
+    system_tools=["nova_grounding"]
+)
+```
+
+This approach is useful when you want to use different system tools for different queries with the same model instance.
+
+<Info>
+    **Tool outputs and citations**
+
+    When using system tools, the model's response will include:
+    - The main text response
+    - Citations or references (for grounding tool)
+    - Code execution results (for code interpreter)
+
+    These outputs are included in the message's `response_metadata` and can be accessed for displaying sources or debugging.
+</Info>
+
+For complete details on system tools, their parameters, and capabilities, see the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+
+## Structured output
+
+Amazon Nova supports structured output through the `with_structured_output()` method, enabling you to get LLM responses in structured formats using Pydantic models or JSON schemas.
+
+### Basic usage with Pydantic
+
+You can constrain LLM responses to match a specific structure using Pydantic models:
+
+```python
+from pydantic import BaseModel, Field
+from langchain_amazon_nova import ChatAmazonNova
+
+class Person(BaseModel):
+    """Information about a person."""
+    name: str = Field(description="The person's name")
+    age: int = Field(description="The person's age")
+
+model = ChatAmazonNova(model="nova-pro-v1")
+structured_model = model.with_structured_output(Person)
+
+result = structured_model.invoke("John is 30 years old")
+print(result)
+```
+
+```output
+Person(name='John', age=30)
+```
+
+### JSON schema support
+
+You can also provide JSON schemas directly:
+
+```python
+json_schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "age": {"type": "integer"}
+    },
+    "required": ["name", "age"]
+}
+
+structured_model = model.with_structured_output(json_schema)
+result = structured_model.invoke("Sarah is 28 years old")
+print(result)
+```
+
+```output
+{'name': 'Sarah', 'age': 28}
+```
+
+### Streaming structured output
+
+Structured output works with streaming. The parsed object is returned once the complete response arrives:
+
+```python
+from pydantic import BaseModel, Field
+
+class Person(BaseModel):
+    """Information about a person."""
+    name: str = Field(description="The person's name")
+    age: int = Field(description="The person's age")
+
+structured_model = model.with_structured_output(Person)
+
+for chunk in structured_model.stream("Michael is 35 years old"):
+    print(chunk)
+```
+
+```output
+Person(name='Michael', age=35)
+```
+
+### Accessing raw messages
+
+The `include_raw` parameter allows access to both the parsed output and the raw AIMessage:
+
+```python
+structured_model = model.with_structured_output(Person, include_raw=True)
+result = structured_model.invoke("John is 30 years old")
+
+print(f"Parsed: {result['parsed']}")
+print(f"Raw message: {result['raw']}")
+```
+
+```output
+Parsed: Person(name='John', age=30)
+Raw message: AIMessage(content='', additional_kwargs={'tool_calls': [...]}, ...)
+```
+
+This is useful for debugging, accessing metadata, or handling edge cases where parsing might fail.
+
+### Nested and complex schemas
+
+You can use nested Pydantic models for complex data structures:
+
+```python
+from pydantic import BaseModel, Field
+from typing import List
+
+class Address(BaseModel):
+    """A physical address."""
+    street: str
+    city: str
+    country: str
+
+class Person(BaseModel):
+    """Information about a person."""
+    name: str
+    age: int
+    addresses: List[Address] = Field(description="List of addresses")
+
+structured_model = model.with_structured_output(Person)
+result = structured_model.invoke(
+    "John is 30 years old. He lives at 123 Main St in Seattle, USA "
+    "and has a vacation home at 456 Beach Rd in Miami, USA."
+)
+print(result)
 ```
 
 <Info>
-    **System tools**
+    **Implementation details**
 
-    System tools like `nova_grounding` and `nova_code_interpreter` provide built-in capabilities. For details on available system tools and their usage, see the [Amazon Nova documentation](https://nova.amazon.com/dev/documentation).
+    Structured output uses Nova's tool calling capabilities under the hood with `tool_choice='required'` to ensure consistent structured responses. The schema is converted to a tool definition, and the tool call response is parsed back into the requested format.
 </Info>
 
-## Model Profile
+## Model profile
 
 Amazon Nova provides different models with varying capabilities. It includes support for LangChain [model profiles](/oss/langchain/models#model-profiles).
 
@@ -265,7 +482,7 @@ async def main():
 asyncio.run(main())
 ```
 
-```output
+```text
 The capital of France is Paris.
 ```
 
@@ -292,7 +509,7 @@ result = chain.invoke({
 print(result)
 ```
 
-```output
+```text
 Hola, ¿cómo estás?
 ```
 

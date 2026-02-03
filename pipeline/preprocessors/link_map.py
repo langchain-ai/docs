@@ -184,6 +184,7 @@ LINK_MAPS: list[LinkMap] = [
             # Runnables
             "Runnable": "langchain_core/runnables/#langchain_core.runnables.Runnable",
             "RunnableConfig": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig",
+            "RunnableLambda": "langchain_core/runnables/#langchain_core.runnables.base.RunnableLambda",
             "RunnableConfig(max_concurrency)": "langchain_core/runnables/#langchain_core.runnables.RunnableConfig.max_concurrency",
             # Retrievers
             "Retrievers": "langchain_core/retrievers/#langchain_core.retrievers.BaseRetriever",
@@ -198,12 +199,25 @@ LINK_MAPS: list[LinkMap] = [
             # Rate limiters
             "InMemoryRateLimiter": "langchain_core/rate_limiters/#langchain_core.rate_limiters.InMemoryRateLimiter",
             # LangSmith SDK
+            "langsmith": "langsmith/observability/sdk/",
+            "langsmith-python": "langsmith/observability/sdk/",
+            "langsmith-js": "https://reference.langchain.com/javascript/modules/langsmith.html",
+            "wrapGemini": "https://reference.langchain.com/javascript/functions/langsmith.wrappers_gemini.wrapGemini.html",
             "Client": "langsmith/observability/sdk/client/#langsmith.client.Client",
             "Client.evaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.evaluate",
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
+            "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
+            "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
+            "wrap_gemini": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_gemini",
+            "traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "@traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "langsmith_extra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
+            "SupportsLangsmithExtra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
             # LangGraph
+            "RemoteGraph": "langsmith/deployment/remote_graph/",
+            "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
             "get_stream_writer": "langgraph/config/#langgraph.config.get_stream_writer",
             "StateGraph": "langgraph/graphs/#langgraph.graph.state.StateGraph",
             "StateGraph.compile": "langgraph/graphs/#langgraph.graph.state.StateGraph.compile",
@@ -353,6 +367,19 @@ LINK_MAPS: list[LinkMap] = [
             "StdioConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StdioConnection",
             "StreamableHttpConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.StreamableHttpConnection",
             "WebsocketConnection": "langchain_mcp_adapters/#langchain_mcp_adapters.sessions.WebsocketConnection",
+            # LangSmith SDK - Vitest/Jest references (JS-only, but added here for cross-scope compatibility)
+            "langsmith.vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
+            "langsmith/vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
+            "langsmith.jest": "https://reference.langchain.com/javascript/modules/langsmith.jest.html",
+            "langsmith/jest": "https://reference.langchain.com/javascript/modules/langsmith.jest.html",
+            "ls.describe": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#describe",
+            "ls.test": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#test",
+            "ls.test.each": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#test",
+            "ls.wrapEvaluator": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#wrapEvaluator",
+            "ls.logOutputs": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#logOutputs",
+            "ls.logFeedback": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#logFeedback",
+            "Client.listExamples": "https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#listexamples",
+            "Example": "https://reference.langchain.com/javascript/interfaces/langsmith.Example.html",
         },
     },
     {
@@ -399,6 +426,11 @@ LINK_MAPS: list[LinkMap] = [
             # Text splitters
             "RecursiveCharacterTextSplitter": "classes/_langchain_textsplitters.RecursiveCharacterTextSplitter.html",
             "TokenTextSplitter": "classes/_langchain_textsplitters.TokenTextSplitter.html",
+            # LangSmith SDK
+            "langsmith": "modules/langsmith.html",
+            "langsmith-js": "modules/langsmith.html",
+            "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
+            "wrapGemini": "functions/langsmith.wrappers_gemini.wrapGemini.html",
             # LangGraph SDK references
             "Auth": "classes/_langchain_langgraph-sdk.auth.Auth.html",
             "client.runs.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
@@ -431,6 +463,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "classes/_langchain_langgraph.index.Command.html",
             "CompiledStateGraph": "classes/_langchain_langgraph.index.CompiledStateGraph.html",
             "createAgent": "functions/langchain.index.createAgent.html",
+            "createMiddleware": "functions/langchain.index.createMiddleware.html",
             "createReactAgent": "functions/_langchain_langgraph.prebuilt.createReactAgent.html",
             "createSupervisor": "functions/_langchain_langgraph-supervisor.createSupervisor.html",
             "entrypoint": "functions/_langchain_langgraph.index.entrypoint.html",
@@ -474,6 +507,23 @@ LINK_MAPS: list[LinkMap] = [
             "modelRetryMiddleware": "functions/langchain.index.modelRetryMiddleware.html",
             "systemPrompt": "types/langchain.index.CreateAgentParams.html#systemprompt",
             "openAIModerationMiddleware": "classes/_langchain_openai.middleware.OpenAIModerationMiddleware.html",
+            # LangSmith SDK - Vitest references
+            "langsmith.vitest": "modules/langsmith.vitest.html",
+            "langsmith/vitest": "modules/langsmith.vitest.html",
+            "ls.describe": "modules/langsmith.vitest.html#describe",
+            "ls.test": "modules/langsmith.vitest.html#test",
+            "ls.test.each": "modules/langsmith.vitest.html#test",
+            "ls.wrapEvaluator": "modules/langsmith.vitest.html#wrapEvaluator",
+            "ls.logOutputs": "modules/langsmith.vitest.html#logOutputs",
+            "ls.logFeedback": "modules/langsmith.vitest.html#logFeedback",
+            "wrapVitest": "modules/langsmith.vitest.html#wrapVitest",
+            # LangSmith SDK - Jest references
+            "langsmith.jest": "modules/langsmith.jest.html",
+            "langsmith/jest": "modules/langsmith.jest.html",
+            "wrapJest": "modules/langsmith.jest.html#wrapJest",
+            # LangSmith SDK - Core client references
+            "Client.listExamples": "classes/langsmith.client.Client.html#listexamples",
+            "Example": "interfaces/langsmith.Example.html",
         },
     },
     {
