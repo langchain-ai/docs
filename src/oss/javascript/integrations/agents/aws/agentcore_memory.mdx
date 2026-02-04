@@ -1,0 +1,161 @@
+---
+title: "AgentCore Memory"
+---
+
+## Overview
+
+This integration renders Amazon Bedrock AgentCore Memory as [LangGraph's built-in Persistence layer](https://docs.langchain.com/oss/javascript/langgraph/persistence).
+
+[Short-term & Long-term Memory in LangGraph](https://docs.langchain.com/oss/javascript/langgraph/add-memory) are characterized as thread-level state persistence and user-specific/application-specific persistence aross agentic conversations. We can use AgentCore Memory for both of these purposes and more.
+
+<Warning>
+Short-term and Long-term Memory have a different meaning in the context of Amazon Bedrock AgentCore Memory.
+* Short-term memory means a raw storage for events, e.g., conversations, sessions.
+* Long-term memory means a vector store over which an asynchronous extraction process executes defined strategies to extract information like summaries, semantic facts, or user preferences.
+</Warning>
+
+### Integration details
+
+| Class | Package | Local | Serializable | [PY support](https://python.langchain.com/docs/integrations/providers/aws#memory) | Downloads | Version |
+| :--- | :--- | :---: | :---: |  :---: | :---: | :---: |
+| [AgentCoreMemorySaver](https://reference.langchain.com/javascript/classes/_langchain_aws.AgentCoreMemorySaver.html) | [@langchain/@langchain/langgraph-checkpoint-aws-agentcore-memory](https://reference.langchain.com/javascript/modules/_langchain_langgraph-checkpoint-aws-agentcore.html) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+| [AgentCoreMemoryStore](https://reference.langchain.com/javascript/classes/_langchain_aws.AgentCoreMemoryStore.html) | [@langchain/@langchain/langgraph-checkpoint-aws-agentcore-memory](https://reference.langchain.com/javascript/modules/_langchain_langgraph-checkpoint-aws-agentcore.html) | ❌ | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/community?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+
+## Setup
+
+To access Amazon Bedrock AgentCore memory you'll require an AWS account.
+
+* Create an instance of [AgentCore Memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-create-a-memory-store.html)
+* Note down the `memory_id` and the AWS Region where the instance is deployed.
+* Install the integration if not installed already.
+<CodeGroup>
+
+```bash npm
+npm install @langchain/langgraph-checkpoint-aws-agentcore-memory
+```
+
+```bash yarn
+yarn add @langchain/langgraph-checkpoint-aws-agentcore-memory
+```
+
+```bash pnpm
+pnpm add @langchain/langgraph-checkpoint-aws-agentcore-memory
+```
+
+</CodeGroup>
+
+### Basic Instantiation & Invocation
+
+```typescript
+import { createAgent } from "langchain";
+import {
+  AgentCoreMemorySaver,
+  AgentCoreMemoryStore,
+} from "@langchain/langgraph-checkpoint-aws-agentcore-memory";
+import { ChatBedrockConverse } from "@langchain/aws";
+import { randomUUID } from "crypto";
+
+const memoryId = "your-memory-id";
+const region = "us-east-1";
+const sessionId = randomUUID();
+const actorId = "user_id";
+
+const checkpointer = new AgentCoreMemorySaver({ memoryId, region });
+const store = new AgentCoreMemoryStore({ memoryId, region });
+await store.start(); // validates the memory resource is reachable
+
+const agent = createAgent({
+  model: new ChatBedrockConverse({
+    model: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    region,
+  }),
+  tools: [],
+  checkpointer,
+  store,
+});
+
+// thread_id: identifies the conversation session
+// actor_id: identifies the owner of the session (AgentCore is multi-tenant)
+const config = {
+  configurable: { thread_id: sessionId, actor_id: actorId },
+};
+
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "How are you?" }] },
+  config
+);
+```
+
+### Using AgentCoreMemorySaver
+
+Once you have set the AgentCoreMemorySaver as `checkpointer` to your agent, LangGraph takes over and uses AgentCore Memory to save graph states. This enables complex usecases like `HumanInTheLoop` because you can interrupt graph execution at any point and resume at a later point in time.
+
+### Using AgentCoreMemoryStore
+
+```typescript
+import { createAgent } from "langchain";
+import {
+  AgentCoreMemoryStore,
+  AgentCoreMemorySaver,
+} from "@langchain/langgraph-checkpoint-aws-agentcore-memory";
+import { ChatBedrockConverse } from "@langchain/aws";
+import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { randomUUID } from "crypto";
+
+const store = new AgentCoreMemoryStore({ memoryId, region });
+const checkpointer = new AgentCoreMemorySaver({ memoryId, region });
+
+const agent = createAgent({
+  model: new ChatBedrockConverse({ model: "global.anthropic.claude-haiku-4-5-20251001-v1:0", region }),
+  tools: [],
+  checkpointer,
+  store,
+});
+
+const config = {
+  configurable: { thread_id: sessionId, actor_id: actorId },
+};
+
+// namespace: [sessionId, actorId] — sessionId first, actorId second
+// store a single item
+await store.put(
+  [sessionId, actorId],
+  randomUUID(),
+  { message: new HumanMessage("Hey Robot, how are you?") }
+);
+
+// retrieve a single item by key
+const item = await store.get([sessionId, actorId], "known-key");
+
+// store multiple items in one call
+await store.batch([
+  {
+    namespace: [sessionId, actorId],
+    key: randomUUID(),
+    value: { message: new HumanMessage("Hey Robot, how are you?") },
+  },
+  {
+    namespace: [sessionId, actorId],
+    key: randomUUID(),
+    value: { message: new AIMessage("Hey Human, I am alright.") },
+  },
+]);
+
+// retrieve multiple items — e.g. load a whole conversation
+const memories = await store.batch([
+  {
+    namespacePrefix: [sessionId, actorId],
+    limit: 10,
+    offset: 0,
+  },
+]);
+
+// search with metadata filter
+const results = await store.search([sessionId, actorId], {
+  filter: { name: "ai" },
+  limit: 5,
+  offset: 0,
+});
+```
+
+For a working end-to-end example using both `AgentCoreMemorySaver` and `AgentCoreMemoryStore`, see the [sample repository](https://github.com/hasnainvirk/aws-agentcore-memory-sample-with-langgraph).
