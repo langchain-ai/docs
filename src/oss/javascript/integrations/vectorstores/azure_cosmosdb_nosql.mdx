@@ -182,6 +182,166 @@ console.log(res.answer);
 await store.delete();
 ```
 
+## Advanced search options
+
+### Vector search with score threshold
+
+Filter results based on a minimum similarity score:
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+});
+
+// Only return results with similarity score >= 0.8
+const results = await store.vectorSearchWithThreshold(
+  "What is the capital of France?",
+  10, // k - number of results
+  0.8 // threshold
+);
+
+for (const [doc, score] of results) {
+  console.log(`Score: ${score}, Content: ${doc.pageContent}`);
+}
+```
+
+### Maximal Marginal Relevance (MMR) search
+
+MMR search balances relevance with diversity in the results:
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+});
+
+const results = await store.maxMarginalRelevanceSearch("machine learning", {
+  k: 5, // Number of results to return
+  fetchK: 20, // Number of candidates to consider
+  lambda: 0.5, // 0 = max diversity, 1 = max relevance
+});
+```
+
+## Using the custom retriever
+
+The `AzureCosmosDBNoSQLVectorStoreRetriever` provides a flexible way to search with different search types. Use `asCosmosRetriever()` to create a retriever with Cosmos DB-specific search capabilities:
+
+```typescript
+import {
+  AzureCosmosDBNoSQLVectorStore,
+  AzureCosmosDBNoSQLVectorStoreRetriever,
+} from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+});
+
+// Vector search with score threshold
+const retriever = store.asCosmosRetriever({
+  searchType: "vector_score_threshold",
+  k: 10,
+  searchKwargs: {
+    scoreThreshold: 0.7,
+  },
+});
+
+const docs = await retriever.invoke("What is artificial intelligence?");
+
+// Available search types:
+// - "similarity" or "vector": Standard vector similarity search
+// - "vector_score_threshold": Vector search with minimum score filter
+// - "mmr": Maximal Marginal Relevance search
+// - "full_text_search": Full-text search (preview)
+// - "full_text_ranking": Full-text search with BM25 ranking (preview)
+// - "hybrid": Hybrid vector + full-text search (preview)
+// - "hybrid_score_threshold": Hybrid search with score threshold (preview)
+```
+
+<Note>
+Use `asCosmosRetriever()` when you need Cosmos DB-specific search types like hybrid search, full-text search, or score thresholds. The standard `asRetriever()` method inherited from `VectorStore` is also available for basic vector similarity search.
+</Note>
+
+## Full-text and hybrid search (preview)
+
+<Warning>
+Full-text and hybrid search are preview features in Azure Cosmos DB. You need to configure your container with a full-text policy to use these features. See the [Azure Cosmos DB documentation](https://learn.microsoft.com/azure/cosmos-db/nosql/full-text-search) for setup instructions.
+</Warning>
+
+### Full-text search
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+  fullTextPolicy: {
+    defaultLanguage: "en-US",
+    fullTextPaths: [{ path: "/text", language: "en-US" }],
+  },
+});
+
+// Perform full-text search
+const results = await store.fullTextSearch("artificial intelligence", 10);
+```
+
+### Hybrid search
+
+Hybrid search combines vector similarity with full-text search using Reciprocal Rank Fusion (RRF):
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+  fullTextPolicy: {
+    defaultLanguage: "en-US",
+    fullTextPaths: [{ path: "/text", language: "en-US" }],
+  },
+});
+
+// Perform hybrid search
+const results = await store.hybridSearchWithScore("machine learning", 10);
+
+// With score threshold
+const filteredResults = await store.hybridSearchWithThreshold(
+  "machine learning",
+  10,
+  0.5 // minimum score threshold
+);
+```
+
+## Utility methods
+
+### Delete a document by ID
+
+```typescript
+// Delete a specific document
+await store.deleteDocumentById("document-id-123");
+```
+
+### Access the underlying container
+
+```typescript
+// Get direct access to the Cosmos DB container for advanced operations
+const container = store.getContainer();
+const { resources } = await container.items
+  .query("SELECT * FROM c WHERE c.metadata.category = 'tech'")
+  .fetchAll();
+```
+
 ## Related
 
 - Vector store [conceptual guide](/oss/integrations/vectorstores)
