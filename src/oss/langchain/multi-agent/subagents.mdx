@@ -102,6 +102,7 @@ When implementing the subagents pattern, you'll make several key design choices.
 |----------|---------|
 | [**Sync vs. async**](#sync-vs-async) | Sync (blocking) vs. async (background) |
 | [**Tool patterns**](#tool-patterns) | Tool per agent vs. single dispatch tool |
+| [**Subagent specs**](#subagent-specs) | System prompt vs. enum constraint vs. tool-based discovery (single dispatch tool only) |
 | [**Subagent inputs**](#subagent-inputs) | Query only vs. full context |
 | [**Subagent outputs**](#subagent-outputs) | Subagent result vs full conversation history |
 
@@ -306,12 +307,12 @@ from langchain.agents import create_agent
 
 # Sub-agents developed by different teams
 research_agent = create_agent(
-    model="gpt-4o",
+    model="gpt-4.1",
     prompt="You are a research specialist..."
 )
 
 writer_agent = create_agent(
-    model="gpt-4o",
+    model="gpt-4.1",
     prompt="You are a writing specialist..."
 )
 
@@ -342,7 +343,7 @@ def task(
 
 # Main coordinator agent
 main_agent = create_agent(
-    model="gpt-4o",
+    model="gpt-4.1",
     tools=[task],
     system_prompt=(
         "You coordinate specialized sub-agents. "
@@ -360,12 +361,12 @@ import * as z from "zod";
 
 // Sub-agents developed by different teams
 const researchAgent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-4.1",
   prompt: "You are a research specialist...",
 });
 
 const writerAgent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-4.1",
   prompt: "You are a writing specialist...",
 });
 
@@ -405,7 +406,7 @@ Available agents:
 
 // Main coordinator agent
 const mainAgent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-4.1",
   tools: [task],
   prompt: (
     "You coordinate specialized sub-agents. " +
@@ -433,17 +434,101 @@ See also our comprehensive guide on [context engineering](/oss/langchain/context
 
 ### Subagent specs
 
-The **names** and **descriptions** associated with subagents are the primary way the main agent knows which subagents to invoke.
-These are prompting levers—choose them carefully.
+The **names** and **descriptions** associated with subagents are the primary way the main agent knows which subagents to invoke. These are prompting levers—choose them carefully.
 
 * **Name**: How the main agent refers to the sub-agent. Keep it clear and action-oriented (e.g., `research_agent`, `code_reviewer`).
 * **Description**: What the main agent knows about the sub-agent's capabilities. Be specific about what tasks it handles and when to use it.
 
-For the [single dispatch tool](#single-dispatch-tool) design, the main agent needs to call the `task` tool with the name of the subagent to invoke. The available tools can be provided to the main agent via one of the following methods:
+For the [single dispatch tool](#single-dispatch-tool) design, you must additionally provide the main agent with information about the subagents it can invoke.
+You can provide this information in different ways based on the number of agents and whether your registry is static or dynamic:
 
-- **System prompt enumeration**: List available agents in the system prompt.
-- **Enum constraint on dispatch tool**: For small agent lists, add an enum to the `agent_name` field.
-- **Tool-based discovery**: For large or dynamic agent registries, provide a separate tool (e.g., `list_agents` or `search_agents`) that returns available agents.
+| Method | Best for | Tradeoff |
+|--------|----------|----------|
+| **System prompt enumeration** | Small, static agent lists (< 10 agents) | Simple, but requires prompt updates when agents change |
+| **Enum constraint** | Small, static agent lists (< 10 agents) | Type-safe and explicit, but requires code changes when agents change |
+| **Tool-based discovery** | Large or dynamic agent registries | Flexible and scalable, but adds complexity |
+
+#### System prompt enumeration
+
+List available agents directly in the main agent's system prompt. The main agent sees the list of agents and their descriptions as part of its instructions.
+
+**When to use:**
+- You have a small, fixed set of agents (< 10)
+- Agent registry rarely changes
+- You want the simplest implementation
+
+**Example:**
+```python
+main_agent = create_agent(
+    model="...",
+    tools=[task],
+    system_prompt=(
+        "You coordinate specialized sub-agents. "
+        "Available agents:\n"
+        "- research: Research and fact-finding\n"
+        "- writer: Content creation and editing\n"
+        "- reviewer: Code and document review\n"
+        "Use the task tool to delegate work."
+    ),
+)
+```
+
+#### Enum constraint on dispatch tool
+
+Add an enum constraint to the `agent_name` parameter in your dispatch tool. This provides type safety and makes available agents explicit in the tool schema.
+
+**When to use:**
+- You have a small, fixed set of agents (< 10)
+- You want type safety and explicit agent names
+- You prefer schema-based validation over prompt-based guidance
+
+**Example:**
+```python
+from enum import Enum
+
+class AgentName(str, Enum):
+    RESEARCH = "research"
+    WRITER = "writer"
+    REVIEWER = "reviewer"
+
+@tool
+def task(
+    agent_name: AgentName,  # Enum constraint
+    description: str
+) -> str:
+    """Launch an ephemeral subagent for a task."""
+    # ...
+```
+
+#### Tool-based discovery
+
+Provide a separate tool (e.g., `list_agents` or `search_agents`) that the main agent can call to discover available agents on-demand. This enables progressive disclosure and supports dynamic registries.
+
+**When to use:**
+- You have many agents (> 10) or a growing registry
+- Agent registry changes frequently or is dynamic
+- You want to reduce prompt size and token usage
+- Different teams manage different agents independently
+
+**Example:**
+```python
+@tool
+def list_agents(query: str = "") -> str:
+    """List available subagents, optionally filtered by query."""
+    agents = search_agent_registry(query)
+    return format_agent_list(agents)
+
+@tool
+def task(agent_name: str, description: str) -> str:
+    """Launch an ephemeral subagent for a task."""
+    # ...
+
+main_agent = create_agent(
+    model="...",
+    tools=[task, list_agents],
+    system_prompt="Use list_agents to discover available subagents, then use task to invoke them."
+)
+```
 
 ### Subagent inputs
 

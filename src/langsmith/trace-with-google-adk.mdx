@@ -3,7 +3,7 @@ title: Trace with Google ADK
 sidebarTitle: Google ADK
 ---
 
-LangSmith supports tracing Google Agent Development Kit (ADK) applications through the OpenTelemetry integration. This guide shows you how to automatically capture traces from your [Google ADK](https://github.com/google/adk-python) agents and send them to LangSmith for monitoring and analysis.
+This guide shows you how to trace [Google Agent Development Kit (ADK)](https://github.com/google/adk-python) agents in LangSmith. You'll configure automatic tracing for your ADK applications to capture agent invocations, tool calls, and LLM interactions.
 
 ## Installation
 
@@ -21,181 +21,177 @@ uv add langsmith google-adk
 
 </CodeGroup>
 
-<Info>
-Requires LangSmith Python SDK version `langsmith>=0.4.26` for optimal OpenTelemetry support.
-</Info>
-
 ## Setup
 
-### 1. Configure environment variables
+Set your [API keys](/langsmith/create-account-api-key):
 
-Set your LangSmith API key and project name:
-
-<CodeGroup>
-
-```bash Shell
+```bash
 export LANGSMITH_API_KEY=<your_langsmith_api_key>
-export LANGSMITH_PROJECT=<your_project_name>
+export GOOGLE_API_KEY=<your_google_api_key>
 ```
 
-</CodeGroup>
+To create a Google API key, refer to [Google AI Studio](https://aistudio.google.com/api-keys).
 
-### 2. Configure OpenTelemetry integration
+## Configure tracing
 
-In your Google ADK application, import and configure the LangSmith OpenTelemetry integration. This will automatically instrument Google ADK spans for OpenTelemetry.
+To trace ADK agents, use `configure_google_adk()` from the LangSmith SDK. Call this function once at the start of your application before creating any ADK agents:
 
 ```python
-from langsmith.integrations.otel import configure
+from langsmith.integrations.google_adk import configure_google_adk
 
-# Configure LangSmith tracing
-configure(project_name="adk-example")  # Optional: can also use LANGSMITH_PROJECT and LANGSMITH_API_KEY environment variables
+configure_google_adk(
+    project_name="my-adk-project",  # Optional: defaults to LANGSMITH_PROJECT env var
+)
 ```
 
-Alternatively, you can use the Openinference GoogleADKInstrumentor:
+The function accepts the following optional parameters:
+
+- `project_name`: LangSmith project to send traces to. Defaults to the `LANGSMITH_PROJECT` environment variable.
+- `name`: Name for the root trace. Defaults to `"google_adk.session"`.
+- `metadata`: Dictionary of key-value pairs for additional context.
+- `tags`: List of strings to categorize traces.
+
+## Example
+
+This example creates a weather agent with a tool, then runs it with tracing enabled:
 
 ```python
-from langsmith.integrations.otel import configure
-from openinference.instrumentation.google_adk import GoogleADKInstrumentor
-
-# Configure LangSmith tracing
-configure(project_name="adk-example")
-
-# Instrument Google ADK directly
-GoogleADKInstrumentor().instrument()
-```
-
-<Note>
-You do not need to set any OpenTelemetry environment variables or configure exporters manually—`configure()` handles everything automatically.
-</Note>
-
-### 3. Create and run your ADK agent
-
-Once configured, your Google ADK application will automatically send traces to LangSmith:
-
-This example includes a minimal app that sets up an agent, session, and runner, then sends a message and streams events.
-
-```python
-import asyncio
-from langsmith.integrations.otel import configure
-from google.adk import Runner
-from google.adk.agents import LlmAgent
+from langsmith.integrations.google_adk import configure_google_adk
+from google.adk.agents import Agent
+from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 # Configure LangSmith tracing
-configure(project_name="travel-assistant")
+configure_google_adk(project_name="weather-assistant")
 
-# Define your tools
-def get_flight_info(destination: str, departure_date: str) -> dict:
-    """Get flight information for a destination."""
-    return {
-        "destination": destination,
-        "departure_date": departure_date,
-        "price": "$450",
-        "duration": "5h 30m",
-        "airline": "Example Airways"
-    }
+# Define a tool
+def get_weather(city: str) -> dict:
+    """Get weather for a city."""
+    return {"city": city, "temperature": "72°F", "conditions": "Sunny"}
 
-def get_hotel_recommendations(city: str, check_in: str) -> dict:
-    """Get hotel recommendations for a city."""
-    return {
-        "city": city,
-        "check_in": check_in,
-        "hotels": [
-            {"name": "Grand Plaza Hotel", "rating": 4.5, "price": "$120/night"},
-            {"name": "City Center Inn", "rating": 4.2, "price": "$95/night"}
-        ]
-    }
+# Create the agent
+agent = Agent(
+    name="weather_agent",
+    model="gemini-2.0-flash",
+    description="Provides weather information.",
+    instruction="Use the get_weather tool to answer weather questions.",
+    tools=[get_weather],
+)
 
-async def main():
-    # Create your ADK agent
-    agent = LlmAgent(
-        name="travel_assistant",
-        tools=[get_flight_info, get_hotel_recommendations],
-        model="gemini-2.5-flash-lite",
-        instruction="You are a helpful travel assistant that can help with flights and hotels.",
-    )
+# Set up session and runner
+session_service = InMemorySessionService()
+session_service.create_session_sync(
+    app_name="weather_app",
+    user_id="user_123",
+    session_id="session_456",
+)
 
-    # Set up session service and runner
-    session_service = InMemorySessionService()
-    runner = Runner(
-        app_name="travel_app",
-        agent=agent,
-        session_service=session_service
-    )
+runner = Runner(
+    agent=agent,
+    app_name="weather_app",
+    session_service=session_service,
+)
 
-    # Create a session
-    user_id = "traveler_456"
-    session_id = "session_789"
-    await session_service.create_session(
-        app_name="travel_app",
-        user_id=user_id,
-        session_id=session_id
-    )
-
-    # Send a message to the agent
-    new_message = types.Content(
-        parts=[types.Part(text="I need to book a flight to Paris for March 15th and find a good hotel.")],
+# Run the agent
+events = runner.run(
+    user_id="user_123",
+    session_id="session_456",
+    new_message=types.Content(
         role="user",
-    )
+        parts=[types.Part(text="What's the weather in San Francisco?")],
+    ),
+)
 
-    # Run the agent and process events
-    events = runner.run(
-        user_id=user_id,
-        session_id=session_id,
-        new_message=new_message,
-    )
-
-    for event in events:
-        print(event)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+for event in events:
+    if event.is_final_response():
+        print(event.content.parts[0].text)
 ```
 
 ## View traces in LangSmith
 
-- **Agent conversations**: Complete conversation flows between users and your ADK agents.
-- **Tool calls**: Individual function calls made by your agents.
-- **Model interactions**: LLM requests and responses using Gemini models.
-- **Session information**: User and session context for organizing related traces.
-- **Model interactions**: LLM requests and responses using Gemini models
+After running your application, you can view traces in the [LangSmith UI](https://smith.langchain.com) that include:
 
-![LangSmith dashboard with raw input from run and trace information.](/langsmith/images/adk.png)
+- **Agent invocations**: Complete flows through your ADK agents
+- **Tool calls**: Individual function calls made by agents
+- **LLM interactions**: Requests and responses from Gemini models
+- **Multi-agent workflows**: Traces from sequential and parallel agent compositions
 
-## Advanced usage
+![LangSmith trace view showing Google ADK agent execution](/langsmith/images/adk.png)
 
-### Custom metadata and tags
+## Custom metadata and tags
 
-You can add custom metadata to your traces by setting span attributes in your ADK application:
+Add metadata and tags when configuring tracing to categorize and filter traces:
 
 ```python
-from opentelemetry import trace
+from langsmith.integrations.google_adk import configure_google_adk
 
-# Get the current tracer
-tracer = trace.get_tracer(__name__)
+configure_google_adk(
+    project_name="production-agents",
+    metadata={
+        "environment": "production",
+        "team": "ml-platform",
+    },
+    tags=["adk", "weather", "v2"],
+)
+```
 
-async def main():
-    with tracer.start_as_current_span("travel_booking_session") as span:
-        # Add custom metadata
-        span.set_attribute("langsmith.metadata.user_type", "premium")
-        span.set_attribute("langsmith.metadata.booking_source", "mobile_app")
-        span.set_attribute("langsmith.span.tags", "travel,booking,premium")
+## Multi-agent workflows
 
-        agent = LlmAgent(
-            name="travel_assistant",
-            tools=[get_flight_info, get_hotel_recommendations],
-            model="gemini-2.5-flash-lite",
-            instruction="You are a helpful travel assistant that can help with flights and hotels.",
-        )
+The integration automatically traces multi-agent workflows including sequential and parallel agent compositions:
 
-        session_service = InMemorySessionService()
-        runner = Runner(
-            app_name="travel_app",
-            agent=agent,
-            session_service=session_service
-        )
+```python
+from langsmith.integrations.google_adk import configure_google_adk
+from google.adk.agents import Agent, SequentialAgent
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 
-        # Continue with your ADK workflow
-        # ...
+configure_google_adk(project_name="multi-agent-demo")
+
+# Create sub-agents
+translator = Agent(
+    name="translator",
+    model="gemini-2.0-flash",
+    description="Translates text to English.",
+)
+
+summarizer = Agent(
+    name="summarizer",
+    model="gemini-2.0-flash",
+    description="Summarizes text concisely.",
+)
+
+# Create a sequential agent that runs sub-agents in order
+pipeline = SequentialAgent(
+    name="translate_and_summarize",
+    sub_agents=[translator, summarizer],
+    description="Translates text then summarizes it.",
+)
+
+# Set up and run
+session_service = InMemorySessionService()
+session_service.create_session_sync(
+    app_name="pipeline_app",
+    user_id="user_123",
+    session_id="session_456",
+)
+
+runner = Runner(
+    agent=pipeline,
+    app_name="pipeline_app",
+    session_service=session_service,
+)
+
+events = runner.run(
+    user_id="user_123",
+    session_id="session_456",
+    new_message=types.Content(
+        role="user",
+        parts=[types.Part(text="Bonjour, comment allez-vous aujourd'hui?")],
+    ),
+)
+
+for event in events:
+    print(event)
 ```

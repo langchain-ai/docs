@@ -6,6 +6,7 @@
 * 🛠️ `reference.langchain.com` is home to the API reference docs for LangChain, LangGraph, LangSmith, and LangChain integration packages (e.g., [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/)). These are static sites built from the source code and deployed to [Vercel](https://vercel.com).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
+* 💬 [`chat.langchain.com`](https://chat.langchain.com) is an AI-powered assistant that can answer questions about LangChain documentation.
 
 ---
 
