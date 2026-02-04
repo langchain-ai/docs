@@ -1,0 +1,241 @@
+
+
+
+---
+title: SkillLite
+description: Sandboxed Agent skills execution for LangChain agents
+---
+
+This guide provides a quick overview for getting started with the SkillLite [tool](/oss/langchain/tools). For detailed documentation of all SkillLite features and configurations, head to the [API reference](https://github.com/EXboys/langchain-skilllite).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [SkillLiteTool](https://github.com/EXboys/langchain-skilllite) | [langchain-skilllite](https://pypi.org/project/langchain-skilllite/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-skilllite?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-skilllite?style=flat-square&label=%20) |
+
+### Features
+
+- 🔒 **Sandboxed Execution** - All skills run in a Rust-based sandbox (skillbox)
+- 📝 **Declarative Skills** - Define skills via SKILL.md using [Agent Skills](https://agentskills.io) format
+- 🔍 **Security Scanning** - Pre-execution static code analysis for dangerous operations
+- ✅ **Confirmation Callbacks** - User approval for high-severity security issues
+- ⚡ **Async Support** - Full async support for LangGraph agents
+
+---
+
+## Setup
+
+To access the SkillLite tools, you'll need to install the `langchain-skilllite` integration package and have skills defined in your project.
+
+### Credentials
+
+SkillLite does not require API keys. It executes local Python skills in a sandbox.
+
+It's helpful (but not needed) to set up LangSmith for best-in-class observability/tracing of your tool calls:
+
+```python
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The SkillLite integration lives in the `langchain-skilllite` package:
+
+```python pip
+pip install -U langchain-skilllite
+```
+
+```python uv
+uv add langchain-skilllite
+```
+
+This will also install the required dependencies:
+- `langchain-core>=0.3.0`
+- `skilllite>=0.1.1`
+
+---
+
+## Instantiation
+
+SkillLite provides two ways to create tools:
+
+### From a skills directory
+
+```python
+from langchain_skilllite import SkillLiteToolkit
+
+# Load all skills from a directory
+tools = SkillLiteToolkit.from_directory("./skills")
+```
+
+### From a SkillManager
+
+```python
+from skilllite import SkillManager
+from langchain_skilllite import SkillLiteToolkit
+
+# Create a SkillManager
+manager = SkillManager(skills_dir="./skills")
+
+# Convert specific skills to LangChain tools
+tools = SkillLiteToolkit.from_manager(
+    manager,
+    skill_names=["calculator", "web_search"],
+    sandbox_level=3,
+    allow_network=True,
+    timeout=60
+)
+```
+
+---
+
+## Invocation
+
+### Directly
+
+Invoke the tool with the required arguments:
+
+```python
+tools = SkillLiteToolkit.from_directory("./skills")
+calculator = tools[0]  # Assuming calculator is the first tool
+
+result = calculator.invoke({"operation": "add", "a": 15, "b": 27})
+print(result)
+# {"operation": "add", "a": 15.0, "b": 27.0, "result": 42.0}
+```
+
+### As a ToolCall
+
+We can also invoke the tool with a model-generated `ToolCall`, in which case a `ToolMessage` will be returned:
+
+```python
+model_generated_tool_call = {
+    "args": {"operation": "multiply", "a": 5, "b": 6},
+    "id": "1",
+    "name": calculator.name,
+    "type": "tool_call",
+}
+tool_message = calculator.invoke(model_generated_tool_call)
+print(tool_message.content)
+# {"operation": "multiply", "a": 5.0, "b": 6.0, "result": 30.0}
+```
+
+### Within an agent
+
+We can use SkillLite tools in an agent with tool-calling capabilities:
+
+```python
+# pip install -qU "langchain[openai]" langgraph
+from langchain_skilllite import SkillLiteToolkit
+from langgraph.prebuilt import create_react_agent
+
+tools = SkillLiteToolkit.from_directory("./skills")
+agent = create_react_agent(model="gpt-4o", tools=tools)
+
+# Run the agent
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Calculate 15 + 27"}]
+})
+```
+
+---
+
+## Security Levels
+
+SkillLite supports three sandbox security levels to balance between security and performance:
+
+| Level | Description | Use Case |
+|-------|-------------|----------|
+| 1 | No sandbox - direct execution | Development/testing |
+| 2 | Sandbox isolation only | Trusted skills |
+| 3 | Sandbox + security scanning (default) | Production |
+
+```python
+# Level 3 with confirmation callback for high-severity issues
+def confirm_execution(report: str, scan_id: str) -> bool:
+    print(report)
+    return input("Proceed? [y/N]: ").lower() == 'y'
+
+tools = SkillLiteToolkit.from_directory(
+    "./skills",
+    sandbox_level=3,
+    confirmation_callback=confirm_execution
+)
+```
+
+### Force Confirmation
+
+Use `force_confirmation=True` to always require user confirmation, even for safe skills:
+
+```python
+tools = SkillLiteToolkit.from_directory(
+    "./skills",
+    sandbox_level=3,
+    force_confirmation=True,
+    confirmation_callback=confirm_execution
+)
+```
+
+---
+
+## Async Support
+
+SkillLite fully supports async execution for use with LangGraph:
+
+```python
+import asyncio
+
+async def async_confirm(report: str, scan_id: str) -> bool:
+    print(report)
+    return True
+
+tools = SkillLiteToolkit.from_directory(
+    "./skills",
+    sandbox_level=3,
+    async_confirmation_callback=async_confirm
+)
+
+# Use with async agent
+result = await agent.ainvoke({
+    "messages": [{"role": "user", "content": "Run my skill"}]
+})
+```
+
+---
+
+## Callback Handler
+
+Use `SkillLiteCallbackHandler` to monitor skill execution:
+
+```python
+from langchain_skilllite import SkillLiteCallbackHandler
+
+handler = SkillLiteCallbackHandler(verbose=True)
+
+result = agent.invoke(
+    {"messages": [("user", "Calculate 5 * 6")]},
+    config={"callbacks": [handler]}
+)
+
+# Get execution summary
+print(handler.get_execution_summary())
+```
+
+---
+
+## API reference
+
+For detailed documentation of all SkillLite features and configurations, head to the:
+
+- [langchain-skilllite GitHub](https://github.com/EXboys/langchain-skilllite)
+- [SkillLite Core Repository](https://github.com/EXboys/skilllite)
+- [Agent Skills Specification](https://agentskills.io)
+```
+
