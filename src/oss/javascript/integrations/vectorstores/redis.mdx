@@ -7,9 +7,10 @@ description: "Integrate with the RedisVectorStore using LangChain JavaScript."
 **Compatibility**: Only available on Node.js.
 </Tip>
 
-[Redis](https://redis.io/) is a fast open source, in-memory data store. As part of the [Redis Stack](https://redis.io/docs/latest/operate/oss_and_stack/install/install-stack/), [RediSearch](https://redis.io/docs/latest/develop/interact/search-and-query/) is the module that enables vector similarity semantic search, as well as many other types of searching.
+[Redis](https://redis.io/) is a fast open source, in-memory data store. Since [Redis 8.0](https://redis.io/docs/latest/develop/whats-new/8-0/), [RediSearch](https://redis.io/docs/latest/develop/interact/search-and-query/) - the module that enables vector similarity semantic search - is built-in and no longer requires installing a separate module. 
+For older versions of Redis you might need to install the module separately or use the [Redis Stack](https://redis.io/docs/latest/operate/oss_and_stack/install/install-stack/) distribution.
 
-This guide provides a quick overview for getting started with Redis [vector stores](/oss/integrations/vectorstores). For detailed documentation of all `RedisVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore).
+This guide provides a quick overview for getting started with Redis [vector stores](/oss/integrations/vectorstores). The `@langchain/redis` package provides two implementations: `FluentRedisVectorStore` (recommended, with advanced filtering) and `RedisVectorStore` (legacy).
 
 ## Overview
 
@@ -17,6 +18,7 @@ This guide provides a quick overview for getting started with Redis [vector stor
 
 | Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/redis/) | Downloads | Version |
 | :--- | :--- | :---: | :---: | :---: |
+| [`FluentRedisVectorStore`](https://reference.langchain.com/javascript/langchain-redis/FluentRedisVectorStore) | [`@langchain/redis`](https://www.npmjs.com/package/@langchain/redis) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/redis?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/redis?style=flat-square&label=%20&) |
 | [`RedisVectorStore`](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore) | [`@langchain/redis`](https://www.npmjs.com/package/@langchain/redis) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/redis?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/redis?style=flat-square&label=%20&) |
 
 ## Setup
@@ -136,8 +138,6 @@ for (const doc of similaritySearchResults) {
 }
 ```
 
-Filtering will currently look for any metadata key containing the provided string.
-
 If you want to execute a similarity search and receive the corresponding scores you can run:
 
 ```typescript
@@ -223,19 +223,38 @@ await client.disconnect();
 
 ## Advanced features
 
-### Custom schema and metadata filtering
+### Advanced pre-filtering with the Redis vector store
 
-The Redis vector store supports custom schema definitions for metadata fields, enabling more efficient filtering and searching. This feature allows you to define specific field types and validation rules for your metadata.
+The `@langchain/redis` package provides two vector store implementations:
 
-#### Defining a custom schema
+- **`FluentRedisVectorStore`** (recommended): New implementation with type-safe fluent filtering API, array-based schema definition, and support for GEO and TIMESTAMP fields
+- **`RedisVectorStore`** (legacy): Original implementation with object-based schema and basic filtering capabilities
 
-You can define a custom schema when creating your vector store to specify field types, validation rules, and indexing options:
+<Note>
+**Which one should I use?**
+
+Use `FluentRedisVectorStore` for new projects or when you need:
+- Advanced filtering with type-safe fluent API (`Tag`, `Num`, `Text`, `Geo`, `Timestamp` filters)
+- Geographic queries
+- Timestamp/date filtering
+- Complex filter combinations with AND/OR logic
+- Cleaner array-based schema definition
+
+Use `RedisVectorStore` for:
+- Existing projects that need backward compatibility
+- Simple use cases without advanced filtering requirements
+</Note>
+
+#### Using FluentRedisVectorStore
+
+The `FluentRedisVectorStore` provides a modern, type-safe API for advanced metadata filtering.
+
+**Defining a schema with FluentRedisVectorStore:**
 
 ```typescript
-import { RedisVectorStore } from "@langchain/redis";
+import { FluentRedisVectorStore } from "@langchain/redis";
 import type { RedisVectorStoreConfig } from "@langchain/redis";
 import { OpenAIEmbeddings } from "@langchain/openai";
-import { SchemaFieldTypes } from "redis";
 import { createClient } from "redis";
 
 const embeddings = new OpenAIEmbeddings({
@@ -247,8 +266,55 @@ const client = createClient({
 });
 await client.connect();
 
-// Define custom schema for metadata fields
-const customSchema:RedisVectorStoreConfig["customSchema"] = {
+// Define custom schema for metadata fields using array format
+const customSchema = [
+  { name: "category", type: "tag" },
+  { name: "price", type: "numeric", options: { sortable: true } },
+  { name: "title", type: "text", options: { weight: 2.0 } },
+  { name: "location", type: "geo" },
+  { name: "created_at", type: "numeric", options: { sortable: true } },
+  { name: "brand", type: "tag" },
+  { name: "rating", type: "numeric" },
+];
+
+const vectorStore = await FluentRedisVectorStore.fromDocuments(
+  documents,
+  embeddings,
+  {
+    redisClient: client,
+    indexName: "products",
+    schema: customSchema,
+  }
+);
+```
+
+<Note>
+**Automatic schema inference:**
+
+If you don't provide a `schema`, `FluentRedisVectorStore` can automatically infer the metadata schema from your documents based on the following rules:
+
+- **Strings in "lon,lat" format** (e.g., `"-122.4194,37.7749"`) → GEO fields
+- **Numbers or Date objects** → NUMERIC fields
+- **Arrays of any type** → TAG fields
+- **All other types** → TEXT fields
+
+While automatic inference is convenient for quick prototyping, explicitly defining your schema is recommended for production use cases to:
+- Ensure precise field type control (e.g., distinguishing between TEXT and TAG for strings)
+- Enable field-specific options like `sortable`, `weight`, or `caseSensitive`
+- Improve query performance with optimized indexing
+- Make your schema self-documenting and maintainable
+</Note>
+
+#### Using RedisVectorStore (legacy)
+
+The original `RedisVectorStore` uses an object-based schema format:
+
+```typescript
+import { RedisVectorStore } from "@langchain/redis";
+import { SchemaFieldTypes } from "redis";
+
+// Define custom schema for metadata fields using object format
+const customSchema = {
   userId: {
     type: SchemaFieldTypes.TEXT,
     required: true,
@@ -284,15 +350,34 @@ const vectorStoreWithSchema = new RedisVectorStore(embeddings, {
 
 #### Schema field types
 
-The custom schema supports three main field types:
+**FluentRedisVectorStore supports five field types:**
 
 - **TEXT**: Full-text searchable fields with optional stemming, weighting, and sorting
 - **TAG**: Categorical fields for exact matching, with support for multiple values and custom separators
 - **NUMERIC**: Numeric fields supporting range queries and sorting
+- **GEO**: Geographic coordinate fields for location-based queries (stored as `[longitude, latitude]`)
+- **TIMESTAMP**: Date/time fields stored as Unix epoch timestamps (automatically converted from Date objects)
+
+**RedisVectorStore (legacy) supports three field types:**
+
+- **TEXT**: Full-text searchable fields
+- **TAG**: Categorical fields for exact matching
+- **NUMERIC**: Numeric fields supporting range queries
 
 #### Field configuration options
 
-Each field can be configured with various options:
+**FluentRedisVectorStore (array-based schema):**
+
+- `name`: Field name (required)
+- `type`: Field type - `"text"`, `"tag"`, `"numeric"`, `"geo"`, or `"timestamp"` (required)
+- `options`: Optional configuration object:
+  - `sortable`: Enable sorting on this field (boolean)
+  - `separator`: For TAG fields, specify the separator for multiple values (string, default: ",")
+  - `caseSensitive`: For TAG fields, enable case-sensitive matching (boolean)
+  - `noStem`: For TEXT fields, disable stemming (boolean)
+  - `weight`: For TEXT fields, specify search weight (number, default: 1.0)
+
+**RedisVectorStore (object-based schema):**
 
 - `required`: Whether the field must be present in metadata (default: false)
 - `SORTABLE`: Enable sorting on this field (default: undefined)
@@ -303,51 +388,305 @@ Each field can be configured with various options:
 
 #### Adding documents with schema validation
 
-When using a custom schema, documents are automatically validated against the defined schema:
+When using either the `RedisVectorStore` or `FluentRedisVectorStore`, the metadata in your documents is compared against the provided custom schema when adding documents if an index is created.
 
-```typescript
-import type { Document } from "@langchain/core/documents";
+**FluentRedisVectorStore (array-based schema):**
 
-const documentsWithMetadata: Document[] = [
-  {
-    pageContent: "Advanced JavaScript techniques for modern web development",
-    metadata: {
-      userId: "user123",
-      category: "programming",
-      score: 95,
-      tags: ["javascript", "web-development", "frontend"],
-      description: "Comprehensive guide to JavaScript best practices",
-    },
-  },
-  {
-    pageContent: "Machine learning fundamentals and applications",
-    metadata: {
-      userId: "user456",
-      category: "ai",
-      score: 88,
-      tags: ["machine-learning", "python", "data-science"],
-      description: "Introduction to ML concepts and practical applications",
-    },
-  },
-  {
-    pageContent: "Database optimization strategies for high performance",
-    metadata: {
-      userId: "user789",
-      category: "database",
-      score: 92,
-      tags: ["database", "optimization", "performance"],
-      description: "Advanced techniques for database performance tuning",
-    },
-  },
-];
+If there's a mismatch between the schema you defined and the metadata fields inferred from your documents, a warning message is logged to the console:
 
-// This will validate each document's metadata against the custom schema
-await vectorStoreWithSchema.addDocuments(documentsWithMetadata);
+```
+"The custom schema does not match the metadata schema inferred from the documents.
+This is not necessarily an issue, but could indicate an invalid custom schema."
 ```
 
-#### Advanced similarity search with metadata filtering
+This validation helps you catch potential issues early, such as:
+- Defining a field as `numeric` when your documents contain string values
+- Defining a field as `geo` when your documents don't use the "lon,lat" string format
+- Missing fields in your schema that exist in your documents
+- Type mismatches between schema definition and actual data
 
-The custom schema enables powerful metadata filtering capabilities using the `similaritySearchVectorWithScoreAndMetadata` method:
+**RedisVectorStore (object-based schema):**
+
+Only validates when customSchema is defined; if no schema exists, validation is skipped entirely. The validation:
+- Throws errors if a field marked as required: true is missing (undefined or null)
+- Throws errors if a field type does not match the schema type, e.g., NUMERIC schema fields expect number metadata fields
+
+<Tip>
+**Best practices for schema validation:**
+
+1. **Use correct data types**: Ensure your document metadata matches your schema field types
+2. **GEO fields**: Use string format `"longitude,latitude"` (e.g., `"-122.4194,37.7749"`)
+3. **TIMESTAMP fields**: Use Date objects or numbers (Unix timestamps)
+4. **Arrays for TAG fields**: Arrays are automatically inferred as TAG fields
+5. **Test with sample data**: Validate your schema with a few documents before bulk indexing
+</Tip>
+
+#### Advanced filtering with the fluent API
+
+<Note>
+**Important:** The fluent filtering API (`Tag`, `Num`, `Text`, `Geo`, `Timestamp`, `Custom`) is **only available with `FluentRedisVectorStore`**. The legacy `RedisVectorStore` uses a different filtering approach.
+</Note>
+
+The `FluentRedisVectorStore` provides a powerful fluent API for building complex metadata filters. This API offers type-safe filter construction with support for various field types and logical operations.
+
+**Import filter builders:**
+
+```typescript
+import {
+  FluentRedisVectorStore,
+  Tag,
+  Num,
+  Text,
+  Geo,
+  Timestamp,
+  Custom,
+} from "@langchain/redis";
+```
+
+**Simple tag filtering:**
+
+```typescript
+// Filter for electronics category
+const electronicsFilter = Tag("category").eq("electronics");
+const results = await vectorStore.similaritySearch(
+  "high quality device",
+  5,
+  electronicsFilter
+);
+```
+
+**Numeric range filtering:**
+
+```typescript
+// Filter for products between $20-$500
+const priceFilter = Num("price").between(20, 500);
+const results = await vectorStore.similaritySearch(
+  "quality product",
+  5,
+  priceFilter
+);
+
+// Other numeric operations
+Num("price").eq(99.99);           // Exact match
+Num("price").gt(50);              // Greater than
+Num("price").gte(50);             // Greater than or equal
+Num("price").lt(100);             // Less than
+Num("price").lte(100);            // Less than or equal
+Num("price").between(20, 100);   // Between (inclusive)
+```
+
+**Text search filtering:**
+
+```typescript
+// Search for titles containing "programming"
+const textFilter = Text("title").wildcard("*programming*");
+const results = await vectorStore.similaritySearch(
+  "learning guide",
+  5,
+  textFilter
+);
+
+// Other text operations
+Text("title").eq("exact title");           // Exact match
+Text("description").match("guide");        // Text match
+Text("title").wildcard("*JavaScript*");    // Wildcard search
+```
+
+**Geographic filtering:**
+
+```typescript
+// Find items within 50km of San Francisco
+const geoFilter = Geo("location").within(-122.4194, 37.7749, 50, "km");
+const results = await vectorStore.similaritySearch(
+  "local products",
+  5,
+  geoFilter
+);
+
+// Geo coordinates are stored as [longitude, latitude]
+const doc = {
+  pageContent: "Product description",
+  metadata: {
+    location: [-122.4194, 37.7749], // [longitude, latitude]
+  },
+};
+```
+
+**Timestamp filtering:**
+
+```typescript
+// Find items created after March 1, 2023
+const timestampFilter = Timestamp("created_at").gt(new Date("2023-03-01"));
+const results = await vectorStore.similaritySearch(
+  "recent items",
+  5,
+  timestampFilter
+);
+
+// Note: Timestamps are stored as Unix epoch timestamps (numbers)
+// Date objects are automatically converted during serialization
+// and returned as numbers during deserialization
+const createdDate = new Date((doc.metadata.created_at as number) * 1000);
+```
+
+**Complex combined filtering with AND:**
+
+```typescript
+// Electronics under $400 in California
+const complexFilter = Tag("category")
+  .eq("electronics")
+  .and(Num("price").lt(400))
+  .and(Geo("location").within(-119.4179, 36.7783, 500, "km"));
+
+const results = await vectorStore.similaritySearch(
+  "affordable electronics",
+  5,
+  complexFilter
+);
+```
+
+**OR filtering:**
+
+```typescript
+// Books OR items under $30
+const orFilter = Tag("category").eq("books").or(Num("price").lt(30));
+const results = await vectorStore.similaritySearch(
+  "affordable items",
+  5,
+  orFilter
+);
+```
+
+**Multiple tag values:**
+
+```typescript
+// TechCorp OR ViewTech brands
+const multiTagFilter = Tag("brand").eq(["TechCorp", "ViewTech"]);
+const results = await vectorStore.similaritySearch(
+  "branded products",
+  5,
+  multiTagFilter
+);
+```
+
+**Negation filtering:**
+
+```typescript
+// NOT electronics
+const negationFilter = Tag("category").ne("electronics");
+const results = await vectorStore.similaritySearch(
+  "non-electronic items",
+  5,
+  negationFilter
+);
+```
+
+**Custom filters with raw RediSearch syntax:**
+
+```typescript
+// Use raw RediSearch query syntax for advanced cases
+const customFilter = Custom("(@category:{electronics} @price:[0 400])");
+const results = await vectorStore.similaritySearch(
+  "affordable tech",
+  5,
+  customFilter
+);
+```
+
+#### Complete filtering example with FluentRedisVectorStore
+
+Here's a comprehensive example demonstrating various filtering capabilities with `FluentRedisVectorStore`:
+
+```typescript
+import { createClient } from "redis";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import {
+  FluentRedisVectorStore,
+  Tag,
+  Num,
+  Text,
+  Geo,
+  Timestamp,
+} from "@langchain/redis";
+import { Document } from "@langchain/core/documents";
+
+// Connect to Redis
+const client = createClient({
+  url: process.env.REDIS_URL ?? "redis://localhost:6379",
+});
+await client.connect();
+
+// Sample documents with rich metadata
+const docs = [
+  new Document({
+    metadata: {
+      category: "electronics",
+      price: 299.99,
+      title: "Wireless Bluetooth Headphones",
+      location: [-122.4194, 37.7749], // San Francisco
+      created_at: new Date("2023-01-15"),
+      brand: "TechCorp",
+      rating: 4.5,
+    },
+    pageContent:
+      "High-quality wireless Bluetooth headphones with noise cancellation",
+  }),
+  new Document({
+    metadata: {
+      category: "books",
+      price: 24.99,
+      title: "JavaScript Programming Guide",
+      location: [-74.006, 40.7128], // New York
+      created_at: new Date("2023-03-20"),
+      author: "John Smith",
+      pages: 450,
+    },
+    pageContent:
+      "Comprehensive guide to modern JavaScript programming techniques",
+  }),
+];
+
+// Create FluentRedisVectorStore with metadata schema
+const vectorStore = await FluentRedisVectorStore.fromDocuments(
+  docs,
+  new OpenAIEmbeddings(),
+  {
+    redisClient: client,
+    indexName: "advanced_products",
+    schema: [
+      { name: "category", type: "tag" },
+      { name: "price", type: "numeric", options: { sortable: true } },
+      { name: "title", type: "text", options: { weight: 2.0 } },
+      { name: "location", type: "geo" },
+      { name: "created_at", type: "numeric", options: { sortable: true } },
+      { name: "brand", type: "tag" },
+      { name: "author", type: "tag" },
+      { name: "rating", type: "numeric" },
+      { name: "pages", type: "numeric" },
+    ],
+  }
+);
+
+// Example: Complex filtering - Electronics under $400 near San Francisco
+const complexFilter = Tag("category")
+  .eq("electronics")
+  .and(Num("price").lt(400))
+  .and(Geo("location").within(-122.4194, 37.7749, 100, "km"));
+
+const results = await vectorStore.similaritySearch(
+  "affordable electronics",
+  5,
+  complexFilter
+);
+
+// Cleanup
+await vectorStore.delete({ deleteAll: true });
+await client.disconnect();
+```
+
+#### Advanced filtering with the legacy API
+
+The legacy `RedisVectorStore` provides metadata filtering capabilities using the `similaritySearchVectorWithScoreAndMetadata` method:
 
 ```typescript
 // Search with TAG filtering
@@ -426,59 +765,30 @@ For numeric fields, you can specify various range queries:
 { score: { max: 95 } }
 ```
 
-#### Error handling and validation
-
-The custom schema provides automatic validation with helpful error messages:
-
-```typescript
-try {
-  // This will fail validation - missing required userId field
-  const invalidDoc: Document = {
-    pageContent: "Some content without required metadata",
-    metadata: {
-      category: "test",
-      // Missing required userId field
-    },
-  };
-
-  await vectorStoreWithSchema.addDocuments([invalidDoc]);
-} catch (error) {
-  console.log("Validation error:", error.message);
-  // Output: "Required metadata field 'userId' is missing"
-}
-
-try {
-  // This will fail validation - wrong type for score field
-  const wrongTypeDoc: Document = {
-    pageContent: "Content with wrong metadata type",
-    metadata: {
-      userId: "user123",
-      score: "not-a-number", // Should be number, not string
-    },
-  };
-
-  await vectorStoreWithSchema.addDocuments([wrongTypeDoc]);
-} catch (error) {
-  console.log("Type validation error:", error.message);
-  // Output: "Metadata field 'score' must be a number, got string"
-}
-```
 
 #### Performance benefits
 
-Using custom schema provides several performance advantages:
+Using custom schema and the fluent filtering API provides several performance advantages:
 
-1. **Indexed Metadata Fields**: Individual metadata fields are indexed separately, enabling fast filtering
-2. **Type-Optimized Queries**: Numeric and tag fields use optimized query structures
-3. **Reduced Data Transfer**: Only relevant fields are returned in search results
+1. **Indexed Metadata Fields**: Individual metadata fields are indexed separately, enabling fast pre-filtering before vector search
+2. **Type-Optimized Queries**: Numeric, tag, geo, and text fields use optimized RediSearch query structures
+3. **Reduced Vector Comparisons**: Filters are applied before vector similarity calculations, reducing computational overhead
 4. **Better Query Planning**: Redis can optimize queries based on field types and indexes
+5. **Type Safety**: The fluent API provides compile-time type checking for filter construction
 
 #### Backward compatibility
 
-The custom schema feature is fully backward compatible. Existing Redis vector stores without custom schemas will continue to work exactly as before. You can gradually migrate to custom schemas for new indexes or when rebuilding existing ones.
+Both `RedisVectorStore` and `FluentRedisVectorStore` are currently supported and maintained. However, `RedisVectorStore` is considered legacy and may be deprecated in future major releases. Existing code using `RedisVectorStore` will continue to work without any changes.
+
+**Migration considerations:**
+
+- `FluentRedisVectorStore` uses `schema` config property instead of `customSchema`
+- Filter syntax is different - use fluent API (`Tag`, `Num`, etc.) instead of object-based filters
+- GEO and TIMESTAMP field types are only available in `FluentRedisVectorStore`
 
 ---
 
 ## API reference
-
-For detailed documentation of all `RedisVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore).
+For detailed documentation of all features and configurations:
+- `[RedisVectorStore` API reference](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore)
+- `[FluentRedisVectorStore` API reference](https://reference.langchain.com/javascript/langchain-redis/FluentRedisVectorStore)
