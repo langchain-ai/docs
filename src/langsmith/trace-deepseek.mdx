@@ -32,12 +32,18 @@ DeepSeek provides an [OpenAI-compatible API](https://api-docs.deepseek.com/), wh
 
 ## Setup
 
+Set your [API keys](/langsmith/create-account-api-key) and project name:
+
 ```bash
 export LANGSMITH_API_KEY="your-langsmith-api-key"
 export LANGSMITH_TRACING="true"
 export LANGSMITH_PROJECT="deepseek-integration"
 export DEEPSEEK_API_KEY="your-deepseek-api-key"
 ```
+- Ensure you have a DeepSeek API key from your [DeepSeek account](https://platform.deepseek.com/).
+- Set `LANGSMITH_TRACING=true` and provide your LangSmith API key (`LANGSMITH_API_KEY`) activates automatic logging of traces.
+- Specify a [`LANGSMITH_PROJECT`](/langsmith/log-traces-to-project) name to organize traces by project; if not set, traces go to the default project (named "default").
+- The `LANGSMITH_TRACING` flag must be true for any traces to be recorded.
 
 ## Configure tracing
 
@@ -56,25 +62,25 @@ export DEEPSEEK_API_KEY="your-deepseek-api-key"
         base_url="https://api.deepseek.com/v1"
     )
 
-    @traceable(name="DeepSeek Chat Completion", run_type="llm")
-    def call_deepseek(messages: list[dict]) -> dict:
+    @traceable(
+        run_type="llm",
+        name="DeepSeek Chat Completion",
+        metadata={"ls_provider": "deepseek", "ls_model_name": "deepseek-chat"},
+    )
+    def call_deepseek(messages: list[dict]):
         response = client.chat.completions.create(
             model="deepseek-chat",
             messages=messages
         )
-        return {
-            "response": response.choices[0].message.content,
-            "model": response.model,
-            "usage": dict(response.usage)
-        }
+        return response.choices[0].message
 
     if __name__ == "__main__":
         messages = [
             {"role": "system", "content": "You are a helpful assistant that translates English to French."},
             {"role": "user", "content": "I love programming."}
         ]
-        output = call_deepseek(messages=messages)
-        print("Model reply:", output["response"])
+        result = call_deepseek(messages=messages)
+        print("Model reply:", result.content)
     ```
 
     ```typescript TypeScript
@@ -94,28 +100,22 @@ export DEEPSEEK_API_KEY="your-deepseek-api-key"
     content: string;
     };
 
-    type LLMResponse = {
-    response: string;
-    model: string;
-    usage?: Record<string, unknown>;
-    };
-
-    const callDeepSeek = traceable<ChatMessage[], LLMResponse>(
+    const callDeepSeek = traceable(
     {
         name: "DeepSeek Chat Completion",
-        run_type: "llm"
+        run_type: "llm",
+        metadata: {
+        ls_provider: "deepseek",
+        ls_model_name: "deepseek-chat"
+        }
     },
-    async (messages) => {
+    async (messages: ChatMessage[]) => {
         const response = await openai.chat.completions.create({
         model: "deepseek-chat",
         messages
         });
 
-        return {
-        response: response.choices[0].message.content,
-        model: response.model,
-        usage: response.usage as Record<string, unknown>
-        };
+        return response.choices[0].message;
     }
     );
 
@@ -132,21 +132,25 @@ export DEEPSEEK_API_KEY="your-deepseek-api-key"
     ];
 
     const result = await callDeepSeek(messages);
-    console.log("Model reply:", result.response);
+    console.log("Model reply:", result.content);
     })();
     ```
 
     </CodeGroup>
 
-    In this example, you use the OpenAI SDK to interact with DeepSeek's API. The OpenAI client is configured with `base_url="https://api.deepseek.com/v1"` to route requests to DeepSeek's endpoint while maintaining OpenAI-compatible syntax.
+    In this example, you use the OpenAI SDK to interact with [DeepSeek's API](https://api-docs.deepseek.com/). The OpenAI client is configured with `base_url="https://api.deepseek.com/v1"` to route requests to DeepSeek's endpoint while maintaining OpenAI-compatible syntax.
 
-    The `@traceable` decorator (Python) or `traceable` function (TypeScript) wraps your function so that each invocation is logged as a trace run of type `"llm"`. This captures:
-    - Input messages sent to the model
-    - The model's response content
-    - Model name and token usage statistics
-    - Execution timing and any errors
+    The `@traceable` decorator (Python) or `traceable` function (TypeScript) wraps your function so that each invocation is logged as a trace run of type `"llm"`. The `metadata` parameter tags the trace with:
 
-    When you call the wrapped function, LangSmith automatically creates a trace in your specified project (or "default" if not set).
+    - `ls_provider`: Identifies the provider (DeepSeek) for filtering traces.
+    - `ls_model_name`: Specifies the model used for cost tracking and analytics.
+
+    The function returns the full message object (`response.choices[0].message`), which includes the response content along with metadata like the role and any additional fields. LangSmith automatically captures:
+
+    - Input messages sent to the model.
+    - The model's complete response (content, role, etc.).
+    - Model name and token usage statistics.
+    - Execution timing and any errors.
 
 2. Execute your script to generate a trace:
 
@@ -162,22 +166,20 @@ export DEEPSEEK_API_KEY="your-deepseek-api-key"
 
     </CodeGroup>
 
-    The function call will reach out to DeepSeek's API, and because of the `@traceable`/`traceable` wrapper, LangSmith will log this call's inputs and outputs as a new trace. You'll find the model's response printed to the console, and a corresponding run appear in [LangSmith](https://smith.langchain.com).
+    The function call will reach out to DeepSeek's API, and because of the `@traceable`/`traceable` wrapper, LangSmith will log this call's inputs and outputs as a new trace. You'll find the model's response printed to the console, and a corresponding run appear in the [LangSmith UI](https://smith.langchain.com).
 
 ## View traces in LangSmith
 
 After running the example, you can inspect the recorded traces in the [LangSmith UI](https://smith.langchain.com):
 
 1. Open the LangSmith UI and log in to your account.
-2. Select the project you used for this integration (for example, the name set in `LANGSMITH_PROJECT`, or "default" if you didn't set one).
-3. Find the trace corresponding to your DeepSeek API call. It will be identified by the function name (`DeepSeek Chat Completion`).
-4. Click on the trace to open it. You'll be able to inspect the model input and output, including the prompt messages you sent and the response from DeepSeek, as well as timing information (latency) and token usage.
+1. Select the project you used for this integration (for example, the name set in `LANGSMITH_PROJECT`, or "default" if you didn't set one).
+1. Find the trace corresponding to your DeepSeek API call. It will be identified by the function name (`DeepSeek Chat Completion`).
+1. Click on the trace to open it. You'll be able to inspect the model input and output, including the prompt messages you sent and the response from DeepSeek, as well as timing information (latency) and token usage.
 
 With LangSmith's tracing, you have full visibility into your DeepSeek calls—allowing you to debug the behavior of DeepSeek's models, monitor performance (response time and token usage), and compare runs with different parameters.
 
 ## Cost tracking
-
-DeepSeek's API uses a usage-based pricing model. DeepSeek models are known for their cost-efficiency, with `deepseek-chat` offering high performance at competitive prices.
 
 LangSmith can automatically associate costs with traced LLM calls by estimating token usage and applying model-specific pricing. When tracing DeepSeek API calls, LangSmith uses the recorded prompt and response messages to calculate token counts and attach cost information to each run.
 
