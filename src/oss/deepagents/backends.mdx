@@ -17,6 +17,7 @@ graph TB
     Backend --> State[State]
     Backend --> Disk[Filesystem]
     Backend --> Store[Store]
+    Backend --> Sandbox[Sandbox]
     Backend --> Composite[Composite]
     Backend --> Custom[Custom]
 
@@ -24,6 +25,8 @@ graph TB
     Router --> State
     Router --> Disk
     Router --> Store
+
+    Sandbox --> Execute[+ execute tool]
 ```
 
 This page explains how to [choose a backend](#specify-a-backend), [route different paths to different backends](#route-to-different-backends), [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres), [add policy hooks](#add-policy-hooks), and [comply with the backend protocol](#protocol-reference).
@@ -37,6 +40,7 @@ Here are a few pre-built filesystem backends that you can quickly use with your 
 | [Default](#statebackend-ephemeral) | `agent = create_deep_agent()` <br></br> Ephemeral in state. The default filesystem backend for an agent is stored in `langgraph` state. Note that this filesystem only persists _for a single thread_. |
 | [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. |
 | [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(backend=lambda rt: StoreBackend(rt))` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
+| [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
 | [Composite](#compositebackend-router) | Ephemeral by default, `/memories/` persisted. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
 
 
@@ -68,7 +72,7 @@ Use with caution and only in appropriate environments.
 - CI/CD pipelines (see security considerations below)
 
 **Inappropriate use cases:**
-- Web servers or HTTP APIs - use `StateBackend`, `StoreBackend`, or `SandboxBackend` instead
+- Web servers or HTTP APIs - use `StateBackend`, `StoreBackend`, or a [sandbox backend](/oss/deepagents/sandboxes) instead
 
 **Security risks:**
 - Agents can read any accessible file, including secrets (API keys, credentials, `.env` files)
@@ -78,7 +82,7 @@ Use with caution and only in appropriate environments.
 **Recommended safeguards:**
 1. Enable [Human-in-the-Loop (HITL) middleware](/oss/deepagents/human-in-the-loop) to review sensitive operations.
 1. Exclude secrets from accessible filesystem paths (especially in CI/CD).
-1. Use `SandboxBackend` for production environments requiring filesystem interaction.
+1. Use a [sandbox backend](/oss/deepagents/sandboxes) for production environments requiring filesystem interaction.
 1. **Always** use `virtual_mode=True` with `root_dir` to enable path-based access restrictions (blocks `..`, `~`, and absolute paths outside root).
    Note that the default (`virtual_mode=False`) provides no security even with `root_dir` set.
 </Warning>
