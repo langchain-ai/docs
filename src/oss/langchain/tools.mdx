@@ -56,9 +56,7 @@ const searchDatabase = tool(
 :::
 
 <Note>
-    **Server-side tool use**
-
-    Some chat models (e.g., [OpenAI](/oss/integrations/chat/openai), [Anthropic](/oss/integrations/chat/anthropic), and [Gemini](/oss/integrations/chat/google_generative_ai)) feature [built-in tools](/oss/langchain/models#server-side-tool-use) that are executed server-side, such as web search and code interpreters. Refer to the [provider overview](/oss/integrations/providers/overview) to learn how to access these tools with your specific chat model.
+    **Server-side tool use:** Some chat models feature built-in tools (web search, code interpreters) that are executed server-side. See [Server-side tool use](#server-side-tool-use) for details.
 </Note>
 
 :::python
@@ -153,29 +151,21 @@ The following parameter names are reserved and cannot be used as tool arguments.
 To access runtime information, use the @[`ToolRuntime`] parameter instead of naming your own arguments `config` or `runtime`.
 :::
 
-## Accessing context
+## Access context
 
-<Info>
-**Why this matters:** Tools are most powerful when they can access agent state, runtime context, and long-term memory. This enables tools to make context-aware decisions, personalize responses, and maintain information across conversations.
-
-:::python
-Runtime context provides a way to inject dependencies (like database connections, user IDs, or configuration) into your tools at runtime, making them more testable and reusable.
-:::
-
-:::js
-The runtime context provides a structured way to supply runtime data, such as DB connections, user IDs, or config, into your tools. This avoids global state and keeps tools testable and reusable.
-:::
-</Info>
+Tools are most powerful when they can access runtime information like conversation history, user data, and persistent memory. This section covers how to access and update this information from within your tools.
 
 :::python
-Tools can access runtime information through the `ToolRuntime` parameter, which provides:
+Tools can access runtime information through the @[`ToolRuntime`] parameter, which provides:
 
-- **State** - Mutable data that flows through execution (e.g., messages, counters, custom fields)
-- **Context** - Immutable configuration like user IDs, session details, or application-specific configuration
-- **Store** - Persistent long-term memory across conversations
-- **Stream Writer** - Stream custom updates as tools execute
-- **Config** - `RunnableConfig` for the execution
-- **Tool Call ID** - ID of the current tool call
+| Component | Description | Use case |
+|-----------|-------------|----------|
+| **State** | Short-term memory - mutable data that exists for the current conversation (messages, counters, custom fields) | Access conversation history, track tool call counts |
+| **Context** | Immutable configuration passed at invocation time (user IDs, session info) | Personalize responses based on user identity |
+| **Store** | Long-term memory - persistent data that survives across conversations | Save user preferences, maintain knowledge base |
+| **Stream Writer** | Emit real-time updates during tool execution | Show progress for long-running operations |
+| **Config** | @[`RunnableConfig`] for the execution | Access callbacks, tags, and metadata |
+| **Tool Call ID** | Unique identifier for the current tool invocation | Correlate tool calls for logs and model invocations |
 
 ```mermaid
 graph LR
@@ -216,42 +206,39 @@ graph LR
     F --> P
 ```
 
-### `ToolRuntime`
+### Short-term memory (State)
 
-Use `ToolRuntime` to access all runtime information in a single parameter. Simply add `runtime: ToolRuntime` to your tool signature, and it will be automatically injected without being exposed to the LLM.
+State represents short-term memory that exists for the duration of a conversation. It includes the message history and any custom fields you define in your [graph state](/oss/langgraph/graph-api#state).
 
 <Info>
-**`ToolRuntime`**: A unified parameter that provides tools access to state, context, store, streaming, config, and tool call ID. This replaces the older pattern of using separate @[`InjectedState`], @[`InjectedStore`], @[`get_runtime`], and @[`InjectedToolCallId`] annotations.
-
-The runtime automatically provides these capabilities to your tool functions without you having to pass them explicitly or use global state.
+    Add `runtime: ToolRuntime` to your tool signature to access state. This parameter is automatically injected and hidden from the LLM - it won't appear in the tool's schema.
 </Info>
 
-**Accessing state:**
+#### Access state
 
-Tools can access the current graph state using `ToolRuntime`:
+Tools can access the current conversation state using `runtime.state`:
 
 ```python
 from langchain.tools import tool, ToolRuntime
+from langchain.messages import HumanMessage
 
-# Access the current conversation state
 @tool
-def summarize_conversation(
-    runtime: ToolRuntime
-) -> str:
-    """Summarize the conversation so far."""
+def get_last_user_message(runtime: ToolRuntime) -> str:
+    """Get the most recent message from the user."""
     messages = runtime.state["messages"]
 
-    human_msgs = sum(1 for m in messages if m.__class__.__name__ == "HumanMessage")
-    ai_msgs = sum(1 for m in messages if m.__class__.__name__ == "AIMessage")
-    tool_msgs = sum(1 for m in messages if m.__class__.__name__ == "ToolMessage")
+    # Find the last human message
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            return message.content
 
-    return f"Conversation has {human_msgs} user messages, {ai_msgs} AI responses, and {tool_msgs} tool results"
+    return "No user messages found"
 
 # Access custom state fields
 @tool
 def get_user_preference(
     pref_name: str,
-    runtime: ToolRuntime  # ToolRuntime parameter is not visible to the model
+    runtime: ToolRuntime
 ) -> str:
     """Get a user preference value."""
     preferences = runtime.state.get("user_preferences", {})
@@ -259,47 +246,34 @@ def get_user_preference(
 ```
 
 <Warning>
-The `runtime` parameter is hidden from the model. For the example above, the model only sees `pref_name` in the tool schema - `runtime` is *not* included in the request.
+    The `runtime` parameter is hidden from the model. For the example above, the model only sees `pref_name` in the tool schema.
 </Warning>
 
-**Updating state:**
+#### Update state
 
-Use @[`Command`] to update the agent's state or control the graph's execution flow:
+Use @[`Command`] to update the agent's state. This is useful for tools that need to update custom state fields:
 
 ```python
 from langgraph.types import Command
-from langchain.messages import RemoveMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
-from langchain.tools import tool, ToolRuntime
+from langchain.tools import tool
 
-# Update the conversation history by removing all messages
 @tool
-def clear_conversation() -> Command:
-    """Clear the conversation history."""
-
-    return Command(
-        update={
-            "messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES)],
-        }
-    )
-
-# Update the user_name in the agent state
-@tool
-def update_user_name(
-    new_name: str,
-    runtime: ToolRuntime
-) -> Command:
-    """Update the user's name."""
+def set_user_name(new_name: str) -> Command:
+    """Set the user's name in the conversation state."""
     return Command(update={"user_name": new_name})
 ```
+
+<Tip>
+    When tools update state variables, consider defining a [reducer](/oss/langgraph/graph-api#reducers) for those fields. Since LLMs can call multiple tools in parallel, a reducer determines how to resolve conflicts when the same state field is updated by concurrent tool calls.
+</Tip>
 :::
 
-#### Context
+### Context
+
+Context provides immutable configuration data that is passed at invocation time. Use it for user IDs, session details, or application-specific settings that shouldn't change during a conversation.
 
 :::python
-Access immutable configuration and contextual data like user IDs, session details, or application-specific configuration through `runtime.context`.
-
-Tools can access runtime context through `ToolRuntime`:
+Access context through `runtime.context`:
 
 ```python
 from dataclasses import dataclass
@@ -337,7 +311,7 @@ def get_account_info(runtime: ToolRuntime[UserContext]) -> str:
         return f"Account holder: {user['name']}\nType: {user['account_type']}\nBalance: ${user['balance']}"
     return "User not found"
 
-model = ChatOpenAI(model="gpt-4o")
+model = ChatOpenAI(model="gpt-4.1")
 agent = create_agent(
     model,
     tools=[get_account_info],
@@ -376,7 +350,7 @@ const contextSchema = z.object({
 });
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-4o" }),
+  model: new ChatOpenAI({ model: "gpt-4.1" }),
   tools: [getUserName],
   contextSchema,
 });
@@ -392,12 +366,16 @@ const result = await agent.invoke(
 ```
 :::
 
-#### Memory (Store)
+### Long-term memory (Store)
+
+The @[`BaseStore`] provides persistent storage that survives across conversations. Unlike state (short-term memory), data saved to the store remains available in future sessions.
 
 :::python
-Access persistent data across conversations using the store. The store is accessed via `runtime.store` and allows you to save and retrieve user-specific or application-specific data.
+Access the store through `runtime.store`. The store uses a namespace/key pattern to organize data:
 
-Tools can access and update the store through `ToolRuntime`:
+<Tip>
+    For production deployments, use a persistent store implementation like @[`PostgresStore`] instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/memory) for setup details.
+</Tip>
 
 ```python expandable
 from typing import Any
@@ -446,7 +424,7 @@ agent.invoke({
 :::
 
 :::js
-Access persistent data across conversations using the store. The store is accessed via `config.store` and allows you to save and retrieve user-specific or application-specific data.
+Access the store through `config.store`. The store uses a namespace/key pattern to organize data:
 
 ```ts expandable
 import * as z from "zod";
@@ -492,7 +470,7 @@ const saveUserInfo = tool(
 );
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-4o" }),
+  model: new ChatOpenAI({ model: "gpt-4.1" }),
   tools: [getUserInfo, saveUserInfo],
   store,
 });
@@ -522,10 +500,12 @@ console.log(result);
 ```
 :::
 
-#### Stream writer
+### Stream writer
+
+Stream real-time updates from tools during execution. This is useful for providing progress feedback to users during long-running operations.
 
 :::python
-Stream custom updates from tools as they execute using `runtime.stream_writer`. This is useful for providing real-time feedback to users about what a tool is doing.
+Use `runtime.stream_writer` to emit custom updates:
 
 ```python
 from langchain.tools import tool, ToolRuntime
@@ -548,7 +528,7 @@ If you use `runtime.stream_writer` inside your tool, the tool must be invoked wi
 :::
 
 :::js
-Stream custom updates from tools as they execute using `config.streamWriter`. This is useful for providing real-time feedback to users about what a tool is doing.
+Use `config.writer` to emit custom updates:
 
 ```ts
 import * as z from "zod";
@@ -576,3 +556,183 @@ const getWeather = tool(
 );
 ```
 :::
+
+## ToolNode
+
+@[`ToolNode`] is a prebuilt node that executes tools in LangGraph workflows. It handles parallel tool execution, error handling, and state injection automatically.
+
+<Info>
+    For custom workflows where you need fine-grained control over tool execution patterns, use @[`ToolNode`] instead of @[`create_agent`]. It's the building block that powers agent tool execution.
+</Info>
+
+### Basic usage
+
+:::python
+```python
+from langchain.tools import tool
+from langgraph.prebuilt import ToolNode
+from langgraph.graph import StateGraph, MessagesState, START, END
+
+@tool
+def search(query: str) -> str:
+    """Search for information."""
+    return f"Results for: {query}"
+
+@tool
+def calculator(expression: str) -> str:
+    """Evaluate a math expression."""
+    return str(eval(expression))
+
+# Create the ToolNode with your tools
+tool_node = ToolNode([search, calculator])
+
+# Use in a graph
+builder = StateGraph(MessagesState)
+builder.add_node("tools", tool_node)
+# ... add other nodes and edges
+```
+:::
+
+:::js
+```typescript
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { tool } from "@langchain/core/tools";
+import * as z from "zod";
+
+const search = tool(
+  ({ query }) => `Results for: ${query}`,
+  {
+    name: "search",
+    description: "Search for information.",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const calculator = tool(
+  ({ expression }) => String(eval(expression)),
+  {
+    name: "calculator",
+    description: "Evaluate a math expression.",
+    schema: z.object({ expression: z.string() }),
+  }
+);
+
+// Create the ToolNode with your tools
+const toolNode = new ToolNode([search, calculator]);
+```
+:::
+
+### Error handling
+
+Configure how tool errors are handled. See the @[`ToolNode`] API reference for all options.
+
+:::python
+```python
+from langgraph.prebuilt import ToolNode
+
+# Default: catch invocation errors, re-raise execution errors
+tool_node = ToolNode(tools)
+
+# Catch all errors and return error message to LLM
+tool_node = ToolNode(tools, handle_tool_errors=True)
+
+# Custom error message
+tool_node = ToolNode(tools, handle_tool_errors="Something went wrong, please try again.")
+
+# Custom error handler
+def handle_error(e: ValueError) -> str:
+    return f"Invalid input: {e}"
+
+tool_node = ToolNode(tools, handle_tool_errors=handle_error)
+
+# Only catch specific exception types
+tool_node = ToolNode(tools, handle_tool_errors=(ValueError, TypeError))
+```
+:::
+
+:::js
+```typescript
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+
+// Default behavior
+const toolNode = new ToolNode(tools);
+
+// Catch all errors
+const toolNode = new ToolNode(tools, { handleToolErrors: true });
+
+// Custom error message
+const toolNode = new ToolNode(tools, {
+  handleToolErrors: "Something went wrong, please try again."
+});
+```
+:::
+
+### Route with tools_condition
+
+Use @[`tools_condition`] for conditional routing based on whether the LLM made tool calls:
+
+:::python
+```python
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.graph import StateGraph, MessagesState, START, END
+
+builder = StateGraph(MessagesState)
+builder.add_node("llm", call_llm)
+builder.add_node("tools", ToolNode(tools))
+
+builder.add_edge(START, "llm")
+builder.add_conditional_edges("llm", tools_condition)  # Routes to "tools" or END
+builder.add_edge("tools", "llm")
+
+graph = builder.compile()
+```
+:::
+
+:::js
+```typescript
+import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
+import { StateGraph, MessagesAnnotation } from "@langchain/langgraph";
+
+const builder = new StateGraph(MessagesAnnotation)
+  .addNode("llm", callLlm)
+  .addNode("tools", new ToolNode(tools))
+  .addEdge("__start__", "llm")
+  .addConditionalEdges("llm", toolsCondition)  // Routes to "tools" or "__end__"
+  .addEdge("tools", "llm");
+
+const graph = builder.compile();
+```
+:::
+
+### State injection
+
+Tools can access the current graph state through @[`ToolRuntime`]:
+
+:::python
+```python
+from langchain.tools import tool, ToolRuntime
+from langgraph.prebuilt import ToolNode
+
+@tool
+def get_message_count(runtime: ToolRuntime) -> str:
+    """Get the number of messages in the conversation."""
+    messages = runtime.state["messages"]
+    return f"There are {len(messages)} messages."
+
+tool_node = ToolNode([get_message_count])
+```
+:::
+
+For more details on accessing state, context, and long-term memory from tools, see [Access context](#access-context).
+
+## Prebuilt tools
+
+LangChain provides a large collection of prebuilt tools and toolkits for common tasks like web search, code interpretation, database access, and more. These ready-to-use tools can be directly integrated into your agents without writing custom code.
+
+See the [tools and toolkits](/oss/integrations/tools) integration page for a complete list of available tools organized by category.
+
+## Server-side tool use
+
+Some chat models feature built-in tools that are executed server-side by the model provider. These include capabilities like web search and code interpreters that don't require you to define or host the tool logic.
+
+Refer to the individual [chat model integration pages](/oss/integrations/providers) and the [tool calling documentation](/oss/langchain/models#server-side-tool-use) for details on enabling and using these built-in tools.

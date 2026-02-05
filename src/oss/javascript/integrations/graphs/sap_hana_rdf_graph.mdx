@@ -1,0 +1,293 @@
+---
+title: SAP HANA Cloud Knowledge Graph Engine
+---
+
+[SAP HANA Cloud Knowledge Graph](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/sap-hana-cloud-sap-hana-database-knowledge-graph-engine-guide) is a fully integrated knowledge graph solution within the SAP HANA Cloud database.
+
+## Setup & Installation
+
+Prerequisites:
+- SAP HANA Cloud instance with the triple store feature enabled
+- See: [Enable Triple Store](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/enable-triple-store/)
+
+To use SAP HANA Knowledge Graph Engine with LangChain, install the `@sap/hana-langchain` package along with its peer dependencies:
+
+```bash
+npm install @sap/hana-langchain @langchain/core@latest langchain@latest
+```
+
+```typescript
+import * as dotenv from 'dotenv';
+// Load environment variables if needed
+dotenv.config();
+
+import hanaClient from "@sap/hana-client";
+
+const connectionParams = {
+  host: process.env.HANA_DB_ADDRESS,
+  port: process.env.HANA_DB_PORT,
+  user: process.env.HANA_DB_USER,
+  password: process.env.HANA_DB_PASSWORD,
+};
+const client = hanaClient.createConnection(connectionParams);
+
+// connect to hanaDB
+await new Promise<void>((resolve, reject) => {
+  client.connect((err: Error) => {
+    // Use arrow function here
+    if (err) {
+      reject(err);
+    } else {
+      console.log("Connected to SAP HANA successfully.");
+      resolve();
+    }
+  });
+});
+```
+
+Then, import the `HanaRdfGraph` Class.
+
+```typescript
+import { HanaRdfGraph } from "@sap/hana-langchain";
+// const graph = new HanaRdfGraph({ connection: client, autoExtractOntology: true });
+```
+
+## Creating a `HanaRdfGraph` instance
+
+The constructor requires:
+
+* **`connection`**: an active `@sap/hana-client Connection` instance
+* **`graphUri`**: the named graph (or `"DEFAULT"`) where your RDF data lives
+* **One of**:
+  1. **`ontologyQuery`**: a SPARQL CONSTRUCT to extract schema triples
+  2. **`ontologyUri`**: a hosted ontology graph URI
+  3. **`ontologyLocalFile`** + **`ontologyLocalFileFormat`**: a local Turtle/RDF file
+  4. **`autoExtractOntology: true`** (not recommended for production—see note)
+
+`graphUri` vs. Ontology
+
+* **`graphUri`**:
+  The named graph in your SAP HANA Cloud instance that contains your instance data (sometimes 100k+ triples).
+  If no `graphUri`, `""` or `"DEFAULT"` is provided, the default graph is used.
+* **Ontology**: a lean schema (typically ~50-100 triples) describing classes, properties, domains, ranges, labels, comments, and subclass relationships. The ontology guides SPARQL generation and result interpretation.
+
+### Creating a graph instance with **DEFAULT** graph
+
+More info on the DEFAULT graph can be found at [DEFAULT Graph and Named Graphs](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/default-graph-and-named-graphs).
+
+```typescript
+const graphOptions = {
+    connection: client,
+    autoExtractOntology: true
+};
+const graph = new HanaRdfGraph(graphOptions);
+
+// need to initialize once an instance is created.
+await graph.initialize(graphOptions);
+
+// const graphOptions = {
+//     connection: client,
+//     graphUri: "DEFAULT",
+//     autoExtractOntology: true
+// };
+
+// const graph = new HanaRdfGraph(graphOptions);
+// await graph.initialize(graphOptions);
+
+// const graphOptions = {
+//     connection: client,
+//     graphUri: "",
+//     autoExtractOntology: true
+// };
+
+// const graph = new HanaRdfGraph(graphOptions);
+// await graph.initialize(graphOptions);
+```
+
+### Creating a graph instance with a `graph_uri`
+
+```typescript
+const graphOptions = {
+  connection: client,
+  graphUri: "http://example.org/movies",
+  autoExtractOntology: true,
+};
+const graph = new HanaRdfGraph(graphOptions);
+await graph.initialize(graphOptions);
+```
+
+### Creating a graph instance with a remote `ontology_uri`
+
+```typescript
+const graphOptions = {
+    connection: client,
+    ontologyUri: "<your_ontology_graph_uri>"
+};
+const graph = new HanaRdfGraph(graphOptions);
+await graph.initialize(graphOptions);
+```
+
+### Creating a graph instance with a custom `ontology_query`
+
+Use a custom `CONSTRUCT` query to selectively extract schema triples.
+
+```typescript
+const ontologyQuery = `
+  PPREFIX owl: <http://www.w3.org/2002/07/owl#>
+  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+  PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+  CONSTRUCT {?cls rdf:type owl:Class . ?cls rdfs:label ?clsLabel . ?rel rdf:type ?propertyType . ?rel rdfs:label ?relLabel . ?rel rdfs:domain ?domain . ?rel rdfs:range ?range .}
+  FROM <kgdocu_movies>
+  WHERE { # get properties
+    {SELECT DISTINCT ?domain ?rel ?relLabel ?propertyType ?range
+      WHERE {
+        ?subj ?rel ?obj .
+        ?subj a ?domain .
+        OPTIONAL{?obj a ?rangeClass .}
+        FILTER(?rel != rdf:type)
+        BIND(IF(isIRI(?obj) = true, owl:ObjectProperty, owl:DatatypeProperty) AS ?propertyType)
+        BIND(COALESCE(?rangeClass, DATATYPE(?obj)) AS ?range)
+        BIND(STR(?rel) AS ?uriStr)       # Convert URI to string
+        BIND(REPLACE(?uriStr, "^.*[/#]", "") AS ?relLabel)
+      }}
+      UNION { # get classes
+        SELECT DISTINCT ?cls ?clsLabel
+        WHERE {
+            ?instance a/rdfs:subClassOf* ?cls .
+            FILTER (isIRI(?cls)) .
+            BIND(STR(?cls) AS ?uriStr)       # Convert URI to string
+            BIND(REPLACE(?uriStr, "^.*[/#]", "") AS ?clsLabel)
+        }
+      }
+   }
+`;
+
+// can provide the graph_uri param as well if needed
+const graphOptions = {
+    connection: client,
+    ontologyQuery
+};
+const graph = new HanaRdfGraph(graphOptions);
+await graph.initialize(graphOptions);
+```
+
+### Load ontology from a local RDF file
+
+Supported RDF formats: `Turtle`, `N-Triples`, `Notation-3`, `Trig`, `N-Quads`.
+
+```typescript
+const graphOptions = {
+  connection: client,
+  ontologyLocalFile: "<your_ontology_file_path>", // e.g., "ontology.ttl"
+  ontologyLocalFileFormat: "<your_ontology_file_format>", // e.g., "Turtle", "N-Triples", "Notation-3", "Trig", "N-Quads"
+};
+const graph = new HanaRdfGraph(graphOptions);
+await graph.initialize(graphOptions);
+```
+
+### Auto extraction of ontology
+
+(`auto_extract_ontology=True`): Infer schema information directly from your instance data.
+
+```typescript
+const graphOptions = {
+  connection: client,
+  graphUri: "<your_graph_uri>",
+  autoExtractOntology: true,
+};
+const graph = new HanaRdfGraph(graphOptions);
+await graph.initialize(graphOptions);
+```
+
+> **Note**: Auto-extraction is **not** recommended for production—it omits important triples like `rdfs:label`, `rdfs:comment`, and `rdfs:subClassOf` in general.
+
+## Executing SPARQL Queries
+
+You can use the `query()` method to execute arbitrary SPARQL queries (`SELECT`, `ASK`, `CONSTRUCT`, etc.) on the data graph.
+
+The function has the following parameters
+
+* **query**: the SPARQL query string.
+* **content_type**: the response format  for the output (Default is CSV)
+
+Please use the following strings for the respective formats.
+
+* CSV: `"sparql-results+xml"`
+* JSON: `"sparql-results+json"`
+* XML: `"sparql-results+csv"`
+* TSV: `"sparql-results+tsv"`
+
+> **Note**: CONSTRUCT and ASK Queries return `turtle` and `boolean` formats respectively.
+
+Let us insert some data into the `Puppets` graph.
+
+```typescript
+await new Promise<void>((resolve, reject) => {
+  const sparqlQuery = `CALL SYS.SPARQL_EXECUTE(?, ?, ?, ?)`;
+  client.prepare(sparqlQuery, (err: Error, stmt) => {
+    if (err) {
+      reject(err);
+    } else {
+      const query = `
+      INSERT DATA {
+        GRAPH <Puppets> {
+            <P1> a <Puppet>; <name> "Ernie"; <show> "Sesame Street".
+            <P2> a <Puppet>; <name> "Bert"; <show> "Sesame Street" .
+            }
+        }`;
+      const params: HanaParameterList = {
+        REQUEST: query,
+        PARAMETER: "",
+      };
+      stmt?.exec(params, (err: Error) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(stmt.getParameterValue(2));
+        }
+      });
+    }
+  });
+});
+```
+
+Then, we create a graph instance for the `Puppets` graph.
+
+```typescript
+const graphOptions = {
+  connection: client,
+  graphUri: "Puppets",
+  autoExtractOntology: true,
+};
+
+// create a Graph instance from a source URI
+const graph = new HanaRdfGraph(graphOptions);
+
+// need to initialize once an instance is created.
+await graph.initialize(graphOptions);
+```
+
+The given query lists all tuples in the `Puppets` graph.
+
+```typescript
+const results = await graph.query(`
+SELECT ?s ?p ?o
+WHERE {
+    GRAPH <Puppets> {
+        ?s ?p ?o .
+    }
+}
+ORDER BY ?s`);
+console.log(results);
+```
+
+```text
+s,p,o
+P1,name,Ernie
+P1,show,Sesame Street
+P1,http://www.w3.org/1999/02/22-rdf-syntax-ns#type,Puppet
+P2,name,Bert
+P2,show,Sesame Street
+P2,http://www.w3.org/1999/02/22-rdf-syntax-ns#type,Puppet
+```
