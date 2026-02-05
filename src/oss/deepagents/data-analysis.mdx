@@ -1,33 +1,35 @@
 ---
 title: Build a data analysis agent
 sidebarTitle: Data Analysis
+description: Build an agent that analyzes data files, generates visualizations, and shares results
 ---
 
 ## Overview
 
-In this guide we will build a data analysis agent use [Deep Agents](/oss/deepagents). Data analysis will generally require planning, code execution, and working with contextual artifacts such as scripts, reports, and plots. Deep Agents are well suited to these needs.
+This guide demonstrates how to build a data analysis agent using [Deep Agents](/oss/deepagents). Data analysis tasks typically require planning, code execution, and working with artifacts such as scripts, reports, and plots—capabilities that Deep Agents are designed to handle.
 
-Our application will:
+The agent we'll build will:
 
-1. Accept a file to analyze (e.g., a CSV)
-2. Perform exploratory data analysis, generating a summary and plot.
-3. Send the result to a Slack channel.
+1. Accept a CSV file for analysis
+2. Perform exploratory data analysis and generate visualizations
+3. Share results to a Slack channel
 
-The application can be easily modified, e.g., to remove the Slack component, or broadcast results another way.
+<Tip>
+The Slack integration is optional. The agent can be modified to save artifacts locally or share results through other channels.
+</Tip>
 
-### Concepts
+### Key concepts
 
-We will cover the following concepts:
+This tutorial covers:
 
-- [Backends](/oss/deepagents/backends) and sandboxes
-
-- Working with custom [tools](/oss/langchain/tools)
+- [Backends](/oss/deepagents/backends) for sandboxed code execution
+- Custom [tools](/oss/langchain/tools) for external integrations
 
 ## Setup
 
 ### Installation
 
-This tutorial requires these langchain dependencies:
+Install the core dependencies:
 
 :::python
 ```bash pip
@@ -35,19 +37,20 @@ pip install deepagents
 ```
 :::
 
-We will also (optionally):
-- Use the [Slack Python SDK](https://docs.slack.dev/tools/python-slack-sdk/) for broadcasting the result. You can read instructions on generating a Slack token [here](https://docs.slack.dev/authentication/tokens/).
-- Use [Daytona](https://www.daytona.io/) for sandboxing. You can create an account and generate an API key [here](https://www.daytona.io/docs/en/api-keys/).
+### Optional dependencies
+
+For this tutorial, we'll use:
+- [Daytona](https://www.daytona.io/) for sandboxed code execution ([API key setup](https://www.daytona.io/docs/en/api-keys/))
+- [Slack Python SDK](https://docs.slack.dev/tools/python-slack-sdk/) for sharing results ([token setup](https://docs.slack.dev/authentication/tokens/))
 
 :::python
 ```bash pip
 pip install daytona slack-sdk
 ```
 :::
+
 <Note>
-If these services are unavailable, below we also show how to:
-- Use your local (un-sandboxed) shell and filesystem (with important [security considerations](#local-shell))
-- Offload artifacts directly from the backend.
+Both services are optional. You can use the local shell backend (with important [security considerations](/oss/deepagents/backends#local-shell)) or download artifacts directly from the backend.
 </Note>
 
 ### LangSmith
@@ -75,7 +78,7 @@ os.environ["LANGSMITH_API_KEY"] = getpass.getpass()
 
 ## Set up the backend
 
-Deep Agents [backends](/oss/deepagents/backends) allow agents to work with sandboxed filesystems.
+Deep Agents use [backends](/oss/deepagents/backends) to execute code in sandboxed environments.
 
 <Tabs>
 <Tab title="Daytona Sandbox">
@@ -195,27 +198,23 @@ class DaytonaBackend(BaseSandbox):
         return [FileUploadResponse(path=path, error=None) for path, _ in files]
 ```
 
-Let's create a sandbox and initialize the Deep Agents backend:
+Create a sandbox instance and initialize the backend:
 
 ```python
 sandbox = daytona_client.create(timeout=60)
 backend = DaytonaBackend(sandbox)
+
+# Verify the sandbox is ready
 result = sandbox.process.exec("echo ready", timeout=5)
-result
-```
-```
-ExecuteResponse(exit_code=0, result='ready', artifacts=<daytona.common.process.ExecutionArtifacts object at 0x121a726c0>)
+print(result)
+# ExecuteResponse(exit_code=0, result='ready', ...)
 ```
 </Tab>
 <Tab title="Local shell">
 <Warning>
-This backend grants agents BOTH direct filesystem access AND unrestricted
-shell execution on your local machine. For demonstration purposes only. Use
-with extreme caution and only in appropriate environments.
-
-Review the [API reference](https://reference.langchain.com/python/deepagents/backends/filesystem/)
-for more on security considerations.
+This backend provides unrestricted filesystem and shell access. Use only in controlled environments for development and testing. See the [security considerations](/oss/deepagents/backends#security-considerations) for more details.
 </Warning>
+
 ```python
 from deepagents.backends import LocalShellBackend
 
@@ -224,11 +223,14 @@ backend = LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"})
 </Tab>
 </Tabs>
 
-We can now upload some data to our backend. Let's create some artificial sales data:
+### Upload sample data
+
+Create and upload sample sales data to the backend:
 ```python
 import csv
 import io
 
+# Create sample sales data
 data = [
     ["Date", "Product", "Units Sold", "Revenue"],
     ["2025-08-01", "Widget A", 10, 250],
@@ -238,19 +240,16 @@ data = [
     ["2025-08-05", "Widget B", 8, 200],
 ]
 
+# Convert to CSV bytes
 text_buf = io.StringIO()
 writer = csv.writer(text_buf)
 writer.writerows(data)
-
 csv_bytes = text_buf.getvalue().encode("utf-8")
 text_buf.close()
-```
-We can upload to the backend with:
-```python
+
+# Upload to backend
 backend.upload_files([("./data/sales_data.csv", csv_bytes)])
 ```
-
-Our backend is ready to go.
 
 ## Implement custom tools
 
@@ -689,14 +688,30 @@ A beautiful 6-panel dashboard featuring:
 
 The analysis reveals that Widget A is the top performer, while Widget C shows room for improvement. All results have been sent to your Slack workspace!
 ```
-You can see the full LangSmith trace [here](https://smith.langchain.com/public/ac2443a8-16ad-4e00-8f02-afde6a737534/r).
 
-Example output:
-![image_of_slack_message](/images/data_analysis_slack_response.png)
+View the full [LangSmith trace](https://smith.langchain.com/public/ac2443a8-16ad-4e00-8f02-afde6a737534/r) for this execution.
+
+## Results
+
+The agent successfully analyzes the data and shares a comprehensive report with visualizations to Slack:
+
+<Frame caption="Agent-generated analysis report and visualization dashboard delivered to Slack">
+  ![Sales analysis results in Slack](/images/data_analysis_slack_response.png)
+</Frame>
 
 <Tip>
-You can download any artifacts added to the filesystem directly using the backend:
+You can download artifacts directly from the backend without using external tools:
 ```python
 backend.download_files(list_of_filepaths)
 ```
 </Tip>
+
+## Next steps
+
+Now that you've built a data analysis agent, explore these resources to extend its capabilities:
+
+- [Backends](/oss/deepagents/backends): Learn about different backend options for sandboxed code execution, including security considerations and advanced configurations
+- [Customization](/oss/deepagents/customization): Discover how to customize your agent with different models, tools, prompts, and planning strategies
+- [CLI](/oss/deepagents/cli): Try the Deep Agents CLI for an interactive command-line interface to assist with data analysis and other agentic tasks locally
+- [Skills](/oss/deepagents/skills): Equip your agent with reusable skills for common workflows
+- [Human-in-the-loop](/oss/deepagents/human-in-the-loop): Add interactive approval steps for critical operations in your data analysis workflow
