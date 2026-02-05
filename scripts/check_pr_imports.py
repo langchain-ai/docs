@@ -235,17 +235,30 @@ def check_import_line(line: str, mapping_dict: dict[str, str]) -> list[dict[str,
                 # Check if this module should be imported from langchain instead
                 if core_module in mapping_dict:
                     langchain_module = mapping_dict[core_module]
-                    suggested_line = f"from {langchain_module} import {imports}"
-                    issues.append(
-                        {
-                            "original": line,
-                            "suggested": suggested_line,
-                            "reason": (
-                                f"Import from {langchain_module} instead "
-                                f"of {core_module}"
-                            ),
-                        }
-                    )
+
+                    # Verify each imported symbol is actually re-exported
+                    import_list = [imp.strip() for imp in imports.split(",")]
+                    re_exported = []
+                    for imp in import_list:
+                        clean_imp = imp.split(" as ")[0].strip()
+                        if f"{core_module}.{clean_imp}" in mapping_dict:
+                            re_exported.append(imp.strip())
+
+                    if re_exported:
+                        re_exported_str = ", ".join(re_exported)
+                        suggested_line = (
+                            f"from {langchain_module} import {re_exported_str}"
+                        )
+                        issues.append(
+                            {
+                                "original": line,
+                                "suggested": suggested_line,
+                                "reason": (
+                                    f"Import from {langchain_module} instead "
+                                    f"of {core_module}"
+                                ),
+                            }
+                        )
                 else:
                     # Check individual imports - handles direct langchain_core imports
                     import_list = [imp.strip() for imp in imports.split(",")]

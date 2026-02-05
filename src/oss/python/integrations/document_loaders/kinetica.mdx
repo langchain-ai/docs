@@ -1,74 +1,67 @@
 ---
-title: Kinetica
+title: "Kinetica document loader integration"
+description: "Integrate with the Kinetica document loader using LangChain Python."
 ---
+
+[Kinetica](https://www.kinetica.com/) is a database with integrated support for vector similarity search.
 
 This notebooks goes over how to load documents from Kinetica
 
 ```python
-pip install gpudb==7.2.0.9
+pip install -qU langchain-kinetica
 ```
 
+You must set the database connection in the following environment variables. If you are using a virtual environment you can set them in the `.env` file of the project:
+
+* `KINETICA_URL`: Database connection URL (e.g. `http://localhost:9191`)
+* `KINETICA_USER`: Database user
+* `KINETICA_PASSWD`: Secure password.
+
+
 ```python
-from langchain_community.document_loaders.kinetica_loader import KineticaLoader
+from gpudb import GPUdb
+
+kdbc = GPUdb.get_connection()
 ```
 
-```python
-## Loading environment variables
-import os
-
-from dotenv import load_dotenv
-from langchain_community.vectorstores import (
-    KineticaSettings,
-)
-
-load_dotenv()
+```text
+2026-02-02 20:54:50.972 INFO     [GPUdb] Connected to Kinetica! (host=http://localhost:19191 api=7.2.3.3 server=7.2.3.5)
 ```
 
-```python
-# Kinetica needs the connection to the database.
-# This is how to set it up.
-HOST = os.getenv("KINETICA_HOST", "http://127.0.0.1:9191")
-USERNAME = os.getenv("KINETICA_USERNAME", "")
-PASSWORD = os.getenv("KINETICA_PASSWORD", "")
-
-
-def create_config() -> KineticaSettings:
-    return KineticaSettings(host=HOST, username=USERNAME, password=PASSWORD)
-```
+The following `QUERY` is an example which will not run; this
+needs to be substituted with a valid `QUERY` that will return
+data and the `SCHEMA.TABLE` combination must exist in Kinetica.
 
 ```python
-from langchain_community.document_loaders.kinetica_loader import KineticaLoader
+from langchain_kinetica import KineticaLoader
 
-# The following `QUERY` is an example which will not run; this
-# needs to be substituted with a valid `QUERY` that will return
-# data and the `SCHEMA.TABLE` combination must exist in Kinetica.
+QUERY = """select
+    oid,
+    object_name as text,
+    creation_time
+from ki_catalog.ki_objects
+where schema_name = 'information_schema'
+limit 10"""
 
-QUERY = "select text, survey_id from SCHEMA.TABLE limit 10"
 kinetica_loader = KineticaLoader(
-    QUERY,
-    HOST,
-    USERNAME,
-    PASSWORD,
+    kdbc=kdbc,
+    query=QUERY,
+    metadata_columns=["creation_time"],
 )
+
 kinetica_documents = kinetica_loader.load()
-print(kinetica_documents)
+display(kinetica_documents)
 ```
 
-```python
-from langchain_community.document_loaders.kinetica_loader import KineticaLoader
-
-# The following `QUERY` is an example which will not run; this
-# needs to be substituted with a valid `QUERY` that will return
-# data and the `SCHEMA.TABLE` combination must exist in Kinetica.
-
-QUERY = "select text, survey_id as source from SCHEMA.TABLE limit 10"
-kl = KineticaLoader(
-    query=QUERY,
-    host=HOST,
-    username=USERNAME,
-    password=PASSWORD,
-    metadata_columns=["source"],
-)
-kinetica_documents = kl.load()
-print(kinetica_documents)
+```text
+[Document(metadata={'creation_time': 1769036399161}, page_content='oid: -263809000193198488\ntext: KEY_COLUMN_USAGE\ncreation_time: 1769036399161'),
+    Document(metadata={'creation_time': 1769036399260}, page_content='oid: -6302080570668733378\ntext: KI_PERIODIC_OBJECTS\ncreation_time: 1769036399260'),
+    Document(metadata={'creation_time': 1769036399402}, page_content='oid: 8620184385195410035\ntext: OBJECT_PRIVILEGES\ncreation_time: 1769036399402'),
+    Document(metadata={'creation_time': 1769036399219}, page_content='oid: -582966432601743881\ntext: KI_HA_CONSUMERS\ncreation_time: 1769036399219'),
+    Document(metadata={'creation_time': 1769036398744}, page_content='oid: -745341673129057292\ntext: COLUMNS\ncreation_time: 1769036398744'),
+    Document(metadata={'creation_time': 1769036399143}, page_content='oid: 7168154014071633303\ntext: INFORMATION_SCHEMA_CATALOG_NAME\ncreation_time: 1769036399143'),
+    Document(metadata={'creation_time': 1769036399352}, page_content='oid: 2994153253665268119\ntext: KI_QUERY_SPAN_METRICS_BY_SQL_STEP\ncreation_time: 1769036399352'),
+    Document(metadata={'creation_time': 1769036399098}, page_content='oid: 2689064758811356754\ntext: INDEXES\ncreation_time: 1769036399098'),
+    Document(metadata={'creation_time': 1769036398543}, page_content='oid: -7679099635043663749\ntext: APPLICABLE_ROLES\ncreation_time: 1769036398543'),
+    Document(metadata={'creation_time': 1769036399434}, page_content='oid: 909900969452802786\ntext: ROLE_TABLE_GRANTS\ncreation_time: 1769036399434')]
 ```
