@@ -1,0 +1,258 @@
+---
+title: SAP HANA Cloud Knowledge Graph Engine
+---
+[SAP HANA Cloud Knowledge Graph](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/sap-hana-cloud-sap-hana-database-knowledge-graph-engine-guide) is a fully integrated knowledge graph solution within the `SAP HANA Cloud` database.
+
+## Setup & Installation
+
+You must have an SAP HANA Cloud instance with the **triple store** feature enabled.
+For detailed instructions, refer to: [Enable Triple Store](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/enable-triple-store/)
+
+To use SAP HANA Knowledge Graph Engine with LangChain, install the `langchain-hana` package:
+
+```python
+pip install langchain_hana
+```
+
+First, create a connection to your SAP HANA Cloud instance.
+
+```python
+import os
+
+from dotenv import load_dotenv
+from hdbcli import dbapi
+
+# Load environment variables if needed
+load_dotenv()
+
+# Establish connection to SAP HANA Cloud
+connection = dbapi.connect(
+    address=os.environ.get("HANA_DB_ADDRESS"),
+    port=os.environ.get("HANA_DB_PORT"),
+    user=os.environ.get("HANA_DB_USER"),
+    password=os.environ.get("HANA_DB_PASSWORD")
+)
+```
+
+Then, import the `HanaRdfGraph` Class
+
+```python
+from langchain_hana import HanaRdfGraph
+```
+
+## Creating a `HanaRdfGraph` instance
+
+The constructor requires:
+
+* **`connection`**: an active `hdbcli.dbapi.connect(...)` instance
+* **`graph_uri`**: the named graph (or `"DEFAULT"`) where your RDF data lives
+* **One of**:
+  1. **`ontology_query`**: a SPARQL CONSTRUCT to extract schema triples
+  2. **`ontology_uri`**: a hosted ontology graph URI
+  3. **`ontology_local_file`** + **`ontology_local_file_format`**: a local Turtle/RDF file
+  4. **`auto_extract_ontology=True`** (not recommended for production—see note)
+
+`graph_uri` vs. Ontology
+
+* **`graph_uri`**:
+  The named graph in your SAP HANA Cloud instance that contains your instance data (sometimes 100k+ triples).
+  If `None`, `""` or `"DEFAULT"` is provided, the default graph is used.
+* **Ontology**: a lean schema (typically ~50-100 triples) describing classes, properties, domains, ranges, labels, comments, and subclass relationships. The ontology guides SPARQL generation and result interpretation.
+
+### Creating a graph instance with **DEFAULT** graph
+
+More info on the DEFAULT graph can be found at [DEFAULT Graph and Named Graphs](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/default-graph-and-named-graphs).
+
+```python
+
+graph = HanaRdfGraph(
+    connection=connection,
+    auto_extract_ontology=True,
+)
+
+# graph = HanaRdfGraph(
+#     connection=connection,
+#     graph_uri="DEFAULT",
+#     auto_extract_ontology=True,
+# )
+
+# graph = HanaRdfGraph(
+#     connection=connection,
+#     graph_uri="",
+#     auto_extract_ontology=True,
+# )
+```
+
+### Creating a graph instance with a `graph_uri`
+
+```python
+graph = HanaRdfGraph(
+    connection=connection,
+    graph_uri="http://example.org/movies",
+    auto_extract_ontology=True,
+)
+```
+
+### Creating a graph instance with a remote `ontology_uri`
+
+Load the schema directly from a hosted graph URI.
+
+```python
+graph = HanaRdfGraph(
+    connection=connection,
+    ontology_uri="<your_ontology_graph_uri>",
+)
+```
+
+### Creating a graph instance with a custom `ontology_query`
+
+Use a custom `CONSTRUCT` query to selectively extract schema triples.
+
+```python
+ontology_query = """
+    PREFIX owl: <http://www.w3.org/2002/07/owl#>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    CONSTRUCT {?cls rdf:type owl:Class . ?cls rdfs:label ?clsLabel . ?rel rdf:type ?propertyType . ?rel rdfs:label ?relLabel . ?rel rdfs:domain ?domain . ?rel rdfs:range ?range .}
+    FROM <kgdocu_movies>
+    WHERE { # get properties
+        {SELECT DISTINCT ?domain ?rel ?relLabel ?propertyType ?range
+        WHERE {
+            ?subj ?rel ?obj .
+            ?subj a ?domain .
+            OPTIONAL{?obj a ?rangeClass .}
+            FILTER(?rel != rdf:type)
+            BIND(IF(isIRI(?obj) = true, owl:ObjectProperty, owl:DatatypeProperty) AS ?propertyType)
+            BIND(COALESCE(?rangeClass, DATATYPE(?obj)) AS ?range)
+            BIND(STR(?rel) AS ?uriStr)       # Convert URI to string
+            BIND(REPLACE(?uriStr, "^.*[/#]", "") AS ?relLabel)
+        }}
+        UNION { # get classes
+            SELECT DISTINCT ?cls ?clsLabel
+            WHERE {
+                ?instance a/rdfs:subClassOf* ?cls .
+                FILTER (isIRI(?cls)) .
+                BIND(STR(?cls) AS ?uriStr)       # Convert URI to string
+                BIND(REPLACE(?uriStr, "^.*[/#]", "") AS ?clsLabel)
+            }
+        }
+    }
+"""
+
+# can provide the graph_uri param as well if needed
+graph = HanaRdfGraph(
+    connection=connection,
+    ontology_query=ontology_query,
+)
+```
+
+### Creating a graph instance with a Local rdf file
+
+(`ontology_local_file` + `ontology_local_file_format`): Load the schema from a local RDF ontology file.
+
+Supported RDF formats are `Turtle`, `RDF/XML`, `JSON-LD`, `N-Triples`, `Notation-3`, `Trig`, `Trix`, `N-Quads`.
+
+```python
+graph = HanaRdfGraph(
+    connection=connection,
+    ontology_local_file="<your_ontology_file_path>", # e.g., "ontology.ttl"
+    ontology_local_file_format="<your_ontology_file_format>",  # e.g., "Turtle", "RDF/XML", "JSON-LD", "N-Triples", "Notation-3", "Trig", "Trix", "N-Quads"
+)
+```
+
+### Auto extraction of ontology
+
+(`auto_extract_ontology=True`): Infer schema information directly from your instance data.
+
+```python
+graph = HanaRdfGraph(
+    connection=connection,
+    graph_uri="<your_graph_uri>",
+    auto_extract_ontology=True,
+)
+```
+
+> **Note**: Auto-extraction is **not** recommended for production—it omits important triples like `rdfs:label`, `rdfs:comment`, and `rdfs:subClassOf` in general.
+
+## Executing SPARQL queries
+
+You can use the `query()` method to execute arbitrary SPARQL queries (`SELECT`, `ASK`, `CONSTRUCT`, etc.) on the data graph.
+
+The function has the following parameters
+
+* **query**: the SPARQL query string.
+* **content_type**: the response format  for the output (Default is CSV)
+
+Please use the following strings for the respective formats.
+
+* CSV: `"sparql-results+xml"`
+* JSON: `"sparql-results+json"`
+* XML: `"sparql-results+csv"`
+* TSV: `"sparql-results+tsv"`
+
+> **Note**: CONSTRUCT and ASK Queries return `turtle` and `boolean` formats respectively.
+
+Let us insert some data into the `Puppets` graph.
+
+```python
+cursor = connection.cursor()
+try:
+    result = cursor.callproc(
+        "SYS.SPARQL_EXECUTE", (
+        """
+        INSERT DATA {
+        GRAPH <Puppets> {
+            <P1> a <Puppet>; <name> "Ernie"; <show> "Sesame Street".
+            <P2> a <Puppet>; <name> "Bert"; <show> "Sesame Street" .
+            }
+        }
+        """, "", "?", "?"
+        )
+    )
+    response = result[2]
+except dbapi.Error as db_error:
+    raise RuntimeError(
+        f'The database query failed: '
+        f'{db_error.errortext.split("; Server Connection")[0]}'
+    )
+finally:
+    cursor.close()
+```
+
+Then, we create a graph instance for the `Puppets` graph.
+
+```python
+puppets_graph = HanaRdfGraph(
+    connection=connection,
+    graph_uri="Puppets",
+    auto_extract_ontology=True,
+)
+```
+
+The given query lists all tuples in the `Puppets` graph.
+
+```python
+query = """
+SELECT ?s ?p ?o
+WHERE {
+    GRAPH <Puppets> {
+        ?s ?p ?o .
+    }
+}
+ORDER BY ?s
+"""
+
+result = puppets_graph.query(query)
+print(result)
+```
+
+```output
+s,p,o
+P1,name,Ernie
+P1,show,Sesame Street
+P1,http://www.w3.org/1999/02/22-rdf-syntax-ns#type,Puppet
+P2,name,Bert
+P2,show,Sesame Street
+P2,http://www.w3.org/1999/02/22-rdf-syntax-ns#type,Puppet
+```

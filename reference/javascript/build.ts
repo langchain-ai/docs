@@ -358,10 +358,13 @@ function reducePackages<T>(
 /**
  * Fetches the latest commit SHA for a given remote GitHub repository and branch.
  *
+ * Includes retry logic with exponential backoff to handle transient network errors.
+ *
  * @param {Remote} remote - The remote repository object containing:
  *   - repo: The GitHub repository in the format "owner/repo".
  *   - branch (optional): The branch to fetch the latest commit SHA from. Defaults to "main" if not specified.
  * @returns {Promise<string>} The SHA of the latest commit on the specified branch.
+ * @throws {Error} If all retry attempts fail.
  */
 async function getLatestRemoteSha(remote: Remote): Promise<string> {
   const branch = remote.branch ?? "main";
@@ -374,9 +377,28 @@ async function getLatestRemoteSha(remote: Remote): Promise<string> {
         "X-GitHub-Api-Version": "2022-11-28",
       }
     : {};
-  const res = await fetch(apiUrl, { headers });
-  const data = await res.json();
-  return data.sha;
+
+  const maxRetries = 3;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch(apiUrl, { headers });
+      const data = await res.json();
+      return data.sha;
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+        console.error(
+          `GitHub API fetch failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -406,12 +428,28 @@ async function getLocalRemoteSha(remote: Remote) {
  *
  * - Compares the latest remote commit SHA with a locally cached SHA (stored in `.sha`).
  * - If up to date, no action is taken. Otherwise, downloads and extracts the branch tarball.
+ * - If GitHub is unreachable, falls back to using the cached local copy if available.
  *
  * @param {Remote} remote - The remote repository reference.
  * @returns {Promise<void>} Resolves when the local copy is ensured to be up to date.
  */
 async function ensureLatestRemote(remote: Remote) {
-  const latestSha = await getLatestRemoteSha(remote);
+  let latestSha: string;
+  try {
+    latestSha = await getLatestRemoteSha(remote);
+  } catch (error) {
+    const localSha = await getLocalRemoteSha(remote);
+    if (fs.existsSync(remotePath(remote)) && localSha) {
+      console.error(
+        `Warning: Could not fetch latest SHA for ${remote.repo}, using cached version (${localSha.slice(0, 7)})`
+      );
+      return;
+    }
+    throw new Error(
+      `Failed to fetch ${remote.repo} from GitHub and no local cache exists: ${error}`
+    );
+  }
+
   const localSha = await getLocalRemoteSha(remote);
   if (fs.existsSync(remotePath(remote)) && latestSha === localSha) return;
   pullRemote(remote, latestSha);

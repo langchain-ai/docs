@@ -3,6 +3,10 @@ title: Configure LangSmith for scale
 sidebarTitle: Configure for scale
 ---
 
+<Warning>
+The scaling guidance and example configurations on this page apply to **LangSmith version v0.13.0 or higher**.
+</Warning>
+
 A self-hosted LangSmith instance can handle a large number of traces and users. The default configuration for the self-hosted deployment can handle substantial load, and you can configure your deployment to be able to achieve higher scale. This page describes scaling considerations and provides some examples to help configure your self-hosted instance.
 
 For example configurations, refer to [Example LangSmith configurations for scale](#example-langsmith-configurations-for-scale).
@@ -17,9 +21,9 @@ The table below provides an overview comparing different LangSmith configuration
 | <Tooltip tip="Number of traces being ingested via SDKs or API endpoints">Traces submitted per second</Tooltip> | 10 | 1000 | 10 | 100 | 1000 |
 | **Frontend replicas**<br />(500m CPU, 1Gi per replica) | 1 (default) | 4 | 2 | 2 | 4 |
 | **Platform backend replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 20 | 3 (default) | 3 (default) | 20 |
-| **Queue replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 160 | 6 | 10 | 160 |
+| **Ingest queue replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 24 | 3 (default) | 6 | 24 |
 | **Backend replicas**<br />(1 CPU, 2Gi per replica) | 2 (default) | 5 | 40 | 16 | 50 |
-| **Redis resources** | 8 Gi (default) | 200 Gi external | 8 Gi (default) | 13Gi external | 200 Gi external |
+| **Redis resources** | 8 Gi (default) | 26 Gi external | 8 Gi (default) | 13Gi external | 26 Gi external |
 | **ClickHouse resources** | 4 CPU<br />16 Gi (default) | 10 CPU<br />32Gi memory | 8 CPU<br />16 Gi per replica | 16 CPU<br />24Gi memory | 14 CPU<br />24 Gi per replica |
 | **ClickHouse setup** | Single instance | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> |
 | <Tooltip tip="We recommend using an external instance and enabling autoexpansion for the disk to handle growing data requirements.">Postgres resources</Tooltip> | 2 CPU<br />8 GB memory<br />10GB storage (external) | 2 CPU<br />8 GB memory<br />10GB storage (external) | 2 CPU<br />8 GB memory<br />10GB storage (external) | 2 CPU<br />8 GB memory<br />10GB storage (external) | 2 CPU<br />8 GB memory<br />10GB storage (external) |
@@ -40,14 +44,14 @@ Services that play a large role in trace ingestion:
 
 - Platform backend service: Receives initial request to ingest traces and places traces on a Redis queue
 - Redis cache: Used to queue traces that need to be persisted
-- Queue service: Persists traces for querying
+- Ingest queue service: Persists traces for querying
 - ClickHouse: Persistent storage used for traces
 
 When scaling up the write path (trace ingestion), it is helpful to monitor the four services/resources listed above. Here are some typical changes that can help increase performance of trace ingestion:
 
 - Give ClickHouse more resources (CPU and memory) if it is approaching resource limits.
 - Increase the number of platform-backend pods if ingest requests are taking long to respond.
-- Increase queue service pod replicas if traces are not being processed from Redis fast enough.
+- Increase ingest queue service pod replicas if traces are not being processed from Redis fast enough.
 - Use a larger Redis cache if you notice that the current Redis instance is reaching resource limits. This could also be a reason why ingest requests take a long time.
 
 ## Trace querying (read path)
@@ -153,48 +157,45 @@ config:
 
 frontend:
   deployment:
-    replicas: 4 # OR enable autoscaling to this level (example below)
+    replicas: 4 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 4
-#   minReplicas: 2
+#   hpa:
+#     enabled: true
+#     minReplicas: 2
+#     maxReplicas: 4
 
 platformBackend:
   deployment:
-    replicas: 20 # OR enable autoscaling to this level (example below)
+    replicas: 20 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 20
-#   minReplicas: 8
-
-## KEDA autoscaling recommended for queue services
-queue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 40
-      maxReplicaCount: 160
+#   hpa:
+#     enabled: true
+#     minReplicas: 8
+#     maxReplicas: 20
 
 ingestQueue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 5
-      maxReplicaCount: 20
+  deployment:
+    replicas: 24 # OR enable KEDA autoscaling below
+# autoscaling:
+#   keda:
+#     enabled: true
+#     minReplicaCount: 8
+#     maxReplicaCount: 24
 
 backend:
   deployment:
-    replicas: 5 # OR enable autoscaling to this level (example below)
+    replicas: 5 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 5
-#   minReplicas: 3
+#   hpa:
+#     enabled: true
+#     minReplicas: 3
+#     maxReplicas: 5
 
-## Ensure your Redis cache is at least 200 GB
+## Ensure your Redis cache is at least 26 GB for high write scale
 redis:
   external:
     enabled: true
-    existingSecretName: langsmith-redis-secret # Set the connection url for your external Redis instance (200+ GB)
+    existingSecretName: langsmith-redis-secret # Set the connection url for your external Redis instance (26+ GB)
 
 clickhouse:
   statefulSet:
@@ -233,28 +234,23 @@ frontend:
   deployment:
     replicas: 2
 
-## KEDA autoscaling recommended for queue services
-queue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 4
-      maxReplicaCount: 6
-
 ingestQueue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 1
-      maxReplicaCount: 5
+  deployment:
+    replicas: 3 # OR enable KEDA autoscaling below
+# autoscaling:
+#   keda:
+#     enabled: true
+#     minReplicaCount: 2
+#     maxReplicaCount: 3
 
 backend:
   deployment:
-    replicas: 40 # OR enable autoscaling to this level (example below)
+    replicas: 40 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 40
-#   minReplicas: 16
+#   hpa:
+#     enabled: true
+#     minReplicas: 16
+#     maxReplicas: 40
 
 # We strongly recommend setting up a replicated clickhouse cluster for this load.
 # Update these values as needed to connect to your replicated clickhouse cluster.
@@ -289,28 +285,23 @@ frontend:
   deployment:
     replicas: 2
 
-## KEDA autoscaling recommended for queue services
-queue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 5
-      maxReplicaCount: 10
-
 ingestQueue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 1
-      maxReplicaCount: 5
+  deployment:
+    replicas: 6 # OR enable KEDA autoscaling below
+# autoscaling:
+#   keda:
+#     enabled: true
+#     minReplicaCount: 3
+#     maxReplicaCount: 6
 
 backend:
   deployment:
-    replicas: 16 # OR enable autoscaling to this level (example below)
+    replicas: 16 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 16
-#   minReplicas: 8
+#   hpa:
+#     enabled: true
+#     minReplicas: 8
+#     maxReplicas: 16
 
 redis:
   statefulSet:
@@ -371,48 +362,45 @@ config:
 
 frontend:
   deployment:
-    replicas: 4 # OR enable autoscaling to this level (example below)
+    replicas: 4 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 4
-#   minReplicas: 2
+#   hpa:
+#     enabled: true
+#     minReplicas: 2
+#     maxReplicas: 4
 
 platformBackend:
   deployment:
-    replicas: 20 # OR enable autoscaling to this level (example below)
+    replicas: 20 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 20
-#   minReplicas: 8
-
-## KEDA autoscaling recommended for queue services
-queue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 40
-      maxReplicaCount: 160
+#   hpa:
+#     enabled: true
+#     minReplicas: 8
+#     maxReplicas: 20
 
 ingestQueue:
-  autoscaling:
-    keda:
-      enabled: true
-      minReplicaCount: 5
-      maxReplicaCount: 20
+  deployment:
+    replicas: 24 # OR enable KEDA autoscaling below
+# autoscaling:
+#   keda:
+#     enabled: true
+#     minReplicaCount: 8
+#     maxReplicaCount: 24
 
 backend:
   deployment:
-    replicas: 50 # OR enable autoscaling to this level (example below)
+    replicas: 50 # OR enable autoscaling below
 # autoscaling:
-#   enabled: true
-#   maxReplicas: 50
-#   minReplicas: 20
+#   hpa:
+#     enabled: true
+#     minReplicas: 20
+#     maxReplicas: 50
 
-## Ensure your Redis cache is at least 200 GB
+## Ensure your Redis cache is at least 26 GB for high write scale
 redis:
   external:
     enabled: true
-    existingSecretName: langsmith-redis-secret # Set the connection url for your external Redis instance (200+ GB)
+    existingSecretName: langsmith-redis-secret # Set the connection url for your external Redis instance (26+ GB)
 
 # We strongly recommend setting up a replicated clickhouse cluster for this load.
 # Update these values as needed to connect to your replicated clickhouse cluster.

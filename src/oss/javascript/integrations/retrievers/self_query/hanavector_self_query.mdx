@@ -1,0 +1,148 @@
+---
+title: Self Querying with SAP HANA Cloud Vector Engine
+---
+
+For setup details of the SAP HANA vector store, see the guide at [Vector Store: SAP HANA](/oss/integrations/vectorstores/sap_hanavector).
+
+We use the same setup here:
+
+```typescript
+import * as dotenv from 'dotenv';
+dotenv.config();
+
+import hanaClient from "@sap/hana-client";
+
+const connectionParams = {
+  host: process.env.HANA_DB_ADDRESS,
+  port: process.env.HANA_DB_PORT,
+  user: process.env.HANA_DB_USER,
+  password: process.env.HANA_DB_PASSWORD,
+};
+const client = hanaClient.createConnection(connectionParams);
+
+// connect to hanaDB
+await new Promise<void>((resolve, reject) => {
+  client.connect((err: Error) => {
+    // Use arrow function here
+    if (err) {
+      reject(err);
+    } else {
+      console.log("Connected to SAP HANA successfully.");
+      resolve();
+    }
+  });
+});
+```
+
+To be able to self query with good performance we create additional metadata fields
+for our vectorstore table in HANA:
+
+```typescript
+await new Promise<void>((resolve, reject) => {
+  client.exec(
+    `DROP TABLE LANGCHAIN_DEMO_SELF_QUERY`,
+    (dropErr: Error) => {
+      // Ignore drop errors
+      client.exec(
+        `CREATE TABLE "LANGCHAIN_DEMO_SELF_QUERY"  (
+          "name" NVARCHAR(100), "is_active" BOOLEAN, "id" INTEGER, "height" DOUBLE,
+          "VEC_TEXT" NCLOB,
+          "VEC_META" NCLOB,
+          "VEC_VECTOR" REAL_VECTOR
+        )`,
+        (createErr: Error) => {
+          if (createErr) {
+            reject(createErr);
+          } else {
+            resolve();
+          }
+        }
+      );
+    }
+  );
+});
+```
+
+Let's add some documents.
+
+```typescript
+import { HanaDB } from "@sap/hana-langchain";
+import { Document } from "@langchain/core/documents";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const embeddings = new OpenAIEmbeddings();
+
+const db = new HanaDB(embeddings, {
+  connection: client,
+  tableName: "LANGCHAIN_DEMO_SELF_QUERY",
+  specificMetadataColumns: ["name", "is_active", "id", "height"],
+});
+await db.initialize();
+
+const docs = [
+  new Document({
+    pageContent: "First",
+    metadata: { name: "adam", is_active: true, id: 1, height: 10.0 },
+  }),
+  new Document({
+    pageContent: "Second",
+    metadata: { name: "bob", is_active: false, id: 2, height: 5.7 },
+  }),
+  new Document({
+    pageContent: "Third",
+    metadata: { name: "jane", is_active: true, id: 3, height: 2.4 },
+  }),
+];
+
+await db.delete({ filter: {} });
+await db.addDocuments(docs);
+```
+
+## Self querying
+
+Now for the main act: here is how to construct a SelfQueryRetriever for HANA vectorstore:
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+import { AttributeInfo } from "@langchain/classic/chains/query_constructor";
+import { SelfQueryRetriever } from "@langchain/classic/retrievers/self_query"
+import { HanaTranslator } from "@sap/hana-langchain";
+
+const llm = new ChatOpenAI({ model: "gpt-3.5-turbo" });
+
+const metadataFieldInfo: AttributeInfo[] = [
+  { name: "name", description: "The name of the person", type: "string" },
+  { name: "is_active", description: "Whether the person is active", type: "boolean" },
+  { name: "id", description: "The ID of the person", type: "integer" },
+  { name: "height", description: "The height of the person", type: "float" },
+];
+
+const contentDescription = "A collection of persons";
+
+const hanaTranslator = new HanaTranslator();
+
+const retriever = await SelfQueryRetriever.fromLLM({
+  llm,
+  vectorStore: db,
+  documentContentDescription: contentDescription,
+  attributeInfo: metadataFieldInfo,
+  structuredQueryTranslator: hanaTranslator,
+});
+```
+
+Let's use this retriever to prepare a (self) query for a person:
+
+```typescript
+const queryPrompt = "Which person is not active?"
+const retreivedDocs = await retriever.invoke(queryPrompt);
+
+for (const doc of retreivedDocs){
+  console.log("-".repeat(80));
+  console.log(doc.pageContent + " " + JSON.stringify(doc.metadata));
+}
+```
+
+```text
+--------------------------------------------------------------------------------
+Second {"name":"bob","is_active":false,"id":2,"height":5.7}
+```

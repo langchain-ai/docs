@@ -1,8 +1,9 @@
 ---
-title: Kinetica Vectorstore based Retriever
+title: "Kinetica vectorstore based retriever integration"
+description: "Integrate with the Kinetica vectorstore based retriever using LangChain Python."
 ---
 
->[Kinetica](https://www.kinetica.com/) is a database with integrated support for vector similarity search
+[Kinetica](https://www.kinetica.com/) is a database with integrated support for vector similarity search.
 
 It supports:
 
@@ -11,9 +12,10 @@ It supports:
 
 This notebook shows how to use a retriever based on Kinetica vector store (`Kinetica`).
 
+Please ensure that this connector is installed in your working environment:
+
 ```python
-# Please ensure that this connector is installed in your working environment.
-pip install gpudb==7.2.0.9
+pip install -qU langchain-kinetica langchain-community langchain-openai
 ```
 
 We want to use `OpenAIEmbeddings` so we have to get the OpenAI API Key.
@@ -22,73 +24,84 @@ We want to use `OpenAIEmbeddings` so we have to get the OpenAI API Key.
 import getpass
 import os
 
+from langchain_openai import OpenAIEmbeddings
+
 if "OPENAI_API_KEY" not in os.environ:
     os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API Key:")
+
+embeddings = OpenAIEmbeddings()
 ```
+
+You must set the database connection in the following environment variables. If you are using a virtual environment you can set them in the `.env` file of the project:
+
+* `KINETICA_URL`: Database connection URL (e.g. `http://localhost:9191`)
+* `KINETICA_USER`: Database user
+* `KINETICA_PASSWD`: Secure password.
+
 
 ```python
-## Loading environment variables
-from dotenv import load_dotenv
+from gpudb import GPUdb
 
-load_dotenv()
+from langchain_kinetica import KineticaSettings, KineticaVectorstore
+
+kdbc = GPUdb.get_connection()
+
+k_config = KineticaSettings(kdbc=kdbc)
+k_config
 ```
+
+```text
+2026-02-02 20:58:48.261 INFO     [GPUdb] Connected to Kinetica! (host=http://localhost:19191 api=7.2.3.3 server=7.2.3.5)
+
+KineticaSettings(kdbc=<gpudb.gpudb.GPUdb object at 0x1141e7b90>, database='langchain', table='langchain_kinetica_embeddings', metric='l2')
+```
+
+## Create the Vectorstore
 
 ```python
 from langchain_community.document_loaders import TextLoader
-from langchain_community.vectorstores import (
-    Kinetica,
-    KineticaSettings,
-)
-from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import CharacterTextSplitter
-```
 
-```python
-# Kinetica needs the connection to the database.
-# This is how to set it up.
-HOST = os.getenv("KINETICA_HOST", "http://127.0.0.1:9191")
-USERNAME = os.getenv("KINETICA_USERNAME", "")
-PASSWORD = os.getenv("KINETICA_PASSWORD", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-
-
-def create_config() -> KineticaSettings:
-    return KineticaSettings(host=HOST, username=USERNAME, password=PASSWORD)
-```
-
-## Create retriever from vector store
-
-```python
-loader = TextLoader("../../how_to/state_of_the_union.txt")
+loader = TextLoader("./state_of_the_union.txt")
 documents = loader.load()
 text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-docs = text_splitter.split_documents(documents)
-
-embeddings = OpenAIEmbeddings()
+results = text_splitter.split_documents(documents)
 
 # The Kinetica Module will try to create a table with the name of the collection.
-# So, make sure that the collection name is unique and the user has the permission to create a table.
+# So, make sure that the collection name is unique and the user has the
+# permission to create a table.
 
 COLLECTION_NAME = "state_of_the_union_test"
-connection = create_config()
 
-db = Kinetica.from_documents(
+vectorstore = KineticaVectorstore.from_documents(
     embedding=embeddings,
-    documents=docs,
+    documents=results,
     collection_name=COLLECTION_NAME,
-    config=connection,
+    config=k_config,
+    pre_delete_collection=True,
 )
-
-# create retriever from the vector store
-retriever = db.as_retriever(search_kwargs={"k": 2})
 ```
 
 ## Search with retriever
 
+
 ```python
-result = retriever.get_relevant_documents(
-    "What did the president say about Ketanji Brown Jackson"
-)
-print(docs[0].page_content)
+from langchain_core.vectorstores import VectorStoreRetriever
+
+# create retriever from the vector store
+retriever: VectorStoreRetriever = vectorstore.as_retriever(search_kwargs={"k": 2})
+
+results = retriever.invoke("What did the president say about Ketanji Brown Jackson")
+
+print(results[0].page_content)
+```
+
+```text
+Tonight. I call on the Senate to: Pass the Freedom to Vote Act. Pass the John Lewis Voting Rights Act. And while you’re at it, pass the Disclose Act so Americans can know who is funding our elections.
+
+Tonight, I’d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer—an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service.
+
+One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court.
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
 ```

@@ -483,8 +483,8 @@ class DocumentationBuilder:
             total=len(existing_files),
             desc="Building files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
         ) as pbar:
             for file_path in existing_files:
                 result = self._build_file_with_progress(file_path, pbar)
@@ -531,8 +531,8 @@ class DocumentationBuilder:
             total=len(all_files),
             desc=f"Building {output_dir} files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from oss/ directory
@@ -608,8 +608,8 @@ class DocumentationBuilder:
             total=len(all_files),
             desc=f"Building {output_dir} files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from source directory
