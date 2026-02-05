@@ -11,10 +11,14 @@ Deep agent skills follow the [Agent Skills standard](https://agentskills.io/).
 
 Skills are a directory of folders, where each folder has one or more files that contain context the agent can use:
 
-- a `SKILL.md` file containing instructions and metadata about the skill
-- additional scripts (optional)
-- additional reference info, such as docs (optional)
-- additional assets, such as templates and other resources (optional)
+- A `SKILL.md` file containing instructions and metadata about the skill
+- Additional scripts (optional)
+- Additional reference info, such as docs (optional)
+- Additional assets, such as templates and other resources (optional)
+
+<Note>
+  Any additional assets (scripts, docs, templates, or other resources) must be referenced in the `SKILL.md` file with information on what the file contains and how to use it so the agent can decide when to use them.
+</Note>
 
 ## How do skills work
 
@@ -210,173 +214,166 @@ Pass the skills directory when creating your deep agent:
 
 :::js
 <Tabs>
-  <Tab title="StateBackend">
+<Tab title="StateBackend">
 
-    ```typescript
-    import { createDeepAgent, type FileData } from "deepagents";
-    import { MemorySaver, Command } from "@langchain/langgraph";
-    import { createInterface } from "node:readline/promises";
-    import { stdin as input, stdout as output } from "node:process";
+```typescript
+import { createDeepAgent, type FileData } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
 
-    const checkpointer = new MemorySaver();
+const checkpointer = new MemorySaver();
 
-    function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
-        content: content.split("\n"),
-        created_at: now,
-        modified_at: now,
-    };
-    }
+function createFileData(content: string): FileData {
+  const now = new Date().toISOString();
+  return {
+    content: content.split("\n"),
+    created_at: now,
+    modified_at: now,
+  };
+}
 
-    const skillsFiles: Record<string, FileData> = {};
+const skillsFiles: Record<string, FileData> = {};
 
-    const skillUrl =
-    "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
-    const response = await fetch(skillUrl);
-    const skillContent = await response.text();
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
 
-    skillsFiles["/skills/langgraph-docs/SKILL.md"] = createFileData(skillContent);
+skillsFiles["/skills/langgraph-docs/SKILL.md"] = createFileData(skillContent);
 
-    const agent = await createDeepAgent({
-    checkpointer,
-    // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
-    skills: ["/skills/"],
-    });
+const agent = await createDeepAgent({
+  checkpointer,
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+  skills: ["/skills/"],
+});
 
-    const config = {
-    configurable: {
-        thread_id: `thread-${Date.now()}`,
-    },
-    };
+const config = {
+  configurable: {
+    thread_id: `thread-${Date.now()}`,
+  },
+};
 
-    let result = await agent.invoke(
-    {
-        messages: [
-        {
-            role: "user",
-            content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
-        ],
-        files: skillsFiles,
-    } as any,
-    config
-    );
-    ```
+const result = await agent.invoke(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "what is langraph? Use the langgraph-docs skill if available.",
+      },
+    ],
+    files: skillsFiles,
+  },
+  config,
+);
+```
 
-  </Tab>
-  <Tab title="StoreBackend">
+</Tab>
+<Tab title="StoreBackend">
 
-    ```typescript
-    import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
-    import {
-    InMemoryStore,
-    MemorySaver,
-    type BaseStore,
-    } from "@langchain/langgraph";
+```typescript
+import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
+import {
+  InMemoryStore,
+  MemorySaver,
+  type BaseStore,
+} from "@langchain/langgraph";
 
-    const checkpointer = new MemorySaver();
-    const store = new InMemoryStore();
+const checkpointer = new MemorySaver();
+const store = new InMemoryStore();
 
-    function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
-        content: content.split("\n"),
-        created_at: now,
-        modified_at: now,
-    };
-    }
+function createFileData(content: string): FileData {
+  const now = new Date().toISOString();
+  return {
+    content: content.split("\n"),
+    created_at: now,
+    modified_at: now,
+  };
+}
 
-    const skillUrl =
-    "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
 
-    const response = await fetch(skillUrl);
-    const skillContent = await response.text();
-    const fileData = createFileData(skillContent);
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
+const fileData = createFileData(skillContent);
 
-    await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
+await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
 
-    const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
-    return new StoreBackend({
-        state: config.state,
-        store: config.store ?? store,
-    });
-    };
+const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
+  return new StoreBackend({
+    state: config.state,
+    store: config.store ?? store,
+  });
+};
 
-    const agent = await createDeepAgent({
-    backend: backendFactory,
-    store: store,
-    checkpointer,
-    // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
-    skills: ["/skills/"],
-    });
+const agent = await createDeepAgent({
+  backend: backendFactory,
+  store: store,
+  checkpointer,
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+  skills: ["/skills/"],
+});
 
-    const config = {
-    configurable: {
-        thread_id: `thread-${Date.now()}`,
-    },
-    };
+const config = {
+  recursionLimit: 50,
+  configurable: {
+    thread_id: `thread-${Date.now()}`,
+  },
+};
 
-    let result = await agent.invoke(
-    {
-        messages: [
-        {
-            role: "user",
-            content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
-        ],
-    },
-    config
-    );
-    ```
+const result = await agent.invoke(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "what is langraph? Use the langgraph-docs skill if available.",
+      },
+    ],
+  },
+  config,
+);
+```
 
-  </Tab>
-  <Tab title="FilesystemBackend">
+</Tab>
+<Tab title="FilesystemBackend">
 
-    ```typescript
-    import {
-    createDeepAgent,
-    createSkillsMiddleware,
-    createSettings,
-    FilesystemBackend,
-    } from "deepagents";
-    import { MemorySaver } from "@langchain/langgraph";
+```typescript
+import { createDeepAgent, FilesystemBackend } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
 
-    const settings = createSettings({
-    });
+const checkpointer = new MemorySaver();
+const backend = new FilesystemBackend({ rootDir: process.cwd() });
 
-    const agent = await createDeepAgent({
-    backend: (config) =>
-        new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
-    skills: [path.join(process.cwd(), ".deepagents/skills")],
-    interruptOn: {
-        read_file: true,
-        write_file: true,
-        delete_file: true,
-    },
-    checkpointer, // Required!
-    });
+const agent = await createDeepAgent({
+  backend,
+  skills: ["./examples/skills/"],
+  interruptOn: {
+    read_file: true,
+    write_file: true,
+    delete_file: true,
+  },
+  checkpointer, // Required!
+});
 
-    const config = {
-    configurable: {
-        thread_id: `thread-${Date.now()}`,
-    },
-    };
+const config = {
+  configurable: {
+    thread_id: `thread-${Date.now()}`,
+  },
+};
 
-    let result = await agent.invoke(
-    {
-        messages: [
-        {
-            role: "user",
-            content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
-        ]
-    } as any,
-    config
-    );
-    ```
+const result = await agent.invoke(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "what is langraph? Use the langgraph-docs skill if available.",
+      },
+    ],
+  },
+  config,
+);
+```
 
-  </Tab>
+</Tab>
 </Tabs>
 
 <ParamField body="skills" type="list[str]" optional>
