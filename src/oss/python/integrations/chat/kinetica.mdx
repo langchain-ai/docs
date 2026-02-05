@@ -42,7 +42,6 @@ You will need to install the following packages...
 
 
 ```python
-# Install Kinetica LangChain integration
 pip install -qU langchain-kinetica faker
 ```
 
@@ -146,11 +145,7 @@ gpudb_table = GPUdbTable.from_df(
 # See the Kinetica column types
 print(gpudb_table.type_as_df())
 ```
-
 ```text
-/Users/chadjuliano/git/langchain-kinetica/.venv/lib/python3.12/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
-    from .autonotebook import tqdm as notebook_tqdm
-
 
         name    type   properties
 0   username  string     [char32]
@@ -176,11 +171,11 @@ table_ctx = GPUdbTableClause(table=table_name, comment="Contains user profiles."
 samples_ctx = GPUdbSamplesClause(
     samples=[
         (
-            "How many male users are there?",
+            "How many users born after 1970 are there?",
             f"""
             select count(1) as num_users
                 from {table_name}
-                where sex = 'M';
+                where birthdate > '1970-01-01';
             """,
         )
     ]
@@ -202,9 +197,9 @@ CREATE OR REPLACE CONTEXT "demo"."test_llm_ctx" (
 ),
 (
     SAMPLES = (
-        'How many male users are there?' = 'select count(1) as num_users
+        'How many users born after 1970 are there?' = 'select count(1) as num_users
     from demo.user_profiles
-    where sex = ''M'';' )
+    where birthdate > ''1970-01-01'';' )
 )
 
 1
@@ -231,11 +226,11 @@ ctx_messages.append(("human", "{input}"))
 
 # Create the prompt template.
 prompt_template = ChatPromptTemplate.from_messages(ctx_messages)
-prompt_template.pretty_print()
+print(prompt_template.pretty_repr())
 ```
 
 ```text
-================================[1m System Message [0m================================
+================================ System Message ================================
 
 CREATE TABLE demo.user_profiles AS
 (
@@ -248,19 +243,19 @@ CREATE TABLE demo.user_profiles AS
 );
 COMMENT ON TABLE demo.user_profiles IS 'Contains user profiles.';
 
-================================[1m Human Message [0m=================================
+================================ Human Message =================================
 
-How many male users are there?
+How many users born after 1970 are there?
 
-==================================[1m Ai Message [0m==================================
+================================== Ai Message ==================================
 
 select count(1) as num_users
     from demo.user_profiles
-    where sex = 'M';
+    where birthdate > '1970-01-01';
 
-================================[1m Human Message [0m=================================
+================================ Human Message =================================
 
-[33;1m[1;3m{input}[0m
+{input}
 ```
 
 ### Create the chain
@@ -286,7 +281,7 @@ The chain we created will take a question as input and return a `KineticaSqlResp
 # Here you must ask a question relevant to the LLM context provided in the
 # prompt template.
 response: KineticaSqlResponse = chain.invoke(
-    {"input": "What are the female users ordered by username?"}
+    {"input": "What users were born after 1990?"}
 )
 
 print(f"SQL: {response.sql}")
@@ -296,26 +291,25 @@ print(response.dataframe.head())
 ```text
 SQL: SELECT *
 FROM demo.user_profiles
-WHERE sex = 'F'
-ORDER BY username;
-        username               name sex  \
-0  alexander40       Tina Ramirez   F
-1      bburton       Paula Kaiser   F
-2      brian12  Stefanie Williams   F
-3    brownanna      Jennifer Rowe   F
-4       carl19       Amanda Potts   F
+WHERE birthdate > '1990-01-01';
+        username             name sex  \
+0      eduardo69       Haley Beck   F
+1      melissa49      Wendy Reese   F
+2        james26  Patricia Potter   F
+3    mooreandrew    Wendy Ramirez   F
+4  melissabutler      Alexa Kelly   F
 
                                                 address                    mail  \
-0  122 Summers Ranch Suite 389\nNorth Robert, NE ...    kellysarah@gmail.com
-1                   Unit 7405 Box 3052\nDPO AE 09858  timothypotts@gmail.com
-2  68772 Brittany Isle Suite 333\nHortonberg, OR ...  grahamjasmin@gmail.com
-3                   Unit 7680 Box 7713\nDPO AE 87482     rebecca99@yahoo.com
-4  98994 Clarke Circle Apt. 755\nMoralesport, CT ...      ncochran@yahoo.com
+0  59836 Carla Causeway Suite 939\nPort Eugene, I...  meltondenise@yahoo.com
+1  6408 Christopher Hill Apt. 459\nNew Benjamin, ...        dadams@gmail.com
+2          7977 Jonathan Meadow\nJerryside, OH 55205      jpatrick@gmail.com
+3        8089 Gonzalez Fields\nJordanville, KS 22824    mathew05@hotmail.com
+4              1904 Burke Roads\nPort Anne, DE 81252     douglas38@yahoo.com
 
     birthdate
-0 1963-08-13
-1 1935-08-19
-2 1915-03-01
-3 2005-09-15
-4 1918-05-24
+0 1999-08-25
+1 1990-07-13
+2 2010-03-21
+3 2000-03-25
+4 2023-02-01
 ```
