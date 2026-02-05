@@ -4,123 +4,84 @@ sidebarTitle: Customization
 description: Learn how to customize deep agents with system prompts, tools, subagents, and more
 ---
 
-```mermaid
-graph LR
-    Create[create_deep_agent] --> Core[Core Config]
-    Create --> Features[Features]
-
-    Core --> Model[Model]
-    Core --> Prompt[System Prompt]
-    Core --> Tools[Tools]
-
-    Features --> Backend[Backend]
-    Features --> Sub[Subagents]
-    Features --> Interrupt[Interrupts]
-
-    Model --> Agent[Customized Agent]
-    Prompt --> Agent
-    Tools --> Agent
-    Backend --> Agent
-    Sub --> Agent
-    Interrupt --> Agent
-```
-
-## Model
-
-By default, `deepagents` uses [`claude-sonnet-4-5-20250929`](https://platform.claude.com/docs/en/about-claude/models/overview). You can customize the model used by passing any supported <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model)">model identifier string</Tooltip> or [LangChain model object](/oss/integrations/chat).
-
-<Tip>
-    Use the `provider:model` format (e.g., `openai:gpt-5`) to quickly switch between models.
-</Tip>
+import ChatModelTabsDaPy from '/snippets/chat-model-tabs-da.mdx';
+import ChatModelTabsDaJs from '/snippets/chat-model-tabs-da-js.mdx';
+import HitlBasicConfig from '/snippets/hitl-basic-config.mdx';
+import BackendState from '/snippets/backend-state.mdx';
+import BackendFilesystem from '/snippets/backend-filesystem.mdx';
+import BackendStore from '/snippets/backend-store.mdx';
+import BackendComposite from '/snippets/backend-composite.mdx';
+import SubagentBasic from '/snippets/subagent-basic.mdx';
 
 :::python
-<CodeGroup>
-    ```python Model string
-    from langchain.chat_models import init_chat_model
-    from deepagents import create_deep_agent
-
-    model = init_chat_model(model="openai:gpt-5")
-    agent = create_deep_agent(model=model)
-    ```
-
-    ```python LangChain model object
-    # ollama pull llama3.1
-    from langchain_ollama import ChatOllama
-    from langchain.chat_models import init_chat_model
-    from deepagents import create_deep_agent
-
-    model = init_chat_model(
-        model=ChatOllama(
-            model="llama3.1",
-            temperature=0,
-            # other params...
-        )
-    )
-    agent = create_deep_agent(model=model)
-    ```
-</CodeGroup>
+`create_deep_agent` has the following core configuration options:
 :::
 
 :::js
-```typescript
-import { ChatAnthropic } from "@langchain/anthropic";
-import { ChatOpenAI } from "@langchain/openai";
-import { createDeepAgent } from "deepagents";
-
-// Using Anthropic
-const agent = createDeepAgent({
-  model: new ChatAnthropic({
-    model: "claude-sonnet-4-20250514",
-    temperature: 0,
-  }),
-});
-
-// Using OpenAI
-const agent2 = createDeepAgent({
-  model: new ChatOpenAI({
-    model: "gpt-5",
-    temperature: 0,
-  }),
-});
-```
+`createDeepAgent` has the following core configuration options:
 :::
 
-## System prompt
+- [Model](#model)
+- [Tools](#tools)
+- [System Prompt](#system-prompt)
 
-Deep agents come with a built-in system prompt inspired by Claude Code's system prompt. The default system prompt contains detailed instructions for using the built-in planning tool, file system tools, and subagents.
+And the following configurable features:
 
-Each deep agent tailored to a use case should include a custom system prompt specific to that use case.
+- [Middleware](#middleware)
+- [Subagents](#subagents)
+- [Filesystem backend](#filesystem-backend)
+- [Human-in-the-loop](#human-in-the-loop)
+- [Skills](#skills)
+- [Memory](#memory)
+
+## Core configuration
 
 :::python
 ```python
-from deepagents import create_deep_agent
-
-research_instructions = """\
-You are an expert researcher. Your job is to conduct \
-thorough research, and then write a polished report. \
-"""
-
-agent = create_deep_agent(
-    system_prompt=research_instructions,
-)
+create_deep_agent(
+    name: str | None = None,
+    model: str | BaseChatModel | None = None,
+    tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
+    *,
+    system_prompt: str | SystemMessage | None = None
+) -> CompiledStateGraph
 ```
+
+For more information, see [`create_deep_agent`](https://reference.langchain.com/python/deepagents/graph/).
 :::
 
 :::js
 ```typescript
-import { createDeepAgent } from "deepagents";
-
-const researchInstructions = `You are an expert researcher. Your job is to conduct thorough research, and then write a polished report.`;
-
 const agent = createDeepAgent({
-  systemPrompt: researchInstructions,
+  name?: string,
+  model?: BaseLanguageModel | string,
+  tools?: TTools | StructuredTool[],
+  systemPrompt?: string | SystemMessage,
 });
 ```
+
+For more information, see [Customizing Deep Agents](https://reference.langchain.com/javascript/modules/deepagents.html#customizing-deep-agents).
 :::
 
-## Tools
+### Model
 
-In addition to custom tools you provide, deep agents include [built-in tools](/oss/deepagents/overview#core-capabilities) for planning, file management, and subagent spawning.
+By default, `deepagents` uses [`claude-sonnet-4-5-20250929`](https://platform.claude.com/docs/en/about-claude/models/overview). You can customize the model by passing any supported <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model)">model identifier string</Tooltip> or [LangChain model object](/oss/integrations/chat).
+
+<Tip>
+    Use the `provider:model` format (for example `openai:gpt-5`) to quickly switch between models.
+</Tip>
+
+:::python
+<ChatModelTabsDaPy />
+:::
+
+:::js
+<ChatModelTabsDaJs />
+:::
+
+### Tools
+
+In addition to [built-in tools](/oss/deepagents/overview#core-capabilities) for planning, file management, and subagent spawning, you can provide custom tools:
 
 :::python
 ```python
@@ -199,7 +160,193 @@ const agent = createDeepAgent({
 ```
 :::
 
-## Skills
+### System prompt
+
+Deep agents come with a built-in system prompt inspired by Claude Code's system prompt. The default system prompt contains detailed instructions for using the built-in planning tool, file system tools, and subagents.
+
+Each deep agent should include a custom system prompt specific to its specific use case.
+
+:::python
+```python
+from deepagents import create_deep_agent
+
+research_instructions = """\
+You are an expert researcher. Your job is to conduct \
+thorough research, and then write a polished report. \
+"""
+
+agent = create_deep_agent(
+    system_prompt=research_instructions,
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+
+const researchInstructions = `You are an expert researcher. ` +
+  `Your job is to conduct thorough research, and then ` +
+  `write a polished report.`;
+
+const agent = createDeepAgent({
+  systemPrompt: researchInstructions,
+});
+```
+:::
+
+## Features
+
+### Middleware
+
+Middleware provides a way to more tightly control what happens inside an agent.
+You can provide additional middleware to extend functionality, add tools, or implement custom hooks:
+
+:::python
+```python
+from langchain.tools import tool
+from langchain.agents.middleware import wrap_tool_call
+from deepagents import create_deep_agent
+
+
+@tool
+def get_weather(city: str) -> str:
+    """Get the weather in a city."""
+    return f"The weather in {city} is sunny."
+
+
+call_count = [0]  # Use list to allow modification in nested function
+
+@wrap_tool_call
+def log_tool_calls(request, handler):
+    """Intercept and log every tool call - demonstrates cross-cutting concern."""
+    call_count[0] += 1
+    tool_name = request.name if hasattr(request, 'name') else str(request)
+
+    print(f"[Middleware] Tool call #{call_count[0]}: {tool_name}")
+    print(f"[Middleware] Arguments: {request.args if hasattr(request, 'args') else 'N/A'}")
+
+    # Execute the tool call
+    result = handler(request)
+
+    # Log the result
+    print(f"[Middleware] Tool call #{call_count[0]} completed")
+
+    return result
+
+
+agent = create_deep_agent(
+    tools=[get_weather],
+    middleware=[log_tool_calls],
+)
+```
+:::
+
+:::js
+```typescript
+import { tool, createMiddleware } from "langchain";
+import { createDeepAgent } from "deepagents";
+import * as z from "zod";
+
+const getWeather = tool(
+  ({ city }: { city: string }) => {
+    return `The weather in ${city} is sunny.`;
+  },
+  {
+    name: "get_weather",
+    description: "Get the weather in a city.",
+    schema: z.object({
+      city: z.string(),
+    }),
+  }
+);
+
+let callCount = 0;
+
+const logToolCallsMiddleware = createMiddleware({
+  name: "LogToolCallsMiddleware",
+  wrapToolCall: async (request, handler) => {
+    // Intercept and log every tool call - demonstrates cross-cutting concern
+    callCount += 1;
+    const toolName = request.toolCall.name;
+
+    console.log(`[Middleware] Tool call #${callCount}: ${toolName}`);
+    console.log(
+      `[Middleware] Arguments: ${JSON.stringify(request.toolCall.args)}`
+    );
+
+    // Execute the tool call
+    const result = await handler(request);
+
+    // Log the result
+    console.log(`[Middleware] Tool call #${callCount} completed`);
+
+    return result;
+  },
+});
+
+const agent = await createDeepAgent({
+  model: "claude-sonnet-4-20250514",
+  tools: [getWeather] as any,
+  middleware: [logToolCallsMiddleware] as any,
+});
+```
+:::
+
+### Subagents
+
+To isolate detailed work and avoid context bloat, use subagents:
+
+<SubagentBasic />
+
+For more information, see [Subagents](/oss/deepagents/subagents).
+
+{/* TODO(https://github.com/langchain-ai/docs/pull/2368/) #### Structured response format */}
+
+{/* ### Context - You can persist agent state between runs to store information like user IDs. */}
+
+### Filesystem backend
+
+For [skills](#skills) and [memory](#memory), you must provide a filesystem backend.
+You may also find it helpful to use the backend with custom tools.
+
+<Tabs>
+  <Tab title="StateBackend">
+    An ephemeral filesystem backend stored in `langgraph` state.
+    This filesystem only persists _for a single thread_.
+
+    <BackendState />
+  </Tab>
+  <Tab title="FilesystemBackend">
+    The local machine's filesystem.
+
+    <BackendFilesystem />
+  </Tab>
+  <Tab title="StoreBackend">
+    A filesystem that provides long-term storage that is _persisted across threads_.
+
+    <BackendStore />
+  </Tab>
+  <Tab title="CompositeBackend">
+    A flexible backen where you can specify different routes in the filesystem to point towards different backends.
+
+    <BackendComposite />
+  </Tab>
+</Tabs>
+
+For more information, see [Backends](/oss/deepagents/backends).
+
+### Human-in-the-loop
+
+Some tool operations may be sensitive and require human approval before execution.
+You can configure the approval for each tool:
+
+<HitlBasicConfig />
+
+You can configure interrupt for agents and subagents on tool call as well as from within tool calls.
+For more information, see [Human-in-the-loop](/oss/deepagents/human-in-the-loop).
+
+### Skills
 
 You can use [skills](/oss/deepagents/overview) to provide your deep agent with new capabilities and expertise.
 While [tools](/oss/deepagents/customization#tools) tend to cover lower level functionality like native file system actions or planning, skills can contain detailed instructions on how to complete tasks, reference info, and other assets, such as templates.
@@ -496,7 +643,7 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
 
 :::
 
-## Memory
+### Memory
 
 Use [`AGENTS.md` files](https://agents.md/) to provide extra context to your deep agent.
 
