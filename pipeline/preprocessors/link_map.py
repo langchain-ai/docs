@@ -213,6 +213,8 @@ LINK_MAPS: list[LinkMap] = [
             "wrap_gemini": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_gemini",
             "traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
             "@traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "tracing_context": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.tracing_context",
+            "tracingEnabled": "https://reference.langchain.com/javascript/classes/langsmith.run_trees.RunTree.html#tracingenabled",
             "langsmith_extra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
             "SupportsLangsmithExtra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
             # LangGraph
@@ -432,6 +434,7 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith": "modules/langsmith.html",
             "langsmith-js": "modules/langsmith.html",
             "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
+            "tracingEnabled": "classes/langsmith.run_trees.RunTree.html#tracingenabled",
             "wrapGemini": "functions/langsmith.wrappers_gemini.wrapGemini.html",
             # LangGraph SDK references
             "Auth": "classes/_langchain_langgraph-sdk.auth.Auth.html",
