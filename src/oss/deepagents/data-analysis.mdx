@@ -40,12 +40,12 @@ pip install deepagents
 ### Optional dependencies
 
 For this tutorial, we'll use:
-- [Daytona](https://www.daytona.io/) for sandboxed code execution ([API key setup](https://www.daytona.io/docs/en/api-keys/))
+- [Daytona](https://www.daytona.io/) for sandboxed code execution ([API key setup](https://www.daytona.io/docs/en/api-keys/)) through the [langchain-daytona](https://github.com/langchain-ai/deepagents/tree/master/libs/partners/daytona) package
 - [Slack Python SDK](https://docs.slack.dev/tools/python-slack-sdk/) for sharing results ([token setup](https://docs.slack.dev/authentication/tokens/))
 
 :::python
 ```bash pip
-pip install daytona slack-sdk
+pip install langchain-daytona slack-sdk
 ```
 :::
 
@@ -82,130 +82,18 @@ Deep Agents use [backends](/oss/deepagents/backends) to execute code in sandboxe
 
 <Tabs>
 <Tab title="Daytona Sandbox">
-First, we implement a simple backend around the Daytona sandbox. This just requires an implementation of the `execute` method. We will also implement convenience methods for uploading and downloading files:
+We can create a sandbox easily using the `langchain-daytona` package:
 
 ```python
-from daytona import Daytona, DaytonaConfig, Sandbox
-from deepagents.backends.protocol import (
-    ExecuteResponse,
-    FileDownloadResponse,
-    FileUploadResponse,
-)
-from deepagents.backends.sandbox import BaseSandbox
+from langchain_daytona import DaytonaProvider
 
-
-daytona_api_key = os.environ.get("DAYTONA_API_KEY")
-daytona_client = Daytona(DaytonaConfig(api_key=daytona_api_key))
-
-
-class DaytonaBackend(BaseSandbox):
-    """Daytona backend implementation conforming to SandboxBackendProtocol.
-
-    This implementation inherits all file operation methods from BaseSandbox
-    and only implements the execute() method using Daytona's API.
-    """
-
-    def __init__(self, sandbox: Sandbox) -> None:
-        """Initialize the DaytonaBackend with a Daytona sandbox client.
-
-        Args:
-            sandbox: Daytona sandbox instance
-        """
-        self._sandbox = sandbox
-        self._timeout: int = 30 * 60  # 30 mins
-
-    @property
-    def id(self) -> str:
-        """Unique identifier for the sandbox backend."""
-        return self._sandbox.id
-
-    def execute(
-        self,
-        command: str,
-    ) -> ExecuteResponse:
-        """Execute a command in the sandbox and return ExecuteResponse.
-
-        Args:
-            command: Full shell command string to execute.
-
-        Returns:
-            ExecuteResponse with combined output, exit code, optional signal, and
-                truncation flag.
-        """
-        result = self._sandbox.process.exec(
-            command,
-            timeout=self._timeout,
-        )
-
-        return ExecuteResponse(
-            output=result.result,  # Daytona combines stdout/stderr
-            exit_code=result.exit_code,
-            truncated=False,
-        )
-
-    def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
-        """Download multiple files from the Daytona sandbox.
-
-        Leverages Daytona's native batch download API for efficiency.
-        Supports partial success - individual downloads may fail without
-        affecting others.
-
-        Args:
-            paths: List of file paths to download.
-
-        Returns:
-            List of FileDownloadResponse objects, one per input path.
-            Response order matches input order.
-        """
-        from daytona import FileDownloadRequest
-
-        # Create batch download request using Daytona's native batch API
-        download_requests = [FileDownloadRequest(source=path) for path in paths]
-        daytona_responses = self._sandbox.fs.download_files(download_requests)
-
-        # Convert Daytona results to our response format
-        return [
-            FileDownloadResponse(
-                path=resp.source,
-                content=resp.result,
-                error=None,  # TODO: map resp.error to FileOperationError
-            )
-            for resp in daytona_responses
-        ]
-
-    def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
-        """Upload multiple files to the Daytona sandbox.
-
-        Leverages Daytona's native batch upload API for efficiency.
-        Supports partial success - individual uploads may fail without
-        affecting others.
-
-        Args:
-            files: List of (path, content) tuples to upload.
-
-        Returns:
-            List of FileUploadResponse objects, one per input file.
-            Response order matches input order.
-        """
-        from daytona import FileUpload
-
-        # Create batch upload request using Daytona's native batch API
-        upload_requests = [
-            FileUpload(source=content, destination=path) for path, content in files
-        ]
-        self._sandbox.fs.upload_files(upload_requests)
-
-        return [FileUploadResponse(path=path, error=None) for path, _ in files]
+provider = DaytonaProvider()
+backend = provider.get_or_create()
 ```
 
-Create a sandbox instance and initialize the backend:
-
+Verify the sandbox is ready:
 ```python
-sandbox = daytona_client.create(timeout=60)
-backend = DaytonaBackend(sandbox)
-
-# Verify the sandbox is ready
-result = sandbox.process.exec("echo ready", timeout=5)
+result = backend.execute("echo ready")
 print(result)
 # ExecuteResponse(exit_code=0, result='ready', ...)
 ```
