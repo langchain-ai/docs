@@ -733,25 +733,27 @@ const graph = builder.compile({ store });
         </Tab>
         <Tab title="Sync">
       ```python
-      from langchain_core.runnables import RunnableConfig
+      from dataclasses import dataclass
       from langchain.chat_models import init_chat_model
       from langgraph.graph import StateGraph, MessagesState, START
       from langgraph.checkpoint.postgres import PostgresSaver
       from langgraph.store.postgres import PostgresStore  # [!code highlight]
-      from langgraph.store.base import BaseStore
+      from langgraph.runtime import Runtime  # [!code highlight]
       import uuid
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
 
+      @dataclass
+      class Context:
+          user_id: str
+
       def call_model(  # [!code highlight]
           state: MessagesState,
-          config: RunnableConfig,
-          *,
-          store: BaseStore,  # [!code highlight]
+          runtime: Runtime[Context],  # [!code highlight]
       ):
-          user_id = config["configurable"]["user_id"]
+          user_id = runtime.context.user_id  # [!code highlight]
           namespace = ("memories", user_id)
-          memories = store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          memories = runtime.store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
           info = "\n".join([d.value["data"] for d in memories])
           system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
 
@@ -759,7 +761,7 @@ const graph = builder.compile({ store });
           last_message = state["messages"][-1]
           if "remember" in last_message.content.lower():
               memory = "User name is Bob"
-              store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+              runtime.store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
 
           response = model.invoke(
               [{"role": "system", "content": system_msg}] + state["messages"]
@@ -775,7 +777,7 @@ const graph = builder.compile({ store });
           # store.setup()
           # checkpointer.setup()
 
-          builder = StateGraph(MessagesState)
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
           builder.add_node(call_model)
           builder.add_edge(START, "call_model")
 
@@ -784,30 +786,21 @@ const graph = builder.compile({ store });
               store=store,  # [!code highlight]
           )
 
-          config = {
-              "configurable": {
-                  "thread_id": "1",  # [!code highlight]
-                  "user_id": "1",  # [!code highlight]
-              }
-          }
+          config = {"configurable": {"thread_id": "1"}}
           for chunk in graph.stream(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 
-          config = {
-              "configurable": {
-                  "thread_id": "2",  # [!code highlight]
-                  "user_id": "1",
-              }
-          }
-
+          config = {"configurable": {"thread_id": "2"}}
           for chunk in graph.stream(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 ```
@@ -979,25 +972,27 @@ const graph = builder.compile({ store });
         </Tab>
         <Tab title="Sync">
       ```python
-      from langchain_core.runnables import RunnableConfig
+      from dataclasses import dataclass
       from langchain.chat_models import init_chat_model
       from langgraph.graph import StateGraph, MessagesState, START
       from langgraph.checkpoint.redis import RedisSaver
       from langgraph.store.redis import RedisStore  # [!code highlight]
-      from langgraph.store.base import BaseStore
+      from langgraph.runtime import Runtime  # [!code highlight]
       import uuid
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
 
+      @dataclass
+      class Context:
+          user_id: str
+
       def call_model(  # [!code highlight]
           state: MessagesState,
-          config: RunnableConfig,
-          *,
-          store: BaseStore,  # [!code highlight]
+          runtime: Runtime[Context],  # [!code highlight]
       ):
-          user_id = config["configurable"]["user_id"]
+          user_id = runtime.context.user_id  # [!code highlight]
           namespace = ("memories", user_id)
-          memories = store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          memories = runtime.store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
           info = "\n".join([d.value["data"] for d in memories])
           system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
 
@@ -1005,7 +1000,7 @@ const graph = builder.compile({ store });
           last_message = state["messages"][-1]
           if "remember" in last_message.content.lower():
               memory = "User name is Bob"
-              store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+              runtime.store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
 
           response = model.invoke(
               [{"role": "system", "content": system_msg}] + state["messages"]
@@ -1021,7 +1016,7 @@ const graph = builder.compile({ store });
           store.setup()
           checkpointer.setup()
 
-          builder = StateGraph(MessagesState)
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
           builder.add_node(call_model)
           builder.add_edge(START, "call_model")
 
@@ -1030,30 +1025,21 @@ const graph = builder.compile({ store });
               store=store,  # [!code highlight]
           )
 
-          config = {
-              "configurable": {
-                  "thread_id": "1",  # [!code highlight]
-                  "user_id": "1",  # [!code highlight]
-              }
-          }
+          config = {"configurable": {"thread_id": "1"}}
           for chunk in graph.stream(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 
-          config = {
-              "configurable": {
-                  "thread_id": "2",  # [!code highlight]
-                  "user_id": "1",
-              }
-          }
-
+          config = {"configurable": {"thread_id": "2"}}
           for chunk in graph.stream(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 ```
