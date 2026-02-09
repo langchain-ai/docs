@@ -194,6 +194,7 @@ LINK_MAPS: list[LinkMap] = [
             # Key-value stores
             "BaseStore": "langgraph/store/#langgraph.store.base.BaseStore",
             "BaseStore.put": "langgraph/store/#langgraph.store.base.BaseStore.put",
+            "InMemoryStore": "langgraph/store/#langgraph.store.memory.InMemoryStore",
             # Callbacks
             "on_llm_new_token": "langchain_core/callbacks/#langchain_core.callbacks.base.AsyncCallbackHandler.on_llm_new_token",
             # Rate limiters
