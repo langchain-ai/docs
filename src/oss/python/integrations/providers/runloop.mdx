@@ -1,0 +1,69 @@
+---
+title: "Runloop"
+sidebarTitle: "Runloop"
+description: "Use Runloop devboxes as deepagents sandbox backends for isolated code execution"
+---
+
+[Runloop](https://www.runloop.ai/) provides disposable devboxes for running code in isolated environments. See the [Runloop docs](https://docs.runloop.ai/) for signup, authentication, and platform details.
+
+## Installation
+
+```bash
+pip install langchain-runloop
+```
+
+## Create a sandbox backend
+
+In Python, you create the devbox using the provider SDK, then wrap it with the [deepagents backend](/oss/deepagents/backends).
+
+```python
+from runloop_api_client import Runloop
+
+from langchain_runloop import RunloopSandbox
+
+api_key = "..."
+client = Runloop(bearer_token=api_key)
+
+devbox = client.devboxes.create()
+backend = RunloopSandbox(devbox=devbox)
+
+result = backend.execute("echo hello")
+print(result.output)
+
+client.devboxes.shutdown(id=devbox.id)
+```
+
+## Use with deepagents
+
+```python
+from runloop_api_client import Runloop
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_runloop import RunloopSandbox
+
+api_key = "..."
+client = Runloop(bearer_token=api_key)
+
+devbox = client.devboxes.create()
+backend = RunloopSandbox(devbox=devbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+try:
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": "Create a small Python project and run tests"}]}
+    )
+finally:
+    client.devboxes.shutdown(id=devbox.id)
+```
+
+## Cleanup
+
+Always shut down devboxes when you are done to avoid ongoing resource usage.
+
+See also: [Sandboxes](/oss/deepagents/sandboxes).
