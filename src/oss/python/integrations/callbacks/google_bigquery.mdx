@@ -236,43 +236,20 @@ You can customize the callback handler using `BigQueryLoggerConfig`.
   The maximum number of events to hold in the internal buffer queue before dropping new events.
 </ParamField>
 
-The following code sample shows how to define a configuration for the BigQuery callback handler, including a custom content formatter:
+The following code sample shows how to define a configuration for the BigQuery callback handler with event filtering:
 
 ```python
-import json
-import re
-from typing import Any
-
 from langchain_google_community.callbacks.bigquery_callback import (
     BigQueryCallbackHandler,
-    BigQueryLoggerConfig
+    BigQueryLoggerConfig,
 )
-
-def redact_dollar_amounts(event_content: Any) -> str:
-    """
-    Custom formatter to redact dollar amounts (e.g., $600, $12.50)
-    and ensure JSON output if the input is a dict.
-    """
-    text_content = ""
-    # If the content is a dictionary (e.g., a list of messages), convert it to a JSON string first.
-    if isinstance(event_content, dict):
-        text_content = json.dumps(event_content)
-    else:
-        text_content = str(event_content)
-
-    # Regex to find dollar amounts: $ followed by digits, optionally with commas or decimals.
-    # Examples: $600, $1,200.50, $0.99
-    redacted_content = re.sub(r'\$\d+(?:,\d{3})*(?:\.\d+)?', 'xxx', text_content)
-
-    return redacted_content
 
 # 1. Configure BigQueryLoggerConfig
 config = BigQueryLoggerConfig(
     enabled=True,
-    event_allowlist=["LLM_REQUEST", "LLM_RESPONSE"], # Only log these specific events
-    shutdown_timeout=10.0,   # Wait up to 10s for logs to flush on exit
+    event_allowlist=["LLM_REQUEST", "LLM_RESPONSE"],  # Only log these specific events
+    shutdown_timeout=10.0,  # Wait up to 10s for logs to flush on exit
     max_content_length=500,  # Truncate content to 500 characters
-    content_formatter=redact_dollar_amounts, # Set the custom formatting function
 )
 
 # 2. Initialize the Callback Handler
@@ -280,7 +257,7 @@ handler = BigQueryCallbackHandler(
     project_id="your-project-id",
     dataset_id="your_dataset",
     table_id="your_table",
-    config=config
+    config=config,
 )
 ```
 
@@ -375,7 +352,7 @@ These events track the raw requests sent to and responses received from the LLM.
 ```json
 {
   "tags": ["tag1"],
-  "model": "gemini-1.5-pro"
+  "model": "gemini-2.5-flash"
 }
 ```
       </td>
@@ -654,7 +631,7 @@ SELECT
   logs.session_id,
   -- Get a signed URL for the image (optional, for viewing)
   STRING(OBJ.GET_ACCESS_URL(parts.object_ref, "r").access_urls.read_url) as signed_url,
-  -- Analyze the image using a remote model (e.g., gemini-1.5-pro)
+  -- Analyze the image using a remote model (e.g., gemini-2.5-flash)
   AI.GENERATE(
     ('Describe this image briefly. What company logo?', parts.object_ref)
   ) AS generated_result
