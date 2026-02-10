@@ -1,0 +1,418 @@
+---
+title: "CockroachDB vector store"
+description: "Integrate with the CockroachDB vector store using LangChain Python."
+---
+
+`AsyncCockroachDBVectorStore` is an implementation of a LangChain vector store using CockroachDB's distributed SQL database with native vector support.
+
+This notebook goes over how to use the `AsyncCockroachDBVectorStore` API.
+
+The code lives in the integration package: [langchain-cockroachdb](https://github.com/cockroachdb/langchain-cockroachdb/).
+
+## Overview
+
+CockroachDB is a distributed SQL database that provides:
+
+- **Native vector support** with the `VECTOR` data type (v24.2+)
+- **Distributed C-SPANN indexes** for approximate nearest neighbor (ANN) search (v25.2+)
+- **SERIALIZABLE isolation** by default for transaction correctness
+- **Horizontal scalability** with automatic sharding and replication
+- **PostgreSQL wire-compatible** for easy adoption
+
+### Key advantages for vector workloads
+
+- **Distributed vector indexes**: C-SPANN indexes automatically shard across your cluster
+- **Multi-tenancy support**: Prefix columns in indexes for efficient tenant isolation
+- **Strong consistency**: SERIALIZABLE transactions prevent data anomalies
+- **High availability**: Automatic failover with no data loss
+
+## Setup
+
+### Install
+
+Install the integration library, `langchain-cockroachdb`.
+
+```bash
+pip install -qU langchain-cockroachdb
+```
+
+### CockroachDB cluster
+
+You need a CockroachDB cluster with vector support (v24.2+). Choose one option:
+
+#### Option 1: CockroachDB Cloud (Recommended)
+
+1. Sign up at [cockroachlabs.cloud](https://cockroachlabs.cloud)
+2. Create a free cluster
+3. Get your connection string from the cluster details page
+
+#### Option 2: Docker (Development)
+
+```bash
+docker run -d \
+  --name cockroachdb \
+  -p 26257:26257 \
+  -p 8080:8080 \
+  cockroachdb/cockroach:latest \
+  start-single-node --insecure
+```
+
+#### Option 3: Local binary
+
+Download from [cockroachlabs.com/docs/releases](https://www.cockroachlabs.com/docs/releases/)
+
+```bash
+cockroach start-single-node --insecure --listen-addr=localhost:26257
+```
+
+### Set your connection values
+
+```python
+# For CockroachDB Cloud
+CONNECTION_STRING = "cockroachdb://user:password@host:26257/database?sslmode=verify-full"
+
+# For local insecure cluster
+CONNECTION_STRING = "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+
+TABLE_NAME = "langchain_vectors"
+VECTOR_DIMENSION = 1536  # Depends on your embedding model
+```
+
+## Initialization
+
+### Create a connection engine
+
+The `CockroachDBEngine` manages a connection pool to your cluster:
+
+```python
+from langchain_cockroachdb import CockroachDBEngine
+
+engine = CockroachDBEngine.from_connection_string(
+    url=CONNECTION_STRING,
+    pool_size=10,        # Connection pool size
+    max_overflow=20,     # Additional connections allowed
+    pool_pre_ping=True,  # Health check connections
+)
+```
+
+### Initialize a table
+
+Create a table with the proper schema for vector storage:
+
+```python
+await engine.ainit_vectorstore_table(
+    table_name=TABLE_NAME,
+    vector_dimension=VECTOR_DIMENSION,
+)
+```
+
+<Tip>
+**Optional**: Specify a schema name
+
+```python
+await engine.ainit_vectorstore_table(
+    table_name=TABLE_NAME,
+    vector_dimension=VECTOR_DIMENSION,
+    schema="my_schema",  # Default: "public"
+)
+```
+</Tip>
+
+### Create an embedding instance
+
+Use any [LangChain embeddings model](https://python.langchain.com/docs/integrations/text_embedding/).
+
+```python
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+```
+
+### Initialize the vector store
+
+```python
+from langchain_cockroachdb import AsyncCockroachDBVectorStore
+
+vectorstore = AsyncCockroachDBVectorStore(
+    engine=engine,
+    embeddings=embeddings,
+    collection_name=TABLE_NAME,
+)
+```
+
+## Manage vector store
+
+### Add documents
+
+Add documents with metadata:
+
+```python
+import uuid
+from langchain_core.documents import Document
+
+docs = [
+    Document(
+        id=str(uuid.uuid4()),
+        page_content="CockroachDB is a distributed SQL database",
+        metadata={"source": "docs", "category": "database"},
+    ),
+    Document(
+        id=str(uuid.uuid4()),
+        page_content="Vector search enables semantic similarity",
+        metadata={"source": "docs", "category": "features"},
+    ),
+]
+
+ids = await vectorstore.aadd_documents(docs)
+```
+
+### Add texts
+
+Add text directly without structuring as documents:
+
+```python
+texts = ["First text", "Second text", "Third text"]
+metadatas = [{"idx": i} for i in range(len(texts))]
+ids = [str(uuid.uuid4()) for _ in texts]
+
+ids = await vectorstore.aadd_texts(texts, metadatas=metadatas, ids=ids)
+```
+
+<Warning>
+**Performance note**: CockroachDB's vector indexes work best with smaller batch sizes. The default `batch_size=100` is optimized for vector inserts. Large batch inserts of VECTOR types can cause performance degradation.
+</Warning>
+
+### Delete documents
+
+Delete documents by ID:
+
+```python
+await vectorstore.adelete([ids[0], ids[1]])
+```
+
+## Query vector store
+
+### Similarity search
+
+Search for similar documents using natural language:
+
+```python
+query = "distributed database"
+docs = await vectorstore.asimilarity_search(query, k=5)
+
+for doc in docs:
+    print(f"{doc.page_content[:50]}...")
+```
+
+### Similarity search with scores
+
+Get relevance scores with results:
+
+```python
+docs_with_scores = await vectorstore.asimilarity_search_with_score(query, k=5)
+
+for doc, score in docs_with_scores:
+    print(f"Score: {score:.4f} - {doc.page_content[:50]}...")
+```
+
+### Search by vector
+
+Search using a pre-computed embedding vector:
+
+```python
+query_vector = await embeddings.aembed_query(query)
+docs = await vectorstore.asimilarity_search_by_vector(query_vector, k=5)
+```
+
+### Maximum marginal relevance (MMR) search
+
+Retrieve diverse results that balance relevance and diversity:
+
+```python
+docs = await vectorstore.amax_marginal_relevance_search(
+    query,
+    k=5,           # Number of results to return
+    fetch_k=20,    # Number of candidates to consider
+    lambda_mult=0.5,  # 0 = max diversity, 1 = max relevance
+)
+```
+
+## Vector indexes
+
+Speed up similarity search with CockroachDB's C-SPANN vector indexes (requires v25.2+).
+
+### What is C-SPANN?
+
+C-SPANN (CockroachDB Space Partition Approximate Nearest Neighbor) is a distributed vector index that:
+
+- Automatically shards across your cluster nodes
+- Provides sub-second query performance at scale
+- Supports cosine, Euclidean (L2), and inner product distances
+- Works with prefix columns for multi-tenant architectures
+
+### Create a vector index
+
+```python
+from langchain_cockroachdb import CSPANNIndex, DistanceStrategy
+
+# Create a cosine distance index (most common)
+index = CSPANNIndex(
+    distance_strategy=DistanceStrategy.COSINE,
+    name="my_vector_index",
+)
+
+await vectorstore.aapply_vector_index(index)
+```
+
+### Distance strategies
+
+Choose the distance metric that matches your use case:
+
+```python
+# Cosine similarity (most common for text embeddings)
+CSPANNIndex(distance_strategy=DistanceStrategy.COSINE)
+
+# Euclidean distance (L2)
+CSPANNIndex(distance_strategy=DistanceStrategy.EUCLIDEAN)
+
+# Inner product (for normalized vectors)
+CSPANNIndex(distance_strategy=DistanceStrategy.INNER_PRODUCT)
+```
+
+### Tune index parameters
+
+Adjust partition sizes for performance:
+
+```python
+index = CSPANNIndex(
+    distance_strategy=DistanceStrategy.COSINE,
+    min_partition_size=16,   # Minimum vectors per partition
+    max_partition_size=128,  # Maximum vectors per partition
+)
+
+await vectorstore.aapply_vector_index(index)
+```
+
+### Query-time tuning
+
+Adjust search parameters at query time:
+
+```python
+from langchain_cockroachdb import CSPANNQueryOptions
+
+# Increase beam size for better recall (slower)
+query_options = CSPANNQueryOptions(beam_size=200)  # Default: 100
+
+docs = await vectorstore.asimilarity_search(
+    query,
+    k=10,
+    query_options=query_options,
+)
+```
+
+### Drop an index
+
+Remove a vector index:
+
+```python
+index = CSPANNIndex(name="my_vector_index")
+await vectorstore.adrop_vector_index(index)
+```
+
+## Metadata filtering
+
+Filter similarity searches using metadata fields.
+
+### Supported operators
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `$eq` | Equality | `{"category": "news"}` |
+| `$ne` | Not equal | `{"category": {"$ne": "spam"}}` |
+| `$gt` | Greater than | `{"year": {"$gt": 2020}}` |
+| `$gte` | Greater than or equal | `{"rating": {"$gte": 4.0}}` |
+| `$lt` | Less than | `{"year": {"$lt": 2023}}` |
+| `$lte` | Less than or equal | `{"rating": {"$lte": 3.0}}` |
+| `$in` | In list | `{"category": {"$in": ["news", "blog"]}}` |
+| `$nin` | Not in list | `{"source": {"$nin": ["spam", "test"]}}` |
+| `$between` | Between values | `{"year": {"$between": [2020, 2023]}}` |
+| `$like` | Pattern match | `{"source": {"$like": "wiki%"}}` |
+| `$ilike` | Case-insensitive | `{"category": {"$ilike": "%NEWS%"}}` |
+| `$and` | Logical AND | `{"$and": [{...}, {...}]}` |
+| `$or` | Logical OR | `{"$or": [{...}, {...}]}` |
+
+### Filter examples
+
+```python
+# Simple equality
+docs = await vectorstore.asimilarity_search(
+    query,
+    filter={"category": "news"},
+)
+
+# Numeric comparison
+docs = await vectorstore.asimilarity_search(
+    query,
+    filter={"year": {"$gte": 2020}},
+)
+
+# Complex filters
+docs = await vectorstore.asimilarity_search(
+    query,
+    filter={
+        "$and": [
+            {"category": {"$in": ["news", "blog"]}},
+            {"year": {"$gte": 2020}},
+            {"rating": {"$gt": 3.5}},
+        ]
+    },
+)
+```
+
+## Sync interface
+
+All async methods have sync equivalents using the sync wrapper:
+
+```python
+from langchain_cockroachdb import CockroachDBVectorStore
+
+# Create sync vectorstore
+vectorstore = CockroachDBVectorStore(
+    engine=engine,
+    embeddings=embeddings,
+    collection_name=TABLE_NAME,
+)
+
+# Use sync methods
+docs = vectorstore.similarity_search(query, k=5)
+ids = vectorstore.add_documents(docs)
+vectorstore.apply_vector_index(index)
+```
+
+## Usage for retrieval-augmented generation (RAG)
+
+For implementing RAG with CockroachDB as your vector store, see the [LangChain RAG tutorial](/oss/python/langchain/rag). The CockroachDB vector store can be used in place of any other vector store in those patterns.
+
+## Clean up
+
+<Warning>
+**⚠️ This operation cannot be undone**
+</Warning>
+
+Drop the vector store table:
+
+```python
+await engine.adrop_table(TABLE_NAME)
+```
+
+## API reference
+
+For detailed documentation of all features and configurations:
+
+- [GitHub repository](https://github.com/cockroachdb/langchain-cockroachdb)
+- [PyPI package](https://pypi.org/project/langchain-cockroachdb/)
+
+## Additional resources
+
+- [CockroachDB Vector Indexes documentation](https://www.cockroachlabs.com/docs/stable/vector-indexes)
+- [CockroachDB Cloud](https://cockroachlabs.cloud)

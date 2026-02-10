@@ -1,0 +1,241 @@
+---
+title: Granular billable usage
+sidebarTitle: Granular usage
+description: Retrieve detailed trace usage data broken down by workspace, project, user, or API key.
+---
+
+<Note>
+For LangSmith Cloud, granular billable usage data collection started on January 5, 2026. Data is not available for usage before this date. 
+
+For self-hosted instances, data collection begins when the feature is enabled via environment variable or after upgrading to a version with it enabled by default.
+</Note>
+
+LangSmith provides granular billable usage APIs that allow you to retrieve detailed trace usage data broken down by workspace, project, user, or API key. This enables you to:
+
+- Track usage across different teams or workspaces
+- Identify which users or API keys are consuming the most traces
+- Analyze usage patterns over time
+- Export usage data for internal reporting
+
+## Prerequisites
+
+- You must have the [`organization:read` permission](/langsmith/organization-workspace-operations) to access granular usage data.
+- You can only view usage for workspaces you have read access to.
+
+## View in the UI
+
+You can also view granular usage data in the [LangSmith UI](https://smith.langchain.com):
+
+1. Navigate to **Settings** > **Billing and Usage**
+2. Select the **Granular Usage** tab
+3. Use the controls to:
+   - Select a time range:
+      - Last 7 days, 30 days, 3 months, 6 months, 1 year, or custom
+   - Choose aggregation level (daily, weekly, or monthly)
+   - Group by workspace, project, user, or API key
+   - Filter to specific workspaces
+4. Click **Export CSV** to download the data
+
+## API endpoints
+
+### Get granular usage data
+
+Retrieve granular usage data with flexible grouping options.
+
+```
+GET /api/v1/orgs/current/billing/granular-usage
+```
+
+#### Query parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `start_time` | datetime | Yes | Start of the time range (ISO 8601 format) |
+| `end_time` | datetime | Yes | End of the time range (must be after start_time) |
+| `workspace_ids` | array of UUIDs | Yes | Filter results to specific workspaces |
+| `group_by` | string | No | Dimension to group by. One of: `workspace`, `project`, `user`, `api_key`. Default: `workspace` |
+
+#### Response
+
+```json
+{
+  "stride": {
+    "days": 1,
+    "hours": 0
+  },
+  "usage": [
+    {
+      "time_bucket": "2026-01-15T00:00:00Z",
+      "dimensions": {
+        "workspace_id": "uuid",
+        "workspace_name": "My Workspace"
+      },
+      "traces": 1500
+    }
+  ]
+}
+```
+
+The `stride` field indicates the time bucket size used for aggregation, calculated based on the requested time range:
+
+| Time range | Aggregation | Stride |
+|------------|-------------|--------|
+| Less than 1 day | Hourly | `hours: 1` |
+| 1-31 days | Daily | `days: 1` |
+| 32-93 days (~3 months) | Weekly | `days: 7` |
+| 94-366 days (~1 year) | Monthly | `days: 30` |
+| More than 366 days | Yearly | `days: 365` |
+
+#### Example: Get usage by workspace
+
+<CodeGroup>
+```python Python
+import httpx
+from datetime import datetime, timedelta, timezone
+
+client = httpx.Client(
+    base_url="https://api.smith.langchain.com",
+    headers={"x-api-key": "<your-api-key>"}
+)
+
+end_time = datetime.now(timezone.utc)
+start_time = end_time - timedelta(days=30)
+
+response = client.get(
+    "/api/v1/orgs/current/billing/granular-usage",
+    params={
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "workspace_ids": ["<workspace-id>"],
+        "group_by": "workspace"
+    }
+)
+
+data = response.json()
+for record in data["usage"]:
+    print(f"{record['time_bucket']}: {record['traces']} traces")
+```
+
+```typescript TypeScript
+const response = await fetch(
+  `https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage?` +
+  new URLSearchParams({
+    start_time: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    end_time: new Date().toISOString(),
+    workspace_ids: "<workspace-id>",
+    group_by: "workspace"
+  }),
+  {
+    headers: {
+      "x-api-key": "<your-api-key>"
+    }
+  }
+);
+
+const data = await response.json();
+for (const record of data.usage) {
+  console.log(`${record.time_bucket}: ${record.traces} traces`);
+}
+```
+
+```bash cURL
+curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage?\
+start_time=2026-01-01T00:00:00Z&\
+end_time=2026-01-15T00:00:00Z&\
+workspace_ids=<workspace-id>&\
+group_by=workspace" \
+  -H "x-api-key: <your-api-key>"
+```
+</CodeGroup>
+
+#### Example: Get usage by user
+
+<CodeGroup>
+```python Python
+response = client.get(
+    "/api/v1/orgs/current/billing/granular-usage",
+    params={
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "workspace_ids": ["<workspace-id>"],
+        "group_by": "user"
+    }
+)
+
+data = response.json()
+for record in data["usage"]:
+    user_email = record["dimensions"].get("user_email", "Unknown")
+    print(f"{user_email}: {record['traces']} traces")
+```
+</CodeGroup>
+
+### Export usage as CSV
+
+Export granular usage data as a downloadable CSV file.
+
+```
+GET /api/v1/orgs/current/billing/granular-usage/export
+```
+
+This endpoint accepts the same query parameters as the granular usage endpoint and returns a CSV file. 
+
+The CSV always includes all columns, but only the columns relevant to the selected `group_by` option are populated:
+
+| Column | Description |
+|--------|-------------|
+| Time Bucket Start | Start of the time bucket |
+| Time Bucket End | End of the time bucket |
+| Workspace ID | UUID of the workspace (when grouping by workspace) |
+| Workspace Name | Name of the workspace (when grouping by workspace) |
+| Project ID | UUID of the project (when grouping by project) |
+| Project Name | Name of the project (when grouping by project) |
+| User ID | UUID of the user (when grouping by user) |
+| User Email | Email of the user (when grouping by user) |
+| API Key Short Key | Short key identifier (when grouping by API key) |
+| Traces | Number of traces in the time bucket |
+
+#### Example: Export to CSV
+
+<CodeGroup>
+```python Python
+response = client.get(
+    "/api/v1/orgs/current/billing/granular-usage/export",
+    params={
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "workspace_ids": ["<workspace-id>"],
+        "group_by": "workspace"
+    }
+)
+
+# Save to file
+with open("usage_report.csv", "wb") as f:
+    f.write(response.content)
+```
+
+```bash cURL
+curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/export?\
+start_time=2026-01-01T00:00:00Z&\
+end_time=2026-01-15T00:00:00Z&\
+workspace_ids=<workspace-id>&\
+group_by=workspace" \
+  -H "x-api-key: <your-api-key>" \
+  -o usage_report.csv
+```
+</CodeGroup>
+
+## Grouping options
+
+The `group_by` parameter determines how usage data is aggregated:
+
+| Value | Description | Dimensions returned |
+|-------|-------------|---------------------|
+| `workspace` | Group by workspace | `workspace_id`, `workspace_name` |
+| `project` | Group by project | `project_id`, `project_name` |
+| `user` | Group by user | `user_id`, `user_email` |
+| `api_key` | Group by API key | `api_key_short_key` |
+
+## Related resources
+
+- [Manage billing in your account](/langsmith/billing)
+- [Organization and workspace operations](/langsmith/organization-workspace-operations)

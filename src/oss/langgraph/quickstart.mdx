@@ -129,11 +129,25 @@ const modelWithTools = model.bindTools(tools);
 
 The graph's state is used to store the messages and the number of LLM calls.
 
+:::python
+
 <Tip>
     State in LangGraph persists throughout the agent's execution.
 
     The `Annotated` type with `operator.add` ensures that new messages are appended to the existing list rather than replacing it.
 </Tip>
+
+:::
+
+:::js
+
+<Tip>
+    State in LangGraph persists throughout the agent's execution.
+
+    The `MessagesValue` provides a built-in reducer for appending messages. The `llmCalls` field uses a `ReducedValue` with `(x, y) => x + y` to accumulate the count.
+</Tip>
+
+:::
 
 :::python
 
@@ -151,16 +165,24 @@ class MessagesState(TypedDict):
 
 :::js
 ```typescript
-import { StateGraph, START, END } from "@langchain/langgraph";
-import { MessagesZodMeta } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import { type BaseMessage } from "@langchain/core/messages";
+import {
+  StateGraph,
+  StateSchema,
+  MessagesValue,
+  ReducedValue,
+  GraphNode,
+  ConditionalEdgeRouter,
+  START,
+  END,
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-const MessagesState = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
-  llmCalls: z.number().optional(),
+const MessagesState = new StateSchema({
+  messages: MessagesValue,
+  llmCalls: new ReducedValue(
+    z.number().default(0),
+    { reducer: (x, y) => x + y }
+  ),
 });
 ```
 :::
@@ -198,17 +220,19 @@ def llm_call(state: dict):
 
 ```typescript
 import { SystemMessage } from "@langchain/core/messages";
-async function llmCall(state: z.infer<typeof MessagesState>) {
+
+const llmCall: GraphNode<typeof MessagesState> = async (state) => {
+  const response = await modelWithTools.invoke([
+    new SystemMessage(
+      "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
+    ),
+    ...state.messages,
+  ]);
   return {
-    messages: await modelWithTools.invoke([
-      new SystemMessage(
-        "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
-      ),
-      ...state.messages,
-    ]),
-    llmCalls: (state.llmCalls ?? 0) + 1,
+    messages: [response],
+    llmCalls: 1,
   };
-}
+};
 ```
 :::
 
@@ -237,11 +261,12 @@ def tool_node(state: dict):
 :::js
 
 ```typescript
-import { isAIMessage, ToolMessage } from "@langchain/core/messages";
-async function toolNode(state: z.infer<typeof MessagesState>) {
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
+
+const toolNode: GraphNode<typeof MessagesState> = async (state) => {
   const lastMessage = state.messages.at(-1);
 
-  if (lastMessage == null || !isAIMessage(lastMessage)) {
+  if (lastMessage == null || !AIMessage.isInstance(lastMessage)) {
     return { messages: [] };
   }
 
@@ -253,7 +278,7 @@ async function toolNode(state: z.infer<typeof MessagesState>) {
   }
 
   return { messages: result };
-}
+};
 ```
 :::
 
@@ -286,9 +311,13 @@ def should_continue(state: MessagesState) -> Literal["tool_node", END]:
 :::js
 
 ```typescript
-async function shouldContinue(state: z.infer<typeof MessagesState>) {
+const shouldContinue: ConditionalEdgeRouter<typeof MessagesState, "toolNode"> = (state) => {
   const lastMessage = state.messages.at(-1);
-  if (lastMessage == null || !isAIMessage(lastMessage)) return END;
+
+  // Check if it's an AIMessage before accessing tool_calls
+  if (!lastMessage || !AIMessage.isInstance(lastMessage)) {
+    return END;
+  }
 
   // If the LLM makes a tool call, then perform an action
   if (lastMessage.tool_calls?.length) {
@@ -297,7 +326,7 @@ async function shouldContinue(state: z.infer<typeof MessagesState>) {
 
   // Otherwise, we stop (reply to the user)
   return END;
-}
+};
 ```
 :::
 
@@ -358,7 +387,7 @@ const result = await agent.invoke({
 });
 
 for (const message of result.messages) {
-  console.log(`[${message.getType()}]: ${message.text}`);
+  console.log(`[${message.type}]: ${message.text}`);
 }
 ```
 :::
@@ -577,43 +606,53 @@ const toolsByName = {
 };
 const tools = Object.values(toolsByName);
 const modelWithTools = model.bindTools(tools);
-
+```
+```typescript
 // Step 2: Define state
 
-import { StateGraph, START, END } from "@langchain/langgraph";
-import { MessagesZodMeta } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import { type BaseMessage } from "@langchain/core/messages";
+import {
+  StateGraph,
+  StateSchema,
+  MessagesValue,
+  ReducedValue,
+  GraphNode,
+  ConditionalEdgeRouter,
+  START,
+  END,
+} from "@langchain/langgraph";
+import * as z from "zod";
 
-const MessagesState = z.object({
-  messages: z
-    .array(z.custom<BaseMessage>())
-    .register(registry, MessagesZodMeta),
-  llmCalls: z.number().optional(),
+const MessagesState = new StateSchema({
+  messages: MessagesValue,
+  llmCalls: new ReducedValue(
+    z.number().default(0),
+    { reducer: (x, y) => x + y }
+  ),
 });
-
+```
+```typescript
 // Step 3: Define model node
 
-import { SystemMessage } from "@langchain/core/messages";
-async function llmCall(state: z.infer<typeof MessagesState>) {
+import { SystemMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
+
+const llmCall: GraphNode<typeof MessagesState> = async (state) => {
   return {
-    messages: await modelWithTools.invoke([
+    messages: [await modelWithTools.invoke([
       new SystemMessage(
         "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
       ),
       ...state.messages,
-    ]),
-    llmCalls: (state.llmCalls ?? 0) + 1,
+    ])],
+    llmCalls: 1,
   };
-}
+};
 
 // Step 4: Define tool node
 
-import { isAIMessage, ToolMessage } from "@langchain/core/messages";
-async function toolNode(state: z.infer<typeof MessagesState>) {
+const toolNode: GraphNode<typeof MessagesState> = async (state) => {
   const lastMessage = state.messages.at(-1);
 
-  if (lastMessage == null || !isAIMessage(lastMessage)) {
+  if (lastMessage == null || !AIMessage.isInstance(lastMessage)) {
     return { messages: [] };
   }
 
@@ -625,13 +664,19 @@ async function toolNode(state: z.infer<typeof MessagesState>) {
   }
 
   return { messages: result };
-}
-
+};
+```
+```typescript
 // Step 5: Define logic to determine whether to end
+import { ConditionalEdgeRouter, END } from "@langchain/langgraph";
 
-async function shouldContinue(state: z.infer<typeof MessagesState>) {
+const shouldContinue: ConditionalEdgeRouter<typeof MessagesState, "toolNode"> = (state) => {
   const lastMessage = state.messages.at(-1);
-  if (lastMessage == null || !isAIMessage(lastMessage)) return END;
+
+  // Check if it's an AIMessage before accessing tool_calls
+  if (!lastMessage || !AIMessage.isInstance(lastMessage)) {
+    return END;
+  }
 
   // If the LLM makes a tool call, then perform an action
   if (lastMessage.tool_calls?.length) {
@@ -640,9 +685,12 @@ async function shouldContinue(state: z.infer<typeof MessagesState>) {
 
   // Otherwise, we stop (reply to the user)
   return END;
-}
-
+};
+```
+```typescript
 // Step 6: Build and compile the agent
+import { HumanMessage } from "@langchain/core/messages";
+import { StateGraph, START, END } from "@langchain/langgraph";
 
 const agent = new StateGraph(MessagesState)
   .addNode("llmCall", llmCall)
@@ -653,13 +701,12 @@ const agent = new StateGraph(MessagesState)
   .compile();
 
 // Invoke
-import { HumanMessage } from "@langchain/core/messages";
 const result = await agent.invoke({
   messages: [new HumanMessage("Add 3 and 4.")],
 });
 
 for (const message of result.messages) {
-  console.log(`[${message.getType()}]: ${message.text}`);
+  console.log(`[${message.type}]: ${message.text}`);
 }
 ```
 :::
@@ -816,6 +863,7 @@ def call_llm(messages: list[BaseMessage]):
 ```typescript
 import { task, entrypoint } from "@langchain/langgraph";
 import { SystemMessage } from "@langchain/core/messages";
+
 const callLlm = task({ name: "callLlm" }, async (messages: BaseMessage[]) => {
   return modelWithTools.invoke([
     new SystemMessage(
@@ -845,6 +893,7 @@ def call_tool(tool_call: ToolCall):
 :::js
 ```typescript
 import type { ToolCall } from "@langchain/core/messages/tool";
+
 const callTool = task({ name: "callTool" }, async (toolCall: ToolCall) => {
   const tool = toolsByName[toolCall.name];
   return tool.invoke(toolCall);
@@ -893,7 +942,7 @@ for chunk in agent.stream(messages, stream_mode="updates"):
 :::js
 ```typescript
 import { addMessages } from "@langchain/langgraph";
-import { type BaseMessage, isAIMessage } from "@langchain/core/messages";
+import { type BaseMessage } from "@langchain/core/messages";
 
 const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
   let modelResponse = await callLlm(messages);
@@ -1051,11 +1100,22 @@ for chunk in agent.stream(messages, stream_mode="updates"):
 
 :::js
 ```typescript
-// Step 1: Define tools and model
-
 import { ChatAnthropic } from "@langchain/anthropic";
 import { tool } from "@langchain/core/tools";
+import {
+  task,
+  entrypoint,
+  addMessages,
+} from "@langchain/langgraph";
+import {
+  SystemMessage,
+  HumanMessage,
+  type BaseMessage,
+} from "@langchain/core/messages";
+import type { ToolCall } from "@langchain/core/messages/tool";
 import * as z from "zod";
+
+// Step 1: Define tools and model
 
 const model = new ChatAnthropic({
   model: "claude-sonnet-4-5-20250929",
@@ -1101,8 +1161,6 @@ const modelWithTools = model.bindTools(tools);
 
 // Step 2: Define model node
 
-import { task, entrypoint } from "@langchain/langgraph";
-import { SystemMessage } from "@langchain/core/messages";
 const callLlm = task({ name: "callLlm" }, async (messages: BaseMessage[]) => {
   return modelWithTools.invoke([
     new SystemMessage(
@@ -1114,15 +1172,13 @@ const callLlm = task({ name: "callLlm" }, async (messages: BaseMessage[]) => {
 
 // Step 3: Define tool node
 
-import type { ToolCall } from "@langchain/core/messages/tool";
 const callTool = task({ name: "callTool" }, async (toolCall: ToolCall) => {
   const tool = toolsByName[toolCall.name];
   return tool.invoke(toolCall);
 });
 
 // Step 4: Define agent
-import { addMessages } from "@langchain/langgraph";
-import { type BaseMessage, isAIMessage } from "@langchain/core/messages";
+
 const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
   let modelResponse = await callLlm(messages);
 
@@ -1143,11 +1199,11 @@ const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
 });
 
 // Invoke
-import { HumanMessage } from "@langchain/core/messages";
+
 const result = await agent.invoke([new HumanMessage("Add 3 and 4.")]);
 
 for (const message of result) {
-  console.log(`[${message.getType()}]: ${message.text}`);
+  console.log(`[${message.type}]: ${message.text}`);
 }
 ```
 :::

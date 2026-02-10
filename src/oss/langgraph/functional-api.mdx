@@ -253,7 +253,11 @@ const workflow = entrypoint(
   // In this case, we're using a bool, but this can be any json-serializable value.
   const humanReview = true;
 
-  for await (const item of workflow.stream(new Command({ resume: humanReview }), config)) {
+  const stream = await workflow.stream(
+    new Command({ resume: humanReview }),
+    config
+  );
+  for await (const item of stream) {
     console.log(item);
   }
   ```
@@ -346,7 +350,7 @@ The **inputs** and **outputs** of entrypoints must be JSON-serializable to suppo
 :::python
 ### Injectable parameters
 
-When declaring an `entrypoint`, you can request access to additional parameters that will be injected automatically at run time. These parameters include:
+When declaring an `entrypoint`, you can request access to additional parameters that will be injected automatically at runtime. These parameters include:
 
 | Parameter    | Description                                                                                                                                                        |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -365,11 +369,14 @@ Declare the parameters with the appropriate name and type annotation.
   from langgraph.func import entrypoint
   from langgraph.store.base import BaseStore
   from langgraph.store.memory import InMemoryStore
+  from langgraph.checkpoint.memory import InMemorySaver
+  from langgraph.types import StreamWriter
 
+  in_memory_checkpointer = InMemorySaver(...)
   in_memory_store = InMemoryStore(...)  # An instance of InMemoryStore for long-term memory
 
   @entrypoint(
-      checkpointer=checkpointer,  # Specify the checkpointer
+      checkpointer=in_memory_checkpointer,  # Specify the checkpointer
       store=in_memory_store  # Specify the store
   )
   def my_workflow(
@@ -904,7 +911,7 @@ While different runs of a workflow can produce different results, resuming a **s
 
 Idempotency ensures that running the same operation multiple times produces the same result. This helps prevent duplicate API calls and redundant processing if a step is rerun due to a failure. Always place API calls inside **tasks** functions for checkpointing, and design them to be idempotent in case of re-execution. Re-execution can occur if a **task** starts, but does not complete successfully. Then, if the workflow is resumed, the **task** will run again. Use idempotency keys or verify existing results to avoid duplication.
 
-## Common Pitfalls
+## Common pitfalls
 
 ### Handling side effects
 
@@ -996,13 +1003,7 @@ Operations that might give different results each time (like getting current tim
 * In a task: Get random number (5) → interrupt → resume → (returns 5 again) → ...
 * Not in a task: Get random number (5) → interrupt → resume → get new random number (7) → ...
 
-:::python
-This is especially important when using **human-in-the-loop** workflows with multiple interrupts calls. LangGraph keeps a list of resume values for each task/entrypoint. When an interrupt is encountered, it's matched with the corresponding resume value. This matching is strictly **index-based**, so the order of the resume values should match the order of the interrupts.
-:::
-
-:::js
 This is especially important when using **human-in-the-loop** workflows with multiple interrupt calls. LangGraph keeps a list of resume values for each task/entrypoint. When an interrupt is encountered, it's matched with the corresponding resume value. This matching is strictly **index-based**, so the order of the resume values should match the order of the interrupts.
-:::
 
 If order of execution is not maintained when resuming, one @[`interrupt`] call may be matched with the wrong `resume` value, leading to incorrect results.
 

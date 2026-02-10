@@ -1,0 +1,198 @@
+---
+title: EgnyteRetriever
+---
+
+This will help you get started with the Egnyte [retriever](/oss/langchain/retrieval). For detailed documentation of all EgnyteRetriever features and configurations head to the [API reference](https://github.com/egnyte/egnyte-langchain-connector).
+
+# Overview
+
+The `EgnyteRetriever` class helps you search and retrieve documents from Egnyte using hybrid search capabilities that combine semantic and keyword search. This retriever is fully compliant with LangChain standards and supports both synchronous and asynchronous operations.
+
+### Integration details
+
+Bring-your-own data (i.e., index and search a custom corpus of documents):
+
+| Retriever | Self-host | Cloud offering | Package |
+| :--- | :--- | :---: | :---: |
+[EgnyteRetriever](https://github.com/egnyte/egnyte-langchain-connector) | ❌ | ✅ | egnyte-langchain-connector |
+
+## Setup
+
+In order to use the Egnyte package, you will need:
+
+* An Egnyte account — If you are not a current Egnyte customer or want to test outside of your production Egnyte instance, you can use a [free developer account](https://developers.egnyte.com/member/register).
+* An Egnyte app — This is configured in the [developer console](https://developers.egnyte.com/), and must have the appropriate scopes enabled.
+* The app must be enabled by the administrator. For free developer accounts, this is whoever signed up for the account.
+
+### Credentials
+
+For these examples, we will use Bearer token authentication with an Egnyte user token. To generate a user token:
+
+1. Register for a developer account at [https://developers.egnyte.com/member/register](https://developers.egnyte.com/member/register)
+2. Generate a user token following the [Public API Authentication guide](https://developers.egnyte.com/docs/read/Public_API_Authentication)
+3. **Important**: Use the scope `Egnyte.ai` when generating the token
+
+```python
+import getpass
+import os
+
+egnyte_user_token = getpass.getpass("Enter your Egnyte User Token: ")
+domain = input("Enter your Egnyte domain (e.g., company.egnyte.com): ")
+```
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](https://docs.smith.langchain.com/) API key by uncommenting below:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+This retriever lives in the `egnyte-langchain-connector` package:
+
+```bash
+pip install -qU egnyte-langchain-connector
+```
+
+```output
+Note: you may need to restart the kernel to use updated packages.
+```
+
+## Instantiation
+
+Now we can instantiate our retriever:
+
+```python
+from langchain_egnyte import EgnyteRetriever
+
+retriever = EgnyteRetriever(domain=domain, k=100)
+```
+
+## Usage
+
+### Basic search
+
+```python
+query = "machine learning policies"
+
+documents = retriever.invoke(query, egnyte_user_token=egnyte_user_token)
+
+for doc in documents:
+    print(f"Title: {doc.metadata.get('title', 'N/A')}")
+    print(f"Content: {doc.page_content[:200]}...")
+    print("---")
+```
+
+### Advanced Search with Options
+
+For more granular search, you can use `EgnyteSearchOptions` to filter results by folder path, date range, and more:
+
+```python
+from langchain_egnyte import EgnyteRetriever, EgnyteSearchOptions
+
+search_options = EgnyteSearchOptions(
+    limit=50,
+    folderPath="/policies",
+    excludeFolderPaths=["/temp", "/archive"],
+    createdAfter=1640995200000,  # Unix timestamp in milliseconds (Jan 1, 2022)
+    createdBefore=1672531200000  # Unix timestamp in milliseconds (Jan 1, 2023)
+)
+
+retriever = EgnyteRetriever(
+    domain=domain,
+    k=50,
+    search_options=search_options
+)
+
+documents = retriever.invoke(
+    "compliance requirements",
+    egnyte_user_token=egnyte_user_token
+)
+```
+
+### Async usage
+
+The retriever supports asynchronous operations:
+
+```python
+import asyncio
+
+async def search_async():
+    documents = await retriever.ainvoke(
+        "data privacy guidelines",
+        egnyte_user_token=egnyte_user_token
+    )
+    return documents
+
+# Run async search
+documents = asyncio.run(search_async())
+```
+
+### Batch operations
+
+You can process multiple queries in batch:
+
+```python
+queries = [
+    "security policies",
+    "employee handbook",
+    "compliance guidelines"
+]
+
+# Synchronous batch
+results = retriever.batch(
+    queries,
+    config={"configurable": {"egnyte_user_token": egnyte_user_token}}
+)
+
+# Asynchronous batch
+results = await retriever.abatch(
+    queries,
+    config={"configurable": {"egnyte_user_token": egnyte_user_token}}
+)
+```
+
+## Use as an agent tool
+
+Like other retrievers, EgnyteRetriever can be added to a LangGraph agent as a tool.
+
+```python
+from langchain import hub
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.tools.retriever import create_retriever_tool
+from langchain_openai import ChatOpenAI
+
+retriever = EgnyteRetriever(domain=domain, k=50)
+
+egnyte_search_tool = create_retriever_tool(
+    retriever,
+    "egnyte_search_tool",
+    "This tool searches Egnyte and retrieves documents that match the search criteria using hybrid search"
+)
+
+tools = [egnyte_search_tool]
+
+prompt = hub.pull("hwchase17/openai-tools-agent")
+llm = ChatOpenAI(temperature=0)
+
+agent = create_openai_tools_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools)
+
+result = agent_executor.invoke({
+    "input": "Find all documents related to data privacy policies"
+})
+
+print(result['output'])
+```
+
+---
+
+## API reference
+
+For detailed documentation of all EgnyteRetriever features and configurations, visit the [GitHub repository](https://github.com/egnyte/egnyte-langchain-connector).
+
+## Help
+
+If you have questions, check out the [Egnyte developer documentation](https://developers.egnyte.com/) or reach out to the Egnyte developer community.
+

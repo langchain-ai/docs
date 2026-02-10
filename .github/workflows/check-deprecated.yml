@@ -1,0 +1,44 @@
+---
+name: Check for deprecated patterns
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.py"
+      - "**/*.md"
+      - "**/*.mdx"
+
+jobs:
+  check-deprecated:
+    name: Block deprecated examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for create_react_agent in diff
+        run: |
+          # Get the diff of added lines only (lines starting with +, excluding the +++ header)
+          ADDED_LINES=$(git diff origin/${{ github.base_ref }}...HEAD --diff-filter=ACMR -- '*.py' '*.md' '*.mdx' '*.ipynb' | grep -E '^\+' | grep -v '^\+\+\+' || true)
+
+          # Check if any added lines contain create_react_agent
+          if echo "$ADDED_LINES" | grep -q 'create_react_agent'; then
+            echo "❌ This PR adds code containing 'create_react_agent'."
+            echo ""
+            echo "The create_react_agent pattern is deprecated. Please use the recommended"
+            echo "agent patterns instead."
+            echo ""
+            echo "Matches found:"
+            echo "$ADDED_LINES" | grep 'create_react_agent' | head -20
+            exit 1
+          else
+            echo "✅ No create_react_agent examples found in added code."
+          fi
