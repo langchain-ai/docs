@@ -31,37 +31,43 @@ uv add langchain-mcp-adapters
 </Note>
 
 ```python Accessing multiple MCP servers icon="server"
+import asyncio
 from langchain_mcp_adapters.client import MultiServerMCPClient  # [!code highlight]
 from langchain.agents import create_agent
 
-
-client = MultiServerMCPClient(  # [!code highlight]
-    {
-        "math": {
-            "transport": "stdio",  # Local subprocess communication
-            "command": "python",
-            # Absolute path to your math_server.py file
-            "args": ["/path/to/math_server.py"],
-        },
-        "weather": {
-            "transport": "http",  # HTTP-based remote server
-            # Ensure you start your weather server on port 8000
-            "url": "http://localhost:8000/mcp",
+async def main():
+    client = MultiServerMCPClient(  # [!code highlight]
+        {
+            "math": {
+                "transport": "stdio",  # Local subprocess communication
+                "command": "python",
+                # Absolute path to your math_server.py file
+                "args": ["/path/to/math_server.py"],
+            },
+            "weather": {
+                "transport": "http",  # HTTP-based remote server
+                # Ensure you start your weather server on port 8000
+                "url": "http://localhost:8000/mcp",
+            }
         }
-    }
-)
+    )
 
-tools = await client.get_tools()  # [!code highlight]
-agent = create_agent(
-    "claude-sonnet-4-5-20250929",
-    tools  # [!code highlight]
-)
-math_response = await agent.ainvoke(
-    {"messages": [{"role": "user", "content": "what's (3 + 5) x 12?"}]}
-)
-weather_response = await agent.ainvoke(
-    {"messages": [{"role": "user", "content": "what is the weather in nyc?"}]}
-)
+    tools = await client.get_tools()  # [!code highlight]
+    agent = create_agent(
+        "claude-sonnet-4-5-20250929",
+        tools  # [!code highlight]
+    )
+    math_response = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "what's (3 + 5) x 12?"}]}
+    )
+    weather_response = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "what is the weather in nyc?"}]}
+    )
+    print(math_response)
+    print(weather_response)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 :::
 
@@ -464,7 +470,7 @@ client = MultiServerMCPClient(
 
 
 * [Example custom auth implementation](https://github.com/modelcontextprotocol/python-sdk/blob/main/examples/clients/simple-auth-client/mcp_simple_auth_client/main.py)
-* [Built-in OAuth flow](https://github.com/modelcontextprotocol/python-sdk/blob/main/src/mcp/client/auth.py#L179)
+* [Built-in OAuth flow](https://github.com/modelcontextprotocol/python-sdk/blob/main/src/mcp/client/auth/oauth2.py#L216)
 :::
 
 ### stdio
@@ -565,7 +571,7 @@ const agent = createAgent({ model: "claude-sonnet-4-5-20250929", tools });
 
 MCP tools can return [structured content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#structured-content) alongside the human-readable text response. This is useful when a tool needs to return machine-parseable data (like JSON) in addition to text that gets shown to the model.
 
-When an MCP tool returns `structuredContent`, the adapter wraps it in an [`MCPToolArtifact`](/docs/reference/langchain-mcp-adapters#MCPToolArtifact) and returns it as the tool's artifact. You can access this using the `artifact` field on the `ToolMessage`. You can also use [interceptors](#tool-interceptors) to process or transform structured content automatically.
+When an MCP tool returns `structuredContent`, the adapter wraps it in an [`MCPToolArtifact`](https://reference.langchain.com/python/langchain_mcp_adapters/#langchain_mcp_adapters.tools.MCPToolArtifact) and returns it as the tool's artifact. You can access this using the `artifact` field on the `ToolMessage`. You can also use [interceptors](#tool-interceptors) to process or transform structured content automatically.
 
 **Extracting structured content from artifact**
 
@@ -648,7 +654,7 @@ This allows you to handle multimodal tool responses in a provider-agnostic way, 
 
 ### Resources
 
-[Resources](https://modelcontextprotocol.io/docs/concepts/resources) allow MCP servers to expose data—such as files, database records, or API responses—that can be read by clients. LangChain converts MCP resources into [Blob](/docs/reference/langchain-core/documents#Blob) objects, which provide a unified interface for handling both text and binary content.
+[Resources](https://modelcontextprotocol.io/docs/concepts/resources) allow MCP servers to expose data—such as files, database records, or API responses—that can be read by clients. LangChain converts MCP resources into [Blob](https://reference.langchain.com/python/langchain_core/documents/#langchain_core.documents.base.Blob) objects, which provide a unified interface for handling both text and binary content.
 
 #### Loading resources
 
@@ -670,7 +676,7 @@ for blob in blobs:
     print(blob.as_string())  # For text content
 ```
 
-You can also use [`load_mcp_resources`](/docs/reference/langchain-mcp-adapters#load_mcp_resources) directly with a session for more control:
+You can also use [`load_mcp_resources`](https://reference.langchain.com/python/langchain_mcp_adapters/#langchain_mcp_adapters.resources.load_mcp_resources) directly with a session for more control:
 
 ```python
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -688,7 +694,7 @@ async with client.session("server_name") as session:
 
 ### Prompts
 
-[Prompts](https://modelcontextprotocol.io/docs/concepts/prompts) allow MCP servers to expose reusable prompt templates that can be retrieved and used by clients. LangChain converts MCP prompts into [messages](/docs/concepts/messages), making them easy to integrate into chat-based workflows.
+[Prompts](https://modelcontextprotocol.io/docs/concepts/prompts) allow MCP servers to expose reusable prompt templates that can be retrieved and used by clients. LangChain converts MCP prompts into [messages](/oss/langchain/messages), making them easy to integrate into chat-based workflows.
 
 #### Loading prompts
 
@@ -714,7 +720,7 @@ for message in messages:
     print(f"{message.type}: {message.content}")
 ```
 
-You can also use [`load_mcp_prompt`](/docs/reference/langchain-mcp-adapters#load_mcp_prompt) directly with a session for more control:
+You can also use [`load_mcp_prompt`](https://reference.langchain.com/python/langchain_mcp_adapters/#langchain_mcp_adapters.prompts.load_mcp_prompt) directly with a session for more control:
 
 ```python
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -787,7 +793,7 @@ When MCP tools are used within a LangChain agent (via `create_agent`), intercept
         tool_interceptors=[inject_user_context],
     )
     tools = await client.get_tools()
-    agent = create_agent("gpt-4o", tools, context_schema=Context)
+    agent = create_agent("gpt-4.1", tools, context_schema=Context)
 
     # Invoke with user context
     result = await agent.ainvoke(
@@ -840,7 +846,7 @@ When MCP tools are used within a LangChain agent (via `create_agent`), intercept
     )
     tools = await client.get_tools()
     agent = create_agent(
-        "gpt-4o",
+        "gpt-4.1",
         tools,
         context_schema=Context,
         store=InMemoryStore()

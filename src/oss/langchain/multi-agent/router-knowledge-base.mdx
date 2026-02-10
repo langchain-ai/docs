@@ -174,6 +174,7 @@ class RouterState(TypedDict):
 
 :::js
 ```typescript
+import { StateSchema, ReducedValue } from "@langchain/langgraph";
 import { z } from "zod/v4";
 
 const AgentOutput = z.object({
@@ -181,7 +182,7 @@ const AgentOutput = z.object({
   result: z.string(),
 });
 
-const RouterState = z.object({
+const RouterState = new StateSchema({
   query: z.string(),
   classifications: z.array(
     z.object({
@@ -189,13 +190,10 @@ const RouterState = z.object({
       query: z.string(),
     })
   ),
-  results: z
-    .array(AgentOutput)
-    .default([])
-    .meta({
-      reducer: (current: z.infer<typeof AgentOutput>[], update: z.infer<typeof AgentOutput>[]) =>
-        current.concat(update),
-    }),
+  results: new ReducedValue(
+    z.array(AgentOutput).default(() => []),
+    { reducer: (current, update) => current.concat(update) }
+  ),
   finalAnswer: z.string(),
 });
 ```
@@ -363,7 +361,7 @@ Create an agent for each vertical. Each agent has domain-specific tools and a pr
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 
-model = init_chat_model("openai:gpt-4o")
+model = init_chat_model("openai:gpt-4.1")
 
 github_agent = create_agent(
     model,
@@ -402,7 +400,7 @@ slack_agent = create_agent(
 import { createAgent } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 
-const llm = new ChatOpenAI({ model: "gpt-4o" });
+const llm = new ChatOpenAI({ model: "gpt-4.1" });
 
 const githubAgent = createAgent({
   model: llm,
@@ -451,7 +449,7 @@ from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 
-router_llm = init_chat_model("openai:gpt-4o-mini")
+router_llm = init_chat_model("openai:gpt-4.1-mini")
 
 
 # Define structured output schema for the classifier
@@ -556,7 +554,7 @@ def synthesize_results(state: RouterState) -> dict:
 import { StateGraph, START, END, Send } from "@langchain/langgraph";
 import { z } from "zod";
 
-const routerLlm = new ChatOpenAI({ model: "gpt-4o-mini" });
+const routerLlm = new ChatOpenAI({ model: "gpt-4.1-mini" });
 
 
 // Define structured output schema for the classifier
@@ -937,8 +935,8 @@ def get_thread(thread_id: str) -> str:
 
 
 # Models and agents
-model = init_chat_model("openai:gpt-4o")
-router_llm = init_chat_model("openai:gpt-4o-mini")
+model = init_chat_model("openai:gpt-4.1")
+router_llm = init_chat_model("openai:gpt-4.1-mini")
 
 github_agent = create_agent(
     model,
@@ -1097,14 +1095,14 @@ if __name__ == "__main__":
  */
 import { z } from "zod/v4";
 import { tool } from "langchain";
-import { StateGraph, START, END, Send } from "@langchain/langgraph";
+import { StateGraph, START, END, Send, StateSchema, ReducedValue } from "@langchain/langgraph";
 
 const AgentOutput = z.object({
   source: z.string(),
   result: z.string(),
 });
 
-const RouterState = z.object({
+const RouterState = new StateSchema({
   query: z.string(),
   classifications: z.array(
     z.object({
@@ -1112,13 +1110,10 @@ const RouterState = z.object({
       query: z.string(),
     })
   ),
-  results: z
-    .array(AgentOutput)
-    .default([])
-    .meta({
-      reducer: (current: z.infer<typeof AgentOutput>[], update: z.infer<typeof AgentOutput>[]) =>
-        current.concat(update),
-    }),
+  results: new ReducedValue(
+    z.array(AgentOutput).default(() => []),
+    { reducer: (current, update) => current.concat(update) }
+  ),
   finalAnswer: z.string(),
 });
 
@@ -1217,7 +1212,7 @@ const getThread = tool(
 import { createAgent } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 
-const llm = new ChatOpenAI({ model: "gpt-4o" });
+const llm = new ChatOpenAI({ model: "gpt-4.1" });
 
 const githubAgent = createAgent({
   model: llm,
@@ -1249,7 +1244,7 @@ shared knowledge and solutions.
   `.trim(),
 });
 
-const routerLlm = new ChatOpenAI({ model: "gpt-4o-mini" });
+const routerLlm = new ChatOpenAI({ model: "gpt-4.1-mini" });
 
 // Define structured output schema for the classifier
 const ClassificationResultSchema = z.object({
@@ -1264,7 +1259,7 @@ const ClassificationResultSchema = z.object({
     .describe("List of agents to invoke with their targeted sub-questions"),
 });
 
-async function classifyQuery(state: z.infer<typeof RouterState>) {
+async function classifyQuery(state: typeof RouterState.State) {
   const structuredLlm = routerLlm.withStructuredOutput(
     ClassificationResultSchema
   ); // [!code highlight]
@@ -1294,13 +1289,13 @@ Example for "How do I authenticate API requests?":
   return { classifications: result.classifications };
 }
 
-function routeToAgents(state: z.infer<typeof RouterState>): Send[] {
+function routeToAgents(state: typeof RouterState.State): Send[] {
   return state.classifications.map(
     (c) => new Send(c.source, { query: c.query }) // [!code highlight]
   );
 }
 
-async function queryGithub(state: z.infer<typeof RouterState>) {
+async function queryGithub(state: typeof RouterState.State) {
   const result = await githubAgent.invoke({
     messages: [{ role: "user", content: state.query }], // [!code highlight]
   });
@@ -1309,7 +1304,7 @@ async function queryGithub(state: z.infer<typeof RouterState>) {
   };
 }
 
-async function queryNotion(state: z.infer<typeof RouterState>) {
+async function queryNotion(state: typeof RouterState.State) {
   const result = await notionAgent.invoke({
     messages: [{ role: "user", content: state.query }], // [!code highlight]
   });
@@ -1318,7 +1313,7 @@ async function queryNotion(state: z.infer<typeof RouterState>) {
   };
 }
 
-async function querySlack(state: z.infer<typeof RouterState>) {
+async function querySlack(state: typeof RouterState.State) {
   const result = await slackAgent.invoke({
     messages: [{ role: "user", content: state.query }], // [!code highlight]
   });
@@ -1327,7 +1322,7 @@ async function querySlack(state: z.infer<typeof RouterState>) {
   };
 }
 
-async function synthesizeResults(state: z.infer<typeof RouterState>) {
+async function synthesizeResults(state: typeof RouterState.State) {
   if (state.results.length === 0) {
     return { finalAnswer: "No results found from any knowledge source." };
   }

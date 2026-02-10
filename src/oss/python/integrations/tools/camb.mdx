@@ -1,0 +1,420 @@
+---
+title: "CAMB AI integration"
+description: "Integrate with CAMB AI multilingual audio and localization tools using LangChain Python."
+---
+
+[CAMB AI](https://camb.ai) provides multilingual audio and localization services supporting 140+ languages, including text-to-speech, translation, transcription, voice cloning, and audio generation.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools) |  Version |
+|:------|:--------|:------------:|:--------------------------------------------------------------:|:--------:|
+| [CambToolkit](https://github.com/camb-ai/langchain-camb) | [langchain-camb](https://pypi.org/project/langchain-camb/) | beta | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-camb?style=flat-square&label=%20) |
+
+### Tool features
+
+| Tool | Description | Returns |
+|:-----|:------------|:--------|
+| `CambTTSTool` | Text-to-Speech - Convert text to natural speech | Audio file path, base64, or bytes |
+| `CambTranslatedTTSTool` | Translate text and convert to speech in one step | Audio file path, base64, or bytes |
+| `CambTranslationTool` | Text translation between 140+ languages | Translated text |
+| `CambTranscriptionTool` | Speech-to-text with speaker identification | JSON with text and segments |
+| `CambVoiceListTool` | List available voices for TTS | JSON list of voices |
+| `CambVoiceCloneTool` | Clone voices from 2+ second audio samples | New voice ID |
+| `CambTextToSoundTool` | Generate music and sound effects from text | Audio file path |
+| `CambAudioSeparationTool` | Separate vocals from background audio | JSON with audio paths |
+
+## Setup
+
+To access the CAMB AI tools, you'll need to create a CAMB AI account and get an API key from [camb.ai](https://camb.ai).
+
+### Credentials
+
+```python
+import getpass
+import os
+
+if "CAMB_API_KEY" not in os.environ:
+    os.environ["CAMB_API_KEY"] = getpass.getpass("Enter your CAMB API key: ")
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](https://docs.langchain.com/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The CAMB AI tools live in the `langchain-camb` package:
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-camb
+```
+```bash uv
+uv add langchain-camb
+```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+You can use the `CambToolkit` to get all tools at once, or instantiate individual tools.
+
+### Using the toolkit
+
+```python
+from langchain_camb import CambToolkit
+
+toolkit = CambToolkit()
+tools = toolkit.get_tools()
+
+print(f"Available tools: {[t.name for t in tools]}")
+```
+
+### Using individual tools
+
+```python
+from langchain_camb import CambTTSTool, CambTranslationTool
+
+tts_tool = CambTTSTool()
+translation_tool = CambTranslationTool()
+```
+
+---
+
+## Examples
+
+### Text-to-Speech
+
+Generate speech from text in multiple languages with different voices and speeds:
+
+```python
+from langchain_camb import CambTTSTool, CambVoiceListTool
+
+# First, list available voices
+voice_list = CambVoiceListTool()
+voices = voice_list.invoke({})
+print(f"Available voices: {voices[:500]}...")
+
+# Create TTS tool
+tts = CambTTSTool()
+
+# Generate speech in English
+english_audio = tts.invoke({
+    "text": "Hello! Welcome to CAMB AI. We support over 140 languages for text to speech.",
+    "language": "en-us",
+    "voice_id": 147320,
+    "speech_model": "mars-flash",  # or "mars-pro", "mars-instruct"
+    "output_format": "file_path",
+})
+print(f"English audio saved to: {english_audio}")
+
+# Generate speech in Spanish
+spanish_audio = tts.invoke({
+    "text": "¡Hola! Bienvenido a CAMB AI. Soportamos más de 140 idiomas.",
+    "language": "es-es",
+    "voice_id": 147320,
+    "output_format": "file_path",
+})
+print(f"Spanish audio saved to: {spanish_audio}")
+
+# Generate with different speed (0.5 to 2.0)
+slow_audio = tts.invoke({
+    "text": "This is spoken slowly for clarity.",
+    "language": "en-us",
+    "voice_id": 147320,
+    "speed": 0.7,
+    "output_format": "file_path",
+})
+print(f"Slow audio saved to: {slow_audio}")
+```
+
+### Translation
+
+Translate text between 140+ languages with optional formality control:
+
+```python
+from langchain_camb import CambTranslationTool
+
+# Language codes (see Language codes section below for full list)
+LANGUAGES = {
+    "english": 1,
+    "spanish": 54,
+    "french": 76,
+    "german": 31,
+    "japanese": 88,
+}
+
+translator = CambTranslationTool()
+
+# Simple translation
+spanish = translator.invoke({
+    "text": "Hello, how are you?",
+    "source_language": LANGUAGES["english"],
+    "target_language": LANGUAGES["spanish"],
+})
+print(f"Spanish: {spanish}")  # "Hola, ¿cómo estás?"
+
+# Formal translation
+german_formal = translator.invoke({
+    "text": "Can you help me with this problem?",
+    "source_language": LANGUAGES["english"],
+    "target_language": LANGUAGES["german"],
+    "formality": 1,  # 1=formal, 2=informal
+})
+print(f"German (formal): {german_formal}")
+
+# Informal translation
+french_informal = translator.invoke({
+    "text": "What's up? Want to hang out later?",
+    "source_language": LANGUAGES["english"],
+    "target_language": LANGUAGES["french"],
+    "formality": 2,
+})
+print(f"French (informal): {french_informal}")
+
+# Multi-language translation
+text = "Good morning! Have a wonderful day."
+for lang_name, lang_code in [("spanish", 54), ("french", 76), ("japanese", 88)]:
+    result = translator.invoke({
+        "text": text,
+        "source_language": LANGUAGES["english"],
+        "target_language": lang_code,
+    })
+    print(f"{lang_name.capitalize()}: {result}")
+```
+
+### Sound and music generation
+
+Generate music, sound effects, and ambient sounds from text descriptions:
+
+```python
+from langchain_camb import CambTextToSoundTool
+
+sound_gen = CambTextToSoundTool()
+
+# Generate background music
+music = sound_gen.invoke({
+    "prompt": "Calm ambient music with soft piano and gentle strings, suitable for meditation",
+    "duration": 30,
+    "audio_type": "music",
+    "output_format": "file_path",
+})
+print(f"Music saved to: {music}")
+
+# Generate sound effect
+sfx = sound_gen.invoke({
+    "prompt": "Futuristic sci-fi door opening with hydraulic hiss",
+    "duration": 3,
+    "audio_type": "sound",
+    "output_format": "file_path",
+})
+print(f"Sound effect saved to: {sfx}")
+
+# Generate ambient soundscape
+ambient = sound_gen.invoke({
+    "prompt": "Peaceful forest ambiance with birds chirping, wind through leaves, and a distant stream",
+    "duration": 60,
+    "audio_type": "sound",
+    "output_format": "file_path",
+})
+print(f"Ambient sound saved to: {ambient}")
+```
+
+### Voice cloning
+
+Clone a voice from a short audio sample (2+ seconds) and use it for TTS:
+
+```python
+from langchain_camb import CambVoiceCloneTool, CambTTSTool
+
+voice_clone = CambVoiceCloneTool()
+tts = CambTTSTool()
+
+# Step 1: Clone a voice from an audio sample (requires 2+ seconds)
+clone_result = voice_clone.invoke({
+    "voice_name": "My Custom Voice",
+    "audio_file_path": "/path/to/voice_sample.wav",
+    "gender": 2,  # 1=Male, 2=Female
+    "description": "A warm, friendly voice for customer service",
+})
+print(f"Voice cloned! New voice ID: {clone_result}")
+
+# Step 2: Use the cloned voice for TTS
+cloned_voice_id = clone_result  # The returned voice ID
+audio = tts.invoke({
+    "text": "Hello! This is my cloned voice speaking.",
+    "language": "en-us",
+    "voice_id": cloned_voice_id,
+    "output_format": "file_path",
+})
+print(f"Audio generated: {audio}")
+```
+
+### Podcast/video localization
+
+Transcribe audio, translate it, and generate speech in another language - the foundation for dubbing workflows:
+
+```python
+from langchain_camb import CambTranscriptionTool, CambTranslationTool, CambTTSTool
+
+ENGLISH = 1
+SPANISH = 54
+
+# Initialize tools
+transcriber = CambTranscriptionTool()
+translator = CambTranslationTool()
+tts = CambTTSTool()
+
+# Step 1: Transcribe the audio
+transcription_result = transcriber.invoke({
+    "audio_url": "https://example.com/podcast_clip.mp3",
+    "language": ENGLISH,
+})
+# Returns JSON with text, segments, and speaker identification
+
+# Step 2: Translate each segment
+segments = transcription_result.get("segments", [])
+translated_segments = []
+for segment in segments:
+    translated = translator.invoke({
+        "text": segment["text"],
+        "source_language": ENGLISH,
+        "target_language": SPANISH,
+    })
+    translated_segments.append({
+        "start": segment["start"],
+        "end": segment["end"],
+        "original": segment["text"],
+        "translated": translated,
+    })
+    print(f"'{segment['text']}' -> '{translated}'")
+
+# Step 3: Generate Spanish audio for each segment
+audio_files = []
+for i, segment in enumerate(translated_segments):
+    audio_path = tts.invoke({
+        "text": segment["translated"],
+        "language": "es-es",
+        "voice_id": 147320,
+        "output_format": "file_path",
+    })
+    audio_files.append(audio_path)
+    print(f"Segment {i + 1}: {audio_path}")
+```
+
+---
+
+## Use within an agent
+
+You can use CAMB AI tools with a LangGraph agent to create powerful multilingual AI assistants:
+
+```python
+from langchain_camb import CambToolkit
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.prebuilt import create_react_agent
+
+# Create the toolkit with all CAMB AI tools
+toolkit = CambToolkit()
+tools = toolkit.get_tools()
+
+print(f"Available tools: {[t.name for t in tools]}")
+
+# Create the agent
+llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+agent = create_react_agent(llm, tools)
+
+# Generate speech
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Say 'Hello world' in English using text-to-speech"}]
+})
+print(f"Agent response: {result['messages'][-1].content}")
+
+# Translate text
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "Translate 'I love programming' to Spanish and French"}]
+})
+print(f"Agent response: {result['messages'][-1].content}")
+
+# Complex multi-step task
+result = agent.invoke({
+    "messages": [{
+        "role": "user",
+        "content": """
+        I need to create a multilingual greeting for my app:
+        1. First, find a good voice to use
+        2. Then translate "Welcome to our app!" to Spanish
+        3. Generate audio of that Spanish greeting
+        """
+    }]
+})
+print(f"Agent response: {result['messages'][-1].content}")
+```
+
+---
+
+## Toolkit configuration
+
+The `CambToolkit` allows you to select which tools to include:
+
+```python
+from langchain_camb import CambToolkit
+
+# TTS-focused toolkit
+tts_toolkit = CambToolkit(
+    include_tts=True,
+    include_voice_list=True,
+    include_translation=False,
+    include_transcription=False,
+    include_translated_tts=False,
+    include_voice_clone=False,
+    include_text_to_sound=False,
+    include_audio_separation=False,
+)
+
+# Translation-focused toolkit
+translation_toolkit = CambToolkit(
+    include_tts=False,
+    include_translated_tts=True,
+    include_translation=True,
+    include_transcription=True,
+    include_voice_list=False,
+    include_voice_clone=False,
+    include_text_to_sound=False,
+    include_audio_separation=False,
+)
+```
+
+---
+
+## Language codes
+
+CAMB AI uses integer language codes for translation and transcription. Common codes:
+
+| Code | Language | BCP-47 |
+|:-----|:---------|:-------|
+| 1 | English (US) | en-us |
+| 31 | German (Germany) | de-de |
+| 54 | Spanish (Spain) | es-es |
+| 76 | French (France) | fr-fr |
+| 87 | Italian | it-it |
+| 88 | Japanese | ja-jp |
+| 94 | Korean | ko-kr |
+| 108 | Dutch | nl-nl |
+| 111 | Portuguese (Brazil) | pt-br |
+| 114 | Russian | ru-ru |
+| 139 | Chinese (Simplified) | zh-cn |
+
+For TTS, use BCP-47 codes like `"en-us"`, `"es-es"`, `"fr-fr"`.
+
+---
+
+## API reference
+
+For detailed documentation of all CAMB AI features and configurations, head to the [CAMB AI API reference](https://docs.camb.ai).

@@ -59,13 +59,14 @@ To make the server aware of your graph, you need to specify a path to the variab
 
 ### Rebuild
 
-To make your graph rebuild on each new run with custom configuration, you need to rewrite `openai_agent.py` to instead provide a _function_ that takes a config and returns a graph (or compiled graph) instance. Let's say we want to return our existing graph for user ID '1', and a tool-calling agent for other users. We can modify `openai_agent.py` as follows:
+To make your graph rebuild on each new run with custom configuration, you need to rewrite `openai_agent.py` to instead provide an _async context manager_ that takes a config and yields a graph (or compiled graph) instance. Let's say we want to return our existing graph for user ID '1', and a tool-calling agent for other users. We can modify `openai_agent.py` as follows:
 
 ```python
+import contextlib
 from typing import Annotated
 from typing_extensions import TypedDict
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, MessageGraph
+from langgraph.graph import END, START
 from langgraph.graph.state import StateGraph
 from langgraph.graph.message import add_messages
 from langchain.tools import tool
@@ -83,8 +84,9 @@ model = ChatOpenAI(temperature=0)
 def make_default_graph():
     """Make a simple LLM agent"""
     graph_workflow = StateGraph(State)
-    def call_model(state):
-        return {"messages": [model.invoke(state["messages"])]}
+
+    async def call_model(state):
+        return {"messages": [await model.ainvoke(state["messages"])]}
 
     graph_workflow.add_node("agent", call_model)
     graph_workflow.add_edge("agent", END)
@@ -104,8 +106,9 @@ def make_alternative_graph():
 
     tool_node = ToolNode([add])
     model_with_tools = model.bind_tools([add])
-    def call_model(state):
-        return {"messages": [model_with_tools.invoke(state["messages"])]}
+
+    async def call_model(state):
+        return {"messages": [await model_with_tools.ainvoke(state["messages"])]}
 
     def should_continue(state: State):
         if state["messages"][-1].tool_calls:
@@ -127,16 +130,17 @@ def make_alternative_graph():
 
 # this is the graph making function that will decide which graph to
 # build based on the provided config
-def make_graph(config: RunnableConfig):
+@contextlib.asynccontextmanager
+async def make_graph(config: RunnableConfig):
     user_id = config.get("configurable", {}).get("user_id")
     # route to different graph state / structure based on the user ID
     if user_id == "1":
-        return make_default_graph()
+        yield make_default_graph()
     else:
-        return make_alternative_graph()
+        yield make_alternative_graph()
 ```
 
-Finally, you need to specify the path to your graph-making function (`make_graph`) in `langgraph.json`:
+Finally, you need to specify the path to your graph-making async context manager (`make_graph`) in `langgraph.json`:
 
 ```
 {

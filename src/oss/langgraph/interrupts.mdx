@@ -134,6 +134,52 @@ The key thing that interrupts unlock is the ability to pause execution and wait 
 - <Icon icon="wrench" /> [Interrupting tool calls](#interrupts-in-tools): Pause before executing tool calls to review and edit the tool call before execution
 - <Icon icon="shield-check" /> [Validating human input](#validating-human-input): Pause before proceeding to the next step to validate human input
 
+### Stream with human-in-the-loop (HITL) interrupts
+
+When building interactive agents with human-in-the-loop workflows, you can stream both message chunks and node updates simultaneously to provide real-time feedback while handling interrupts.
+
+Use multiple stream modes (`"messages"` and `"updates"`) with `subgraphs=True` (if subgraphs are present) to:
+- Stream AI responses in real-time as they're generated
+- Detect when the graph encounters an interrupt
+- Handle user input and resume execution seamlessly
+
+```python
+async for metadata, mode, chunk in graph.astream(
+    initial_input,
+    stream_mode=["messages", "updates"],
+    subgraphs=True,
+    config=config
+):
+    if mode == "messages":
+        # Handle streaming message content
+        msg, _ = chunk
+        if isinstance(msg, AIMessageChunk) and msg.content:
+            # Display content in real-time
+            display_streaming_content(msg.content)
+    
+    elif mode == "updates":
+        # Check for interrupts
+        if "__interrupt__" in chunk:
+            # Stop streaming display
+            interrupt_info = chunk["__interrupt__"][0].value
+            
+            # Handle user input
+            user_response = get_user_input(interrupt_info)
+            
+            # Resume graph with updated input
+            initial_input = Command(resume=user_response)
+            break
+        
+        else:
+            # Track node transitions
+            current_node = list(chunk.keys())[0]
+```
+
+- **`stream_mode=["messages", "updates"]`**: Enables dual streaming of both message chunks and graph state updates
+- **`subgraphs=True`**: Required for interrupt detection in nested graphs
+- **`"__interrupt__"` detection**: Signals when human input is needed
+- **`Command(resume=...)`**: Resumes graph execution with user-provided data
+
 ### Approve or reject
 
 One of the most common uses of interrupts is to pause before a critical action and ask for approval. For example, you might want to ask a human to approve an API call, a database change, or any other important decision.
