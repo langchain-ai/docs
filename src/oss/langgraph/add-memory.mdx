@@ -530,6 +530,92 @@ const graph = builder.compile({ store });
 ```
 :::
 
+### Access the store inside nodes
+
+Once you compile a graph with a store, LangGraph automatically injects the store into your node functions. The recommended way to access the store is through the `Runtime` object.
+
+:::python
+```python
+from dataclasses import dataclass
+from langgraph.runtime import Runtime
+from langgraph.graph import StateGraph, MessagesState, START
+import uuid
+
+@dataclass
+class Context:
+    user_id: str
+
+async def call_model(state: MessagesState, runtime: Runtime[Context]):  # [!code highlight]
+    user_id = runtime.context.user_id  # [!code highlight]
+    namespace = (user_id, "memories")
+
+    # Search for relevant memories
+    memories = await runtime.store.asearch(  # [!code highlight]
+        namespace, query=state["messages"][-1].content, limit=3
+    )
+    info = "\n".join([d.value["data"] for d in memories])
+
+    # ... Use memories in model call
+
+    # Store a new memory
+    await runtime.store.aput(  # [!code highlight]
+        namespace, str(uuid.uuid4()), {"data": "User prefers dark mode"}
+    )
+
+builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
+builder.add_node(call_model)
+builder.add_edge(START, "call_model")
+graph = builder.compile(store=store)
+
+# Pass context at invocation time
+graph.invoke(
+    {"messages": [{"role": "user", "content": "hi"}]},
+    {"configurable": {"thread_id": "1"}},
+    context=Context(user_id="1"),  # [!code highlight]
+)
+```
+:::
+
+:::js
+```typescript
+import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
+import { v4 as uuidv4 } from "uuid";
+
+const State = new StateSchema({
+  messages: MessagesValue,
+});
+
+const callModel: GraphNode<typeof State> = async (state, runtime) => {
+  const userId = runtime.context?.userId;
+  const namespace = [userId, "memories"];
+
+  // Search for relevant memories
+  const memories = await runtime.store?.search(namespace, {
+    query: state.messages.at(-1)?.content,
+    limit: 3,
+  });
+  const info = memories?.map((d) => d.value.data).join("\n") || "";
+
+  // ... Use memories in model call
+
+  // Store a new memory
+  await runtime.store?.put(namespace, uuidv4(), { data: "User prefers dark mode" });
+};
+
+const builder = new StateGraph(State)
+  .addNode("call_model", callModel)
+  .addEdge(START, "call_model");
+const graph = builder.compile({ store });
+
+// Pass context at invocation time
+await graph.invoke(
+  { messages: [{ role: "user", content: "hi" }] },
+  { configurable: { thread_id: "1" }, context: { userId: "1" } }
+);
+```
+:::
+
+
 ### Use in production
 
 In production, use a store backed by a database:
@@ -568,96 +654,42 @@ const graph = builder.compile({ store });
     </Tip>
 
     <Tabs>
-        <Tab title="Sync">
-      ```python
-      from langchain_core.runnables import RunnableConfig
-      from langchain.chat_models import init_chat_model
-      from langgraph.graph import StateGraph, MessagesState, START
-      from langgraph.checkpoint.postgres import PostgresSaver
-      from langgraph.store.postgres import PostgresStore  # [!code highlight]
-      from langgraph.store.base import BaseStore
-
-      model = init_chat_model(model="claude-haiku-4-5-20251001")
-
-      DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
-
-      with (
-          PostgresStore.from_conn_string(DB_URI) as store,  # [!code highlight]
-          PostgresSaver.from_conn_string(DB_URI) as checkpointer,
-      ):
-          # store.setup()
-          # checkpointer.setup()
-
-          def call_model(
-              state: MessagesState,
-              config: RunnableConfig,
-              *,
-              store: BaseStore,  # [!code highlight]
-          ):
-              user_id = config["configurable"]["user_id"]
-              namespace = ("memories", user_id)
-              memories = store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
-              info = "\n".join([d.value["data"] for d in memories])
-              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
-
-              # Store new memories if the user asks the model to remember
-              last_message = state["messages"][-1]
-              if "remember" in last_message.content.lower():
-                  memory = "User name is Bob"
-                  store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
-
-              response = model.invoke(
-                  [{"role": "system", "content": system_msg}] + state["messages"]
-              )
-              return {"messages": response}
-
-          builder = StateGraph(MessagesState)
-          builder.add_node(call_model)
-          builder.add_edge(START, "call_model")
-
-          graph = builder.compile(
-              checkpointer=checkpointer,
-              store=store,  # [!code highlight]
-          )
-
-          config = {
-              "configurable": {
-                  "thread_id": "1",  # [!code highlight]
-                  "user_id": "1",  # [!code highlight]
-              }
-          }
-          for chunk in graph.stream(
-              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
-              config,  # [!code highlight]
-              stream_mode="values",
-          ):
-              chunk["messages"][-1].pretty_print()
-
-          config = {
-              "configurable": {
-                  "thread_id": "2",  # [!code highlight]
-                  "user_id": "1",
-              }
-          }
-
-          for chunk in graph.stream(
-              {"messages": [{"role": "user", "content": "what is my name?"}]},
-              config,  # [!code highlight]
-              stream_mode="values",
-          ):
-              chunk["messages"][-1].pretty_print()
-```
-        </Tab>
         <Tab title="Async">
       ```python
-      from langchain_core.runnables import RunnableConfig
+      from dataclasses import dataclass
       from langchain.chat_models import init_chat_model
       from langgraph.graph import StateGraph, MessagesState, START
       from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
       from langgraph.store.postgres.aio import AsyncPostgresStore  # [!code highlight]
-      from langgraph.store.base import BaseStore
+      from langgraph.runtime import Runtime  # [!code highlight]
+      import uuid
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      @dataclass
+      class Context:
+          user_id: str
+
+      async def call_model(  # [!code highlight]
+          state: MessagesState,
+          runtime: Runtime[Context],  # [!code highlight]
+      ):
+          user_id = runtime.context.user_id  # [!code highlight]
+          namespace = ("memories", user_id)
+          memories = await runtime.store.asearch(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          info = "\n".join([d.value["data"] for d in memories])
+          system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+          # Store new memories if the user asks the model to remember
+          last_message = state["messages"][-1]
+          if "remember" in last_message.content.lower():
+              memory = "User name is Bob"
+              await runtime.store.aput(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+          response = await model.ainvoke(
+              [{"role": "system", "content": system_msg}] + state["messages"]
+          )
+          return {"messages": response}
 
       DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
 
@@ -668,30 +700,7 @@ const graph = builder.compile({ store });
           # await store.setup()
           # await checkpointer.setup()
 
-          async def call_model(
-              state: MessagesState,
-              config: RunnableConfig,
-              *,
-              store: BaseStore,  # [!code highlight]
-          ):
-              user_id = config["configurable"]["user_id"]
-              namespace = ("memories", user_id)
-              memories = await store.asearch(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
-              info = "\n".join([d.value["data"] for d in memories])
-              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
-
-              # Store new memories if the user asks the model to remember
-              last_message = state["messages"][-1]
-              if "remember" in last_message.content.lower():
-                  memory = "User name is Bob"
-                  await store.aput(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
-
-              response = await model.ainvoke(
-                  [{"role": "system", "content": system_msg}] + state["messages"]
-              )
-              return {"messages": response}
-
-          builder = StateGraph(MessagesState)
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
           builder.add_node(call_model)
           builder.add_edge(START, "call_model")
 
@@ -700,30 +709,95 @@ const graph = builder.compile({ store });
               store=store,  # [!code highlight]
           )
 
-          config = {
-              "configurable": {
-                  "thread_id": "1",  # [!code highlight]
-                  "user_id": "1",  # [!code highlight]
-              }
-          }
+          config = {"configurable": {"thread_id": "1"}}
           async for chunk in graph.astream(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 
-          config = {
-              "configurable": {
-                  "thread_id": "2",  # [!code highlight]
-                  "user_id": "1",
-              }
-          }
-
+          config = {"configurable": {"thread_id": "2"}}
           async for chunk in graph.astream(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
+          ):
+              chunk["messages"][-1].pretty_print()
+```
+        </Tab>
+        <Tab title="Sync">
+      ```python
+      from dataclasses import dataclass
+      from langchain.chat_models import init_chat_model
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.checkpoint.postgres import PostgresSaver
+      from langgraph.store.postgres import PostgresStore  # [!code highlight]
+      from langgraph.runtime import Runtime  # [!code highlight]
+      import uuid
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      @dataclass
+      class Context:
+          user_id: str
+
+      def call_model(  # [!code highlight]
+          state: MessagesState,
+          runtime: Runtime[Context],  # [!code highlight]
+      ):
+          user_id = runtime.context.user_id  # [!code highlight]
+          namespace = ("memories", user_id)
+          memories = runtime.store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          info = "\n".join([d.value["data"] for d in memories])
+          system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+          # Store new memories if the user asks the model to remember
+          last_message = state["messages"][-1]
+          if "remember" in last_message.content.lower():
+              memory = "User name is Bob"
+              runtime.store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+          response = model.invoke(
+              [{"role": "system", "content": system_msg}] + state["messages"]
+          )
+          return {"messages": response}
+
+      DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+
+      with (
+          PostgresStore.from_conn_string(DB_URI) as store,  # [!code highlight]
+          PostgresSaver.from_conn_string(DB_URI) as checkpointer,
+      ):
+          # store.setup()
+          # checkpointer.setup()
+
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          config = {"configurable": {"thread_id": "1"}}
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+              config,
+              stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
+          ):
+              chunk["messages"][-1].pretty_print()
+
+          config = {"configurable": {"thread_id": "2"}}
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "what is my name?"}]},
+              config,
+              stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 ```
@@ -742,7 +816,7 @@ const graph = builder.compile({ store });
 
   ```typescript
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, LangGraphRunnableConfig } from "@langchain/langgraph";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
   import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
   import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
   import { v4 as uuidv4 } from "uuid";
@@ -753,17 +827,10 @@ const graph = builder.compile({ store });
 
   const model = new ChatAnthropic({ model: "claude-haiku-4-5-20251001" });
 
-  const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
-
-  const store = PostgresStore.fromConnString(DB_URI);
-  const checkpointer = PostgresSaver.fromConnString(DB_URI);
-  // await store.setup();
-  // await checkpointer.setup();
-
-  const callModel: GraphNode<typeof State> = async (state, config) => {
-    const userId = config.configurable?.userId;
+  const callModel: GraphNode<typeof State> = async (state, runtime) => {
+    const userId = runtime.context?.userId;
     const namespace = ["memories", userId];
-    const memories = await config.store?.search(namespace, { query: state.messages.at(-1)?.content });
+    const memories = await runtime.store?.search(namespace, { query: state.messages.at(-1)?.content });
     const info = memories?.map(d => d.value.data).join("\n") || "";
     const systemMsg = `You are a helpful assistant talking to the user. User info: ${info}`;
 
@@ -771,7 +838,7 @@ const graph = builder.compile({ store });
     const lastMessage = state.messages.at(-1);
     if (lastMessage?.content?.toLowerCase().includes("remember")) {
       const memory = "User name is Bob";
-      await config.store?.put(namespace, uuidv4(), { data: memory });
+      await runtime.store?.put(namespace, uuidv4(), { data: memory });
     }
 
     const response = await model.invoke([
@@ -780,6 +847,13 @@ const graph = builder.compile({ store });
     ]);
     return { messages: [response] };
   };
+
+  const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+
+  const store = PostgresStore.fromConnString(DB_URI);
+  const checkpointer = PostgresSaver.fromConnString(DB_URI);
+  // await store.setup();
+  // await checkpointer.setup();
 
   const builder = new StateGraph(State)
     .addNode("call_model", callModel)
@@ -790,30 +864,16 @@ const graph = builder.compile({ store });
     store,
   });
 
-  const config = {
-    configurable: {
-      thread_id: "1",
-      userId: "1",
-    }
-  };
-
   for await (const chunk of await graph.stream(
     { messages: [{ role: "user", content: "Hi! Remember: my name is Bob" }] },
-    { ...config, streamMode: "values" }
+    { configurable: { thread_id: "1" }, context: { userId: "1" }, streamMode: "values" }
   )) {
     console.log(chunk.messages.at(-1)?.content);
   }
 
-  const config2 = {
-    configurable: {
-      thread_id: "2",
-      userId: "1",
-    }
-  };
-
   for await (const chunk of await graph.stream(
     { messages: [{ role: "user", content: "what is my name?" }] },
-    { ...config2, streamMode: "values" }
+    { configurable: { thread_id: "2" }, context: { userId: "1" }, streamMode: "values" }
   )) {
     console.log(chunk.messages.at(-1)?.content);
   }
@@ -833,96 +893,42 @@ const graph = builder.compile({ store });
     </Tip>
 
     <Tabs>
-        <Tab title="Sync">
-      ```python
-      from langchain_core.runnables import RunnableConfig
-      from langchain.chat_models import init_chat_model
-      from langgraph.graph import StateGraph, MessagesState, START
-      from langgraph.checkpoint.redis import RedisSaver
-      from langgraph.store.redis import RedisStore  # [!code highlight]
-      from langgraph.store.base import BaseStore
-
-      model = init_chat_model(model="claude-haiku-4-5-20251001")
-
-      DB_URI = "redis://localhost:6379"
-
-      with (
-          RedisStore.from_conn_string(DB_URI) as store,  # [!code highlight]
-          RedisSaver.from_conn_string(DB_URI) as checkpointer,
-      ):
-          store.setup()
-          checkpointer.setup()
-
-          def call_model(
-              state: MessagesState,
-              config: RunnableConfig,
-              *,
-              store: BaseStore,  # [!code highlight]
-          ):
-              user_id = config["configurable"]["user_id"]
-              namespace = ("memories", user_id)
-              memories = store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
-              info = "\n".join([d.value["data"] for d in memories])
-              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
-
-              # Store new memories if the user asks the model to remember
-              last_message = state["messages"][-1]
-              if "remember" in last_message.content.lower():
-                  memory = "User name is Bob"
-                  store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
-
-              response = model.invoke(
-                  [{"role": "system", "content": system_msg}] + state["messages"]
-              )
-              return {"messages": response}
-
-          builder = StateGraph(MessagesState)
-          builder.add_node(call_model)
-          builder.add_edge(START, "call_model")
-
-          graph = builder.compile(
-              checkpointer=checkpointer,
-              store=store,  # [!code highlight]
-          )
-
-          config = {
-              "configurable": {
-                  "thread_id": "1",  # [!code highlight]
-                  "user_id": "1",  # [!code highlight]
-              }
-          }
-          for chunk in graph.stream(
-              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
-              config,  # [!code highlight]
-              stream_mode="values",
-          ):
-              chunk["messages"][-1].pretty_print()
-
-          config = {
-              "configurable": {
-                  "thread_id": "2",  # [!code highlight]
-                  "user_id": "1",
-              }
-          }
-
-          for chunk in graph.stream(
-              {"messages": [{"role": "user", "content": "what is my name?"}]},
-              config,  # [!code highlight]
-              stream_mode="values",
-          ):
-              chunk["messages"][-1].pretty_print()
-```
-        </Tab>
         <Tab title="Async">
       ```python
-      from langchain_core.runnables import RunnableConfig
+      from dataclasses import dataclass
       from langchain.chat_models import init_chat_model
       from langgraph.graph import StateGraph, MessagesState, START
       from langgraph.checkpoint.redis.aio import AsyncRedisSaver
       from langgraph.store.redis.aio import AsyncRedisStore  # [!code highlight]
-      from langgraph.store.base import BaseStore
+      from langgraph.runtime import Runtime  # [!code highlight]
+      import uuid
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      @dataclass
+      class Context:
+          user_id: str
+
+      async def call_model(  # [!code highlight]
+          state: MessagesState,
+          runtime: Runtime[Context],  # [!code highlight]
+      ):
+          user_id = runtime.context.user_id  # [!code highlight]
+          namespace = ("memories", user_id)
+          memories = await runtime.store.asearch(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          info = "\n".join([d.value["data"] for d in memories])
+          system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+          # Store new memories if the user asks the model to remember
+          last_message = state["messages"][-1]
+          if "remember" in last_message.content.lower():
+              memory = "User name is Bob"
+              await runtime.store.aput(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+          response = await model.ainvoke(
+              [{"role": "system", "content": system_msg}] + state["messages"]
+          )
+          return {"messages": response}
 
       DB_URI = "redis://localhost:6379"
 
@@ -933,30 +939,7 @@ const graph = builder.compile({ store });
           # await store.setup()
           # await checkpointer.asetup()
 
-          async def call_model(
-              state: MessagesState,
-              config: RunnableConfig,
-              *,
-              store: BaseStore,  # [!code highlight]
-          ):
-              user_id = config["configurable"]["user_id"]
-              namespace = ("memories", user_id)
-              memories = await store.asearch(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
-              info = "\n".join([d.value["data"] for d in memories])
-              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
-
-              # Store new memories if the user asks the model to remember
-              last_message = state["messages"][-1]
-              if "remember" in last_message.content.lower():
-                  memory = "User name is Bob"
-                  await store.aput(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
-
-              response = await model.ainvoke(
-                  [{"role": "system", "content": system_msg}] + state["messages"]
-              )
-              return {"messages": response}
-
-          builder = StateGraph(MessagesState)
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
           builder.add_node(call_model)
           builder.add_edge(START, "call_model")
 
@@ -965,30 +948,95 @@ const graph = builder.compile({ store });
               store=store,  # [!code highlight]
           )
 
-          config = {
-              "configurable": {
-                  "thread_id": "1",  # [!code highlight]
-                  "user_id": "1",  # [!code highlight]
-              }
-          }
+          config = {"configurable": {"thread_id": "1"}}
           async for chunk in graph.astream(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 
-          config = {
-              "configurable": {
-                  "thread_id": "2",  # [!code highlight]
-                  "user_id": "1",
-              }
-          }
-
+          config = {"configurable": {"thread_id": "2"}}
           async for chunk in graph.astream(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
-              config,  # [!code highlight]
+              config,
               stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
+          ):
+              chunk["messages"][-1].pretty_print()
+```
+        </Tab>
+        <Tab title="Sync">
+      ```python
+      from dataclasses import dataclass
+      from langchain.chat_models import init_chat_model
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.checkpoint.redis import RedisSaver
+      from langgraph.store.redis import RedisStore  # [!code highlight]
+      from langgraph.runtime import Runtime  # [!code highlight]
+      import uuid
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      @dataclass
+      class Context:
+          user_id: str
+
+      def call_model(  # [!code highlight]
+          state: MessagesState,
+          runtime: Runtime[Context],  # [!code highlight]
+      ):
+          user_id = runtime.context.user_id  # [!code highlight]
+          namespace = ("memories", user_id)
+          memories = runtime.store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+          info = "\n".join([d.value["data"] for d in memories])
+          system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+          # Store new memories if the user asks the model to remember
+          last_message = state["messages"][-1]
+          if "remember" in last_message.content.lower():
+              memory = "User name is Bob"
+              runtime.store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+          response = model.invoke(
+              [{"role": "system", "content": system_msg}] + state["messages"]
+          )
+          return {"messages": response}
+
+      DB_URI = "redis://localhost:6379"
+
+      with (
+          RedisStore.from_conn_string(DB_URI) as store,  # [!code highlight]
+          RedisSaver.from_conn_string(DB_URI) as checkpointer,
+      ):
+          store.setup()
+          checkpointer.setup()
+
+          builder = StateGraph(MessagesState, context_schema=Context)  # [!code highlight]
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          config = {"configurable": {"thread_id": "1"}}
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+              config,
+              stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
+          ):
+              chunk["messages"][-1].pretty_print()
+
+          config = {"configurable": {"thread_id": "2"}}
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "what is my name?"}]},
+              config,
+              stream_mode="values",
+              context=Context(user_id="1"),  # [!code highlight]
           ):
               chunk["messages"][-1].pretty_print()
 ```
@@ -1055,9 +1103,9 @@ const items = await store.search(["user_123", "memories"], {
 
     from langchain.embeddings import init_embeddings
     from langchain.chat_models import init_chat_model
-    from langgraph.store.base import BaseStore
     from langgraph.store.memory import InMemoryStore
     from langgraph.graph import START, MessagesState, StateGraph
+    from langgraph.runtime import Runtime  # [!code highlight]
 
     model = init_chat_model("gpt-4.1-mini")
 
@@ -1073,14 +1121,14 @@ const items = await store.search(["user_123", "memories"], {
     store.put(("user_123", "memories"), "1", {"text": "I love pizza"})
     store.put(("user_123", "memories"), "2", {"text": "I am a plumber"})
 
-    def chat(state, *, store: BaseStore):
+    async def chat(state: MessagesState, runtime: Runtime):  # [!code highlight]
         # Search based on user's last message
-        items = store.search(
+        items = await runtime.store.asearch(  # [!code highlight]
             ("user_123", "memories"), query=state["messages"][-1].content, limit=2
         )
         memories = "\n".join(item.value["text"] for item in items)
         memories = f"## Memories of user\n{memories}" if memories else ""
-        response = model.invoke(
+        response = await model.ainvoke(
             [
                 {"role": "system", "content": f"You are a helpful assistant.\n{memories}"},
                 *state["messages"],
@@ -1094,7 +1142,7 @@ const items = await store.search(["user_123", "memories"], {
     builder.add_edge(START, "chat")
     graph = builder.compile(store=store)
 
-    for message, metadata in graph.stream(
+    async for message, metadata in graph.astream(
         input={"messages": [{"role": "user", "content": "I'm hungry"}]},
         stream_mode="messages",
     ):
@@ -1126,9 +1174,9 @@ const items = await store.search(["user_123", "memories"], {
     await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
     await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
 
-    const chat: GraphNode<typeof State> = async (state, config) => {
+    const chat: GraphNode<typeof State> = async (state, runtime) => {
       // Search based on user's last message
-      const items = await config.store.search(
+      const items = await runtime.store.search(
         ["user_123", "memories"],
         { query: state.messages.at(-1)?.content, limit: 2 }
       );

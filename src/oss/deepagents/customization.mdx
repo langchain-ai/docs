@@ -315,36 +315,39 @@ For more information, see [Subagents](/oss/deepagents/subagents).
 
 ## Backends
 
-You can provide your deep agent with one of the following virtual filesystems:
+Deep agent tools can make use of virtual file systems to store, access, and edit files. By default, deep agents use a `StateBackend`.
+
+If you are using [skills](#skills) or [memory](#memory), you must add the expected skill or memory files to the backend before creating the agent.
 
 <Tabs>
-  <Tab title="StateBackend">
-    An ephemeral filesystem backend stored in `langgraph` state.
-    This filesystem only persists _for a single thread_.
+    <Tab title="StateBackend">
+        An ephemeral filesystem backend stored in `langgraph` state.
 
-    <BackendState />
-  </Tab>
-  <Tab title="FilesystemBackend">
-    The local machine's filesystem.
+        This filesystem only persists _for a single thread_.
 
-    <Warning>
-    This backend grants agents direct filesystem read/write access.
-    Use with caution and only in appropriate environments.
-    For more information, see [FilesystemBackend](/oss/deepagents/backends#filesystembackend-local-disk).
-    </Warning>
+        <BackendState />
+    </Tab>
+    <Tab title="FilesystemBackend">
+        The local machine's filesystem.
 
-    <BackendFilesystem />
-  </Tab>
-  <Tab title="StoreBackend">
-    A filesystem that provides long-term storage that is _persisted across threads_.
+        <Warning>
+            This backend grants agents direct filesystem read/write access.
+            Use with caution and only in appropriate environments.
+            For more information, see [`FilesystemBackend`](/oss/deepagents/backends#filesystembackend-local-disk).
+        </Warning>
 
-    <BackendStore />
-  </Tab>
-  <Tab title="CompositeBackend">
-    A flexible backen where you can specify different routes in the filesystem to point towards different backends.
+        <BackendFilesystem />
+    </Tab>
+    <Tab title="StoreBackend">
+        A filesystem that provides long-term storage that is _persisted across threads_.
 
-    <BackendComposite />
-  </Tab>
+        <BackendStore />
+    </Tab>
+    <Tab title="CompositeBackend">
+        A flexible backend where you can specify different routes in the filesystem to point towards different backends.
+
+        <BackendComposite />
+    </Tab>
 </Tabs>
 
 For more information, see [Backends](/oss/deepagents/backends).
@@ -376,6 +379,7 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     ```python
     from urllib.request import urlopen
     from deepagents import create_deep_agent
+    from deepagents.backends.utils import create_file_data
     from langgraph.checkpoint.memory import MemorySaver
 
     checkpointer = MemorySaver()
@@ -385,11 +389,11 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
         skill_content = response.read().decode('utf-8')
 
     skills_files = {
-        "/skills/langgraph-docs/SKILL.md": skill_content
+        "/skills/langgraph-docs/SKILL.md": create_file_data(skill_content)
     }
 
     agent = create_deep_agent(
-        skills=["./skills/"],
+        skills=["/skills/"],
         checkpointer=checkpointer,
     )
 
@@ -413,6 +417,7 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     from urllib.request import urlopen
     from deepagents import create_deep_agent
     from deepagents.backends import StoreBackend
+    from deepagents.backends.utils import create_file_data
     from langgraph.store.memory import InMemoryStore
 
 
@@ -425,13 +430,13 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     store.put(
         namespace=("filesystem",),
         key="/skills/langgraph-docs/SKILL.md",
-        value=skill_content
+        value=create_file_data(skill_content)
     )
 
     agent = create_deep_agent(
         backend=(lambda rt: StoreBackend(rt)),
         store=store,
-        skills=["./skills/"]
+        skills=["/skills/"]
     )
 
     result = agent.invoke(
@@ -487,7 +492,7 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
 <Tabs>
   <Tab title="StateBackend">
 
-    ```typescript
+```typescript
     import { createDeepAgent, type FileData } from "deepagents";
     import { MemorySaver, Command } from "@langchain/langgraph";
     import { createInterface } from "node:readline/promises";
@@ -496,48 +501,48 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     const checkpointer = new MemorySaver();
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const skillsFiles: Record<string, FileData> = {};
 
     const skillUrl =
-    "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
     const response = await fetch(skillUrl);
     const skillContent = await response.text();
 
     skillsFiles["/skills/langgraph-docs/SKILL.md"] = createFileData(skillContent);
 
     const agent = await createDeepAgent({
-    checkpointer,
-    // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
-    skills: ["/skills/"],
+      checkpointer,
+      // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+      skills: ["/skills/"],
     });
 
     const config = {
-    configurable: {
+      configurable: {
         thread_id: `thread-${Date.now()}`,
-    },
+      },
     };
 
     let result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
+          },
         ],
         files: skillsFiles,
-    } as any,
-    config
+      } as any,
+      config
     );
-    ```
+```
 
   </Tab>
   <Tab title="StoreBackend">
@@ -545,25 +550,25 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     ```typescript
     import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
     import {
-    InMemoryStore,
-    MemorySaver,
-    type BaseStore,
+      InMemoryStore,
+      MemorySaver,
+      type BaseStore,
     } from "@langchain/langgraph";
 
     const checkpointer = new MemorySaver();
     const store = new InMemoryStore();
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const skillUrl =
-    "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
 
     const response = await fetch(skillUrl);
     const skillContent = await response.text();
@@ -572,36 +577,36 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
 
     const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
-    return new StoreBackend({
+      return new StoreBackend({
         state: config.state,
         store: config.store ?? store,
-    });
+      });
     };
 
     const agent = await createDeepAgent({
-    backend: backendFactory,
-    store: store,
-    checkpointer,
-    // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
-    skills: ["/skills/"],
+      backend: backendFactory,
+      store: store,
+      checkpointer,
+      // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+      skills: ["/skills/"],
     });
 
     const config = {
-    configurable: {
+      configurable: {
         thread_id: `thread-${Date.now()}`,
-    },
+      },
     };
 
     let result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
+          },
         ],
-    },
-    config
+      },
+      config
     );
     ```
 
@@ -610,44 +615,43 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
 
     ```typescript
     import {
-    createDeepAgent,
-    createSkillsMiddleware,
-    createSettings,
-    FilesystemBackend,
+      createDeepAgent,
+      createSkillsMiddleware,
+      createSettings,
+      FilesystemBackend,
     } from "deepagents";
     import { MemorySaver } from "@langchain/langgraph";
 
-    const settings = createSettings({
-    });
+    const settings = createSettings({});
 
     const agent = await createDeepAgent({
-    backend: (config) =>
+      backend: (config) =>
         new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
-    skills: [path.join(process.cwd(), ".deepagents/skills")],
-    interruptOn: {
+      skills: [path.join(process.cwd(), ".deepagents/skills")],
+      interruptOn: {
         read_file: true,
         write_file: true,
         delete_file: true,
-    },
-    checkpointer, // Required!
+      },
+      checkpointer, // Required!
     });
 
     const config = {
-    configurable: {
+      configurable: {
         thread_id: `thread-${Date.now()}`,
-    },
+      },
     };
 
     let result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
-        ]
-    } as any,
-    config
+          },
+        ],
+      } as any,
+      config
     );
     ```
 
@@ -778,77 +782,77 @@ You can pass one or more file paths to the `memory` parameter when creating your
     import { MemorySaver } from "@langchain/langgraph";
 
     const AGENTS_MD_URL =
-    "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md";
 
     async function fetchText(url: string): Promise<string> {
-    const res = await fetch(url);
-    if (!res.ok) {
+      const res = await fetch(url);
+      if (!res.ok) {
         throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-    }
-    return await res.text();
+      }
+      return await res.text();
     }
 
     const agentsMd = await fetchText(AGENTS_MD_URL);
     const checkpointer = new MemorySaver();
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const agent = await createDeepAgent({
-    memory: ["/AGENTS.md"],
-    checkpointer: checkpointer,
+      memory: ["/AGENTS.md"],
+      checkpointer: checkpointer,
     });
 
     const result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "Please tell me what's in your memory files.",
-        },
+          },
         ],
         // Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
         files: { "/AGENTS.md": createFileData(agentsMd) },
-    } as any,
-    { configurable: { thread_id: "12345" } }
+      },
+      { configurable: { thread_id: "12345" } }
     );
     ```
   </Tab>
   <Tab title="StoreBackend">
-    ```typescript
+```typescript
     import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
     import {
-    InMemoryStore,
-    MemorySaver,
-    type BaseStore,
+      InMemoryStore,
+      MemorySaver,
+      type BaseStore,
     } from "@langchain/langgraph";
 
     const AGENTS_MD_URL =
-    "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md";
 
     async function fetchText(url: string): Promise<string> {
-    const res = await fetch(url);
-    if (!res.ok) {
+      const res = await fetch(url);
+      if (!res.ok) {
         throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-    }
-    return await res.text();
+      }
+      return await res.text();
     }
 
     const agentsMd = await fetchText(AGENTS_MD_URL);
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const store = new InMemoryStore();
@@ -858,29 +862,29 @@ You can pass one or more file paths to the `memory` parameter when creating your
     const checkpointer = new MemorySaver();
 
     const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
-    return new StoreBackend({
+      return new StoreBackend({
         state: config.state,
         store: config.store ?? store,
-    });
+      });
     };
 
     const agent = await createDeepAgent({
-    backend: backendFactory,
-    store: store,
-    checkpointer: checkpointer,
-    memory: ["/AGENTS.md"],
+      backend: backendFactory,
+      store: store,
+      checkpointer: checkpointer,
+      memory: ["/AGENTS.md"],
     });
 
     const result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "Please tell me what's in your memory files.",
-        },
+          },
         ],
-    },
-    { configurable: { thread_id: "12345" } }
+      },
+      { configurable: { thread_id: "12345" } }
     );
     ```
   </Tab>
@@ -893,18 +897,160 @@ You can pass one or more file paths to the `memory` parameter when creating your
     const checkpointer = new MemorySaver();
 
     const agent = await createDeepAgent({
-    backend: (config) =>
+      backend: (config) =>
         new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
-    memory: ["./AGENTS.md", "./.deepagents/AGENTS.md"],
-    interruptOn: {
+      memory: ["./AGENTS.md", "./.deepagents/AGENTS.md"],
+      interruptOn: {
         read_file: true,
         write_file: true,
         delete_file: true,
-    },
-    checkpointer, // Required!
+      },
+      checkpointer, // Required!
     });
     ```
   </Tab>
 </Tabs>
 
 :::
+
+## Structured ouput
+
+Deep agents support [structured ouput](/oss/langchain/structured-output).
+:::python
+You can set a desired structured output schema by passing it as the `response_format` argument to the call to `create_deep_agent()`.
+When the model generates the structured data, it’s captured, validated, and returned in the 'structured_response' key of the deep agent’s state.
+
+```python
+import os
+from typing import Literal
+from pydantic import BaseModel, Field
+from tavily import TavilyClient
+from deepagents import create_deep_agent
+
+tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+
+def internet_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = False,
+):
+    """Run a web search"""
+    return tavily_client.search(
+        query,
+        max_results=max_results,
+        include_raw_content=include_raw_content,
+        topic=topic,
+    )
+
+class WeatherReport(BaseModel):
+    """A structured weather report with current conditions and forecast."""
+    location: str = Field(description="The location for this weather report")
+    temperature: float = Field(description="Current temperature in Celsius")
+    condition: str = Field(description="Current weather condition (e.g., sunny, cloudy, rainy)")
+    humidity: int = Field(description="Humidity percentage")
+    wind_speed: float = Field(description="Wind speed in km/h")
+    forecast: str = Field(description="Brief forecast for the next 24 hours")
+
+
+agent = create_deep_agent(
+    response_format=WeatherReport,
+    tools=[internet_search]
+)
+
+result = agent.invoke({
+    "messages": [{
+        "role": "user",
+        "content": "What's the weather like in San Francisco?"
+    }]
+})
+
+print(result["structured_response"])
+# location='San Francisco, California' temperature=18.3 condition='Sunny' humidity=48 wind_speed=7.6 forecast='Pleasant sunny conditions expected to continue with temperatures around 64°F (18°C) during the day, dropping to around 52°F (11°C) at night. Clear skies with minimal precipitation expected.'
+```
+
+:::
+:::js
+You can set a desired structured output schema by passing it as the `responseFormat` argument to the call to `createDeepAgent()`.
+When the model generates the structured data, it's captured, validated, and returned in the 'structuredResponse' key of the agent's state.
+
+```typescript
+import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query,
+    maxResults = 5,
+    topic = "general",
+    includeRawContent = false,
+  }: {
+    query: string;
+    maxResults?: number;
+    topic?: "general" | "news" | "finance";
+    includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+      includeRawContent,
+      topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search",
+    description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z
+        .enum(["general", "news", "finance"])
+        .optional()
+        .default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  }
+);
+
+const weatherReportSchema = z.object({
+  location: z.string().describe("The location for this weather report"),
+  temperature: z.number().describe("Current temperature in Celsius"),
+  condition: z
+    .string()
+    .describe("Current weather condition (e.g., sunny, cloudy, rainy)"),
+  humidity: z.number().describe("Humidity percentage"),
+  windSpeed: z.number().describe("Wind speed in km/h"),
+  forecast: z.string().describe("Brief forecast for the next 24 hours"),
+});
+
+const agent = await createDeepAgent({
+  responseFormat: weatherReportSchema,
+  tools: [internetSearch],
+});
+
+const result = await agent.invoke({
+  messages: [
+    {
+      role: "user",
+      content: "What's the weather like in San Francisco?",
+    },
+  ],
+});
+
+console.log(result.structuredResponse);
+// {
+//   location: 'San Francisco, California',
+//   temperature: 18.3,
+//   condition: 'Sunny',
+//   humidity: 48,
+//   windSpeed: 7.6,
+//   forecast: 'Clear skies with temperatures remaining mild. High of 18°C (64°F) during the day, dropping to around 11°C (52°F) at night.'
+// }
+```
+
+:::
+
+For more information and examples, see [response format](/oss/langchain/structured-output#response-format).

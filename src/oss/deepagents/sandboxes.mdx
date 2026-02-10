@@ -54,6 +54,22 @@ graph LR
 </CardGroup>
 :::
 
+:::python
+## Available providers
+
+<CardGroup cols={2}>
+    <Card title="Modal" icon="/images/providers/modal-icon.svg" href="/oss/integrations/providers/modal">
+        ML/AI workloads, GPU access.
+    </Card>
+    <Card title="Daytona" icon="/images/providers/daytona-icon.svg" href="/oss/integrations/providers/daytona">
+        TypeScript/Python development, fast cold starts.
+    </Card>
+    <Card title="Runloop" href="/oss/integrations/providers/runloop">
+        Disposable devboxes for isolated code execution.
+    </Card>
+</CardGroup>
+:::
+
 :::js
 ## Basic usage
 
@@ -90,6 +106,151 @@ try {
 ```
 :::
 
+:::python
+## Basic usage
+
+These examples assume you have already created a sandbox/devbox using the provider's SDK and have credentials set up. For signup, authentication, and provider-specific lifecycle details, see [Provider integrations](#provider-integrations).
+
+<Tabs>
+  <Tab title="Modal">
+
+<CodeGroup>
+```bash pip
+pip install langchain-modal
+```
+
+```bash uv
+uv add langchain-modal
+```
+</CodeGroup>
+
+
+```python
+import modal
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_modal import ModalSandbox
+
+app = modal.App.lookup("your-app")
+modal_sandbox = modal.Sandbox.create(app=app)
+backend = ModalSandbox(sandbox=modal_sandbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
+    system_prompt="You are a Python coding assistant with sandbox access.",
+    backend=backend,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Create a small Python package and run pytest",
+            }
+        ]
+    }
+)
+
+modal_sandbox.terminate()
+```
+
+  </Tab>
+  <Tab title="Runloop">
+
+<CodeGroup>
+```bash pip
+pip install langchain-runloop
+```
+
+```bash uv
+uv add langchain-runloop
+```
+</CodeGroup>
+
+```python
+import os
+
+from runloop_api_client import RunloopSDK
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_runloop import RunloopSandbox
+
+client = RunloopSDK(bearer_token=os.environ["RUNLOOP_API_KEY"])
+
+devbox = client.devbox.create()
+backend = RunloopSandbox(devbox=devbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
+    system_prompt="You are a Python coding assistant with sandbox access.",
+    backend=backend,
+)
+
+try:
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Create a small Python package and run pytest",
+                }
+            ]
+        }
+    )
+finally:
+    devbox.shutdown()
+```
+
+  </Tab>
+  <Tab title="Daytona">
+
+<CodeGroup>
+```bash pip
+pip install langchain-daytona
+```
+
+```bash uv
+uv add langchain-daytona
+```
+</CodeGroup>
+
+```python
+from daytona import Daytona
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_daytona import DaytonaSandbox
+
+sandbox = Daytona().create()
+backend = DaytonaSandbox(sandbox=sandbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
+    system_prompt="You are a Python coding assistant with sandbox access.",
+    backend=backend,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Create a small Python package and run pytest",
+            }
+        ]
+    }
+)
+
+sandbox.stop()
+```
+
+  </Tab>
+</Tabs>
+:::
+
 ## How sandboxes work
 
 ### Isolation boundaries
@@ -122,7 +283,88 @@ This design means:
 - **Adding a new provider is straightforward.** Implement `execute()` — the base class handles everything else.
 - **The `execute` tool is conditionally available.** On every model call, the harness checks whether the backend implements `SandboxBackendProtocol`. If not, the tool is filtered out and the agent never sees it.
 
-When the agent calls the `execute` tool, it provides a `command` string and gets back the combined stdout/stderr, exit code, and a truncation notice if the output was too large. For example:
+When the agent calls the `execute` tool, it provides a `command` string and gets back the combined stdout/stderr, exit code, and a truncation notice if the output was too large.
+
+You can also call the backend `execute()` method directly in your application code.
+
+:::python
+<Tabs>
+  <Tab title="Modal">
+
+```python
+import modal
+
+from langchain_modal import ModalSandbox
+
+app = modal.App.lookup("your-app")
+modal_sandbox = modal.Sandbox.create(app=app)
+backend = ModalSandbox(sandbox=modal_sandbox)
+
+result = backend.execute("python --version")
+print(result.output)
+```
+
+  </Tab>
+  <Tab title="Runloop">
+
+<CodeGroup>
+```bash pip
+pip install langchain-runloop
+```
+
+```bash uv
+uv add langchain-runloop
+```
+</CodeGroup>
+
+```python
+from runloop_api_client import RunloopSDK
+
+from langchain_runloop import RunloopSandbox
+
+api_key = "..."
+client = RunloopSDK(bearer_token=api_key)
+
+devbox = client.devbox.create()
+backend = RunloopSandbox(devbox=devbox)
+
+try:
+    result = backend.execute("python --version")
+    print(result.output)
+finally:
+    devbox.shutdown()
+```
+
+  </Tab>
+  <Tab title="Daytona">
+
+<CodeGroup>
+```bash pip
+pip install langchain-daytona
+```
+
+```bash uv
+uv add langchain-daytona
+```
+</CodeGroup>
+
+```python
+from daytona import Daytona
+
+from langchain_daytona import DaytonaSandbox
+
+sandbox = Daytona().create()
+backend = DaytonaSandbox(sandbox=sandbox)
+
+result = backend.execute("python --version")
+print(result.output)
+```
+
+  </Tab>
+</Tabs>
+:::
+
+For example:
 
 ```
 4
@@ -210,6 +452,192 @@ Inside the sandbox, the agent uses its own filesystem tools (`read_file`, `write
 </Note>
 :::
 
+:::python
+## Working with files
+
+The deepagents sandbox backends support file transfer APIs for moving files between your application and the sandbox.
+
+### Seeding the sandbox
+
+Use `upload_files()` to populate the sandbox before the agent runs. Paths must be absolute and contents are `bytes`:
+
+<Tabs>
+  <Tab title="Modal">
+
+```python
+import modal
+
+from langchain_modal import ModalSandbox
+
+app = modal.App.lookup("your-app")
+modal_sandbox = modal.Sandbox.create(app=app)
+backend = ModalSandbox(sandbox=modal_sandbox)
+
+backend.upload_files(
+    [
+        ("/src/index.py", b"print('Hello')\n"),
+        ("/pyproject.toml", b"[project]\nname = 'my-app'\n"),
+    ]
+)
+```
+
+  </Tab>
+  <Tab title="Runloop">
+
+<CodeGroup>
+```bash pip
+pip install langchain-runloop
+```
+
+```bash uv
+uv add langchain-runloop
+```
+</CodeGroup>
+
+```python
+from runloop_api_client import RunloopSDK
+
+from langchain_runloop import RunloopSandbox
+
+api_key = "..."
+client = RunloopSDK(bearer_token=api_key)
+
+devbox = client.devbox.create()
+backend = RunloopSandbox(devbox=devbox)
+
+backend.upload_files(
+    [
+        ("/src/index.py", b"print('Hello')\n"),
+        ("/pyproject.toml", b"[project]\nname = 'my-app'\n"),
+    ]
+)
+```
+
+  </Tab>
+  <Tab title="Daytona">
+
+<CodeGroup>
+```bash pip
+pip install langchain-daytona
+```
+
+```bash uv
+uv add langchain-daytona
+```
+</CodeGroup>
+
+```python
+from daytona import Daytona
+
+from langchain_daytona import DaytonaSandbox
+
+sandbox = Daytona().create()
+backend = DaytonaSandbox(sandbox=sandbox)
+
+backend.upload_files(
+    [
+        ("/src/index.py", b"print('Hello')\n"),
+        ("/pyproject.toml", b"[project]\nname = 'my-app'\n"),
+    ]
+)
+```
+
+  </Tab>
+</Tabs>
+
+### Retrieving artifacts
+
+Use `download_files()` to retrieve files from the sandbox after the agent finishes:
+
+<Tabs>
+  <Tab title="Modal">
+
+```python
+import modal
+
+from langchain_modal import ModalSandbox
+
+app = modal.App.lookup("your-app")
+modal_sandbox = modal.Sandbox.create(app=app)
+backend = ModalSandbox(sandbox=modal_sandbox)
+
+results = backend.download_files(["/src/index.py", "/output.txt"])
+for result in results:
+    if result.content is not None:
+        print(f"{result.path}: {result.content.decode()}")
+    else:
+        print(f"Failed to download {result.path}: {result.error}")
+```
+
+  </Tab>
+  <Tab title="Runloop">
+
+<CodeGroup>
+```bash pip
+pip install langchain-runloop
+```
+
+```bash uv
+uv add langchain-runloop
+```
+</CodeGroup>
+
+```python
+from runloop_api_client import RunloopSDK
+
+from langchain_runloop import RunloopSandbox
+
+api_key = "..."
+client = RunloopSDK(bearer_token=api_key)
+
+devbox = client.devbox.create()
+backend = RunloopSandbox(devbox=devbox)
+
+results = backend.download_files(["/src/index.py", "/output.txt"])
+for result in results:
+    if result.content is not None:
+        print(f"{result.path}: {result.content.decode()}")
+    else:
+        print(f"Failed to download {result.path}: {result.error}")
+```
+
+  </Tab>
+  <Tab title="Daytona">
+
+<CodeGroup>
+```bash pip
+pip install langchain-daytona
+```
+
+```bash uv
+uv add langchain-daytona
+```
+</CodeGroup>
+
+```python
+from daytona import Daytona
+
+from langchain_daytona import DaytonaSandbox
+
+sandbox = Daytona().create()
+backend = DaytonaSandbox(sandbox=sandbox)
+
+results = backend.download_files(["/src/index.py", "/output.txt"])
+for result in results:
+    if result.content is not None:
+        print(f"{result.path}: {result.content.decode()}")
+    else:
+        print(f"Failed to download {result.path}: {result.error}")
+```
+
+  </Tab>
+</Tabs>
+
+<Note>
+Inside the sandbox, the agent uses filesystem tools (`read_file`, `write_file`). The `upload_files` and `download_files` methods are for your application code to move files across the boundary between your host and the sandbox.
+</Note>
+:::
+
 :::js
 ## Lifecycle and reconnection
 
@@ -267,6 +695,27 @@ const sandbox2 = await sandbox.create();
 ```
 
 Use the reuse pattern when you want continuity (e.g., installed dependencies persist across turns). Use the fresh pattern when you want clean isolation between tasks.
+:::
+
+## Provider integrations
+
+If you are looking for provider-specific setup and lifecycle details, see:
+
+:::python
+<CardGroup cols={2}>
+    <Card title="Modal" icon="/images/providers/modal-icon.svg" href="/oss/integrations/providers/modal" />
+    <Card title="Runloop" href="/oss/integrations/providers/runloop" />
+    <Card title="Daytona" icon="/images/providers/daytona-icon.svg" href="/oss/integrations/providers/daytona" />
+</CardGroup>
+:::
+
+:::js
+<CardGroup cols={2}>
+    <Card title="Modal" icon="/images/providers/modal-icon.svg" href="/oss/integrations/providers/modal" />
+    <Card title="Daytona" icon="/images/providers/daytona-icon.svg" href="/oss/integrations/providers/daytona" />
+    <Card title="Deno" icon="/images/providers/deno-icon.svg" href="/oss/integrations/providers/deno" />
+    <Card title="Node VFS" icon="/images/providers/nodejs-icon.svg" href="/oss/integrations/providers/node-vfs" />
+</CardGroup>
 :::
 
 ## Security considerations

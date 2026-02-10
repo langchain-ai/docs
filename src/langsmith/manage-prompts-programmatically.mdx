@@ -266,44 +266,37 @@ If you are in a non-Node environment, "includeModel" is not supported for non-Op
 
 ## Prompt caching
 
-<Note>
-We recommend enabling prompt caching in production environments to reduce latency and API calls. The cache uses a stale-while-revalidate pattern, ensuring your application always gets a fast response while keeping prompts up-to-date in the background.
-</Note>
-
-The LangSmith SDK includes built-in in-memory caching for prompts. When enabled, pulled prompts are cached in memory, reducing latency and API calls for frequently used prompts. The cache persists for the lifetime of the client instance.
+The LangSmith SDK includes built-in in-memory caching for prompts. When enabled, LangSmith will cache pulled prompts in memory, reducing latency and API calls for frequently used prompts. The cache uses a global singleton instance that is shared across all clients and persists for the lifetime of the process. It implements a stale-while-revalidate pattern, ensuring your application always gets a fast response while keeping prompts up-to-date in the background.
 
 **Requirements:**
-- Python SDK: `langsmith >= 0.6.1`
-- TypeScript SDK: `langsmith >= 0.4.5`
+- Python SDK: `langsmith >= 0.7.0`
+- TypeScript SDK: `langsmith >= 0.5.0`
 
 ### Default behavior
 
-Caching is **disabled by default**. When enabled, the default settings are:
+Caching is **enabled by default**. When enabled, the default settings are:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `max_size` | 100 | Maximum number of prompts to cache |
-| `ttl_seconds` | 3600 (1 hour) | Time before a cached prompt is considered stale |
-| `refresh_interval_seconds` | 60 | How often to check for stale prompts |
+| `ttl_seconds` | 300 (5 minutes) | Time before a cached prompt is considered stale |
+| `refresh_interval_seconds` | 60 | How often to check for stale prompts and refresh them in the background |
 
-### Enabling the cache
+When refreshing, the global cache will use the last client that requested a given prompt to fetch new data.
 
-Pass `cache=True` to enable caching with default settings, or pass a `Cache` instance for custom configuration:
+### Using the cache
+
+By default, all clients use the global prompt cache. No configuration is needed:
 
 <CodeGroup>
 
 ```python Python
-from langsmith import Client, Cache
+from langsmith import Client
+# Obtain a reference to the global cache just for logging metrics
+from langsmith.prompt_cache import prompt_cache_singleton
 
-# Enable with default settings
-client = Client(cache=True)
-
-# Or configure custom cache settings
-my_cache = Cache(
-    max_size=100,
-    ttl_seconds=3600,
-)
-client = Client(cache=my_cache)
+# Caching is enabled by default using the global singleton
+client = Client()
 
 # First pull - fetches from API and caches
 prompt = client.pull_prompt("joke-generator")
@@ -312,41 +305,121 @@ prompt = client.pull_prompt("joke-generator")
 prompt = client.pull_prompt("joke-generator")
 
 # Check cache metrics
-print(f"Cache hits: {client.cache.metrics.hits}")
-print(f"Cache misses: {client.cache.metrics.misses}")
-print(f"Hit rate: {client.cache.metrics.hit_rate:.1%}")
+print(f"Cache hits: {prompt_cache_singleton.metrics.hits}")
+print(f"Cache misses: {prompt_cache_singleton.metrics.misses}")
+print(f"Hit rate: {prompt_cache_singleton.metrics.hit_rate:.1%}")
 ```
 
 ```typescript TypeScript
-import { Client, Cache } from "langsmith";
+import * as hub from "langchain/hub";
+// Obtain a reference to the global cache just for logging metrics
+import { promptCacheSingleton } from "langsmith";
 
-// Enable with default settings
-const client = new Client({ cache: true });
-
-// Or configure custom cache settings
-const myCache = new Cache({
-  maxSize: 100,
-  ttlSeconds: 3600,
-});
-const client2 = new Client({ cache: myCache });
-
+// Caching is enabled by default
 // First pull - fetches from API and caches
-const prompt = await client.pullPrompt("joke-generator");
+const prompt = await hub.pull("joke-generator");
 
 // Subsequent pulls - returns cached version instantly
-const prompt2 = await client.pullPrompt("joke-generator");
+const prompt2 = await hub.pull("joke-generator");
 
 // Check cache metrics
-console.log(`Cache hits: ${client.cache?.metrics.hits}`);
-console.log(`Cache misses: ${client.cache?.metrics.misses}`);
-console.log(`Hit rate: ${(client.cache?.hitRate ?? 0 * 100).toFixed(1)}%`);
+console.log(`Cache hits: ${promptCacheSingleton.metrics.hits}`);
+console.log(`Cache misses: ${promptCacheSingleton.metrics.misses}`);
+console.log(`Hit rate: ${(promptCacheSingleton.hitRate * 100).toFixed(1)}%`);
+```
+
+</CodeGroup>
+
+### Configuring the global cache
+
+You can configure the global prompt cache that all clients use by default. This is useful when you want to customize caching behavior across your entire application:
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client
+from langsmith.prompt_cache import (
+    configure_global_prompt_cache,
+    prompt_cache_singleton,
+)
+
+# Configure global cache before creating any clients
+configure_global_prompt_cache(
+    max_size=200,  # Cache up to 200 prompts
+    ttl_seconds=7200,  # Consider prompts stale after 2 hours
+    refresh_interval_seconds=600,  # Check for stale prompts every 10 minutes
+)
+
+# All clients will use these settings
+client1 = Client()
+client2 = Client()
+
+# Both clients share the same global cache with your custom settings
+prompt1 = client1.pull_prompt("prompt-1")
+prompt2 = client2.pull_prompt("prompt-2")
+
+# Check global cache metrics
+print(f"Global cache hits: {prompt_cache_singleton.metrics.hits}")
+print(f"Global cache misses: {prompt_cache_singleton.metrics.misses}")
+```
+
+```typescript TypeScript
+import * as hub from "langchain/hub";
+import {
+  configureGlobalPromptCache,
+  promptCacheSingleton,
+} from "langsmith";
+
+// Configure global cache before pulling prompts
+configureGlobalPromptCache({
+  maxSize: 200,  // Cache up to 200 prompts
+  ttlSeconds: 7200,  // Consider prompts stale after 2 hours
+  refreshIntervalSeconds: 600,  // Check for stale prompts every 10 minutes
+});
+
+// All hub.pull calls will use these settings
+const prompt1 = await hub.pull("prompt-1");
+const prompt2 = await hub.pull("prompt-2");
+
+// Check global cache metrics
+console.log(`Global cache hits: ${promptCacheSingleton.metrics.hits}`);
+console.log(`Global cache misses: ${promptCacheSingleton.metrics.misses}`);
+```
+
+</CodeGroup>
+
+### Disabling the cache
+
+To disable caching for a specific client, pass `disable_prompt_cache=True`. You can also configure a max size of zero globally:
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client
+
+# Disable caching for this client
+client = Client(disable_prompt_cache=True)
+
+# Every pull will fetch from the API
+prompt = client.pull_prompt("joke-generator")
+```
+
+```typescript TypeScript
+import * as hub from "langchain/hub";
+import { configureGlobalPromptCache } from "langsmith";
+
+// Disable caching globally
+configureGlobalPromptCache({ maxSize: 0 });
+
+// Every pull will fetch from the API
+const prompt = await hub.pull("joke-generator");
 ```
 
 </CodeGroup>
 
 ### Skipping the cache
 
-To bypass the cache and fetch a fresh prompt from the API, use the `skip_cache` parameter:
+To bypass the cache and fetch a fresh prompt from the API for an individual request, use the `skip_cache` parameter:
 
 <CodeGroup>
 
@@ -356,8 +429,10 @@ prompt = client.pull_prompt("joke-generator", skip_cache=True)
 ```
 
 ```typescript TypeScript
+import * as hub from "langchain/hub";
+
 // Force a fresh fetch, ignoring any cached version
-const prompt = await client.pullPrompt("joke-generator", { skipCache: true });
+const prompt = await hub.pull("joke-generator", { skipCache: true });
 ```
 
 </CodeGroup>
@@ -366,17 +441,18 @@ This is useful when you need to ensure you have the latest version of a prompt, 
 
 ### Offline mode
 
-For environments with limited or no network connectivity, you can pre-populate the cache and use it offline. Set `ttl_seconds` to `None` (Python) or `null` (TypeScript) to prevent cache entries from expiring.
+For environments with limited or no network connectivity, you can pre-populate the cache and use it offline. Set `ttl_seconds` to `None` (Python) or `null` (TypeScript) to prevent cache entries from expiring and disable background refresh.
 
 **Step 1: Export your prompts to a cache file (while online)**
 
 <CodeGroup>
 
 ```python Python
-from langsmith import Client, Cache
+from langsmith import Client
+from langsmith.prompt_cache import prompt_cache_singleton
 
-# Create client with caching enabled
-client = Client(cache=True)
+# Create client (caching is enabled by default)
+client = Client()
 
 # Pull the prompts you need
 client.pull_prompt("prompt-1")
@@ -384,24 +460,22 @@ client.pull_prompt("prompt-2")
 client.pull_prompt("prompt-3")
 
 # Export cache to a file
-client.cache.dump("prompts_cache.json")
-client.cleanup()
+prompt_cache_singleton.dump("prompts_cache.json")
 ```
 
 ```typescript TypeScript
-import { Client } from "langsmith";
+import * as hub from "langchain/hub";
+import { promptCacheSingleton } from "langsmith";
 
-// Create client with caching enabled
-const client = new Client({ cache: true });
+// Caching is enabled by default
 
 // Pull the prompts you need
-await client.pullPrompt("prompt-1");
-await client.pullPrompt("prompt-2");
-await client.pullPrompt("prompt-3");
+await hub.pull("prompt-1");
+await hub.pull("prompt-2");
+await hub.pull("prompt-3");
 
 // Export cache to a file
-client.cache?.dump("prompts_cache.json");
-client.cleanup();
+promptCacheSingleton.dump("prompts_cache.json");
 ```
 
 </CodeGroup>
@@ -411,48 +485,105 @@ client.cleanup();
 <CodeGroup>
 
 ```python Python
-from langsmith import Client, Cache
+from langsmith import Client
+from langsmith.prompt_cache import (
+    configure_global_prompt_cache,
+    prompt_cache_singleton,
+)
 
-# Create cache with infinite TTL (never expire)
-my_cache = Cache(ttl_seconds=None)
-my_cache.load("prompts_cache.json")
+# Configure cache with infinite TTL (never expire, no background refresh)
+configure_global_prompt_cache(ttl_seconds=None)
 
-client = Client(cache=my_cache)
+# Load the cache file
+prompt_cache_singleton.load("prompts_cache.json")
+
+# Create client (uses the loaded cache)
+client = Client()
 
 # Uses cached version without any API calls
 prompt = client.pull_prompt("prompt-1")
 ```
 
 ```typescript TypeScript
-import { Client, Cache } from "langsmith";
+import * as hub from "langchain/hub";
+import {
+  configureGlobalPromptCache,
+  promptCacheSingleton,
+} from "langsmith";
 
-// Create cache with infinite TTL (never expire)
-const myCache = new Cache({ ttlSeconds: null });
-myCache.load("prompts_cache.json");
+// Configure cache with infinite TTL (never expire, no background refresh)
+configureGlobalPromptCache({ ttlSeconds: null });
 
-const client = new Client({ cache: myCache });
+// Load the cache file
+promptCacheSingleton.load("prompts_cache.json");
 
 // Uses cached version without any API calls
-const prompt = await client.pullPrompt("prompt-1");
+const prompt = await hub.pull("prompt-1");
+```
+
+</CodeGroup>
+
+### Cache operations
+
+The cache supports several operations for managing cached prompts:
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client
+from langsmith.prompt_cache import prompt_cache_singleton
+
+client = Client()
+
+# Invalidate a specific prompt from cache
+prompt_cache_singleton.invalidate("joke-generator:latest")
+
+# Clear all cached prompts
+prompt_cache_singleton.clear()
+
+# Reset metrics
+prompt_cache_singleton.reset_metrics()
+
+# Check if cache is running background refresh
+# (only runs if ttl_seconds is not None)
+if prompt_cache_singleton._refresh_thread is not None:
+    print("Background refresh is active")
+```
+
+```typescript TypeScript
+import { promptCacheSingleton } from "langsmith";
+
+// Invalidate a specific prompt from cache
+promptCacheSingleton.invalidate("joke-generator:latest");
+
+// Clear all cached prompts
+promptCacheSingleton.clear();
+
+// Reset metrics
+promptCacheSingleton.resetMetrics();
 ```
 
 </CodeGroup>
 
 ### Cleanup
 
-When you're done using the client, call `cleanup()` to stop the background refresh task:
+You can manually call `stop()` to stop the background refresh task:
 
 <CodeGroup>
 
 ```python Python
-client.cleanup()
+prompt_cache_singleton.stop()
 ```
 
 ```typescript TypeScript
-client.cleanup();
+promptCacheSingleton.stop();
 ```
 
 </CodeGroup>
+
+<Note>
+The background refresh task is only started when you first set a value in the cache, and only if `ttl_seconds` is not `None`. If `ttl_seconds` is `None` (offline mode), no background task is created.
+</Note>
 
 ## Use a prompt without LangChain
 

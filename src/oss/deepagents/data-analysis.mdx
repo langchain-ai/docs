@@ -40,17 +40,17 @@ pip install deepagents
 ### Optional dependencies
 
 For this tutorial, we'll use:
-- [Daytona](https://www.daytona.io/) for sandboxed code execution ([API key setup](https://www.daytona.io/docs/en/api-keys/)) through the [langchain-daytona](https://github.com/langchain-ai/deepagents/tree/master/libs/partners/daytona) package
 - [Slack Python SDK](https://docs.slack.dev/tools/python-slack-sdk/) for sharing results ([token setup](https://docs.slack.dev/authentication/tokens/))
+- A [sandbox](/oss/deepagents/sandboxes) environment for code execution. See [available providers](/oss/deepagents/sandboxes#available-providers) for setup details
 
 :::python
 ```bash pip
-pip install langchain-daytona slack-sdk
+pip install slack-sdk
 ```
 :::
 
 <Note>
-Both services are optional. You can use the local shell backend (with important [security considerations](/oss/deepagents/backends#local-shell)) or download artifacts directly from the backend.
+These services are optional, though a sandboxed environment is highly recommended for any production use. You can alternatively use the local shell backend (with important [security considerations](/oss/deepagents/backends#local-shell)) or download artifacts directly from the backend.
 </Note>
 
 ### LangSmith
@@ -80,24 +80,75 @@ os.environ["LANGSMITH_API_KEY"] = getpass.getpass()
 
 Deep agents use [backends](/oss/deepagents/backends) to execute code in sandboxed environments.
 
+See [available providers](/oss/deepagents/sandboxes#available-providers) for setup details.
+
 <Tabs>
-<Tab title="Daytona Sandbox">
-We can create a sandbox easily using the `langchain-daytona` package:
+<Tab title="Daytona">
 
-```python
-from langchain_daytona import DaytonaProvider
-
-provider = DaytonaProvider()
-backend = provider.get_or_create()
+<CodeGroup>
+```bash pip
+pip install langchain-daytona
 ```
 
+```bash uv
+uv add langchain-daytona
+```
+</CodeGroup>
+
+```python
+from daytona import Daytona
+
+from langchain_daytona import DaytonaSandbox
+
+sandbox = Daytona().create()
+backend = DaytonaSandbox(sandbox=sandbox)
+```
 Verify the sandbox is ready:
 ```python
 result = backend.execute("echo ready")
 print(result)
-# ExecuteResponse(exit_code=0, result='ready', ...)
+# ExecuteResponse(output='ready', exit_code=0, ...)
 ```
-</Tab>
+
+  </Tab>
+  <Tab title="Modal">
+
+```python
+import modal
+
+from langchain_modal import ModalSandbox
+
+app = modal.App.lookup("your-app")
+modal_sandbox = modal.Sandbox.create(app=app)
+backend = ModalSandbox(sandbox=modal_sandbox)
+```
+
+  </Tab>
+  <Tab title="Runloop">
+
+<CodeGroup>
+```bash pip
+pip install langchain-runloop
+```
+
+```bash uv
+uv add langchain-runloop
+```
+</CodeGroup>
+
+```python
+from runloop_api_client import RunloopSDK
+
+from langchain_runloop import RunloopSandbox
+
+api_key = "..."
+client = RunloopSDK(bearer_token=api_key)
+
+devbox = client.devbox.create()
+backend = RunloopSandbox(devbox=devbox)
+```
+
+  </Tab>
 <Tab title="Local shell">
 <Warning>
 This backend provides unrestricted filesystem and shell access. Use only in controlled environments for development and testing. See the [security considerations](https://reference.langchain.com/python/deepagents/backends/filesystem/) for more details.
@@ -136,7 +187,7 @@ csv_bytes = text_buf.getvalue().encode("utf-8")
 text_buf.close()
 
 # Upload to backend
-backend.upload_files([("./data/sales_data.csv", csv_bytes)])
+backend.upload_files([("/home/daytona/data/sales_data.csv", csv_bytes)])
 ```
 
 ## Implement custom tools
@@ -183,6 +234,8 @@ It is generally good practice to avoid adding credentials and other secrets to t
 Let's instantiate an agent:
 
 ```python
+import uuid
+
 from langgraph.checkpoint.memory import InMemorySaver
 from deepagents import create_deep_agent
 
@@ -195,6 +248,9 @@ agent = create_deep_agent(
     backend=backend,
     checkpointer=checkpointer,
 )
+
+thread_id = str(uuid.uuid4())
+config={"configurable": {"thread_id": thread_id}}
 ```
 
 We include:
@@ -209,8 +265,7 @@ input_message = {
     "role": "user",
     "content": (
         "Analyze ./data/sales_data.csv in the current dir and generate a beautiful plot. "
-        "When finished, send your analysis and the plot to "
-        "Slack channel C0123456ABC."  # Substitute your own channel
+        "When finished, send your analysis and the plot to Slack using the tool."
     ),
 }
 for step in agent.stream(
@@ -591,11 +646,16 @@ backend.download_files(list_of_filepaths)
 ```
 </Tip>
 
+<Note>
+See [provider guides](/oss/deepagents/sandboxes#available-providers) for how to clean up the sandbox once finished.
+</Note>
+
 ## Next steps
 
 Now that you've built a data analysis agent, explore these resources to extend its capabilities:
 
-- [Backends](/oss/deepagents/backends): Learn about different backend options for sandboxed code execution, including security considerations and advanced configurations
+- [Backends](/oss/deepagents/backends): Learn about the Deep Agents backend system
+- [Sandboxes](/oss/deepagents/sandboxes): Review backends for sandboxed code execution, including security considerations and advanced configurations
 - [Customization](/oss/deepagents/customization): Discover how to customize your agent with different models, tools, prompts, and planning strategies
 - [CLI](/oss/deepagents/cli): Try the Deep Agents CLI for an interactive command-line interface to assist with data analysis and other agentic tasks locally
 - [Skills](/oss/deepagents/skills): Equip your agent with reusable skills for common workflows
