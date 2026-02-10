@@ -73,6 +73,7 @@ Pass `session_id`, `user_id`, and `agent` via the `metadata` dictionary in the `
 import os
 from datetime import datetime
 
+from langchain.agents import create_agent
 from langchain.messages import HumanMessage
 from langchain.tools import tool
 from langchain_google_community.callbacks.bigquery_callback import (
@@ -80,7 +81,6 @@ from langchain_google_community.callbacks.bigquery_callback import (
     BigQueryLoggerConfig,
 )
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.prebuilt import create_react_agent
 
 # 1. Define tools for the agent
 @tool
@@ -141,28 +141,23 @@ def run_agent_example(project_id: str):
         project=project_id,  # For Vertex AI
     )
     tools = [get_current_time, get_weather, convert_currency]
-    agent = create_react_agent(llm, tools)
+    agent = create_agent(llm, tools)
 
     # 4. Run with graph_context for GRAPH_START/GRAPH_END events
     query = "What time is it? What's the weather in Tokyo? How much is 100 USD in EUR?"
 
-    with handler.graph_context(
-        "travel_assistant",
-        metadata={
-            "session_id": "session-001",
-            "user_id": "user-123",
-            "agent": "travel_assistant",
-        },
-    ):
+    run_metadata = {
+        "session_id": "session-001",
+        "user_id": "user-123",
+        "agent": "travel_assistant",
+    }
+
+    with handler.graph_context("travel_assistant", metadata=run_metadata):
         result = agent.invoke(
             {"messages": [HumanMessage(content=query)]},
             config={
                 "callbacks": [handler],
-                "metadata": {
-                    "session_id": "session-001",
-                    "user_id": "user-123",
-                    "agent": "travel_assistant",
-                },
+                "metadata": run_metadata,
             },
         )
 
@@ -320,261 +315,56 @@ The `content_parts` column provides a structured view of the content, especially
 
 These events track the raw requests sent to and responses received from the LLM.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-      <th><strong>Attributes (JSON)</strong></th>
-      <th><strong>Example Content (Simplified)</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>LLM_REQUEST</pre></td>
-      <td>
-        <strong>Chat Model:</strong><br/>
-```json
-{
-  "messages": [
-    {"content": "..."}
-  ]
-}
-```
-        <strong>Legacy Model:</strong><br/>
-```json
-{
-  "prompts": ["..."]
-}
-```
-      </td>
-      <td>
-```json
-{
-  "tags": ["tag1"],
-  "model": "gemini-2.5-flash"
-}
-```
-      </td>
-      <td>
-```json
-{
-  "messages": [
-    {"content": "What is the weather?"}
-  ]
-}
-```
-      </td>
-    </tr>
-    <tr>
-      <td><pre>LLM_RESPONSE</pre></td>
-      <td>
-```json
-"The weather is sunny."
-```
-        (Stored as JSON string)
-      </td>
-      <td>
-```json
-{
-  "usage": {
-    "total_tokens": 20
-  }
-}
-```
-      </td>
-      <td>
-```json
-"The weather is sunny."
-```
-      </td>
-    </tr>
-    <tr>
-      <td><pre>LLM_ERROR</pre></td>
-      <td>
-        <pre>null</pre>
-      </td>
-      <td>
-```json
-{}
-```
-      </td>
-      <td>
-        <pre>null</pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure | Attributes (JSON) | Example Content (Simplified) |
+|---|---|---|---|
+| `LLM_REQUEST` | **Chat Model:** `{"messages": [{"content": "..."}]}` **Legacy Model:** `{"prompts": ["..."]}` | `{"tags": ["tag1"], "model": "gemini-2.5-flash"}` | `{"messages": [{"content": "What is the weather?"}]}` |
+| `LLM_RESPONSE` | `"The weather is sunny."` (Stored as JSON string) | `{"usage": {"total_tokens": 20}}` | `"The weather is sunny."` |
+| `LLM_ERROR` | `null` | `{}` | `null` |
 
 ### Tool usage
 
 These events track the execution of tools by the agent.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>TOOL_STARTING</pre></td>
-      <td>
-        <strong>Input String:</strong><br/>
-        <pre>"city='Paris'"</pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>TOOL_COMPLETED</pre></td>
-      <td>
-        <strong>Output String:</strong><br/>
-        <pre>"25°C, Sunny"</pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>TOOL_ERROR</pre></td>
-      <td>
-        <pre>"Error: Connection timeout"</pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `TOOL_STARTING` | **Input String:** `"city='Paris'"` |
+| `TOOL_COMPLETED` | **Output String:** `"25°C, Sunny"` |
+| `TOOL_ERROR` | `"Error: Connection timeout"` |
 
 ### Chain Execution
 
 These events track the start and end of high-level chains/graphs.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>CHAIN_START</pre></td>
-      <td>
-        <pre>
-&#123;
-  "messages": [...]
-&#125;
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>CHAIN_END</pre></td>
-      <td>
-        <pre>
-&#123;
-  "output": "..."
-&#125;
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>CHAIN_ERROR</pre></td>
-      <td><pre>null (See error_message column)</pre></td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `CHAIN_START` | `{"messages": [...]}` |
+| `CHAIN_END` | `{"output": "..."}` |
+| `CHAIN_ERROR` | `null` (See `error_message` column) |
 
 ### Retriever usage
 
 These events track the execution of retrievers.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>RETRIEVER_START</pre></td>
-      <td>
-        <strong>Query String:</strong><br/>
-        <pre>"What is the capital of France?"</pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>RETRIEVER_END</pre></td>
-      <td>
-        <strong>Documents List:</strong><br/>
-        <pre>
-[
-  &#123;
-    "page_content": "Paris is the capital...",
-    "metadata": &#123;"source": "wiki"&#125;
-  &#125;
-]
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>RETRIEVER_ERROR</pre></td>
-      <td><pre>null (See error_message column)</pre></td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `RETRIEVER_START` | **Query String:** `"What is the capital of France?"` |
+| `RETRIEVER_END` | **Documents List:** `[{"page_content": "Paris is the capital...", "metadata": {"source": "wiki"}}]` |
+| `RETRIEVER_ERROR` | `null` (See `error_message` column) |
 
 ### Agent Actions
 
 These events track specific actions taken by the agent.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>AGENT_ACTION</pre></td>
-      <td>
-        <pre>
-&#123;
-  "tool": "Calculator",
-  "input": "2 + 2"
-&#125;
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>AGENT_FINISH</pre></td>
-      <td>
-        <pre>
-&#123;
-  "output": "The answer is 4"
-&#125;
-        </pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `AGENT_ACTION` | `{"tool": "Calculator", "input": "2 + 2"}` |
+| `AGENT_FINISH` | `{"output": "The answer is 4"}` |
 
 ### Other Events
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>TEXT</pre></td>
-      <td>
-        <strong>Arbitrary Text:</strong><br/>
-        <pre>"Some logging text..."</pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `TEXT` | **Arbitrary Text:** `"Some logging text..."` |
 
 ## Advanced analysis queries
 
@@ -786,52 +576,26 @@ The `BigQueryCallbackHandler` provides enhanced support for LangGraph agents wit
 
 In addition to standard LangChain events, the callback handler automatically detects and logs LangGraph-specific events:
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Description</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>NODE_STARTING</pre></td>
-      <td>Emitted when a LangGraph node begins execution</td>
-    </tr>
-    <tr>
-      <td><pre>NODE_COMPLETED</pre></td>
-      <td>Emitted when a LangGraph node completes successfully</td>
-    </tr>
-    <tr>
-      <td><pre>NODE_ERROR</pre></td>
-      <td>Emitted when a LangGraph node fails</td>
-    </tr>
-    <tr>
-      <td><pre>GRAPH_START</pre></td>
-      <td>Emitted when a graph execution begins (via context manager)</td>
-    </tr>
-    <tr>
-      <td><pre>GRAPH_END</pre></td>
-      <td>Emitted when a graph execution completes</td>
-    </tr>
-    <tr>
-      <td><pre>GRAPH_ERROR</pre></td>
-      <td>Emitted when a graph execution fails</td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Description |
+|---|---|
+| `NODE_STARTING` | Emitted when a LangGraph node begins execution |
+| `NODE_COMPLETED` | Emitted when a LangGraph node completes successfully |
+| `NODE_ERROR` | Emitted when a LangGraph node fails |
+| `GRAPH_START` | Emitted when a graph execution begins (via context manager) |
+| `GRAPH_END` | Emitted when a graph execution completes |
+| `GRAPH_ERROR` | Emitted when a graph execution fails |
 
 ### Graph context manager
 
 Use the `graph_context()` method to explicitly mark graph execution boundaries. This enables `GRAPH_START` and `GRAPH_END` events with accurate latency measurements:
 
 ```python
+from langchain.agents import create_agent
 from langchain.messages import HumanMessage
 from langchain_google_community.callbacks.bigquery_callback import (
     BigQueryCallbackHandler,
     BigQueryLoggerConfig,
 )
-from langgraph.prebuilt import create_react_agent
 
 # Initialize handler with graph name
 handler = BigQueryCallbackHandler(
@@ -841,27 +605,22 @@ handler = BigQueryCallbackHandler(
     graph_name="my_agent",
 )
 
-# Create your LangGraph agent
-agent = create_react_agent(llm, tools)
+# Create your agent
+agent = create_agent(llm, tools)
 
 # Use the graph context manager for proper GRAPH_START/GRAPH_END events
-with handler.graph_context(
-    "my_agent",
-    metadata={
-        "session_id": "session-123",
-        "user_id": "user-456",
-        "agent": "my_agent",
-    },
-):
+run_metadata = {
+    "session_id": "session-123",
+    "user_id": "user-456",
+    "agent": "my_agent",
+}
+
+with handler.graph_context("my_agent", metadata=run_metadata):
     result = agent.invoke(
         {"messages": [HumanMessage(content="What is the weather in Tokyo?")]},
         config={
             "callbacks": [handler],
-            "metadata": {
-                "session_id": "session-123",
-                "user_id": "user-456",
-                "agent": "my_agent",
-            },
+            "metadata": run_metadata,
         },
     )
 ```
