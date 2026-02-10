@@ -879,6 +879,42 @@ Two methods are supported for structured output:
 - **`method="json_schema"` (default)**: Uses Gemini's native structured output. Recommended for better reliability, as it constrains the model's generation process directly rather than relying on post-processing tool calls.
 - **`method="function_calling"`**: Uses tool calling to extract structured data.
 
+#### Avoid Using Additional Tools with Structured Output
+
+When using `with_structured_output(method="function_calling")`, avoid passing additional tools (like `Google Search`) directly in the `invoke()` call. 
+
+If the model decides to use a tool (such as searching the web) before generating the structured response, the internal parser will fail to find the expected schema and return `None`.
+:::
+
+#### ❌ The Failing Pattern
+This code will often crash because the model returns a "Tool Call" instead of the structured object:
+
+```python
+structured_llm = llm.with_structured_output(WeatherResponse)
+
+# Model searches first -> returns None to the parser
+response = structured_llm.invoke(
+    "What is the weather in Hyderabad?", 
+    tools=[{"google_search": {}}]
+)
+print(response.city) # Raises AttributeError: 'NoneType' object
+```
+
+✅ The Recommended Pattern: "Gather then Extract"
+Separate the "Action" (searching) from the "Extraction" (formatting).
+
+```python
+# 1. GATHER: Use a standard call to get raw information
+raw_info = llm.invoke(
+    "What is the current weather in Hyderabad?", 
+    tools=[{"google_search": {}}]
+)
+
+# 2. EXTRACT: Pass the raw text to the structured formatter
+structured_llm = llm.with_structured_output(WeatherResponse)
+final_data = structured_llm.invoke(f"Extract details from: {raw_info.content}")
+```
+
 ## Token usage tracking
 
 Access token usage information from the response metadata.

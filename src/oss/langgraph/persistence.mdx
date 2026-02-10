@@ -568,12 +568,16 @@ A [state schema](/oss/langgraph/graph-api#schema) specifies a set of keys that a
 
 But, what if we want to retain some information _across threads_? Consider the case of a chatbot where we want to retain specific information about the user across _all_ chat conversations (e.g., threads) with that user!
 
-With checkpointers alone, we cannot share information across threads. This motivates the need for the [`Store`](https://reference.langchain.com/python/langgraph/store/) interface. As an illustration, we can define an `InMemoryStore` to store information about a user across threads. We simply compile our graph with a checkpointer, as before, and with our new `in_memory_store` variable.
+With checkpointers alone, we cannot share information across threads. This motivates the need for the [`Store`](https://reference.langchain.com/python/langgraph/store/) interface. As an illustration, we can define an `InMemoryStore` to store information about a user across threads. We simply compile our graph with a checkpointer, as before, and pass the store.
 
 <Info>
 **LangGraph API handles stores automatically**
 When using the LangGraph API, you don't need to implement or configure stores manually. The API handles all storage infrastructure for you behind the scenes.
 </Info>
+
+<Note>
+[`InMemoryStore`](/oss/langgraph/reference/store/#langgraph.store.memory.InMemoryStore) is suitable for development and testing. For production, use a persistent store like `PostgresStore` or `RedisStore`. All implementations extend [`BaseStore`](/oss/langgraph/reference/store/#langgraph.store.base.BaseStore), which is the type annotation to use in node function signatures.
+</Note>
 
 ### Basic usage
 
@@ -582,7 +586,7 @@ First, let's showcase this in isolation without using LangGraph.
 :::python
 ```python
 from langgraph.store.memory import InMemoryStore
-in_memory_store = InMemoryStore()
+store = InMemoryStore()
 ```
 :::
 
@@ -616,7 +620,7 @@ We use the `store.put` method to save memories to our namespace in the store. Wh
 ```python
 memory_id = str(uuid.uuid4())
 memory = {"food_preference" : "I like pizza"}
-in_memory_store.put(namespace_for_memory, memory_id, memory)
+store.put(namespace_for_memory, memory_id, memory)
 ```
 :::
 
@@ -634,7 +638,7 @@ We can read out memories in our namespace using the `store.search` method, which
 
 :::python
 ```python
-memories = in_memory_store.search(namespace_for_memory)
+memories = store.search(namespace_for_memory)
 memories[-1].dict()
 {'value': {'food_preference': 'I like pizza'},
  'key': '07e0caf4-1631-47b7-b15f-65515d4c1843',
@@ -797,10 +801,15 @@ await store.put(
 ### Using in LangGraph
 
 :::python
-With this all in place, we use the `in_memory_store` in LangGraph. The `in_memory_store` works hand-in-hand with the checkpointer: the checkpointer saves state to threads, as discussed above, and the `in_memory_store` allows us to store arbitrary information for access _across_ threads. We compile the graph with both the checkpointer and the `in_memory_store` as follows.
+With this all in place, we use the store in LangGraph. The store works hand-in-hand with the checkpointer: the checkpointer saves state to threads, as discussed above, and the store allows us to store arbitrary information for access _across_ threads. We compile the graph with both the checkpointer and the store as follows.
 
 ```python
+from dataclasses import dataclass
 from langgraph.checkpoint.memory import InMemorySaver
+
+@dataclass
+class Context:
+    user_id: str
 
 # We need this because we want to enable threads (conversations)
 checkpointer = InMemorySaver()
@@ -808,7 +817,9 @@ checkpointer = InMemorySaver()
 # ... Define the graph ...
 
 # Compile the graph with the checkpointer and store
-graph = graph.compile(checkpointer=checkpointer, store=in_memory_store)
+builder = StateGraph(MessagesState, context_schema=Context)
+# ... add nodes and edges ...
+graph = builder.compile(checkpointer=checkpointer, store=store)
 ```
 :::
 
@@ -833,12 +844,14 @@ We invoke the graph with a `thread_id`, as before, and also with a `user_id`, wh
 :::python
 ```python
 # Invoke the graph
-user_id = "1"
-config = {"configurable": {"thread_id": "1", "user_id": user_id}}
+config = {"configurable": {"thread_id": "1"}}
 
 # First let's just say hi to the AI
 for update in graph.stream(
-    {"messages": [{"role": "user", "content": "hi"}]}, config, stream_mode="updates"
+    {"messages": [{"role": "user", "content": "hi"}]},
+    config,
+    stream_mode="updates",
+    context=Context(user_id="1"),
 ):
     print(update)
 ```
@@ -848,7 +861,7 @@ for update in graph.stream(
 ```typescript
 // Invoke the graph
 const userId = "1";
-const config = { configurable: { thread_id: "1", user_id: userId } };
+const config = { configurable: { thread_id: "1" }, context: { userId } };
 
 // First let's just say hi to the AI
 for await (const update of await graph.stream(
@@ -861,13 +874,20 @@ for await (const update of await graph.stream(
 :::
 
 :::python
-We can access the `in_memory_store` and the `user_id` in _any node_ by passing `store: BaseStore` and `config: RunnableConfig` as node arguments. Here's how we might use semantic search in a node to find relevant memories:
+You can access the store and the `user_id` in _any node_ by using the `Runtime` object. The `Runtime` is automatically injected by LangGraph when you add it as a parameter to your node function. Here's how you might use it to save memories:
 
 ```python
-def update_memory(state: MessagesState, config: RunnableConfig, *, store: BaseStore):
+from langgraph.runtime import Runtime
+from dataclasses import dataclass
 
-    # Get the user id from the config
-    user_id = config["configurable"]["user_id"]
+@dataclass
+class Context:
+    user_id: str
+
+async def update_memory(state: MessagesState, runtime: Runtime[Context]):
+
+    # Get the user id from the runtime context
+    user_id = runtime.context.user_id
 
     # Namespace the memory
     namespace = (user_id, "memories")
@@ -878,13 +898,15 @@ def update_memory(state: MessagesState, config: RunnableConfig, *, store: BaseSt
     memory_id = str(uuid.uuid4())
 
     # We create a new memory
-    store.put(namespace, memory_id, {"memory": memory})
+    await runtime.store.aput(namespace, memory_id, {"memory": memory})
 
 ```
+
+
 :::
 
 :::js
-We can access the `memoryStore` and the `user_id` in _any node_ by accessing `config` and `store` as node arguments. Here's how we might use semantic search in a node to find relevant memories:
+You can access the store and the `userId` in _any node_ with the `runtime` argument. Here's how you might use it to save memories:
 
 ```typescript
 import { StateSchema, MessagesValue, Runtime } from "@langchain/langgraph";
@@ -944,15 +966,22 @@ We can access the memories and use them in our model call.
 
 :::python
 ```python
-def call_model(state: MessagesState, config: RunnableConfig, *, store: BaseStore):
-    # Get the user id from the config
-    user_id = config["configurable"]["user_id"]
+from dataclasses import dataclass
+from langgraph.runtime import Runtime
+
+@dataclass
+class Context:
+    user_id: str
+
+async def call_model(state: MessagesState, runtime: Runtime[Context]):
+    # Get the user id from the runtime context
+    user_id = runtime.context.user_id
 
     # Namespace the memory
     namespace = (user_id, "memories")
 
     # Search based on the most recent message
-    memories = store.search(
+    memories = await runtime.store.asearch(
         namespace,
         query=state["messages"][-1].content,
         limit=3
@@ -988,12 +1017,15 @@ If we create a new thread, we can still access the same memories so long as the 
 
 :::python
 ```python
-# Invoke the graph
-config = {"configurable": {"thread_id": "2", "user_id": "1"}}
+# Invoke the graph on a new thread
+config = {"configurable": {"thread_id": "2"}}
 
 # Let's say hi again
 for update in graph.stream(
-    {"messages": [{"role": "user", "content": "hi, tell me about my memories"}]}, config, stream_mode="updates"
+    {"messages": [{"role": "user", "content": "hi, tell me about my memories"}]},
+    config,
+    stream_mode="updates",
+    context=Context(user_id="1"),
 ):
     print(update)
 ```
@@ -1002,7 +1034,7 @@ for update in graph.stream(
 :::js
 ```typescript
 // Invoke the graph
-const config = { configurable: { thread_id: "2", user_id: "1" } };
+const config = { configurable: { thread_id: "2" }, context: { userId: "1" } };
 
 // Let's say hi again
 for await (const update of await graph.stream(

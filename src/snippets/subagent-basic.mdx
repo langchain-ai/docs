@@ -1,0 +1,97 @@
+:::python
+```python
+import os
+from typing import Literal
+from tavily import TavilyClient
+from deepagents import create_deep_agent
+
+tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+
+def internet_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = False,
+):
+    """Run a web search"""
+    return tavily_client.search(
+        query,
+        max_results=max_results,
+        include_raw_content=include_raw_content,
+        topic=topic,
+    )
+
+research_subagent = {
+    "name": "research-agent",
+    "description": "Used to research more in depth questions",
+    "system_prompt": "You are a great researcher",
+    "tools": [internet_search],
+    "model": "openai:gpt-4.1",  # Optional override, defaults to main agent model
+}
+subagents = [research_subagent]
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-5-20250929",
+    subagents=subagents
+)
+```
+:::
+
+:::js
+```typescript
+import { tool } from "langchain";
+import { TavilySearch } from "@langchain/tavily";
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { z } from "zod";
+
+const internetSearch = tool(
+  async ({
+    query,
+    maxResults = 5,
+    topic = "general",
+    includeRawContent = false,
+  }: {
+    query: string;
+    maxResults?: number;
+    topic?: "general" | "news" | "finance";
+    includeRawContent?: boolean;
+  }) => {
+    const tavilySearch = new TavilySearch({
+      maxResults,
+      tavilyApiKey: process.env.TAVILY_API_KEY,
+      includeRawContent,
+      topic,
+    });
+    return await tavilySearch._call({ query });
+  },
+  {
+    name: "internet_search",
+    description: "Run a web search",
+    schema: z.object({
+      query: z.string().describe("The search query"),
+      maxResults: z.number().optional().default(5),
+      topic: z
+        .enum(["general", "news", "finance"])
+        .optional()
+        .default("general"),
+      includeRawContent: z.boolean().optional().default(false),
+    }),
+  },
+);
+
+const researchSubagent = {
+  name: "research-agent",
+  description: "Used to research more in depth questions",
+  systemPrompt: "You are a great researcher",
+  tools: [internetSearch],
+  model: new ChatAnthropic({model:"claude-sonnet-4-5-20250929"}),  // Optional override, defaults to main agent model
+};
+const subagents = [researchSubagent];
+
+const agent = createDeepAgent({
+  model: new ChatAnthropic({model:"claude-sonnet-4-5-20250929"}),
+  subagents: subagents,
+});
+```
+:::

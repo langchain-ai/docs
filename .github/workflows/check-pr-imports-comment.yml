@@ -9,12 +9,14 @@ on:
 
 jobs:
   comment:
+    if: github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
 
     steps:
       - name: Download artifact
+        id: download
         uses: actions/github-script@v8
         with:
           script: |
@@ -30,6 +32,7 @@ jobs:
 
             if (!matchArtifact) {
               console.log('No artifact found');
+              core.setOutput('found', 'false');
               return;
             }
 
@@ -42,11 +45,14 @@ jobs:
 
             const fs = require('fs');
             fs.writeFileSync('${{github.workspace}}/import-check-result.zip', Buffer.from(download.data));
+            core.setOutput('found', 'true');
 
       - name: Extract artifact
+        if: steps.download.outputs.found == 'true'
         run: unzip import-check-result.zip
 
       - name: Read PR number and output
+        if: steps.download.outputs.found == 'true'
         id: read-data
         run: |
           if [ -f pr_number.txt ] && [ -f import_check_output.txt ]; then

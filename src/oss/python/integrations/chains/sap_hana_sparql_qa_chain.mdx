@@ -1,0 +1,323 @@
+---
+title: Question Answering with `HanaSparqlQAChain`
+---
+## Setup and Installation
+
+To use this feature, install the `langchain-hana` package:
+
+```python
+pip install langchain_hana
+```
+
+And then, create a connection to your SAP HANA Cloud instance.
+
+```python
+import os
+
+from dotenv import load_dotenv
+from hdbcli import dbapi
+
+# Load environment variables if needed
+load_dotenv()
+
+# Establish connection to SAP HANA Cloud
+connection = dbapi.connect(
+    address=os.environ.get("HANA_DB_ADDRESS"),
+    port=os.environ.get("HANA_DB_PORT"),
+    user=os.environ.get("HANA_DB_USER"),
+    password=os.environ.get("HANA_DB_PASSWORD")
+)
+```
+
+`HanaSparqlQAChain` ties together:
+
+1. **Schema-aware SPARQL generation**
+2. **Query execution** against SAP HANA
+3. **Natural-language answer formatting**
+
+## Initialization
+
+You need:
+
+* An **LLM** to generate and interpret queries
+* A **`HanaRdfGraph`** (with connection, `graph_uri`, and ontology)
+
+Follow the steps here [HanaRdfGraph](/oss/integrations/graphs/sap_hana_rdf_graph) to know more about creating a `HanaRdfGraph` instance.
+
+Import the `HanaSparqlQAChain`
+
+```python
+from langchain_hana import HanaSparqlQAChain
+```
+
+```python
+qa_chain = HanaSparqlQAChain.from_llm(
+    llm=llm, graph=graph, allow_dangerous_requests=True, verbose=True
+)
+```
+
+## Pipeline overview
+
+1. **SPARQL Generation**
+  * Uses `SPARQL_GENERATION_SELECT_PROMPT`
+  * Inputs:
+    * `schema` (Turtle from `graph.get_schema`)
+    * `prompt` (user’s question)
+2. **Query Post-processing**
+  * Extracts the SPARQL code from the llm output.
+  * Inject `FROM <graph_uri>` if missing
+  * Ensure required common prefixes are declared (`rdf:`, `rdfs:`, `owl:`, `xsd:`)
+3. **Execution**
+  * Calls `graph.query(generated_sparql)`
+4. **Answer Formulation**
+  * Uses `SPARQL_QA_PROMPT`
+  * Inputs:
+    * `context` (raw query results)
+    * `prompt` (original question)
+
+## Prompt templates
+
+### "SPARQL Generation" prompt
+
+The `sparql_generation_prompt` is used to guide the LLM in generating a SPARQL query from the user question and the provided schema.
+
+### Answering prompt
+
+The `qa_prompt` instructs the LLM to create a natural language answer based solely on the database results.
+
+The default prompts can be found here: [`prompts.py`](https://github.com/SAP/langchain-integration-for-sap-hana-cloud/blob/main/langchain_hana/chains/graph_qa/prompts.py)
+
+## Customizing prompts
+
+You can override the defaults at initialization:
+
+```python
+qa_chain = HanaSparqlQAChain.from_llm(
+    llm=llm,
+    graph=graph,
+    allow_dangerous_requests=True,
+    verbose=True,
+    sparql_generation_prompt=YOUR_SPARQL_PROMPT,
+    qa_prompt=YOUR_QA_PROMPT
+)
+```
+
+> - `sparql_generation_prompt` must have the input variables: `["schema", "prompt"]`
+> - `qa_prompt` must have the input variables: `["context", "prompt"]`
+
+## Example: Question answering over a “Movies” knowledge graph
+
+**Prerequisite**:
+You must have an SAP HANA Cloud instance with the **triple store** feature enabled.
+For detailed instructions, refer to: [Enable Triple Store](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/enable-triple-store/)<br />
+Load the `kgdocu_movies` example data. See [Knowledge Graph Example](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/knowledge-graph-example).
+
+Below we’ll:
+
+1. Instantiate the `HanaRdfGraph` pointing at our “movies” data graph
+2. Wrap it in a `HanaSparqlQAChain` powered by an LLM
+3. Ask natural-language questions and print out the chain’s responses
+
+This demonstrates how the LLM generates SPARQL under the hood, executes it against SAP HANA, and returns a human-readable answer.
+
+First, create a connection to your SAP HANA Cloud instance.
+
+```python
+import os
+
+from dotenv import load_dotenv
+from hdbcli import dbapi
+
+# Load environment variables if needed
+load_dotenv()
+
+# Establish connection to SAP HANA Cloud
+connection = dbapi.connect(
+    address=os.environ.get("HANA_DB_ADDRESS"),
+    port=os.environ.get("HANA_DB_PORT"),
+    user=os.environ.get("HANA_DB_USER"),
+    password=os.environ.get("HANA_DB_PASSWORD")
+)
+```
+
+Then, set up the knowledge graph instance
+
+```python
+from gen_ai_hub.proxy.langchain.openai import ChatOpenAI
+from langchain_hana import HanaRdfGraph, HanaSparqlQAChain
+
+# from langchain_openai import ChatOpenAI  # or your chosen LLM
+```
+
+```python
+# Set up the Knowledge Graph
+graph_uri = "kgdocu_movies"
+
+graph = HanaRdfGraph(
+    connection=connection,
+    graph_uri=graph_uri,
+    auto_extract_ontology=True
+)
+```
+
+```python
+# a basic graph schema is extracted from the data graph. This schema will guide the LLM to generate a proper SPARQL query.
+schema_graph = graph.get_schema
+print(schema_graph.serialize(format="turtle"))
+```
+
+```output
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://kg.demo.sap.com/acted_in> a owl:ObjectProperty ;
+    rdfs:label "acted_in" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range <http://kg.demo.sap.com/Film> .
+
+<http://kg.demo.sap.com/dateOfBirth> a owl:DatatypeProperty ;
+    rdfs:label "dateOfBirth" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range xsd:dateTime .
+
+<http://kg.demo.sap.com/directed> a owl:ObjectProperty ;
+    rdfs:label "directed" ;
+    rdfs:domain <http://kg.demo.sap.com/Director> ;
+    rdfs:range <http://kg.demo.sap.com/Film> .
+
+<http://kg.demo.sap.com/genre> a owl:ObjectProperty ;
+    rdfs:label "genre" ;
+    rdfs:domain <http://kg.demo.sap.com/Film> ;
+    rdfs:range <http://kg.demo.sap.com/Genre> .
+
+<http://kg.demo.sap.com/placeOfBirth> a owl:ObjectProperty ;
+    rdfs:label "placeOfBirth" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range <http://kg.demo.sap.com/Place> .
+
+<http://kg.demo.sap.com/title> a owl:DatatypeProperty ;
+    rdfs:label "title" ;
+    rdfs:domain <http://kg.demo.sap.com/Film> ;
+    rdfs:range xsd:string .
+
+rdfs:label a owl:DatatypeProperty ;
+    rdfs:label "label" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor>,
+        <http://kg.demo.sap.com/Director>,
+        <http://kg.demo.sap.com/Genre>,
+        <http://kg.demo.sap.com/Place> ;
+    rdfs:range xsd:string .
+
+<http://kg.demo.sap.com/Director> a owl:Class ;
+    rdfs:label "Director" .
+
+<http://kg.demo.sap.com/Genre> a owl:Class ;
+    rdfs:label "Genre" .
+
+<http://kg.demo.sap.com/Place> a owl:Class ;
+    rdfs:label "Place" .
+
+<http://kg.demo.sap.com/Actor> a owl:Class ;
+    rdfs:label "Actor" .
+
+<http://kg.demo.sap.com/Film> a owl:Class ;
+    rdfs:label "Film" .
+```
+
+After that, initialise the LLM.
+
+```python
+# Initialize the LLM
+llm = ChatOpenAI(proxy_model_name="gpt-4o", temperature=0)
+```
+
+Then, we create a SPARQL QA Chain
+
+```python
+# Create a SPARQL QA Chain
+chain = HanaSparqlQAChain.from_llm(
+    llm=llm,
+    verbose=True,
+    allow_dangerous_requests=True,
+    graph=graph,
+)
+```
+
+```python
+# output = chain.invoke("Which movies are in the data?")
+# output = chain.invoke("In which movies did Keanu Reeves and Carrie-Anne Moss play in together")
+# output = chain.invoke("which movie genres are in the data?")
+# output = chain.invoke("which are the two most assigned movie genres?")
+# output = chain.invoke("where were the actors of "Blade Runner" born?")
+# output = chain.invoke("which actors acted together in a movie and were born in the same city?")
+output = chain.invoke("which actors acted in Blade Runner?")
+
+print(output["result"])
+```
+
+```output
+
+
+> Entering new HanaSparqlQAChain chain...
+Generated SPARQL:
+\`\`\`
+PREFIX kg: <http://kg.demo.sap.com/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?actor ?actorLabel
+WHERE {
+    ?movie rdf:type kg:Film .
+    ?movie kg:title ?movieTitle .
+    ?actor kg:acted_in ?movie .
+    ?actor rdfs:label ?actorLabel .
+    FILTER(?movieTitle = "Blade Runner")
+}
+\`\`\`
+Final SPARQL:
+
+PREFIX kg: <http://kg.demo.sap.com/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?actor ?actorLabel
+
+FROM <kgdocu_movies>
+WHERE {
+    ?movie rdf:type kg:Film .
+    ?movie kg:title ?movieTitle .
+    ?actor kg:acted_in ?movie .
+    ?actor rdfs:label ?actorLabel .
+    FILTER(?movieTitle = "Blade Runner")
+}
+
+Full Context:
+actor,actorLabel
+http://www.wikidata.org/entity/Q1353691,Morgan Paull
+http://www.wikidata.org/entity/Q1372770,William Sanderson
+http://www.wikidata.org/entity/Q358990,James Hong
+http://www.wikidata.org/entity/Q498420,M. Emmet Walsh
+http://www.wikidata.org/entity/Q81328,Q81328
+http://www.wikidata.org/entity/Q723780,Brion James
+http://www.wikidata.org/entity/Q207596,Daryl Hannah
+http://www.wikidata.org/entity/Q1691628,Joe Turkel
+http://www.wikidata.org/entity/Q236702,Joanna Cassidy
+http://www.wikidata.org/entity/Q213574,Rutger Hauer
+http://www.wikidata.org/entity/Q3143555,Hy Pyke
+http://www.wikidata.org/entity/Q211415,Edward James Olmos
+http://www.wikidata.org/entity/Q230736,Sean Young
+
+
+> Finished chain.
+The actors who acted in Blade Runner are Morgan Paull, William Sanderson, James Hong, M. Emmet Walsh, Brion James, Daryl Hannah, Joe Turkel, Joanna Cassidy, Rutger Hauer, Hy Pyke, Edward James Olmos, and Sean Young.
+```
+
+## What’s happening under the hood?
+
+1. **SPARQL Generation**
+  The chain invokes the LLM with your Turtle-formatted ontology (`graph.get_schema`) and the user’s question using the `SPARQL_GENERATION_SELECT_PROMPT`. The LLM then emits a valid `SELECT` query tailored to your schema.
+2. **Pre-processing & Execution**
+  * **Extract & clean**: Pull the raw SPARQL text out of the LLM’s response.
+  * **Inject graph context**: Add `FROM <graph_uri>` if it’s missing and ensure common prefixes (`rdf:`, `rdfs:`, `owl:`, `xsd:`) are declared.
+  * **Run on HANA**: Execute the finalized query via `HanaRdfGraph.query()` over your named graph.
+3. **Answer Formulation**
+  The returned CSV (or Turtle) results feed into the LLM again—this time with the `SPARQL_QA_PROMPT`. The LLM produces a concise, human-readable answer strictly based on the retrieved data, without hallucination.

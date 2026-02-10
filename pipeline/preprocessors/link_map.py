@@ -194,6 +194,7 @@ LINK_MAPS: list[LinkMap] = [
             # Key-value stores
             "BaseStore": "langgraph/store/#langgraph.store.base.BaseStore",
             "BaseStore.put": "langgraph/store/#langgraph.store.base.BaseStore.put",
+            "InMemoryStore": "langgraph/store/#langgraph.store.memory.InMemoryStore",
             # Callbacks
             "on_llm_new_token": "langchain_core/callbacks/#langchain_core.callbacks.base.AsyncCallbackHandler.on_llm_new_token",
             # Rate limiters
@@ -213,6 +214,8 @@ LINK_MAPS: list[LinkMap] = [
             "wrap_gemini": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_gemini",
             "traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
             "@traceable": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.traceable",
+            "tracing_context": "langsmith/observability/sdk/run_helpers/#langsmith.run_helpers.tracing_context",
+            "tracingEnabled": "https://reference.langchain.com/javascript/classes/langsmith.run_trees.RunTree.html#tracingenabled",
             "langsmith_extra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
             "SupportsLangsmithExtra": "langsmith/observability/sdk/run_helpers/?h=langsmith_extra#langsmith.run_helpers.SupportsLangsmithExtra",
             # LangGraph
@@ -432,6 +435,7 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith": "modules/langsmith.html",
             "langsmith-js": "modules/langsmith.html",
             "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
+            "tracingEnabled": "classes/langsmith.run_trees.RunTree.html#tracingenabled",
             "wrapGemini": "functions/langsmith.wrappers_gemini.wrapGemini.html",
             # LangGraph SDK references
             "Auth": "classes/_langchain_langgraph-sdk.auth.Auth.html",
@@ -443,10 +447,12 @@ LINK_MAPS: list[LinkMap] = [
             "BaseCheckpointSaver": "classes/_langchain_langgraph-checkpoint.BaseCheckpointSaver.html",
             "BaseStore": "classes/_langchain_langgraph-checkpoint.BaseStore.html",
             "BaseStore.put": "classes/_langchain_langgraph-checkpoint.BaseStore.html#put",
+            "InMemoryStore": "classes/_langchain_langgraph-checkpoint.InMemoryStore.html",
             "InMemorySaver": "classes/_langchain_langgraph-checkpoint.MemorySaver.html",
             "MemorySaver": "classes/_langchain_langgraph-checkpoint.MemorySaver.html",
             "AsyncPostgresSaver": "classes/_langchain_langgraph-checkpoint-postgres.AsyncPostgresSaver.html",
             "PostgresSaver": "classes/_langchain_langgraph-checkpoint-postgres.index.PostgresSaver.html",
+            "PostgresStore": "classes/_langchain_langgraph-checkpoint-postgres.store.PostgresStore.html",
             "protocol": "interfaces/_langchain_langgraph-checkpoint.SerializerProtocol.html",
             "SerializerProtocol": "interfaces/_langchain_langgraph-checkpoint.SerializerProtocol.html",
             "SqliteSaver": "classes/_langchain_langgraph-checkpoint-sqlite.SqliteSaver.html",
