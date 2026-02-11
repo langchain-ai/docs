@@ -103,4 +103,99 @@ _REGISTRY=your-registry # Set this to your registry URL if you mirrored all imag
 
 </CodeGroup>
 
-Once configured, you will need to update your LangSmith installation. You can follow our upgrade guide here: [Upgrading LangSmith](/langsmith/self-host-upgrades).If your upgrade is successful, your LangSmith instance should now be using the mirrored images from your Docker registry.
+## Additional images for Agent Builder and Insights
+
+If you are using Agent Builder or Insights, the LangGraph operator dynamically creates Redis and PostgreSQL (pgvector) pods for each deployment. These pods use images defined in operator templates that require separate configuration.
+
+You must mirror these additional images:
+- `docker.io/redis:7`
+- `docker.io/pgvector/pgvector:pg15`
+
+Then override the operator templates in your `values.yaml` to use your mirrored images:
+
+```yaml
+operator:
+  templates:
+    redis: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ${service_name}
+        namespace: ${namespace}
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: ${service_name}
+        template:
+          metadata:
+            labels:
+              app: ${service_name}
+          spec:
+            enableServiceLinks: false
+            containers:
+            - name: redis
+              image: (your-registry)/redis:7
+              ports:
+              - containerPort: 6379
+                name: redis
+              livenessProbe:
+                exec:
+                  command:
+                  - redis-cli
+                  - ping
+                initialDelaySeconds: 30
+                periodSeconds: 10
+              readinessProbe:
+                tcpSocket:
+                  port: 6379
+                initialDelaySeconds: 10
+                periodSeconds: 5
+    db: |
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: ${service_name}
+      spec:
+        serviceName: ${service_name}
+        selector:
+          matchLabels:
+            app: ${service_name}
+        persistentVolumeClaimRetentionPolicy:
+          whenDeleted: Delete
+          whenScaled: Retain
+        template:
+          metadata:
+            labels:
+              app: ${service_name}
+          spec:
+            containers:
+            - name: postgres
+              image: (your-registry)/pgvector/pgvector:pg15
+              ports:
+              - containerPort: 5432
+              command: ["docker-entrypoint.sh"]
+              args:
+                - postgres
+                - -c
+                - max_connections=${max_connections}
+              env:
+              - name: PGDATA
+                value: /var/lib/postgresql/data/pgdata
+              volumeMounts:
+              - name: postgres-data
+                mountPath: /var/lib/postgresql/data
+            enableServiceLinks: false
+        volumeClaimTemplates:
+        - metadata:
+            name: postgres-data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: "${storage_gi}Gi"
+```
+
+Replace `(your-registry)` with your registry URL. The template variables (`${service_name}`, `${namespace}`, `${max_connections}`, `${storage_gi}`) are replaced by the operator at runtime and must be kept as-is.
+
+Once configured, you will need to update your LangSmith installation. You can follow our upgrade guide here: [Upgrading LangSmith](/langsmith/self-host-upgrades). If your upgrade is successful, your LangSmith instance should now be using the mirrored images from your Docker registry.
