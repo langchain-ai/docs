@@ -2,7 +2,31 @@
 title: Router
 ---
 
-In the **router** architecture, a routing step classifies input and directs it to specialized [agents](/oss/langchain/agents). This is useful when you have distinct **verticals**—separate knowledge domains that each require their own agent.
+In the **router** architecture, a routing step classifies user input and directs it to specialized [agents](/oss/langchain/agents). This pattern works well when you have distinct **verticals**—separate knowledge domains that each require their own agent.
+
+**Example:** A customer service bot with separate agents for terms & agreements, betting history, and account settings. User asks "What are the withdrawal terms?" → classifier selects the terms agent → that agent responds directly. Next question might land on a different agent.
+
+## Two variations
+
+The router pattern has two common implementations:
+
+| Variation | Flow | Best for |
+|-----------|------|----------|
+| **Classifier (pass-through)** | Classify → single agent → agent responds directly to user | Single-intent questions, one at a time. Mimics a human conversation: user asks, specialist answers. Example: terms agent, betting history agent. |
+| **Synthesis (fan-out)** | Classify → one or more agents in parallel → synthesize combined response | Queries that span multiple sources. Example: "Search GitHub, Notion, and Slack for X" → combine results. |
+
+<Note>
+**Classifier vs. Handoffs:** The classifier variation routes based on *user intent* (e.g., "this question is about terms"). [Handoffs](/oss/langchain/multi-agent/handoffs) routes based on *conversation state* (e.g., "we've collected warranty status, now move to resolution"). Classifier: "which agent handles this question?" Handoffs: "which step are we in this workflow?"
+</Note>
+
+### Simplified flow: classifier (pass-through)
+
+```
+User: "What are the withdrawal terms?"     →  Classifier  →  Terms Agent  →  User gets answer
+User: "Show my betting history"           →  Classifier  →  Betting Agent →  User gets answer
+```
+
+### Synthesis (fan-out)
 
 ```mermaid
 graph LR
@@ -18,13 +42,13 @@ graph LR
 
 ## Key characteristics
 
-* Router decomposes the query
-* Zero or more specialized agents are invoked in parallel
-* Results are synthesized into a coherent response
+* Router classifies each request (LLM or rule-based)
+* Zero or more specialized agents are invoked (parallel for synthesis)
+* **Classifier**: Selected agent responds directly to user. **Synthesis**: Results are combined into a coherent response.
 
 ## When to use
 
-Use the router pattern when you have distinct verticals (separate knowledge domains that each require their own agent), need to query multiple sources in parallel, and want to synthesize results into a combined response.
+Use the **classifier** variation when you have distinct verticals and users typically ask one question at a time—each question lands on one agent, which responds directly. Use the **synthesis** variation when queries span multiple domains and you need to combine answers (e.g., multi-source search).
 
 ## Basic implementation
 
@@ -157,10 +181,14 @@ Each request is routed independently—no memory between calls. For multi-turn c
 **Router vs. Subagents**: Both patterns can dispatch work to multiple agents, but they differ in how routing decisions are made:
 
 - **Router**: A dedicated routing step (often a single LLM call or rule-based logic) that classifies the input and dispatches to agents. The router itself typically doesn't maintain conversation history or perform multi-turn orchestration—it's a preprocessing step.
-- **Subagents**: An main supervisor agent dynamically decides which [subagents](/oss/langchain/multi-agent/subagents) to call as part of an ongoing conversation. The main agent maintains context, can call multiple subagents across turns, and orchestrates complex multi-step workflows.
+- **Subagents**: A main supervisor agent dynamically decides which [subagents](/oss/langchain/multi-agent/subagents) to call as part of an ongoing conversation. The main agent maintains context, can call multiple subagents across turns, and orchestrates complex multi-step workflows.
 
-Use a **router** when you have clear input categories and want deterministic or lightweight classification. Use a **supervisor** when you need flexible, conversation-aware orchestration where the LLM decides what to do next based on evolving context.
+Use a **stateless router** when you have clear input categories, need custom routing or preprocessing (e.g., support ticket triage, document classification, parsing and validation before dispatch), or want deterministic/rule-based classification. Use a **supervisor** (subagents) when you need flexible, conversation-aware orchestration where the LLM decides what to do next based on evolving context.
 </Tip>
+
+<Note>
+**Stateful router vs. Subagents**: When you wrap a router as a tool inside a conversational agent (see [Tool wrapper](#tool-wrapper)), you're effectively using the subagents pattern—the conversational agent is the supervisor, and the "router" becomes a specialized tool. If you need multi-turn context and conversation-aware routing, the [subagents pattern](/oss/langchain/multi-agent/subagents) often provides clearer semantics than trying to make a router stateful.
+</Note>
 
 
 ## Stateful
@@ -217,5 +245,5 @@ const conversationalAgent = createAgent({
 If you need the router itself to maintain state, use [persistence](/oss/langchain/short-term-memory) to store message history. When routing to an agent, fetch previous messages from state and selectively include them in the agent's context—this is a lever for [context engineering](/oss/langchain/context-engineering).
 
 <Warning>
-**Stateful routers require custom history management.** If the router switches between agents across turns, conversations may not feel fluid to end users when agents have different tones or prompts. With parallel invocation, you'll need to maintain history at the router level (inputs and synthesized outputs) and leverage this history in routing logic. Consider the [handoffs pattern](/oss/langchain/multi-agent/handoffs) or [subagents pattern](/oss/langchain/multi-agent/subagents) instead—both provide clearer semantics for multi-turn conversations.
+**Stateful routers require custom history management.** If the router switches between agents across turns: (1) conversations may not feel fluid when agents have different tones or prompts; (2) cycling between agents with different system prompts breaks prompt caches—each switch invalidates cached prompt prefixes, increasing latency and cost. With parallel invocation, you'll need to maintain history at the router level (inputs and synthesized outputs) and leverage this history in routing logic. Consider the [handoffs pattern](/oss/langchain/multi-agent/handoffs) or [subagents pattern](/oss/langchain/multi-agent/subagents) instead—both provide clearer semantics for multi-turn conversations.
 </Warning>
