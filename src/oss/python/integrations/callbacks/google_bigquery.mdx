@@ -1,6 +1,6 @@
 ---
 title: "Bigquery callback handler integration"
-description: Log events from LangChain to Google BigQuery for monitoring, auditing, and analyzing your LLM applications.
+description: Log events from LangChain and LangGraph to Google BigQuery for monitoring, auditing, and analyzing your LLM applications with real-time analytics.
 ---
 
 # BigQuery Callback Handler
@@ -11,7 +11,14 @@ description: Log events from LangChain to Google BigQuery for monitoring, auditi
 
 > [Google BigQuery](https://cloud.google.com/bigquery) is a serverless and cost-effective enterprise data warehouse that works across clouds and scales with your data.
 
-The `BigQueryCallbackHandler` allows you to log events from LangChain to Google BigQuery. This is useful for monitoring, auditing, and analyzing the performance of your LLM applications.
+The `BigQueryCallbackHandler` allows you to log events from LangChain and LangGraph to Google BigQuery. This is useful for monitoring, auditing, and analyzing the performance of your LLM applications.
+
+**Key features:**
+- **LangGraph support**: Automatic detection of LangGraph nodes with `NODE_STARTING`, `NODE_COMPLETED`, and `GRAPH_START/END` events
+- **Latency tracking**: Built-in latency measurement for all LLM and tool calls
+- **Event filtering**: Configurable allowlist/denylist to control which events are logged
+- **Graph context manager**: Explicit graph execution boundaries with accurate timing
+- **Real-time dashboard**: FastAPI-based monitoring webapp with live event streaming
 
 <Note>
   **Preview release**
@@ -56,90 +63,112 @@ For the callback handler to work properly, the principal (e.g., service account,
 - If using GCS offloading: `roles/storage.objectCreator` and `roles/storage.objectViewer` on the target bucket.
 
 
-## Use with LangChain Agent
+## Use with LangGraph agent
 
-To use the `AsyncBigQueryCallbackHandler`, you need to instantiate it with your Google Cloud project ID, dataset ID, and table ID.
+To use the `BigQueryCallbackHandler` with a LangGraph agent, instantiate it with your Google Cloud project ID, dataset ID, and table ID. Use the `graph_context()` method to track graph execution boundaries and enable `GRAPH_START`/`GRAPH_END` events with latency measurements.
 
-If you want to log `session_id`, `user_id`, and `agent` fields to BigQuery, you must pass them via the `metadata` dictionary in the `config` object when invoking the chain or agent. If you do not have an `agent` field, we recommend creating and using different tables for different agents.
+Pass `session_id`, `user_id`, and `agent` via the `metadata` dictionary in the `config` object when invoking the agent.
 
 ```python
-import asyncio
 import os
 from datetime import datetime
 
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
 from langchain.tools import tool
-from langchain_google_community.callbacks.bigquery_callback import AsyncBigQueryCallbackHandler
+from langchain_google_community.callbacks.bigquery_callback import (
+    BigQueryCallbackHandler,
+    BigQueryLoggerConfig,
+)
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langgraph.prebuilt import create_react_agent
 
-# 1. Define some tools for the agent
+# 1. Define tools for the agent
 @tool
-def get_current_time():
+def get_current_time() -> str:
     """Returns the current local time."""
-    return datetime.now().strftime("%H:%M:%S")
+    now = datetime.now()
+    return f"Current time: {now.strftime('%I:%M:%S %p')} on {now.strftime('%B %d, %Y')}"
 
 @tool
-def get_weather(city: str):
+def get_weather(city: str) -> str:
     """Returns the current weather for a specific city."""
-    return f"The weather in {city} is sunny and 25°C."
+    # Simulated weather data (use real API in production)
+    weather_data = {
+        "new york": {"temp": 22, "condition": "Clear"},
+        "tokyo": {"temp": 24, "condition": "Sunny"},
+        "london": {"temp": 14, "condition": "Overcast"},
+    }
+    city_lower = city.lower()
+    if city_lower in weather_data:
+        data = weather_data[city_lower]
+        return f"Weather in {city.title()}: {data['temp']}°C, {data['condition']}"
+    return f"Weather data for '{city}' not available."
 
-async def run_example_async_agent(bq_project_id: str):
-    """Runs an asynchronous Agent with BigQuery logging."""
+@tool
+def convert_currency(amount: float, from_currency: str, to_currency: str) -> str:
+    """Convert an amount between currencies."""
+    rates = {"USD": 1.0, "EUR": 1.08, "GBP": 1.27, "JPY": 0.0067}
+    from_curr, to_curr = from_currency.upper(), to_currency.upper()
+    if from_curr not in rates or to_curr not in rates:
+        return f"Unknown currency"
+    result = amount * rates[from_curr] / rates[to_curr]
+    return f"{amount} {from_curr} = {result:.2f} {to_curr}"
 
-    # Setup BigQuery logging details
-    dataset_id = "your_dataset_id"
-    table_id = "your_table_id"
+def run_agent_example(project_id: str):
+    """Run a LangGraph agent with BigQuery logging."""
 
-    print(f"--- Starting Async Agent Example ---")
-    print(f"Logging to: {bq_project_id}.{dataset_id}.{table_id}")
+    dataset_id = "agent_analytics"
+    table_id = "agent_events_v2"
 
-    # Initialize the async callback handler
-    bigquery_handler = AsyncBigQueryCallbackHandler(
-        project_id=bq_project_id, dataset_id=dataset_id, table_id=table_id
+    # 2. Configure the callback handler
+    config = BigQueryLoggerConfig(
+        batch_size=1,
+        batch_flush_interval=0.5,
     )
 
-    try:
-        # Setup LLM and Tools
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro")
-        tools = [get_current_time, get_weather]
+    handler = BigQueryCallbackHandler(
+        project_id=project_id,
+        dataset_id=dataset_id,
+        table_id=table_id,
+        config=config,
+        graph_name="travel_assistant",  # Enable LangGraph tracking
+    )
 
-        # Create the Agent (LangGraph ReAct implementation)
-        agent_executor = create_react_agent(llm, tools)
+    # 3. Create the LLM and agent
+    # Use project parameter for Vertex AI, or api_key for Gemini Developer API
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        project=project_id,  # For Vertex AI
+    )
+    tools = [get_current_time, get_weather, convert_currency]
+    agent = create_agent(llm, tools)
 
-        query = "What time is it now, and what is the weather like in New York?"
-        print(f"User Query: {query}")
+    # 4. Run with graph_context for GRAPH_START/GRAPH_END events
+    query = "What time is it? What's the weather in Tokyo? How much is 100 USD in EUR?"
 
-        # Run the agent asynchronously
-        # We use astream to process chunks, but you can also use ainvoke
-        async for chunk in agent_executor.astream(
-            {"messages": [("user", query)]},
+    run_metadata = {
+        "session_id": "session-001",
+        "user_id": "user-123",
+        "agent": "travel_assistant",
+    }
+
+    with handler.graph_context("travel_assistant", metadata=run_metadata):
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=query)]},
             config={
-                "callbacks": [bigquery_handler],  # Pass the handler here
-                "metadata": {
-                    "session_id": "agent-session-001",
-                    "user_id": "user-123",
-                    "agent": "weather-agent",
-                },
+                "callbacks": [handler],
+                "metadata": run_metadata,
             },
-        ):
-            # Print agent thoughts/actions as they happen
-            if "agent" in chunk:
-                print(f"🤖 Agent: {chunk['agent']['messages'][0].content}")
-            elif "tools" in chunk:
-                print(f"🛠️ Tool Output: {chunk['tools']['messages'][0].content}")
+        )
 
-        print("✅ Agent finished. Logs are being written in the background...")
-    finally:
-        # Ensure resources are cleaned up
-        await bigquery_handler.close()
+    print(f"Response: {result['messages'][-1].content}")
+
+    # 5. Clean up
+    handler.shutdown()
 
 if __name__ == "__main__":
-    # Ensure GOOGLE_API_KEY is set in your environment
-    if "GOOGLE_API_KEY" not in os.environ:
-        raise ValueError("Please set the GOOGLE_API_KEY environment variable.")
-
-    project_id = "your-project-id"
-    asyncio.run(run_example_async_agent(project_id))
+    project_id = os.environ.get("GCP_PROJECT_ID", "your-project-id")
+    run_agent_example(project_id)
 ```
 
 ## Configuration options
@@ -202,43 +231,20 @@ You can customize the callback handler using `BigQueryLoggerConfig`.
   The maximum number of events to hold in the internal buffer queue before dropping new events.
 </ParamField>
 
-The following code sample shows how to define a configuration for the BigQuery callback handler, including a custom content formatter:
+The following code sample shows how to define a configuration for the BigQuery callback handler with event filtering:
 
 ```python
-import json
-import re
-from typing import Any
-
 from langchain_google_community.callbacks.bigquery_callback import (
     BigQueryCallbackHandler,
-    BigQueryLoggerConfig
+    BigQueryLoggerConfig,
 )
-
-def redact_dollar_amounts(event_content: Any) -> str:
-    """
-    Custom formatter to redact dollar amounts (e.g., $600, $12.50)
-    and ensure JSON output if the input is a dict.
-    """
-    text_content = ""
-    # If the content is a dictionary (e.g., a list of messages), convert it to a JSON string first.
-    if isinstance(event_content, dict):
-        text_content = json.dumps(event_content)
-    else:
-        text_content = str(event_content)
-
-    # Regex to find dollar amounts: $ followed by digits, optionally with commas or decimals.
-    # Examples: $600, $1,200.50, $0.99
-    redacted_content = re.sub(r'\$\d+(?:,\d{3})*(?:\.\d+)?', 'xxx', text_content)
-
-    return redacted_content
 
 # 1. Configure BigQueryLoggerConfig
 config = BigQueryLoggerConfig(
     enabled=True,
-    event_allowlist=["LLM_REQUEST", "LLM_RESPONSE"], # Only log these specific events
-    shutdown_timeout=10.0,   # Wait up to 10s for logs to flush on exit
+    event_allowlist=["LLM_REQUEST", "LLM_RESPONSE"],  # Only log these specific events
+    shutdown_timeout=10.0,  # Wait up to 10s for logs to flush on exit
     max_content_length=500,  # Truncate content to 500 characters
-    content_formatter=redact_dollar_amounts, # Set the custom formatting function
 )
 
 # 2. Initialize the Callback Handler
@@ -246,7 +252,7 @@ handler = BigQueryCallbackHandler(
     project_id="your-project-id",
     dataset_id="your_dataset",
     table_id="your_table",
-    config=config
+    config=config,
 )
 ```
 
@@ -309,261 +315,56 @@ The `content_parts` column provides a structured view of the content, especially
 
 These events track the raw requests sent to and responses received from the LLM.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-      <th><strong>Attributes (JSON)</strong></th>
-      <th><strong>Example Content (Simplified)</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>LLM_REQUEST</pre></td>
-      <td>
-        <strong>Chat Model:</strong><br/>
-```json
-{
-  "messages": [
-    {"content": "..."}
-  ]
-}
-```
-        <strong>Legacy Model:</strong><br/>
-```json
-{
-  "prompts": ["..."]
-}
-```
-      </td>
-      <td>
-```json
-{
-  "tags": ["tag1"],
-  "model": "gemini-1.5-pro"
-}
-```
-      </td>
-      <td>
-```json
-{
-  "messages": [
-    {"content": "What is the weather?"}
-  ]
-}
-```
-      </td>
-    </tr>
-    <tr>
-      <td><pre>LLM_RESPONSE</pre></td>
-      <td>
-```json
-"The weather is sunny."
-```
-        (Stored as JSON string)
-      </td>
-      <td>
-```json
-{
-  "usage": {
-    "total_tokens": 20
-  }
-}
-```
-      </td>
-      <td>
-```json
-"The weather is sunny."
-```
-      </td>
-    </tr>
-    <tr>
-      <td><pre>LLM_ERROR</pre></td>
-      <td>
-        <pre>null</pre>
-      </td>
-      <td>
-```json
-{}
-```
-      </td>
-      <td>
-        <pre>null</pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure | Attributes (JSON) | Example Content (Simplified) |
+|---|---|---|---|
+| `LLM_REQUEST` | **Chat Model:** `{"messages": [{"content": "..."}]}` **Legacy Model:** `{"prompts": ["..."]}` | `{"tags": ["tag1"], "model": "gemini-2.5-flash"}` | `{"messages": [{"content": "What is the weather?"}]}` |
+| `LLM_RESPONSE` | `"The weather is sunny."` (Stored as JSON string) | `{"usage": {"total_tokens": 20}}` | `"The weather is sunny."` |
+| `LLM_ERROR` | `null` | `{}` | `null` |
 
 ### Tool usage
 
 These events track the execution of tools by the agent.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>TOOL_STARTING</pre></td>
-      <td>
-        <strong>Input String:</strong><br/>
-        <pre>"city='Paris'"</pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>TOOL_COMPLETED</pre></td>
-      <td>
-        <strong>Output String:</strong><br/>
-        <pre>"25°C, Sunny"</pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>TOOL_ERROR</pre></td>
-      <td>
-        <pre>"Error: Connection timeout"</pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `TOOL_STARTING` | **Input String:** `"city='Paris'"` |
+| `TOOL_COMPLETED` | **Output String:** `"25°C, Sunny"` |
+| `TOOL_ERROR` | `"Error: Connection timeout"` |
 
 ### Chain Execution
 
 These events track the start and end of high-level chains/graphs.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>CHAIN_START</pre></td>
-      <td>
-        <pre>
-&#123;
-  "messages": [...]
-&#125;
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>CHAIN_END</pre></td>
-      <td>
-        <pre>
-&#123;
-  "output": "..."
-&#125;
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>CHAIN_ERROR</pre></td>
-      <td><pre>null (See error_message column)</pre></td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `CHAIN_START` | `{"messages": [...]}` |
+| `CHAIN_END` | `{"output": "..."}` |
+| `CHAIN_ERROR` | `null` (See `error_message` column) |
 
 ### Retriever usage
 
 These events track the execution of retrievers.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>RETRIEVER_START</pre></td>
-      <td>
-        <strong>Query String:</strong><br/>
-        <pre>"What is the capital of France?"</pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>RETRIEVER_END</pre></td>
-      <td>
-        <strong>Documents List:</strong><br/>
-        <pre>
-[
-  &#123;
-    "page_content": "Paris is the capital...",
-    "metadata": &#123;"source": "wiki"&#125;
-  &#125;
-]
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>RETRIEVER_ERROR</pre></td>
-      <td><pre>null (See error_message column)</pre></td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `RETRIEVER_START` | **Query String:** `"What is the capital of France?"` |
+| `RETRIEVER_END` | **Documents List:** `[{"page_content": "Paris is the capital...", "metadata": {"source": "wiki"}}]` |
+| `RETRIEVER_ERROR` | `null` (See `error_message` column) |
 
 ### Agent Actions
 
 These events track specific actions taken by the agent.
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>AGENT_ACTION</pre></td>
-      <td>
-        <pre>
-&#123;
-  "tool": "Calculator",
-  "input": "2 + 2"
-&#125;
-        </pre>
-      </td>
-    </tr>
-    <tr>
-      <td><pre>AGENT_FINISH</pre></td>
-      <td>
-        <pre>
-&#123;
-  "output": "The answer is 4"
-&#125;
-        </pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `AGENT_ACTION` | `{"tool": "Calculator", "input": "2 + 2"}` |
+| `AGENT_FINISH` | `{"output": "The answer is 4"}` |
 
 ### Other Events
 
-<table>
-  <thead>
-    <tr>
-      <th><strong>Event Type</strong></th>
-      <th><strong>Content (JSON) Structure</strong></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><pre>TEXT</pre></td>
-      <td>
-        <strong>Arbitrary Text:</strong><br/>
-        <pre>"Some logging text..."</pre>
-      </td>
-    </tr>
-  </tbody>
-</table>
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `TEXT` | **Arbitrary Text:** `"Some logging text..."` |
 
 ## Advanced analysis queries
 
@@ -620,7 +421,7 @@ SELECT
   logs.session_id,
   -- Get a signed URL for the image (optional, for viewing)
   STRING(OBJ.GET_ACCESS_URL(parts.object_ref, "r").access_urls.read_url) as signed_url,
-  -- Analyze the image using a remote model (e.g., gemini-1.5-pro)
+  -- Analyze the image using a remote model (e.g., gemini-2.5-flash)
   AI.GENERATE(
     ('Describe this image briefly. What company logo?', parts.object_ref)
   ) AS generated_result
@@ -767,7 +568,166 @@ To connect this dashboard to your own BigQuery table, use the following link for
 https://lookerstudio.google.com/reporting/create?c.reportId=f1c5b513-3095-44f8-90a2-54953d41b125&ds.ds3.connector=bigQuery&ds.ds3.type=TABLE&ds.ds3.projectId=<your-project-id>&ds.ds3.datasetId=<your-dataset-id>&ds.ds3.tableId=<your-table-id>
 ```
 
+## LangGraph integration
+
+The `BigQueryCallbackHandler` provides enhanced support for LangGraph agents with automatic node detection, graph-level tracking, and latency measurements.
+
+### LangGraph event types
+
+In addition to standard LangChain events, the callback handler automatically detects and logs LangGraph-specific events:
+
+| Event Type | Description |
+|---|---|
+| `NODE_STARTING` | Emitted when a LangGraph node begins execution |
+| `NODE_COMPLETED` | Emitted when a LangGraph node completes successfully |
+| `NODE_ERROR` | Emitted when a LangGraph node fails |
+| `GRAPH_START` | Emitted when a graph execution begins (via context manager) |
+| `GRAPH_END` | Emitted when a graph execution completes |
+| `GRAPH_ERROR` | Emitted when a graph execution fails |
+
+### Graph context manager
+
+Use the `graph_context()` method to explicitly mark graph execution boundaries. This enables `GRAPH_START` and `GRAPH_END` events with accurate latency measurements:
+
+```python
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
+from langchain_google_community.callbacks.bigquery_callback import (
+    BigQueryCallbackHandler,
+    BigQueryLoggerConfig,
+)
+
+# Initialize handler with graph name
+handler = BigQueryCallbackHandler(
+    project_id="your-project-id",
+    dataset_id="agent_analytics",
+    table_id="agent_events_v2",
+    graph_name="my_agent",
+)
+
+# Create your agent
+agent = create_agent(llm, tools)
+
+# Use the graph context manager for proper GRAPH_START/GRAPH_END events
+run_metadata = {
+    "session_id": "session-123",
+    "user_id": "user-456",
+    "agent": "my_agent",
+}
+
+with handler.graph_context("my_agent", metadata=run_metadata):
+    result = agent.invoke(
+        {"messages": [HumanMessage(content="What is the weather in Tokyo?")]},
+        config={
+            "callbacks": [handler],
+            "metadata": run_metadata,
+        },
+    )
+```
+
+### Latency tracking
+
+The callback handler automatically tracks latency for all operations and stores measurements in the `latency_ms` JSON column:
+
+```sql
+-- Query latency by event type
+SELECT
+    event_type,
+    agent,
+    COUNT(*) as count,
+    ROUND(AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)), 2) as avg_latency_ms,
+    ROUND(APPROX_QUANTILES(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64), 100)[OFFSET(95)], 2) as p95_latency_ms
+FROM `your-project.your-dataset.agent_events_v2`
+WHERE DATE(timestamp) = CURRENT_DATE()
+  AND event_type IN ('LLM_RESPONSE', 'TOOL_COMPLETED', 'GRAPH_END')
+GROUP BY event_type, agent
+ORDER BY avg_latency_ms DESC;
+```
+
+### Event filtering
+
+Use `event_allowlist` and `event_denylist` to control which events are logged:
+
+```python
+from langchain_google_community.callbacks.bigquery_callback import (
+    BigQueryCallbackHandler,
+    BigQueryLoggerConfig,
+)
+
+# Production config: Only log important events
+config = BigQueryLoggerConfig(
+    event_allowlist=[
+        "LLM_RESPONSE",
+        "LLM_ERROR",
+        "TOOL_COMPLETED",
+        "TOOL_ERROR",
+        "GRAPH_END",
+        "GRAPH_ERROR",
+    ],
+)
+
+handler = BigQueryCallbackHandler(
+    project_id="your-project-id",
+    dataset_id="agent_analytics",
+    config=config,
+)
+```
+
+Or exclude noisy events:
+
+```python
+# Exclude chain events but log everything else
+config = BigQueryLoggerConfig(
+    event_denylist=["CHAIN_START", "CHAIN_END"],
+)
+```
+
+## Examples and resources
+
+### Example code
+
+The following examples demonstrate various features of the BigQuery callback handler:
+
+| Example | Description |
+|---------|-------------|
+| [Basic example](https://github.com/langchain-ai/langchain-google/blob/main/libs/community/examples/bigquery_callback/basic_example.py) | Basic callback usage with LLM calls |
+| [LangGraph agent](https://github.com/langchain-ai/langchain-google/blob/main/libs/community/examples/bigquery_callback/langgraph_agent_example.py) | Complete ReAct agent with 6 realistic tools |
+| [Async example](https://github.com/langchain-ai/langchain-google/blob/main/libs/community/examples/bigquery_callback/async_example.py) | Async handler with concurrent queries |
+| [Event filtering](https://github.com/langchain-ai/langchain-google/blob/main/libs/community/examples/bigquery_callback/event_filtering_example.py) | Allowlist/denylist configurations |
+| [Sample data generator](https://github.com/langchain-ai/langchain-google/blob/main/libs/community/examples/bigquery_callback/populate_sample_data.py) | Generate sample data across multiple agent types |
+
+### Analytics notebook
+
+The [LangGraph Agent Analytics notebook](https://github.com/langchain-ai/langchain-google/blob/main/libs/community/examples/bigquery_callback/langgraph_agent_analytics.ipynb) provides comprehensive BigQuery analytics queries for:
+
+- Real-time event monitoring
+- Tool usage analytics
+- Latency analysis and trends
+- Error debugging
+- User engagement metrics
+- Time-series visualization
+
+### Real-time monitoring dashboard
+
+A [FastAPI-based monitoring dashboard](https://github.com/langchain-ai/langchain-google/tree/main/libs/community/examples/bigquery_callback/webapp) is available for real-time agent monitoring:
+
+**Features:**
+- Live event stream via Server-Sent Events (SSE)
+- Interactive charts for event distribution and latency trends
+- Session tracing with detailed timeline view
+- 20+ REST API endpoints for analytics queries
+- Auto-refresh every 5 seconds
+
+```bash
+# Run the dashboard
+cd libs/community/examples/bigquery_callback/webapp
+pip install -r requirements.txt
+uvicorn main:app --port 8001
+# Open http://localhost:8001
+```
+
 ## Additional resources
 
 -   [BigQuery Storage Write API](https://cloud.google.com/bigquery/docs/write-api)
 -   [Introduction to Object Tables](https://cloud.google.com/bigquery/docs/object-tables-intro)
+-   [Example code and notebook](https://github.com/langchain-ai/langchain-google/tree/main/libs/community/examples/bigquery_callback)
