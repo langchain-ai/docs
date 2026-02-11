@@ -1,0 +1,112 @@
+<Tabs>
+  <Tab title="StateBackend">
+    ```python
+    from urllib.request import urlopen
+    from deepagents import create_deep_agent
+    from deepagents.backends.utils import create_file_data
+    from langgraph.checkpoint.memory import MemorySaver
+
+    checkpointer = MemorySaver()
+
+    skill_url = "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/examples/skills/langgraph-docs/SKILL.md"
+    with urlopen(skill_url) as response:
+        skill_content = response.read().decode('utf-8')
+
+    skills_files = {
+        "/skills/langgraph-docs/SKILL.md": create_file_data(skill_content)
+    }
+
+    agent = create_deep_agent(
+        skills=["./skills/"],
+        checkpointer=checkpointer,
+    )
+
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "What is langgraph?",
+                }
+            ],
+            # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
+            "files": skills_files
+        },
+        config={"configurable": {"thread_id": "12345"}},
+    )
+    ```
+  </Tab>
+  <Tab title="StoreBackend">
+    ```python
+    from urllib.request import urlopen
+    from deepagents import create_deep_agent
+    from deepagents.backends import StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langgraph.store.memory import InMemoryStore
+
+
+    store = InMemoryStore()
+
+    skill_url = "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/examples/skills/langgraph-docs/SKILL.md"
+    with urlopen(skill_url) as response:
+        skill_content = response.read().decode('utf-8')
+
+    store.put(
+        namespace=("filesystem",),
+        key="/skills/langgraph-docs/SKILL.md",
+        value=create_file_data(skill_content)
+    )
+
+    agent = create_deep_agent(
+        backend=(lambda rt: StoreBackend(rt)),
+        store=store,
+        skills=["/skills/"]
+    )
+
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "What is langgraph?",
+                }
+            ]
+        },
+        config={"configurable": {"thread_id": "12345"}},
+    )
+    ```
+  </Tab>
+  <Tab title="FilesystemBackend">
+    ```python
+    from deepagents import create_deep_agent
+    from langgraph.checkpoint.memory import MemorySaver
+    from deepagents.backends.filesystem import FilesystemBackend
+
+    # Checkpointer is REQUIRED for human-in-the-loop
+    checkpointer = MemorySaver()
+
+    agent = create_deep_agent(
+        backend=FilesystemBackend(root_dir="/Users/user/{project}"),
+        skills=["/Users/user/{project}/skills/"],
+        interrupt_on={
+            "write_file": True,  # Default: approve, edit, reject
+            "read_file": False,  # No interrupts needed
+            "edit_file": True    # Default: approve, edit, reject
+        },
+        checkpointer=checkpointer,  # Required!
+    )
+
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "What is langgraph?",
+                }
+            ]
+        },
+        config={"configurable": {"thread_id": "12345"}},
+    )
+    ```
+  </Tab>
+</Tabs>
