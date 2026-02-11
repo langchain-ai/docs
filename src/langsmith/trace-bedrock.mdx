@@ -3,9 +3,7 @@ title: Trace Amazon Bedrock applications
 sidebarTitle: Bedrock
 ---
 
-This guide shows you how to trace [Amazon Bedrock](https://aws.amazon.com/bedrock) model calls using LangSmith. Amazon Bedrock is a fully managed service that offers a choice of high-performing foundation models from leading AI companies via an API. By integrating LangSmith tracing, you can monitor, debug, and optimize your Bedrock applications with detailed observability into model interactions, latency, token usage, and custom metadata.
-
-LangSmith automatically captures traces when you use [LangChain's Bedrock integrations](/oss/integrations/providers/aws), providing insights into:
+This guide shows you how to trace [Amazon Bedrock](https://aws.amazon.com/bedrock) model calls with LangSmith using the native AWS SDKs. LangSmith also works seamlessly with [LangChain's Bedrock integrations](/oss/integrations/providers/aws). Either approach provides insights into:
 
 - Request and response payloads
 - Token usage and costs
@@ -18,24 +16,16 @@ LangSmith automatically captures traces when you use [LangChain's Bedrock integr
 <CodeGroup>
 
 ```bash pip
-pip install -qU langchain-aws
+pip install boto3 langsmith
 ```
 
 ```bash npm
-npm install @langchain/community @langchain/core @aws-crypto/sha256-js @aws-sdk/credential-provider-node @smithy/protocol-http @smithy/signature-v4 @smithy/eventstream-codec @smithy/util-utf8 @aws-sdk/types
-```
-
-```bash yarn
-yarn add @langchain/community @langchain/core @aws-crypto/sha256-js @aws-sdk/credential-provider-node @smithy/protocol-http @smithy/signature-v4 @smithy/eventstream-codec @smithy/util-utf8 @aws-sdk/types
-```
-
-```bash pnpm
-pnpm add @langchain/community @langchain/core @aws-crypto/sha256-js @aws-sdk/credential-provider-node @smithy/protocol-http @smithy/signature-v4 @smithy/eventstream-codec @smithy/util-utf8 @aws-sdk/types
+npm install @aws-sdk/client-bedrock-runtime langsmith
 ```
 
 </CodeGroup>
 
-The Python integration requires [`langchain-aws`](https://pypi.org/project/langchain-aws/), which provides the `ChatBedrockConverse` class for interacting with Bedrock models. The JavaScript integration requires [`@langchain/community`](https://www.npmjs.com/package/@langchain/community) for the Bedrock chat model, plus several AWS SDK packages for authentication, request signing, and streaming support.
+This integration uses the native AWS SDKs with LangSmith's tracing capabilities. For Python, you'll use [`boto3`](https://pypi.org/project/boto3/) (the AWS SDK for Python) along with [`langsmith`](https://pypi.org/project/langsmith/) to capture traces. For JavaScript/TypeScript, you'll use [`@aws-sdk/client-bedrock-runtime`](https://www.npmjs.com/package/@aws-sdk/client-bedrock-runtime) with the [`langsmith`](https://www.npmjs.com/package/langsmith) package. Both implementations use the [Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html), which provides a unified interface for interacting with foundation models.
 
 ## Setup
 
@@ -64,62 +54,99 @@ export AWS_DEFAULT_REGION=<your_bedrock_region> # e.g., us-east-1 or us-west-2
 
 ## Configure tracing
 
-Once your environment variables are set, LangSmith will automatically trace all Bedrock model calls made through LangChain. You can enhance traces with custom tags and metadata to make filtering and analysis easier. Tags help you categorize traces (e.g., by environment, feature, or test type), while metadata allows you to attach arbitrary key-value pairs for detailed context.
+Once your environment variables are set, you can trace Bedrock model calls by wrapping your invocation functions with LangSmith's `@traceable` decorator (Python) or `traceable` function (TypeScript).
 
-The following example shows you how to invoke a Bedrock model with tracing enabled and custom metadata attached:
+The following example demonstrates how to use the Bedrock Converse API with LangSmith tracing. The Converse API is AWS's recommended unified interface for foundation models, providing consistent request and response handling across different model providers. You can enhance traces with custom tags and metadata—tags help you categorize traces (e.g., by environment, feature, or test type), while metadata allows you to attach arbitrary key-value pairs for detailed context:
 
 <CodeGroup>
 
 ```python Python
-from langchain_aws import ChatBedrockConverse
+import boto3
+from langsmith import traceable
 
-# Initialize the Bedrock chat model
-model = ChatBedrockConverse(
-    model="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-)
+# Initialize Bedrock runtime client (ensure AWS creds and region are set)
+bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+model_id = "anthropic.claude-3-haiku-20240307-v1:0"  # Example Bedrock model ID
 
-# Invoke the model with tracing metadata
-response = model.invoke(
-    "Hello! How can I use LangSmith with Bedrock?",
-    config={
-        "tags": ["aws-bedrock", "langsmith", "integration-test"],
-        "metadata": {
-            "env": "dev",
-            "model_provider": "bedrock",
-            "model_id": "claude-sonnet-4.5"
-        }
-    }
-)
+# Decorate the model invocation function to auto-capture a trace with tags/metadata
+@traceable(tags=["aws-bedrock", "langsmith", "integration-test"],
+           metadata={"env": "dev", "model_provider": "bedrock", "model_id": "claude-3-haiku"})
+def generate_text(prompt: str) -> str:
+    # Prepare a single-turn conversation input for the Converse API
+    messages = [
+        {"role": "user", "content": [{"text": prompt}]}
+    ]
+    # Invoke the Bedrock model using the unified Converse API
+    response = bedrock.converse(
+        modelId=model_id,
+        messages=messages,
+        inferenceConfig={"maxTokens": 512, "temperature": 0.5, "topP": 0.9}
+    )
+    # Extract the model's reply text from the response
+    output_text = response["output"]["message"]["content"][0]["text"]
+    return output_text
 
-print(response)
+# Call the traced function with a prompt
+result = generate_text("How can I trace AWS Bedrock model outputs to LangSmith for debugging?")
+print(result)
 ```
 
 ```typescript TypeScript
-import { ChatBedrockConverse } from "@langchain/community/chat_models/bedrock";
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { traceable } from "langsmith";
 
-// Initialize the Bedrock Claude model
-const model = new ChatBedrockConverse({
-  model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-  region: process.env.AWS_DEFAULT_REGION || "us-east-1",
-});
+const client = new BedrockRuntimeClient({ region: "us-east-1" });
+const modelId = "anthropic.claude-3-haiku-20240307-v1:0";
 
-// Invoke the model with LangSmith tracing metadata
-const response = await model.invoke(
-  "Hello! How can I use LangSmith with Bedrock?",
+// Wrap the Bedrock invocation in a traceable function with tags and metadata
+const invokeBedrock = traceable(
+  async (userInput: string) => {
+    // Prepare the conversation message for the Bedrock Converse API
+    const conversation = [
+      { role: "user", content: [{ text: userInput }] }
+    ];
+    // Create and send a Bedrock Converse command (single-turn chat)
+    const command = new ConverseCommand({
+      modelId,
+      messages: conversation,
+      inferenceConfig: { maxTokens: 512, temperature: 0.5, topP: 0.9 }
+    });
+    const response = await client.send(command);
+    // Extract the assistant's reply text from the response
+    const outputText = response.output?.message?.content[0]?.text;
+    return outputText;
+  },
   {
     tags: ["aws-bedrock", "langsmith", "integration-test"],
-    metadata: {
-      env: "dev",
-      model_provider: "bedrock",
-      model_id: "claude-sonnet-4.5"
-    }
+    metadata: { env: "dev", model_provider: "bedrock", model_id: "claude-3-haiku" }
   }
 );
 
-console.log(response);
+// Invoke the traced function with a prompt
+const answer = await invokeBedrock("How can I trace AWS Bedrock model outputs to LangSmith for debugging?");
+console.log(answer);
 ```
 
 </CodeGroup>
+
+<Tabs>
+<Tab title="Python">
+- `boto3.client("bedrock-runtime")` creates a Bedrock Runtime client.
+- The `converse` method sends a chat prompt (as a list of messages) to the specified model and returns a structured response.
+- The `generate_text` function is decorated with `@traceable`, logging each call to LangSmith as a trace (using the function name as the default trace name).
+- Custom tags (`aws-bedrock`, `langsmith`, `integration-test`) and metadata (environment, model info) are passed into the decorator and attached to the trace record for filtering in the LangSmith UI.
+- When you run this code (with `LANGSMITH_TRACING=true` and your API key set), LangSmith automatically captures the input prompt, model output, token usage, and latency.
+</Tab>
+
+<Tab title="TypeScript">
+- `BedrockRuntimeClient` from the AWS SDK v3 provides the Bedrock runtime interface.
+- `ConverseCommand` offers a unified chat interface that sends a user message and returns the assistant's response in a structured format (no manual JSON parsing needed).
+- The Bedrock call is wrapped with LangSmith's `traceable` function, converting `invokeBedrock` into a traced function that logs its execution to LangSmith.
+- Custom tags and metadata are provided in the traceable options object and attached to each trace.
+- When you run this script (with `LANGSMITH_TRACING=true` and your API key configured), check your LangSmith dashboard for trace entries that include the input prompt, model output, timing info, and specified tags/metadata.
+</Tab>
+</Tabs>
+
 
 ## View traces in LangSmith
 
@@ -128,7 +155,7 @@ After running your code, navigate to your LangSmith project at [smith.langchain.
 - **Request details**: Input messages, model parameters, and configuration
 - **Response details**: Model output, token usage, and response metadata
 - **Performance metrics**: Latency, tokens per second, and cost estimates
-- **Custom metadata**: Tags and metadata you provided in the `config` parameter
+- **Custom metadata**: Tags and metadata you provided to the `@traceable` decorator
 
 You can filter traces by tags (e.g., `aws-bedrock` or `integration-test`), search by metadata fields, or drill into specific traces to debug issues.
 

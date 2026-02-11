@@ -12,6 +12,8 @@ import BackendFilesystem from '/snippets/backend-filesystem.mdx';
 import BackendStore from '/snippets/backend-store.mdx';
 import BackendComposite from '/snippets/backend-composite.mdx';
 import SubagentBasic from '/snippets/subagent-basic.mdx';
+import SandboxBasicPy from '/snippets/deepagents-sandbox-basic-py.mdx';
+import SandboxBasicJs from '/snippets/deepagents-sandbox-basic-js.mdx';
 
 :::python
 `create_deep_agent` has the following core configuration options:
@@ -193,7 +195,21 @@ const agent = createDeepAgent({
 
 ## Middleware
 
-[Middleware](/oss/langchain/middleware/overview) provides a way to more tightly control what happens inside an agent.
+By default, deep agents have access to the following [middleware](/oss/langchain/middleware/overview):
+
+- `TodoListMiddleware`: manages todo lists
+- `FilesystemMiddleware`: file operations
+- `SubAgentMiddleware`: subagent spawning
+- `SummarizationMiddleware`: message history summarization
+- `AnthropicPromptCachingMiddleware`: prompt caching
+- `PatchToolCallsMiddleware`: patches tool calls
+
+If you are using memory, skills, or human-in-the-loop, the following middleware is also included:
+
+- `MemoryMiddleware`: if the `memory` argument is provided
+- `SkillsMiddleware`: if the `skills` argument is provided
+- `HumanInTheLoopMiddleware`: if the `interrupt_on` argument is provided
+
 You can provide additional middleware to extend functionality, add tools, or implement custom hooks:
 
 :::python
@@ -301,39 +317,59 @@ For more information, see [Subagents](/oss/deepagents/subagents).
 
 ## Backends
 
-You can provide your deep agent with one of the following virtual filesystems:
+Deep agent tools can make use of virtual file systems to store, access, and edit files. By default, deep agents use a `StateBackend`.
+
+If you are using [skills](#skills) or [memory](#memory), you must add the expected skill or memory files to the backend before creating the agent.
 
 <Tabs>
-  <Tab title="StateBackend">
-    An ephemeral filesystem backend stored in `langgraph` state.
-    This filesystem only persists _for a single thread_.
+    <Tab title="StateBackend">
+        An ephemeral filesystem backend stored in `langgraph` state.
 
-    <BackendState />
-  </Tab>
-  <Tab title="FilesystemBackend">
-    The local machine's filesystem.
+        This filesystem only persists _for a single thread_.
 
-    <Warning>
-    This backend grants agents direct filesystem read/write access.
-    Use with caution and only in appropriate environments.
-    For more information, see [FilesystemBackend](/oss/deepagents/backends#filesystembackend-local-disk).
-    </Warning>
+        <BackendState />
+    </Tab>
+    <Tab title="FilesystemBackend">
+        The local machine's filesystem.
 
-    <BackendFilesystem />
-  </Tab>
-  <Tab title="StoreBackend">
-    A filesystem that provides long-term storage that is _persisted across threads_.
+        <Warning>
+            This backend grants agents direct filesystem read/write access.
+            Use with caution and only in appropriate environments.
+            For more information, see [`FilesystemBackend`](/oss/deepagents/backends#filesystembackend-local-disk).
+        </Warning>
 
-    <BackendStore />
-  </Tab>
-  <Tab title="CompositeBackend">
-    A flexible backen where you can specify different routes in the filesystem to point towards different backends.
+        <BackendFilesystem />
+    </Tab>
+    <Tab title="StoreBackend">
+        A filesystem that provides long-term storage that is _persisted across threads_.
 
-    <BackendComposite />
-  </Tab>
+        <BackendStore />
+    </Tab>
+    <Tab title="CompositeBackend">
+        A flexible backend where you can specify different routes in the filesystem to point towards different backends.
+
+        <BackendComposite />
+    </Tab>
 </Tabs>
 
 For more information, see [Backends](/oss/deepagents/backends).
+
+### Sandboxes
+
+Sandboxes are specialized [backends](/oss/deepagents/backends) that run agent code in an isolated environment with their own filesystem and an `execute` tool for shell commands.
+Use a sandbox backend when you want your deep agent to write files, install dependencies, and run commands without changing anything on your local machine.
+
+You configure sandboxes by passing a sandbox backend to `backend` when creating your deep agent:
+
+:::python
+<SandboxBasicPy />
+:::
+
+:::js
+<SandboxBasicJs />
+:::
+
+For more information, see [Sandboxes](/oss/deepagents/sandboxes).
 
 ## Human-in-the-loop
 
@@ -362,6 +398,7 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     ```python
     from urllib.request import urlopen
     from deepagents import create_deep_agent
+    from deepagents.backends.utils import create_file_data
     from langgraph.checkpoint.memory import MemorySaver
 
     checkpointer = MemorySaver()
@@ -371,11 +408,11 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
         skill_content = response.read().decode('utf-8')
 
     skills_files = {
-        "/skills/langgraph-docs/SKILL.md": skill_content
+        "/skills/langgraph-docs/SKILL.md": create_file_data(skill_content)
     }
 
     agent = create_deep_agent(
-        skills=["./skills/"],
+        skills=["/skills/"],
         checkpointer=checkpointer,
     )
 
@@ -399,6 +436,7 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     from urllib.request import urlopen
     from deepagents import create_deep_agent
     from deepagents.backends import StoreBackend
+    from deepagents.backends.utils import create_file_data
     from langgraph.store.memory import InMemoryStore
 
 
@@ -411,13 +449,13 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     store.put(
         namespace=("filesystem",),
         key="/skills/langgraph-docs/SKILL.md",
-        value=skill_content
+        value=create_file_data(skill_content)
     )
 
     agent = create_deep_agent(
         backend=(lambda rt: StoreBackend(rt)),
         store=store,
-        skills=["./skills/"]
+        skills=["/skills/"]
     )
 
     result = agent.invoke(
@@ -473,7 +511,7 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
 <Tabs>
   <Tab title="StateBackend">
 
-    ```typescript
+```typescript
     import { createDeepAgent, type FileData } from "deepagents";
     import { MemorySaver, Command } from "@langchain/langgraph";
     import { createInterface } from "node:readline/promises";
@@ -482,48 +520,48 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     const checkpointer = new MemorySaver();
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const skillsFiles: Record<string, FileData> = {};
 
     const skillUrl =
-    "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
     const response = await fetch(skillUrl);
     const skillContent = await response.text();
 
     skillsFiles["/skills/langgraph-docs/SKILL.md"] = createFileData(skillContent);
 
     const agent = await createDeepAgent({
-    checkpointer,
-    // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
-    skills: ["/skills/"],
+      checkpointer,
+      // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+      skills: ["/skills/"],
     });
 
     const config = {
-    configurable: {
+      configurable: {
         thread_id: `thread-${Date.now()}`,
-    },
+      },
     };
 
     let result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
+          },
         ],
         files: skillsFiles,
-    } as any,
-    config
+      } as any,
+      config
     );
-    ```
+```
 
   </Tab>
   <Tab title="StoreBackend">
@@ -531,25 +569,25 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     ```typescript
     import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
     import {
-    InMemoryStore,
-    MemorySaver,
-    type BaseStore,
+      InMemoryStore,
+      MemorySaver,
+      type BaseStore,
     } from "@langchain/langgraph";
 
     const checkpointer = new MemorySaver();
     const store = new InMemoryStore();
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const skillUrl =
-    "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
 
     const response = await fetch(skillUrl);
     const skillContent = await response.text();
@@ -558,36 +596,36 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
     await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
 
     const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
-    return new StoreBackend({
+      return new StoreBackend({
         state: config.state,
         store: config.store ?? store,
-    });
+      });
     };
 
     const agent = await createDeepAgent({
-    backend: backendFactory,
-    store: store,
-    checkpointer,
-    // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
-    skills: ["/skills/"],
+      backend: backendFactory,
+      store: store,
+      checkpointer,
+      // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+      skills: ["/skills/"],
     });
 
     const config = {
-    configurable: {
+      configurable: {
         thread_id: `thread-${Date.now()}`,
-    },
+      },
     };
 
     let result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
+          },
         ],
-    },
-    config
+      },
+      config
     );
     ```
 
@@ -596,44 +634,43 @@ To add skills to your deep agent, pass them as an argument to `create_deep_agent
 
     ```typescript
     import {
-    createDeepAgent,
-    createSkillsMiddleware,
-    createSettings,
-    FilesystemBackend,
+      createDeepAgent,
+      createSkillsMiddleware,
+      createSettings,
+      FilesystemBackend,
     } from "deepagents";
     import { MemorySaver } from "@langchain/langgraph";
 
-    const settings = createSettings({
-    });
+    const settings = createSettings({});
 
     const agent = await createDeepAgent({
-    backend: (config) =>
+      backend: (config) =>
         new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
-    skills: [path.join(process.cwd(), ".deepagents/skills")],
-    interruptOn: {
+      skills: [path.join(process.cwd(), ".deepagents/skills")],
+      interruptOn: {
         read_file: true,
         write_file: true,
         delete_file: true,
-    },
-    checkpointer, // Required!
+      },
+      checkpointer, // Required!
     });
 
     const config = {
-    configurable: {
+      configurable: {
         thread_id: `thread-${Date.now()}`,
-    },
+      },
     };
 
     let result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "what is langraph? Use the langgraph-docs skill if available.",
-        },
-        ]
-    } as any,
-    config
+          },
+        ],
+      } as any,
+      config
     );
     ```
 
@@ -659,7 +696,7 @@ You can pass one or more file paths to the `memory` parameter when creating your
     from deepagents.backends.utils import create_file_data
     from langgraph.checkpoint.memory import MemorySaver
 
-    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md") as response:
+    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
         agents_md = response.read().decode("utf-8")
     checkpointer = MemorySaver()
 
@@ -694,7 +731,7 @@ You can pass one or more file paths to the `memory` parameter when creating your
     from deepagents.backends.utils import create_file_data
     from langgraph.store.memory import InMemoryStore
 
-    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md") as response:
+    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
         agents_md = response.read().decode("utf-8")
 
     # Create the store and add the file to it
@@ -764,77 +801,77 @@ You can pass one or more file paths to the `memory` parameter when creating your
     import { MemorySaver } from "@langchain/langgraph";
 
     const AGENTS_MD_URL =
-    "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md";
 
     async function fetchText(url: string): Promise<string> {
-    const res = await fetch(url);
-    if (!res.ok) {
+      const res = await fetch(url);
+      if (!res.ok) {
         throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-    }
-    return await res.text();
+      }
+      return await res.text();
     }
 
     const agentsMd = await fetchText(AGENTS_MD_URL);
     const checkpointer = new MemorySaver();
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const agent = await createDeepAgent({
-    memory: ["/AGENTS.md"],
-    checkpointer: checkpointer,
+      memory: ["/AGENTS.md"],
+      checkpointer: checkpointer,
     });
 
     const result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "Please tell me what's in your memory files.",
-        },
+          },
         ],
         // Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
         files: { "/AGENTS.md": createFileData(agentsMd) },
-    } as any,
-    { configurable: { thread_id: "12345" } }
+      },
+      { configurable: { thread_id: "12345" } }
     );
     ```
   </Tab>
   <Tab title="StoreBackend">
-    ```typescript
+```typescript
     import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
     import {
-    InMemoryStore,
-    MemorySaver,
-    type BaseStore,
+      InMemoryStore,
+      MemorySaver,
+      type BaseStore,
     } from "@langchain/langgraph";
 
     const AGENTS_MD_URL =
-    "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/master/examples/text-to-sql-agent/AGENTS.md";
+      "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md";
 
     async function fetchText(url: string): Promise<string> {
-    const res = await fetch(url);
-    if (!res.ok) {
+      const res = await fetch(url);
+      if (!res.ok) {
         throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-    }
-    return await res.text();
+      }
+      return await res.text();
     }
 
     const agentsMd = await fetchText(AGENTS_MD_URL);
 
     function createFileData(content: string): FileData {
-    const now = new Date().toISOString();
-    return {
+      const now = new Date().toISOString();
+      return {
         content: content.split("\n"),
         created_at: now,
         modified_at: now,
-    };
+      };
     }
 
     const store = new InMemoryStore();
@@ -844,29 +881,29 @@ You can pass one or more file paths to the `memory` parameter when creating your
     const checkpointer = new MemorySaver();
 
     const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
-    return new StoreBackend({
+      return new StoreBackend({
         state: config.state,
         store: config.store ?? store,
-    });
+      });
     };
 
     const agent = await createDeepAgent({
-    backend: backendFactory,
-    store: store,
-    checkpointer: checkpointer,
-    memory: ["/AGENTS.md"],
+      backend: backendFactory,
+      store: store,
+      checkpointer: checkpointer,
+      memory: ["/AGENTS.md"],
     });
 
     const result = await agent.invoke(
-    {
+      {
         messages: [
-        {
+          {
             role: "user",
             content: "Please tell me what's in your memory files.",
-        },
+          },
         ],
-    },
-    { configurable: { thread_id: "12345" } }
+      },
+      { configurable: { thread_id: "12345" } }
     );
     ```
   </Tab>
@@ -879,15 +916,15 @@ You can pass one or more file paths to the `memory` parameter when creating your
     const checkpointer = new MemorySaver();
 
     const agent = await createDeepAgent({
-    backend: (config) =>
+      backend: (config) =>
         new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
-    memory: ["./AGENTS.md", "./.deepagents/AGENTS.md"],
-    interruptOn: {
+      memory: ["./AGENTS.md", "./.deepagents/AGENTS.md"],
+      interruptOn: {
         read_file: true,
         write_file: true,
         delete_file: true,
-    },
-    checkpointer, // Required!
+      },
+      checkpointer, // Required!
     });
     ```
   </Tab>
