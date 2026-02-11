@@ -767,10 +767,10 @@ See compatible models in the [Claude documentation](https://platform.claude.com/
 
 To use extended thinking, specify the `thinking` parameter when initializing @[`ChatAnthropic`]. If needed, it can also be passed in as a parameter during invocation.
 
-You will need to specify a token budget to use this feature. See usage example below:
+For Claude Sonnet and earlier models, you will need to specify a token budget. For Claude Opus 4.6+, you can use adaptive thinking which automatically determines the budget.
 
 <CodeGroup>
-    ```python Initialization param
+    ```python With token budget
     import json
     from langchain_anthropic import ChatAnthropic
 
@@ -778,6 +778,20 @@ You will need to specify a token budget to use this feature. See usage example b
         model="claude-sonnet-4-5-20250929",
         max_tokens=5000,
         thinking={"type": "enabled", "budget_tokens": 2000}, # [!code highlight]
+    )
+
+    response = model.invoke("What is the cube root of 50.653?")
+    print(json.dumps(response.content_blocks, indent=2))
+    ```
+
+    ```python Adaptive (Opus 4.6+)
+    import json
+    from langchain_anthropic import ChatAnthropic
+
+    model = ChatAnthropic(
+        model="claude-opus-4-6",
+        max_tokens=5000,
+        thinking={"type": "adaptive"}, # [!code highlight]
     )
 
     response = model.invoke("What is the cube root of 50.653?")
@@ -823,12 +837,19 @@ You will need to specify a token budget to use this feature. See usage example b
 
 Certain Claude models support an [effort](https://platform.claude.com/docs/en/build-with-claude/effort) feature, which controls how many tokens Claude uses when responding. This is useful for balancing response quality against latency and cost.
 
+<Info>
+    **Model Support**
+
+    - Generally available: Claude Opus 4.6 and Claude Opus 4.5
+    - The `max` effort level is only supported by Claude Opus 4.6
+</Info>
+
 ```python
 from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-opus-4-5-20251101",
-    effort="medium",  # # Options: "high", "medium", "low" [!code highlight]
+    effort="medium",  # Options: "max", "high", "medium", "low" [!code highlight]
 )
 
 response = model.invoke("Analyze the trade-offs between microservices and monolithic architectures")
@@ -1456,9 +1477,13 @@ You can count tokens in messages before sending them to the model using @[`get_n
 
 ## Context management
 
-Anthropic supports a context editing feature that will automatically manage the model's context window (e.g., by clearing tool results).
+Anthropic supports context management features that automatically manage the model's context window to optimize performance and cost.
 
 See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/context-editing) for more details and configuration options.
+
+### Clearing tool uses
+
+Clear tool results from the context to reduce token usage while preserving the conversation flow.
 
 <Info>
     **Context management is supported since `langchain-anthropic>=0.3.21`**
@@ -1469,7 +1494,6 @@ See the [Claude documentation](https://platform.claude.com/docs/en/build-with-cl
 ```python
 from langchain_anthropic import ChatAnthropic
 
-
 model = ChatAnthropic(
     model="claude-sonnet-4-5-20250929",
     betas=["context-management-2025-06-27"], # [!code highlight]
@@ -1478,6 +1502,40 @@ model = ChatAnthropic(
 model_with_tools = model.bind_tools([{"type": "web_search_20250305", "name": "web_search"}])
 response = model_with_tools.invoke("Search for recent developments in AI")
 ```
+
+### Automatic compaction
+
+Claude Opus 4.6 supports automatic [server-side compaction](https://platform.claude.com/docs/en/build-with-claude/compaction), which intelligently condenses conversation history when the context window approaches its limit. This allows for longer conversations without manual context management.
+
+<Info>
+    **Automatic compaction requirements:**
+
+    - Claude Opus 4.6
+    - `langchain-anthropic>=1.3.0`
+    - `compact-2026-01-12` beta header
+</Info>
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(
+    model="claude-opus-4-6",
+    betas=["compact-2026-01-12"], # [!code highlight]
+    max_tokens=4096,
+    context_management={ # [!code highlight]
+        "edits": [ # [!code highlight]
+            { # [!code highlight]
+                "type": "compact_20260112", # [!code highlight]
+                "trigger": {"type": "input_tokens", "value": 50000}, # [!code highlight]
+            } # [!code highlight]
+        ] # [!code highlight]
+    }, # [!code highlight]
+)
+```
+
+See Anthropic's docs for details on [trigger configuration](https://platform.claude.com/docs/en/build-with-claude/compaction#trigger-configuration).
+
+When a compaction event is triggered, `ChatAnthropic` will return [compaction blocks](https://platform.claude.com/docs/en/build-with-claude/compaction#working-with-compaction-blocks) representing the state of the prompt. These should be retained in the message history that is passed back to the model in multi-turn applications.
 
 ## Extended context window
 
