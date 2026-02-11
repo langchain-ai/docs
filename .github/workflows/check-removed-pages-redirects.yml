@@ -1,0 +1,123 @@
+---
+name: Check removed pages have redirects
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-redirects:
+    name: Verify redirects for removed pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check if docs.json changed
+        id: changed
+        run: |
+          git fetch origin "${{ github.base_ref }}"
+          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- src/docs.json 2>/dev/null; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Get base branch docs.json
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE_REF" ]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          fi
+          git show "${BASE_REF}:src/docs.json" > base_docs.json
+
+      - name: Run redirect check
+        if: steps.changed.outputs.changed == 'true'
+        id: check
+        run: |
+          set +e
+          python scripts/check_removed_pages_redirects.py base_docs.json src/docs.json 2> check_output.txt
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ No pages removed without redirects"
+          else
+            cat check_output.txt
+          fi
+
+      - name: Comment on PR on failure
+        if: steps.changed.outputs.changed == 'true' && steps.check.outputs.exit_code == '1'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let output = '';
+            try {
+              output = fs.readFileSync('check_output.txt', 'utf8');
+              output = output.replace(/[^\x20-\x7E\n\r\t]/g, '');
+              if (output.length > 32000) {
+                output = output.substring(0, 32000) + '\n... (truncated)';
+              }
+            } catch (error) {
+              output = 'Error reading check output';
+            }
+
+            const body = `## ❌ Removed pages require redirects
+
+            This PR removes pages from \`docs.json\` without adding corresponding redirects. When pages are removed from the navigation, existing links and bookmarks will break unless redirects are added.
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            `;
+
+            const prNumber = context.payload.pull_request.number;
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user?.type === 'Bot' &&
+              comment.body.includes('Removed pages require redirects')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body
+              });
+            }
+
+      - name: Fail if pages removed without redirects
+        if: steps.changed.outputs.changed == 'true' && steps.check.outputs.exit_code == '1'
+        run: |
+          echo "❌ Please add redirects for the removed pages (see PR comment for details)"
+          exit 1
