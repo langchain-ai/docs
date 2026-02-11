@@ -57,6 +57,42 @@ Agent Server can be deployed using different methods depending on your infrastru
 Cloud deployments are available on all LangSmith plans. Hybrid and self-hosted options require an Enterprise plan and license key. To acquire a license key, [contact our sales team](https://www.langchain.com/contact-sales).
 </Note>
 
+## Runtime architecture
+
+The following description applies to the non-distributed runtime variant of LangSmith Deployment.
+
+### Container architecture
+
+A typical deployment consists of two kinds of long-running containers, both built from the same Docker image (a base image with your project code installed on top):
+
+- **API servers** handle client requests (creating runs, reading thread state, streaming results) but do not execute agent code themselves.
+- **Queue workers** are the execution engine. They listen to the durable task queue, execute your graph code, and write checkpoints.
+
+Containers are **stateless* but persistent. At least 1 queue worker must listen to the task queue at any time to ensure no runs are orphaned. The containers can serve many runs over their lifetime.
+
+API servers and queue workers are separate container pools and [scale independently](/langsmith/data-plane#autoscaling).
+
+### Run execution lifecycle
+
+When you invoke a run, the request flows through several components:
+
+1. A client sends a request to an API server, which creates a pending run in the durable task queue.
+2. A queue worker picks up the run, acquires a lease on it, loads the appropriate graph, and begins execution. The queue enforces that at most 1 run can be executed for a given thread at one time.
+3. As the graph executes, the worker writes checkpoints to the persistence layer (the frequency depends on the [durability mode](/oss/langgraph/durable-execution#durability-modes)) and broadcasts streaming events over the configured pubsub provider.
+4. If the client opened a `/stream` connection, the API server subscribes to the pubsub channel and forwards events to the client via server-sent events in real time.
+5. When execution completes, the worker updates the run status and releases its slot for the next run.
+
+Each worker handles up to [`N_JOBS_PER_WORKER`](/langsmith/env-var#n-jobs-per-worker) runs concurrently (default: 10), so a single worker container serves many runs in parallel. See [Configure Agent Server for scale](/langsmith/agent-server-scale) for tuning guidance.
+
+### Graph loading and compilation
+
+How and when your graph is compiled depends on how you register it in your [application structure](/langsmith/application-structure):
+
+1. **Compiled graph**: If you export an already-compiled graph (a `CompiledGraph` instance), it is loaded once at container startup and reused for every run. This is the most efficient path.
+2. **Factory function**: If you export an agent factory function, the server invokes it each time it needs the graph. Factories receive the run's configuration, enabling per-run graph customization (for example, choosing different models or tools based on the assistant config). Keep factory functions lightweight for best performance.
+
+In both cases, the server automatically injects the checkpointer and memory store configured for that deployment at runtime. **You should not configure these in your graph code**, since the server needs to manage these for other operations.
+
 ## Learn more
 
 - [Application Structure](/langsmith/application-structure) guide explains how to structure your application for deployment.
