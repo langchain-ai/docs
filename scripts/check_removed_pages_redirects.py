@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Check that pages removed from docs.json navigation have corresponding redirects.
+"""Check that pages removed from docs.json navigation have corresponding redirects.
 
 When a page is removed from the navigation, existing links and bookmarks will break
 unless a redirect is added. This script compares docs.json between the base branch
@@ -79,8 +78,7 @@ def normalize_page_for_comparison(path: str) -> str:
 
 
 def has_redirect_for_page(page_path: str, redirects: list[dict]) -> bool:
-    """
-    Check if any redirect has a source that matches the given page path.
+    """Check if any redirect has a source that matches the given page path.
 
     Redirects in docs.json can use various formats:
     - "langsmith/home" or "/langsmith/home"
@@ -140,9 +138,7 @@ def main() -> int:
     doc_redirects = [
         r
         for r in head_redirects
-        if isinstance(r, dict)
-        and "source" in r
-        and "destination" in r
+        if isinstance(r, dict) and "source" in r and "destination" in r
     ]
 
     pages_without_redirect: list[str] = []
@@ -164,7 +160,7 @@ def main() -> int:
     for page in pages_without_redirect:
         print(f"  - {page}", file=sys.stderr)
 
-    print("", file=sys.stderr)
+    print(file=sys.stderr)
     print(
         "Please add a redirect for each removed page to the `redirects` array in docs.json.",
         file=sys.stderr,
