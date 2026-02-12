@@ -11,49 +11,49 @@ LangSmith Deployment is a workflow orchestration runtime — durable execution, 
 **This section covers deploying your application.** For LangSmith infrastructure setup (cloud, hybrid, self-hosted), see [Platform setup](/langsmith/platform-setup).
 </Callout>
 
+<Steps>
+  <Step title={<a href="/langsmith/local-server">Test locally</a>}>
+    Run your application on a local development server.
+  </Step>
+  <Step title={<a href="/langsmith/application-structure">Configure app for deployment</a>}>
+    Set up dependencies, project structure, and environment configuration.
+  </Step>
+  <Step title={<a href="/langsmith/platform-setup">Choose hosting</a>}>
+    Select Cloud, Hybrid, or Self-hosted.
+  </Step>
+  <Step title="Deploy your app">
+    - [**Cloud**](/langsmith/deploy-to-cloud): Push code from a git repository
+    - [**Hybrid or Self-hosted with control plane**](/langsmith/deploy-with-control-plane): Build and push Docker images, deploy via UI
+    - [**Standalone servers**](/langsmith/deploy-standalone-server): Deploy directly without control plane
+  </Step>
+  <Step title={<a href="/langsmith/observability">Monitor & manage</a>}>
+    Track traces, alerts, and dashboards.
+  </Step>
+</Steps>
+
 ---
 
-## Runtime foundation
+## Durable execution
 
-At its core, LangSmith Deployment is a durable execution engine. Your agents run on a managed task queue with automatic checkpointing, so any run can be retried, replayed, or resumed from the point of failure — not from scratch. Configurable [retry policies](/oss/langgraph/use-graph-api#retry-policies) let you control backoff, max attempts, and which exceptions trigger retries on a per-node basis. Runs survive process restarts, infrastructure failures, and code revisions mid-execution.
+At its core, LangSmith Deployment is a durable execution engine. Your agents run on a managed task queue with automatic checkpointing, so any run can be retried, replayed, or resumed from the exact point of interruption — not from scratch.
 
-For details on how containers, processes, and the task queue work together, see [Agent Server: Runtime architecture](/langsmith/agent-server#runtime-architecture).
+Because execution is durable, agents can do things that would be fragile or impossible in a stateless runtime:
 
-## What the runtime provides for agents
+- **Pause and resume.** An agent calls [`interrupt()`](/langsmith/add-human-in-the-loop) and the runtime checkpoints its state, frees resources, and waits — for a human to approve something, for a condition to be satisfied, or for new input to arrive. When [`Command(resume=...)`](/langsmith/add-human-in-the-loop) is called hours or days later, execution picks up exactly where it stopped. This is the same primitive underneath [human-in-the-loop](/langsmith/add-human-in-the-loop) workflows and [time-travel debugging](/langsmith/human-in-the-loop-time-travel).
+- **Run in the background.** [Background runs](/langsmith/background-run) execute without blocking the caller. The runtime manages the full lifecycle — queuing, execution, checkpointing, completion — while the client moves on.
+- **Run on a schedule.** [Cron jobs](/langsmith/cron-jobs) trigger agent execution on a recurring cadence. A daily summary agent, a weekly report, a periodic data sync — the runtime starts a new execution on schedule with the same durability guarantees.
+- **Handle concurrent input.** When a user sends new input while an agent is mid-run ([double-texting](/langsmith/double-texting)), the runtime can queue it, cancel the in-progress run, or process both in parallel — without data races or corrupted state.
+- **Retry on failure.** Configurable [retry policies](/oss/langgraph/use-graph-api#retry-policies) control backoff, max attempts, and which exceptions trigger retries on a per-node basis. Runs survive process restarts, infrastructure failures, and code revisions mid-execution.
 
-### Streaming and real-time interaction
+For details on how containers, processes, and the task queue work together, see [Agent Server: Runtime architecture](/langsmith/agent-server#runtime-architecture). For scaling and throughput tuning, see [Configure Agent Server for scale](/langsmith/agent-server-scale).
 
-Agents need to show their work while they're working. Resumable streams survive network interruptions — clients reconnect and pick up without losing progress. Multiple [streaming modes](/langsmith/streaming) (`values`, `updates`, `messages`) control what surfaces to the user. When users send new input while the agent is mid-run ([double-texting](/langsmith/double-texting)), the runtime handles concurrent interactions on the same thread without data races or corrupted state.
+## Streaming
 
-### Human-in-the-loop
+Agents need to show their work while they're working. The runtime provides [resumable streaming](/langsmith/streaming) that survives network interruptions — clients reconnect and pick up without losing progress. Multiple streaming modes (`values`, `updates`, `messages`) control what surfaces to the user, from full state snapshots to individual token output.
 
-Agents pause for human review, approval, or input — then [resume exactly where they stopped](/langsmith/add-human-in-the-loop), potentially hours or days later. LangGraph's `interrupt()` and `Command(resume=...)` handle the application logic. The runtime manages state persistence and execution resumption underneath, so paused agents don't consume resources and resumed agents don't lose context.
-
-### Background and scheduled execution
-
-Not all agent work is request-driven. [Background runs](/langsmith/background-run) execute asynchronously without blocking the caller. [Cron jobs](/langsmith/cron-jobs) run agents on a schedule — for example, a daily summary agent that emails a digest every evening.
-
-### Agent IDE
+## Studio
 
 [LangGraph Studio](/langsmith/studio) ships with every deployment. Visualize execution graphs, inspect state at any checkpoint, step through runs, modify state mid-execution, and branch to explore alternative paths. Works against your local dev server and production deployments alike.
-
----
-
-## Capabilities
-
-| | |
-|---|---|
-| **Durable task queue** | Checkpoint-based recovery and replay with configurable [retry policies](/oss/langgraph/use-graph-api#retry-policies) |
-| **[LangGraph Studio](/langsmith/studio)** | Real-time visualization, state inspection, interactive debugging, time-travel |
-| **[Resumable streaming](/langsmith/streaming)** | Network-resilient streams across `values`, `updates`, and `messages` modes |
-| **[Scheduled and background runs](/langsmith/cron-jobs)** | Cron schedules and [async dispatch](/langsmith/background-run) |
-| **[Double-texting](/langsmith/double-texting)** | Concurrent inputs on the same thread — queuing, cancellation, or parallel execution |
-| **[Horizontal scaling](/langsmith/agent-server-scale)** | Distribute long-running agents across workers without dropping in-progress work |
-| **[Human-in-the-loop](/langsmith/add-human-in-the-loop)** | Interrupt, inspect, approve, edit, and resume at any checkpoint |
-| **[RemoteGraph](/langsmith/use-remote-graph)** | Compose agents across deployments using the same local API |
-| **Protocol support** | Native [MCP](/langsmith/server-mcp), [Agent-to-Agent (A2A)](/langsmith/server-a2a) |
-| **[Auth and access control](/langsmith/auth)** | [Custom authentication](/langsmith/custom-auth), resource authorization, [agent auth](/langsmith/agent-auth) |
-| **Server customization** | [Custom routes](/langsmith/custom-routes), [middleware](/langsmith/custom-middleware), [lifespan hooks](/langsmith/custom-lifespan), [encryption at rest](/langsmith/encryption) |
 
 ---
 
@@ -67,21 +67,15 @@ Same runtime, same APIs. What changes is who manages the infrastructure. See [Pl
 
 ---
 
-## Get started
+## Go deeper
 
-1. **[Test locally](/langsmith/local-server)** — Run your app on the development server.
-2. **[Structure your app](/langsmith/application-structure)** — Dependencies, project layout, environment.
-3. **[Deploy](/langsmith/deployment-quickstart)** — Cloud, hybrid, or self-hosted.
-4. **[Debug with Studio](/langsmith/studio)** — Visualize and interact with your running agent.
-5. **[Configure for scale](/langsmith/agent-server-scale)** — Production throughput and reliability.
-
-### Go deeper
-
+- [RemoteGraph](/langsmith/use-remote-graph) — Compose agents across deployments
+- [Custom auth](/langsmith/auth) — Authentication and multi-tenant access control
+- [Server customization](/langsmith/custom-routes) — Custom routes, [middleware](/langsmith/custom-middleware), [lifespan hooks](/langsmith/custom-lifespan), [encryption](/langsmith/encryption)
+- [MCP](/langsmith/server-mcp) and [A2A](/langsmith/server-a2a) protocol support
 - [CI/CD pipelines](/langsmith/cicd-pipeline-example)
-- [Semantic search](/langsmith/semantic-search) for your agent
+- [Semantic search](/langsmith/semantic-search)
 - [TTL configuration](/langsmith/configure-ttl) for state and thread management
-- [RemoteGraph](/langsmith/use-remote-graph) for cross-deployment composition
-- [Custom auth](/langsmith/auth) for multi-tenant access
 
 ### Background reading
 
