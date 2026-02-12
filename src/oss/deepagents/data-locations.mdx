@@ -1,0 +1,117 @@
+---
+title: Data locations
+sidebarTitle: App data
+description: Where the Deep Agents CLI stores configuration, sessions, and customization files
+---
+
+The Deep Agents CLI stores data in two directory hierarchies:
+
+- **`~/.deepagents/`** — Deep Agents-specific data (agent memory, skills, sessions)
+- **`~/.agents/`** — Tool-agnostic data (skills shared across AI CLI tools)
+
+## Directory Structure
+
+```text
+~/.deepagents/
+├── sessions.db              # SQLite database for conversation checkpoints
+├── history.jsonl            # Command input history
+└── {agent}/                 # Per-agent directory (default: "agent")
+    ├── AGENTS.md            # User customizations to agent instructions
+    ├── skills/              # User-level skills
+    │   └── {skill-name}/
+    │       └── SKILL.md
+    └── agents/              # Custom subagent definitions
+        └── {subagent-name}/
+            └── AGENTS.md
+
+~/.agents/                   # Tool-agnostic alias (shared across AI CLIs)
+└── skills/                  # Skills available to any compatible tool
+    └── {skill-name}/
+        └── SKILL.md
+
+{project}/                   # Project-level (in git repo root)
+├── AGENTS.md                # Project instructions (root-level)
+└── .deepagents/
+│   ├── AGENTS.md            # Project instructions (preferred location)
+│   ├── skills/              # Project-specific skills
+│   │   └── {skill-name}/
+│   │       └── SKILL.md
+│   └── agents/              # Project-specific subagents
+│       └── {subagent-name}/
+│           └── AGENTS.md
+└── .agents/                 # Tool-agnostic project skills
+    └── skills/
+        └── {skill-name}/
+            └── SKILL.md
+```
+
+## What Goes Where
+
+| Data | Location | Read/Write | Notes |
+|------|----------|------------|-------|
+| **Sessions** | `~/.deepagents/sessions.db` | R/W | SQLite checkpoint database |
+| **Input history** | `~/.deepagents/history.jsonl` | R/W | JSON-lines, up/down arrow recall |
+| **Base instructions** | Package `default_agent_prompt.md` | R | Immutable, updated with CLI upgrades |
+| **User customizations** | `~/.deepagents/{agent}/AGENTS.md` | R/W | Appended to base instructions |
+| **Project instructions** | `.deepagents/AGENTS.md` or `AGENTS.md` | R | Both loaded if present |
+| **User skills** | `~/.deepagents/{agent}/skills/` | R/W | Agent-specific skills |
+| **Shared skills** | `~/.agents/skills/` | R | Tool-agnostic, cross-CLI |
+| **Project skills** | `.deepagents/skills/` or `.agents/skills/` | R | Project-scoped |
+| **Custom subagents** | `~/.deepagents/{agent}/agents/` | R/W | User-defined subagents |
+| **Project subagents** | `.deepagents/agents/` | R | Project-defined subagents |
+
+## Precedence Rules
+
+When the same item exists in multiple locations, **higher precedence wins completely** (no merging).
+
+### Skills
+
+Precedence order (lowest to highest):
+
+1. `~/.deepagents/{agent}/skills/` — User deepagents
+2. `~/.agents/skills/` — User tool-agnostic
+3. `.deepagents/skills/` — Project deepagents
+4. `.agents/skills/` — Project tool-agnostic *(highest)*
+
+### Subagents
+
+Precedence order (lowest to highest):
+
+1. `~/.deepagents/{agent}/agents/` — User-level
+2. `.deepagents/agents/` — Project-level *(highest)*
+
+### Instructions
+
+All instruction sources are **combined** (not overridden):
+
+1. Package base prompt *(always loaded)*
+2. `~/.deepagents/{agent}/AGENTS.md` *(appended)*
+3. `.deepagents/AGENTS.md` *(appended)*
+4. `AGENTS.md` at project root *(appended)*
+
+## `.deepagents` vs `.agents`
+
+| Directory | Purpose | When to use |
+|-----------|---------|-------------|
+| `.deepagents/` | Deep Agents CLI-specific | Skills and config that use CLI-specific features |
+| `.agents/` | Tool-agnostic | Skills you want to share across different AI CLI tools |
+
+<Tip>
+Use `.agents/skills/` for skills that work with any AI coding assistant.
+Use `.deepagents/skills/` for skills that rely on Deep Agents-specific tools or conventions.
+</Tip>
+
+## Cleaning Up
+
+| Need | Action |
+|------|--------|
+| Reset all data | `rm -rf ~/.deepagents` |
+| Clear sessions only | `rm ~/.deepagents/sessions.db` |
+| Clear input history | `rm ~/.deepagents/history.jsonl` |
+| Reset agent instructions | `deepagents reset --agent {name}` |
+| Remove a skill | `rm -rf ~/.deepagents/{agent}/skills/{skill-name}` |
+
+<Warning>
+Deleting `~/.deepagents/sessions.db` will remove all conversation history and checkpoints.
+This cannot be undone.
+</Warning>
