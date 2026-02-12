@@ -295,6 +295,10 @@ if (result.__interrupt__) {
 
 ## Subagent interrupts
 
+When using subagents, you can use interrupts [on tool calls](#interrupts-on-tool-calls) and [within tool calls](#interrupts-within-tool-calls).
+
+### Interrupts on tool calls
+
 Each subagent can have its own `interrupt_on` configuration that overrides the main agent's settings:
 
 :::python
@@ -346,6 +350,263 @@ const agent = createDeepAgent({
 :::
 
 When a subagent triggers an interrupt, the handling is the same – check for `__interrupt__` and resume with `Command`.
+
+### Interrupts within tool calls
+
+Subagent tools can call `interrupt()` directly to pause execution and await approval:
+
+:::python
+
+```python
+from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
+from langchain.messages import HumanMessage
+from langchain.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command, interrupt
+
+from deepagents.graph import create_deep_agent
+from deepagents.middleware.subagents import CompiledSubAgent
+
+
+@tool(description="Request human approval before proceeding with an action.")
+def request_approval(action_description: str) -> str:
+    """Request human approval using the interrupt() primitive."""
+    # interrupt() pauses execution and returns the value passed to Command(resume=...)
+    approval = interrupt({
+        "type": "approval_request",
+        "action": action_description,
+        "message": f"Please approve or reject: {action_description}",
+    })
+
+    if approval.get("approved"):
+        return f"Action '{action_description}' was APPROVED. Proceeding..."
+    else:
+        return f"Action '{action_description}' was REJECTED. Reason: {approval.get('reason', 'No reason provided')}"
+
+
+def main():
+    checkpointer = InMemorySaver()
+    model = ChatAnthropic(
+        model_name="claude-sonnet-4-5-20250929",
+        max_tokens=4096,
+    )
+
+    compiled_subagent = create_agent(
+        model=model,
+        tools=[request_approval],
+        name="approval-agent",
+    )
+
+    parent_agent = create_deep_agent(
+        checkpointer=checkpointer,
+        subagents=[
+            CompiledSubAgent(
+                name="approval-agent",
+                description="An agent that can request approvals",
+                runnable=compiled_subagent,
+            )
+        ],
+    )
+
+    thread_id = "test_interrupt_directly"
+    config = {"configurable": {"thread_id": thread_id}}
+
+    print("Invoking agent - sub-agent will use request_approval tool...")
+
+    result = parent_agent.invoke(
+        {
+            "messages": [
+                HumanMessage(
+                    content="Use the task tool to launch the approval-agent sub-agent. "
+                    "Tell it to use the request_approval tool to request approval for 'deploying to production'."
+                )
+            ]
+        },
+        config=config,
+    )
+
+    # Check for interrupt
+    if result.get("__interrupt__"):
+        interrupt_value = result["__interrupt__"][0].value
+        print(f"\nInterrupt received!")
+        print(f"  Type: {interrupt_value.get('type')}")
+        print(f"  Action: {interrupt_value.get('action')}")
+        print(f"  Message: {interrupt_value.get('message')}")
+
+        print("\nResuming with Command(resume={'approved': True})...")
+        result2 = parent_agent.invoke(
+            Command(resume={"approved": True}),
+            config=config,
+        )
+
+        if "__interrupt__" not in result2:
+            print("\nExecution completed!")
+            # Find the tool response
+            tool_msgs = [m for m in result2.get("messages", []) if m.type == "tool"]
+            if tool_msgs:
+                print(f"  Tool result: {tool_msgs[-1].content}")
+        else:
+            print("\nAnother interrupt occurred")
+    else:
+        print("\n  No interrupt - the model may not have called request_approval")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+When run, this produces the following output:
+
+```python
+Invoking agent - sub-agent will use request_approval tool...
+
+Interrupt received!
+  Type: approval_request
+  Action: deploying to production
+  Message: Please approve or reject: deploying to production
+
+Resuming with Command(resume={'approved': True})...
+
+Execution completed!
+  Tool result: Great! The approval request has been processed. The action **"deploying to production"** was **APPROVED**. You can now proceed with the production deployment.
+```
+
+:::
+
+:::js
+```typescript
+import { createAgent, tool } from "langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { HumanMessage } from "@langchain/core/messages";
+import { MemorySaver, Command, interrupt } from "@langchain/langgraph";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+const requestApproval = tool(
+  async ({ actionDescription }: { actionDescription: string }) => {
+    const approval = interrupt({
+      type: "approval_request",
+      action: actionDescription,
+      message: `Please approve or reject: ${actionDescription}`,
+    }) as { approved?: boolean; reason?: string };
+
+    if (approval.approved) {
+      return `Action '${actionDescription}' was APPROVED. Proceeding...`;
+    } else {
+      return `Action '${actionDescription}' was REJECTED. Reason: ${
+        approval.reason || "No reason provided"
+      }`;
+    }
+  },
+  {
+    name: "request_approval",
+    description: "Request human approval before proceeding with an action.",
+    schema: z.object({
+      actionDescription: z
+        .string()
+        .describe("The action that requires approval"),
+    }),
+  }
+);
+
+async function main() {
+  const checkpointer = new MemorySaver();
+  const model = new ChatOpenAI({
+    model: "gpt-4o-mini",
+    maxTokens: 4096,
+  });
+
+  const compiledSubagent = createAgent({
+    model: model,
+    tools: [requestApproval],
+    name: "approval-agent",
+  });
+
+  const parentAgent = await createDeepAgent({
+    checkpointer: checkpointer,
+    subagents: [
+      {
+        name: "approval-agent",
+        description: "An agent that can request approvals",
+        runnable: compiledSubagent as any,
+      },
+    ],
+  });
+
+  const threadId = "test_interrupt_directly";
+  const config = { configurable: { thread_id: threadId } };
+
+  console.log("Invoking agent - sub-agent will use request_approval tool...");
+
+  let result = await parentAgent.invoke(
+    {
+      messages: [
+        new HumanMessage({
+          content:
+            "Use the task tool to launch the approval-agent sub-agent. " +
+            "Tell it to use the request_approval tool to request approval for 'deploying to production'.",
+        }),
+      ],
+    },
+    config
+  );
+
+  if (result.__interrupt__) {
+    const interruptValue = result.__interrupt__[0].value as {
+      type?: string;
+      action?: string;
+      message?: string;
+    };
+    console.log("\nInterrupt received!");
+    console.log(`  Type: ${interruptValue.type}`);
+    console.log(`  Action: ${interruptValue.action}`);
+    console.log(`  Message: ${interruptValue.message}`);
+
+    console.log("\nResuming with Command(resume={'approved': true})...");
+    const result2 = await parentAgent.invoke(
+      new Command({ resume: { approved: true } }),
+      config
+    );
+
+    if (!result2.__interrupt__) {
+      console.log("\nExecution completed!");
+      // Find the tool response
+      const toolMsgs = result2.messages?.filter((m) => m.type === "tool") || [];
+      if (toolMsgs.length > 0) {
+        const lastToolMsg = toolMsgs[toolMsgs.length - 1];
+        console.log(`  Tool result: ${lastToolMsg.content}`);
+      }
+    } else {
+      console.log("\nAnother interrupt occurred");
+    }
+  } else {
+    console.log(
+      "\n  No interrupt - the model may not have called request_approval"
+    );
+  }
+}
+
+main().catch(console.error);
+```
+
+When run, this produces the following output:
+
+```typescript
+Invoking agent - sub-agent will use request_approval tool...
+
+Interrupt received!
+  Type: approval_request
+  Action: deploying to production
+  Message: Please approve or reject: deploying to production
+
+Resuming with Command(resume={'approved': true})...
+
+Execution completed!
+  Tool result: Approval for "deploying to production" has been granted. You can proceed with the deployment.
+```
+
+:::
 
 ## Best practices
 
