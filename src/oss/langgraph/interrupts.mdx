@@ -588,17 +588,18 @@ This approach is useful when you want the approval logic to live with the tool i
 
     ```python
     import sqlite3
-    from typing import TypedDict
-
+    import operator
+    from typing import TypedDict, Annotated, Literal
     from langchain.tools import tool
     from langchain_anthropic import ChatAnthropic
     from langgraph.checkpoint.sqlite import SqliteSaver
     from langgraph.graph import StateGraph, START, END
     from langgraph.types import Command, interrupt
+    from langchain.messages import AnyMessage, SystemMessage, ToolMessage
 
 
     class AgentState(TypedDict):
-        messages: list[dict]
+        messages: Annotated[list[AnyMessage], operator.add]
 
 
     @tool
@@ -627,18 +628,39 @@ This approach is useful when you want the approval logic to live with the tool i
 
 
     model = ChatAnthropic(model="claude-sonnet-4-6").bind_tools([send_email])
+    tools_by_name = {"send_email": send_email}
 
 
     def agent_node(state: AgentState):
         # LLM may decide to call the tool; interrupt pauses before sending
         result = model.invoke(state["messages"])
-        return {"messages": state["messages"] + [result]}
+        return {"messages": [result]}
 
+    def tool_node(state: AgentState):
+        """Performs the tool call"""
+        result = []
+        for tool_call in state["messages"][-1].tool_calls:
+            tool = tools_by_name[tool_call["name"]]
+            observation = tool.invoke(tool_call["args"])
+            result.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
+        return {"messages": result}
+
+    def should_continue(state: AgentState) -> Literal["tool_node", END]:
+        """Decide if we should continue the loop or stop based upon whether the LLM made a tool call"""
+        messages = state["messages"]
+        last_message = messages[-1]
+
+        if last_message.tool_calls:
+            return "tool_node"
+        return END
 
     builder = StateGraph(AgentState)
     builder.add_node("agent", agent_node)
+    builder.add_node("tool_node", tool_node)
+
     builder.add_edge(START, "agent")
-    builder.add_edge("agent", END)
+    builder.add_conditional_edges("agent", should_continue, ["tool_node", END])  # Routes to "tools" or END
+    builder.add_edge("tool_node", "agent")  # Loop back after tools
 
     checkpointer = SqliteSaver(sqlite3.connect("tool-approval.db"))
     graph = builder.compile(checkpointer=checkpointer)
