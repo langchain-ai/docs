@@ -1,0 +1,310 @@
+---
+title: Custom model providers
+sidebarTitle: Model providers
+description: Configure any LangChain-compatible model provider for the Deep Agents CLI
+---
+
+The Deep Agents CLI supports any [chat model provider compatible with LangChain](/oss/langchain/models), unlocking use for virtually any LLM that supports tool calling. Any service that exposes an OpenAI-compatible or Anthropic-compatible API also works out of the box — see [Compatible APIs](#compatible-apis).
+
+## Quick start
+
+The CLI integrates automatically with the [following model providers](#provider-reference) — no extra configuration needed beyond installing the relevant provider package.
+
+1. **Install provider packages**
+
+    Each model provider requires installing its corresponding LangChain integration package. These are available as optional extras when installing the CLI:
+
+    ```bash
+    # Install with one provider
+    uv tool install 'deepagents-cli[anthropic]'
+
+    # Install with multiple providers at once
+    uv tool install 'deepagents-cli[anthropic,openai,groq]'
+
+    # Add additional packages at a later date
+    uv tool upgrade deepagents-cli --with langchain-ollama
+
+    # All providers
+    uv tool install 'deepagents-cli[anthropic,bedrock,cohere,deepseek,fireworks,google-genai,groq,huggingface,ibm,mistralai,nvidia,ollama,openai,perplexity,vertexai,xai]'
+    ```
+
+2. **Set your API key**
+
+    Most providers require an API key. Set the appropriate environment variable listed in the table below. Refer to each integration package's docs for details.
+
+### Provider reference
+
+Using a provider not listed here? See [Arbitrary providers](#arbitrary-providers) — any LangChain-compatible provider can be used in the CLI with some additional setup.
+
+| Provider | Package | API key env var | Model profiles |
+| --- | --- | --- | --- |
+| OpenAI | [`langchain-openai`](/oss/integrations/chat/openai) | `OPENAI_API_KEY` | ✅ |
+| Azure OpenAI | [`langchain-openai`](/oss/integrations/chat/azure_chat_openai) | `AZURE_OPENAI_API_KEY` | ✅ |
+| Anthropic | [`langchain-anthropic`](/oss/integrations/chat/anthropic) | `ANTHROPIC_API_KEY` | ✅ |
+| Google Gemini API | [`langchain-google-genai`](/oss/integrations/chat/google_generative_ai) | `GOOGLE_API_KEY` | ✅ |
+| Google Vertex AI | [`langchain-google-vertexai`](/oss/integrations/chat/google_generative_ai#credentials) | `GOOGLE_CLOUD_PROJECT` | ✅ |
+| AWS Bedrock | [`langchain-aws`](/oss/integrations/chat/bedrock) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | ✅ |
+| AWS Bedrock Converse | [`langchain-aws`](/oss/integrations/chat/bedrock) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | ✅ |
+| Hugging Face | [`langchain-huggingface`](/oss/integrations/chat/huggingface) | `HUGGINGFACEHUB_API_TOKEN` | ✅ |
+| Ollama | [`langchain-ollama`](/oss/integrations/chat/ollama) | Optional | ❌ |
+| Groq | [`langchain-groq`](/oss/integrations/chat/groq) | `GROQ_API_KEY` | ✅ |
+| Cohere | [`langchain-cohere`](/oss/integrations/chat/cohere) | `COHERE_API_KEY` | ❌ |
+| Fireworks | [`langchain-fireworks`](/oss/integrations/chat/fireworks) | `FIREWORKS_API_KEY` | ✅ |
+| Together | [`langchain-together`](/oss/integrations/chat/together) | `TOGETHER_API_KEY` | ❌ |
+| Mistral AI | [`langchain-mistralai`](/oss/integrations/chat/mistralai) | `MISTRAL_API_KEY` | ✅ |
+| DeepSeek | [`langchain-deepseek`](/oss/integrations/chat/deepseek) | `DEEPSEEK_API_KEY` | ✅ |
+| IBM (watsonx.ai) | [`langchain-ibm`](/oss/integrations/chat/ibm_watsonx) | `WATSONX_APIKEY` | ❌ |
+| Nvidia | [`langchain-nvidia-ai-endpoints`](/oss/integrations/chat/nvidia_ai_endpoints) | `NVIDIA_API_KEY` | ❌ |
+| xAI | [`langchain-xai`](/oss/integrations/chat/xai) | `XAI_API_KEY` | ✅ |
+| Perplexity | [`langchain-perplexity`](/oss/integrations/chat/perplexity) | `PPLX_API_KEY` | ✅ |
+
+<Tip>
+A **[model profile](/oss/langchain/models#model-profiles)** is a bundle of metadata (model name, default parameters, capabilities, etc.) that ships with a provider package, largely powered by the [models.dev](https://models.dev/) project. Providers that include model profiles have their models listed automatically in the interactive `/model` switcher. Providers without model profiles require you to specify the model name directly.
+</Tip>
+
+### Switching models
+
+To switch models in the CLI, either:
+
+1. **Use the interactive model switcher** with the `/model` command. This displays a hardcoded list of known model profiles sourced from each LangChain provider package.
+
+    <Note>
+        Note that these profiles are not an exhaustive list of available models. If the model you want isn't shown, use option 2 instead (useful for newly released models that haven't been added to the profiles yet).
+    </Note>
+2. **Specify a model name directly** as an argument, e.g. `/model openai:gpt-4o`. You can use any model supported by the chosen provider, regardless of whether it appears in the list from option 1. The model name will be passed to the API request.
+3. **Specify the model at launch** via `--model`, e.g.
+
+    ```txt
+    deepagents --model openai:gpt-4o
+    ```
+
+### Setting a default model
+
+You can set a persistent default model that will be used for all future CLI launches:
+
+* **Via model selector:** Open `/model`, navigate to the desired model, and press `Ctrl+S` to pin it as the default. Pressing `Ctrl+S` again on the current default clears it.
+* **Via command:** `/model --default provider:model` (e.g., `/model --default anthropic:claude-opus-4-6`)
+* **Via config file:** Set `[models].default` in `~/.deepagents/config.toml` (see [Config file](#config-file)).
+* **From the shell:**
+
+    ```bash
+    deepagents --default-model anthropic:claude-opus-4-6
+    ```
+
+To view the current default:
+
+```bash
+deepagents --default-model
+```
+
+To clear the default:
+
+* **From the shell:**
+
+    ```bash
+    deepagents --clear-default-model
+    ```
+
+* **Via command:** `/model --default --clear`
+* **Via model selector:** Press `Ctrl+S` on the currently pinned default model.
+
+Without a default, the CLI will default to the most recently used model.
+
+### Model resolution order
+
+When the CLI launches, it resolves which model to use in the following order:
+
+1. **`--model` flag** always wins when provided.
+2. **`[models].default`** in `~/.deepagents/config.toml` — The user's intentional long-term preference.
+3. **`[models].recent`** in `~/.deepagents/config.toml` — The last model switched to via `/model`. Written automatically; never overwrites `[models].default`.
+4. **Environment auto-detection** — Falls back to the first provider with a valid API key, checked in order: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_CLOUD_PROJECT` (Vertex AI).
+
+---
+
+## Config file
+
+The Deep Agents CLI offers extending and modifying individual model & provider config via `~/.deepagents/config.toml`.
+
+Each provider is a TOML table under the `[models.providers]` namespace:
+
+```toml
+[models.providers.<name>]
+models = ["gpt-4o"]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com/v1"
+class_path = "my_package.models:MyChatModel"
+
+[models.providers.<name>.params]
+temperature = 0
+max_tokens = 4096
+
+[models.providers.<name>.params."gpt-4o"]
+temperature = 0.7
+```
+
+**Keys:**
+
+<ResponseField name="models" type="string[]">
+    A list of model names to show in the interactive `/model` switcher for this provider. For providers that already ship with model profiles, any names you add here appear alongside the bundled ones — useful for newly released models that haven't been added to the package yet. For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
+
+    This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time.
+</ResponseField>
+
+<ResponseField name="api_key_env" type="string">
+    Optionally override the environment variable name checked for credentials.
+</ResponseField>
+
+<ResponseField name="base_url" type="string">
+    Optionally override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info.
+</ResponseField>
+
+<ResponseField name="params" type="object">
+    Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
+</ResponseField>
+
+<ResponseField name="class_path" type="string">
+    Used for [arbitrary model](#arbitrary-providers) providers. Optional fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass.
+</ResponseField>
+
+You can set a default model in `~/.deepagents/config.toml` — either by editing the file directly, using `/model --default`, or selecting a default in the interactive model switcher.
+
+```toml
+[models]
+default = "ollama:qwen3:4b"        # your intentional long-term preference
+recent = "anthropic:claude-sonnet-4-5"  # last /model switch (written automatically)
+```
+
+`[models].default` always takes priority over `[models].recent`. The `/model` command only writes to `[models].recent`, so your configured default is never overwritten by mid-session switches. To remove the default, use `/model --default --clear` or delete the `default` key from the config file.
+
+## Examples
+
+### Model constructor params
+
+Any provider can use the `params` table to pass extra arguments to the model constructor:
+
+```toml
+[models.providers.ollama.params]
+temperature = 0
+num_ctx = 8192
+```
+
+#### Per-model overrides
+
+If a specific model needs different params, add a model-keyed sub-table under `params` to override individual values without duplicating the entire provider config:
+
+```toml
+[models.providers.ollama]
+models = ["qwen3:4b", "llama3"]
+
+[models.providers.ollama.params]
+temperature = 0
+num_ctx = 8192
+
+[models.providers.ollama.params."qwen3:4b"]
+temperature = 0.5
+num_ctx = 4000
+```
+
+With this configuration:
+
+* `ollama:qwen3:4b` gets `{temperature: 0.5, num_ctx: 4000}` — model overrides win.
+* `ollama:llama3` gets `{temperature: 0, num_ctx: 8192}` — no override, provider-level params only.
+
+The merge is shallow: any key present in the model sub-table replaces the same key from the provider-level params, while keys only at the provider level are preserved.
+
+#### CLI overrides with `--model-params`
+
+For one-off adjustments without editing the config file, pass a JSON object via `--model-params`:
+
+```bash
+deepagents --model ollama:llama3 --model-params '{"temperature": 0.9, "num_ctx": 16384}'
+
+# In non-interactive mode
+deepagents -n "Summarize this repo" --model ollama:llama3 --model-params '{"temperature": 0}'
+```
+
+These take the highest priority, overriding values from config file params.
+
+### Specifying custom `base_url`
+
+Some provider packages accept a `base_url` to override the default endpoint. For example, `langchain-ollama` defaults to `http://localhost:11434` via the underlying `ollama` client. To point it elsewhere, set `base_url` in your configuration:
+
+```toml
+[models.providers.ollama]
+base_url = "http://your-host-here:port"
+```
+
+Refer to your provider's reference documentation for compatibility information and additional considerations.
+
+### Compatible APIs
+
+Many LLM providers expose APIs that are wire-compatible with OpenAI or Anthropic. You can use these with the existing `langchain-openai` or `langchain-anthropic` packages by pointing `base_url` at the provider's endpoint. Note that any features added on top of the spec by providers may not be captured.
+
+For example, to use an OpenAI-compatible provider:
+
+```toml
+[models.providers.openai]
+base_url = "https://api.example.com/v1"
+api_key_env = "EXAMPLE_API_KEY"
+models = ["my-model"]
+```
+
+Or an Anthropic-compatible provider:
+
+```toml
+[models.providers.anthropic]
+base_url = "https://api.example.com"
+api_key_env = "EXAMPLE_API_KEY"
+models = ["my-model"]
+```
+
+### Adding models to the interactive switcher
+
+Some providers (e.g. `langchain-ollama`) — don't bundle model profile data (see [Provider reference](#provider-reference) for full listing). When this is the case, the interactive `/model` switcher won't list models for that provider. You can fill in the gap by defining a `models` list in your config file for the provider:
+
+```toml
+[models.providers.ollama]
+models = ["llama3", "mistral", "codellama"]
+```
+
+The `/model` switcher will now include an Ollama section with these models listed.
+
+This is entirely optional. You can always switch to any model by specifying its full name directly:
+
+```txt
+/model ollama:llama3
+```
+
+### Arbitrary providers
+
+You can use any [LangChain `BaseChatModel`](https://reference.langchain.com/python/langchain_core/language_models/#langchain_core.language_models.BaseChatModel) subclass using `class_path`. The CLI will import and instantiate it directly:
+
+```toml
+[models.providers.my_custom]
+class_path = "my_package.models:MyChatModel"
+api_key_env = "MY_API_KEY"
+base_url = "https://my-endpoint.example.com"
+
+[models.providers.my_custom.params]
+temperature = 0
+max_tokens = 4096
+```
+
+The package must be installed in the same Python environment as `deepagents-cli`:
+
+```bash
+# If deepagents-cli was installed with uv tool:
+uv tool upgrade deepagents-cli --with my_package
+```
+
+When you switch to `my_custom:my-model-v1` (via `/model` or `--model`), the model name (`my-model-v1`) is passed as the `model` kwarg:
+
+```python
+MyChatModel(model="my-model-v1", base_url="...", api_key="...", temperature=0, max_tokens=4096)
+```
+
+<Warning>
+`class_path` executes arbitrary Python code from your config file. This has the same trust model as `pyproject.toml` build scripts — you control your own machine.
+</Warning>
+
+Your provider package may optionally provide model profiles at a `_PROFILES` dict in `<package>.data._profiles` in lieu of defining them under the `models` key. See LangChain [model profiles](https://github.com/langchain-ai/langchain/tree/master/libs/model-profiles) for more info.
