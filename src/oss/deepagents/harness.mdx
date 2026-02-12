@@ -1,13 +1,11 @@
 ---
 title: Harness capabilities
-sidebarTitle: Harness capabilities
+sidebarTitle: Overview
 ---
-
- Harness = built-in-subagents + skills/tools/mcp +  runtime execution + context management + hooks + prompts
 
 An agent harness is a combination of several different capabilities that make building long-running agents easier:
 
-- [Planning capabilities]()
+- [Planning capabilities](#planning-capabilities)
 - [Virtual filesystem](#virtual-filesystem-access)
 - [Task delegation (subagents)](#task-delegation-subagents)
 - [Context and token management](#context-management)
@@ -29,9 +27,10 @@ The harness provides a `write_todos` tool that agents can use to maintain a stru
 - Helps agent organize complex multi-step work
 - Useful for long-running tasks and planning
 
-## Virtual file system access
+## Virtual filesystem access
 
-The harness provides several tools for file system operations, making files first-class citizens in the agent's environment:
+The harness provides a configurable virtual filesystem which can be backed by different pluggable backends.
+The backends support the following file system operations:
 
 | Tool | Description |
 | ---- | ----------- |
@@ -42,6 +41,11 @@ The harness provides several tools for file system operations, making files firs
 | `glob` | Find files matching patterns (e.g., `**/*.py`) |
 | `grep` | Search file contents with multiple output modes (files only, content with context, or counts) |
 | `execute` | Run shell commands in the environment (available with [sandbox backends](/oss/deepagents/sandboxes) only) |
+
+The virtual filesystem is used by several other harness capabilites such as skills, memory, code execution, and context management.
+You can also use the file system when building custom tools and middleware for deep agents.
+
+For more information, see [backends](/oss/python/deepagents/backends).
 
 ## Task delegation (subagents)
 
@@ -80,12 +84,11 @@ In the following page, you will gain an overview of the different kinds of conte
 
 ### Input context
 
-Input context consists of sources of information provided to your deep agent at startup.
-The agent's behavior, capabilities, and knowledge base is made up of its [prompt](#prompt) and its [long-term memory](#long-term-memory).
+Input context consists of sources of information provided to your deep agent at startup which is added ot the prompt.
 
 #### Prompts
 
-Deep agents use system prompts to define the agent's role, behavior, and instructions.
+Deep agents use system prompts to define the agent's role, behavior, capabilities, and knowledge base.
 If you provide a custom system prompt, this gets appended to the built-in system prompt which includes detailed guidance for using built-in tools like the planning tool, filesystem tools, and subagents.
 
 Middleware that adds tools (such as the filesystem middleware) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively.
@@ -103,32 +106,19 @@ The final deep agent prompt consists of the following parts:
 1. Human-in-the-loop prompt (when `interrupt_on` is set)
 1. Local context prompt: current directory, project info,... (when using CLI locally)
 
-#### Long-term memory
-
-When using the default filesystem, your deep agent stores its working memory files in agent state, which only persists within a single thread.
-Long-term memory enables your deep agent to persist information across different threads and conversations.
-To use long-term memory, you must use a `CompositeBackend` that routes specific paths (typically `/memories/`) to a LangGraph Store, which provides durable cross-thread persistence.
-The `CompositeBackend` is a hybrid storage system where some files persist indefinitely while others remain ephemeral to a single thread.
-
-Files that the agent stores in the long-term memory path (for example, `/memories/preferences.txt`) survive agent restarts and can be accessed from any conversation thread.
-Deep agents can use these files for storing user preferences, accumulated knowledge, research progress, or any information that should persist beyond a single session.
-
-For more information, see [Long-term memory](/oss/deepagents/long-term-memory).
-
 ### Runtime context
 
 Deep agents use a pattern called context compression which works by reducing the size of the information in an agent's working memory while preserving the details that are relevant to the task.
 The following techniques are the built-in features to ensure the context passed to LLMs stays within its context window limit:
 
-- [offloading large tool inputs and results](#offloading-large-tool-inputs-and-results)
-- [summarization](#summarization)
+- [Offloading large tool inputs and results](#offloading-large-tool-inputs-and-results)
+- [Summarization](#summarization)
+
+You can also confiure deep agents to use [long-term memory](#long-term-memory) to allow them to store information across different threads and conversations.
 
 #### Offloading large tool inputs and results
 
-Deep agents use built-in filesystem tools to access and manipulate files on a virtual filesystem.
-These tools allow deep agents to perform actions such as listing files (`ls`), reading files (`read_file`), creating files (`write_file`), editing files (`edit_file`), finding files with matching a pattern (`glob`), and finding and replacing patterns in files (`grep`).
-
-The suite of filesystem tools allow deep agents to automatically offload content and to search and retrieve that offloaded content as needed.
+Deep agents use the [built-in filesystem tools](#virtual-filesystem-access) to automatically offload content and to search and retrieve that offloaded content as needed.
 Content offloading happens in two cases:
 
 1. **The inputs for a tool cross 20,000 tokens** (configurable via `tool_token_limit_before_evict`): File write and edit operations leave behind tool calls containing the complete file content in the agent's conversation history.
@@ -137,7 +127,7 @@ Content offloading happens in two cases:
 
     ![An example of offloading showing a large input which is saved to disk and the truncated version is used for the tool call](/oss/images/deepagents/offloading-inputs.png)
 
-2. **The results of tool calls exceed **: When the results exceed the defined threshold, the deep agent offloads the response to the configured backend and substitutes it with a file path reference and a preview of the first 10 lines. Agents can then re-read or search the content as needed.
+2. **The results of tool calls exceed**: When the results exceed the defined threshold, the deep agent offloads the response to the configured backend and substitutes it with a file path reference and a preview of the first 10 lines. Agents can then re-read or search the content as needed.
 
     ![An example of offloading showing a large tool response that is replacd with a message about the location of the offloaded results an dhte first 10 lines of the result](/oss/images/deepagents/offloading-results.png)
 
@@ -165,9 +155,33 @@ This dual approach ensures the agent maintains awareness of its goals and progre
 - Preserves recent context while compressing ancient history
 - Transparent to the agent (appears as a special system message)
 
+#### Long-term memory
+
+When using the default filesystem, your deep agent stores its working memory files in agent state, which only persists within a single thread.
+Long-term memory enables your deep agent to persist information across different threads and conversations.
+To use long-term memory, you must use a `CompositeBackend` that routes specific paths (typically `/memories/`) to a LangGraph Store, which provides durable cross-thread persistence.
+The `CompositeBackend` is a hybrid storage system where some files persist indefinitely while others remain ephemeral to a single thread.
+
+Files that the agent stores in the long-term memory path (for example, `/memories/preferences.txt`) survive agent restarts and can be accessed from any conversation thread.
+Deep agents can use these files for storing user preferences, accumulated knowledge, research progress, or any information that should persist beyond a single session.
+
+For more information, see [Long-term memory](/oss/deepagents/long-term-memory).
+
 ## Code execution
 
-TODO
+When you use a [sandbox backend](/oss/deepagents/sandboxes), the harness exposes an `execute` tool that lets the agent run shell commands in an isolated environment. This enables the agent to install dependencies, run scripts, and execute code as part of its task.
+
+**How it works:**
+- Sandbox backends implement the `SandboxBackendProtocol` — when detected, the harness adds the `execute` tool to the agent's available tools
+- Without a sandbox backend, the agent only has filesystem tools (`read_file`, `write_file`, etc.) and cannot run commands
+- The `execute` tool returns combined stdout/stderr, exit code, and truncates large outputs (saving to a file for the agent to read incrementally)
+
+**Why it's useful:**
+- **Security** — Code runs in isolation, protecting your host system from the agent's operations
+- **Clean environments** — Use specific dependencies or OS configurations without local setup
+- **Reproducibility** — Consistent execution environments across teams
+
+For setup, providers, and file transfer APIs, see [Sandboxes](/oss/deepagents/sandboxes).
 
 ## Human-in-the-loop
 
@@ -205,12 +219,14 @@ For more information, see [Skills](/oss/deepagents/skills).
 ## Memory
 
 The harness supports persistent memory files that provide extra context to your deep agent across conversations.
+These files often contain general coding style, preferences, conventions, and guidelines that help the agent understand how to work with your codebase and follow your preferences.
 
 **How it works:**
 - Uses [`AGENTS.md` files](https://agents.md/) to provide persistent context
 - Memory files are always loaded (unlike skills, which use progressive disclosure)
 - Can pass one or more file paths to the `memory` parameter when creating your agent
 - Files are stored in the agent's backend (StateBackend, StoreBackend, or FilesystemBackend)
+- The agent can update memory based on your interactions, feedback, and identified patterns
 
 **Why it's useful:**
 - Provides persistent context that doesn't need to be re-specified each conversation
@@ -218,39 +234,3 @@ The harness supports persistent memory files that provide extra context to your 
 - Always available to the agent, ensuring consistent behavior
 
 For configuration details and examples, see [Memory](/oss/deepagents/customization#memory).
-
-## Automatic repair and speedup (?)
-
-### Prompt caching (Anthropic)
-
-The harness enables Anthropic's prompt caching feature to reduce redundant token processing.
-
-**How it works:**
-- Caches portions of the prompt that repeat across turns
-- Significantly reduces latency and cost for long system prompts
-- Automatically skipped for non-Anthropic models
-
-**Why it's useful:**
-- System prompts (especially with filesystem docs) can be 5k+ tokens
-- These repeat every turn without caching
-- Caching provides ~10x speedup and cost reduction
-
-### Dangling tool call repair
-
-The harness fixes message history when tool calls are interrupted or cancelled before receiving results.
-
-**The problem:**
-- Agent requests tool call: "Please run X"
-- Tool call is interrupted (user cancels, error, etc.)
-- Agent sees `tool_call` in `AIMessage` but no corresponding `ToolMessage`
-- This creates an invalid message sequence
-
-**The solution:**
-- Detects `AIMessage` objects with `tool_calls` that have no results
-- Creates synthetic `ToolMessage` responses indicating the call was cancelled
-- Repairs the message history before agent execution
-
-**Why it's useful:**
-- Prevents agent confusion from incomplete message chains
-- Gracefully handles interruptions and errors
-- Maintains conversation coherence
