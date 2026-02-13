@@ -1,0 +1,177 @@
+---
+title: "ChatOpenRouter integration"
+sidebarTitle: OpenRouter
+description: "Integrate with the ChatOpenRouter chat model using LangChain Python."
+---
+
+This will help you get started with OpenRouter [chat models](/oss/langchain/models). OpenRouter is a unified API that provides access to models from multiple providers (OpenAI, Anthropic, Google, Meta, and more) through a single endpoint.
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all features and configuration options, head to the @[`ChatOpenRouter`] API reference.
+</Tip>
+
+For a full list of available models, visit the [OpenRouter docs](https://openrouter.ai/docs/guides/overview/models).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| @[`ChatOpenRouter`] | @[`langchain-openrouter`] | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-openrouter?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-openrouter?style=flat-square&label=%20) |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+
+## Setup
+
+To access models via OpenRouter you'll need to create an [OpenRouter account](https://openrouter.ai/), get an API key, and install the `langchain-openrouter` integration package.
+
+### Credentials
+
+Head to the [OpenRouter keys page](https://openrouter.ai/settings/keys) to sign up and generate an API key. Once you've done this set the `OPENROUTER_API_KEY` environment variable:
+
+```python
+import getpass
+import os
+
+if not os.getenv("OPENROUTER_API_KEY"):
+    os.environ["OPENROUTER_API_KEY"] = getpass.getpass("Enter your OpenRouter API key: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](https://docs.langchain.com/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The LangChain OpenRouter integration lives in the `langchain-openrouter` package:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-openrouter
+    ```
+    ```bash uv
+    uv add langchain-openrouter
+    ```
+</CodeGroup>
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```python
+from langchain_openrouter import ChatOpenRouter
+
+llm = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4-5-20250929",
+    temperature=0,
+    max_tokens=1024,
+    max_retries=2,
+    # other params...
+)
+```
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+ai_msg.content
+```
+
+```text
+"J'adore la programmation."
+```
+
+## Provider routing
+
+OpenRouter can route requests to specific providers or define a fallback order. Use the `openrouter_provider` parameter to control this:
+
+```python
+llm = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4-5-20250929",
+    openrouter_provider={"order": ["Anthropic"]},
+)
+```
+
+You can also set a route preference for automatic fallback behavior:
+
+```python
+llm = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4-5-20250929",
+    openrouter_route="fallback",
+)
+```
+
+See the [OpenRouter provider routing docs](https://openrouter.ai/docs/features/provider-routing) for details.
+
+## Reasoning output
+
+For models that support reasoning (e.g., `anthropic/claude-sonnet-4-5-20250929`, `deepseek/deepseek-r1`), you can enable reasoning tokens via the `openrouter_reasoning` parameter:
+
+```python
+llm = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4-5-20250929",
+    openrouter_reasoning={"effort": "high"},
+)
+
+ai_msg = llm.invoke("What is the square root of 529?")
+
+# Reasoning content is available in additional_kwargs
+print(ai_msg.additional_kwargs.get("reasoning_content"))
+```
+
+Reasoning token usage is included in `usage_metadata`:
+
+```python
+print(ai_msg.usage_metadata)
+# {'input_tokens': ..., 'output_tokens': ..., 'total_tokens': ...,
+#  'output_token_details': {'reasoning': ...}}
+```
+
+## App attribution
+
+OpenRouter supports app attribution via HTTP headers. You can set these through init params or environment variables:
+
+```python
+llm = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4-5-20250929",
+    app_url="https://myapp.com",   # or OPENROUTER_APP_URL env var
+    app_title="My App",            # or OPENROUTER_APP_TITLE env var
+)
+```
+
+## Streaming
+
+```python
+for chunk in llm.stream("Write a short poem about the sea."):
+    print(chunk.text, end="", flush=True)
+```
+
+Async streaming is also supported:
+
+```python
+async for chunk in llm.astream("Write a short poem about the sea."):
+    print(chunk.text, end="", flush=True)
+```
+
+---
+
+## API reference
+
+For detailed documentation of all ChatOpenRouter features and configurations, head to the [API reference](https://python.langchain.com/api_reference/openrouter/chat_models/langchain_openrouter.chat_models.ChatOpenRouter.html).
