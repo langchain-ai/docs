@@ -1,0 +1,468 @@
+---
+title: API v1 and v2 overview
+sidebarTitle: API v1 vs v2 overview
+description: Understand the runs endpoint API v1 and v2 namespaces, breaking changes, and step-by-step migration.
+---
+
+This page summarizes how the API versions differ in serving, routing, and rollout, and provides the full migration guide (breaking changes, request/response updates, and code examples). For version and sunset policy, see [API versioning and support policy](/langsmith/endpoint-deprecation).
+
+Upgrading your API version affects the endpoint paths you call, the parameters and body you send, and the structure of responses. Follow the sections below and the [Migration checklist](#migration-checklist) to update your integration.
+
+The [LangSmith runs API](https://api.smith.langchain.com/redoc) provides two namespaces:
+
+- **API v1:** The `/api/v1` namespace includes the existing runs endpoints.
+- **API v2:** The `/v2` namespace includes the runs endpoints that use the new design.
+
+## SDK versions that support API v2
+
+Only in certain SDK versions support v2 patterns.
+
+| SDK | Minimum version for v2 |
+| --- | ---------------------- |
+| **Python** | v0.5.0 |
+| **TypeScript/JavaScript** | v0.4.0 |
+
+If you're using an older SDK version, upgrade to at least the version listed above to use v2 endpoints. For the official v1 deprecation and sunset timetable, see [API versioning and support policy](/langsmith/endpoint-deprecation).
+
+## Deprecated patterns for ingest
+
+The following patterns are deprecated for runs ingest (POST and PATCH). The API may log warnings when it detects them; requests are still processed.
+
+### POST-only (must not appear in PATCH)
+
+These fields must be sent only in POST, not in PATCH. Sending them in a patch is deprecated:
+
+- **`inputs`** — Must be sent in POST, not in patch.
+- **`serialized`** — Must be sent in POST, not in patch.
+
+### PATCH-only completion fields (should not appear in POST unless run is complete)
+
+These fields are PATCH-only in the sense that they should not be sent in POST unless the run is being completed in that same POST (i.e. `end_time` is also provided). Sending them in POST without `end_time` is deprecated and triggers a warning:
+
+- **`outputs`** — Send in PATCH, or in POST only when also sending `end_time`.
+- **`error`** — Same as `outputs`.
+- **`events`** — Same as `outputs`.
+- **`usage_metadata`** — Used for token and cost tracking. Same rule as `outputs`: send in PATCH, or in POST only when also sending `end_time`. Prefer putting token and cost data in `extra.metadata` so it is stored with the run and available for analytics.
+
+### Summary
+
+| Deprecated pattern | Correct pattern |
+| ------------------ | ---------------- |
+| `inputs` in PATCH | Send `inputs` only in POST. |
+| `serialized` in PATCH | Send `serialized` only in POST. |
+| `outputs` in POST (without `end_time`) | Send `outputs` in PATCH, or in POST only when also sending `end_time`. |
+| `error` in POST (without `end_time`) | Send `error` in PATCH, or in POST only when also sending `end_time`. |
+| `events` in POST (without `end_time`) | Send `events` in PATCH, or in POST only when also sending `end_time`. |
+| `usage_metadata` in POST (without `end_time`) | Put token and cost data in `extra.metadata`. Send it in PATCH, or in POST only when you also send `end_time`. |
+
+## Migrate from v1 to v2
+
+The following subsections describe breaking changes and behavior differences between major version 1 and 2 of the LangSmith API endpoints.
+
+### Base URL changes
+
+Starting in version 2.0.0, the base URL structure for runs endpoint requests has changed.
+
+**v1 (old):**
+```
+https://api.smith.langchain.com/api/v1/runs
+```
+
+**v2 (new):**
+```
+https://api.smith.langchain.com/v2/runs
+```
+
+For self-hosted LangSmith instances, update your base URL accordingly:
+- v1: `http(s)://<langsmith-url>/api/v1/runs`
+- v2: `http(s)://<langsmith-url>/v2/runs`
+
+Note: In v2, endpoint paths use `/v2/` instead of `/api/v2/` (e.g., `/v2/runs/multipart` instead of `/api/v2/runs/multipart`).
+
+### Authentication
+
+Authentication remains the same across versions. Continue to use the `x-api-key` header for authentication.
+
+If your API key is linked to multiple workspaces, specify the workspace in the `x-tenant-id` header.
+
+### Endpoint changes
+
+The following table lists endpoint changes between v1 and v2:
+
+| v1 Endpoint                    | v2 Endpoint                    | Method | Notes                                    |
+| ---------------------------------- | ----------------------------------- | ------ | ---------------------------------------- |
+| `POST /api/v1/runs`                | `POST /v2/runs/multipart`           | POST   | All ingestion goes through multipart     |
+| `POST /api/v1/runs/batch`          | `POST /v2/runs/multipart`           | POST   | Batch endpoint moved to multipart                   |
+| `POST /api/v1/runs/multipart`      | `POST /v2/runs/multipart`           | POST   | Direct equivalent                        |
+| `PATCH /api/v1/runs/{run_id}`      | `POST /v2/runs/multipart`           | POST   | No PATCH in v2; use multipart with part `patch.{run_id}` (JSON = update payload) |
+| `GET /api/v1/runs/{run_id}`        | `GET /v2/runs/{run_id}`             | GET    | Query params required                    |
+| `POST /api/v1/runs/query`          | `POST /v2/runs/query`               | POST   | Request body changes                     |
+| `GET /api/v1/traces/{trace_id}/runs` | `GET /v2/traces/{trace_id}/runs`    | GET    | Query params required                    |
+
+### Request body changes
+
+#### Update run (PATCH → multipart)
+
+v1 has **PATCH** endpoints for updating a single run: `PATCH /api/v1/runs/{run_id}`, `PATCH /runs/{run_id}`, or `PATCH /v1/runs/{run_id}` with a JSON body. **v2 has no PATCH endpoint.** The equivalent is **POST /v2/runs/multipart** with one part named `patch.{run_id}` (Content-Type: application/json). The v2 patch payload must include `id`, `trace_id`, `dotted_order`, `start_time`, `end_time`, and `session_id`; other fields (e.g. `name`, `run_type`, `outputs`, `error`, `status`) are optional.
+
+The v2 patch payload **requires**: `id`, `trace_id`, `dotted_order`, `start_time`, `end_time`, `session_id`. The following are **optional**: `name`, `run_type`, `status` (and other update fields such as `outputs`, `error`).
+
+
+### Response format changes
+
+#### GET /runs/\{run_id}
+
+**Query parameter changes:**
+
+In v1, query parameters were optional. In v2, the following query parameters are required:
+
+| Parameter | Required | Notes                                    |
+| --------- | -------- | ---------------------------------------- |
+| `session_id` | Required | Must be provided in query string |
+| `start_time` | Required | Must be provided in query string (ISO 8601 format) |
+| `select` | Optional | Array of UPPERCASE field names (e.g., "ID", "NAME") |
+
+**Example:**
+```
+GET /v2/runs/{run_id}?session_id=xxx&start_time=2025-01-01T00:00:00Z&select=ID&select=NAME
+```
+
+**Response structure changes:**
+
+The response structure has been updated in v2:
+
+| v1 Response Field | v2 Response Field | Notes                                    |
+| ---------------------- | --------------------- | ---------------------------------------- |
+| N/A                    | `status`               | New field indicating run status          |
+
+Response continues to use `session_id` and `session_name`; no change from v1.
+
+#### GET /traces/\{trace_id}/runs
+
+**Query parameter changes:**
+
+In v2, the following query parameters are required:
+
+| Parameter | Required | Notes                                    |
+| --------- | -------- | ---------------------------------------- |
+| `session_id` | Required | Must be provided in query string |
+| `min_start_time` | Required | Must be provided in query string (ISO 8601 format) |
+| `max_start_time` | Required | Must be provided in query string (ISO 8601 format) |
+| `select` | Optional | Array of UPPERCASE field names (e.g., "ID", "NAME") |
+| `filter` | Optional | Filter criteria for runs |
+
+**Example:**
+```
+GET /v2/traces/xyz789abc123/runs?session_id=xxx&min_start_time=2025-01-01T00:00:00Z&max_start_time=2025-01-31T23:59:59Z&select=ID&select=NAME
+```
+
+### Query endpoint changes
+
+#### POST /runs/query
+
+The query endpoint request and response formats have been updated:
+
+**Request body changes:**
+
+| v1 Field | v2 Field | Notes                                    |
+| ------------- | ------------- | ---------------------------------------- |
+| `session` (optional) | `session` (required) | Now required in v2 |
+| `start_time` | `min_start_time` | Field renamed |
+| `end_time` | `max_start_time` | Field renamed |
+| N/A | Time defaults | v2 defaults to 400 days ago → now if not provided |
+| `select` (lowercase) | `select` (UPPERCASE) | Values must be UPPERCASE enum names (e.g., "ID", "NAME" instead of "id", "name") |
+| `order` (case-insensitive) | `order` (UPPERCASE) | Must be UPPERCASE ("ASC" or "DESC") |
+| N/A | `ai_query` | New field |
+| N/A | `in_dataset` | New field |
+| N/A | `share_token` | New field |
+| N/A | `last_queued_at` | New field |
+
+Continue to use `session_id` and optionally `session_name` in the request body; no change from v1.
+
+**Response changes:**
+
+The response structure has been updated in v2 with the following changes:
+
+**Pagination:**
+- `parsed_query` - No longer returned in v2
+- `search_cursors` - No longer returned in v2
+- `cursors.prev` removed - Only `cursors.next` is supported in v2
+
+For more on pagination and cursor format differences, see [List pagination](#list-pagination) below.
+
+**Format changes:**
+- Run objects use Arrow IPC format internally (transparent to JSON clients)
+
+**Field name changes (when using select):**
+- `extra` → `metadata` - Field renamed when using select
+- `error` → `error_preview` - Field renamed when using select
+
+**Unsupported in v2:**
+- `trace_min_max_start_time` - Removed from select options
+- `feedback_stats` - Removed from select options
+
+### Multipart endpoint changes
+
+#### POST /runs/multipart
+
+The multipart endpoint base path has changed from `/api/v1/runs/multipart` to `/v2/runs/multipart`. Note that in v2, all run ingestion (including `POST /api/v1/runs` and `POST /api/v1/runs/batch`) now goes through the multipart endpoint.
+
+**V1 Multipart (POST /api/v1/runs/multipart):**
+
+**Part naming:**
+- `post.{run_id}` - Create run (JSON)
+- `patch.{run_id}` - Update run (JSON)
+- `post.{run_id}.inputs` - Large inputs (JSON, stored out-of-band)
+- `patch.{run_id}.outputs` - Large outputs (JSON, stored out-of-band)
+- `feedback.{run_id}` - Feedback object (JSON)
+- `attachment.{run_id}.{filename}` - Binary attachment
+
+**Compression:**
+- Supports `Content-Encoding: gzip` or `zstd` at request level
+
+**V2 Multipart (POST /v2/runs/multipart):**
+
+**Part naming:**
+- Same as v1 (no changes to part naming structure)
+
+**Compression:**
+- Same as v1 (supports `Content-Encoding: gzip` or `zstd`)
+
+**Behavior:**
+- Same multipart structure
+- Same compression support
+
+### Error responses
+
+Error response formats have been standardized in v2:
+
+**v1 (old):**
+```json
+{
+  "error": "Error message",
+  "code": 400
+}
+```
+
+**v2 (new):**
+```json
+{
+  "error": {
+    "message": "Error message",
+    "code": "INVALID_REQUEST",
+    "status": 400
+  }
+}
+```
+
+### Migration checklist
+
+Use this checklist to migrate from v1 to v2:
+
+- Update `POST /api/v1/runs` to use `POST /v2/runs/multipart`
+- Update `POST /api/v1/runs/batch` to use `POST /v2/runs/multipart`
+- Update `POST /api/v1/runs/multipart` to `POST /v2/runs/multipart`
+  - Add `dotted_order` field to all POST /runs/multipart requests
+  - Add `trace_id` field to all POST /runs/multipart requests
+- Update `PATCH /api/v1/runs/{run_id}` to `POST /v2/runs/multipart` with part `patch.{run_id}` (no PATCH in v2)
+  - Build multipart body with one part: name = `patch.{run_id}`, value = update JSON including required fields: `id`, `trace_id`, `dotted_order`, `start_time`, `end_time`, `session_id` (other fields such as `name`, `run_type`, `outputs`, `status` are optional)
+  - Use out-of-band parts for large fields if needed (e.g. `patch.{run_id}.outputs`)
+- Update `GET /api/v1/runs/{run_id}` to `GET /v2/runs/{run_id}`
+  - Add required `session_id` query parameter
+  - Add required `start_time` query parameter
+- Update `POST /api/v1/runs/query` to `POST /v2/runs/query`
+  - `session` field now required
+  - Rename `start_time` to `min_start_time`
+  - Rename `end_time` to `max_start_time`
+  - Add new optional fields if needed: `ai_query`, `in_dataset`, `share_token`, `last_queued_at`
+  - Update response handling: Remove references to `parsed_query` and `search_cursors`
+  - Update cursor handling: Remove `cursors.prev` usage (only `cursors.next` supported)
+  - Update field name mappings: `extra` → `metadata`, `error` → `error_preview` (when using select)
+  - Remove `trace_min_max_start_time` and `feedback_stats` from select options
+- Update `GET /api/v1/traces/{trace_id}/runs` to `GET /v2/traces/{trace_id}/runs`
+  - Add required `session_id` query parameter
+  - Add required `min_start_time` query parameter
+  - Add required `max_start_time` query parameter
+  - Add optional `filter` parameter if needed
+- Update error handling to use new error response format
+
+## Identifiers and required query params (v1 vs v2)
+
+This section explains how run, trace, and session identifiers work in v1 and v2 and what to adjust when migrating.
+
+Run, trace, and session IDs are valid UUIDs in both v1 and v2. The main change is required query params for read endpoints:
+
+**v1** — GET run and GET trace runs accept optional query params (`session_id`, `start_time`, or time range). You can fetch a run with only the run ID.
+
+**v2** — `GET /v2/runs/{run_id}` needs `session_id` and `start_time`, `GET /v2/traces/{trace_id}/runs` needs `session_id`, `min_start_time`, and `max_start_time`.
+
+**UUIDv7 vs other UUIDs** — UUIDv7 encodes a timestamp in its first 48 bits, so `start_time` can be derived from the run ID. UUIDv4 and other non–time-ordered UUIDs do not encode a timestamp; for those, `start_time` must come from the trace, a prior query, or your own store when calling v2.
+
+If you generate run IDs: Prefer UUIDv7 for new runs. You can then derive `start_time` from the run ID and call v2 GET run with only the run ID and `session_id`, with no extra lookup. UUIDv7 also dramatically improves performance when querying runs.
+
+## List pagination
+
+List-style responses (for example, from `POST /runs/query`) use cursors for pagination. v1 and v2 differ in how cursors are returned, how they are formatted, and what request options are available.
+
+### Response cursors
+
+**V1** — Returns both `next` and `prev` in the response: `cursors: { "next": string | null, "prev": string | null }`.
+
+**V2** — Returns only `next`: `cursors: { "next": string }` (no `prev` in the response).
+
+When migrating from v1 to v2, remove any reliance on `cursors.prev` for backward pagination.
+
+### Cursor format
+
+**V1** — Cursor used with tuple comparison or concatenation, backend binds as `cursor__gt` / `cursor__lt`.
+
+**V2** — Single string, predicate form `lt(cursor, '{start_time}{id}')`, `start_time` as `%Y-%m-%d %H:%M:%S%.6f`.
+
+Do not assume v1 cursor format when calling v2 or when persisting v2 cursors.
+
+### Code examples
+
+<Tabs>
+<Tab title="Python">
+
+```python
+import os
+import requests
+from datetime import datetime, timezone
+from langsmith import uuid7
+
+# v1 (old)
+def post_run_v1(run_id, name, run_type, inputs, session_name):
+    data = {
+        "id": run_id.hex,
+        "name": name,
+        "run_type": run_type,
+        "inputs": inputs,
+        "session_name": session_name,
+    }
+    response = requests.post(
+        "https://api.smith.langchain.com/api/v1/runs",  # Old endpoint
+        json=data,
+        headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]}
+    )
+    return response
+
+# v2 (new)
+def post_run_v2(run_id, name, run_type, inputs, session_name, trace_id, dotted_order):
+    data = {
+        "id": run_id.hex,
+        "name": name,
+        "run_type": run_type,
+        "inputs": inputs,
+        "session_name": session_name,  # Same as v1
+        "trace_id": trace_id.hex,  # Now required
+        "dotted_order": dotted_order,  # Now required
+    }
+    response = requests.post(
+        "https://api.smith.langchain.com/v2/runs/multipart",  # New endpoint - all ingestion goes through multipart
+        json=data,
+        headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]}
+    )
+    return response
+
+# Usage example:
+# Generate IDs for the run and trace
+run_id = uuid7()
+trace_id = uuid7()
+
+# v1 usage
+post_run_v1(run_id, "My Run", "llm", {"input": "Hello"}, "my-project")
+
+# v2 usage: dotted_order = timestamp + run ID (e.g. 20241009T184741275821Z + str(run_id))
+dotted_order = "20241009T184741275821Z" + str(run_id)
+post_run_v2(run_id, "My Run", "llm", {"input": "Hello"}, "my-project", trace_id, dotted_order)
+```
+
+</Tab>
+<Tab title="JavaScript/TypeScript">
+
+```typescript
+// v1 (old)
+async function postRunV1(runId: string, name: string, runType: string, inputs: any, sessionName: string) {
+  const data = {
+    id: runId,
+    name: name,
+    run_type: runType,
+    inputs: inputs,
+    session_name: sessionName,
+  };
+
+  const response = await fetch('https://api.smith.langchain.com/api/v1/runs', {  // Old endpoint
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.LANGSMITH_API_KEY!,
+    },
+    body: JSON.stringify(data),
+  });
+
+  return response;
+}
+
+// v2 (new)
+async function postRunV2(
+  runId: string,
+  name: string,
+  runType: string,
+  inputs: any,
+  sessionName: string,
+  traceId: string,
+  dottedOrder: string
+) {
+  const data = {
+    id: runId,
+    name: name,
+    run_type: runType,
+    inputs: inputs,
+    session_name: sessionName,  // Same as v1
+    trace_id: traceId,  // Now required
+    dotted_order: dottedOrder,  // Now required
+  };
+
+  const response = await fetch('https://api.smith.langchain.com/v2/runs/multipart', {  // New endpoint - all ingestion goes through multipart
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.LANGSMITH_API_KEY!,
+    },
+    body: JSON.stringify(data),
+  });
+
+  return response;
+}
+
+// Usage example:
+// Generate IDs for the run and trace (using crypto.randomUUID() or a UUID library)
+const runId = crypto.randomUUID();
+const traceId = crypto.randomUUID();
+
+// v1 usage
+await postRunV1(runId, "My Run", "llm", { input: "Hello" }, "my-project");
+
+// v2 usage: dottedOrder = timestamp + run ID (e.g. 20241009T184741275821Z + runId)
+const dottedOrder = "20241009T184741275821Z" + runId;
+await postRunV2(runId, "My Run", "llm", { input: "Hello" }, "my-project", traceId, dottedOrder);
+```
+
+</Tab>
+</Tabs>
+
+### Support
+
+If you encounter issues during migration:
+
+1. Check the [API versioning and support policy](/langsmith/endpoint-deprecation) for timeline and support information.
+2. Review the [API reference documentation](https://api.smith.langchain.com/redoc) for detailed endpoint specifications.
+3. Ask questions on the [LangSmith forum](https://forum.langchain.com/).
+4. Contact LangSmith support for assistance.
+
+## See also
+
+- [API versioning and support policy](/langsmith/endpoint-deprecation) — Versioning, deprecation, and sunset
+- [Trace with API](/langsmith/trace-with-api) — Using the runs API for tracing
+- [LangSmith changelog](https://changelog.langchain.com/) — Announcements and version updates
