@@ -34,6 +34,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     name: "Documentation Build & Link Check (Python ${{ inputs.python-version }})"
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -56,8 +59,87 @@ jobs:
       - name: Install Mintlify CLI
         run: npm i -g mint@4.2.126
 
-      - name: Validate documentation links
-        run: make broken-links
+      - name: Build documentation
+        run: make build
+
+      - name: Check documentation links
+        id: broken-links
+        run: |
+          cd build && mint broken-links 2>&1 | tee ../broken-links-output.txt || true
+          # Filter out agent-server-api (matches Makefile logic)
+          if grep -v '/langsmith/agent-server-api/' ../broken-links-output.txt | grep -qE 'found [1-9][0-9]* broken links'; then
+            echo "has_broken_links=true" >> $GITHUB_OUTPUT
+            grep -v '/langsmith/agent-server-api/' ../broken-links-output.txt > ../broken-links-filtered.txt
+          else
+            echo "has_broken_links=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Validate openapi spec validity
         run: make check-openapi
+
+      - name: Comment broken links on PR
+        if: steps.broken-links.outputs.has_broken_links == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let output = '';
+            try {
+              output = fs.readFileSync('broken-links-filtered.txt', 'utf8');
+              output = output.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+              if (output.length > 32000) {
+                output = output.substring(0, 32000) + '\n... (truncated)';
+              }
+            } catch (error) {
+              output = 'Error reading broken links output';
+            }
+
+            const body = `## Broken links found
+
+            The documentation build found broken links that need to be fixed.
+
+            <details>
+            <summary>Broken links details</summary>
+
+            \`\`\`
+            ${output}
+            \`\`\`
+
+            </details>
+            `;
+
+            const prNumber = context.payload.pull_request?.number;
+            if (!prNumber) return;
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Broken links found')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body
+              });
+            }
+
+      - name: Fail if broken links found
+        if: steps.broken-links.outputs.has_broken_links == 'true'
+        run: |
+          echo "Broken links found. See the PR comment for details."
+          exit 1
