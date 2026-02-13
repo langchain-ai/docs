@@ -71,7 +71,7 @@ clean:
 broken-links: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
 	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt | grep -v '/langsmith/agent-server-api/'; \
-		grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -qE '^[[:space:]]+' && \
+		grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -qE 'found [1-9][0-9]* broken links?' && \
 		echo "❌ Broken links found" && exit 1; echo "✅ No broken links"
 
 check-openapi: build
