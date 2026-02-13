@@ -227,12 +227,6 @@ If you are using memory, skills, or human-in-the-loop, the following middleware 
 
 You can provide additional middleware to extend functionality, add tools, or implement custom hooks:
 
-<Warning>
-Middleware implementations should never mutate any attributes post initialization.
-If mutation is needed, leverage graph state instead.
-Mutations at the middleware level cause subtle bugs and race conditions that are difficult to catch, because many things run concurrently (for example, subagents, parallel tools, and parallel invocations of the same agent on different threads).
-</Warning>
-
 :::python
 ```python
 from langchain.tools import tool
@@ -323,6 +317,40 @@ const agent = await createDeepAgent({
 });
 ```
 :::
+
+<Warning>
+**Do not mutate attributes after initialization**
+
+If you need to track values across hook invocations (for example, counters or accumulated data), use graph state.
+Graph state is scoped to a thread by design, so updates are safe under concurrency.
+
+**Do this:**
+
+```python
+class CustomMiddleware(AgentMiddleware):
+    def __init__(self):
+        pass
+
+    def before_agent(self, state, runtime):
+        return {"x": state.get("x", 0) + 1}  # Update graph state instead
+```
+
+Do **not** do this:
+
+```python
+class CustomMiddleware(AgentMiddleware):
+    def __init__(self):
+        self.x = 1
+
+    def before_agent(self, state, runtime):
+        self.x += 1  # Mutation causes race conditions
+```
+
+Mutation in place—such as modifying `self.x` in `before_agent` or other hooks—can lead to subtle bugs and race conditions, because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
+
+For full details on extending state with custom properties, see [Custom middleware - Custom state schema](/oss/langchain/middleware/custom#custom-state-schema).
+If you must use mutation in custom middleware, consider what happens when subagents, parallel tools, or concurrent agent invocations run at the same time.
+</Warning>
 
 ## Subagents
 
