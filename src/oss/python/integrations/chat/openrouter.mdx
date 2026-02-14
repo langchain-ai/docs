@@ -18,9 +18,9 @@ For a full list of available models, visit the [OpenRouter models page](https://
 
 ### Integration details
 
-| Class | Package | Serializable | JS support | Downloads | Version |
+| Class | Package | Serializable | JS/TS Support | Downloads | Latest Version |
 | :--- | :--- | :---: |  :---: | :---: | :---: |
-| @[`ChatOpenRouter`] | @[`langchain-openrouter`] | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-openrouter?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-openrouter?style=flat-square&label=%20) |
+| @[`ChatOpenRouter`] | @[`langchain-openrouter`] | beta | ❌ | <a href="https://pypi.org/project/langchain-openrouter/" target="_blank"><img src="https://static.pepy.tech/badge/langchain-openrouter/month" alt="Downloads per month" noZoom height="100" class="rounded" /></a> | <a href="https://pypi.org/project/langchain-openrouter/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-openrouter?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
 
 ### Model features
 
@@ -80,6 +80,8 @@ model = ChatOpenRouter(
 )
 ```
 
+---
+
 ## Invocation
 
 ```python
@@ -98,6 +100,8 @@ ai_msg.content
 "J'adore la programmation."
 ```
 
+---
+
 ## Streaming
 
 ```python
@@ -111,6 +115,395 @@ Async streaming is also supported:
 async for chunk in model.astream("Write a short poem about the sea."):
     print(chunk.text, end="", flush=True)
 ```
+
+---
+
+## Tool calling
+
+OpenRouter uses the OpenAI-compatible tool calling format. You can describe tools and their arguments, and have the model return a JSON object with a tool to invoke and the inputs to that tool.
+
+### Bind tools
+
+With `ChatOpenRouter.bind_tools`, you can pass in Pydantic classes, dict schemas, LangChain tools, or functions as tools to the model. Under the hood these are converted to OpenAI tool schemas and passed in every model invocation.
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location"""
+
+    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+
+model_with_tools = model.bind_tools([GetWeather])
+```
+
+```python
+ai_msg = model_with_tools.invoke(
+    "what is the weather like in San Francisco",
+)
+ai_msg
+```
+
+```text
+AIMessage(content='', response_metadata={'finish_reason': 'tool_calls'}, tool_calls=[{'name': 'GetWeather', 'args': {'location': 'San Francisco, CA'}, 'id': 'call_abc123', 'type': 'tool_call'}], usage_metadata={'input_tokens': 68, 'output_tokens': 17, 'total_tokens': 85})
+```
+
+### Tool calls
+
+The AIMessage has a `tool_calls` attribute. This contains tool calls in a standardized format that is model-provider agnostic.
+
+```python
+ai_msg.tool_calls
+```
+
+```text
+[{'name': 'GetWeather',
+  'args': {'location': 'San Francisco, CA'},
+  'id': 'call_abc123',
+  'type': 'tool_call'}]
+```
+
+<Note>
+    `ChatOpenRouter` accepts the `strict` parameter in `bind_tools` but does not currently forward it to the API.
+</Note>
+
+For more on binding tools and tool call outputs, head to the [tool calling](/oss/langchain/tools) docs.
+
+---
+
+## Structured output
+
+`ChatOpenRouter` supports structured output via the [`with_structured_output`](/oss/langchain/models#structured-output) method. Three methods are available: `function_calling` (default), `json_schema`, and `json_mode`.
+
+<Accordion title="Individual model calls">
+
+Use `with_structured_output` to generate a structured model response. Specify `method="json_schema"` to use JSON Schema-based structured output; otherwise the method defaults to function calling.
+
+```python
+from langchain_openrouter import ChatOpenRouter
+from pydantic import BaseModel, Field
+
+model = ChatOpenRouter(model="openai/gpt-4.1")
+
+class Movie(BaseModel):
+    """A movie with details."""
+    title: str = Field(..., description="The title of the movie")
+    year: int = Field(..., description="The year the movie was released")
+    director: str = Field(..., description="The director of the movie")
+    rating: float = Field(..., description="The movie's rating out of 10")
+
+structured_model = model.with_structured_output(Movie, method="json_schema")  # [!code highlight]
+response = structured_model.invoke("Provide details about the movie Inception")
+response
+```
+
+```python
+Movie(title='Inception', year=2010, director='Christopher Nolan', rating=8.8)
+```
+
+</Accordion>
+
+<Accordion title="Agent response format">
+
+Specify `response_format` with [`ProviderStrategy`](/oss/langchain/agents#providerstrategy) to engage structured output when generating the agent's final response.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.structured_output import ProviderStrategy
+from pydantic import BaseModel
+
+class Weather(BaseModel):
+    temperature: float
+    condition: str
+
+def weather_tool(location: str) -> str:
+    """Get the weather at a location."""
+    return "Sunny and 75 degrees F."
+
+agent = create_agent(
+    model="openrouter:openai/gpt-4.1",
+    tools=[weather_tool],
+    response_format=ProviderStrategy(Weather),  # [!code highlight]
+)
+
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "What's the weather in SF?"}]
+})
+
+result["structured_response"]
+```
+
+```python
+Weather(temperature=75.0, condition='Sunny')
+```
+
+</Accordion>
+
+<Note>
+    `ChatOpenRouter` accepts the `strict` parameter in `with_structured_output` but does not currently forward it to the API.
+</Note>
+
+---
+
+## Multimodal inputs
+
+OpenRouter supports [multimodal inputs](/oss/langchain/messages#multimodal) for models that accept them. The available modalities depend on the model you select — check the [OpenRouter models page](https://openrouter.ai/models) for details.
+
+### Supported input methods
+
+| Method | Image | Audio | Video | PDF |
+|--------|:-----:|:-----:|:-----:|:---:|
+| HTTP/HTTPS URLs | ✅ | ❌ | ✅ | ✅ |
+| Base64 inline data | ✅ | ✅ | ✅ | ✅ |
+
+<Note>
+    Not all models support all modalities. Check the [OpenRouter models page](https://openrouter.ai/models) for model-specific support.
+</Note>
+
+### Image input
+
+Provide image inputs along with text using a @[`HumanMessage`] with list content format.
+
+<CodeGroup>
+    ```python URL
+    from langchain_openrouter import ChatOpenRouter
+    from langchain.messages import HumanMessage
+
+    model = ChatOpenRouter(model="openai/gpt-4o")
+
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": "Describe this image."},
+            {
+                "type": "image",
+                "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+            },
+        ]
+    )
+    response = model.invoke([message])
+    ```
+
+    ```python Base64 encoded
+    import base64
+    import httpx
+    from langchain_openrouter import ChatOpenRouter
+    from langchain.messages import HumanMessage
+
+    model = ChatOpenRouter(model="openai/gpt-4o")
+
+    image_url = "https://picsum.photos/id/237/200/300"
+    image_data = base64.b64encode(httpx.get(image_url, follow_redirects=True).content).decode("utf-8")
+
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": "Describe this image."},
+            { # [!code highlight]
+                "type": "image", # [!code highlight]
+                "base64": image_data, # [!code highlight]
+                "mime_type": "image/jpeg", # [!code highlight]
+            }, # [!code highlight]
+        ]
+    )
+    response = model.invoke([message])
+    ```
+</CodeGroup>
+
+### Audio input
+
+Provide audio inputs along with text. Audio is passed as base64 inline data.
+
+```python
+import base64
+from pathlib import Path
+from langchain_openrouter import ChatOpenRouter
+from langchain.messages import HumanMessage
+
+model = ChatOpenRouter(model="openai/gpt-4o-audio-preview")
+
+audio_data = base64.b64encode(Path("/path/to/audio.wav").read_bytes()).decode("utf-8")
+
+message = HumanMessage(
+    content=[
+        {"type": "text", "text": "Transcribe this audio."},
+        { # [!code highlight]
+            "type": "audio", # [!code highlight]
+            "base64": audio_data, # [!code highlight]
+            "mime_type": "audio/wav", # [!code highlight]
+        }, # [!code highlight]
+    ]
+)
+response = model.invoke([message])
+```
+
+### Video input
+
+Video inputs are automatically converted to OpenRouter's `video_url` format.
+
+<CodeGroup>
+    ```python URL
+    from langchain_openrouter import ChatOpenRouter
+    from langchain.messages import HumanMessage
+
+    model = ChatOpenRouter(model="google/gemini-2.5-pro-preview")
+
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": "Describe this video."},
+            {
+                "type": "video",
+                "url": "https://example.com/video.mp4",
+            },
+        ]
+    )
+    response = model.invoke([message])
+    ```
+
+    ```python Base64 encoded
+    import base64
+    from pathlib import Path
+    from langchain_openrouter import ChatOpenRouter
+    from langchain.messages import HumanMessage
+
+    model = ChatOpenRouter(model="google/gemini-2.5-pro-preview")
+
+    video_data = base64.b64encode(Path("/path/to/video.mp4").read_bytes()).decode("utf-8")
+
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": "Describe this video."},
+            { # [!code highlight]
+                "type": "video", # [!code highlight]
+                "base64": video_data, # [!code highlight]
+                "mime_type": "video/mp4", # [!code highlight]
+            }, # [!code highlight]
+        ]
+    )
+    response = model.invoke([message])
+    ```
+</CodeGroup>
+
+### PDF input
+
+Provide PDF file inputs along with text.
+
+<CodeGroup>
+    ```python URL
+    from langchain_openrouter import ChatOpenRouter
+    from langchain.messages import HumanMessage
+
+    model = ChatOpenRouter(model="google/gemini-2.5-pro-preview")
+
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": "Summarize this document."},
+            {
+                "type": "file",
+                "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+                "mime_type": "application/pdf",
+            },
+        ]
+    )
+    response = model.invoke([message])
+    ```
+
+    ```python Base64 encoded
+    import base64
+    from pathlib import Path
+    from langchain_openrouter import ChatOpenRouter
+    from langchain.messages import HumanMessage
+
+    model = ChatOpenRouter(model="google/gemini-2.5-pro-preview")
+
+    pdf_data = base64.b64encode(Path("/path/to/document.pdf").read_bytes()).decode("utf-8")
+
+    message = HumanMessage(
+        content=[
+            {"type": "text", "text": "Summarize this document."},
+            { # [!code highlight]
+                "type": "file", # [!code highlight]
+                "base64": pdf_data, # [!code highlight]
+                "mime_type": "application/pdf", # [!code highlight]
+            }, # [!code highlight]
+        ]
+    )
+    response = model.invoke([message])
+    ```
+</CodeGroup>
+
+---
+
+## Token usage metadata
+
+After an invocation, token usage information is available on the `usage_metadata` attribute of the response:
+
+```python
+ai_msg = model.invoke("Tell me a joke.")
+ai_msg.usage_metadata
+```
+
+```text
+{'input_tokens': 12,
+ 'output_tokens': 25,
+ 'total_tokens': 37}
+```
+
+When available, detailed token breakdowns are included:
+
+- `input_token_details.cache_read`: Number of input tokens read from cache
+- `output_token_details.reasoning`: Number of output tokens used for reasoning
+
+```python
+ai_msg.usage_metadata
+```
+
+```text
+{'input_tokens': 12,
+ 'output_tokens': 25,
+ 'total_tokens': 37,
+ 'input_token_details': {'cache_read': 5},
+ 'output_token_details': {'reasoning': 10}}
+```
+
+When streaming, aggregate token usage from the final chunk:
+
+```python
+stream = model.stream("Tell me a joke.")
+full = next(stream)
+for chunk in stream:
+    full += chunk
+full.usage_metadata
+```
+
+```text
+{'input_tokens': 12,
+ 'output_tokens': 25,
+ 'total_tokens': 37}
+```
+
+---
+
+## Response metadata
+
+After an invocation, provider and model metadata is available on the `response_metadata` attribute:
+
+```python
+ai_msg = model.invoke("Tell me a joke.")
+ai_msg.response_metadata
+```
+
+```text
+{'finish_reason': 'stop',
+ 'model': 'anthropic/claude-sonnet-4.5',
+ 'model_provider': 'openrouter',
+ 'system_fingerprint': 'fp_abc123',
+ 'native_finish_reason': 'end_turn'}
+```
+
+The `native_finish_reason` field contains the underlying provider's original finish reason, which may differ from the normalized `finish_reason`.
+
+---
 
 ## Provider routing
 
@@ -218,6 +611,8 @@ model = ChatOpenRouter(
 
 See the [OpenRouter provider routing docs](https://openrouter.ai/docs/guides/routing/provider-selection) for the full list of options.
 
+---
+
 ## Reasoning output
 
 For models that support reasoning (e.g., `anthropic/claude-sonnet-4.5`, `deepseek/deepseek-r1`), you can enable reasoning tokens via the `openrouter_reasoning` parameter:
@@ -241,6 +636,8 @@ print(ai_msg.usage_metadata)
 # {'input_tokens': ..., 'output_tokens': ..., 'total_tokens': ...,
 #  'output_token_details': {'reasoning': ...}}
 ```
+
+---
 
 ## App attribution
 
