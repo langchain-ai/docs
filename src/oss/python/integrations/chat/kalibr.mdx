@@ -1,0 +1,129 @@
+# ChatKalibr
+
+This notebook provides a quick overview for getting started with Kalibr
+[chat models](/docs/integrations/chat/). For detailed documentation of all
+`ChatKalibr` features and configurations, head to the
+[API reference](https://pypi.org/project/langchain-kalibr/).
+
+## Overview
+
+**Kalibr is the first autonomous routing system for AI agents** — routing to the optimal execution path (model + tool + parameters) to prevent failures, degradations, and cost spikes before they impact users. Observability shows you what went wrong. Kalibr prevents it from happening.
+
+`ChatKalibr` exposes this as a LangChain chat model you can drop into any chain, agent, or LangGraph workflow.
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support | Package downloads | Package latest |
+|:------|:--------|:------|:-------------|:-----------|:----------------|:--------------|
+| `ChatKalibr` | `langchain-kalibr` | ❌ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-kalibr?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-kalibr?style=flat-square&label=%20) |
+
+### Model features
+
+| [Tool calling](/docs/how_to/tool_calling/) | [Structured output](/docs/how_to/structured_output/) | JSON mode | [Image input](/docs/how_to/multimodal_inputs/) | Audio input | Video input | [Token-level streaming](/docs/how_to/chat_streaming/) | Native async | [Token usage](/docs/how_to/chat_token_usage_tracking/) | [Logprobs](/docs/how_to/logprobs/) |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+
+## Setup
+
+### Credentials
+
+Get your API key and Tenant ID from
+[dashboard.kalibr.systems/settings](https://dashboard.kalibr.systems/settings):
+
+```python
+import os
+
+os.environ["KALIBR_API_KEY"] = "your-api-key"
+os.environ["KALIBR_TENANT_ID"] = "your-tenant-id"
+
+# Provider keys for models you want to route between:
+os.environ["OPENAI_API_KEY"] = "sk-..."
+os.environ["ANTHROPIC_API_KEY"] = "sk-ant-..."
+```
+
+### Installation
+
+```bash
+pip install -qU langchain-kalibr
+```
+
+## Instantiation
+
+```python
+from langchain_kalibr import ChatKalibr
+
+llm = ChatKalibr(
+    goal="summarize",
+    paths=["gpt-4o", "claude-sonnet-4-20250514"],
+)
+```
+
+## Invocation
+
+```python
+messages = [
+    ("system", "You are a helpful translator. Translate the user's sentence to French."),
+    ("human", "I love programming."),
+]
+response = llm.invoke(messages)
+print(response.content)
+```
+
+## Chaining
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+prompt = ChatPromptTemplate.from_template(
+    "Tell me a short joke about {topic}"
+)
+
+chain = prompt | llm | StrOutputParser()
+result = chain.invoke({"language": "English", "question": "What is Thompson Sampling?"})
+```
+
+## Outcome Reporting
+
+What makes Kalibr different from other routers is the feedback loop. You report outcomes — Kalibr learns from them and routes based on what actually works, not benchmarks:
+
+```python
+response = llm.invoke("Extract the email: Contact hello@example.com for details.")
+llm.report(success="@" in response.content)
+```
+
+Or use auto-reporting:
+
+```python
+llm = ChatKalibr(
+    goal="extract_email",
+    paths=["gpt-4o", "claude-sonnet-4-20250514"],
+    success_when=lambda output: "@" in output,
+)
+
+# Outcome reported automatically
+result = llm.invoke("Contact hello@example.com for details.")
+```
+
+## Execution Path Configuration
+
+Kalibr routes execution paths, not just model names. Route between different tool and parameter configurations:
+
+```python
+llm = ChatKalibr(
+    goal="research",
+    paths=[
+        {"model": "gpt-4o", "tools": ["web_search"]},
+        {"model": "gpt-4o", "tools": ["code_interpreter"]},
+        {"model": "claude-sonnet-4-20250514"},
+    ],
+)
+```
+
+Each `(model, tool, params)` combination is tracked separately. Kalibr learns which full configuration works best.
+
+## API reference
+
+For detailed documentation, see the
+[langchain-kalibr PyPI page](https://pypi.org/project/langchain-kalibr/)
+and [Kalibr documentation](https://kalibr.systems/docs).
