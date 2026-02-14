@@ -40,7 +40,7 @@ def make_backend(runtime):
     )
 
 agent = create_deep_agent(
-    store=InMemoryStore(),  # Required for StoreBackend
+    store=InMemoryStore(),  # Good for local dev; omit for LangSmith Deployment
     backend=make_backend,
     checkpointer=checkpointer
 )
@@ -54,7 +54,7 @@ import { CompositeBackend, StateBackend, StoreBackend } from "deepagents";
 import { InMemoryStore } from "@langchain/langgraph-checkpoint";
 
 const agent = createDeepAgent({
-  store: new InMemoryStore(),  // Required for StoreBackend
+  store: new InMemoryStore(),  // Good for local dev; omit for LangSmith Deployment
   backend: (config) => new CompositeBackend(
     new StateBackend(config),  // Ephemeral storage
     { "/memories/": new StoreBackend(config) }  // Persistent storage
@@ -159,6 +159,74 @@ await agent.invoke({
 // Agent can read /memories/preferences.txt from the first thread
 ```
 :::
+
+## Accessing memories from external code (LangSmith)
+
+If deploying your agent on LangSmith, you can read or write memories from server-side code (outside the agent) using the [Store API](/langsmith/agent-server-api/store). The `StoreBackend` stores files using the namespace `(assistant_id, "filesystem")`.
+
+:::python
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="<DEPLOYMENT_URL>")
+
+# Read a memory file (path without /memories/ prefix)
+item = await client.store.get_item(
+    (assistant_id, "filesystem"),
+    "/preferences.txt"
+)
+
+# Write a memory file
+await client.store.put_item(
+    (assistant_id, "filesystem"),
+    "/preferences.txt",
+    {
+        "content": ["line 1", "line 2"],
+        "created_at": "2024-01-15T10:30:00Z",
+        "modified_at": "2024-01-15T10:30:00Z"
+    }
+)
+
+# Search for items
+items = await client.store.search_items(
+    (assistant_id, "filesystem")
+)
+```
+:::
+
+:::js
+```typescript
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+// Read a memory file (path without /memories/ prefix)
+const item = await client.store.getItem(
+  [assistantId, "filesystem"],
+  "/preferences.txt"
+);
+
+// Write a memory file
+await client.store.putItem(
+  [assistantId, "filesystem"],
+  "/preferences.txt",
+  {
+    content: ["line 1", "line 2"],
+    created_at: "2024-01-15T10:30:00Z",
+    modified_at: "2024-01-15T10:30:00Z"
+  }
+);
+
+// Search for items
+const items = await client.store.searchItems([assistantId, "filesystem"]);
+```
+:::
+
+<Note>
+    The key does not include the `/memories/` prefix because `CompositeBackend` strips it before storing. See [Path routing](#path-routing) for details.
+</Note>
+
+For more information, see the [Store API reference](/langsmith/agent-server-api/store).
 
 ## Use cases
 
