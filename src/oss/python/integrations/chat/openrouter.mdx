@@ -12,7 +12,7 @@ This will help you get started with OpenRouter [chat models](/oss/langchain/mode
     For detailed documentation of all features and configuration options, head to the @[`ChatOpenRouter`] API reference.
 </Tip>
 
-For a full list of available models, visit the [OpenRouter docs](https://openrouter.ai/docs/guides/overview/models).
+For a full list of available models, visit the [OpenRouter models page](https://openrouter.ai/models).
 
 ## Overview
 
@@ -26,30 +26,11 @@ For a full list of available models, visit the [OpenRouter docs](https://openrou
 
 | [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
 | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
-| ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ## Setup
 
 To access models via OpenRouter you'll need to create an [OpenRouter account](https://openrouter.ai/), get an API key, and install the `langchain-openrouter` integration package.
-
-### Credentials
-
-Head to the [OpenRouter keys page](https://openrouter.ai/settings/keys) to sign up and generate an API key. Once you've done this set the `OPENROUTER_API_KEY` environment variable:
-
-```python
-import getpass
-import os
-
-if not os.getenv("OPENROUTER_API_KEY"):
-    os.environ["OPENROUTER_API_KEY"] = getpass.getpass("Enter your OpenRouter API key: ")
-```
-
-To enable automated tracing of your model calls, set your [LangSmith](https://docs.langchain.com/langsmith/home) API key:
-
-```python
-os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
-os.environ["LANGSMITH_TRACING"] = "true"
-```
 
 ### Installation
 
@@ -64,6 +45,25 @@ The LangChain OpenRouter integration lives in the `langchain-openrouter` package
     ```
 </CodeGroup>
 
+### Credentials
+
+Head to the [OpenRouter keys page](https://openrouter.ai/settings/keys) to sign up and generate an API key. Once you've done this set the `OPENROUTER_API_KEY` environment variable:
+
+```python
+import getpass
+import os
+
+if not os.getenv("OPENROUTER_API_KEY"):
+    os.environ["OPENROUTER_API_KEY"] = getpass.getpass("Enter your OpenRouter API key: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
 ## Instantiation
 
 Now we can instantiate our model object and generate chat completions:
@@ -71,8 +71,8 @@ Now we can instantiate our model object and generate chat completions:
 ```python
 from langchain_openrouter import ChatOpenRouter
 
-llm = ChatOpenRouter(
-    model="anthropic/claude-sonnet-4-5-20250929",
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
     temperature=0,
     max_tokens=1024,
     max_retries=2,
@@ -90,7 +90,7 @@ messages = [
     ),
     ("human", "I love programming."),
 ]
-ai_msg = llm.invoke(messages)
+ai_msg = model.invoke(messages)
 ai_msg.content
 ```
 
@@ -98,39 +98,137 @@ ai_msg.content
 "J'adore la programmation."
 ```
 
-## Provider routing
-
-OpenRouter can route requests to specific providers or define a fallback order. Use the `openrouter_provider` parameter to control this:
+## Streaming
 
 ```python
-llm = ChatOpenRouter(
-    model="anthropic/claude-sonnet-4-5-20250929",
-    openrouter_provider={"order": ["Anthropic"]},
+for chunk in model.stream("Write a short poem about the sea."):
+    print(chunk.text, end="", flush=True)
+```
+
+Async streaming is also supported:
+
+```python
+async for chunk in model.astream("Write a short poem about the sea."):
+    print(chunk.text, end="", flush=True)
+```
+
+## Provider routing
+
+Many models on OpenRouter are served by multiple providers. The `openrouter_provider` parameter gives you control over which providers handle your requests and how they're selected.
+
+### Ordering and filtering providers
+
+Use `order` to set a preferred provider sequence. OpenRouter tries each provider in order and falls back to the next if one is unavailable:
+
+```python
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
+    openrouter_provider={
+        "order": ["Anthropic", "Google"],
+        "allow_fallbacks": True,  # default; fall back beyond the order list if needed
+    },
 )
 ```
 
-You can also set a route preference for automatic fallback behavior:
+To restrict requests to specific providers only, use `only`. To exclude certain providers, use `ignore`:
 
 ```python
-llm = ChatOpenRouter(
-    model="anthropic/claude-sonnet-4-5-20250929",
+# Only use these providers (no fallback to others)
+model = ChatOpenRouter(
+    model="openai/gpt-4o",
+    openrouter_provider={"only": ["OpenAI", "Azure"]},
+)
+
+# Use any provider except DeepInfra
+model = ChatOpenRouter(
+    model="meta-llama/llama-4-maverick",
+    openrouter_provider={"ignore": ["DeepInfra"]},
+)
+```
+
+### Sorting by cost, speed, or latency
+
+By default, OpenRouter load-balances across providers with a preference for lower cost. Use `sort` to change the priority:
+
+```python
+# Prefer the fastest providers (highest tokens/second)
+model = ChatOpenRouter(
+    model="openai/gpt-4o",
+    openrouter_provider={"sort": "throughput"},
+)
+
+# Prefer the lowest-latency providers
+model = ChatOpenRouter(
+    model="openai/gpt-4o",
+    openrouter_provider={"sort": "latency"},
+)
+```
+
+### Data collection policy
+
+If your use case requires that providers do not store or train on your data, set `data_collection` to `"deny"`:
+
+```python
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
+    openrouter_provider={"data_collection": "deny"},
+)
+```
+
+### Filtering by quantization
+
+For open-weight models, you can restrict routing to specific precision levels:
+
+```python
+model = ChatOpenRouter(
+    model="meta-llama/llama-4-maverick",
+    openrouter_provider={"quantizations": ["fp16", "bf16"]},
+)
+```
+
+### Route parameter
+
+The `openrouter_route` parameter controls high-level routing behavior:
+
+- `"fallback"`: enable automatic failover across providers (default behavior).
+- `"sort"`: route based on the sorting strategy configured in `openrouter_provider`.
+
+```python
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
     openrouter_route="fallback",
 )
 ```
 
-See the [OpenRouter provider routing docs](https://openrouter.ai/docs/features/provider-routing) for details.
+### Combining options
+
+Provider options can be composed together:
+
+```python
+model = ChatOpenRouter(
+    model="openai/gpt-4o",
+    openrouter_provider={
+        "order": ["OpenAI", "Azure"],
+        "allow_fallbacks": False,       # strict — only use providers in order
+        "require_parameters": True,     # skip providers that don't support all params
+        "data_collection": "deny",
+    },
+)
+```
+
+See the [OpenRouter provider routing docs](https://openrouter.ai/docs/guides/routing/provider-selection) for the full list of options.
 
 ## Reasoning output
 
-For models that support reasoning (e.g., `anthropic/claude-sonnet-4-5-20250929`, `deepseek/deepseek-r1`), you can enable reasoning tokens via the `openrouter_reasoning` parameter:
+For models that support reasoning (e.g., `anthropic/claude-sonnet-4.5`, `deepseek/deepseek-r1`), you can enable reasoning tokens via the `openrouter_reasoning` parameter:
 
 ```python
-llm = ChatOpenRouter(
-    model="anthropic/claude-sonnet-4-5-20250929",
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
     openrouter_reasoning={"effort": "high"},
 )
 
-ai_msg = llm.invoke("What is the square root of 529?")
+ai_msg = model.invoke("What is the square root of 529?")
 
 # Reasoning content is available in additional_kwargs
 print(ai_msg.additional_kwargs.get("reasoning_content"))
@@ -149,29 +247,15 @@ print(ai_msg.usage_metadata)
 OpenRouter supports app attribution via HTTP headers. You can set these through init params or environment variables:
 
 ```python
-llm = ChatOpenRouter(
-    model="anthropic/claude-sonnet-4-5-20250929",
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
     app_url="https://myapp.com",   # or OPENROUTER_APP_URL env var
     app_title="My App",            # or OPENROUTER_APP_TITLE env var
 )
-```
-
-## Streaming
-
-```python
-for chunk in llm.stream("Write a short poem about the sea."):
-    print(chunk.text, end="", flush=True)
-```
-
-Async streaming is also supported:
-
-```python
-async for chunk in llm.astream("Write a short poem about the sea."):
-    print(chunk.text, end="", flush=True)
 ```
 
 ---
 
 ## API reference
 
-For detailed documentation of all ChatOpenRouter features and configurations, head to the [API reference](https://python.langchain.com/api_reference/openrouter/chat_models/langchain_openrouter.chat_models.ChatOpenRouter.html).
+For detailed documentation of all ChatOpenRouter features and configurations, head to the @[`ChatOpenRouter`] API reference.
