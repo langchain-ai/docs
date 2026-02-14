@@ -198,7 +198,7 @@ A **provider** is a third-party service or platform that LangChain integrates wi
 
 <Columns cols={{3}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />
-    <Card title="Embedding models" icon="layer-group" href="/oss/integrations/text_embedding" arrow />
+    <Card title="Embedding models" icon="layers-difference" href="/oss/integrations/text_embedding" arrow />
     <Card title="Tools and toolkits" icon="tool" href="/oss/integrations/tools" arrow />
 </Columns>
 
