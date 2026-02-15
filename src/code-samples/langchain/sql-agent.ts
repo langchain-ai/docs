@@ -147,6 +147,84 @@ for await (const step of stream) {
 }
 // :snippet-end:
 
+// :snippet-start: sql-agent-hitl-middleware-js
+import { createAgent, humanInTheLoopMiddleware } from "langchain"; // [!code highlight]
+import { MemorySaver } from "@langchain/langgraph"; // [!code highlight]
+
+const agent = createAgent({
+  model: "gpt-5.4",
+  tools: [executeSql],
+  systemPrompt: await getSystemPrompt(),
+  middleware: [
+    // [!code highlight]
+    humanInTheLoopMiddleware({
+      // [!code highlight]
+      interruptOn: {
+        execute_sql: true, // [!code highlight]
+      },
+      descriptionPrefix: "Tool execution pending approval", // [!code highlight]
+    }),
+  ], // [!code highlight]
+  checkpointer: new MemorySaver(), // [!code highlight]
+});
+// :snippet-end:
+
+// :snippet-start: sql-agent-hitl-run-js
+const question = "Which genre, on average, has the longest tracks?";
+const config = { configurable: { thread_id: "1" } }; // [!code highlight]
+
+const stream = await agent.stream(
+  { messages: [{ role: "user", content: question }] },
+  { ...config, streamMode: "values" }, // [!code highlight]
+);
+for await (const step of stream) {
+  if ("__interrupt__" in step) {
+    // [!code highlight]
+    console.log("INTERRUPTED:"); // [!code highlight]
+    for (const interrupt of step.__interrupt__) {
+      // [!code highlight]
+      for (const request of interrupt.value.actionRequests) {
+        // [!code highlight]
+        console.log(request.description); // [!code highlight]
+      }
+    }
+  } else if (step.messages) {
+    const message = step.messages.at(-1);
+    console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
+  }
+}
+// :snippet-end:
+
+// :snippet-start: sql-agent-hitl-resume-js
+import { Command } from "@langchain/langgraph"; // [!code highlight]
+
+// :remove-start:
+if (false) {
+  // :remove-end:
+  for await (const step of await agent.stream(
+    new Command({ resume: { decisions: [{ type: "approve" }] } }), // [!code highlight]
+    { ...config, streamMode: "values" },
+  )) {
+    if (step.messages) {
+      const message = step.messages.at(-1);
+      console.log(
+        `${message.role}: ${JSON.stringify(message.content, null, 2)}`,
+      );
+    }
+    if ("__interrupt__" in step) {
+      console.log("INTERRUPTED:");
+      for (const interrupt of step.__interrupt__) {
+        for (const request of interrupt.value.actionRequests) {
+          console.log(request.description);
+        }
+      }
+    }
+  }
+  // :remove-start:
+}
+// :remove-end:
+// :snippet-end:
+
 // :remove-start:
 async function main() {
   const dbPath = await resolveDbPath();
