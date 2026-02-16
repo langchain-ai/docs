@@ -55,7 +55,7 @@ const result = await agent.invoke(
 <Tab title="StoreBackend">
 
 ```typescript
-import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
+import { createDeepAgent, StoreBackend } from "deepagents";
 import {
   InMemoryStore,
   MemorySaver,
@@ -64,26 +64,18 @@ import {
 const checkpointer = new MemorySaver();
 const store = new InMemoryStore();
 
-function createFileData(content: string): FileData {
-  const now = new Date().toISOString();
-  return {
-    content: content.split("\n"),
-    created_at: now,
-    modified_at: now,
-  };
-}
-
 const skillUrl =
   "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
 
 const response = await fetch(skillUrl);
 const skillContent = await response.text();
-const fileData = createFileData(skillContent);
-
-await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
+const backend = new StoreBackend({ state: {}, store });
+await backend.uploadFiles([
+  ["/skills/langgraph-docs/SKILL.md", new TextEncoder().encode(skillContent)],
+]);
 
 const agent = await createDeepAgent({
-  backend: new StoreBackend(),
+  backend: backend,
   store: store,
   checkpointer,
   // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
@@ -118,17 +110,30 @@ import { createDeepAgent, FilesystemBackend } from "deepagents";
 import { MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
-const backend = new FilesystemBackend({ rootDir: process.cwd() });
+
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
+
+const backend = new FilesystemBackend({
+  rootDir: process.cwd(),
+  virtualMode: true,
+});
+backend.uploadFiles([
+  ["/skills/langgraph-docs/SKILL.md", new TextEncoder().encode(skillContent)],
+]);
 
 const agent = await createDeepAgent({
   backend,
-  skills: ["./examples/skills/"],
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+  skills: ["/skills/"],
   interruptOn: {
     read_file: true,
     write_file: true,
     delete_file: true,
   },
-  checkpointer, // Required!
+  checkpointer, // Required for filesystem operations!
 });
 
 const config = {
