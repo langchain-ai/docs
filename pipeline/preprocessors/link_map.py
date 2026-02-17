@@ -36,6 +36,7 @@ LINK_MAPS: list[LinkMap] = [
             "create_agent": "langchain/agents/#langchain.agents.create_agent",
             "create_agent(tools)": "langchain/agents/#langchain.agents.create_agent(tools)",
             "create_agent(response_format)": "langchain/agents/#langchain.agents.create_agent(response_format)",
+            "create_agent(name)": "langchain/agents/#langchain.agents.create_agent(name)",
             "system_prompt": "langchain/agents/#langchain.agents.create_agent(system_prompt)",
             "AgentState": "langchain/agents/#langchain.agents.AgentState",
             "ModelRequest": "langchain/middleware/#langchain.agents.middleware.ModelRequest",
@@ -114,6 +115,9 @@ LINK_MAPS: list[LinkMap] = [
             "AzureOpenAI": "integrations/langchain_openai/AzureOpenAI",
             "OpenAIEmbeddings": "integrations/langchain_openai/OpenAIEmbeddings",
             "AzureOpenAIEmbeddings": "integrations/langchain_openai/AzureOpenAIEmbeddings",
+            # langchain-openrouter
+            "langchain-openrouter": "integrations/langchain_openrouter",
+            "ChatOpenRouter": "integrations/langchain_openrouter/ChatOpenRouter",
             # langchain-anthropic
             "langchain-anthropic": "integrations/langchain_anthropic",
             "ChatAnthropic": "integrations/langchain_anthropic/ChatAnthropic",

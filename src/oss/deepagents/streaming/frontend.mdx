@@ -1,0 +1,518 @@
+---
+title: Frontend
+description: Build React UIs that display real-time subagent streams from deep agents
+---
+
+The `useStream` React hook provides built-in support for deep agent streaming. It automatically tracks subagent lifecycles, separates subagent messages from the main conversation, and exposes a rich API for building multi-agent UIs.
+
+Key features for deep agents:
+
+* <Icon icon="diagram-subtask" size={16} /> **Subagent tracking** — Automatic lifecycle management for each subagent (pending, running, complete, error)
+* <Icon icon="filter" size={16} /> **Message filtering** — Separate subagent messages from the main conversation stream
+* <Icon icon="screwdriver-wrench" size={16} /> **Tool call visibility** — Access tool calls and results from within subagent execution
+* <Icon icon="arrows-rotate" size={16} /> **State reconstruction** — Restore subagent state from thread history on page reload
+
+## Installation
+
+Install the LangGraph SDK to use the `useStream` hook in your React application:
+
+:::js
+```bash
+npm install @langchain/langgraph-sdk
+```
+:::
+
+## Basic usage
+
+To stream from a deep agent with subagents, configure `useStream` with `filterSubagentMessages` and pass `streamSubgraphs: true` when submitting:
+
+```tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+
+function DeepAgentChat() {
+  const stream = useStream<typeof agent>({
+    assistantId: "deep-agent",
+    apiUrl: "http://localhost:2024",
+    filterSubagentMessages: true,  // Keep subagent messages separate
+  });
+
+  const handleSubmit = (message: string) => {
+    stream.submit(
+      { messages: [{ content: message, type: "human" }] },
+      { streamSubgraphs: true }  // Enable subagent streaming
+    );
+  };
+
+  return (
+    <div>
+      {/* Main conversation messages (subagent messages filtered out) */}
+      {stream.messages.map((message, idx) => (
+        <div key={message.id ?? idx}>
+          {message.type}: {message.content}
+        </div>
+      ))}
+
+      {/* Subagent progress */}
+      {stream.activeSubagents.length > 0 && (
+        <div>
+          <h3>Active subagents:</h3>
+          {stream.activeSubagents.map((subagent) => (
+            <SubagentCard key={subagent.id} subagent={subagent} />
+          ))}
+        </div>
+      )}
+
+      {stream.isLoading && <div>Loading...</div>}
+    </div>
+  );
+}
+```
+
+<Tip>
+Learn how to [deploy your deep agents to LangSmith](/oss/langchain/deploy) for production-ready hosting with built-in observability, authentication, and scaling.
+</Tip>
+
+<Accordion title="Deep agent `useStream` parameters">
+
+In addition to the [standard `useStream` parameters](/oss/langchain/streaming/frontend), deep agent streaming supports:
+
+<ParamField body="filterSubagentMessages" type="boolean" default="false">
+    When `true`, subagent messages are excluded from the main `stream.messages` array. Access them instead via `stream.subagents.get(id).messages`. This keeps the main conversation clean.
+</ParamField>
+
+<ParamField body="subagentToolNames" type="string[]" default="['task']">
+    The tool names that spawn subagents. By default, deep agents use the `task` tool to delegate work to subagents. Only change this if you've customized the tool name.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Deep agent `useStream` return values">
+
+In addition to the [standard return values](/oss/langchain/streaming/frontend), deep agent streaming provides:
+
+<ParamField body="subagents" type="Map<string, SubagentStream>">
+    A map of all subagents, keyed by tool call ID. Each subagent includes its messages, status, tool calls, and result.
+</ParamField>
+
+<ParamField body="activeSubagents" type="SubagentStream[]">
+    An array of currently running subagents (status is `"pending"` or `"running"`).
+</ParamField>
+
+<ParamField body="getSubagent" type="(toolCallId: string) => SubagentStream | undefined">
+    Get a specific subagent by its tool call ID.
+</ParamField>
+
+<ParamField body="getSubagentsByMessage" type="(messageId: string) => SubagentStream[]">
+    Get all subagents triggered by a specific AI message. Useful for associating subagents with the message that spawned them.
+</ParamField>
+
+<ParamField body="getSubagentsByType" type="(type: string) => SubagentStream[]">
+    Filter subagents by their `subagent_type` (e.g., `"researcher"`, `"writer"`).
+</ParamField>
+
+</Accordion>
+
+## Subagent stream interface
+
+Each subagent in the `stream.subagents` map exposes a stream-like interface:
+
+```tsx
+interface SubagentStream {
+  // Identity
+  id: string;                    // Tool call ID
+  toolCall: {                    // Original task tool call
+    subagent_type: string;
+    description: string;
+  };
+
+  // Lifecycle
+  status: "pending" | "running" | "complete" | "error";
+  startedAt: Date | null;
+  completedAt: Date | null;
+  isLoading: boolean;
+
+  // Content
+  messages: Message[];           // Subagent's messages
+  values: Record<string, any>;   // Subagent's state
+  result: string | null;         // Final result
+  error: string | null;          // Error message
+
+  // Tool calls
+  toolCalls: ToolCallWithResult[];
+  getToolCalls: (message: Message) => ToolCallWithResult[];
+
+  // Hierarchy
+  depth: number;                 // Nesting depth (0 for top-level subagents)
+  parentId: string | null;       // Parent subagent ID (for nested subagents)
+}
+```
+
+## Rendering subagent streams
+
+### Subagent cards
+
+Build cards that show each subagent's streaming content, status, and progress:
+
+```tsx
+import { AIMessage } from "langchain";
+import { useStream, type SubagentStream } from "@langchain/langgraph-sdk/react";
+import type { Message } from "@langchain/langgraph-sdk";
+import type { agent } from "./agent";
+
+function SubagentCard({ subagent }: { subagent: SubagentStream<typeof agent> }) {
+  const content = getStreamingContent(subagent.messages);
+
+  return (
+    <div className="border rounded-lg p-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-2">
+        <StatusIcon status={subagent.status} />
+        <span className="font-medium">{subagent.toolCall.subagent_type}</span>
+        <span className="text-sm text-gray-500">
+          {subagent.toolCall.description}
+        </span>
+      </div>
+
+      {/* Streaming content */}
+      {content && (
+        <div className="prose text-sm mt-2">
+          {content}
+        </div>
+      )}
+
+      {/* Result */}
+      {subagent.status === "complete" && subagent.result && (
+        <div className="mt-2 p-2 bg-green-50 rounded text-sm">
+          {subagent.result}
+        </div>
+      )}
+
+      {/* Error */}
+      {subagent.status === "error" && subagent.error && (
+        <div className="mt-2 p-2 bg-red-50 rounded text-sm text-red-700">
+          {subagent.error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case "pending":
+      return <span className="text-gray-400">⏳</span>;
+    case "running":
+      return <span className="animate-spin">⚙️</span>;
+    case "complete":
+      return <span className="text-green-500">✓</span>;
+    case "error":
+      return <span className="text-red-500">✗</span>;
+    default:
+      return null;
+  }
+}
+
+/** Extract text content from subagent messages */
+function getStreamingContent(messages: Message[]): string {
+  return messages
+    .filter((m) => m.type === "ai")
+    .map((m) => {
+      if (typeof m.content === "string") return m.content;
+      if (Array.isArray(m.content)) {
+        return m.content
+          .filter((c): c is { type: "text"; text: string } =>
+            c.type === "text" && "text" in c
+          )
+          .map((c) => c.text)
+          .join("");
+      }
+      return "";
+    })
+    .join("");
+}
+```
+
+### Map subagents to messages
+
+Use `getSubagentsByMessage` to associate subagent cards with the AI message that triggered them:
+
+```tsx
+import { useMemo } from "react";
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+
+function DeepAgentChat() {
+  const stream = useStream<typeof agent>({
+    assistantId: "deep-agent",
+    apiUrl: "http://localhost:2024",
+    filterSubagentMessages: true,
+  });
+
+  // Map subagents to the human message that triggered them
+  const subagentsByMessage = useMemo(() => {
+    const result = new Map();
+    const messages = stream.messages;
+
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].type !== "human") continue;
+
+      // The next message should be the AI message with task tool calls
+      const next = messages[i + 1];
+      if (!next || next.type !== "ai" || !next.id) continue;
+
+      const subagents = stream.getSubagentsByMessage(next.id);
+      if (subagents.length > 0) {
+        result.set(messages[i].id, subagents);
+      }
+    }
+    return result;
+  }, [stream.messages, stream.subagents]);
+
+  return (
+    <div>
+      {stream.messages.map((message, idx) => (
+        <div key={message.id ?? idx}>
+          <MessageBubble message={message} />
+
+          {/* Show subagent pipeline after the human message that triggered it */}
+          {message.type === "human" && subagentsByMessage.has(message.id) && (
+            <SubagentPipeline
+              subagents={subagentsByMessage.get(message.id)!}
+              isLoading={stream.isLoading}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### Subagent pipeline with progress
+
+Show a progress bar and grid of subagent cards:
+
+```tsx
+function SubagentPipeline({
+  subagents,
+  isLoading,
+}: {
+  subagents: SubagentStream[];
+  isLoading: boolean;
+}) {
+  const completed = subagents.filter(
+    (s) => s.status === "complete" || s.status === "error"
+  ).length;
+
+  const allDone = completed === subagents.length;
+
+  return (
+    <div className="my-4 space-y-3">
+      {/* Progress header */}
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">
+          Subagents ({completed}/{subagents.length})
+        </span>
+        {allDone && isLoading && (
+          <span className="text-blue-500 animate-pulse">
+            Synthesizing results...
+          </span>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-blue-500 transition-all duration-300"
+          style={{ width: `${(completed / subagents.length) * 100}%` }}
+        />
+      </div>
+
+      {/* Subagent cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {subagents.map((subagent) => (
+          <SubagentCard key={subagent.id} subagent={subagent} />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+## Rendering tool calls
+
+Display tool calls and results from within subagent execution using the `toolCalls` property:
+
+```tsx
+function SubagentWithTools({ subagent }: { subagent: SubagentStream }) {
+  return (
+    <div className="border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <StatusIcon status={subagent.status} />
+        <span className="font-medium">{subagent.toolCall.subagent_type}</span>
+        {subagent.toolCalls.length > 0 && (
+          <span className="text-xs bg-gray-100 px-2 py-0.5 rounded-full">
+            {subagent.toolCalls.length} tool calls
+          </span>
+        )}
+      </div>
+
+      {/* Tool calls */}
+      {subagent.toolCalls.map((tc) => (
+        <div key={tc.call.id} className="mb-2 p-2 bg-gray-50 rounded text-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs">{tc.call.name}</span>
+            {tc.result !== undefined ? (
+              <span className="text-green-600 text-xs">completed</span>
+            ) : (
+              <span className="text-yellow-600 text-xs animate-pulse">
+                running...
+              </span>
+            )}
+          </div>
+
+          {/* Tool arguments */}
+          <pre className="text-xs text-gray-600 mt-1 overflow-x-auto">
+            {JSON.stringify(tc.call.args, null, 2)}
+          </pre>
+
+          {/* Tool result */}
+          {tc.result !== undefined && (
+            <div className="mt-1 pt-1 border-t text-xs">
+              {typeof tc.result === "string"
+                ? tc.result.slice(0, 200)
+                : JSON.stringify(tc.result, null, 2)}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* Streaming content */}
+      <div className="mt-2 prose text-sm">
+        {getStreamingContent(subagent.messages)}
+      </div>
+    </div>
+  );
+}
+```
+
+## Thread persistence
+
+Persist thread IDs across page reloads so users can return to their deep agent conversations:
+
+```tsx
+import { useCallback, useState, useEffect } from "react";
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+
+function useThreadIdParam() {
+  const [threadId, setThreadId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("threadId");
+  });
+
+  const updateThreadId = useCallback((id: string) => {
+    setThreadId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("threadId", id);
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  return [threadId, updateThreadId] as const;
+}
+
+function PersistentDeepAgentChat() {
+  const [threadId, onThreadId] = useThreadIdParam();
+
+  const stream = useStream<typeof agent>({
+    assistantId: "deep-agent",
+    apiUrl: "http://localhost:2024",
+    filterSubagentMessages: true,
+    threadId,
+    onThreadId,
+    reconnectOnMount: true,  // Auto-resume stream after page reload
+  });
+
+  return (
+    <div>
+      {stream.messages.map((message, idx) => (
+        <div key={message.id ?? idx}>
+          {message.type}: {message.content}
+        </div>
+      ))}
+
+      {/* Subagents are reconstructed from thread history on reload */}
+      {[...stream.subagents.values()].map((subagent) => (
+        <SubagentCard key={subagent.id} subagent={subagent} />
+      ))}
+    </div>
+  );
+}
+```
+
+<Note>
+When a page reloads, `useStream` reconstructs subagent state from thread history. Completed subagents are restored with their final status and result, so users see the full conversation history including subagent work.
+</Note>
+
+## Type safety
+
+:::js
+For full type safety, pass your agent type to `useStream`. This gives you typed access to state, messages, tool calls, and subagent data:
+
+```tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+
+function TypedDeepAgentChat() {
+  const stream = useStream<typeof agent>({
+    assistantId: "deep-agent",
+    apiUrl: "http://localhost:2024",
+    filterSubagentMessages: true,
+  });
+
+  // stream.values is typed to your agent's state
+  // stream.messages has typed tool calls
+  // stream.subagents has typed subagent data
+}
+```
+:::
+
+:::python
+For Python type safety, use type annotations when accessing stream state:
+
+```python
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(
+    system_prompt="You are a helpful assistant",
+    subagents=[...],
+)
+
+# Type hints are inferred from the agent definition
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Hello"}]}
+)
+# result["messages"] is typed as list of messages
+```
+:::
+
+## Complete examples
+
+For full working implementations that combine all the patterns above, see these examples in the LangGraph.js repository:
+
+<Card title="Deep agent example" icon="diagram-subtask" href="https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/deepagent">
+  Parallel subagents with a grid layout, streaming content, progress tracking, and synthesis detection.
+</Card>
+
+<Card title="Deep agent with tool calls" icon="screwdriver-wrench" href="https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/deepagent-tools">
+  Tool call visibility, thread persistence, expandable subagent cards, and automatic reconnection on page reload.
+</Card>
+
+## Related
+
+- [Streaming overview](/oss/deepagents/streaming/overview) — Server-side streaming with deep agents
+- [Subagents](/oss/deepagents/subagents) — Configure and use subagents with deep agents
+- [LangChain frontend streaming](/oss/langchain/streaming/frontend) — General `useStream` documentation
+- [useStream API Reference](https://reference.langchain.com/javascript/functions/_langchain_langgraph-sdk.react.useStream.html) — Full API documentation
+- [Agent Chat UI](/oss/langchain/ui) — Pre-built chat interface for LangGraph agents
