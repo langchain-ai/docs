@@ -34,6 +34,7 @@ MIN_DOWNLOADS = 100_000
 
 DOCS_DIR = Path(__file__).parents[2]
 PROVIDERS_PATH = Path() / "src" / "oss" / "python" / "integrations" / "providers"
+REFERENCE_INTEGRATIONS_PATH = Path() / "reference" / "python" / "docs" / "integrations"
 PACKAGE_YML = Path() / "reference" / "packages.yml"
 
 # Load package registry
@@ -115,6 +116,11 @@ def _enrich_package(p: dict) -> dict | None:
         raise ValueError(msg)
 
     # Handling for package URLs
+    ref_doc_name = p["name"].replace("-", "_")
+    has_reference_docs = (
+        DOCS_DIR / REFERENCE_INTEGRATIONS_PATH / f"{ref_doc_name}.md"
+    ).exists()
+
     if p["type"] in ("monorepo", "langchain-org"):
         if p.get("integration") == "false":
             # I don't think we'll hit this case since we filter them out?
@@ -123,9 +129,15 @@ def _enrich_package(p: dict) -> dict | None:
             # Integration
             p["package_url"] = (
                 "https://reference.langchain.com/python/integrations"
-                f"/{p['name'].replace('-', '_')}/"
+                f"/{ref_doc_name}/"
             )
-    else:  # Third-party
+    elif has_reference_docs:
+        # Third-party package with reference docs hosted on reference site
+        p["package_url"] = (
+            "https://reference.langchain.com/python/integrations"
+            f"/{ref_doc_name}/"
+        )
+    else:  # Third-party without reference docs
         p["package_url"] = f"https://pypi.org/project/{p['name']}/"
 
     return p
