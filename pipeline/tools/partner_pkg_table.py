@@ -128,14 +128,12 @@ def _enrich_package(p: dict) -> dict | None:
         else:
             # Integration
             p["package_url"] = (
-                "https://reference.langchain.com/python/integrations"
-                f"/{ref_doc_name}/"
+                f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
             )
     elif has_reference_docs:
         # Third-party package with reference docs hosted on reference site
         p["package_url"] = (
-            "https://reference.langchain.com/python/integrations"
-            f"/{ref_doc_name}/"
+            f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
         )
     else:  # Third-party without reference docs
         p["package_url"] = f"https://pypi.org/project/{p['name']}/"
