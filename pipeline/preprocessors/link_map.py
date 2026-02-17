@@ -114,6 +114,9 @@ LINK_MAPS: list[LinkMap] = [
             "AzureOpenAI": "integrations/langchain_openai/AzureOpenAI",
             "OpenAIEmbeddings": "integrations/langchain_openai/OpenAIEmbeddings",
             "AzureOpenAIEmbeddings": "integrations/langchain_openai/AzureOpenAIEmbeddings",
+            # langchain-openrouter
+            "langchain-openrouter": "integrations/langchain_openrouter",
+            "ChatOpenRouter": "integrations/langchain_openrouter/ChatOpenRouter",
             # langchain-anthropic
             "langchain-anthropic": "integrations/langchain_anthropic",
             "ChatAnthropic": "integrations/langchain_anthropic/ChatAnthropic",
