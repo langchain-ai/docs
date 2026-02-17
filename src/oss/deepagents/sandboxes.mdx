@@ -33,18 +33,14 @@ graph LR
 
 ## Why use sandboxes?
 
-A sandbox provides:
+Sandboxes are used for security.
+They let agents execute arbitrary code, access files, and use the network without compromising your credentials, local files, or host system.
+This isolation is essential when agents run autonomously.
 
-- **Security** — Code runs in isolation; it can't access your credentials, files, or network
-- **Clean environments** — Use specific dependencies or OS configurations without local setup
-- **Reproducibility** — Consistent execution environments across teams
-- **Flexibility** — Switch between cloud providers or use local VFS for development
+Sandboxes are especially useful for:
 
-Unlike an in-process Python interpreter, sandboxes also provide the agent with the following abilities:
-
-- **Shell and git** — Run arbitrary commands, use version control, and work with different languages in the same session
-- **Clone repositories** — Many providers offer native git APIs (e.g., [Daytona's git operations](https://www.daytona.io/docs/en/git-operations/)) so the agent can clone and work with repos
-- **Docker-in-Docker** — Run containers inside the sandbox for build and test pipelines
+- Coding agents: Agents that run autonomously can use shell, git, clone repositories (many providers offer native git APIs, e.g., [Daytona's git operations](https://www.daytona.io/docs/en/git-operations/)), and run Docker-in-Docker for build and test pipelines
+- Data analysis agents — Load files, install data analysis libraries (pandas, numpy, etc.), run statistical calculations, and create outputs like PowerPoint presentations in a safe, isolated environment
 
 ## Available providers
 
@@ -490,7 +486,7 @@ Sandboxes consume resources (and cost money for cloud providers) until they're s
 You **must clean them up** when done. Use `try/finally` to ensure cleanup even when the agent throws an error.
 
 <Tip>
-**Recommend TTL for chat applications.** When users can re-engage after idle time, you often don't know if or when they'll return. Configure a time-to-live (TTL) on the sandbox—for example, TTL to archive or TTL to delete—so the provider automatically cleans up idle sandboxes. Many sandbox providers support this.
+**TTL for chat applications.** When users can re-engage after idle time, you often don't know if or when they'll return. Configure a time-to-live (TTL) on the sandbox—for example, TTL to archive or TTL to delete—so the provider automatically cleans up idle sandboxes. Many sandbox providers support this.
 </Tip>
 
 ### Basic lifecycle
@@ -574,6 +570,59 @@ finally:
 </Tabs>
 :::
 
+### Per-conversation lifecycle
+
+In chat applications, a conversation is typically represented by a `thread_id`.
+Each thread should have a unique sandbox associated with it.
+
+For convenience, we recommend using the sandbox ID assigned by the provider when the sandbox is created as the `thread_id`.
+If your sandbox ID and `thread_id` differ, store the mapping in your application, or with the sandbox if the sandbox provider allows attaching metadata to the sandbox.
+
+:::python
+
+The following example shows a get-or-create pattern using Daytona.
+For other providers, consult the sandbox provider API for the equivalent labels, metadata, and TTL options:
+
+```python
+import uuid
+
+from daytona import CreateSandboxFromSnapshotParams, Daytona
+from langchain_daytona import DaytonaSandbox
+
+client = Daytona()
+thread_id = str(uuid.uuid4())
+
+# Get or create sandbox by thread_id
+try:
+    sandbox = client.find_one(labels={"thread_id": thread_id})
+except Exception:
+    params = CreateSandboxFromSnapshotParams(
+        labels={"thread_id": thread_id},
+        # Add TTL so the sandbox is cleaned up when idle
+        auto_delete_interval=3600,
+    )
+    sandbox = client.create(params)
+
+backend = DaytonaSandbox(sandbox=sandbox)
+agent = create_deep_agent(..., backend=backend)
+
+try:
+    result = agent.invoke(
+        ...,
+        {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        },
+    )
+except Exception:
+    # Optional: delete the sandbox proactively on an exception
+    sandbox.delete()
+    raise
+```
+
+:::
+
 ### Sandbox patterns
 
 When integrating sandboxes, you have two patterns:
@@ -648,20 +697,33 @@ agent = create_deep_agent(
 
 ### Sandboxes in middleware
 
-If you provision sandboxes in [middleware](/oss/deepagents/middleware), there is no `on_error` hook for cleanup when exceptions occur. As a workaround:
+If you provision sandboxes in [middleware](/oss/deepagents/middleware), follow these guidelines to manage lifecycle:
+
+1. **Set a TTL** for the sandbox—most providers support this.
+    End-users may at any point stop chatting with an agent, so it is best practice to deleter or archive sandboxes aftere some amount of inactivity to avoid ongoing costs.
+2. **Wrap `agent.invoke()` in try/finally** to ensure cleanup runs whether the invocation succeeds or raises:
 
 :::python
 
-1. **Set a TTL** for the sandbox—most providers support this. Use it even on the happy path; it's especially important when cleanup might not run.
-2. **Use `wrapModelCall` and `wrapToolCall` hooks** to catch unexpected exceptions and clean up resources. Note that this won't help for node-style hooks (`before_agent`, `after_agent`, `before_model`, `after_model`) if the exception arises from other middleware.
+```python
+try:
+    result = agent.invoke({ "messages": [...] })
+finally:
+    # cleanup sandbox (delete, archive, etc.)
+    ...
+```
 
 :::
 :::js
 
-If you provision sandboxes in [middleware](/oss/deepagents/middleware), there is no `on_error` hook for cleanup when exceptions occur. As a workaround:
-
-1. **Set a TTL** for the sandbox—most providers support this. Use it even on the happy path; it's especially important when cleanup might not run.
-2. **Use `wrap_model_call` and `wrap_tool_call` hooks** to catch unexpected exceptions and clean up resources. Note that this won't help for node-style hooks (`before_agent`, `after_agent`, `before_model`, `after_model`) if the exception arises from other middleware.
+```typescript
+try {
+  const result = await agent.invoke({ messages: [...] });
+} finally {
+  // cleanup sandbox (delete, archive, etc.)
+  ...
+}
+```
 
 :::
 
