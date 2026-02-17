@@ -220,8 +220,6 @@ export SSL_CERT_FILE='path/to/cert.pem'  # Optional: custom SSL certificate
 For SOCKS5 proxies or advanced proxy configuration, use the `client_args` parameter:
 
 ```python
-from langchain_google_genai import ChatGoogleGenerativeAI
-
 model = ChatGoogleGenerativeAI(
     model="gemini-3-pro-preview",
     client_args={"proxy": "socks5://user:pass@host:port"},
@@ -255,41 +253,19 @@ ai_msg
 <Note>
     **Message content shape**
 
-    Gemini 3 series models will always return a list of content blocks to capture [thought signatures](#thought-signatures). Use the `.text` property to recover string content.
+    Gemini 3 series models return a list of content blocks to capture [thought signatures](#thought-signatures). Use `.text` to get string content:
 
     ```python
-    response.content  # -> [{"type": "text", "text": "Hello!", "extras": {"signature": "EpQFCp...lKx64r"}}]
+    response.content  # -> [{"type": "text", "text": "Hello!", "extras": {"signature": "EpQFCp..."}}]
     response.text     # -> "Hello!"
     ```
+
+    Gemini 2.5 and earlier return a plain string for `.content`.
 </Note>
-
-```python
-print(ai_msg.content)
-```
-
-<CodeGroup>
-    ```plaintext Gemini 3
-    [{'type': 'text',
-    'text': "J'adore la programmation.",
-    'extras': {'signature': '...'}}]
-    ```
-
-    ```plaintext Gemini 2.5
-    J'adore la programmation.
-    ```
-</CodeGroup>
-
-```python
-print(ai_msg.text)
-```
-
-```text
-J'adore la programmation.
-```
 
 ## Multimodal usage
 
-Gemini models can accept multimodal inputs (text, images, audio, video) and, for some models, generate multimodal outputs.
+Gemini models accept multimodal inputs (text, images, audio, video, PDFs) and some models can generate multimodal outputs.
 
 ### Supported input methods
 
@@ -662,21 +638,18 @@ Provide video file inputs along with text.
 </CodeGroup>
 
 <Note>
-    **YouTube limitations**
+    **YouTube video input (preview)**
+
     - Only public videos are supported (not private or unlisted)
     - Free tier: max 8 hours of YouTube video per day
-    - Feature is currently in preview
 </Note>
 
 ### Image generation
 
-Certain models can generate text and images inline. See more information on the [Gemini API docs](https://ai.google.dev/gemini-api/docs/image-generation) for details.
-
-This example demonstrates how to generate and display an image in a Jupyter notebook:
+Certain models can generate text and images inline. See [Gemini API docs](https://ai.google.dev/gemini-api/docs/image-generation) for details.
 
 ```python
 import base64
-
 from IPython.display import Image, display
 from langchain.messages import AIMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -693,47 +666,27 @@ def _get_image_base64(response: AIMessage) -> None:
     )
     return image_block["image_url"].get("url").split(",")[-1]
 
-
 image_base64 = _get_image_base64(response)
 display(Image(data=base64.b64decode(image_base64), width=300))
 ```
 
-Use `image_config` to control resulting image dimensions and quality. See [`genai.types.ImageConfig`](https://googleapis.github.io/python-genai/genai.html#genai.types.ImageConfig)
-for a list of supported fields and their values.
+Use `image_config` to control image dimensions and quality (see [`genai.types.ImageConfig`](https://googleapis.github.io/python-genai/genai.html#genai.types.ImageConfig)). It can be set at instantiation (applies to all calls) or at invocation (per-call override):
 
-Setting `image_config` during instantiation applies the configuration to all invocations, while setting it during invocation overrides the default for that call only; this allows for flexible control over generation parameters on a per-request basis.
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-<CodeGroup>
-    ```python Instantiation
-    from langchain_google_genai import ChatGoogleGenerativeAI
+# Set at instantiation (applies to all calls)
+model = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-image",
+    image_config={"aspect_ratio": "16:9"}, # [!code highlight]
+)
 
-    model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash-image", # [!code highlight]
-        image_config={ # [!code highlight]
-            "aspect_ratio": "16:9", # [!code highlight]
-        }, # [!code highlight]
-    )
-
-    response = model.invoke("Generate a photorealistic image of a cuddly cat wearing a hat.")
-    ```
-
-    ```python Invocation
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash-image") # [!code highlight]
-
-    response = model.invoke(
-        "Generate a photorealistic image of a cuddly cat wearing a hat.",
-        image_config={ # [!code highlight]
-            "aspect_ratio": "1:1", # [!code highlight]
-        }, # [!code highlight]
-    )
-    ```
-</CodeGroup>
-
-<Note>
-    Supported parameters vary by model and backend (Gemini Developer API and Vertex AI each support different subsets of parameters and models).
-</Note>
+# Or override per call
+response = model.invoke(
+    "Generate a photorealistic image of a cuddly cat wearing a hat.",
+    image_config={"aspect_ratio": "1:1"}, # [!code highlight]
+)
+```
 
 By default, image generation models may return both text and images (e.g. *"Ok! Here's an image of a..."*).
 
@@ -767,7 +720,7 @@ You can request that the model only return images by setting the `response_modal
 
 ### Audio generation
 
-Certain models can generate audio files. See more information on the [Gemini API docs](https://ai.google.dev/gemini-api/docs/speech-generation) for details.
+Certain models can generate audio files. See [Gemini API docs](https://ai.google.dev/gemini-api/docs/speech-generation) for details.
 
 <Warning>
     **Vertex AI Limitation**
@@ -832,10 +785,6 @@ final_response
 [{'name': 'get_weather', 'args': {'location': 'Boston'}, 'id': '879b4233-901b-4bbb-af56-3771ca8d3a75', 'type': 'tool_call'}]
 ```
 
-```text
-AIMessage(content=[{'type': 'text', 'text': 'The weather in Boston is sunny.'}], additional_kwargs={}, response_metadata={'prompt_feedback': {'block_reason': 0, 'safety_ratings': []}, 'finish_reason': 'STOP', 'model_name': 'gemini-3-pro-preview', 'safety_ratings': [], 'model_provider': 'google_genai'}, id='lc_run--190be543-c974-460b-a708-7257892c3121-0', usage_metadata={'input_tokens': 143, 'output_tokens': 7, 'total_tokens': 150, 'input_token_details': {'cache_read': 0}})
-```
-
 ## Structured output
 
 Force the model to respond with a specific structure. See the [Gemini API docs](https://ai.google.dev/gemini-api/docs/structured-output) for more info.
@@ -879,41 +828,37 @@ Two methods are supported for structured output:
 - **`method="json_schema"` (default)**: Uses Gemini's native structured output. Recommended for better reliability, as it constrains the model's generation process directly rather than relying on post-processing tool calls.
 - **`method="function_calling"`**: Uses tool calling to extract structured data.
 
-#### Avoid Using Additional Tools with Structured Output
+### Combining structured output with Google Search
 
-When using `with_structured_output(method="function_calling")`, avoid passing additional tools (like `Google Search`) directly in the `invoke()` call. 
+When using `with_structured_output(method="function_calling")`, do not pass additional tools (like Google Search) in the same call.
 
-If the model decides to use a tool (such as searching the web) before generating the structured response, the internal parser will fail to find the expected schema and return `None`.
-:::
-
-#### ❌ The Failing Pattern
-This code will often crash because the model returns a "Tool Call" instead of the structured object:
+To get structured output **and** search grounding in a single call, use `.bind()` with `response_mime_type` and `response_schema` instead of `with_structured_output`:
 
 ```python
-structured_llm = llm.with_structured_output(WeatherResponse)
+from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel
 
-# Model searches first -> returns None to the parser
-response = structured_llm.invoke(
-    "What is the weather in Hyderabad?", 
-    tools=[{"google_search": {}}]
-)
-print(response.city) # Raises AttributeError: 'NoneType' object
-```
 
-✅ The Recommended Pattern: "Gather then Extract"
-Separate the "Action" (searching) from the "Extraction" (formatting).
+class MatchResult(BaseModel):
+    winner: str
+    final_match_score: str
+    scorers: list[str]
 
-```python
-# 1. GATHER: Use a standard call to get raw information
-raw_info = llm.invoke(
-    "What is the current weather in Hyderabad?", 
-    tools=[{"google_search": {}}]
+
+llm = ChatGoogleGenerativeAI(model="gemini-3-pro-preview")
+
+llm_with_search = llm.bind(
+    tools=[{"google_search": {}}],
+    response_mime_type="application/json",
+    response_schema=MatchResult.model_json_schema(),
 )
 
-# 2. EXTRACT: Pass the raw text to the structured formatter
-structured_llm = llm.with_structured_output(WeatherResponse)
-final_data = structured_llm.invoke(f"Extract details from: {raw_info.content}")
+response = llm_with_search.invoke(
+    "Search for details of the latest Euro championship final match."
+)
 ```
+
+This uses Gemini's native JSON schema mode for structuring the output while allowing tools like Google Search for grounding — all in a single LLM call.
 
 ## Token usage tracking
 
@@ -940,24 +885,17 @@ Usage Metadata:
 
 ## Thinking support
 
-Certain Gemini models support configurable thinking depth. Depending on the model version used, you can control this via either `thinking_level` (Gemini 3+) or `thinking_budget` (Gemini 2.5).
+Certain Gemini models support configurable thinking depth. The parameter depends on the model version:
 
-### Thinking level
-
-For Gemini 3+ models, use `thinking_level` to control reasoning depth. Some model providers call this "reasoning effort".
-
-| Value | Models | Description |
-|-------|--------|-------------|
-| `'minimal'` | Flash | Matches the "no thinking" setting for most queries |
-| `'low'` | Flash, Pro | Minimizes latency and cost |
-| `'medium'` | Flash | Balances latency/cost with reasoning depth |
-| `'high'` | Pro | Maximizes reasoning depth (default) |
-
-Note that `minimal` does not guarantee that thinking is off.
+| Model family | Parameter | Values |
+|---|---|---|
+| Gemini 3+ | `thinking_level` | `"minimal"`, `"low"`, `"medium"`, `"high"` (default for Pro) |
+| Gemini 2.5 | `thinking_budget` | `0` (off), `-1` (dynamic), or a positive integer (token limit) |
 
 ```python
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+# Gemini 3+: use thinking_level
 llm = ChatGoogleGenerativeAI(
     model="gemini-3-pro-preview",
     thinking_level="low",  # [!code highlight]
@@ -1014,64 +952,17 @@ See the [Gemini API docs](https://ai.google.dev/gemini-api/docs/thinking) for mo
 
 ### Thought signatures
 
-[Thought signatures](https://ai.google.dev/gemini-api/docs/thinking) are encrypted representations of the model's reasoning processes. They enable Gemini to maintain thought context across multi-turn conversations, since the API is stateless and treats each request independently.
+[Thought signatures](https://ai.google.dev/gemini-api/docs/thinking) are encrypted representations of the model's reasoning. They enable Gemini to maintain thought context across multi-turn conversations, since the API is stateless.
 
 <Note>
     Gemini 3 may raise 4xx errors if thought signatures are not passed back with tool call responses. Upgrade to `langchain-google-genai >= 3.1.0` to ensure this is handled correctly.
 </Note>
 
-Signatures appear in two places in `AIMessage` responses:
-- **Text blocks**: Stored in `extras.signature` within the content block
-- **Tool calls**: Stored in `additional_kwargs["__gemini_function_call_thought_signatures__"]`
+Signatures appear in `AIMessage` responses:
+- **Text blocks**: `extras.signature` within the content block
+- **Tool calls**: `additional_kwargs["__gemini_function_call_thought_signatures__"]`
 
-```python
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3-pro-preview",
-    include_thoughts=True, # [!code highlight]
-)
-
-response = llm.invoke("How many O's are in Google? How did you verify your answer?")
-
-response.content_blocks[-1]
-```
-
-```text
-{'type': 'text',
- 'text': 'There are **2** O\'s in the word "Google...',
- 'extras': {'signature': 'EsUSCsIS...'}}
-```
-
-For multi-turn conversations with tool calls, you must pass the full `AIMessage` back to the model so signatures are preserved. This happens automatically when you append the `AIMessage` to your messages list:
-
-```python
-from langchain.tools import tool
-from langchain.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-
-@tool
-def get_weather(location: str) -> str:
-    """Get current weather for a location."""
-    return f"Weather in {location}: sunny, 22°C"
-
-
-model = ChatGoogleGenerativeAI(model="gemini-3-pro-preview").bind_tools([get_weather])
-messages = [HumanMessage("What's the weather in Tokyo?")]
-
-# Step 1: Model returns tool call with thought signature attached
-ai_msg = model.invoke(messages)
-messages.append(ai_msg)  # Preserves thought signature
-
-# Step 2: Execute tool and add result
-for tool_call in ai_msg.tool_calls:
-    result = get_weather.invoke(tool_call)
-    messages.append(result)
-
-# Step 3: Model receives signature back, continues reasoning coherently
-final_response = model.invoke(messages)
-```
+For multi-turn conversations, pass the full `AIMessage` back to the model so signatures are preserved. This happens automatically when you append the `AIMessage` to your messages list (as shown in the [tool calling](#tool-calling) example above).
 
 <Warning>
     **Don't reconstruct messages manually.** If you create a new `AIMessage` instead of passing the original object, the signatures will be lost and the API may reject the request.
