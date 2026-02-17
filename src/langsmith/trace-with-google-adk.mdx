@@ -162,57 +162,70 @@ configure_google_adk(
 The integration automatically traces multi-agent workflows including sequential and parallel agent compositions:
 
 ```python
+import asyncio
+from dotenv import load_dotenv  # Optional
 from langsmith.integrations.google_adk import configure_google_adk
 from google.adk.agents import Agent, SequentialAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-configure_google_adk(project_name="multi-agent-demo")
+load_dotenv()  # Optional
 
-# Create sub-agents
-translator = Agent(
-    name="translator",
-    model="gemini-2.0-flash",
-    description="Translates text to English.",
-)
 
-summarizer = Agent(
-    name="summarizer",
-    model="gemini-2.0-flash",
-    description="Summarizes text concisely.",
-)
+async def main():
+    # Configure LangSmith tracing
+    configure_google_adk(
+        project_name="multi-agent-demo",  # Optional: defaults to LANGSMITH_PROJECT env var
+    )
 
-# Create a sequential agent that runs sub-agents in order
-pipeline = SequentialAgent(
-    name="translate_and_summarize",
-    sub_agents=[translator, summarizer],
-    description="Translates text then summarizes it.",
-)
+    # Create sub-agents
+    translator = Agent(
+        name="translator",
+        model="gemini-2.0-flash",
+        description="Translates text to English.",
+    )
 
-# Set up and run
-session_service = InMemorySessionService()
-session_service.create_session_sync(
-    app_name="pipeline_app",
-    user_id="user_123",
-    session_id="session_456",
-)
+    summarizer = Agent(
+        name="summarizer",
+        model="gemini-2.0-flash",
+        description="Summarizes text concisely.",
+    )
 
-runner = Runner(
-    agent=pipeline,
-    app_name="pipeline_app",
-    session_service=session_service,
-)
+    # Create a sequential agent that runs sub-agents in order
+    pipeline = SequentialAgent(
+        name="translate_and_summarize",
+        sub_agents=[translator, summarizer],
+        description="Translates text then summarizes it.",
+    )
 
-events = runner.run(
-    user_id="user_123",
-    session_id="session_456",
-    new_message=types.Content(
-        role="user",
-        parts=[types.Part(text="Bonjour, comment allez-vous aujourd'hui?")],
-    ),
-)
+    # Set up and run
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="pipeline_app",
+        user_id="user_123",
+        session_id="session_456",
+    )
 
-for event in events:
-    print(event)
+    runner = Runner(
+        agent=pipeline,
+        app_name="pipeline_app",
+        session_service=session_service,
+    )
+
+    events = runner.run(
+        user_id="user_123",
+        session_id=session.id,
+        new_message=types.Content(
+            role="user",
+            parts=[types.Part(text="Bonjour, comment allez-vous aujourd'hui?")],
+        ),
+    )
+
+    for event in events:
+        print(event.content.parts[0].text)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
