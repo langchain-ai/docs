@@ -21,7 +21,7 @@ For reference documentation, see `.github/instructions/reference-docs.instructio
 
 - Format: MDX files with YAML frontmatter. Mintlify syntax.
 - Config: docs.json for navigation, theme, settings
-- Components: Mintlify components
+- Components: Mintlify components - refer to the [Mintlify documentation](https://www.mintlify.com/docs/components/index) for details.
 
 ## Content strategy
 
@@ -48,7 +48,7 @@ If the trailing `/index` (no extension included) is omitted, the Mintlify parser
 
 ## Frontmatter requirements for pages
 
-- title: Clear, descriptive, concise page title
+- title: Clear, descriptive, active concise page title
 - description: Concise summary for SEO/navigation
 
 ## Custom code language fences
@@ -103,6 +103,7 @@ In general, follow the [Google Developer Documentation Style Guide](https://deve
 - Do not use model aliases (e.g., "claude-sonnet-4-5") in code examples; always use full model names / identifiers (e.g., "claude-sonnet-4-5-20250929")
 - Do not use FontAwesome icon names — this project uses the Tabler icon library. Verify icon names at https://tabler.io/icons
 - Do not use nested double quotes in Mintlify component attributes (e.g., `default='["a", "b"]'`). This causes escape characters to render in the frontend. Instead, use single quotes inside double quotes: `default="['a', 'b']"`
+- Do not use horizontal lines.
 
 For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
 
