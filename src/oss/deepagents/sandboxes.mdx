@@ -582,6 +582,8 @@ from langchain_daytona import DaytonaSandbox
 client = Daytona()
 thread_id = str(uuid.uuid4())
 
+from deepagents import create_deep_agent
+
 # Get or create sandbox by thread_id
 try:
     sandbox = client.find_one(labels={"thread_id": thread_id})
@@ -594,124 +596,95 @@ except Exception:
     sandbox = client.create(params)
 
 backend = DaytonaSandbox(sandbox=sandbox)
-agent = create_deep_agent(..., backend=backend)
+agent = create_deep_agent(
+    backend=backend,
+    system_prompt="You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+)
 
 try:
     result = agent.invoke(
-        ...,
         {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Create a hello world Python script and run it",
+                }
+            ]
+        },
+        config={
             "configurable": {
                 "thread_id": thread_id,
             }
         },
     )
+    print(result["messages"][-1].content)
 except Exception:
     # Optional: delete the sandbox proactively on an exception
-    sandbox.delete()
+    client.delete(sandbox)
     raise
 ```
 
 :::
 
-### Sandbox patterns
-
-When integrating sandboxes, you have two patterns:
-
-**Reuse a sandbox** across multiple invocations when you want continuity (for example to persist installed dependencies):
-
 :::js
 
 ```typescript
-const sandbox = await DenoSandbox.create({ memoryMb: 1024 });
+import "dotenv/config";
+import { randomUUID } from "node:crypto";
+import { Daytona } from "@daytonaio/sdk";
+import type { CreateSandboxFromSnapshotParams } from "@daytonaio/sdk";
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
 
-const agent = createDeepAgent({
-  model,
-  systemPrompt: "You are a coding assistant.",
-  backend: sandbox,
-});
+const client = new Daytona();
+const threadId = randomUUID();
 
-// Multiple invocations share the same sandbox
-await agent.invoke({ messages: [...] });
-await agent.invoke({ messages: [...] }); // Same sandbox, same files
-
-await sandbox.close(); // You manage the lifecycle
-```
-
-:::
-
-:::python
-
-```python
-sandbox = Daytona().create()
-backend = DaytonaSandbox(sandbox=sandbox)
-
-agent = create_deep_agent(
-    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
-    system_prompt="You are a Python coding assistant with sandbox access.",
-    backend=backend,
-)
-
-result = agent.invoke({ "messages": [...] })
-result = agent.invoke({ "messages": [...] }) # Same sandbox, same files
-
-modal_sandbox.terminate()
-```
-
-:::
-
-**Create a fresh sandbox** per invocation for clean isolation between tasks:
-
-:::js
-
-```typescript
-const agent = createDeepAgent({
-  model: new ChatAnthropic({ model: "claude-opus-4-6" }),
-  systemPrompt: "You are a coding assistant.",
-  backend: () => DenoSandbox.create({ memoryMb: 1024 }),
-});
-```
-
-:::
-
-:::python
-
-```python
-agent = create_deep_agent(
-    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
-    system_prompt="You are a Python coding assistant with sandbox access.",
-    backend=DaytonaSandbox(sandbox=Daytona().create()),
-)
-```
-
-:::
-
-### Sandboxes in middleware
-
-If you provision sandboxes in [middleware](/oss/deepagents/middleware), follow these guidelines to manage lifecycle:
-
-1. **Set a TTL** for the sandbox—most providers support this.
-    End-users may at any point stop chatting with an agent, so it is best practice to deleter or archive sandboxes aftere some amount of inactivity to avoid ongoing costs.
-2. **Wrap `agent.invoke()` in try/finally** to ensure cleanup runs whether the invocation succeeds or raises:
-
-:::python
-
-```python
-try:
-    result = agent.invoke({ "messages": [...] })
-finally:
-    # cleanup sandbox (delete, archive, etc.)
-    ...
-```
-
-:::
-:::js
-
-```typescript
+// Get or create sandbox by thread_id
+let sandbox;
 try {
-  const result = await agent.invoke({ messages: [...] });
-} finally {
-  // cleanup sandbox (delete, archive, etc.)
-  ...
+sandbox = await client.findOne({ labels: { thread_id: threadId } });
+} catch {
+const params: CreateSandboxFromSnapshotParams = {
+    labels: { thread_id: threadId },
+    // Add TTL so the sandbox is cleaned up when idle (minutes)
+    autoDeleteInterval: 3600,
+};
+sandbox = await client.create(params);
+}
+
+const backend = await DaytonaSandbox.fromId(sandbox.id);
+const agent = createDeepAgent({
+backend,
+systemPrompt:
+    "You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+});
+
+try {
+const result = await agent.invoke(
+    {
+    messages: [
+        {
+        role: "user",
+        content: "Create a hello world Python script and run it",
+        },
+    ],
+    },
+    {
+    configurable: {
+        thread_id: threadId,
+    },
+    },
+);
+const lastMessage = result.messages[result.messages.length - 1];
+console.log(
+    typeof lastMessage.content === "string"
+    ? lastMessage.content
+    : String(lastMessage.content),
+);
+} catch (err) {
+// Optional: delete the sandbox proactively on an exception
+await client.delete(sandbox);
+throw err;
 }
 ```
 
