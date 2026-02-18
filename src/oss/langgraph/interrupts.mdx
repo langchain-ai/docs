@@ -2,8 +2,6 @@
 title: Interrupts
 ---
 
-
-
 Interrupts allow you to pause graph execution at specific points and wait for external input before continuing. This enables human-in-the-loop patterns where you need external input to proceed. When an interrupt is triggered, LangGraph saves the graph state using its [persistence](/oss/langgraph/persistence) layer and waits indefinitely until you resume execution.
 
 Interrupts work by calling the `interrupt()` function at any point in your graph nodes. The function accepts any JSON-serializable value which is surfaced to the caller. When you're ready to continue, you resume execution by re-invoking the graph using `Command`, which then becomes the return value of the `interrupt()` call from inside the node.
@@ -130,6 +128,7 @@ await graph.invoke(new Command({ resume: true }), config);
 The key thing that interrupts unlock is the ability to pause execution and wait for external input. This is useful for a variety of use cases, including:
 
 - <Icon icon="circle-check" /> [Approval workflows](#approve-or-reject): Pause before executing critical actions (API calls, database changes, financial transactions)
+- <Icon icon="link" /> [Map interrupt IDs to resume values](#map-interrupt-ids-to-resume-values): Pair interrupt IDs with resume values when resuming multiple interrupts in a single invocation
 - <Icon icon="pencil" /> [Review and edit](#review-and-edit-state): Let humans review and modify LLM outputs or tool calls before continuing
 - <Icon icon="tool" /> [Interrupting tool calls](#interrupts-in-tools): Pause before executing tool calls to review and edit the tool call before execution
 - <Icon icon="shield-check" /> [Validating human input](#validating-human-input): Pause before proceeding to the next step to validate human input
@@ -156,20 +155,20 @@ async for metadata, mode, chunk in graph.astream(
         if isinstance(msg, AIMessageChunk) and msg.content:
             # Display content in real-time
             display_streaming_content(msg.content)
-    
+
     elif mode == "updates":
         # Check for interrupts
         if "__interrupt__" in chunk:
             # Stop streaming display
             interrupt_info = chunk["__interrupt__"][0].value
-            
+
             # Handle user input
             user_response = get_user_input(interrupt_info)
-            
+
             # Resume graph with updated input
             initial_input = Command(resume=user_response)
             break
-        
+
         else:
             # Track node transitions
             current_node = list(chunk.keys())[0]
@@ -179,6 +178,69 @@ async for metadata, mode, chunk in graph.astream(
 - **`subgraphs=True`**: Required for interrupt detection in nested graphs
 - **`"__interrupt__"` detection**: Signals when human input is needed
 - **`Command(resume=...)`**: Resumes graph execution with user-provided data
+
+### Map interrupt IDs to resume values
+
+When resuming multiple interrupts with a single invocation, map each interrupt ID to its resume value.
+This ensures each response is paired with the correct interrupt at runtime.
+
+:::python
+```python
+from langgraph.types import Command
+
+def ask_pending_hitl_questions(interrupts: list) -> dict[str, str] | None:
+    resume_map = {}
+    for pending_interrupt in interrupts:
+        answer = input(f"Q: {pending_interrupt.value} ")
+        resume_map[pending_interrupt.id] = answer
+    return resume_map or None
+
+# In your run loop, when the graph has interrupted:
+resume_map = ask_pending_hitl_questions(state)
+if resume_map:
+    async for e in workflow.astream(Command(resume=resume_map), config=config):
+        print(f"===> {e}")
+else:
+    break
+```
+:::
+
+:::js
+```typescript
+import {
+  Command,
+  type StateSnapshot,
+} from "@langchain/langgraph";
+
+async function askPendingHitlQuestions(
+  state: StateSnapshot,
+): Promise<Record<string, string> | null> {
+  const rl = createInterface({ input, output });
+  const resumeMap: Record<string, string> = {};
+  for (const pendingInterrupt of getPendingInterrupts(state)) {
+    const answer = await rl.question(`Q: ${pendingInterrupt.value as string} `);
+    const id = pendingInterrupt.id ?? randomUUID();
+    resumeMap[id] = answer;
+  }
+  rl.close();
+  return Object.keys(resumeMap).length > 0 ? resumeMap : null;
+}
+
+// When the graph has interrupted, build the resume map from result.__interrupt__
+const resumeMap = await askPendingHitlQuestions(state);
+if (resumeMap) {
+  const resumeStream = await workflow.stream(
+  new Command({ resume: resumeMap }),
+    config,
+  );
+  for await (const e of resumeStream) {
+    console.log(`===> ${JSON.stringify(e)}`);
+  }
+} else {
+  break;
+}
+```
+:::
 
 ### Approve or reject
 
