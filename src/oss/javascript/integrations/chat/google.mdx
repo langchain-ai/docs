@@ -1,0 +1,754 @@
+---
+title: "ChatGoogle integration"
+sidebarTitle: "Chat"
+description: "Integrate with the ChatGoogle chat model using LangChain JavaScript."
+---
+
+This library supports access to a variety of Google's models, including the Gemini
+family of models and their Nano Banana image generation model. You can access these
+models through either Google's [Google AI](https://ai.google.dev/) API (sometimes also
+called the Generative AI API or the AI Studio API) or through the Google Cloud Platform
+[Vertex AI](https://cloud.google.com/vertex-ai) service.
+
+This will help you getting started with `ChatGoogle` [chat models](/oss/langchain/models).
+For detailed documentation of all `ChatGoogle` features and configurations head to the
+[API reference](https://api.js.langchain.com/classes/langchain_google.ChatGoogle.html).
+
+<Tip>
+  `@langchain/google` is the recommended package for all new Google Gemini integrations.
+  It replaces the older [`@langchain/google-genai`](/oss/integrations/chat/google_generative_ai)
+  and [`@langchain/google-vertexai`](/oss/integrations/chat/google_vertex_ai) packages.
+  See [legacy packages](/oss/integrations/providers/google#legacy-packages) for migration details.
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class                                                                               | Package                                                                        | Serializable | PY support |                                            Downloads                                             |                                            Version                                            |
+|:------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------| :---: |  :---: |:------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------:|
+| [ChatGoogle](https://api.js.langchain.com/classes/langchain_google.ChatGoogle.html) | [`@langchain/google`](https://www.npmjs.com/package/@langchain/google)         | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/google?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/google?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+Note that while logprobs are supported, Gemini has fairly restricted usage of them.
+
+## Setup
+
+### Credentials through AI Studio (API Key)
+
+To use the model through Google AI Studio (sometimes called the Generative AI
+API), you will need an API key. You can obtain one from the
+[Google AI Studio](https://aistudio.google.com/app/apikey).
+
+Once you have your API key, you can set it as an environment variable:
+
+```bash
+export GOOGLE_API_KEY="your-api-key"
+```
+
+Or you can pass it directly to the model constructor:
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle({
+  apiKey: "your-api-key",
+  model: "gemini-2.5-flash",
+});
+```
+
+### Credentials through Vertex AI Express Mode (API Key)
+
+Vertex AI also supports [Express Mode](https://cloud.google.com/vertex-ai/docs/start/introduction-unified-platform#express-mode),
+which allows you to use an API key for authentication. You can obtain a Vertex AI
+API key from the [Google Cloud Console](https://console.cloud.google.com/vertex-ai/studio/api-key).
+
+Once you have your API key, you can set it as an environment variable:
+
+```bash
+export GOOGLE_API_KEY="your-api-key"
+```
+
+When using [Vertex AI Express Mode](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview), you will also need to specify the platform
+type as `gcp` when instantiating the model.
+
+```typescript
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash",
+  platformType: "gcp",
+  // apiKey: "...", // Optional if GOOGLE_API_KEY is set
+});
+```
+
+### Credentials through Vertex AI (OAuth Application Default Credentials / ADC)
+
+For production environments on Google Cloud, it is recommended to use
+[Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/provide-credentials-adc).
+This is supported in Node.js environments.
+
+If you are running on a local machine, you can set up ADC by installing the
+[Google Cloud SDK](https://cloud.google.com/sdk) and running:
+
+```bash
+gcloud auth application-default login
+```
+
+Alternatively, you can set the `GOOGLE_APPLICATION_CREDENTIALS` environment
+variable to the path of your service account key file:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/service-account-key.json"
+```
+
+### Credentials through Vertex AI (OAuth saved credentials)
+
+If you are running in a web environment or want to provide credentials directly,
+you can use the `GOOGLE_CLOUD_CREDENTIALS` environment variable. This should
+contain the **content** of your service account key file (not the path).
+
+```bash
+export GOOGLE_CLOUD_CREDENTIALS='{"type":"service_account","project_id":"your-project-id",...}'
+```
+
+You can also provide these credentials directly in your code using the
+`credentials` parameter.
+
+```typescript
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash",
+  platformType: "gcp",
+  credentials: {
+    type: "service_account",
+    project_id: "your-project-id",
+    private_key_id: "your-private-key-id",
+    private_key: "your-private-key",
+    client_email: "your-service-account-email",
+    client_id: "your-client-id",
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+    auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+    client_x509_cert_url: "your-cert-url",
+  }
+});
+```
+
+### Tracing
+
+If you want to get automated tracing of your model calls you can also set
+your [LangSmith](https://docs.langchain.com/langsmith/home) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain `ChatGoogle` integration lives in the `@langchain/google` package:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/google @langchain/core
+```
+```bash yarn
+yarn add @langchain/google @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/google @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+The import path differs depending on whether you are running in a Node.js environment or a Web/Edge environment.
+
+<CodeGroup>
+```typescript Node.js
+import { ChatGoogle } from "@langchain/google/node";
+```
+```typescript Web/Edge
+import { ChatGoogle } from "@langchain/google";
+```
+</CodeGroup>
+
+The model will automatically determine whether to use the Google AI API or Vertex AI based on your configuration:
+- If you provide an `apiKey` (or set `GOOGLE_API_KEY`), it defaults to Google AI.
+- If you provide `credentials` (or set `GOOGLE_APPLICATION_CREDENTIALS` / `GOOGLE_CLOUD_CREDENTIALS` in Node), it defaults to Vertex AI.
+
+### Google AI (AI Studio)
+
+```typescript
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash",
+  maxRetries: 2,
+  // apiKey: "...", // Optional if GOOGLE_API_KEY is set
+});
+```
+
+### Vertex AI
+
+```typescript
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash",
+  // credentials: { ... }, // Optional if using ADC or GOOGLE_CLOUD_CREDENTIALS
+});
+```
+
+### Vertex AI Express Mode
+
+To use Vertex AI with an API key (Express Mode), you must explicitly set the `platformType`.
+
+```typescript
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash",
+  platformType: "gcp",
+  // apiKey: "...", // Optional if GOOGLE_API_KEY is set
+});
+```
+
+### Model Configuration Best Practices
+
+While `ChatGoogle` supports standard model parameters like `temperature`, `topP`, and `topK`,
+best practice with Gemini models is to leave these at their default values. The models
+are highly tuned around these defaults.
+
+If you want to control the "randomness" or "creativity" of the model, it is recommended
+to use specific instructions in your prompt or system prompt (e.g., "Be creative",
+"Give a concise factual answer") rather than adjusting the temperature.
+
+## Invocation
+
+```typescript
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+
+const aiMsg = await llm.invoke([
+  new SystemMessage(
+    "You are a helpful assistant that translates English to French. Translate the user sentence."
+  ),
+  new HumanMessage("I love programming."),
+]);
+```
+
+```typescript
+console.log(aiMsg.text);
+```
+
+```text
+J'adore programmer.
+```
+
+## Response Metadata
+
+The `AIMessage` response contains metadata about the generation, including
+token usage and log probabilities.
+
+### Token Usage
+
+The `usage_metadata` property allows you to inspect token counts.
+
+```typescript
+const res = await llm.invoke("Hello, how are you?");
+
+console.log(res.usage_metadata);
+```
+
+```text
+{ input_tokens: 6, output_tokens: 7, total_tokens: 13 }
+```
+
+### Logprobs
+
+If you enable `logprobs` in the model configuration, they will be available in
+the `response_metadata`.
+
+```typescript
+const llmWithLogprobs = new ChatGoogle({
+  model: "gemini-2.5-flash",
+  logprobs: 2, // Number of top candidates to return
+});
+
+const resWithLogprobs = await llmWithLogprobs.invoke("Hello");
+
+console.log(resWithLogprobs.response_metadata.logprobs_result);
+```
+
+## Safety settings
+
+By default, current versions of Gemini have safety settings turned off.
+
+If you want to enable safety settings for various categories, you can use
+the `safetySettings` attribute of the model.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash",
+  safetySettings: [
+    {
+      category: "HARM_CATEGORY_HARASSMENT",
+      threshold: "BLOCK_LOW_AND_ABOVE",
+    },
+  ],
+});
+```
+
+{/* TODO: Add section for enableEnhancedCivicAnswers */}
+
+## Structured output
+
+You can use the `withStructuredOutput` method to get structured JSON output from the model.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+import { z } from "zod";
+
+const llm = new ChatGoogle("gemini-2.5-flash");
+
+const schema = z.object({
+  people: z.array(z.object({
+    name: z.string().describe("The name of the person"),
+    age: z.number().describe("The age of the person"),
+  })),
+});
+
+const structuredLlm = llm.withStructuredOutput(schema);
+
+const res = await structuredLlm.invoke("John is 25 and Jane is 30.");
+console.log(res);
+```
+
+```json
+{
+  "people": [
+    { "name": "John", "age": 25 },
+    { "name": "Jane", "age": 30 }
+  ]
+}
+```
+
+## Tool calling
+
+`ChatGoogle` supports standard LangChain [tool calling](/oss/langchain/tools) as
+well as Gemini-specific "Specialty Tools" (like Code Execution and Grounding).
+
+### Standard Tools
+
+You can use standard LangChain tools defined with Zod schemas.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const weatherTool = tool((input) => {
+  return "It is sunny and 75 degrees.";
+}, {
+  name: "get_weather",
+  description: "Get the weather for a location",
+  schema: z.object({
+    location: z.string(),
+  }),
+});
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([weatherTool]);
+
+const res = await llm.invoke("What is the weather in SF?");
+console.log(res.tool_calls);
+```
+
+### Specialty Tools
+
+Gemini offers several built-in tools for code execution and grounding.
+
+<Warning>
+  You cannot mix these "Specialty Tools" (Code Execution, Google Search, etc.)
+  with standard LangChain tools (like the weather tool above) in the same request.
+</Warning>
+
+#### Code execution
+
+Gemini models support code execution, which allows the model to generate and run
+Python code to solve complex problems.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      codeExecution: {},
+    },
+  ]);
+
+const res = await llm.invoke("Calculate the 100th Fibonacci number.");
+console.log(res.contentBlocks);
+```
+
+#### Grounding with Google Search
+
+You can use the `googleSearch` tool to ground responses with Google Search.
+This is useful for questions about current events or specific facts.
+
+<Note>
+  The `googleSearchRetrieval` tool is maintained for backwards compatibility, but `googleSearch` is preferred.
+</Note>
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      googleSearch: {},
+    },
+  ]);
+
+const res = await llm.invoke("Who won the latest World Series?");
+console.log(res.text);
+```
+
+#### Grounding with URL Retrieval
+
+You can also ground responses using a specific URL.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      urlContext: {},
+    },
+  ]);
+
+const prompt = "Summarize this page: https://js.langchain.com/";
+const res = await llm.invoke(prompt);
+console.log(res.text);
+```
+
+#### Grounding with a data store
+
+If you are using Vertex AI (`platformType: "gcp"`), you can ground responses using
+a Vertex AI Search data store.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const projectId = "YOUR_PROJECT_ID";
+const datastoreId = "YOUR_DATASTORE_ID";
+
+const searchRetrievalToolWithDataset = {
+  retrieval: {
+    vertexAiSearch: {
+      datastore: `projects/${projectId}/locations/global/collections/default_collection/dataStores/${datastoreId}`,
+    },
+    disableAttribution: false,
+  },
+};
+
+const llm = new ChatGoogle({
+  model: "gemini-2.5-pro",
+  platformType: "gcp",
+}).bindTools([searchRetrievalToolWithDataset]);
+
+const res = await llm.invoke(
+  "What is the score of Argentina vs Bolivia football game?"
+);
+console.log(res.text);
+```
+
+## Context caching
+
+By default, Gemini models do implicit context caching. If the start of the
+history that you send to Gemini exactly matches context that Gemini has in
+its cache, it will reduce the token cost for that request.
+
+You can also explicitly pass some content to the model once, cache the input
+tokens, and then refer to the cached tokens for subsequent requests to reduce cost
+and latency. Creating this explicit cache is not supported by LangChain, but
+if you have created the cache, you can reference it in your invocation.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-pro");
+
+// Pass the cache name to the model
+const res = await llm.invoke("Summarize this document", {
+  cachedContent: "projects/123/locations/us-central1/cachedContents/456",
+});
+```
+
+## Multimodal Requests
+
+The `ChatGoogle` model supports multimodal requests, allowing you to send images,
+audio, and video along with text. You can use the `contentBlocks` field in your
+messages to provide these inputs in a structured way.
+
+### Images
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+import { HumanMessage } from "@langchain/core/messages";
+import * as fs from "fs";
+
+const llm = new ChatGoogle("gemini-2.5-flash");
+
+const image = fs.readFileSync("./hotdog.jpg").toString("base64");
+
+const res = await llm.invoke([
+  new HumanMessage({
+    contentBlocks: [
+      {
+        type: "text",
+        text: "What is in this image?",
+      },
+      {
+        type: "image",
+        mimeType: "image/jpeg",
+        data: image,
+      },
+    ],
+  }),
+]);
+
+console.log(res.text);
+```
+
+### Audio
+
+```typescript
+const audio = fs.readFileSync("./speech.wav").toString("base64");
+
+const res = await llm.invoke([
+  new HumanMessage({
+    contentBlocks: [
+      {
+        type: "text",
+        text: "Summarize this audio.",
+      },
+      {
+        type: "audio",
+        mimeType: "audio/wav",
+        data: audio,
+      },
+    ],
+  }),
+]);
+
+console.log(res.text);
+```
+
+### Video
+
+```typescript
+const video = fs.readFileSync("./movie.mp4").toString("base64");
+
+const res = await llm.invoke([
+  new HumanMessage({
+    contentBlocks: [
+      {
+        type: "text",
+        text: "Describe the video.",
+      },
+      {
+        type: "video",
+        mimeType: "video/mp4",
+        data: video,
+      },
+    ],
+  }),
+]);
+
+console.log(res.text);
+```
+
+{/* TODO: Add section for mediaResolution */}
+{/* TODO: Add section for video clipping intervals and frame rate */}
+
+## Reasoning / Thinking
+
+Google's Gemini 2.5 and Gemini 3 models support "thinking" or "reasoning" steps.
+These models may perform reasoning even if you don't explicitly configure it,
+but the library will only return the reasoning summaries (thought blocks) if you
+explicitly set a value for how much to reason/think.
+
+This library offers compatibility between models, allowing you to use unified parameters:
+
+- `maxReasoningTokens` (or `thinkingBudget`): Specifies the maximum number of tokens to use for reasoning.
+  - `0`: Turns off reasoning (if supported).
+  - `-1`: Uses the model's default.
+  - `> 0`: Sets the specific token budget.
+
+- `reasoningEffort` (or `thinkingLevel`): Sets the relative effort.
+  - Values: `"minimal"`, `"low"`, `"medium"`, `"high"`.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle({
+  model: "gemini-3-pro-preview",
+  reasoningEffort: "high",
+});
+
+const res = await llm.invoke("What is the square root of 144?");
+
+// The reasoning steps are available in the contentBlocks
+const reasoningBlocks = res.contentBlocks.filter((block) => block.type === "reasoning");
+reasoningBlocks.forEach((block) => {
+  if (block.type === "reasoning") {
+    console.log("Thought:", block.reasoning);
+  }
+});
+
+console.log("Answer:", res.text);
+```
+
+<Note>
+  Thought blocks also include a `reasoningContentBlock` field. This contains the `ContentBlock` based on
+  the underlying part sent by Gemini. While this is typically a text block, for multimodal models like
+  Nano Banana Pro, it could be an image or other media block.
+</Note>
+
+## Image Generation with Nano Banana and Nano Banana Pro
+
+To generate images, you need to use a model that supports it (such as
+`gemini-2.5-flash-image`) and configure the `responseModalities` to
+include "IMAGE".
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+import * as fs from "fs";
+
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash-image",
+  responseModalities: ["IMAGE", "TEXT"],
+});
+
+const res = await llm.invoke(
+  "I would like to see a drawing of a house with the sun shining overhead. Drawn in crayon."
+);
+
+// Generated images are returned in the contentBlocks of the message
+for (const [index, block] of res.contentBlocks.entries()) {
+  if (block.type === "file" && block.data) {
+    const base64Data = block.data;
+    // Determine the correct file extension from the MIME type
+    const mimeType = (block.mimeType || "image/png").split(";")[0];
+    const extension = mimeType.split("/")[1] || "png";
+    const filename = `generated_image_${index}.${extension}`;
+
+    // Save the image to a file
+    fs.writeFileSync(filename, Buffer.from(base64Data, "base64"));
+    console.log(`[Saved image to ${filename}]`);
+  } else if (block.type === "text") {
+    console.log(block.text);
+  }
+}
+```
+
+## Speech Generation (TTS)
+
+Some Gemini models support generating speech (audio output). To enable this,
+configure the `responseModalities` to include "AUDIO" and provide a
+`speechConfig`.
+
+The `speechConfig` can be a
+[full Gemini speech configuration object](https://ai.google.dev/api/generate-content#SpeechConfig),
+but for most cases you just need to provide a string with a prebuilt
+[voice name](https://ai.google.dev/gemini-api/docs/speech-generation#voices).
+
+Many models return audio in raw PCM format (`audio/L16`), which requires a
+WAV header to be playable by most media players.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+import * as fs from "fs";
+
+const llm = new ChatGoogle({
+  model: "gemini-2.5-flash-preview-tts",
+  responseModalities: ["AUDIO", "TEXT"],
+  speechConfig: "Zubenelgenubi", // Prebuilt voice name
+});
+
+const res = await llm.invoke("Say cheerfully: Have a wonderful day!");
+
+// Function to add a WAV header to raw PCM data
+function addWavHeader(pcmData: Buffer, sampleRate = 24000) {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcmData.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // Mono
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28); // Byte rate (16-bit mono)
+  header.writeUInt16LE(2, 32); // Block align
+  header.writeUInt16LE(16, 34); // Bits per sample
+  header.write("data", 36);
+  header.writeUInt32LE(pcmData.length, 40);
+  return Buffer.concat([header, pcmData]);
+}
+
+// Generated audio is returned in the contentBlocks
+for (const [index, block] of res.contentBlocks.entries()) {
+  if (block.type === "file" && block.data) {
+    let audioBuffer = Buffer.from(block.data, "base64");
+    let filename = `generated_audio_${index}.wav`;
+
+    if (block.mimeType?.startsWith("audio/L16")) {
+      audioBuffer = addWavHeader(audioBuffer);
+    } else if (block.mimeType) {
+      // Ignore parameters in the mimeType, such as "; rate=24000"
+      const mimeType = block.mimeType.split(";")[0];
+      const extension = mimeType.split("/")[1] || "wav";
+      filename = `generated_audio_${index}.${extension}`;
+    }
+
+    // Save the audio to a file
+    fs.writeFileSync(filename, audioBuffer);
+    console.log(`[Saved audio to ${filename}]`);
+  } else if (block.type === "text") {
+    console.log(block.text);
+  }
+}
+```
+
+### Multi-speaker TTS
+
+You can also configure multiple speakers for a single request. This is useful to have
+Gemini read a script. The simplified `speechConfig` for this requires you to assign
+a `speaker` to each pre-defined `name` representing the voice, and then use that
+speaker in the script.
+
+```typescript
+const multiSpeakerLlm = new ChatGoogle({
+  model: "gemini-2.5-flash-preview-tts",
+  responseModalities: ["AUDIO"],
+  speechConfig: [
+    { speaker: "Joe", name: "Kore" },
+    { speaker: "Jane", name: "Puck" },
+  ],
+});
+
+const res = await multiSpeakerLlm.invoke(`
+  Joe: How's it going today, Jane?
+  Jane: Not too bad, how about you?
+`);
+```
+
+## API Reference
+
+For detailed documentation of all `ChatGoogle` features and configurations head to the
+[API reference](https://api.js.langchain.com/classes/langchain_google.ChatGoogle.html).

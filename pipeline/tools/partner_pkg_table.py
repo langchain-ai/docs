@@ -34,6 +34,7 @@ MIN_DOWNLOADS = 100_000
 
 DOCS_DIR = Path(__file__).parents[2]
 PROVIDERS_PATH = Path() / "src" / "oss" / "python" / "integrations" / "providers"
+REFERENCE_INTEGRATIONS_PATH = Path() / "reference" / "python" / "docs" / "integrations"
 PACKAGE_YML = Path() / "reference" / "packages.yml"
 
 # Load package registry
@@ -115,6 +116,11 @@ def _enrich_package(p: dict) -> dict | None:
         raise ValueError(msg)
 
     # Handling for package URLs
+    ref_doc_name = p["name"].replace("-", "_")
+    has_reference_docs = (
+        DOCS_DIR / REFERENCE_INTEGRATIONS_PATH / f"{ref_doc_name}.md"
+    ).exists()
+
     if p["type"] in ("monorepo", "langchain-org"):
         if p.get("integration") == "false":
             # I don't think we'll hit this case since we filter them out?
@@ -122,10 +128,14 @@ def _enrich_package(p: dict) -> dict | None:
         else:
             # Integration
             p["package_url"] = (
-                "https://reference.langchain.com/python/integrations"
-                f"/{p['name'].replace('-', '_')}/"
+                f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
             )
-    else:  # Third-party
+    elif has_reference_docs:
+        # Third-party package with reference docs hosted on reference site
+        p["package_url"] = (
+            f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
+        )
+    else:  # Third-party without reference docs
         p["package_url"] = f"https://pypi.org/project/{p['name']}/"
 
     return p
@@ -184,9 +194,10 @@ def table() -> str:
 def doc() -> str:
     return f"""\
 ---
-title: LangChain Python integrations overview
-sidebarTitle: LangChain integrations
+title: "LangChain Python integrations"
+sidebarTitle: "LangChain integrations"
 mode: "wide"
+description: "Integrate with providers using LangChain Python."
 ---
 {{/* File generated automatically by pipeline/tools/partner_pkg_table.py */}}
 {{/* Do not manually edit */}}
@@ -197,8 +208,8 @@ A **provider** is a third-party service or platform that LangChain integrates wi
 
 <Columns cols={{3}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />
-    <Card title="Embedding models" icon="layer-group" href="/oss/integrations/text_embedding" arrow />
-    <Card title="Tools and toolkits" icon="screwdriver-wrench" href="/oss/integrations/tools" arrow />
+    <Card title="Embedding models" icon="layers-difference" href="/oss/integrations/text_embedding" arrow />
+    <Card title="Tools and toolkits" icon="tool" href="/oss/integrations/tools" arrow />
 </Columns>
 
 To see a full list of integrations by component type, refer to the categories in the sidebar.

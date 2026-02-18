@@ -1,0 +1,253 @@
+---
+title: "Google integration"
+sidebarTitle: "Tools"
+description: "Integrate with Google Gemini tools using LangChain JavaScript."
+---
+
+The `@langchain/google` package supports Gemini's built-in tools, which provide capabilities like web search grounding, code execution, URL context retrieval, and more. These tools are passed as Gemini-native objects to `ChatGoogle` via `bindTools()` or the `tools` call option.
+
+<Warning>
+  You cannot mix Gemini native tools (Google Search, Code Execution, etc.) with standard LangChain tools (Zod-based function tools) in the same request. See the [ChatGoogle](/oss/integrations/chat/google) page for standard tool calling usage.
+</Warning>
+
+### Google Search
+
+The `googleSearch` tool grounds model responses with real-time Google Search results. This is useful for questions about current events or specific facts.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      googleSearch: {},
+    },
+  ]);
+
+const res = await llm.invoke("Who won the latest World Series?");
+console.log(res.text);
+```
+
+You can optionally filter search results to a specific time range:
+
+```typescript
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+  {
+    googleSearch: {
+      timeRangeFilter: {
+        startTime: "2025-01-01T00:00:00Z",
+        endTime: "2025-12-31T23:59:59Z",
+      },
+    },
+  },
+]);
+```
+
+<Note>
+  The `googleSearchRetrieval` tool is maintained for backwards compatibility, but `googleSearch` is preferred.
+</Note>
+
+For more information, see [Google's Grounding with Google Search documentation](https://ai.google.dev/gemini-api/docs/grounding).
+
+### Code execution
+
+The `codeExecution` tool allows Gemini to generate and run Python code to solve complex problems. The model writes the code, executes it, and returns the results.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      codeExecution: {},
+    },
+  ]);
+
+const res = await llm.invoke("Calculate the 100th Fibonacci number.");
+console.log(res.contentBlocks);
+```
+
+The response includes both the generated code and its execution result in the `contentBlocks` field:
+
+```typescript
+for (const block of res.contentBlocks) {
+  if (block.type === "tool_code") {
+    console.log("Code:", block.toolCode);
+  } else if (block.type === "tool_result") {
+    console.log("Result:", block.toolResult);
+  }
+}
+```
+
+For more information, see [Google's Code Execution documentation](https://ai.google.dev/gemini-api/docs/code-execution).
+
+### URL context
+
+The `urlContext` tool allows Gemini to fetch and use content from URLs to ground its responses.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      urlContext: {},
+    },
+  ]);
+
+const res = await llm.invoke("Summarize this page: https://js.langchain.com/");
+console.log(res.text);
+```
+
+For more information, see [Google's URL Context documentation](https://ai.google.dev/gemini-api/docs/url-context).
+
+### Google Maps
+
+The `googleMaps` tool grounds responses with geospatial context from Google Maps. This is useful for place-related queries.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      googleMaps: {},
+    },
+  ]);
+
+const res = await llm.invoke("What are the best coffee shops near Times Square?");
+console.log(res.text);
+```
+
+You can enable a widget context token for rendering a Google Maps widget:
+
+```typescript
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      googleMaps: {
+        enableWidget: true,
+    },
+  },
+]);
+
+const res = await llm.invoke("Find Italian restaurants in downtown Chicago");
+
+// Access the widget context token from grounding metadata
+const groundingMetadata = res.response_metadata?.groundingMetadata;
+console.log(groundingMetadata?.googleMapsWidgetContextToken);
+```
+
+For more information, see [Google's Google Maps grounding documentation](https://ai.google.dev/gemini-api/docs/grounding/google-maps).
+
+### File search
+
+The `fileSearch` tool performs semantic retrieval from file search stores. Files must first be imported using the Gemini File API.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      fileSearch: {
+      fileSearchStoreNames: ["fileSearchStores/my-store-123"],
+    },
+  },
+]);
+
+const res = await llm.invoke("What does the report say about Q4 revenue?");
+console.log(res.text);
+```
+
+Configuration options:
+
+- `fileSearchStoreNames` (required) -- the names of the file search stores to retrieve from
+- `metadataFilter` (optional) -- metadata filter to apply to the retrieval
+- `topK` (optional) -- the number of semantic retrieval chunks to return
+
+For more information, see [Google's File Search documentation](https://ai.google.dev/gemini-api/docs/file-search).
+
+### Computer use
+
+The `computerUse` tool enables Gemini to interact with a browser environment. The model can view screenshots and perform actions like clicking, typing, and scrolling.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      computerUse: {
+      environment: "ENVIRONMENT_BROWSER",
+    },
+  },
+]);
+```
+
+Configuration options:
+
+- `environment` (required) -- the environment being operated (e.g. `"ENVIRONMENT_BROWSER"`)
+- `excludedPredefinedFunctions` (optional) -- predefined functions to exclude from the action space
+
+For more information, see [Google's Computer Use documentation](https://ai.google.dev/gemini-api/docs/computer-use).
+
+### MCP servers
+
+The `mcpServers` field allows Gemini to connect to remote MCP (Model Context Protocol) servers. Unlike other native tools, MCP servers are specified as an array on the tool object.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const llm = new ChatGoogle("gemini-2.5-flash")
+  .bindTools([
+    {
+      mcpServers: [
+      {
+        name: "my-mcp-server",
+        streamableHttpTransport: {
+          url: "https://my-mcp-server.example.com/mcp",
+        },
+      },
+    ],
+  },
+]);
+
+const res = await llm.invoke("Use the tools from the MCP server to help me.");
+console.log(res.text);
+```
+
+For more information, see [Google's MCP documentation](https://ai.google.dev/gemini-api/docs/mcp).
+
+### Vertex AI Search data store
+
+If you are using Vertex AI (`platformType: "gcp"`), you can ground responses using a Vertex AI Search data store.
+
+```typescript
+import { ChatGoogle } from "@langchain/google";
+
+const projectId = "YOUR_PROJECT_ID";
+const datastoreId = "YOUR_DATASTORE_ID";
+
+const llm = new ChatGoogle({
+  model: "gemini-2.5-pro",
+  platformType: "gcp",
+}).bindTools([
+  {
+    retrieval: {
+      vertexAiSearch: {
+        datastore: `projects/${projectId}/locations/global/collections/default_collection/dataStores/${datastoreId}`,
+      },
+      disableAttribution: false,
+    },
+  },
+]);
+
+const res = await llm.invoke(
+  "What is the score of Argentina vs Bolivia football game?"
+);
+console.log(res.text);
+```
+
+For more information, see [Google's Vertex AI Search grounding documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/grounding/ground-with-vertex-ai-search).

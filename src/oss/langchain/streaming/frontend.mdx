@@ -8,8 +8,8 @@ The `useStream` React hook provides seamless integration with LangGraph streamin
 Key features:
 
 * <Icon icon="messages" size={16} /> **Messages streaming** — Handle a stream of message chunks to form a complete message
-* <Icon icon="arrows-rotate" size={16} /> **Automatic state management** — for messages, interrupts, loading states, and errors
-* <Icon icon="code-branch" size={16} /> **Conversation branching** — Create alternate conversation paths from any point in the chat history
+* <Icon icon="refresh" size={16} /> **Automatic state management** — for messages, interrupts, loading states, and errors
+* <Icon icon="git-branch" size={16} /> **Conversation branching** — Create alternate conversation paths from any point in the chat history
 * <Icon icon="palette" size={16} /> **UI-agnostic design** — Bring your own components and styling
 
 ## Installation
@@ -461,7 +461,7 @@ export function BranchSwitcher({
 
 For advanced use cases, use the `experimental_branchTree` property to get the tree representation of the thread for non-message based graphs.
 
-<Card title="Try the branching example" icon="code-branch" href="https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/branching-chat">
+<Card title="Try the branching example" icon="git-branch" href="https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/branching-chat">
   See a complete implementation of conversation branching with edit, regenerate, and branch switching in the `branching-chat` example.
 </Card>
 
@@ -2060,7 +2060,7 @@ export const agent = createAgent({
 </CodeGroup>
 :::
 
-<Card title="Try the human-in-the-loop example" icon="hand" href="https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/human-in-the-loop">
+<Card title="Try the human-in-the-loop example" icon="hand-stop" href="https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/human-in-the-loop">
   See a complete implementation of approval workflows with approve, reject, and edit actions in the `human-in-the-loop` example.
 </Card>
 
@@ -2465,6 +2465,103 @@ function CustomAPIChat({ apiKey }: { apiKey: string }) {
   );
 }
 ```
+:::
+
+:::js
+
+### Example: Streaming from Next.js endpoints
+
+You can host your agent in Next.js API routes instead of running a separate LangGraph server.The `useStream` hook communicates via Server-Sent Events (SSE), so any endpoint that returns the correct event format works—including your own Next.js route.
+
+<Tip>
+**When to use your own API routes vs LangSmith**
+
+For basic agent interaction (streaming, tool calls), rolling your own Next.js API routes works well. For persisting conversations, loading thread history, and conversation branching, consider [LangSmith deployments](/langsmith/deployments), which provide these features out of the box.
+</Tip>
+
+#### Server: Stream from an API route
+
+In your Next.js API route, stream the agent's output by returning a `Response` with `text/event-stream` encoding:
+
+```typescript
+// app/api/agent/route.ts
+import { NextRequest } from "next/server";
+import { createAgent, tool } from "langchain";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { MemorySaver } from "@langchain/langgraph";
+import type { BaseMessage } from "@langchain/core/messages";
+
+const checkpointer = new MemorySaver();
+
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+
+  const agent = createAgent({
+    model: new ChatAnthropic({ model: "claude-sonnet-4-5-20250929" }),
+    tools: [/* your tools */],
+    checkpointer,
+  });
+
+  const stream = await agent.stream(
+    { messages: body.messages },
+    {
+      encoding: "text/event-stream",
+      streamMode: ["values", "updates", "messages"],
+      configurable: body.config?.configurable,
+      recursionLimit: 10,
+    }
+  );
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+```
+
+#### Client: Connect with FetchStreamTransport
+
+Use `FetchStreamTransport` to point `useStream` at your Next.js API route. Pass `transport` instead of `apiUrl` and `assistantId` when using a custom endpoint:
+
+```tsx
+import { useMemo } from "react";
+import { useStream, FetchStreamTransport } from "@langchain/langgraph-sdk/react";
+
+function ChatInterface({ apiKey }: { apiKey: string }) {
+  const transport = useMemo(() => {
+    return new FetchStreamTransport({
+      apiUrl: "/api/agent",
+      onRequest: async (url: string, init: RequestInit) => {
+        // Inject API key or other data into the request body
+        const customBody = JSON.stringify({
+          ...(JSON.parse(init.body as string) || {}),
+          apiKey,
+        });
+        return { ...init, body: customBody };
+      },
+    });
+  }, [apiKey]);
+
+  const stream = useStream({
+    transport,
+  });
+
+  return (
+    <div>
+      {stream.messages.map((message, idx) => (
+        <div key={message.id ?? idx}>{/* render message */}</div>
+      ))}
+      {stream.isLoading && <div>Loading...</div>}
+    </div>
+  );
+}
+```
+
+For thread history, pass `threadId` to `useStream` and include it in `configurable` when streaming from your API route. The agent's checkpointer will load and persist state per thread.
+
+<Card title="Full Next.js example" icon="brand-github" href="https://github.com/christian-bromann/langchain-nextjs">
+  See a complete Next.js app with LangChain agents, streaming chat, and tool calling in the [langchain-nextjs](https://github.com/christian-bromann/langchain-nextjs) repository.
+</Card>
+
 :::
 
 ## Related

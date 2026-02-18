@@ -3,6 +3,8 @@ title: Subagents
 description: Learn how to use subagents to delegate work and keep context clean
 ---
 
+import SubagentBasic from '/snippets/subagent-basic.mdx';
+
 Deep agents can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
 
 ```mermaid
@@ -66,7 +68,12 @@ For most use cases, define subagents as dictionaries:
 **Optional fields:**
 
 <ParamField body="model" type="str | BaseChatModel">
-    Override the main agent's model. Use the format `'provider:model-name'` (for example, `'openai:gpt-4.1'`).
+    :::python
+    Override the main agent's model. You can pass either a model identifier string like `'openai:gpt-5'` (using the `'provider:model'` format) or a LangChain chat model object (`init_chat_model("gpt-5")` or `ChatOpenAI(model="gpt-5")`).
+    :::
+    :::js
+    Override the main agent's model. You can pass either a model identifier string like `'openai:gpt-5'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5")` or `new ChatOpenAI({ model: "gpt-5" })`).
+    :::
 </ParamField>
 
 <ParamField body="middleware" type="list[Middleware]">
@@ -75,6 +82,15 @@ For most use cases, define subagents as dictionaries:
 
 <ParamField body="interrupt_on" type="dict[str, bool]">
     Configure human-in-the-loop for specific tools. Requires a checkpointer.
+</ParamField>
+
+<ParamField body="skills" type="list[str]">
+    [Skills](/oss/deepagents/skills) source paths for the subagent's SkillsMiddleware.
+    When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`).
+    This allows subagents to have different skill sets than the main agent.
+    **Note:** Custom subagents do NOT inherit skills from the main agent by default—only the general-purpose subagent inherits the main agent's skills.
+
+    When a subagent has skills, it runs its own independent `SkillsMiddleware` instance. Skill state is fully isolated — a subagent's loaded skills are not visible to the parent, and vice versa.
 </ParamField>
 
 ### CompiledSubAgent
@@ -96,103 +112,7 @@ For complex workflows, use a pre-built LangGraph graph:
 
 ## Using SubAgent
 
-:::python
-```python
-import os
-from typing import Literal
-from tavily import TavilyClient
-from deepagents import create_deep_agent
-
-tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
-
-def internet_search(
-    query: str,
-    max_results: int = 5,
-    topic: Literal["general", "news", "finance"] = "general",
-    include_raw_content: bool = False,
-):
-    """Run a web search"""
-    return tavily_client.search(
-        query,
-        max_results=max_results,
-        include_raw_content=include_raw_content,
-        topic=topic,
-    )
-
-research_subagent = {
-    "name": "research-agent",
-    "description": "Used to research more in depth questions",
-    "system_prompt": "You are a great researcher",
-    "tools": [internet_search],
-    "model": "openai:gpt-4.1",  # Optional override, defaults to main agent model
-}
-subagents = [research_subagent]
-
-agent = create_deep_agent(
-    model="claude-sonnet-4-5-20250929",
-    subagents=subagents
-)
-```
-:::
-
-:::js
-```typescript
-import { tool } from "langchain";
-import { TavilySearch } from "@langchain/tavily";
-import { createDeepAgent } from "deepagents";
-import { ChatAnthropic } from "@langchain/anthropic";
-import { z } from "zod";
-
-const internetSearch = tool(
-  async ({
-    query,
-    maxResults = 5,
-    topic = "general",
-    includeRawContent = false,
-  }: {
-    query: string;
-    maxResults?: number;
-    topic?: "general" | "news" | "finance";
-    includeRawContent?: boolean;
-  }) => {
-    const tavilySearch = new TavilySearch({
-      maxResults,
-      tavilyApiKey: process.env.TAVILY_API_KEY,
-      includeRawContent,
-      topic,
-    });
-    return await tavilySearch._call({ query });
-  },
-  {
-    name: "internet_search",
-    description: "Run a web search",
-    schema: z.object({
-      query: z.string().describe("The search query"),
-      maxResults: z.number().optional().default(5),
-      topic: z
-        .enum(["general", "news", "finance"])
-        .optional()
-        .default("general"),
-      includeRawContent: z.boolean().optional().default(false),
-    }),
-  },
-);
-
-const researchSubagent = {
-  name: "research-agent",
-  description: "Used to research more in depth questions",
-  systemPrompt: "You are a great researcher",
-  tools: [internetSearch],
-  model: new ChatAnthropic({model:"claude-sonnet-4-5-20250929"}),  // Optional override, defaults to main agent model
-};
-const subagents = [researchSubagent];
-
-const agent = createDeepAgent({
-  model: new ChatAnthropic({model:"claude-sonnet-4-5-20250929"}),
-  subagents: subagents,
-});
-```
-:::
+<SubagentBasic />
 
 ## Using CompiledSubAgent
 
@@ -311,12 +231,31 @@ In this case the subagent with the name `"research-agent"`, will have `{'lc_agen
 
 ![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
 
+## Structured output
+
+All subagents support [structured ouput](/oss/langchain/structured-output) which you can use to validate the subagent's output.
+
+:::python
+You can set a desired structured output schema by passing it as the `response_format` argument to the call to `create_agent()`.
+When the model generates the structured data, it’s captured and validated.
+The structured object itself is not returned to the parent agent.
+When using structured output with subagents, include the structured data in the `ToolMessage`.
+:::
+:::js
+You can set a desired structured output schema by passing it as the `responseFormat` argument to the call to `createAgent()`.
+When the model generates the structured data, it’s captured and validated. The structured object itself is not returned to the parent agent.
+When using structured output with subagents, include the structured data in the `ToolMessage`.
+:::
+
+For more information, see [response format](/oss/langchain/structured-output#response-format).
+
 ## The general-purpose subagent
 
 In addition to any user-defined subagents, deep agents have access to a `general-purpose` subagent at all times. This subagent:
 - Has the same system prompt as the main agent
 - Has access to all the same tools
 - Uses the same model (unless overridden)
+- Inherits skills from the main agent (when skills are configured)
 
 ### When to use it
 
@@ -325,6 +264,59 @@ The general-purpose subagent is ideal for context isolation without specialized 
 <Card title="Example">
     Instead of the main agent making 10 web searches and filling its context with results, it delegates to the general-purpose subagent: `task(name="general-purpose", task="Research quantum computing trends")`. The subagent performs all the searches internally and returns only a summary.
 </Card>
+
+### Skills inheritance
+
+When configuring [skills](/oss/deepagents/skills) with `create_deep_agent`:
+
+- **General-purpose subagent**: Automatically inherits skills from the main agent
+- **Custom subagents**: Do NOT inherit skills by default—use the `skills` parameter to give them their own skills
+
+<Note>
+    Only subagents configured with skills get a `SkillsMiddleware` instance — custom subagents without a `skills` parameter do not. When present, skill state is fully isolated in both directions: the parent's skills are not visible to the child, and the child's skills are not propagated back to the parent.
+</Note>
+
+:::python
+```python
+from deepagents import create_deep_agent
+
+# Research subagent with its own skills
+research_subagent = {
+    "name": "researcher",
+    "description": "Research assistant with specialized skills",
+    "system_prompt": "You are a researcher.",
+    "tools": [web_search],
+    "skills": ["/skills/research/", "/skills/web-search/"],  # Subagent-specific skills
+}
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-5-20250929",
+    skills=["/skills/main/"],  # Main agent and GP subagent get these
+    subagents=[research_subagent],  # Gets only /skills/research/ and /skills/web-search/
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, SubAgent } from "deepagents";
+
+// Research subagent with its own skills
+const researchSubagent: SubAgent = {
+  name: "researcher",
+  description: "Research assistant with specialized skills",
+  systemPrompt: "You are a researcher.",
+  tools: [webSearch],
+  skills: ["/skills/research/", "/skills/web-search/"],  // Subagent-specific skills
+};
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-5-20250929",
+  skills: ["/skills/main/"],  // Main agent and GP subagent get these
+  subagents: [researchSubagent],  // Gets only /skills/research/ and /skills/web-search/
+});
+```
+:::
 
 ## Best practices
 

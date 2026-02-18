@@ -1,0 +1,291 @@
+---
+title: Attribute-based access control
+sidebarTitle: Attribute-based access control
+---
+
+This reference explains LangSmith's Attribute-Based Access Control (ABAC) system, which enables fine-grained access control based on resource attributes, complementing [RBAC](/langsmith/rbac). For automated user provisioning into roles, see [SCIM](/langsmith/user-management#set-up-scim-for-your-organization).
+
+ABAC complements [Role-Based Access Control (RBAC)](/langsmith/rbac) by adding tag-based conditions to access decisions. While RBAC grants blanket permissions based on a user's role (e.g., "can read all projects"), ABAC lets you restrict or grant access based on resource tags (e.g., "can only read projects tagged with Environment=Development").
+
+<Note>
+ABAC (Attribute-Based Access Control) is an Enterprise feature in private beta. If you are interested in upgrading to Enterprise, [contact our sales team](https://www.langchain.com/contact-sales).
+</Note>
+
+<Note>
+Roles and resource tags can be managed via the UI or API. ABAC policies are currently only configurable via the [API](https://api.smith.langchain.com/docs#/access_policies).
+</Note>
+
+## Before you begin
+
+* [Set up resource tags](/langsmith/set-up-resource-tags) in your workspace.
+* ABAC currently only supports `resource_tag_key` as an `attribute_name` in policies, for evaluating against resource tags. No other attributes are supported yet.
+
+## Access policy structure
+
+An access policy defines conditions under which access is granted or denied. Here's the structure:
+
+```json
+{
+  "name": "Policy Name",
+  "description": "Optional description",
+  "effect": "allow | deny",
+  "condition_groups": [
+    {
+      "permission": "projects:read",
+      "resource_type": "project",
+      "conditions": [
+        {
+          "attribute_name": "resource_tag_key",
+          "attribute_key": "Environment",
+          "operator": "equals",
+          "attribute_value": "Production"
+        }
+      ]
+    }
+  ],
+  "role_ids": ["<role-uuid>"]
+}
+```
+
+### Effect
+
+The `effect` determines what happens when conditions match:
+
+- **`allow`** - Grant access when conditions match
+- **`deny`** - Block access when conditions match
+
+<Note>
+Deny policies always take precedence. If both an allow and deny policy match, access is denied.
+</Note>
+
+### Condition groups
+
+The `condition_groups` array contains one or more condition groups. Multiple condition groups are evaluated with **OR logic** - if any group matches, the policy applies.
+
+Each condition group specifies:
+- **`permission`** - The permission this group applies to
+- **`resource_type`** - The resource type to match
+- **`conditions`** - Array of conditions (evaluated with **AND logic** within the group)
+
+#### Resource types and permissions
+
+| Resource type | Supported permissions |
+|---------------|----------------------|
+| `project` | `projects:read`, `runs:read` |
+| `prompt` | `prompts:read`, `prompts:update`, `prompts:delete` |
+| `dataset` | `datasets:read`, `datasets:update`, `datasets:delete`, `datasets:share` |
+
+<Note>
+Runs don't have their own tags. Run permissions (`runs:read`) are evaluated against the parent project's tags.
+</Note>
+
+#### Conditions
+
+Each condition in the `conditions` array specifies:
+- **`attribute_name`** - Currently only `resource_tag_key` is supported
+- **`attribute_key`** - The tag key to match (e.g., `Environment`, `Team`)
+- **`operator`** - The comparison operator
+- **`attribute_value`** - The value to compare against
+
+##### Operators
+
+| Operator | Description |
+|----------|-------------|
+| `equals` | Exact match (case sensitive) |
+| `not_equals` | Values differ (case sensitive) |
+| `equals_ignore_case` | Exact match (case insensitive) |
+| `not_equals_ignore_case` | Values differ (case insensitive) |
+| `matches` | Glob pattern matching with `*` and `?` wildcards |
+| `not_matches` | Match when value doesn't match glob pattern |
+
+##### `_if_exists` variants
+
+Each operator has an `_if_exists` variant that matches by default when the tag key is absent, or evaluates the condition normally when the tag exists:
+
+| Operator | Description |
+|----------|-------------|
+| `equals_if_exists` | Exact match (case sensitive), or if tag key absent |
+| `not_equals_if_exists` | Values differ (case sensitive), or if tag key absent |
+| `equals_ignore_case_if_exists` | Exact match (case insensitive), or if tag key absent |
+| `not_equals_ignore_case_if_exists` | Values differ (case insensitive), or if tag key absent |
+| `matches_if_exists` | Glob pattern match, or if tag key absent |
+| `not_matches_if_exists` | Match when value doesn't match glob pattern, or if tag key absent |
+
+<Tip>
+In an **allow** policy, `_if_exists` variants grant access to resources that either match the condition or don't have the specified tag key. In a **deny** policy, they block resources that either match the condition or don't have the tag key.
+</Tip>
+
+### Roles
+
+The `role_ids` array specifies which workspace roles the policy applies to. When a user with that role accesses a resource, the policy conditions are evaluated.
+
+Policies can be attached to roles when creating the policy, or attached later via the API.
+
+## Managing access policies
+
+Access policies are managed via the LangSmith API by [Organization Admins](/langsmith/rbac#organization-admin). Before creating policies, [set up resource tags](/langsmith/set-up-resource-tags) in your workspace.
+
+## How ABAC works with RBAC
+
+[RBAC](/langsmith/rbac) permissions and ABAC policies are both considered when determining access to resources:
+
+- ABAC **deny** policies override RBAC permissions
+- ABAC **allow** policies can grant access even without RBAC permissions
+- If no ABAC policies match, the system falls back to RBAC
+
+### Policy evaluation outcomes
+
+**Feature combinations:**
+
+| RBAC enabled | ABAC enabled | Behavior |
+|--------------|--------------|----------|
+| ✗ | ✗ | All workspace members have Admin-level access |
+| ✓ | ✗ | Standard RBAC - access based on role permissions |
+| ✓ | ✓ | RBAC + ABAC - fine-grained tag-based access control |
+
+**When both RBAC and ABAC are enabled:**
+
+| RBAC permits | Allow policy matches | Deny policy matches | Result |
+|--------------|---------------------|---------------------|--------|
+| ✓ | ✓ | ✗ | **Allowed** |
+| ✓ | ✗ | ✗ | **Allowed** (RBAC fallback) |
+| ✓ | ✓ | ✓ | **Denied** (deny wins) |
+| ✓ | ✗ | ✓ | **Denied** (deny wins) |
+| ✗ | ✓ | ✗ | **Allowed** (ABAC grants access) |
+| ✗ | ✗ | ✗ | **Denied** |
+| ✗ | ✓ | ✓ | **Denied** (deny wins) |
+
+## Example scenarios
+
+### 1. Annotator team assignment
+
+Allow annotators to only access datasets tagged for their team:
+
+```json
+{
+  "name": "Annotator Team A Access",
+  "effect": "allow",
+  "condition_groups": [{
+    "permission": "datasets:read",
+    "resource_type": "dataset",
+    "conditions": [{
+      "attribute_name": "resource_tag_key",
+      "attribute_key": "Annotation-Team",
+      "operator": "equals",
+      "attribute_value": "Team-A"
+    }]
+  }]
+}
+```
+
+### 2. Block sensitive data
+
+Deny access to datasets containing PII. Since deny policies override allow policies, this blocks access even for users with RBAC permissions:
+
+```json
+{
+  "name": "Block PII Datasets",
+  "effect": "deny",
+  "condition_groups": [{
+    "permission": "datasets:read",
+    "resource_type": "dataset",
+    "conditions": [{
+      "attribute_name": "resource_tag_key",
+      "attribute_key": "Contains-PII",
+      "operator": "equals",
+      "attribute_value": "true"
+    }]
+  }]
+}
+```
+
+### 3. Application-based access with wildcards
+
+Allow engineers to access projects for any application in the "chatbot" family using glob patterns:
+
+```json
+{
+  "name": "Chatbot Apps Access",
+  "effect": "allow",
+  "condition_groups": [{
+    "permission": "projects:read",
+    "resource_type": "project",
+    "conditions": [{
+      "attribute_name": "resource_tag_key",
+      "attribute_key": "Application",
+      "operator": "matches",
+      "attribute_value": "chatbot-*"
+    }]
+  }]
+}
+```
+
+### 4. Client and purpose isolation (AND logic)
+
+Grant access only if both conditions are met - dataset is for training AND belongs to a specific client:
+
+```json
+{
+  "name": "Client Training Data Access",
+  "effect": "allow",
+  "condition_groups": [{
+    "permission": "datasets:read",
+    "resource_type": "dataset",
+    "conditions": [
+      {
+        "attribute_name": "resource_tag_key",
+        "attribute_key": "Purpose",
+        "operator": "equals",
+        "attribute_value": "Training"
+      },
+      {
+        "attribute_name": "resource_tag_key",
+        "attribute_key": "Client",
+        "operator": "equals",
+        "attribute_value": "Acme-Corp"
+      }
+    ]
+  }]
+}
+```
+
+### 5. Client data plus resources without a `Client` tag using `_if_exists`
+
+Consultants don't have RBAC `datasets:read` permission, but this policy grants them access to datasets tagged `Client=Acme-Corp`, as well as datasets that don't have a `Client` tag at all. Datasets tagged with a different client (e.g., `Client=Other-Corp`) remain blocked:
+
+```json
+{
+  "name": "Acme Consultant Access",
+  "effect": "allow",
+  "condition_groups": [{
+    "permission": "datasets:read",
+    "resource_type": "dataset",
+    "conditions": [{
+      "attribute_name": "resource_tag_key",
+      "attribute_key": "Client",
+      "operator": "equals_if_exists",
+      "attribute_value": "Acme-Corp"
+    }]
+  }]
+}
+```
+
+## Troubleshooting
+
+**Access unexpectedly denied?**
+- Check if a deny policy is matching (deny always takes precedence)
+- Check if the user has RBAC permissions or a matching allow policy
+- Verify the resource has the expected tag and value
+- Deny policies with `_if_exists` operators block resources missing that tag key
+- For case-sensitive operators (`equals`, `not_equals`), check for case mismatches
+- With multiple conditions in a group, all must match (AND logic)
+
+**Access unexpectedly granted?**
+- Review RBAC permissions (users may have access via their role)
+- Check if an allow policy is too broad (e.g., using wildcards)
+- `_if_exists` operators match resources missing that tag key
+
+**Policy not taking effect?**
+- Confirm the policy is attached to the correct role
+- Verify the user has that role in the workspace
+- Check that `resource_type` and `permission` match the resource being accessed
