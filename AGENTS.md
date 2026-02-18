@@ -31,9 +31,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 
 ## Local development
 
-```bash
-mint update  # Always run first to get latest Mintlify CLI
-```
+See [Contributing to documentation](/oss/contributing/documentation) for setup instructions.
 
 ## Frontmatter
 
