@@ -46,42 +46,134 @@ Sandboxes are especially useful for:
 
 There are two architecture patterns for integrating agents with sandboxes, based on where the agent runs.
 
-**Agent in sandbox pattern**
+### Agent in sandbox pattern
 
 The agent runs inside the sandbox and you communicate with it over the network. You build a Docker or VM image with your agent framework pre-installed, run it inside the sandbox, and connect from outside to send messages.
 
 Benefits:
 
-- Mirrors local development closely.
-- Tight coupling between agent and environment.
+- ✅ Mirrors local development closely.
+- ✅ Tight coupling between agent and environment.
 
 Trade-offs:
 
-- API keys must live inside the sandbox (security risk).
-- Updates require rebuilding images.
-- Requires infrastructure for communication (WebSocket or HTTP layer).
+- 🔴 API keys must live inside the sandbox (security risk).
+- 🔴 Updates require rebuilding images.
+- 🔴 Requires infrastructure for communication (WebSocket or HTTP layer).
 
-**Sandbox as tool pattern**
+To run an agent in a sandbox, build an image and install deepagents on it.
 
-The agent runs on your machine or server. When it needs to execute code, it calls a remote sandbox via the provider's API.
+```dockerfile
+FROM python:3.11
+RUN pip install deepagents-cli
+```
+
+Then run the agent inside the sandbox.
+To use the agent inside the sandbox you have to add additional infrastructure to handle communication between your application and the agent inside the sandbox.
+
+### Sandbox as tool pattern
+
+The agent runs on your machine or server. When it needs to execute code, it calls sandbox tools (such as `execute`, `read_file`, or `write_file`) which invoke the provider's APIs to run operations in a remote sandbox.
 
 Benefits:
 
-- Update agent code instantly without rebuilding images.
-- Cleaner separation between agent state and execution.
+- ✅ Update agent code instantly without rebuilding images.
+- ✅ Cleaner separation between agent state and execution.
     - API keys stay outside the sandbox.
     - Sandbox failures don't lose agent state.
     - Option to run tasks in multiple sandboxes in parallel.
-- Pay only for execution time.
+- ✅ Pay only for execution time.
 
 Trade-offs:
 
-- Network latency on each execution call.
+- 🔴 Network latency on each execution call.
+
+Example:
+
+:::python
+
+```python
+from dotenv import load_dotenv
+from daytona import Daytona
+
+from langchain_daytona import DaytonaSandbox
+from deepagents import create_deep_agent
+
+
+load_dotenv()
+
+# Can also do this with E2B, Runloop, Modal
+sandbox = Daytona().create()
+backend = DaytonaSandbox(sandbox=sandbox)
+
+agent = create_deep_agent(
+    backend=backend,
+    system_prompt="You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+)
+
+try:
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Create a hello world Python script and run it",
+                }
+            ]
+        }
+    )
+    print(result["messages"][-1].content)
+except Exception:
+    # Optional: delete the sandbox proactively on an exception
+    sandbox.stop()
+    raise
+```
+
+:::
+
+:::js
+
+```typescript
+import "dotenv/config";
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
+
+// Can also do this with E2B, Runloop, Modal
+const sandbox = await DaytonaSandbox.create();
+
+const agent = createDeepAgent({
+backend: sandbox,
+systemPrompt:
+    "You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+});
+
+try {
+const result = await agent.invoke({
+    messages: [
+    {
+        role: "user",
+        content: "Create a hello world Python script and run it",
+    },
+    ],
+});
+const lastMessage = result.messages[result.messages.length - 1];
+console.log(
+    typeof lastMessage.content === "string"
+    ? lastMessage.content
+    : String(lastMessage.content),
+);
+} catch (err) {
+// Optional: delete the sandbox proactively on an exception
+await sandbox.close();
+throw err;
+}
+```
+
+:::
 
 The examples in this doc use the sandbox as a tool pattern.
 Choose the agent in sandbox pattern when your provider's SDK handles the communication layer and you want production to mirror local development.
 Choose the sandbox as tool pattern when you need to iterate quickly on agent logic, keep API keys outside the sandbox, or prefer cleaner separation of concerns.
-For a deeper dive with trade-offs and implementation details, see [The two patterns by which agents connect sandboxes](https://blog.langchain.com/the-two-patterns-by-which-agents-connect-sandboxes/).
 
 :::js
 
