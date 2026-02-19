@@ -185,60 +185,148 @@ When resuming multiple interrupts with a single invocation, map each interrupt I
 This ensures each response is paired with the correct interrupt at runtime.
 
 :::python
+
 ```python
-from langgraph.types import Command
+"""Minimal example: resuming multiple parallel interrupts."""
 
-def ask_pending_hitl_questions(interrupts: list) -> dict[str, str] | None:
-    resume_map = {}
-    for pending_interrupt in interrupts:
-        answer = input(f"Q: {pending_interrupt.value} ")
-        resume_map[pending_interrupt.id] = answer
-    return resume_map or None
+from typing import Annotated, TypedDict
+import operator
 
-# In your run loop, when the graph has interrupted:
-resume_map = ask_pending_hitl_questions(state)
-if resume_map:
-    async for e in workflow.astream(Command(resume=resume_map), config=config):
-        print(f"===> {e}")
-else:
-    break
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import START, END, StateGraph
+from langgraph.types import Command, interrupt
+
+
+class State(TypedDict):
+    vals: Annotated[list[str], operator.add]
+
+
+def node_a(state):
+    answer = interrupt("question_a")
+    return {"vals": [f"a:{answer}"]}
+
+
+def node_b(state):
+    answer = interrupt("question_b")
+    return {"vals": [f"b:{answer}"]}
+
+
+graph = (
+    StateGraph(State)
+    .add_node("a", node_a)
+    .add_node("b", node_b)
+    .add_edge(START, "a")
+    .add_edge(START, "b")
+    .add_edge("a", END)
+    .add_edge("b", END)
+    .compile(checkpointer=InMemorySaver())
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+# Step 1: invoke — both parallel nodes hit interrupt() and pause
+interrupted_result = graph.invoke({"vals": []}, config)
+print(interrupted_result)
+"""
+{
+    'vals': [],
+    '__interrupt__': [
+        Interrupt(value='question_a', id='bd4f3183600f2c41dddafbf8f0f7be7b'),
+        Interrupt(value='question_b', id='29963e3d3585f0cef025dd0f14323f55')
+    ]
+}
+"""
+
+# Step 2: resume all pending interrupts at once
+resume_map = {
+    i.id: f"answer for {i.value}"
+    for i in interrupted_result["__interrupt__"]
+}
+result = graph.invoke(Command(resume=resume_map), config)
+
+print("Final state:", result)
+#> Final state: {'vals': ['a:answer for question_a', 'b:answer for question_b']}
 ```
+
 :::
 
 :::js
 ```typescript
+/**
+ * Minimal example: resuming multiple parallel interrupts.
+ */
+
 import {
+  Annotation,
   Command,
-  type StateSnapshot,
+  END,
+  INTERRUPT,
+  MemorySaver,
+  START,
+  StateGraph,
+  interrupt,
+  isInterrupted,
 } from "@langchain/langgraph";
 
-async function askPendingHitlQuestions(
-  state: StateSnapshot,
-): Promise<Record<string, string> | null> {
-  const rl = createInterface({ input, output });
-  const resumeMap: Record<string, string> = {};
-  for (const pendingInterrupt of getPendingInterrupts(state)) {
-    const answer = await rl.question(`Q: ${pendingInterrupt.value as string} `);
-    const id = pendingInterrupt.id ?? randomUUID();
-    resumeMap[id] = answer;
-  }
-  rl.close();
-  return Object.keys(resumeMap).length > 0 ? resumeMap : null;
+const State = Annotation.Root({
+  vals: Annotation<string[]>({
+    reducer: (left, right) =>
+      left.concat(Array.isArray(right) ? right : [right]),
+    default: () => [],
+  }),
+});
+
+function nodeA(_state: typeof State.State) {
+  const answer = interrupt("question_a") as string;
+  return { vals: [`a:${answer}`] };
 }
 
-// When the graph has interrupted, build the resume map from result.__interrupt__
-const resumeMap = await askPendingHitlQuestions(state);
-if (resumeMap) {
-  const resumeStream = await workflow.stream(
-  new Command({ resume: resumeMap }),
-    config,
-  );
-  for await (const e of resumeStream) {
-    console.log(`===> ${JSON.stringify(e)}`);
-  }
-} else {
-  break;
+function nodeB(_state: typeof State.State) {
+  const answer = interrupt("question_b") as string;
+  return { vals: [`b:${answer}`] };
 }
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addEdge(START, "a")
+  .addEdge(START, "b")
+  .addEdge("a", END)
+  .addEdge("b", END)
+  .compile({ checkpointer: new MemorySaver() });
+
+const config = { configurable: { thread_id: "1" } };
+
+async function main() {
+  // Step 1: invoke — both parallel nodes hit interrupt() and pause
+  const interruptedResult = await graph.invoke({ vals: [] }, config);
+  console.log(interruptedResult);
+  /*
+  {
+    vals: [],
+    __interrupt__: [
+      { id: '...', value: 'question_a' },
+      { id: '...', value: 'question_b' }
+    ]
+  }
+  */
+
+  // Step 2: resume all pending interrupts at once
+  const resumeMap: Record<string, string> = {};
+  if (isInterrupted(interruptedResult)) {
+    for (const i of interruptedResult[INTERRUPT]) {
+      if (i.id != null) {
+        resumeMap[i.id] = `answer for ${i.value}`;
+      }
+    }
+  }
+  const result = await graph.invoke(new Command({ resume: resumeMap }), config);
+
+  console.log("Final state:", result);
+  //> Final state: { vals: ['a:answer for question_a', 'b:answer for question_b'] }
+}
+
+main().catch(console.error);
 ```
 :::
 
