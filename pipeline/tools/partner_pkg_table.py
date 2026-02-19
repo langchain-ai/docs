@@ -206,10 +206,11 @@ LangChain offers an extensive ecosystem with 1000+ integrations across chat & em
 
 A **provider** is a third-party service or platform that LangChain integrates with to access AI capabilities like chat models, embeddings, and vector stores. These providers have standalone `langchain-provider` packages for improved versioning, dependency management, and testing.
 
-<Columns cols={{3}}>
+<Columns cols={{4}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />
     <Card title="Embedding models" icon="layers-difference" href="/oss/integrations/text_embedding" arrow />
     <Card title="Tools and toolkits" icon="tool" href="/oss/integrations/tools" arrow />
+    <Card title="Sandboxes" icon="cube" href="/oss/deepagents/sandboxes" arrow />
 </Columns>
 
 To see a full list of integrations by component type, refer to the categories in the sidebar.
