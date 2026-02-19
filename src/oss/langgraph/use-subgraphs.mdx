@@ -614,15 +614,14 @@ const subgraph = builder.compile({ checkpointer: false });  // or true, or null
 |---|---|---|---|
 | Interrupts | ❌ | ✅ | ✅ |
 | Persistent subgraph state | ❌ | ❌ | ✅ |
-| Multiple subgraphs | ✅ | ✅ | ✅\*1 |
-| State inspection | ❌ | ✅\*2 | ✅ |
+| Multiple subgraphs | ✅ | ✅ | ✅ |
+| State inspection | ❌ | ✅\* | ✅ |
 
-1. State inspection is available for the current invocation only (only available when interrupted)
-2. Multiple subgraphs with `checkpointer=True` requires wrapping each subgraph with a unique node name. See [multiple subgraphs and namespace isolation](#multiple-subgraphs-and-namespace-isolation).
+\* State inspection with `checkpointer=None` is available for the current invocation only (while interrupted). Each invocation starts fresh, so there is no accumulated state to inspect after the invocation completes.
 
 - **Interrupts**: The subgraph can use [interrupt()](/oss/langgraph/interrupts) to pause execution and wait for user input, then resume where it left off.
 - **Persistent subgraph state**: The subgraph retains its state across multiple invocations within the same [thread](/oss/langgraph/persistence#threads). Each call picks up where the last one left off rather than starting fresh.
-- **Multiple subgraphs**: Multiple subgraph instances can be invoked within a single node without checkpoint namespace conflicts. This is relevant for subagents invoked in a `tools` node, for example.
+- **Multiple subgraphs**: Multiple subgraph instances can be invoked within a single node without checkpoint namespace conflicts. With `checkpointer=True`, each invocation gets a position-based namespace suffix (e.g., `calling_node`, `calling_node|1`). See [namespace isolation with `checkpointer=True`](#namespace-isolation-with-checkpointertrue) for details.
 - **State inspection**: The subgraph's state is available via `get_state(config, subgraphs=True)` for debugging and monitoring.
 
 <Note>
@@ -650,7 +649,7 @@ const subgraph = subgraphBuilder.compile({ checkpointer: false });  // [!code hi
 :::
 
 <Note>
-This is also a workaround for the [`MULTIPLE_SUBGRAPHS`](/oss/langgraph/errors/MULTIPLE_SUBGRAPHS) error when you don't need interrupt support.
+Use `checkpointer=False` when you don't need interrupt support or state inspection for the subgraph.
 </Note>
 
 ### `checkpointer=None`
@@ -727,6 +726,8 @@ Compile with `checkpointer=True` to enable **stateful continuations**. LangGraph
 
 Use this mode when a subagent needs to maintain its own multi-turn conversation history.
 
+When a subgraph is [called inside a node](#call-a-subgraph-inside-a-node), LangGraph automatically assigns each invocation a position-based namespace suffix to prevent conflicts. The first invocation gets the base namespace (e.g., `calling_node`), the second gets `calling_node|1`, and so on. This means state persists per **call position**, not per subgraph identity. See [namespace isolation with `checkpointer=True`](#namespace-isolation-with-checkpointertrue) for details.
+
 :::python
 ```python
 from langgraph.graph import START, StateGraph, MessagesState
@@ -790,21 +791,27 @@ await graph.invoke({ messages: [{ role: "user", content: "what did I say?" }] },
 ```
 :::
 
-#### Multiple subgraphs and namespace isolation
+#### Namespace isolation with `checkpointer=True`
 
-When multiple subgraphs are [called inside a node](#call-a-subgraph-inside-a-node), `checkpointer=True` cannot disambiguate their checkpoint namespaces. Each subgraph inherits the calling node's namespace, and with `checkpointer=True` the per-invocation identifiers are stripped — so all subgraph invocations collapse to the same namespace. This causes a [`MULTIPLE_SUBGRAPHS`](/oss/langgraph/errors/MULTIPLE_SUBGRAPHS) error.
+When multiple subgraphs are [called inside a node](#call-a-subgraph-inside-a-node) with `checkpointer=True`, LangGraph automatically assigns each invocation a **position-based namespace suffix** to prevent conflicts. The first invocation gets the base namespace (e.g., `calling_node`), the second gets `calling_node|1`, the third gets `calling_node|2`, and so on:
 
-This is particularly relevant for [multi-agent](/oss/langchain/multi-agent) architectures where multiple subagents are invoked from a unified `tools` node.
+```
+First sub.invoke():   calling_node       (position 0, no suffix)
+Second sub.invoke():  calling_node|1     (position 1)
+Third sub.invoke():   calling_node|2     (position 2)
+```
 
-Subgraphs [added as nodes](#add-a-subgraph-as-a-node) do not have this problem because each node has a unique name, which provides a distinct namespace.
+This means state persists per **call position** — the first `sub.invoke()` in your node always reads from and writes to the same namespace, regardless of what arguments you pass. If you reorder the calls, each subgraph may load the wrong state.
 
-| Subgraph pattern | With `checkpointer=True` | Multiple subgraphs? |
+Subgraphs [added as nodes](#add-a-subgraph-as-a-node) do not have this limitation because each node has a unique name that becomes part of the namespace.
+
+| Subgraph pattern | Namespace with `checkpointer=True` | Isolation |
 |------------------|--------------------------|----------------|
-| [Added as a node](#add-a-subgraph-as-a-node) | `node_name\|internal` | Yes — node names are unique |
-| [Called inside a node](#call-a-subgraph-inside-a-node) | `calling_node` | No — invocations share namespace |
+| [Added as a node](#add-a-subgraph-as-a-node) | `node_name\|internal_node` | Name-based (stable) |
+| [Called inside a node](#call-a-subgraph-inside-a-node) | `calling_node`, `calling_node\|1`, ... | Position-based (order-dependent) |
 
-<Accordion title="Workaround: wrap each subgraph with a unique node name">
-To get both persistent subgraph state **and** multiple subgraphs for subgraphs [called inside a node](#call-a-subgraph-inside-a-node), wrap each subgraph instance in its own `StateGraph` with a unique node name. With `checkpointer=True`, the namespace includes the node name (e.g., `calling_node|fruit_agent` vs `calling_node|veggie_agent`), so each subagent gets its own isolated namespace.
+<Accordion title="Tip: wrap subgraphs with unique node names for stable namespaces">
+For subgraphs [called inside a node](#call-a-subgraph-inside-a-node), you can wrap each subgraph in its own `StateGraph` with a unique node name. This gives you **name-based namespaces** (e.g., `calling_node|fruit_agent` vs `calling_node|veggie_agent`) instead of position-based ones, making state persistence stable regardless of call order.
 
 :::python
 ```python
@@ -821,7 +828,7 @@ def create_named_subagent(agent, name: str):
 fruit_agent = create_named_subagent(base_agent, "fruit_agent")
 veggie_agent = create_named_subagent(base_agent, "veggie_agent")
 
-# Safe to call both in parallel from the same node — no namespace conflicts
+# Call order doesn't matter — namespaces are name-based, not position-based
 def my_node(state):
     fruit_result = fruit_agent.invoke({"messages": state["messages"]})
     veggie_result = veggie_agent.invoke({"messages": state["messages"]})
@@ -847,7 +854,7 @@ function createNamedSubagent(agent: CompiledStateGraph, name: string) {
 const fruitAgent = createNamedSubagent(baseAgent, "fruit_agent");
 const veggieAgent = createNamedSubagent(baseAgent, "veggie_agent");
 
-// Safe to call both in parallel from the same node — no namespace conflicts
+// Call order doesn't matter — namespaces are name-based, not position-based
 async function myNode(state) {
   const fruitResult = await fruitAgent.invoke({ messages: state.messages });
   const veggieResult = await veggieAgent.invoke({ messages: state.messages });
