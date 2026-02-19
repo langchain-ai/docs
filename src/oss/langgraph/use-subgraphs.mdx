@@ -12,11 +12,6 @@ Subgraphs are useful for:
 - Re-using a set of nodes in multiple graphs
 - Distributing development: when you want different teams to work on different parts of the graph independently, you can define each part as a subgraph, and as long as the subgraph interface (the input and output schemas) is respected, the parent graph can be built without knowing any details of the subgraph
 
-When adding subgraphs, you need to define how the parent graph and the subgraph communicate:
-
-* [Invoke a graph from a node](#invoke-a-graph-from-a-node) — subgraphs are called from inside a node in the parent graph
-* [Add a graph as a node](#add-a-graph-as-a-node) — a subgraph is added directly as a node in the parent and **shares [state keys](/oss/langgraph/graph-api#state)** with the parent
-
 ## Setup
 
 :::python
@@ -43,11 +38,21 @@ Sign up for [LangSmith](https://smith.langchain.com) to quickly spot issues and 
 </Tip>
 
 
-## Invoke a graph from a node
+## Define subgraph communication
 
-A simple way to implement a subgraph is to invoke a graph from inside the node of another graph. In this case subgraphs can have **completely different schemas** from the parent graph (no shared keys). For example, you might want to keep a private message history for each of the agents in a [multi-agent](/oss/langchain/multi-agent) system.
+When adding subgraphs, you need to define how the parent graph and the subgraph communicate. The right approach depends on whether the parent and subgraph share [state keys](/oss/langgraph/graph-api#state):
 
-If that's the case for your application, you need to define a node **function that invokes the subgraph**. This function needs to transform the input (parent) state to the subgraph state before invoking the subgraph, and transform the results back to the parent state before returning the state update from the node.
+| Pattern | When to use | State schemas |
+|---------|------------|--------------|
+| [Call a subgraph inside a node](#call-a-subgraph-inside-a-node) | Parent and subgraph have **different state schemas** (no shared keys), or you need to transform state between them | You write a wrapper function that maps parent state to subgraph input and subgraph output back to parent state |
+| [Add a subgraph as a node](#add-a-subgraph-as-a-node) | Parent and subgraph **share state keys** — the subgraph reads from and writes to the same channels as the parent | You pass the compiled subgraph directly to `add_node` — no wrapper function needed |
+
+<a id="invoke-a-graph-from-a-node"></a>
+### Call a subgraph inside a node
+
+When the parent graph and subgraph have **different state schemas** (no shared keys), invoke the subgraph inside a node function. This is common when you want to keep a private message history for each agent in a [multi-agent](/oss/langchain/multi-agent) system.
+
+The node function transforms the parent state to the subgraph state before invoking the subgraph, and transforms the results back to the parent state before returning.
 
 :::python
 ```python
@@ -411,9 +416,10 @@ const graph = builder.compile();
   :::
 </Accordion>
 
-## Add a graph as a node
+<a id="add-a-graph-as-a-node"></a>
+### Add a subgraph as a node
 
-When the parent graph and subgraph can communicate over a shared state key (channel) in the [schema](/oss/langgraph/graph-api#state), you can add a graph as a [node](/oss/langgraph/graph-api#nodes) in another graph. For example, in [multi-agent](/oss/langchain/multi-agent) systems, the agents often communicate over a shared [messages](/oss/langgraph/graph-api#why-use-messages) key.
+When the parent graph and subgraph **share state keys**, you can pass a compiled subgraph directly to `add_node`. No wrapper function is needed — the subgraph reads from and writes to the parent's state channels automatically. For example, in [multi-agent](/oss/langchain/multi-agent) systems, the agents often communicate over a shared [messages](/oss/langgraph/graph-api#why-use-messages) key.
 
 <img
   src="/oss/images/subgraph.png"
@@ -588,9 +594,70 @@ const graph = builder.compile();
   :::
 </Accordion>
 
-## Add persistence
+## Subgraph checkpointing
 
-You only need to **provide the checkpointer when compiling the parent graph**. LangGraph will automatically propagate the checkpointer to the child subgraphs.
+When you compile a parent graph with a checkpointer, subgraphs inherit it by default. You can control checkpointing behavior per-subgraph using the `checkpointer` parameter on `.compile()`:
+
+:::python
+```python
+subgraph = builder.compile(checkpointer=False)  # or True / None
+```
+:::
+
+:::js
+```typescript
+const subgraph = builder.compile({ checkpointer: false });  // or true, or null
+```
+:::
+
+| | `False` | `None` (default) | `True` |
+|---|---|---|---|
+| Interrupts | ❌ | ✅ | ✅ |
+| Persistent subgraph state | ❌ | ❌ | ✅ |
+| Parallel execution | ✅ | ✅ | ✅\*1 |
+| State inspection | ❌ | ✅\*2 | ✅ |
+
+\*1 State inspection is available for the current invocation only (only available when interrupted)
+\*2 Parallel execution with `checkpointer=True` requires wrapping each subgraph with a unique node name. See [parallel execution and namespace isolation](#parallel-execution-and-namespace-isolation).
+
+- **Interrupts**: The subgraph can use [interrupt()](/oss/langgraph/interrupts) to pause execution and wait for user input, then resume where it left off.
+- **Persistent subgraph state**: The subgraph retains its state across multiple invocations within the same [thread](/oss/langgraph/persistence#threads). Each call picks up where the last one left off rather than starting fresh.
+- **Parallel execution**: Multiple instances of the same subgraph can run concurrently within a single graph invocation without checkpoint namespace conflicts.
+- **State inspection**: The subgraph's state is available via `get_state(config, subgraphs=True)` for debugging and monitoring.
+
+<Note>
+The parent graph must be compiled with a checkpointer for `checkpointer=None` and `checkpointer=True` to work. See [persistence](/oss/langgraph/persistence).
+</Note>
+
+### `checkpointer=False`
+
+Compile with `checkpointer=False` to opt out of checkpointing entirely. No checkpoints are written for the subgraph. The subgraph cannot use `interrupt()` and its state is not inspectable via `get_state`. This is the lightest-weight option.
+
+Use this mode for subgraphs that perform simple operations where you don't need interrupt support or state inspection.
+
+:::python
+```python
+subgraph_builder = StateGraph(...)
+subgraph = subgraph_builder.compile(checkpointer=False)  # [!code highlight]
+```
+:::
+
+:::js
+```typescript
+const subgraphBuilder = new StateGraph(...);
+const subgraph = subgraphBuilder.compile({ checkpointer: false });  // [!code highlight]
+```
+:::
+
+<Note>
+This is also a workaround for the [`MULTIPLE_SUBGRAPHS`](/oss/langgraph/errors/MULTIPLE_SUBGRAPHS) error when you don't need interrupt support.
+</Note>
+
+### `checkpointer=None`
+
+The default behavior when you omit `checkpointer` or set it to `None`. The subgraph inherits the parent's checkpointer. Each invocation gets a unique checkpoint namespace that includes task IDs (e.g., `node:task_id|subnode:subtask_id`). This means each invocation starts with a fresh state — the subgraph does not remember previous calls. However, within a single invocation, the subgraph can use `interrupt()` to pause and resume.
+
+Use this mode for most use cases, including calling subagents as tools.
 
 :::python
 ```python
@@ -609,7 +676,7 @@ def subgraph_node_1(state: State):
 subgraph_builder = StateGraph(State)
 subgraph_builder.add_node(subgraph_node_1)
 subgraph_builder.add_edge(START, "subgraph_node_1")
-subgraph = subgraph_builder.compile()
+subgraph = subgraph_builder.compile()  # inherits parent checkpointer  # [!code highlight]
 
 # Parent graph
 
@@ -638,7 +705,7 @@ const subgraphBuilder = new StateGraph(State)
   })
   .addEdge(START, "subgraphNode1");
 
-const subgraph = subgraphBuilder.compile();
+const subgraph = subgraphBuilder.compile();  // inherits parent checkpointer  // [!code highlight]
 
 // Parent graph
 const builder = new StateGraph(State)
@@ -650,40 +717,173 @@ const graph = builder.compile({ checkpointer });
 ```
 :::
 
-If you want the subgraph to **have its own memory**, you can compile it with the appropriate checkpointer option. This is useful in [multi-agent](/oss/langchain/multi-agent) systems, if you want agents to keep track of their internal message histories:
+<Tip>
+This is the recommended mode for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools. It supports interrupts and parallel execution while keeping each invocation isolated.
+</Tip>
+
+### `checkpointer=True`
+
+Compile with `checkpointer=True` to enable **stateful continuations**. LangGraph strips task IDs from the checkpoint namespace (turning `node:task_id|subnode:subtask_id` into `node|subnode`), so the subgraph writes to the same namespace every time it's invoked within a thread. State accumulates across invocations — the subgraph "remembers" previous calls.
+
+Use this mode when a subagent needs to maintain its own multi-turn conversation history.
 
 :::python
 ```python
-subgraph_builder = StateGraph(...)
-subgraph = subgraph_builder.compile(checkpointer=True)
+from langgraph.graph import START, StateGraph, MessagesState
+from langgraph.checkpoint.memory import MemorySaver
+
+# Subgraph with its own message history
+
+subgraph_builder = StateGraph(MessagesState)
+# ... add nodes and edges
+subgraph = subgraph_builder.compile(checkpointer=True)  # [!code highlight]
+
+# Parent graph
+
+builder = StateGraph(MessagesState)
+builder.add_node("agent", subgraph)
+builder.add_edge(START, "agent")
+
+checkpointer = MemorySaver()
+graph = builder.compile(checkpointer=checkpointer)
+
+config = {"configurable": {"thread_id": "1"}}
+
+# First invocation — subgraph starts fresh
+graph.invoke({"messages": [{"role": "user", "content": "hi"}]}, config)
+
+# Second invocation — subgraph remembers previous messages
+graph.invoke({"messages": [{"role": "user", "content": "what did I say?"}]}, config)
 ```
 :::
 
 :::js
 ```typescript
-const subgraphBuilder = new StateGraph(...)
-const subgraph = subgraphBuilder.compile({ checkpointer: true });
+import { StateGraph, StateSchema, MessagesValue, START, MemorySaver } from "@langchain/langgraph";
+
+// Subgraph with its own message history
+
+const SubgraphState = new StateSchema({
+  messages: MessagesValue,
+});
+
+const subgraphBuilder = new StateGraph(SubgraphState);
+// ... add nodes and edges
+const subgraph = subgraphBuilder.compile({ checkpointer: true });  // [!code highlight]
+
+// Parent graph
+
+const builder = new StateGraph(SubgraphState)
+  .addNode("agent", subgraph)
+  .addEdge(START, "agent");
+
+const checkpointer = new MemorySaver();
+const graph = builder.compile({ checkpointer });
+
+const config = { configurable: { thread_id: "1" } };
+
+// First invocation — subgraph starts fresh
+await graph.invoke({ messages: [{ role: "user", content: "hi" }] }, config);
+
+// Second invocation — subgraph remembers previous messages
+await graph.invoke({ messages: [{ role: "user", content: "what did I say?" }] }, config);
 ```
 :::
 
-## View subgraph state
+#### Parallel execution and namespace isolation
 
-When you enable [persistence](/oss/langgraph/persistence), you can [inspect the graph state](/oss/langgraph/persistence#checkpoints) (checkpoint) via the appropriate method. To view the subgraph state, you can use the subgraphs option.
+<Warning>
+`checkpointer=True` does not support parallel execution of the same subgraph [called inside a node](#call-a-subgraph-inside-a-node). If two instances run concurrently on the same thread, they write to the same namespace, causing a [`MULTIPLE_SUBGRAPHS`](/oss/langgraph/errors/MULTIPLE_SUBGRAPHS) error.
+</Warning>
+
+LangGraph identifies subgraph checkpoints using a **checkpoint namespace** — a string that encodes the path through the graph hierarchy. How the namespace is constructed depends on how the subgraph is wired into the parent graph.
+
+**Subgraph [added as a node](#add-a-subgraph-as-a-node)**: The namespace is built from node names in the graph hierarchy. Because node names are unique within a graph, the namespace for each subgraph is inherently distinct — even with `checkpointer=True`:
+
+```
+Default:       parent_node:task_id|subgraph_internal_node:task_id
+With True:     parent_node|subgraph_internal_node  (still unique per node)
+```
+
+**Subgraph [called inside a node](#call-a-subgraph-inside-a-node)**: The subgraph doesn't have its own node name. LangGraph uses the calling node's namespace plus an invocation counter to differentiate multiple calls. With `checkpointer=True`, these identifiers are stripped:
+
+```
+Default:       calling_node:task_id|0  (first), calling_node:task_id|1  (second)
+With True:     calling_node  (all invocations collapse to the same namespace)
+```
+
+| Subgraph pattern | With `checkpointer=True` | Parallel-safe? |
+|------------------|--------------------------|----------------|
+| [Added as a node](#add-a-subgraph-as-a-node) | `node_name\|internal` | Yes — node names are unique |
+| [Called inside a node](#call-a-subgraph-inside-a-node) | `calling_node` | No — invocations share namespace |
+
+##### Workaround: wrap each subgraph with a unique node name
+
+To get both persistent subgraph state **and** parallel execution for subgraphs [called inside a node](#call-a-subgraph-inside-a-node), wrap each subgraph instance in its own `StateGraph` with a unique node name. With `checkpointer=True`, the namespace includes the node name (e.g., `calling_node|fruit_agent` vs `calling_node|veggie_agent`), so each subagent gets its own isolated namespace.
 
 :::python
-You can inspect the graph state via `graph.get_state(config)`. To view the subgraph state, you can use `graph.get_state(config, subgraphs=True)`.
+```python
+from langgraph.graph import START, StateGraph, MessagesState
+
+def create_named_subagent(agent, name: str):
+    """Wrap a subgraph in a graph with a unique node name for namespace isolation."""
+    wrapper = StateGraph(MessagesState)
+    wrapper.add_node(name, agent)  # [!code highlight]
+    wrapper.add_edge(START, name)
+    return wrapper.compile(checkpointer=True)
+
+# Each subagent gets a unique namespace based on its node name
+fruit_agent = create_named_subagent(base_agent, "fruit_agent")
+veggie_agent = create_named_subagent(base_agent, "veggie_agent")
+
+# Safe to call both in parallel from the same node — no namespace conflicts
+def my_node(state):
+    fruit_result = fruit_agent.invoke({"messages": state["messages"]})
+    veggie_result = veggie_agent.invoke({"messages": state["messages"]})
+    ...
+```
 :::
 
 :::js
-You can inspect the graph state via `graph.getState(config)`. To view the subgraph state, you can use `graph.getState(config, { subgraphs: true })`.
+```typescript
+import { StateGraph, StateSchema, MessagesValue, START } from "@langchain/langgraph";
+
+function createNamedSubagent(agent: CompiledStateGraph, name: string) {
+  // Wrap a subgraph in a graph with a unique node name for namespace isolation
+  const wrapper = new StateGraph(
+    new StateSchema({ messages: MessagesValue })
+  )
+    .addNode(name, agent)  // [!code highlight]
+    .addEdge(START, name);
+  return wrapper.compile({ checkpointer: true });
+}
+
+// Each subagent gets a unique namespace based on its node name
+const fruitAgent = createNamedSubagent(baseAgent, "fruit_agent");
+const veggieAgent = createNamedSubagent(baseAgent, "veggie_agent");
+
+// Safe to call both in parallel from the same node — no namespace conflicts
+async function myNode(state) {
+  const fruitResult = await fruitAgent.invoke({ messages: state.messages });
+  const veggieResult = await veggieAgent.invoke({ messages: state.messages });
+  ...
+}
+```
 :::
 
+### View subgraph state
+
+When you enable [persistence](/oss/langgraph/persistence), you can inspect the subgraph state using the subgraphs option. With `checkpointer=False`, no subgraph checkpoints are saved, so subgraph state is not available.
+
 <Note>
-Viewing subgraph state requires that LangGraph can **statically discover** the subgraph — i.e., it is [added as a node](#add-a-graph-as-a-node) or [invoked from a node function](#invoke-a-graph-from-a-node). It does not work when a subgraph is called inside a [tool](/oss/langchain/tools) function or other indirection (e.g., the [subagents](/oss/langchain/multi-agent/subagents) pattern). Note that interrupts themselves still propagate to the top-level graph regardless of nesting.
+Viewing subgraph state requires that LangGraph can **statically discover** the subgraph — i.e., it is [added as a node](#add-a-subgraph-as-a-node) or [called inside a node](#call-a-subgraph-inside-a-node). It does not work when a subgraph is called inside a [tool](/oss/langchain/tools) function or other indirection (e.g., the [subagents](/oss/langchain/multi-agent/subagents) pattern). Interrupts still propagate to the top-level graph regardless of nesting.
 </Note>
 
-<Accordion title="View interrupted subgraph state">
-  :::python
+:::python
+<Tabs>
+  <Tab title="checkpointer=None">
+  Returns subgraph state for the **current invocation only**. Each invocation starts fresh.
+
   ```python
   from langgraph.graph import START, StateGraph
   from langgraph.checkpoint.memory import MemorySaver
@@ -694,7 +894,6 @@ Viewing subgraph state requires that LangGraph can **statically discover** the s
       foo: str
 
   # Subgraph
-
   def subgraph_node_1(state: State):
       value = interrupt("Provide value:")
       return {"foo": state["foo"] + value}
@@ -702,11 +901,9 @@ Viewing subgraph state requires that LangGraph can **statically discover** the s
   subgraph_builder = StateGraph(State)
   subgraph_builder.add_node(subgraph_node_1)
   subgraph_builder.add_edge(START, "subgraph_node_1")
-
-  subgraph = subgraph_builder.compile()
+  subgraph = subgraph_builder.compile()  # inherits parent checkpointer
 
   # Parent graph
-
   builder = StateGraph(State)
   builder.add_node("node_1", subgraph)
   builder.add_edge(START, "node_1")
@@ -717,17 +914,51 @@ Viewing subgraph state requires that LangGraph can **statically discover** the s
   config = {"configurable": {"thread_id": "1"}}
 
   graph.invoke({"foo": ""}, config)
-  parent_state = graph.get_state(config)
 
-  subgraph_state = graph.get_state(config, subgraphs=True).tasks[0].state
+  # View subgraph state for the current invocation
+  subgraph_state = graph.get_state(config, subgraphs=True).tasks[0].state  # [!code highlight]
 
-  # resume the subgraph
+  # Resume the subgraph
   graph.invoke(Command(resume="bar"), config)
   ```
+  </Tab>
+  <Tab title="checkpointer=True">
+  Returns **accumulated** subgraph state across all invocations on this thread.
 
-  :::
+  ```python
+  from langgraph.graph import START, StateGraph, MessagesState
+  from langgraph.checkpoint.memory import MemorySaver
 
-  :::js
+  # Subgraph with its own persistent state
+  subgraph_builder = StateGraph(MessagesState)
+  # ... add nodes and edges
+  subgraph = subgraph_builder.compile(checkpointer=True)  # [!code highlight]
+
+  # Parent graph
+  builder = StateGraph(MessagesState)
+  builder.add_node("agent", subgraph)
+  builder.add_edge(START, "agent")
+
+  checkpointer = MemorySaver()
+  graph = builder.compile(checkpointer=checkpointer)
+
+  config = {"configurable": {"thread_id": "1"}}
+
+  graph.invoke({"messages": [{"role": "user", "content": "hi"}]}, config)
+  graph.invoke({"messages": [{"role": "user", "content": "what did I say?"}]}, config)
+
+  # View accumulated subgraph state (includes messages from both invocations)
+  subgraph_state = graph.get_state(config, subgraphs=True).tasks[0].state  # [!code highlight]
+  ```
+  </Tab>
+</Tabs>
+:::
+
+:::js
+<Tabs>
+  <Tab title="checkpointer=None">
+  Returns subgraph state for the **current invocation only**. Each invocation starts fresh.
+
   ```typescript
   import { StateGraph, StateSchema, START, MemorySaver, interrupt, Command } from "@langchain/langgraph";
   import * as z from "zod";
@@ -744,7 +975,7 @@ Viewing subgraph state requires that LangGraph can **statically discover** the s
     })
     .addEdge(START, "subgraphNode1");
 
-  const subgraph = subgraphBuilder.compile();
+  const subgraph = subgraphBuilder.compile();  // inherits parent checkpointer
 
   // Parent graph
   const builder = new StateGraph(State)
@@ -757,14 +988,48 @@ Viewing subgraph state requires that LangGraph can **statically discover** the s
   const config = { configurable: { thread_id: "1" } };
 
   await graph.invoke({ foo: "" }, config);
-  const parentState = await graph.getState(config);
-  const subgraphState = (await graph.getState(config, { subgraphs: true })).tasks[0].state;   // [!code highlight]
 
-  // resume the subgraph
+  // View subgraph state for the current invocation
+  const subgraphState = (await graph.getState(config, { subgraphs: true })).tasks[0].state;  // [!code highlight]
+
+  // Resume the subgraph
   await graph.invoke(new Command({ resume: "bar" }), config);
   ```
-  :::
-</Accordion>
+  </Tab>
+  <Tab title="checkpointer=True">
+  Returns **accumulated** subgraph state across all invocations on this thread.
+
+  ```typescript
+  import { StateGraph, StateSchema, MessagesValue, START, MemorySaver } from "@langchain/langgraph";
+
+  // Subgraph with its own persistent state
+  const SubgraphState = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  const subgraphBuilder = new StateGraph(SubgraphState);
+  // ... add nodes and edges
+  const subgraph = subgraphBuilder.compile({ checkpointer: true });  // [!code highlight]
+
+  // Parent graph
+  const builder = new StateGraph(SubgraphState)
+    .addNode("agent", subgraph)
+    .addEdge(START, "agent");
+
+  const checkpointer = new MemorySaver();
+  const graph = builder.compile({ checkpointer });
+
+  const config = { configurable: { thread_id: "1" } };
+
+  await graph.invoke({ messages: [{ role: "user", content: "hi" }] }, config);
+  await graph.invoke({ messages: [{ role: "user", content: "what did I say?" }] }, config);
+
+  // View accumulated subgraph state (includes messages from both invocations)
+  const subgraphState = (await graph.getState(config, { subgraphs: true })).tasks[0].state;  // [!code highlight]
+  ```
+  </Tab>
+</Tabs>
+:::
 
 ## Stream subgraph outputs
 

@@ -2,20 +2,64 @@
 title: MULTIPLE_SUBGRAPHS
 ---
 
-You are calling subgraphs multiple times within a single LangGraph node with checkpointing enabled for each subgraph.
+This error occurs when you [call a subgraph inside a node](/oss/langgraph/use-subgraphs#call-a-subgraph-inside-a-node) multiple times, and the subgraph is compiled with `checkpointer=True` (continuations mode). Because continuations mode strips task IDs and invocation counters from checkpoint namespaces, parallel invocations write to the same namespace and conflict.
 
-This is currently not allowed due to internal restrictions on how checkpoint namespacing for subgraphs works.
+<Note>
+This error applies to subgraphs **called inside a node function**. Subgraphs [added as nodes](/oss/langgraph/use-subgraphs#add-a-subgraph-as-a-node) have inherently unique namespaces based on their node names, so they are not affected.
+</Note>
+
+## Why this happens
+
+LangGraph identifies subgraph checkpoints using a **checkpoint namespace** — a string that encodes the path through the graph hierarchy. When a subgraph is invoked from within a node, the namespace includes the calling node's task ID plus an invocation counter to differentiate multiple calls:
+
+```
+Default:  calling_node:task_id|0  (first invocation)
+          calling_node:task_id|1  (second invocation)
+```
+
+When you compile a subgraph with `checkpointer=True`, LangGraph strips task IDs and invocation counters to enable state persistence across invocations:
+
+```
+Continuations:  calling_node  (all invocations share this namespace)
+```
+
+Without these identifiers, two concurrent invocations of the same subgraph write to the same namespace, causing this error.
 
 ## Troubleshooting
 
-The following may help resolve this error:
+Choose one of the following based on your requirements:
 
 :::python
-* If you don't need to interrupt/resume from a subgraph, pass `checkpointer=False` when compiling it like this: `.compile(checkpointer=False)`
+1. **Don't need interrupts?** Use `checkpointer=False` to opt out of checkpointing entirely:
+   ```python
+   subgraph = subgraph_builder.compile(checkpointer=False)
+   ```
+
+2. **Need interrupts but not cross-invocation persistence?** Use the default inherited mode by omitting `checkpointer`:
+   ```python
+   subgraph = subgraph_builder.compile()
+   ```
+   Each invocation gets a unique namespace, so parallel execution works. The subgraph starts fresh each time but can use `interrupt()`.
+
+3. **Need cross-invocation persistence?** Keep `checkpointer=True` but ensure sequential execution — do not call the same subgraph in parallel within a single node. You can also use the [`Send`](/oss/langgraph/graph-api#send) API instead of imperatively calling graphs multiple times.
 :::
 
 :::js
-* If you don't need to interrupt/resume from a subgraph, pass `checkpointer: false` when compiling it like this: `.compile({ checkpointer: false })`
+1. **Don't need interrupts?** Use `checkpointer: false` to opt out of checkpointing entirely:
+   ```typescript
+   const subgraph = subgraphBuilder.compile({ checkpointer: false });
+   ```
+
+2. **Need interrupts but not cross-invocation persistence?** Use the default inherited mode by omitting `checkpointer`:
+   ```typescript
+   const subgraph = subgraphBuilder.compile();
+   ```
+   Each invocation gets a unique namespace, so parallel execution works. The subgraph starts fresh each time but can use `interrupt()`.
+
+3. **Need cross-invocation persistence?** Keep `checkpointer: true` but ensure sequential execution — do not call the same subgraph in parallel within a single node. You can also use the [`Send`](/oss/langgraph/graph-api#send) API instead of imperatively calling graphs multiple times.
 :::
 
-* Don't imperatively call graphs multiple times in the same node, and instead use the [`Send`](/oss/langgraph/graph-api#send) API.
+## Related
+
+- [Subgraph checkpointing](/oss/langgraph/use-subgraphs#subgraph-checkpointing) — full comparison of checkpointer modes
+- [Persistence](/oss/langgraph/persistence) — how checkpointers work in LangGraph
