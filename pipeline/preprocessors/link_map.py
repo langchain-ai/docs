@@ -208,6 +208,7 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith-python": "langsmith/observability/sdk/",
             "langsmith-js": "https://reference.langchain.com/javascript/modules/langsmith.html",
             "wrapGemini": "https://reference.langchain.com/javascript/functions/langsmith.wrappers_gemini.wrapGemini.html",
+            "expect": "langsmith/observability/sdk/expect/",
             "Client": "langsmith/observability/sdk/client/#langsmith.client.Client",
             "Client.evaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.evaluate",
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
