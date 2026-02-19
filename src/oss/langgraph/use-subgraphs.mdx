@@ -40,7 +40,7 @@ Sign up for [LangSmith](https://smith.langchain.com) to quickly spot issues and 
 
 ## Define subgraph communication
 
-When adding subgraphs, you need to define how the parent graph and the subgraph communicate. The right approach depends on whether the parent and subgraph share [state keys](/oss/langgraph/graph-api#state):
+When adding subgraphs, you need to define how the parent graph and the subgraph communicate:
 
 | Pattern | When to use | State schemas |
 |---------|------------|--------------|
@@ -614,10 +614,8 @@ const subgraph = builder.compile({ checkpointer: false });  // or true, or null
 |---|---|---|---|
 | Interrupts | ❌ | ✅ | ✅ |
 | Persistent subgraph state | ❌ | ❌ | ✅ |
-| Parallel subgraphs | ✅ | ✅ | ✅ |
-| State inspection | ❌ | ✅\* | ✅ |
-
-\* State inspection with `checkpointer=None` is available for the current invocation only (while interrupted). Each invocation starts fresh, so there is no accumulated state to inspect after the invocation completes.
+| Parallel subgraphs | ✅ | ✅ | <Tooltip tip="When invoking multiple subgraphs inside a node, special care is needed to prevent namespace conflicts, see [multiple subgraphs with `checkpointer=True`](#multiple-subgraphs-with-checkpointertrue)">✅</Tooltip> |
+| State inspection | ❌ | <Tooltip tip="State inspection with `checkpointer=None` is available for the current invocation only (while interrupted). Each invocation starts fresh, so there is no accumulated state to inspect after the invocation completes">✅ </Tooltip> | ✅ |
 
 - **Interrupts**: The subgraph can use [interrupt()](/oss/langgraph/interrupts) to pause execution and wait for user input, then resume where it left off.
 - **Persistent subgraph state**: The subgraph retains its state across multiple invocations within the same [thread](/oss/langgraph/persistence#threads). Each call picks up where the last one left off rather than starting fresh.
@@ -630,9 +628,9 @@ The parent graph must be compiled with a checkpointer for `checkpointer=None` an
 
 ### `checkpointer=False`
 
-Compile with `checkpointer=False` to opt out of checkpointing entirely. No checkpoints are written for the subgraph. The subgraph cannot use `interrupt()` and its state is not inspectable via `get_state`. This is the lightest-weight option.
+Use `checkpointer=False` for subgraphs that perform simple operations where you don't need interrupt support or state inspection for the subgraph.
 
-Use this mode for subgraphs that perform simple operations where you don't need interrupt support or state inspection.
+Compile with `checkpointer=False` to opt out of checkpointing entirely. No checkpoints are written for the subgraph. The subgraph cannot use `interrupt()` and its state is not inspectable via `get_state`. This is the lightest-weight option.
 
 :::python
 ```python
@@ -648,15 +646,13 @@ const subgraph = subgraphBuilder.compile({ checkpointer: false });  // [!code hi
 ```
 :::
 
-<Note>
-Use `checkpointer=False` when you don't need interrupt support or state inspection for the subgraph.
-</Note>
-
 ### `checkpointer=None`
 
-The default behavior when you omit `checkpointer` or set it to `None`. The subgraph inherits the parent's checkpointer. Each invocation gets a unique checkpoint namespace that includes task IDs (e.g., `node:task_id|subnode:subtask_id`). This means each invocation starts with a fresh state — the subgraph does not remember previous calls. However, within a single invocation, the subgraph can use `interrupt()` to pause and resume.
+<Tip>
+This is the recommended mode for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools. It supports interrupts and multiple subgraphs while keeping each invocation isolated.
+</Tip>
 
-Use this mode for most use cases, including calling subagents as tools.
+The default behavior when you omit `checkpointer` or set it to `None`. The subgraph inherits the parent's checkpointer. Each invocation gets a unique checkpoint namespace that includes task IDs (e.g., `node:task_id|subnode:subtask_id`). This means each invocation starts with a fresh state — the subgraph does not remember previous calls. However, within a single invocation, the subgraph can use `interrupt()` to pause and resume.
 
 :::python
 ```python
@@ -715,10 +711,6 @@ const checkpointer = new MemorySaver();
 const graph = builder.compile({ checkpointer });
 ```
 :::
-
-<Tip>
-This is the recommended mode for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools. It supports interrupts and multiple subgraphs while keeping each invocation isolated.
-</Tip>
 
 ### `checkpointer=True`
 
@@ -810,7 +802,7 @@ Subgraphs [added as nodes](#add-a-subgraph-as-a-node) do not have this limitatio
 | [Added as a node](#add-a-subgraph-as-a-node) | `node_name\|internal_node` | Name-based (stable) |
 | [Called inside a node](#call-a-subgraph-inside-a-node) | `calling_node`, `calling_node\|1`, ... | Position-based (order-dependent) |
 
-<Accordion title="Tip: wrap subgraphs with unique node names for stable namespaces">
+<Accordion title="Tip: Wrap subgraphs with unique node names for stable namespaces">
 For subgraphs [called inside a node](#call-a-subgraph-inside-a-node), you can wrap each subgraph in its own `StateGraph` with a unique node name. This gives you **name-based namespaces** (e.g., `calling_node|fruit_agent` vs `calling_node|veggie_agent`) instead of position-based ones, making state persistence stable regardless of call order.
 
 <Warning>
