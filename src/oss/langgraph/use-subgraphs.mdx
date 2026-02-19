@@ -614,15 +614,15 @@ const subgraph = builder.compile({ checkpointer: false });  // or true, or null
 |---|---|---|---|
 | Interrupts | ❌ | ✅ | ✅ |
 | Persistent subgraph state | ❌ | ❌ | ✅ |
-| Parallel execution | ✅ | ✅ | ✅\*1 |
+| Multiple subgraphs | ✅ | ✅ | ✅\*1 |
 | State inspection | ❌ | ✅\*2 | ✅ |
 
 1. State inspection is available for the current invocation only (only available when interrupted)
-2. Parallel execution with `checkpointer=True` requires wrapping each subgraph with a unique node name. See [parallel execution and namespace isolation](#parallel-execution-and-namespace-isolation).
+2. Multiple subgraphs with `checkpointer=True` requires wrapping each subgraph with a unique node name. See [multiple subgraphs and namespace isolation](#multiple-subgraphs-and-namespace-isolation).
 
 - **Interrupts**: The subgraph can use [interrupt()](/oss/langgraph/interrupts) to pause execution and wait for user input, then resume where it left off.
 - **Persistent subgraph state**: The subgraph retains its state across multiple invocations within the same [thread](/oss/langgraph/persistence#threads). Each call picks up where the last one left off rather than starting fresh.
-- **Parallel execution**: Multiple instances of the same subgraph can run concurrently within a single graph invocation without checkpoint namespace conflicts.
+- **Multiple subgraphs**: Multiple subgraph instances can be invoked within a single node without checkpoint namespace conflicts. This is relevant for subagents invoked in a `tools` node, for example.
 - **State inspection**: The subgraph's state is available via `get_state(config, subgraphs=True)` for debugging and monitoring.
 
 <Note>
@@ -718,7 +718,7 @@ const graph = builder.compile({ checkpointer });
 :::
 
 <Tip>
-This is the recommended mode for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools. It supports interrupts and parallel execution while keeping each invocation isolated.
+This is the recommended mode for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools. It supports interrupts and multiple subgraphs while keeping each invocation isolated.
 </Tip>
 
 ### `checkpointer=True`
@@ -790,36 +790,21 @@ await graph.invoke({ messages: [{ role: "user", content: "what did I say?" }] },
 ```
 :::
 
-#### Parallel execution and namespace isolation
+#### Multiple subgraphs and namespace isolation
 
-<Warning>
-`checkpointer=True` does not support parallel execution of the same subgraph [called inside a node](#call-a-subgraph-inside-a-node). If two instances run concurrently on the same thread, they write to the same namespace, causing a [`MULTIPLE_SUBGRAPHS`](/oss/langgraph/errors/MULTIPLE_SUBGRAPHS) error.
-</Warning>
+When multiple subgraphs are [called inside a node](#call-a-subgraph-inside-a-node), `checkpointer=True` cannot disambiguate their checkpoint namespaces. Each subgraph inherits the calling node's namespace, and with `checkpointer=True` the per-invocation identifiers are stripped — so all subgraph invocations collapse to the same namespace. This causes a [`MULTIPLE_SUBGRAPHS`](/oss/langgraph/errors/MULTIPLE_SUBGRAPHS) error.
 
-LangGraph identifies subgraph checkpoints using a **checkpoint namespace** — a string that encodes the path through the graph hierarchy. How the namespace is constructed depends on how the subgraph is wired into the parent graph.
+This is particularly relevant for [multi-agent](/oss/langchain/multi-agent) architectures where multiple subagents are invoked from a unified `tools` node.
 
-**Subgraph [added as a node](#add-a-subgraph-as-a-node)**: The namespace is built from node names in the graph hierarchy. Because node names are unique within a graph, the namespace for each subgraph is inherently distinct — even with `checkpointer=True`:
+Subgraphs [added as nodes](#add-a-subgraph-as-a-node) do not have this problem because each node has a unique name, which provides a distinct namespace.
 
-```
-Default:       parent_node:task_id|subgraph_internal_node:task_id
-With True:     parent_node|subgraph_internal_node  (still unique per node)
-```
-
-**Subgraph [called inside a node](#call-a-subgraph-inside-a-node)**: The subgraph doesn't have its own node name. LangGraph uses the calling node's namespace plus an invocation counter to differentiate multiple calls. With `checkpointer=True`, these identifiers are stripped:
-
-```
-Default:       calling_node:task_id|0  (first), calling_node:task_id|1  (second)
-With True:     calling_node  (all invocations collapse to the same namespace)
-```
-
-| Subgraph pattern | With `checkpointer=True` | Parallel-safe? |
+| Subgraph pattern | With `checkpointer=True` | Multiple subgraphs? |
 |------------------|--------------------------|----------------|
 | [Added as a node](#add-a-subgraph-as-a-node) | `node_name\|internal` | Yes — node names are unique |
 | [Called inside a node](#call-a-subgraph-inside-a-node) | `calling_node` | No — invocations share namespace |
 
-##### Workaround: wrap each subgraph with a unique node name
-
-To get both persistent subgraph state **and** parallel execution for subgraphs [called inside a node](#call-a-subgraph-inside-a-node), wrap each subgraph instance in its own `StateGraph` with a unique node name. With `checkpointer=True`, the namespace includes the node name (e.g., `calling_node|fruit_agent` vs `calling_node|veggie_agent`), so each subagent gets its own isolated namespace.
+<Accordion title="Workaround: wrap each subgraph with a unique node name">
+To get both persistent subgraph state **and** multiple subgraphs for subgraphs [called inside a node](#call-a-subgraph-inside-a-node), wrap each subgraph instance in its own `StateGraph` with a unique node name. With `checkpointer=True`, the namespace includes the node name (e.g., `calling_node|fruit_agent` vs `calling_node|veggie_agent`), so each subagent gets its own isolated namespace.
 
 :::python
 ```python
@@ -870,6 +855,7 @@ async function myNode(state) {
 }
 ```
 :::
+</Accordion>
 
 ### View subgraph state
 
