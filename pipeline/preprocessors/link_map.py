@@ -214,6 +214,7 @@ LINK_MAPS: list[LinkMap] = [
             "Client.aevaluate": "langsmith/observability/sdk/client/#langsmith.client.Client.aevaluate",
             "Client.get_experiment_results": "langsmith/observability/sdk/client/#langsmith.client.Client.get_experiment_results",
             "ExperimentResults": "langsmith/observability/sdk/evaluation/#langsmith.evaluation._runner.ExperimentResults",
+            "create_feedback": "langsmith/observability/sdk/client/#langsmith.client.Client.create_feedback",
             "wrap_openai": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_openai",
             "wrap_anthropic": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_anthropic",
             "wrap_gemini": "langsmith/observability/sdk/wrappers/#langsmith.wrappers.wrap_gemini",
