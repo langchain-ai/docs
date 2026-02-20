@@ -2,8 +2,6 @@
 title: Interrupts
 ---
 
-
-
 Interrupts allow you to pause graph execution at specific points and wait for external input before continuing. This enables human-in-the-loop patterns where you need external input to proceed. When an interrupt is triggered, LangGraph saves the graph state using its [persistence](/oss/langgraph/persistence) layer and waits indefinitely until you resume execution.
 
 Interrupts work by calling the `interrupt()` function at any point in your graph nodes. The function accepts any JSON-serializable value which is surfaced to the caller. When you're ready to continue, you resume execution by re-invoking the graph using `Command`, which then becomes the return value of the `interrupt()` call from inside the node.
@@ -130,6 +128,7 @@ await graph.invoke(new Command({ resume: true }), config);
 The key thing that interrupts unlock is the ability to pause execution and wait for external input. This is useful for a variety of use cases, including:
 
 - <Icon icon="circle-check" /> [Approval workflows](#approve-or-reject): Pause before executing critical actions (API calls, database changes, financial transactions)
+- <Icon icon="link" /> [Handling multiple interrupts](#handling-multiple-interrupts): Pair interrupt IDs with resume values when resuming multiple interrupts in a single invocation
 - <Icon icon="pencil" /> [Review and edit](#review-and-edit-state): Let humans review and modify LLM outputs or tool calls before continuing
 - <Icon icon="tool" /> [Interrupting tool calls](#interrupts-in-tools): Pause before executing tool calls to review and edit the tool call before execution
 - <Icon icon="shield-check" /> [Validating human input](#validating-human-input): Pause before proceeding to the next step to validate human input
@@ -156,20 +155,20 @@ async for metadata, mode, chunk in graph.astream(
         if isinstance(msg, AIMessageChunk) and msg.content:
             # Display content in real-time
             display_streaming_content(msg.content)
-    
+
     elif mode == "updates":
         # Check for interrupts
         if "__interrupt__" in chunk:
             # Stop streaming display
             interrupt_info = chunk["__interrupt__"][0].value
-            
+
             # Handle user input
             user_response = get_user_input(interrupt_info)
-            
+
             # Resume graph with updated input
             initial_input = Command(resume=user_response)
             break
-        
+
         else:
             # Track node transitions
             current_node = list(chunk.keys())[0]
@@ -179,6 +178,152 @@ async for metadata, mode, chunk in graph.astream(
 - **`subgraphs=True`**: Required for interrupt detection in nested graphs
 - **`"__interrupt__"` detection**: Signals when human input is needed
 - **`Command(resume=...)`**: Resumes graph execution with user-provided data
+
+### Handling multiple interrupts
+
+When parallel branches interrupt simultaneously (for example, fan-out to multiple nodes that each call `interrupt()`), you may need to resume multiple interrupts in a single invocation.
+When resuming multiple interrupts with a single invocation, map each interrupt ID to its resume value.
+This ensures each response is paired with the correct interrupt at runtime.
+
+:::python
+
+```python
+from typing import Annotated, TypedDict
+import operator
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import START, END, StateGraph
+from langgraph.types import Command, interrupt
+
+
+class State(TypedDict):
+    vals: Annotated[list[str], operator.add]
+
+
+def node_a(state):
+    answer = interrupt("question_a")
+    return {"vals": [f"a:{answer}"]}
+
+
+def node_b(state):
+    answer = interrupt("question_b")
+    return {"vals": [f"b:{answer}"]}
+
+
+graph = (
+    StateGraph(State)
+    .add_node("a", node_a)
+    .add_node("b", node_b)
+    .add_edge(START, "a")
+    .add_edge(START, "b")
+    .add_edge("a", END)
+    .add_edge("b", END)
+    .compile(checkpointer=InMemorySaver())
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+# Step 1: invoke — both parallel nodes hit interrupt() and pause
+interrupted_result = graph.invoke({"vals": []}, config)
+print(interrupted_result)
+"""
+{
+    'vals': [],
+    '__interrupt__': [
+        Interrupt(value='question_a', id='bd4f3183600f2c41dddafbf8f0f7be7b'),
+        Interrupt(value='question_b', id='29963e3d3585f0cef025dd0f14323f55')
+    ]
+}
+"""
+
+# Step 2: resume all pending interrupts at once
+resume_map = {
+    i.id: f"answer for {i.value}"
+    for i in interrupted_result["__interrupt__"]
+}
+result = graph.invoke(Command(resume=resume_map), config)
+
+print("Final state:", result)
+#> Final state: {'vals': ['a:answer for question_a', 'b:answer for question_b']}
+```
+
+:::
+
+:::js
+```typescript
+import {
+  Annotation,
+  Command,
+  END,
+  INTERRUPT,
+  MemorySaver,
+  START,
+  StateGraph,
+  interrupt,
+  isInterrupted,
+} from "@langchain/langgraph";
+
+const State = Annotation.Root({
+  vals: Annotation<string[]>({
+    reducer: (left, right) =>
+      left.concat(Array.isArray(right) ? right : [right]),
+    default: () => [],
+  }),
+});
+
+function nodeA(_state: typeof State.State) {
+  const answer = interrupt("question_a") as string;
+  return { vals: [`a:${answer}`] };
+}
+
+function nodeB(_state: typeof State.State) {
+  const answer = interrupt("question_b") as string;
+  return { vals: [`b:${answer}`] };
+}
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addEdge(START, "a")
+  .addEdge(START, "b")
+  .addEdge("a", END)
+  .addEdge("b", END)
+  .compile({ checkpointer: new MemorySaver() });
+
+const config = { configurable: { thread_id: "1" } };
+
+async function main() {
+  // Step 1: invoke — both parallel nodes hit interrupt() and pause
+  const interruptedResult = await graph.invoke({ vals: [] }, config);
+  console.log(interruptedResult);
+  /*
+  {
+    vals: [],
+    __interrupt__: [
+      { id: '...', value: 'question_a' },
+      { id: '...', value: 'question_b' }
+    ]
+  }
+  */
+
+  // Step 2: resume all pending interrupts at once
+  const resumeMap: Record<string, string> = {};
+  if (isInterrupted(interruptedResult)) {
+    for (const i of interruptedResult[INTERRUPT]) {
+      if (i.id != null) {
+        resumeMap[i.id] = `answer for ${i.value}`;
+      }
+    }
+  }
+  const result = await graph.invoke(new Command({ resume: resumeMap }), config);
+
+  console.log("Final state:", result);
+  //> Final state: { vals: ['a:answer for question_a', 'b:answer for question_b'] }
+}
+
+main().catch(console.error);
+```
+:::
 
 ### Approve or reject
 
