@@ -117,6 +117,66 @@ await chat_history.aadd_message(AIMessage(content="Hi there!"))
 messages = await chat_history.aget_messages()
 ```
 
+### LangGraph Checkpointer
+
+Persist LangGraph workflow state in CockroachDB for short-term memory, human-in-the-loop interactions, and fault tolerance.
+
+Both sync (`CockroachDBSaver`) and async (`AsyncCockroachDBSaver`) implementations are available.
+
+```python
+from langchain_cockroachdb import AsyncCockroachDBSaver
+
+DB_URI = "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
+
+async with AsyncCockroachDBSaver.from_conn_string(DB_URI) as checkpointer:
+    await checkpointer.setup()
+
+    # Compile a LangGraph workflow with CockroachDB persistence
+    graph = workflow.compile(checkpointer=checkpointer)
+
+    config = {"configurable": {"thread_id": "user-123"}}
+    result = await graph.ainvoke({"input": "Hello"}, config)
+
+    # State is persisted -- resume from the same thread later
+    result = await graph.ainvoke({"input": "Follow up"}, config)
+```
+
+<Tip>
+The checkpointer uses raw `psycopg3` connections (not SQLAlchemy) for compatibility with LangGraph's checkpoint interface. The `from_conn_string` factory accepts `cockroachdb://` URLs and converts them automatically.
+</Tip>
+
+### Multi-tenancy
+
+Isolate vector data by tenant using an opt-in namespace column. When enabled, all CRUD and search operations are scoped to the specified namespace.
+
+CockroachDB's C-SPANN indexes support prefix columns, so namespace filtering uses the vector index directly without a separate scan.
+
+```python
+from langchain_cockroachdb import AsyncCockroachDBVectorStore, CockroachDBEngine
+from langchain_openai import OpenAIEmbeddings
+
+engine = CockroachDBEngine.from_connection_string(CONNECTION_STRING)
+
+# Create the table with a namespace column
+await engine.ainit_vectorstore_table(
+    table_name="documents",
+    vector_dimension=1536,
+    namespace_column="namespace",
+)
+
+# Create a vectorstore scoped to a specific tenant
+vectorstore = AsyncCockroachDBVectorStore(
+    engine=engine,
+    embeddings=OpenAIEmbeddings(),
+    collection_name="documents",
+    namespace="tenant_a",
+)
+
+# All operations are scoped to tenant_a
+ids = await vectorstore.aadd_texts(["Tenant A document"])
+results = await vectorstore.asimilarity_search("query", k=5)
+```
+
 ## Why CockroachDB for AI applications?
 
 ### Distributed by design
