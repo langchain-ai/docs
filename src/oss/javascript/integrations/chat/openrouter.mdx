@@ -1,0 +1,467 @@
+---
+title: "ChatOpenRouter integration"
+sidebarTitle: "Chat"
+description: "Integrate with the ChatOpenRouter chat model using LangChain JavaScript."
+---
+
+This will help you get started with OpenRouter [chat models](/oss/langchain/models). OpenRouter is a unified API that provides access to models from multiple providers (OpenAI, Anthropic, Google, Meta, and more) through a single endpoint.
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all features and configuration options, head to the [ChatOpenRouter API reference](https://api.js.langchain.com/classes/langchain_openrouter.ChatOpenRouter.html).
+</Tip>
+
+For a full list of available models, visit the [OpenRouter models page](https://openrouter.ai/models).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [PY support](/oss/integrations/chat/openrouter) | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| [ChatOpenRouter](https://api.js.langchain.com/classes/langchain_openrouter.ChatOpenRouter.html) | [`@langchain/openrouter`](https://www.npmjs.com/package/@langchain/openrouter) | ✅ | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/openrouter?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/openrouter?style=flat-square&label=%20&) |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+## Setup
+
+To access models via OpenRouter you'll need to create an [OpenRouter account](https://openrouter.ai/), get an API key, and install the `@langchain/openrouter` integration package.
+
+### Credentials
+
+Head to the [OpenRouter keys page](https://openrouter.ai/settings/keys) to sign up and generate an API key. Once you've done this set the `OPENROUTER_API_KEY` environment variable:
+
+```bash
+export OPENROUTER_API_KEY="your-api-key"
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain OpenRouter integration lives in the `@langchain/openrouter` package:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/openrouter @langchain/core
+```
+```bash yarn
+yarn add @langchain/openrouter @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/openrouter @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```typescript
+import { ChatOpenRouter } from "@langchain/openrouter";
+
+const model = new ChatOpenRouter({
+  model: "anthropic/claude-sonnet-4.5",
+  temperature: 0,
+  maxTokens: 1024,
+  // other params...
+});
+```
+
+---
+
+## Invocation
+
+```typescript
+const aiMsg = await model.invoke([
+  {
+    role: "system",
+    content:
+      "You are a helpful assistant that translates English to French. Translate the user sentence.",
+  },
+  {
+    role: "user",
+    content: "I love programming.",
+  },
+]);
+console.log(aiMsg.content);
+```
+
+```text
+J'adore la programmation.
+```
+
+---
+
+## Streaming
+
+```typescript
+const stream = await model.stream("Write a short poem about the sea.");
+for await (const chunk of stream) {
+  process.stdout.write(typeof chunk.content === "string" ? chunk.content : "");
+}
+```
+
+---
+
+## Tool calling
+
+OpenRouter uses the OpenAI-compatible tool calling format. You can describe tools and their arguments, and have the model return a JSON object with a tool to invoke and the inputs to that tool.
+
+### Bind tools
+
+With `ChatOpenRouter.bindTools`, you can pass in Zod schemas, LangChain tools, or raw function definitions as tools to the model. Under the hood these are converted to OpenAI tool schemas and passed in every model invocation.
+
+```typescript
+import { ChatOpenRouter } from "@langchain/openrouter";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const getWeather = tool(async ({ location }) => `Sunny in ${location}`, {
+  name: "get_weather",
+  description: "Get the current weather in a given location",
+  schema: z.object({
+    location: z
+      .string()
+      .describe("The city and state, e.g. San Francisco, CA"),
+  }),
+});
+
+const modelWithTools = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+}).bindTools([getWeather]);
+
+const aiMsg = await modelWithTools.invoke(
+  "What is the weather like in San Francisco?"
+);
+console.log(aiMsg.tool_calls);
+```
+
+```text
+[
+  {
+    name: 'get_weather',
+    args: { location: 'San Francisco, CA' },
+    id: 'call_abc123',
+    type: 'tool_call'
+  }
+]
+```
+
+### Strict mode
+
+Pass `strict: true` to guarantee that model output exactly matches the JSON Schema provided in the tool definition:
+
+```typescript
+const modelWithStrictTools = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+}).bindTools([getWeather], { strict: true });
+```
+
+For more on binding tools and tool call outputs, head to the [tool calling](/oss/langchain/tools) docs.
+
+---
+
+## Structured output
+
+`ChatOpenRouter` supports structured output via the `.withStructuredOutput()` method. The extraction strategy is chosen automatically based on model capabilities:
+
+- **`jsonSchema`** — native JSON Schema response format (used when the model supports it)
+- **`functionCalling`** — wraps the schema as a tool call (default fallback)
+- **`jsonMode`** — asks the model to respond in JSON without strict schema constraints
+
+<Note>
+    When multi-model routing is active (`models` list or `route: "fallback"`), the method always falls back to `functionCalling` because the actual backend model's capabilities are unknown at request time.
+</Note>
+
+```typescript
+import { ChatOpenRouter } from "@langchain/openrouter";
+import { z } from "zod";
+
+const model = new ChatOpenRouter({ model: "openai/gpt-4.1" });
+
+const movieSchema = z.object({
+  title: z.string().describe("The title of the movie"),
+  year: z.number().describe("The year the movie was released"),
+  director: z.string().describe("The director of the movie"),
+  rating: z.number().describe("The movie's rating out of 10"),
+});
+
+const structuredModel = model.withStructuredOutput(movieSchema, {
+  name: "movie",
+  method: "jsonSchema", // [!code highlight]
+});
+const response = await structuredModel.invoke(
+  "Provide details about the movie Inception"
+);
+console.log(response);
+```
+
+```text
+{
+  title: 'Inception',
+  year: 2010,
+  director: 'Christopher Nolan',
+  rating: 8.8
+}
+```
+
+You can pass `strict: true` with the `jsonSchema` and `functionCalling` methods to enforce exact schema adherence:
+
+```typescript
+const strictModel = model.withStructuredOutput(movieSchema, {
+  name: "movie",
+  method: "jsonSchema",
+  strict: true,
+});
+```
+
+---
+
+## Multimodal inputs
+
+OpenRouter supports [multimodal inputs](/oss/langchain/messages#multimodal) for models that accept them. The available modalities depend on the model you select — check the [OpenRouter models page](https://openrouter.ai/models) for details.
+
+<Note>
+    Not all models support all modalities. Check the [OpenRouter models page](https://openrouter.ai/models) for model-specific support.
+</Note>
+
+### Image input
+
+Provide image inputs along with text using a list content format.
+
+<CodeGroup>
+```typescript URL
+import { ChatOpenRouter } from "@langchain/openrouter";
+import { HumanMessage } from "@langchain/core/messages";
+
+const model = new ChatOpenRouter({ model: "openai/gpt-4o" });
+
+const message = new HumanMessage({
+  content: [
+    { type: "text", text: "Describe this image." },
+    {
+      type: "image_url",
+      image_url: {
+        url: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+      },
+    },
+  ],
+});
+const response = await model.invoke([message]);
+```
+
+```typescript Base64 encoded
+import { ChatOpenRouter } from "@langchain/openrouter";
+import { HumanMessage } from "@langchain/core/messages";
+import * as fs from "node:fs";
+
+const model = new ChatOpenRouter({ model: "openai/gpt-4o" });
+
+const imageData = fs.readFileSync("/path/to/image.jpg").toString("base64");
+
+const message = new HumanMessage({
+  content: [
+    { type: "text", text: "Describe this image." },
+    {
+      type: "image_url", // [!code highlight]
+      image_url: { // [!code highlight]
+        url: `data:image/jpeg;base64,${imageData}`, // [!code highlight]
+      }, // [!code highlight]
+    },
+  ],
+});
+const response = await model.invoke([message]);
+```
+</CodeGroup>
+
+---
+
+## Token usage metadata
+
+After an invocation, token usage information is available on the `usage_metadata` attribute of the response:
+
+```typescript
+const aiMsg = await model.invoke("Tell me a joke.");
+console.log(aiMsg.usage_metadata);
+```
+
+```text
+{
+  input_tokens: 12,
+  output_tokens: 25,
+  total_tokens: 37
+}
+```
+
+When the underlying provider includes detailed token breakdowns in its response, they are surfaced automatically:
+
+- `output_token_details.reasoning` — tokens used for internal chain-of-thought reasoning
+- `input_token_details.cache_read` — input tokens served from prompt cache
+
+When streaming, aggregate token usage from the final chunk:
+
+```typescript
+import { AIMessageChunk } from "@langchain/core/messages";
+import { concat } from "@langchain/core/utils/stream";
+
+const stream = await model.stream("Tell me a joke.");
+let finalMsg: AIMessageChunk | undefined;
+for await (const chunk of stream) {
+  finalMsg = finalMsg ? concat(finalMsg, chunk) : chunk;
+}
+console.log(finalMsg?.usage_metadata);
+```
+
+---
+
+## Provider routing
+
+Many models on OpenRouter are served by multiple providers. The `provider` parameter gives you control over which providers handle your requests and how they're selected.
+
+### Order and filter providers
+
+Use `order` to set a preferred provider sequence. OpenRouter tries each provider in order and falls back to the next if one is unavailable:
+
+```typescript
+const model = new ChatOpenRouter({
+  model: "anthropic/claude-sonnet-4.5",
+  provider: {
+    order: ["Anthropic", "Google"],
+    allow_fallbacks: true,
+  },
+});
+```
+
+To restrict requests to specific providers only, use `only`. To exclude certain providers, use `ignore`:
+
+```typescript
+const onlyModel = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+  provider: { only: ["OpenAI", "Azure"] },
+});
+
+const ignoreModel = new ChatOpenRouter({
+  model: "meta-llama/llama-4-maverick",
+  provider: { ignore: ["DeepInfra"] },
+});
+```
+
+### Sort by cost, speed, or latency
+
+By default, OpenRouter load-balances across providers with a preference for lower cost. Use `sort` to change the priority:
+
+```typescript
+const fastModel = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+  provider: { sort: "throughput" },
+});
+
+const lowLatencyModel = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+  provider: { sort: "latency" },
+});
+```
+
+### Data collection policy
+
+If your use case requires that providers do not store or train on your data, set `data_collection` to `"deny"`:
+
+```typescript
+const model = new ChatOpenRouter({
+  model: "anthropic/claude-sonnet-4.5",
+  provider: { data_collection: "deny" },
+});
+```
+
+### Filter by quantization
+
+For open-weight models, you can restrict routing to specific precision levels:
+
+```typescript
+const model = new ChatOpenRouter({
+  model: "meta-llama/llama-4-maverick",
+  provider: { quantizations: ["fp16", "bf16"] },
+});
+```
+
+### Combine options
+
+Provider options can be composed together:
+
+```typescript
+const model = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+  provider: {
+    order: ["OpenAI", "Azure"],
+    allow_fallbacks: false,
+    require_parameters: true,
+    data_collection: "deny",
+  },
+});
+```
+
+See the [OpenRouter provider routing docs](https://openrouter.ai/docs/guides/routing/provider-selection) for the full list of options.
+
+---
+
+## Multi-model routing
+
+OpenRouter supports routing requests across multiple models. Pass a `models` array and an optional `route` strategy:
+
+```typescript
+const model = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+  models: ["openai/gpt-4o", "anthropic/claude-sonnet-4.5"],
+  route: "fallback",
+});
+```
+
+---
+
+## Plugins
+
+OpenRouter supports [plugins](https://openrouter.ai/docs/features/plugins) that extend model capabilities. Pass plugin configurations via the `plugins` parameter:
+
+```typescript
+const model = new ChatOpenRouter({
+  model: "openai/gpt-4o",
+  plugins: [
+    { id: "web", max_results: 5 },
+  ],
+});
+```
+
+Available plugins include `web` (web search), `file-parser` (PDF parsing), `moderation`, `auto-router`, and `response-healing`.
+
+---
+
+## App attribution
+
+OpenRouter supports app attribution via HTTP headers. Set these through constructor params:
+
+```typescript
+const model = new ChatOpenRouter({
+  model: "anthropic/claude-sonnet-4.5",
+  siteUrl: "https://myapp.com",
+  siteName: "My App",
+});
+```
+
+---
+
+## API reference
+
+For detailed documentation of all `ChatOpenRouter` features and configurations, head to the [ChatOpenRouter API reference](https://api.js.langchain.com/classes/langchain_openrouter.ChatOpenRouter.html).
+
+For more information about OpenRouter's platform, models, and features, see the [OpenRouter documentation](https://openrouter.ai/docs).
