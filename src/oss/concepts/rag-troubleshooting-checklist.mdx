@@ -1,0 +1,148 @@
+# RAG troubleshooting checklist 
+
+Retrieval-augmented generation (RAG) systems often fail in repeatable ways.  
+Answers look wrong, but it is not always obvious whether the root cause is retrieval collapse, chunking issues, embedding drift, index problems, or orchestration logic.
+
+This page provides a **RAG troubleshooting checklist** based on a 16-problem map of common failure modes in production RAG systems.  
+The goal is not to introduce a new dependency, but to give you a compact vocabulary you can log, visualize, and reason about while working with LangChain components.
+
+> [!NOTE]
+> You do not need any external package to use this checklist.  
+> You can copy the pattern below and adapt the problem codes to your own stack.
+
+---
+
+## 1. Minimal debug helper
+
+A simple way to start is to add a small helper that runs your retriever and embeddings and returns a short **problem code** string that you can log or inspect.
+
+```python
+def rag_debug(prompt, retriever, embedder):
+    """Return a short problem code for a single RAG query.
+
+    retriever: any object with .get_relevant_documents(prompt)
+    embedder: any object with .embed_documents(list[str])
+    """
+    # 1. Retrieval
+    docs = retriever.get_relevant_documents(prompt)
+
+    if not docs:
+        # No documents at all
+        return "P01_retrieval_collapse"
+
+    if len(docs) < 3:
+        # Very thin context, likely under-retrieval
+        return "P02_thin_retrieval"
+
+    # 2. Embeddings
+    texts = [d.page_content for d in docs]
+    vecs = embedder.embed_documents(texts)
+
+    if not vecs:
+        # Embeddings call failed or returned empty
+        return "P03_embedding_failure"
+
+    dims = {len(v) for v in vecs}
+    if len(dims) > 1:
+        # Mixed dimensionality almost always means a config issue
+        return "P04_embedding_dim_mismatch"
+
+    # 3. Basic similarity sanity check (optional, depends on your embedder)
+    # Here we just check if the mean vector has almost zero norm as a crude signal.
+    mean_vec = [sum(values) / len(values) for values in zip(*vecs)]
+    norm = sum(x * x for x in mean_vec) ** 0.5
+    if norm < 1e-6:
+        return "P05_embedding_degenerate"
+
+    return "OK"
+````
+
+You can call this helper inside your RAG pipeline, log the returned code, and aggregate it in your observability tools.
+The exact thresholds and codes are only a starting point. The important part is that each code maps to a clear **hypothesis** you can investigate.
+
+---
+
+## 2. Mapping codes to LangChain components
+
+The 16-problem map groups failures by **where** they live in the stack.
+The table below shows a compact mapping between typical symptoms, problem codes, and LangChain concepts.
+
+You can extend this table to cover all 16 codes you use in your own system.
+
+| Code example                   | High-level symptom                                                      | Likely area                 | Typical LangChain objects                      | First questions to ask                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------- | --------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `P01_retrieval_collapse`       | Model answers from parametric memory instead of your data.              | Retrieval                   | `Retriever`, `VectorStore`, `DocumentLoader`   | Were documents actually indexed? Are filters too strict? Is `k` too small?                                                        |
+| `P02_thin_retrieval`           | Only 1–2 documents are retrieved for diverse queries.                   | Retrieval config            | `Retriever` configuration                      | What is `k`? Are you using MMR or only similarity search? Are you filtering on metadata that rarely matches?                      |
+| `P03_embedding_failure`        | Embedding calls sometimes return empty lists or raise errors.           | Embeddings runtime          | `Embeddings` implementation                    | Are you hitting rate limits or size limits? Are you passing text instead of `Document` objects, or vice versa?                    |
+| `P04_embedding_dim_mismatch`   | Vector index complains about shape mismatch or crashes at query time.   | Embedding / index contract  | `Embeddings`, `VectorStore`                    | Did the embedding model change dimension after re-deploy? Did you re-index existing vectors?                                      |
+| `P05_embedding_degenerate`     | All similarity scores are extremely close, ranking looks random.        | Embedding quality           | `Embeddings`, `VectorStore`                    | Are you normalizing vectors twice or not at all? Are you using cosine distance with unnormalized vectors?                         |
+| `P06_chunking_window`          | Answers quote irrelevant parts of long documents or miss key sentences. | Chunking and context window | Text splitters, `Document` metadata            | What is your chunk size and overlap? Are you dropping titles or section headers?                                                  |
+| `P07_negative_filtering`       | Good documents exist but are filtered out by metadata.                  | Metadata filters            | `VectorStore` filters, retriever search kwargs | Are timestamp or tenant filters too strict? Are you mixing AND/OR logic correctly?                                                |
+| `P08_ingestion_ordering`       | Recently added documents are never retrieved, older ones dominate.      | Indexing / ingestion        | Ingestion scripts, `VectorStore`               | Are new chunks actually written? Are you using the same namespace / index name in read and write paths?                           |
+| `P09_multi_tenant_leak`        | Users occasionally see documents from another tenant / project.         | Isolation                   | `VectorStore` filters, `Retriever`             | Is tenant ID part of your filter? Are you reusing the same retriever across tenants without scoping metadata?                     |
+| `P10_orchestration_timeout`    | Pipelines time out under load, partial answers, or blank outputs.       | Orchestration               | Chains, tools, streaming logic                 | Are you doing multiple serial calls to retrievers and tools? Can you parallelize or cache certain steps?                          |
+| `P11_prompt_contract_mismatch` | Retrieved docs are correct, but the prompt ignores them.                | Prompting                   | Chat prompt templates                          | Does your prompt explicitly tell the model how to use the context? Are you passing the right variable into the template?          |
+| `P12_overstuffed_context`      | Long answers that mix correct facts with hallucinations.                | Context packing             | Retrievers, re-rankers, summarizers            | Are you retrieving too many documents? Can you re-rank or summarize before passing to the model?                                  |
+| `P13_evaluation_blind_spot`    | Offline eval says “good”, users still report bad answers.               | Evaluation                  | LangSmith / other evaluators                   | Are you only measuring lexical similarity? Do you have test cases that cover edge conditions and rare entities?                   |
+| `P14_observability_gap`        | Incidents are hard to reproduce, logs lack context.                     | Logging / tracing           | Callbacks, LangSmith traces                    | Are you logging prompt, retrieved docs, and problem codes together? Can you replay failing runs from traces?                      |
+| `P15_index_config_drift`       | Behavior changes after index config tweaks, without code changes.       | Deployment / config         | Vector index config, environment variables     | Did you change distance metric, HNSW parameters, or quantization settings without re-running evaluations?                         |
+| `P16_model_mode_mismatch`      | Switching models silently breaks RAG behavior.                          | Model config                | Chat models, tools, retrievers                 | Did the new model support the same context length and tool calling protocol? Are you reusing prompts tuned for a different model? |
+
+You can keep these codes as simple strings and log them alongside other metadata.
+For example, when running a `Runnable` or chain, you can attach the code in callbacks and send it to your observability system together with the prompt, retrieved docs, and model outputs.
+
+---
+
+## 3. How to use this in a LangChain RAG pipeline
+
+At a high level:
+
+1. Identify the place where your RAG pipeline calls a retriever and passes context to the model.
+2. Wrap that section with a call to `rag_debug` to compute a problem code.
+3. Log the code, along with the query, retrieved documents, and final answer.
+4. Aggregate the codes over time to see which failure modes dominate.
+5. Use the mapping table above to decide which LangChain objects to inspect or reconfigure.
+
+A minimal pattern in pseudocode:
+
+```python
+def answer_question(prompt, retriever, embedder, llm):
+    problem_code = rag_debug(prompt, retriever, embedder)
+
+    docs = retriever.get_relevant_documents(prompt)
+    context = "\n\n".join(d.page_content for d in docs)
+
+    messages = [
+        ("system", "You are a helpful RAG assistant that only answers from the given context."),
+        ("human", f"Question: {prompt}\n\nContext:\n{context}"),
+    ]
+    result = llm.invoke(messages)
+
+    # Attach the problem code to your logs or traces
+    return {
+        "answer": result,
+        "problem_code": problem_code,
+        "docs": docs,
+    }
+```
+
+You can then build dashboards or alerting rules around `problem_code`, for example:
+
+* If `P01` or `P02` spikes, focus on retriever and vector store configuration.
+* If `P04` or `P05` appears, investigate embedding configuration and index dimensionality.
+* If `P10` or `P16` appears often, look at orchestration, timeouts, and model settings.
+
+---
+
+## 4. Extending to your own 16-problem map
+
+The codes above are only a suggested starting point.
+In a production setting you will typically:
+
+* Define your own 16 canonical codes that match the failure modes you care about most.
+* Keep the codes **stable over time** so that dashboards and alerts remain comparable.
+* Store the code, query, model, retriever, and index configuration together for each run.
+* Periodically review which codes dominate and whether new patterns deserve a new code.
+
+Because the codes are just strings, you can adopt this checklist incrementally:
+start with 3–4 codes, then extend it until you reach the full 16-problem map you want to standardize on in your organization.
