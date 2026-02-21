@@ -1,0 +1,129 @@
+---
+title: "Blindfold PII Transformer"
+description: "Integrate with the Blindfold PII document transformer using LangChain Python."
+---
+
+[Blindfold](https://blindfold.dev) detects and protects PII (personally identifiable information)
+across 18+ languages. The `BlindfoldPIITransformer` protects PII in LangChain `Document` objects,
+making it ideal for RAG pipelines and vector store indexing.
+
+## Installation
+
+```bash
+pip install -qU langchain-blindfold
+```
+
+## Setup
+
+You need a Blindfold API key. Sign up at [blindfold.dev](https://blindfold.dev) to get one
+with 1M free characters/month.
+
+```python
+import os
+
+os.environ["BLINDFOLD_API_KEY"] = "<your-api-key>"
+```
+
+## Usage
+
+### Tokenize PII in documents
+
+Replace PII with reversible tokens. The mapping is stored in document metadata
+so you can restore original values later.
+
+```python
+from langchain_blindfold import BlindfoldPIITransformer
+from langchain_core.documents import Document
+
+transformer = BlindfoldPIITransformer(pii_method="tokenize", policy="basic")
+
+docs = [
+    Document(page_content="Contact John Smith at john@example.com for details."),
+]
+
+protected_docs = transformer.transform_documents(docs)
+print(protected_docs[0].page_content)
+# "Contact <Person_1> at <Email Address_1> for details."
+print(protected_docs[0].metadata["blindfold_mapping"])
+# {"<Person_1>": "John Smith", "<Email Address_1>": "john@example.com"}
+```
+
+### Redact PII from documents
+
+Permanently remove PII when you don't need reversibility.
+
+```python
+transformer = BlindfoldPIITransformer(pii_method="redact", policy="hipaa_us")
+
+docs = [
+    Document(page_content="Patient Jane Doe, SSN 123-45-6789, diagnosed on 03/15/2024."),
+]
+
+redacted_docs = transformer.transform_documents(docs)
+print(redacted_docs[0].page_content)
+# "Patient [REDACTED], SSN [REDACTED], diagnosed on [REDACTED]."
+```
+
+### Available PII methods
+
+| Method | Description | Reversible |
+|---|---|---|
+| `tokenize` | Replace with tokens like `<Person_1>` | Yes |
+| `redact` | Remove PII entirely | No |
+| `mask` | Mask characters (e.g., `J***oe`) | No |
+| `hash` | Replace with hash values | No |
+| `synthesize` | Replace with synthetic data | No |
+| `encrypt` | AES-256 encrypted values | Yes |
+
+### Detection policies
+
+| Policy | Best for |
+|---|---|
+| `basic` | General PII (names, emails, phones, locations) |
+| `gdpr_eu` | GDPR compliance (IBANs, EU addresses, dates of birth) |
+| `hipaa_us` | HIPAA compliance (SSNs, medical record numbers) |
+| `pci_dss` | PCI DSS compliance (card numbers, CVVs) |
+| `strict` | Maximum detection with lower thresholds |
+
+### Region support
+
+For data residency requirements, specify a region:
+
+```python
+transformer = BlindfoldPIITransformer(
+    pii_method="tokenize",
+    policy="gdpr_eu",
+    region="eu",  # or "us"
+)
+```
+
+## Chain composition with Runnables
+
+For protecting prompts in LLM chains (rather than documents), use the `BlindfoldTokenizer`
+and `BlindfoldDetokenizer` Runnables:
+
+```python
+from langchain_blindfold import blindfold_protect
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
+tokenize, detokenize = blindfold_protect(policy="basic")
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("user", "{input}"),
+])
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+# PII is tokenized before the LLM and restored in the response
+chain = tokenize | prompt | llm | (lambda msg: msg.content) | detokenize
+
+result = chain.invoke("Please summarize the case for John Smith, john@example.com")
+# The LLM never sees the real name or email
+```
+
+## API reference
+
+- [langchain-blindfold on PyPI](https://pypi.org/project/langchain-blindfold/)
+- [GitHub repository](https://github.com/blindfold-dev/langchain-blindfold)
+- [Blindfold documentation](https://docs.blindfold.dev)
