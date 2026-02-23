@@ -596,9 +596,9 @@ const graph = builder.compile();
 
 ## Subgraph persistence
 
-By default, subgraphs start fresh on every invocation — they have no memory of previous calls. This is the right choice for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools.
+When you use a subgraph, you need to decide what happens to its internal data between calls. Consider a customer support bot that delegates to specialist subagents: should the "billing expert" subagent remember the customer's earlier questions, or start fresh each time it's called?
 
-If a subagent needs to remember previous conversations (multi-turn history), you can enable stateful persistence so state accumulates across invocations on the same thread.
+By default, subgraphs are **stateless** (no memory): each call starts with a blank slate. This is the right choice for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents handle independent requests. If a subagent needs multi-turn conversation memory (for example, a research assistant that builds context over several exchanges) you can make it **stateful** (persistent memory) so its conversation history and data accumulate across calls on the same thread.
 
 <Note>
 The parent graph must be compiled with a checkpointer for subgraph persistence features (interrupts, state inspection, stateful memory) to work. See [persistence](/oss/langgraph/persistence).
@@ -606,33 +606,17 @@ The parent graph must be compiled with a checkpointer for subgraph persistence f
 
 ### Stateless
 
-Both `checkpointer=False` and `checkpointer=None` produce stateless behavior — each invocation starts fresh with no memory of previous calls. The difference is whether the subgraph supports [interrupts](/oss/langgraph/interrupts) within a single invocation.
+Use stateless subgraphs when each call to the subgraph is independent and the subagent doesn't need to remember anything from previous calls. This is the most common pattern, especially for [multi-agent](/oss/langchain/multi-agent) systems where subagents handle one-off requests like "look up this customer's order" or "summarize this document."
 
-#### Without interrupts
-
-Compile with `checkpointer=False` to opt out of checkpointing entirely. No checkpoints are written for the subgraph. The subgraph cannot use `interrupt()` and its state is not inspectable via `get_state`. This is the lightest-weight option.
-
-:::python
-```python
-subgraph_builder = StateGraph(...)
-subgraph = subgraph_builder.compile(checkpointer=False)  # [!code highlight]
-```
-:::
-
-:::js
-```typescript
-const subgraphBuilder = new StateGraph(...);
-const subgraph = subgraphBuilder.compile({ checkpointer: false });  // [!code highlight]
-```
-:::
+There are two stateless options depending on whether you need [interrupts](/oss/langgraph/interrupts) (human-in-the-loop pausing) and durable execution within the subgraph.
 
 #### With interrupts
 
 <Tip>
-This is the recommended mode for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools. It supports interrupts and parallel calls while keeping each invocation isolated.
+This is the recommended mode for most applications, including [multi-agent](/oss/langchain/multi-agent) systems where subagents are invoked as tools. It supports interrupts, [durable execution](/oss/langgraph/persistence), and parallel calls while keeping each invocation isolated.
 </Tip>
 
-The default behavior when you omit `checkpointer` or set it to `None`. The subgraph inherits the parent's checkpointer and each invocation gets a unique checkpoint namespace. Within a single invocation, the subgraph can use `interrupt()` to pause and resume.
+Use this when you want a subagent with no memory across calls, but you still need durable execution and the ability to pause mid-run for user input (for example, asking for approval before taking an action). This is the default behavior: omit `checkpointer` or set it to `None`. Each call starts fresh, but within a single call, the subgraph can use `interrupt()` to pause and resume.
 
 The following examples use two subagents (fruit expert, veggie expert) wrapped as tools for an outer agent:
 
@@ -912,9 +896,37 @@ const agent = createAgent({
 </Tabs>
 :::
 
+#### Without interrupts
+
+Use this when you want to run a subagent like a normal function call with no checkpointing overhead. The subgraph cannot pause/resume and does not benefit from [durable execution](/oss/langgraph/persistence). Compile with `checkpointer=False`.
+
+<Warning>
+Without checkpointing, the subgraph has no durable execution. If the process crashes mid-run, the subgraph cannot recover and must be re-run from the beginning.
+</Warning>
+
+:::python
+```python
+subgraph_builder = StateGraph(...)
+subgraph = subgraph_builder.compile(checkpointer=False)  # [!code highlight]
+```
+:::
+
+:::js
+```typescript
+const subgraphBuilder = new StateGraph(...);
+const subgraph = subgraphBuilder.compile({ checkpointer: false });  // [!code highlight]
+```
+:::
+
 ### Stateful
 
-Compile with `checkpointer=True` to enable state that accumulates across invocations on the same thread. LangGraph strips task IDs from the checkpoint namespace (turning `node:task_id|subnode:subtask_id` into `node|subnode`), so the subgraph writes to the same namespace every time. The subgraph "remembers" previous calls — use this when a subagent needs multi-turn conversation history.
+Use stateful subgraphs when a subagent needs to remember previous interactions. For example, a research assistant that builds up context over several exchanges, or a coding assistant that tracks what files it has already edited. With stateful persistence, the subagent's conversation history and data accumulate across calls on the same thread. Each call picks up where the last one left off.
+
+Compile with `checkpointer=True` to enable this behavior.
+
+<Warning>
+**Stateful subgraphs do not support parallel calls to the same subagent.** Because the subagent writes to the same checkpoint namespace every time, two simultaneous calls corrupt each other's state. You must ensure only one call runs at a time. See [Prevent parallel calls to stateful subgraphs](#prevent-parallel-calls) below for how to enforce this with middleware, or use [stateless with interrupts](#with-interrupts) if you need parallel calls.
+</Warning>
 
 The following examples use a single fruit expert subagent compiled with `checkpointer=True`:
 
@@ -1205,22 +1217,39 @@ const agent = createAgent({
 </Tabs>
 :::
 
-<Warning>
-Multiple calls to the **same** subgraph with stateful persistence cause namespace conflicts — both calls read from and write to the same checkpoint, corrupting state. Use [stateless with interrupts](#with-interrupts) persistence instead when you need multiple calls to the same subgraph.
-</Warning>
+<a id="prevent-parallel-calls"></a>
+<Accordion title="Prevent parallel calls to stateful subgraphs">
+When an LLM has access to a stateful subagent as a tool, it may try to call that tool multiple times in parallel (for example, asking the fruit expert about apples and bananas simultaneously). This causes checkpoint conflicts because both calls write to the same namespace.
+
+Use `ToolCallLimitMiddleware` to cap how many times a tool can be called per agent run. If the LLM tries to call the tool more than the limit, the extra calls return an error message instead of executing:
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolCallLimitMiddleware
+from langgraph.checkpoint.memory import MemorySaver
+
+agent = create_agent(
+    "gpt-4.1-mini",
+    tools=[ask_fruit_expert, ask_veggie_expert],
+    prompt="Delegate fruit questions to ask_fruit_expert and veggie questions to ask_veggie_expert.",
+    middleware=[
+        ToolCallLimitMiddleware(tool_name="ask_fruit_expert", run_limit=1),  # [!code highlight]
+        ToolCallLimitMiddleware(tool_name="ask_veggie_expert", run_limit=1),  # [!code highlight]
+    ],
+    checkpointer=MemorySaver(),
+)
+```
+:::
+
+If the LLM tries to call `ask_fruit_expert` twice in one run (for example, once for apples and once for bananas), only the first call executes. The second returns `"Tool call limit exceeded. Do not call 'ask_fruit_expert' again."` and the LLM can retry in a follow-up turn.
+</Accordion>
 
 <a id="parallel-subgraphs"></a>
-<Accordion title="Namespace isolation for parallel stateful subgraphs">
-When multiple subgraphs are [called inside a node](#call-a-subgraph-inside-a-node) with `checkpointer=True`, LangGraph assigns each invocation a **position-based namespace suffix**. The first invocation gets the base namespace (e.g., `calling_node`), the second gets `calling_node|1`, and so on. State persists per **call position** — if you reorder calls, each subgraph may load the wrong state.
+<Accordion title="Run multiple different stateful subagents in parallel">
+When you have multiple **different** stateful subagents (for example, a fruit expert and a veggie expert), each one needs its own storage space so their checkpoints don't overwrite each other. This is called namespace isolation.
 
-Subgraphs [added as nodes](#add-a-subgraph-as-a-node) do not have this limitation because each node has a unique name that becomes part of the namespace.
-
-| Subgraph pattern | Namespace with `checkpointer=True` | Isolation |
-|------------------|--------------------------|----------------|
-| [Added as a node](#add-a-subgraph-as-a-node) | `node_name\|internal_node` | Name-based (stable) |
-| [Called inside a node](#call-a-subgraph-inside-a-node) | `calling_node`, `calling_node\|1`, ... | Position-based (order-dependent) |
-
-For stable, name-based namespaces, wrap each subgraph in its own `StateGraph` with a unique node name. Each wrapper must be a **different** compiled subgraph instance — you cannot invoke the same instance twice in a single node.
+If you [call subgraphs inside a node](#call-a-subgraph-inside-a-node), LangGraph assigns namespaces based on call order (first call, second call, etc.). This means reordering your calls can mix up which subagent loads which data. To avoid this, wrap each subagent in its own `StateGraph` with a unique node name. This gives each subagent a stable, name-based namespace:
 
 :::python
 ```python
@@ -1232,7 +1261,7 @@ def create_sub_agent(model, *, name, **kwargs):
     agent = create_agent(model=model, name=name, **kwargs)
     return (
         StateGraph(MessagesState)
-        .add_node(name, agent)  # [!code highlight]
+        .add_node(name, agent)  # unique name → stable namespace  # [!code highlight]
         .add_edge("__start__", name)
         .compile()
     )
@@ -1250,7 +1279,7 @@ import { StateGraph, StateSchema, MessagesValue, START } from "@langchain/langgr
 function createSubAgent(model: string, { name, ...kwargs }: { name: string; [key: string]: any }) {
   const agent = createAgent({ model, name, ...kwargs });
   return new StateGraph(new StateSchema({ messages: MessagesValue }))
-    .addNode(name, agent)  // [!code highlight]
+    .addNode(name, agent)  // unique name → stable namespace  // [!code highlight]
     .addEdge(START, name)
     .compile();
 }
@@ -1259,6 +1288,8 @@ const fruitAgent = createSubAgent("gpt-4.1-mini", { name: "fruit_agent", tools: 
 const veggieAgent = createSubAgent("gpt-4.1-mini", { name: "veggie_agent", tools: [...], checkpointer: true });
 ```
 :::
+
+Subgraphs [added as nodes](#add-a-subgraph-as-a-node) already get name-based namespaces automatically, so they don't need this wrapper.
 </Accordion>
 
 ### Checkpointer reference
