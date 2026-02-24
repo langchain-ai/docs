@@ -1,0 +1,106 @@
+---
+title: Secure tool execution
+description: Add delegated authorization and budget checks around tool calls using a fail-closed wrapper pattern.
+---
+
+When a tool can trigger side effects (payments, writes, external actions), add an authorization step before the tool executes.
+
+This page shows a Python pattern that wraps a LangChain tool with a delegated-policy layer that can:
+
+- authorize or deny each call before execution,
+- enforce budget constraints,
+- produce execution receipts for auditing.
+
+<Tip>
+Use this pattern for high-impact tools where accidental execution is expensive or irreversible.
+</Tip>
+
+## Safety goals
+
+A secure tool execution path should guarantee:
+
+1. **Authorize before execute**: verify policy before side effects.
+2. **Fail closed**: denied calls must not run tool code.
+3. **Record outcomes**: produce verifiable receipts for allowed/denied decisions.
+
+## Install dependencies
+
+:::python
+```bash
+pip install -U langchain langchain-core aecp-langchain aecp-sdk
+```
+:::
+
+<Note>
+AECP is an external integration used here as a concrete policy adapter. LangChain does not require AECP.
+</Note>
+
+## Wrap a tool with delegated authorization
+
+:::python
+```python
+import os
+from langchain_core.tools import tool
+from aecp_langchain import AECPToolConfig, wrap_tool
+
+@tool
+def charge_customer(customer_id: str, amount_cents: int) -> dict:
+    """Charge a customer in cents."""
+    # Side effect placeholder.
+    return {
+        "status": "charged",
+        "customer_id": customer_id,
+        "amount_cents": amount_cents,
+    }
+
+secure_charge = wrap_tool(
+    charge_customer,
+    AECPToolConfig(
+        base_url=os.environ["AECP_BASE_URL"],
+        delegation_token=os.environ["AECP_DELEGATION_TOKEN"],
+        tool_id="tool.billing.charge",
+        action_fn=lambda args, kwargs: "charge_customer",
+        cost_estimate_fn=lambda args, kwargs: 1,
+    ),
+)
+```
+:::
+
+## Run allowed and denied calls
+
+:::python
+```python
+from aecp_sdk import AuthorizationDenied
+
+try:
+    # Allowed by policy and budget.
+    ok = secure_charge.invoke({"customer_id": "cus_123", "amount_cents": 1})
+    print("allowed:", ok)
+
+    # Denied after budget is exhausted.
+    denied = secure_charge.invoke({"customer_id": "cus_123", "amount_cents": 1})
+    print("unexpected:", denied)
+except AuthorizationDenied as exc:
+    # Fail-closed path: tool function is not executed.
+    print(f"fail-closed deny: {exc}")
+```
+:::
+
+## Verify execution receipts
+
+In production, persist receipts for both allow and deny outcomes. Use those receipts to support auditability and incident review.
+
+Typical receipt fields include:
+
+- timestamp
+- tool identifier
+- actor/delegation token subject
+- decision (`allow` or `deny`)
+- reason/budget state
+- signed hash chain metadata
+
+## Related docs
+
+- [Tools](/oss/langchain/tools)
+- [Guardrails](/oss/langchain/guardrails)
+- [Human-in-the-loop](/oss/langchain/human-in-the-loop)
