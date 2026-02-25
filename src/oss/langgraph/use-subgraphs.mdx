@@ -924,11 +924,8 @@ Use stateful subgraphs when a subagent needs to remember previous interactions. 
 
 Compile with `checkpointer=True` to enable this behavior.
 
-<Warning>
-**Stateful subgraphs do not support parallel calls to the same subagent.** Because the subagent writes to the same checkpoint namespace every time, two simultaneous calls corrupt each other's state. You must ensure only one call runs at a time. See [Prevent parallel calls to stateful subgraphs](#prevent-parallel-calls) below for how to enforce this with middleware, or use [stateless with interrupts](#with-interrupts) if you need parallel calls.
-</Warning>
-
-The following examples use a single fruit expert subagent compiled with `checkpointer=True`:
+The following examples use a single fruit expert subagent compiled with `checkpointer=True`.
+The fruit expert subagent is wrapped in a unique node name to guarantee namespace isolation:
 
 :::python
 
@@ -936,6 +933,7 @@ The following examples use a single fruit expert subagent compiled with `checkpo
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import MessagesState, StateGraph
 from langgraph.types import Command, interrupt
 
 @tool
@@ -943,9 +941,20 @@ def fruit_info(fruit_name: str) -> str:
     """Look up fruit info."""
     return f"Info about {fruit_name}"
 
+def create_sub_agent(model, *, name, **kwargs):  # [!code highlight]
+    """Wrap an agent with a unique node name for namespace isolation."""  # [!code highlight]
+    agent = create_agent(model=model, name=name, **kwargs)  # [!code highlight]
+    return (  # [!code highlight]
+        StateGraph(MessagesState)  # [!code highlight]
+        .add_node(name, agent)  # [!code highlight]
+        .add_edge("__start__", name)  # [!code highlight]
+        .compile()  # [!code highlight]
+    )  # [!code highlight]
+
 # Subagent with checkpointer=True for persistent state
-fruit_agent = create_agent(
-    model="gpt-4.1-mini",
+fruit_agent = create_sub_agent(
+    "gpt-4.1-mini",
+    name="fruit_agent",
     tools=[fruit_info],
     prompt="You are a fruit expert. Use the fruit_info tool. Respond in one sentence.",
     checkpointer=True,  # [!code highlight]
@@ -1017,8 +1026,9 @@ agent = create_agent(
   # Subagent message count: 8 (accumulated!)
   ```
   </Tab>
-  <Tab title="Multiple subgraph calls in parrallel">
-  Multiple calls to different stateful subgraphs from a single node require [namespace isolation](#parallel-subgraphs) — wrap each agent in a `StateGraph` with a unique node name:
+  <Tab title="Multiple subgraph calls">
+
+  If multiple calls to different stateful subgraphs from a single node occur, the agents accumulate state independently using [namespace isolation](#namespace-isolation):
 
   ```python
   from langgraph.graph import MessagesState, StateGraph
@@ -1041,11 +1051,7 @@ agent = create_agent(
       "gpt-4.1-mini", name="veggie_agent",
       tools=[veggie_info], prompt="...", checkpointer=True,
   )
-  ```
 
-  Each agent accumulates state independently:
-
-  ```python
   config = {"configurable": {"thread_id": "1"}}
 
   # First call — LLM calls both fruit and veggie experts
@@ -1065,12 +1071,6 @@ agent = create_agent(
   # Veggie subagent message count: 8 (remembers broccoli!)
   ```
   </Tab>
-<Tab title="Multiple subgraph calls in sequence">
-
-If you are sure that multiple subgraph calls will not execute in parallel, you can disable checkpointers
-
-
-</Tab>
 </Tabs>
 :::
 
@@ -1078,7 +1078,7 @@ If you are sure that multiple subgraph calls will not execute in parallel, you c
 
 ```typescript
 import { createAgent, tool } from "langchain";
-import { MemorySaver, Command, interrupt } from "@langchain/langgraph";
+import { MemorySaver, Command, interrupt, StateGraph, StateSchema, MessagesValue, START } from "@langchain/langgraph";
 import * as z from "zod";
 
 const fruitInfo = tool(
@@ -1090,9 +1090,18 @@ const fruitInfo = tool(
   }
 );
 
+// Wrap an agent with a unique node name for namespace isolation. // [!code highlight]
+function createSubAgent(model: string, { name, ...kwargs }: { name: string; [key: string]: any }) { // [!code highlight]
+  const agent = createAgent({ model, name, ...kwargs }); // [!code highlight]
+  return new StateGraph(new StateSchema({ messages: MessagesValue })) // [!code highlight]
+    .addNode(name, agent) // [!code highlight]
+    .addEdge(START, name) // [!code highlight]
+    .compile(); // [!code highlight]
+} // [!code highlight]
+
 // Subagent with checkpointer=true for persistent state
-const fruitAgent = createAgent({
-  model: "gpt-4.1-mini",
+const fruitAgent = createSubAgent("gpt-4.1-mini", {
+  name: "fruit_agent",
   tools: [fruitInfo],
   prompt: "You are a fruit expert. Use the fruit_info tool. Respond in one sentence.",
   checkpointer: true,  // [!code highlight]
@@ -1177,7 +1186,8 @@ const agent = createAgent({
   ```
   </Tab>
   <Tab title="Multiple subgraph calls">
-  Multiple calls to different stateful subgraphs from a single node require [namespace isolation](#parallel-subgraphs) — wrap each agent in a `StateGraph` with a unique node name:
+
+  If multiple calls to different stateful subgraphs from a single node occur, the agents accumulate state independently using [namespace isolation](#namespace-isolation):
 
   ```typescript
   import { StateGraph, StateSchema, MessagesValue, START } from "@langchain/langgraph";
@@ -1196,11 +1206,6 @@ const agent = createAgent({
   const veggieAgent = createSubAgent("gpt-4.1-mini", {
     name: "veggie_agent", tools: [veggieInfo], prompt: "...", checkpointer: true,
   });
-  ```
-
-  Each agent accumulates state independently:
-
-  ```typescript
   const config = { configurable: { thread_id: "1" } };
 
   // First call — LLM calls both fruit and veggie experts
@@ -1223,36 +1228,8 @@ const agent = createAgent({
 </Tabs>
 :::
 
-<a id="prevent-parallel-calls"></a>
-<Accordion title="Prevent parallel calls to stateful subgraphs">
-When an LLM has access to a stateful subagent as a tool, it may try to call that tool multiple times in parallel (for example, asking the fruit expert about apples and bananas simultaneously). This causes checkpoint conflicts because both calls write to the same namespace.
+#### Namespace isolation
 
-Use `ToolCallLimitMiddleware` to cap how many times a tool can be called per agent run. If the LLM tries to call the tool more than the limit, the extra calls return an error message instead of executing:
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ToolCallLimitMiddleware
-from langgraph.checkpoint.memory import MemorySaver
-
-agent = create_agent(
-    "gpt-4.1-mini",
-    tools=[ask_fruit_expert, ask_veggie_expert],
-    prompt="Delegate fruit questions to ask_fruit_expert and veggie questions to ask_veggie_expert.",
-    middleware=[
-        ToolCallLimitMiddleware(tool_name="ask_fruit_expert", run_limit=1),  # [!code highlight]
-        ToolCallLimitMiddleware(tool_name="ask_veggie_expert", run_limit=1),  # [!code highlight]
-    ],
-    checkpointer=MemorySaver(),
-)
-```
-:::
-
-If the LLM tries to call `ask_fruit_expert` twice in one run (for example, once for apples and once for bananas), only the first call executes. The second returns `"Tool call limit exceeded. Do not call 'ask_fruit_expert' again."` and the LLM can retry in a follow-up turn.
-</Accordion>
-
-<a id="parallel-subgraphs"></a>
-<Accordion title="Run multiple different stateful subagents in parallel">
 When you have multiple **different** stateful subagents (for example, a fruit expert and a veggie expert), each one needs its own storage space so their checkpoints don't overwrite each other. This is called namespace isolation.
 
 If you [call subgraphs inside a node](#call-a-subgraph-inside-a-node), LangGraph assigns namespaces based on call order (first call, second call, etc.). This means reordering your calls can mix up which subagent loads which data. To avoid this, wrap each subagent in its own `StateGraph` with a unique node name. This gives each subagent a stable, name-based namespace:
@@ -1296,6 +1273,35 @@ const veggieAgent = createSubAgent("gpt-4.1-mini", { name: "veggie_agent", tools
 :::
 
 Subgraphs [added as nodes](#add-a-subgraph-as-a-node) already get name-based namespaces automatically, so they don't need this wrapper.
+
+If you use an agent without wrapping it in a unique node name, you must ensure that multiple subgraph calls will not execute in parallel.
+
+<a id="prevent-parallel-calls"></a>
+<Accordion title="Prevent parallel calls to stateful subgraphs">
+When an LLM has access to a stateful subagent as a tool, it may try to call that tool multiple times in parallel (for example, asking the fruit expert about apples and bananas simultaneously). This causes checkpoint conflicts because both calls write to the same namespace.
+
+Use `ToolCallLimitMiddleware` to cap how many times a tool can be called per agent run. If the LLM tries to call the tool more than the limit, the extra calls return an error message instead of executing:
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolCallLimitMiddleware
+from langgraph.checkpoint.memory import MemorySaver
+
+agent = create_agent(
+    "gpt-4.1-mini",
+    tools=[ask_fruit_expert, ask_veggie_expert],
+    prompt="Delegate fruit questions to ask_fruit_expert and veggie questions to ask_veggie_expert.",
+    middleware=[
+        ToolCallLimitMiddleware(tool_name="ask_fruit_expert", run_limit=1),  # [!code highlight]
+        ToolCallLimitMiddleware(tool_name="ask_veggie_expert", run_limit=1),  # [!code highlight]
+    ],
+    checkpointer=MemorySaver(),
+)
+```
+:::
+
+If the LLM tries to call `ask_fruit_expert` twice in one run (for example, once for apples and once for bananas), only the first call executes. The second returns `"Tool call limit exceeded. Do not call 'ask_fruit_expert' again."` and the LLM can retry in a follow-up turn.
 </Accordion>
 
 ### Checkpointer reference
