@@ -1,0 +1,49 @@
+---
+title: Veritensor
+description: Integrate Veritensor for securing RAG pipelines and document loaders.
+---
+
+[Veritensor](https://github.com/arsbr/Veritensor) is an open-source security scanner and firewall for AI artifacts.
+
+In the context of RAG (Retrieval-Augmented Generation), `Veritensor` can be used to wrap standard LangChain Document Loaders to prevent **Data Poisoning**, **Indirect Prompt Injections**, and **PII leaks** before the data is chunked and embedded into your Vector Database.
+
+It scans the raw files (PDF, DOCX, TXT) for stealth techniques (like hidden CSS text or HTML comments) and uses static analysis and entropy checks to sanitize the ingested data locally.
+
+## Installation and Setup
+
+You need to install the `veritensor` python package. To scan documents (PDF, DOCX), use the `[rag]` extra:
+
+```bash
+pip install "veritensor[rag]"
+```
+
+## Usage: Securing Document Loaders
+You can secure any existing LangChain `BaseLoader` by wrapping it with the `SecureLangChainLoader`.
+If `strict_mode=True`, the loader will raise a `VeritensorSecurityError` and block the ingestion process if malicious payloads (e.g., hidden "Ignore previous instructions" text) are detected in the document.
+
+```Python
+from langchain_community.document_loaders import PyPDFLoader
+from veritensor.integrations.langchain_guard import SecureLangChainLoader
+
+# 1. Initialize your standard document loader
+base_loader = PyPDFLoader("untrusted_user_upload.pdf")
+
+# 2. Wrap it in the Veritensor Guard
+secure_loader = SecureLangChainLoader(
+    file_path="untrusted_user_upload.pdf", 
+    base_loader=base_loader,
+    strict_mode=True # Blocks ingestion if threats are found
+)
+
+# 3. Safely load the documents
+try:
+    docs = secure_loader.load()
+    print(f"Successfully loaded {len(docs)} safe documents.")
+except Exception as e:
+    print(f"Security Alert: {e}")
+```
+
+## Advanced: Smart Filtering and PII
+Veritensor also supports PII (Personally Identifiable Information) detection using Microsoft Presidio. If you install the `[pii]` extra, the `SecureLangChainLoader` will automatically scan for and flag sensitive data during the loading phase.
+
+For more details on supported formats (including Parquet, Jupyter Notebooks, and Pickle models) and configuration options, visit the [Veritensor GitHub repository](https://github.com/arsbr/Veritensor).
