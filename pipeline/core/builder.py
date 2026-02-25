@@ -190,12 +190,14 @@ class DocumentationBuilder:
             # Create the callout section with Mintlify Callout component
             source_links_section = (
                 "\n\n---\n\n"
+                '<div className="source-links">\n'
                 '<Callout icon="edit">\n'
                 f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
                 "</Callout>\n"
                 '<Callout icon="terminal-2">\n'
                 "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
                 "</Callout>\n"
+                "</div>\n"
             )
 
             # Append to content
