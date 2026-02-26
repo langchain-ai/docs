@@ -925,7 +925,7 @@ Use stateful subgraphs when a subagent needs to remember previous interactions. 
 Compile with `checkpointer=True` to enable this behavior.
 
 <Warning>
-Stateful subgraphs do not support parallel tool calls. When an LLM has access to a stateful subagent as a tool, it may try to call that tool multiple times in parallel (for example, asking the fruit expert about apples and bananas simultaneously). This causes checkpoint conflicts because both calls write to the same namespace. Use `ToolCallLimitMiddleware` to [prevent parallel calls](#prevent-parallel-calls).
+Stateful subgraphs do not support parallel tool calls. When an LLM has access to a stateful subagent as a tool, it may try to call that tool multiple times in parallel (for example, asking the fruit expert about apples and bananas simultaneously). This causes checkpoint conflicts because both calls write to the same namespace. The examples below use `ToolCallLimitMiddleware` to prevent this.
 </Warning>
 
 The following examples use a fruit expert subagent compiled with `checkpointer=True`:
@@ -934,6 +934,7 @@ The following examples use a fruit expert subagent compiled with `checkpointer=T
 
 ```python
 from langchain.agents import create_agent
+from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
@@ -961,10 +962,15 @@ def ask_fruit_expert(question: str) -> str:
     return response["messages"][-1].content
 
 # Outer agent with checkpointer
+# Use ToolCallLimitMiddleware to prevent parallel calls to stateful subagents,
+# which would cause checkpoint conflicts.
 agent = create_agent(
     model="gpt-4.1-mini",
     tools=[ask_fruit_expert],
     prompt="You have a fruit expert. ALWAYS delegate fruit questions to ask_fruit_expert.",
+    middleware=[  # [!code highlight]
+        ToolCallLimitMiddleware(tool_name="ask_fruit_expert", run_limit=1),  # [!code highlight]
+    ],  # [!code highlight]
     checkpointer=MemorySaver(),
 )
 ```
@@ -1072,7 +1078,7 @@ agent = create_agent(
 :::js
 
 ```typescript
-import { createAgent, tool } from "langchain";
+import { createAgent, tool, toolCallLimitMiddleware } from "langchain";
 import { MemorySaver, Command, interrupt } from "@langchain/langgraph";
 import * as z from "zod";
 
@@ -1109,10 +1115,15 @@ const askFruitExpert = tool(
 );
 
 // Outer agent with checkpointer
+// Use toolCallLimitMiddleware to prevent parallel calls to stateful subagents,
+// which would cause checkpoint conflicts.
 const agent = createAgent({
   model: "gpt-4.1-mini",
   tools: [askFruitExpert],
   prompt: "You have a fruit expert. ALWAYS delegate fruit questions to ask_fruit_expert.",
+  middleware: [  // [!code highlight]
+    toolCallLimitMiddleware({ toolName: "ask_fruit_expert", runLimit: 1 }),  // [!code highlight]
+  ],  // [!code highlight]
   checkpointer: new MemorySaver(),
 });
 ```
@@ -1217,32 +1228,6 @@ const agent = createAgent({
   </Tab>
 </Tabs>
 :::
-
-<a id="prevent-parallel-calls"></a>
-#### Prevent parallel calls
-
-Use `ToolCallLimitMiddleware` to cap how many times a tool can be called per agent run. If the LLM tries to call the tool more than the limit, the extra calls return an error message instead of executing:
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ToolCallLimitMiddleware
-from langgraph.checkpoint.memory import MemorySaver
-
-agent = create_agent(
-    "gpt-4.1-mini",
-    tools=[ask_fruit_expert, ask_veggie_expert],
-    prompt="Delegate fruit questions to ask_fruit_expert and veggie questions to ask_veggie_expert.",
-    middleware=[
-        ToolCallLimitMiddleware(tool_name="ask_fruit_expert", run_limit=1),  # [!code highlight]
-        ToolCallLimitMiddleware(tool_name="ask_veggie_expert", run_limit=1),  # [!code highlight]
-    ],
-    checkpointer=MemorySaver(),
-)
-```
-:::
-
-If the LLM tries to call `ask_fruit_expert` twice in one run (for example, once for apples and once for bananas), only the first call executes. The second returns `"Tool call limit exceeded. Do not call 'ask_fruit_expert' again."` and the LLM can retry in a follow-up turn.
 
 ### Checkpointer reference
 
