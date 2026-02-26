@@ -1,0 +1,1014 @@
+---
+title: SAP HANA Cloud Vector Engine
+---
+
+>[SAP HANA Cloud Vector Engine](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/sap-hana-cloud-sap-hana-database-vector-engine-guide) is a vector store fully integrated into the `SAP HANA Cloud` database.
+
+## Setup
+
+Install the `@sap/hana-langchain` external integration package, as well as the other packages used throughout this notebook.
+
+```bash
+npm install @sap/hana-langchain @langchain/core@latest @langchain/classic@latest langchain@latest
+```
+
+### Credentials
+
+Ensure your SAP HANA instance is running. Load credentials from environment variables and create a connection using your preferred HANA client.
+
+```typescript
+import * as dotenv from 'dotenv';
+dotenv.config();
+
+import hanaClient from "@sap/hana-client";
+
+const connectionParams = {
+  host: process.env.HANA_DB_ADDRESS,
+  port: process.env.HANA_DB_PORT,
+  user: process.env.HANA_DB_USER,
+  password: process.env.HANA_DB_PASSWORD,
+};
+const client = hanaClient.createConnection(connectionParams);
+
+// connect to hanaDB
+await new Promise<void>((resolve, reject) => {
+  client.connect((err: Error) => {
+    // Use arrow function here
+    if (err) {
+      reject(err);
+    } else {
+      console.log("Connected to SAP HANA successfully.");
+      resolve();
+    }
+  });
+});
+```
+
+Learn more about SAP HANA in [What is SAP HANA?](https://www.sap.com/products/data-cloud/hana/what-is-sap-hana.html).
+
+## Initialization
+
+To initialize a `HanaDB` vector store, you need a database connection and an embedding instance. SAP HANA Cloud Vector Engine supports both external and internal embeddings.
+
+### Using external embeddings
+
+```typescript
+import { OpenAIEmbeddings } from "@langchain/openai";
+const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-large" });
+```
+
+### Using internal embeddings
+
+Alternatively, you can compute embeddings directly in SAP HANA using its native `VECTOR_EMBEDDING()` function. If you have internal embedding support available in your TypeScript environment, initialize and pass it to `HanaDB` similarly. For more information about internal embedding, see the [SAP HANA VECTOR_EMBEDDING Function](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/vector-embedding-function-vector).
+
+> Caution: Ensure NLP is enabled in your SAP HANA Cloud instance.
+
+```typescript
+import { HanaInternalEmbeddings } from "@sap/hana-langchain";
+
+const internalEmbeddings = new HanaInternalEmbeddings({
+  internalEmbeddingModelId:
+    process.env.HANA_DB_EMBEDDING_MODEL_ID || "SAP_NEB.20240715",
+});
+// optionally, you can specify a remote source to use models from your deployed SAP AI CORE instance:
+/*
+const internalEmbeddings = new HanaInternalEmbeddings({
+  internalEmbeddingModelId:
+    process.env.HANA_DB_EMBEDDING_REMOTE_MODEL_ID || "YOUR_EMBEDDING_MODEL_ID",
+  remoteSource:
+    process.env.HANA_DB_EMBEDDING_REMOTE_SOURCE || "YOUR_REMOTE_SOURCE_NAME",
+});
+*/
+```
+
+Once you have your connection and embedding instance, create the vector store by passing them to `HanaDB` along with a table name for storing vectors:
+
+```typescript
+// define instance args
+// check the interface to see all possible options
+const args: HanaDBArgs = {
+  connection: client,
+  tableName: "MY_TABLE",
+};
+// Create a LangChain VectorStore interface for the HANA database and specify the table (collection) to use in args.
+const db = new HanaDB(embeddings, args);
+// need to initialize once an instance is created.
+await db.initialize()
+```
+
+## Manage vector store
+
+Once you have created your vector store, we can interact with it by adding and deleting different items.
+
+### Add items to vector store
+
+We can add items to our vector store by using the `addDocuments` function.
+
+```typescript
+import { Document } from "@langchain/core/documents";
+
+await db.addDocuments([
+  new Document({ pageContent: "Hello world" }),
+  new Document({ pageContent: "Other docs"})
+]);
+```
+
+Add documents with metadata
+
+```typescript
+await db.addDocuments([
+  { pageContent: "foo", metadata: { start: 100, end: 150, docName: "foo.txt", quality: "bad" } },
+  { pageContent: "bar", metadata: { start: 200, end: 250, docName: "bar.txt", quality: "good" } },
+]);
+```
+
+### Delete items from vector store
+
+```typescript
+await db.delete({ filter: { quality: "bad" } });
+```
+
+## Query vector store
+
+### Query directly
+
+#### Similarity search
+
+Performing a simple similarity search with filtering on metadata can be done as follows:
+
+```typescript
+// With filtering on {"quality": "bad"}, only one document should be returned
+const docs = await db.similaritySearch("foobar", 2, { quality: "bad" });
+console.log(docs);
+```
+
+```text
+[
+    {
+    pageContent: "foo",
+    metadata: { start: 100, end: 150, docName: "foo.txt", quality: "bad" }
+    }
+]
+```
+
+#### MMR search
+
+Performing a Maximal Marginal Relevance (MMR) with filtering on metadata search can be done as follows:
+
+```typescript
+const docsMMR = await db.maxMarginalRelevanceSearch("foobar", {
+    k: 2,
+    fetchK: 5,
+    filter: { quality: "bad" },
+});
+console.log(docsMMR);
+```
+
+```text
+[
+    {
+    pageContent: "foo",
+    metadata: { start: 100, end: 150, docName: "foo.txt", quality: "bad" }
+    }
+]
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+```typescript
+const retriever = db.asRetriever();
+const docsRetriever = await retriever.invoke("foobar", {filter: { quality: "good" }});
+console.log(docsRetriever);
+```
+
+```text
+[
+    {
+    pageContent: "bar",
+    metadata: { start: 200, end: 250, docName: "bar.txt", quality: "good" }
+    }
+]
+```
+
+## Distance similarity algorithm
+
+`HanaDB` supports the following distance similarity algorithms:
+- Cosine Similarity (default)
+- Euclidian Distance (L2)
+
+You can specify the distance strategy when initializing the `HanaDB` instance by using the `distanceStrategy` parameter.
+
+```typescript
+const argsDist: HanaDBArgs = {
+  connection: client,
+  tableName: "MY_TABLE",
+  distanceStrategy: "EUCLIDEAN",
+    // distanceStrategy: "COSINE", // (default)
+};
+const dbDist = new HanaDB(embeddings, argsDist);
+await dbDist.initialize();
+```
+
+## Creating a HNSW index
+
+A vector index can significantly speed up top-k nearest neighbor queries for vectors. Users can create a Hierarchical Navigable Small World (HNSW) vector index using the `createHnswIndex` function.
+
+For more information about creating an index at the database level, please refer to the [official documentation](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/create-vector-index-statement-data-definition).
+
+```typescript
+const argsHnsw: HanaDBArgs = {
+  connection: client,
+  tableName: "MY_TABLE",
+};
+const dbHnsw = new HanaDB(embeddings, argsHnsw);
+await dbHnsw.initialize();
+dbHnsw.createHnswIndex({
+  indexName: "MY_HNSW_INDEX",
+  efSearch: 100, // Max number of neighbors per graph node (valid range: 4 to 1000)
+  m: 200, // Max number of candidates during graph construction (valid range: 1 to 100000)
+  efConstruction: 500, // Min number of candidates during the search (valid range: 1 to 100000)
+});
+```
+
+If no other parameters are specified, the default values will be used
+
+Default values: m=64, ef_construction=128, ef_search=200
+
+The default index name will be: "\<TABLE_NAME>_idx"
+
+## Advanced filtering
+
+In addition to the basic value-based filtering capabilities, it is possible to use more advanced filtering. The table below shows the available filter operators.
+
+| Operator | Semantic |
+|----------|---------|
+| `$eq` | Equality (==) |
+| `$ne` | Inequality (!=) |
+| `$lt` | Less than (&lt;) |
+| `$lte` | Less than or equal (&lt;=) |
+| `$gt` | Greater than (&gt;) |
+| `$gte` | Greater than or equal (&gt;=) |
+| `$in` | Contained in a set of given values (in) |
+| `$nin` | Not contained in a set of given values (not in) |
+| `$between` | Between the range of two boundary values |
+| `$like` | Text equality based on the "LIKE" semantics in SQL (using "%" as wildcard) |
+| `$contains` | Filters documents containing a specific keyword |
+| `$and` | Logical "and", supporting two or more operands |
+| `$or` | Logical "or", supporting two or more operands |
+
+```typescript
+const docs: Document[] = [
+  {
+    pageContent: "First",
+    metadata: { name: "Adam Smith", is_active: true, id: 1, height: 10.0 },
+  },
+  {
+    pageContent: "Second",
+    metadata: { name: "Bob Johnson", is_active: false, id: 2, height: 5.7 },
+  },
+  {
+    pageContent: "Third",
+    metadata: { name: "Jane Doe", is_active: true, id: 3, height: 2.4 },
+  },
+];
+
+const args: HanaDBArgs = {
+  connection: client,
+  tableName: "LANGCHAIN_DEMO_ADVANCED_FILTER",
+};
+
+const vectorStore = new HanaDB(embeddings, args);
+// need to initialize once an instance is created.
+await vectorStore.initialize();
+
+// Delete already existing documents from the table
+await vectorStore.delete({ filter: {} });
+await vectorStore.addDocuments(docs);
+
+// Helper function to print filter results
+function printFilterResult(result: Document[]) {
+  if (result.length === 0) {
+    console.log("<empty result>");
+  } else {
+    result.forEach((doc) => console.log(JSON.stringify(doc.metadata)) );
+  }
+}
+```
+
+Filtering with `$ne`, `$gt`, `$gte`, `$lt`, `$lte`
+
+```typescript
+let advancedFilter;
+
+advancedFilter = { id: { $ne: 1 } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { id: { $gt: 1 } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { id: { $gte: 1 } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { id: { $lt: 1 } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { id: { $lte: 1 } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+```
+
+```text
+Filter: {"id":{"$ne":1}}
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+{ name: 'Jane Doe', is_active: true, id: 3, height: 2.4 }
+Filter: {"id":{"$gt":1}}
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+{ name: 'Jane Doe', is_active: true, id: 3, height: 2.4 }
+Filter: {"id":{"$gte":1}}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+{ name: 'Jane Doe', is_active: true, id: 3, height: 2.4 }
+Filter: {"id":{"$lt":1}}
+<empty result>
+Filter: {"id":{"$lte":1}}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+```
+
+Filtering with `$between`, `$in`, `$nin`
+
+```typescript
+advancedFilter = { id: { $between: [1, 2] } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { name: { $in: ["Adam Smith", "Bob Johnson"] } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { name: { $nin: ["Adam Smith", "Bob Johnson"] } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+```
+
+```text
+Filter: {"id":{"$between":[1,2]}}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+Filter: {"name":{"$in":["Adam Smith","Bob Johnson"]}}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+Filter: {"name":{"$nin":["Adam Smith","Bob Johnson"]}}
+{ name: 'Jane Doe', is_active: true, id: 3, height: 2.4 }
+```
+
+Text filtering with `$like`
+
+```typescript
+advancedFilter = { name: { $like: "a%" } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { name: { $like: "%a%" } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+```
+
+```text
+Filter: {"name":{"$like":"a%"}}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+Filter: {"name":{"$like":"%a%"}}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+{ name: 'Jane Doe', is_active: true, id: 3, height: 2.4 }
+```
+
+Text filtering with `$contains`
+
+```typescript
+advancedFilter = { name: { $contains: "bob" } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { name: { $contains: "bo" } };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = {"name": {"$contains": "Adam Johnson"}}
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = {"name": {"$contains": "Adam Smith"}}
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+```
+
+```text
+Filter: {"name":{"$contains":"bob"}}
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+Filter: {"name":{"$contains":"bo"}}
+<empty result>
+Filter: {'name': {'$contains': 'Adam Johnson'}}
+<empty result>
+Filter: {'name': {'$contains': 'Adam Smith'}}
+{'name': 'Adam Smith', 'is_active': True, 'id': 1, 'height': 10.0}
+```
+
+Combined filtering with `$and`, `$or`
+
+```typescript
+advancedFilter = { $or: [{ id: 1 }, { name: "bob" }] };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { $and: [{ id: 1 }, { id: 2 }] };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { $and: [{ name: { $contains: "bob" } }, { id: 2 }] };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = { $or: [{ id: 1 }, { id: 2 }, { id: 3 }] };
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+
+advancedFilter = {
+  $and: [{ $or: [{ id: 1 }, { id: 2 }] }, { height: { $gte: 5.0 } }],
+};
+console.log(`Filter: ${JSON.stringify(advancedFilter)}`);
+printFilterResult(
+  await vectorStore.similaritySearch("just testing", 5, advancedFilter)
+);
+```
+
+```text
+Filter: {'$or': [{'id': 1}, {'name': 'bob'}]}
+{'name': 'Adam Smith', 'is_active': True, 'id': 1, 'height': 10.0}
+Filter: {"$and":[{"id":1},{"id":2}]}
+<empty result>
+Filter: {"$and":[{"name":{"$contains":"bob"}},{"id":2}]}
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+Filter: {"$or":[{"id":1},{"id":2},{"id":3}]}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+{ name: 'Jane Doe', is_active: true, id: 3, height: 2.4 }
+Filter: {"$and":[{"$or":[{"id":1},{"id":2}]},{"height":{"$gte":5.0}}]}
+{ name: 'Adam Smith', is_active: true, id: 1, height: 10 }
+{ name: 'Bob Johnson', is_active: false, id: 2, height: 5.7 }
+```
+
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Tutorials](/oss/langchain/rag)
+- [How-to: Question and answer with RAG](https://js.langchain.com/docs/how_to/#qa-with-rag)
+- [Retrieval conceptual docs](https://js.langchain.com/docs/concepts/retrieval)
+
+## Standard tables vs. custom tables with vector data
+
+By default, the embeddings table contains three columns:
+
+- `VEC_TEXT`: the document text
+- `VEC_META`: the document metadata
+- `VEC_VECTOR`: the embedding vector
+
+Custom tables must have at least three columns that match the semantics of a standard table:
+
+- An `NCLOB`/`NVARCHAR` column for the text/context
+- An `NCLOB`/`NVARCHAR` column for the metadata
+- A `REAL_VECTOR` column for the embedding vector
+
+Additional columns are allowed; ensure they accept NULLs for new document inserts.
+
+```typescript
+//  Access the vector DB with a new table
+const dbDefaultArgs: HanaDBArgs = {
+  connection: client,
+  tableName: "LANGCHAIN_DEMO_NEW_TABLE"
+};
+
+const dbDefault = new HanaDB(embeddings, dbDefaultArgs);
+await dbDefault.initialize();
+
+//  Delete already existing entries from the table
+await dbDefault.delete({ filter: {} });
+
+//  Add a simple document with some metadata
+docs = [
+    new Document({
+        pageContent: "A simple document",
+        metadata: { start: 100, end: 150, docName: "simple.txt" }
+    })
+]
+await dbDefault.addDocuments(docs);
+```
+
+Show the columns in table "LANGCHAIN_DEMO_NEW_TABLE"
+
+```typescript
+const result = await new Promise<any[]>((resolve, reject) => {
+  client.exec(
+    `SELECT COLUMN_NAME, DATA_TYPE_NAME FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = CURRENT_SCHEMA AND TABLE_NAME = 'LANGCHAIN_DEMO_NEW_TABLE'`,
+    (err: Error, rows: any) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    }
+  );
+});
+row.forEach((r) => {
+  console.log(`${r.COLUMN_NAME}: ${r.DATA_TYPE_NAME}`);
+});
+```
+
+```text
+VEC_TEXT: NCLOB
+VEC_META: NCLOB
+VEC_VECTOR: REAL_VECTOR
+```
+
+Show the value of the inserted document in the three columns
+
+Since, HANA's dbapi driver outputs the vector columns in Buffer objects by default, we will create a helper function to convert the function into a list of numbers.
+
+```typescript
+// Helper function to parse fvecs format for REAL_VECTOR
+function parseFvecs(b: ArrayBuffer): number[] {
+    const v = new DataView(b)
+    const d = v.getUint32(0, true)
+    return Array.from({ length: d }, (_, i) => v.getFloat32(4 + i * 4, true))
+}
+
+const resultVal = await new Promise<any[]>((resolve, reject) => {
+  client.exec(
+    `SELECT * FROM LANGCHAIN_DEMO_NEW_TABLE LIMIT 1`,
+    (err: Error, rows: any) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    }
+  );
+});
+rowVal.forEach((r) => {
+  console.log(`VEC_TEXT: ${r.VEC_TEXT}`); // The text
+  console.log(`VEC_META: ${r.VEC_META}`); // The metadata
+  const embedding = parseFvecs(r.VEC_VECTOR);
+  console.log(`VEC_VECTOR: ${embedding.length, embedding.slice(0, 3).concat(['...']).concat(embedding.slice(-3))}`); // The vector
+});
+```
+
+```text
+VEC_TEXT: A simple document
+VEC_META: {"start": 100, "end": 150, "docName": "simple.txt"}
+VEC_VECTOR: 768 [-0.01989901065826416, 0.02785174734890461, 0.0020877711940556765, '...', 0.0183248370885849, 0.009469633921980858, 0.04312701150774956]
+```
+
+Custom tables must have at least three columns that match the semantics of a standard table
+
+- A column with type `NCLOB` or `NVARCHAR` for the text/context of the embeddings
+- A column with type `NCLOB` or `NVARCHAR` for the metadata
+- A column with type `REAL_VECTOR` or `HALF_VECTOR` for the embedding vector
+
+The table can contain additional columns. When new Documents are inserted into the table, these additional columns must allow NULL values.
+
+```typescript
+// Create a new table "MY_OWN_TABLE_ADD" with three "standard" columns and one additional column
+const myOwnTableName = "MY_OWN_TABLE_ADD";
+await new Promise<void>((resolve, reject) => {
+  client.exec(
+    `CREATE TABLE MY_OWN_TABLE_ADD (
+      SOME_OTHER_COLUMN NVARCHAR(42),
+      MY_TEXT NVARCHAR(2048),
+      MY_METADATA NVARCHAR(1024),
+      MY_VECTOR REAL_VECTOR,
+    )`,
+    (err: Error) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    }
+  );
+});
+
+// Create a HanaDB instance with the own table
+const dbOwnTableArgs: HanaDBArgs = {
+  connection: client,
+  tableName: myOwnTableName,
+  textColumnName: "MY_TEXT",
+  metadataColumnName: "MY_METADATA",
+  vectorColumnName: "MY_VECTOR",
+};
+const dbOwnTable = new HanaDB(embeddings, dbOwnTableArgs);
+await dbOwnTable.initialize();
+
+// Add a simple document with some metadata
+docs = [
+    new Document({
+        pageContent: "Some other text",
+        metadata: {start: 400, end: 450, docName: "other.txt"}
+    })
+]
+await dbOwnTable.addDocuments(docs);
+
+//  Check if data has been inserted into our own table
+const resultOwnTable = await new Promise<any[]>((resolve, reject) => {
+  client.exec(
+    `SELECT * FROM ${myOwnTableName} LIMIT 1`,
+    (err: Error, rows: any) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    }
+  );
+});
+rowOwnTable.forEach((r) => {
+  console.log(`SOME_OTHER_COLUMN: ${r.SOME_OTHER_COLUMN}`); // should be NULL
+  console.log(`MY_TEXT: ${r.MY_TEXT}`); // The text
+  console.log(`MY_METADATA: ${r.MY_METADATA}`); // The metadata
+  const embedding = parseFvecs(r.MY_VECTOR);
+  console.log(`MY_VECTOR: ${embedding.length, embedding.slice(0, 3).concat(['...']).concat(embedding.slice(-3))}`); // The vector
+});
+```
+
+```text
+SOME_OTHER_COLUMN: null
+MY_TEXT: Some other text
+MY_METADATA: {"start":400,"end":450,"docName":"other.txt"}
+MY_VECTOR: 768 [0.016170687973499298, -0.01129427831619978, -0.0005921399570070207, '...', 0.017849743366241455, 0.0003932560794055462, -0.00045805066474713385]
+```
+
+Add another document and perform a similarity search on the custom table.
+
+```typescript
+const moreDocs = [
+    new Document({
+        pageContent: "ome more text",
+        metadata: {start: 800, end: 950, docName: "more.txt"}
+    })
+]
+
+awwait dbOwnTable.addDocuments(moreDocs);
+
+const foundDocs = await dbOwnTable.similaritySearch("What's up?", 2);
+foundDocs.forEach((doc) => {
+    console.log("-".repeat(80));
+    console.log(doc.pageContent);
+});
+```
+
+```text
+--------------------------------------------------------------------------------
+Some more text
+--------------------------------------------------------------------------------
+Some other text
+```
+
+### Filter performance optimization with custom columns
+
+To allow flexible metadata values, all metadata is stored as JSON in the metadata column by default. If some of the used metadata keys and value types are known, they can be stored in additional columns instead by creating the target table with the key names as column names and passing them to the HanaDB constructor via the `specificMetadataColumns` list. Metadata keys that match those values are copied into the special column during insert. Filters use the special columns instead of the metadata JSON column for keys in the `specificMetadataColumns` list.
+
+```typescript
+// Create a new table "PERFORMANT_CUSTOMTEXT_FILTER" with three "standard" columns and one additional column
+const performantTableName = "PERFORMANT_CUSTOMTEXT_FILTER";
+await new Promise<void>((resolve, reject) => {
+  client.exec(
+    `CREATE TABLE ${performantTableName} (
+      CUSTOMTEXT NVARCHAR(500),
+      MY_TEXT NVARCHAR(2048),
+      MY_METADATA NVARCHAR(1024),
+      MY_VECTOR REAL_VECTOR,
+    )`,
+    (err: Error) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    }
+  );
+});
+
+// Create a HanaDB instance with the table
+const dbPerformantArgs: HanaDBArgs = {
+  connection: client,
+  tableName: performantTableName,
+  textColumnName: "MY_TEXT",
+  metadataColumnName: "MY_METADATA",
+  vectorColumnName: "MY_VECTOR",
+  specificMetadataColumns: ["CUSTOMTEXT"],
+};
+const dbPerformant = new HanaDB(embeddings, dbPerformantArgs);
+await dbPerformant.initialize();
+
+// Add a simple document with some metadata
+
+const performantDocs = [
+    new Document({
+        pageContent: "Some other text",
+        metadata: {
+            start: 400,
+            end: 450,
+            docName: "other.txt",
+            CUSTOMTEXT: "Filters on this value are very performant"
+        }
+    })
+]
+
+await dbPerformant.addDocuments(performantDocs);
+// Check if data has been inserted into our own table
+const resultPerformant = await new Promise<any[]>((resolve, reject) => {
+  client.exec(
+    `SELECT * FROM ${performantTableName} LIMIT 1`,
+    (err: Error, rows: any) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    }
+  );
+});
+rowPerformant.forEach((r) => {
+  console.log(`CUSTOMTEXT: ${r.CUSTOMTEXT}`); // The custom text metadata
+  console.log(`MY_TEXT: ${r.MY_TEXT}`); // The text
+  console.log(`MY_METADATA: ${r.MY_METADATA}`); // The metadata
+  const embedding = parseFvecs(r.MY_VECTOR);
+  console.log(`MY_VECTOR: ${embedding.length, embedding.slice(0, 3).concat(['...']).concat(embedding.slice(-3))}`); // The vector
+});
+```
+
+```text
+CUSTOMTEXT: Filters on this value are very performant
+MY_TEXT: Some other text
+MY_METADATA: {"start":400,"end":450,"docName":"other.txt","CUSTOMTEXT":"Filters on this value are very performant"}
+768 [0.016170687973499298, -0.01129427831619978, -0.0005921399570070207, '...', 0.017849743366241455, 0.0003932560794055462, -0.00045805066474713385]
+```
+
+The special columns are completely transparent to the rest of the langchain interface. Everything works as it did before, just more performant.
+
+```typescript
+const advancedFilter = { CUSTOMTEXT: { $like: "%value%" } };
+const foundPerformantDocs = await dbPerformant.similaritySearch("What's up?", 2, advancedFilter);
+
+foundPerformantDocs.forEach((doc) => {
+    console.log("-".repeat(80));
+    console.log(doc.pageContent);
+});
+```
+
+```text
+--------------------------------------------------------------------------------
+Some more text
+--------------------------------------------------------------------------------
+Some other text
+```
+
+## A simple example
+
+Load the sample document "state_of_the_union.txt" and create chunks from it.
+
+First, install the `@langchain/textsplitters` package:
+
+```bash
+npm install @langchain/textsplitters
+```
+
+```typescript
+import { TextLoader } from "@langchain/classic/document_loaders/fs/text";
+import { CharacterTextSplitter } from "@langchain/textsplitters";
+
+// Load documents from file
+const loader = new TextLoader("./state_of_the_union.txt");
+const textDocuments = await loader.load();
+const textSplitter = new CharacterTextSplitter({
+  chunkSize: 500,
+  chunkOverlap: 0,
+});
+const textChunks = await textSplitter.splitDocuments(textDocuments);
+console.log("Number of document chunks:", textChunks.length);
+```
+
+```text
+Number of document chunks: 88
+```
+
+Add the loaded document chunks to the table. For this example, we delete any previous content from the table which might exist from previous runs.
+
+```typescript
+// Delete already existing documents from the table
+await db.delete({ filter: {} });
+// add the loaded document chunks
+await db.addDocuments(textChunks);
+```
+
+Perform a query to get the two best-matching document chunks from the ones that were added in the previous step.
+By default "Cosine Similarity" is used for the search.
+
+```typescript
+const query = "What did the president say about Ketanji Brown Jackson";
+const docs = await db.similaritySearch(query, 2);
+docs.forEach((doc) => {
+  console.log("-".repeat(80));
+  console.log(doc.pageContent);
+});
+```
+
+```text
+--------------------------------------------------------------------------------
+One of the most serious constitutional responsibilities a President has is nominating
+someone to serve on the United States Supreme Court.
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson.
+One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+--------------------------------------------------------------------------------
+As I said last year, especially to our younger transgender Americans, I will always have your back as your President,
+so you can be yourself and reach your God-given potential.
+
+While it often appears that we never agree, that isn’t true. I signed 80 bipartisan bills into law last year.
+From preventing government shutdowns to protecting Asian-Americans from still-too-common hate crimes to reforming military justice
+```
+
+Query the same content with "Euclidian Distance". The results shoud be the same as with "Cosine Similarity".
+
+```typescript
+const argsL2d: HanaDBArgs = {
+  connection: client,
+  tableName: "STATE_OF_THE_UNION",
+  distanceStrategy: "EUCLIDEAN",
+};
+const dbL2d = new HanaDB(embeddings, argsL2d);
+await dbL2d.initialize();
+
+const docsL2d = await dbL2d.similaritySearch(query, 2);
+docsL2d.forEach((doc) => {
+  console.log("-".repeat(80));
+  console.log(doc.pageContent);
+});
+```
+
+```text
+--------------------------------------------------------------------------------
+One of the most serious constitutional responsibilities a President has is nominating
+someone to serve on the United States Supreme Court.
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson.
+One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+--------------------------------------------------------------------------------
+As I said last year, especially to our younger transgender Americans, I will always have your back as your President,
+so you can be yourself and reach your God-given potential.
+
+While it often appears that we never agree, that isn’t true. I signed 80 bipartisan bills into law last year.
+From preventing government shutdowns to protecting Asian-Americans from still-too-common hate crimes to reforming military justice
+```
+
+### Maximal marginal relevance search (MMR)
+
+`Maximal marginal relevance` optimizes for similarity to query AND diversity among selected documents. The first 20 (fetch_k) items will be retrieved from the DB. The MMR algorithm will then find the best 2 (k) matches.
+
+```typescript
+const docsMMR = await db.maxMarginalRelevanceSearch(query, {
+  k: 2,
+  fetchK: 20,
+});
+docsMMR.forEach((doc) => {
+  console.log("-".repeat(80));
+  console.log(doc.pageContent);
+});
+```
+
+```text
+--------------------------------------------------------------------------------
+One of the most serious constitutional responsibilities a President has is nominating someone
+to serve on the United States Supreme Court.
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson.
+One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+--------------------------------------------------------------------------------
+Groups of citizens blocking tanks with their bodies. Everyone from students to retirees teachers turned
+soldiers defending their homeland.
+
+In this struggle as President Zelenskyy said in his speech to the European Parliament “Light will win over darkness.”
+The Ukrainian Ambassador to the United States is here tonight.
+
+Let each of us here tonight in this Chamber send an unmistakable signal to Ukraine and to the world.
+```
+
+### Creating a HNSW vector index
+
+A vector index can significantly speed up top-k nearest neighbor queries for vectors. Users can create a Hierarchical Navigable Small World (HNSW) vector index using the `createHnswIndex` function.
+
+For more information about creating an index at the database level, please refer to the [official documentation](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-vector-engine-guide/create-vector-index-statement-data-definition).
+
+```typescript
+// HanaDB instance uses cosine similarity as default
+const argsCosine: HanaDBArgs = {
+  connection: client,
+  tableName: "STATE_OF_THE_UNION",
+};
+
+// Initialize both HanaDB instances
+const dbCosine = new HanaDB(embeddings, argsCosine);
+await dbCosine.initialize();
+
+// Attempting to create the HNSW index with default parameters
+await dbCosine.createHnswIndex(); // If no other parameters are specified, the default values will be used
+// Default values: m=64, efConstruction=128, efSearch=200
+// The default index name will be: STATE_OF_THE_UNION_COSINE_idx
+
+// Second instance using the existing table "STATE_OF_THE_UNION" but with L2 Euclidean distance
+const argsL2: HanaDBArgs = {
+  connection: client,
+  tableName: "STATE_OF_THE_UNION",
+  distanceStrategy: "EUCLIDEAN", // Use Euclidean distance for this instance
+};
+
+const dbL2 = new HanaDB(embeddings, argsL2);
+await dbL2.initialize();
+
+// This will create an index based on L2 distance strategy.
+await dbL2.createHnswIndex({
+  indexName: "STATE_OF_THE_UNION_L2_index",
+  efSearch: 400, // Max number of neighbors per graph node (valid range: 4 to 1000)
+  m: 50, // Max number of candidates during graph construction (valid range: 1 to 100000)
+  efConstruction: 150, // Min number of candidates during the search (valid range: 1 to 100000)
+});
+
+// Use L2 index to perform MMR
+const docsL2HNSW = await dbL2.maxMarginalRelevanceSearch(query, {
+  k: 2,
+  fetchK: 20,
+});
+docsL2HNSW.forEach((doc) => {
+  console.log("-".repeat(80));
+  console.log(doc.pageContent);
+});
+```
+
+```text
+--------------------------------------------------------------------------------
+One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court.
+
+And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+--------------------------------------------------------------------------------
+Groups of citizens blocking tanks with their bodies. Everyone from students to retirees teachers turned soldiers defending their homeland.
+
+In this struggle as President Zelenskyy said in his speech to the European Parliament “Light will win over darkness.” The Ukrainian Ambassador to the United States is here tonight.
+
+Let each of us here tonight in this Chamber send an unmistakable signal to Ukraine and to the world.
+```
+
+**Key Points**:
+
+- **Similarity Function**: The similarity function for the index is **cosine similarity** by default. If you want to use a different similarity function (e.g., `L2` distance), you need to specify it when initializing the `HanaDB` instance.
+- **Default Parameters**: In the `createHnswIndex` function, if the user does not provide custom values for parameters like `m`, `efConstruction`, or `efSearch`, the default values (e.g., `m=64`, `efConstruction=128`, `efSearch=200`) will be used automatically. These values ensure the index is created with reasonable performance without requiring user intervention.

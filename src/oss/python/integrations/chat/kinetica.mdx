@@ -1,10 +1,12 @@
 ---
-title: Kinetica Language To SQL Chat Model
+title: "Kinetica language to SQL integration"
+description: "Integrate with the Kinetica language to SQL chat model using LangChain Python."
 ---
 
+[Kinetica](https://www.kinetica.com/) is a database with integrated support for text-to-SQL generation.
+
 This notebook demonstrates how to use Kinetica to transform natural language into SQL
-and simplify the process of data retrieval. This demo is intended to show the mechanics
-of creating and using a chain as opposed to the capabilities of the LLM.
+and simplify the process of data retrieval. This demo is intended to show the text generation workflow as opposed to the capabilities of the LLM.
 
 ## Overview
 
@@ -38,29 +40,25 @@ obtain a [free development instance](https://cloud.kinetica.com/trynow).
 
 You will need to install the following packages...
 
+
 ```python
-# Install LangChain community and core packages
-pip install -qU langchain-core langchain-community
-
-# Install Kinetica DB connection package
-pip install -qU 'gpudb>=7.2.0.8' typeguard pandas tqdm
-
-# Install packages needed for this tutorial
-pip install -qU faker ipykernel
+pip install -qU langchain-kinetica faker
 ```
+
 
 ## Database connection
 
 You must set the database connection in the following environment variables. If you are using a virtual environment you can set them in the `.env` file of the project:
 
-* `KINETICA_URL`: Database connection URL
+* `KINETICA_URL`: Database connection URL (e.g. `http://localhost:9191`)
 * `KINETICA_USER`: Database user
 * `KINETICA_PASSWD`: Secure password.
 
 If you can create an instance of `KineticaChatLLM` then you are successfully connected.
 
+
 ```python
-from langchain_community.chat_models.kinetica import ChatKinetica
+from langchain_kinetica import ChatKinetica
 
 kinetica_llm = ChatKinetica()
 
@@ -69,6 +67,10 @@ table_name = "demo.user_profiles"
 
 # LLM Context we will create
 kinetica_ctx = "demo.test_llm_ctx"
+```
+
+```text
+2026-02-02 19:39:09.975 INFO     [GPUdb] Connected to Kinetica! (host=http://localhost:19191 api=7.2.3.3 server=7.2.3.5)
 ```
 
 ## Create test data
@@ -80,7 +82,7 @@ Before we can generate SQL we will need to create a Kinetica table and an LLM co
 We will use the `faker` package to create a dataframe with 100 fake profiles.
 
 ```python
-from typing import Generator
+from collections.abc import Generator
 
 import pandas as pd
 from faker import Faker
@@ -90,8 +92,8 @@ faker = Faker(locale="en-US")
 
 
 def profile_gen(count: int) -> Generator:
-    for id in range(0, count):
-        rec = dict(id=id, **faker.simple_profile())
+    for p_id in range(count):
+        rec = dict(id=p_id, **faker.simple_profile())
         rec["birthdate"] = pd.Timestamp(rec["birthdate"])
         yield rec
 
@@ -101,7 +103,7 @@ print(load_df.head())
 ```
 
 ```text
-         username             name sex  \
+            username             name sex  \
 id
 0       eduardo69       Haley Beck   F
 1        lbarrera  Joshua Stephens   M
@@ -109,7 +111,7 @@ id
 3       melissa49      Wendy Reese   F
 4   melissacarter      Manuel Rios   M
 
-                                              address                    mail  \
+                                                address                    mail  \
 id
 0   59836 Carla Causeway Suite 939\nPort Eugene, I...  meltondenise@yahoo.com
 1   3108 Christina Forges\nPort Timothychester, KY...     erica80@hotmail.com
@@ -119,14 +121,15 @@ id
 
     birthdate
 id
-0  1997-12-08
-1  1924-08-03
-2  1933-12-05
-3  1988-10-26
-4  1931-03-19
+0  1999-08-22
+1  1926-04-17
+2  1935-08-19
+3  1990-07-10
+4  1932-11-30
 ```
 
 ### Create a kinetica table from the dataframe
+
 
 ```python
 from gpudb import GPUdbTable
@@ -142,8 +145,8 @@ gpudb_table = GPUdbTable.from_df(
 # See the Kinetica column types
 print(gpudb_table.type_as_df())
 ```
-
 ```text
+
         name    type   properties
 0   username  string     [char32]
 1       name  string     [char32]
@@ -159,6 +162,7 @@ You can create an LLM Context using the Kinetica Workbench UI or you can manuall
 
 Here we create a context from the SQL syntax referencing the table we created.
 
+
 ```python
 from gpudb import GPUdbSamplesClause, GPUdbSqlContext, GPUdbTableClause
 
@@ -167,11 +171,11 @@ table_ctx = GPUdbTableClause(table=table_name, comment="Contains user profiles."
 samples_ctx = GPUdbSamplesClause(
     samples=[
         (
-            "How many male users are there?",
+            "How many users born after 1970 are there?",
             f"""
             select count(1) as num_users
                 from {table_name}
-                where sex = 'M';
+                where birthdate > '1970-01-01';
             """,
         )
     ]
@@ -193,15 +197,15 @@ CREATE OR REPLACE CONTEXT "demo"."test_llm_ctx" (
 ),
 (
     SAMPLES = (
-        'How many male users are there?' = 'select count(1) as num_users
+        'How many users born after 1970 are there?' = 'select count(1) as num_users
     from demo.user_profiles
-    where sex = ''M'';' )
+    where birthdate > ''1970-01-01'';' )
 )
-```
 
-```text
 1
 ```
+
+
 
 ## Use LangChain for inferencing
 
@@ -222,7 +226,7 @@ ctx_messages.append(("human", "{input}"))
 
 # Create the prompt template.
 prompt_template = ChatPromptTemplate.from_messages(ctx_messages)
-prompt_template.pretty_print()
+print(prompt_template.pretty_repr())
 ```
 
 ```text
@@ -230,24 +234,24 @@ prompt_template.pretty_print()
 
 CREATE TABLE demo.user_profiles AS
 (
-   username VARCHAR (32) NOT NULL,
-   name VARCHAR (32) NOT NULL,
-   sex VARCHAR (2) NOT NULL,
-   address VARCHAR (64) NOT NULL,
-   mail VARCHAR (32) NOT NULL,
-   birthdate TIMESTAMP NOT NULL
+    username VARCHAR (32) NOT NULL,
+    name VARCHAR (32) NOT NULL,
+    sex VARCHAR (2) NOT NULL,
+    address VARCHAR (64) NOT NULL,
+    mail VARCHAR (32) NOT NULL,
+    birthdate TIMESTAMP NOT NULL
 );
 COMMENT ON TABLE demo.user_profiles IS 'Contains user profiles.';
 
 ================================ Human Message =================================
 
-How many male users are there?
+How many users born after 1970 are there?
 
 ================================== Ai Message ==================================
 
 select count(1) as num_users
     from demo.user_profiles
-    where sex = 'M';
+    where birthdate > '1970-01-01';
 
 ================================ Human Message =================================
 
@@ -258,8 +262,9 @@ select count(1) as num_users
 
 The last element of this chain is `KineticaSqlOutputParser` that will execute the SQL and return a dataframe. This is optional and if we left it out then only SQL would be returned.
 
+
 ```python
-from langchain_community.chat_models.kinetica import (
+from langchain_kinetica import (
     KineticaSqlOutputParser,
     KineticaSqlResponse,
 )
@@ -271,10 +276,12 @@ chain = prompt_template | kinetica_llm | KineticaSqlOutputParser(kdbc=kinetica_l
 
 The chain we created will take a question as input and return a `KineticaSqlResponse` containing the generated SQL and data. The question must be relevant to the to LLM context we used to create the prompt.
 
+
 ```python
-# Here you must ask a question relevant to the LLM context provided in the prompt template.
+# Here you must ask a question relevant to the LLM context provided in the
+# prompt template.
 response: KineticaSqlResponse = chain.invoke(
-    {"input": "What are the female users ordered by username?"}
+    {"input": "What users were born after 1990?"}
 )
 
 print(f"SQL: {response.sql}")
@@ -282,14 +289,27 @@ print(response.dataframe.head())
 ```
 
 ```text
-SQL: SELECT username, name
-    FROM demo.user_profiles
-    WHERE sex = 'F'
-    ORDER BY username;
-      username               name
-0  alexander40       Tina Ramirez
-1      bburton       Paula Kaiser
-2      brian12  Stefanie Williams
-3    brownanna      Jennifer Rowe
-4       carl19       Amanda Potts
+SQL: SELECT *
+FROM demo.user_profiles
+WHERE birthdate > '1990-01-01';
+        username             name sex  \
+0      eduardo69       Haley Beck   F
+1      melissa49      Wendy Reese   F
+2        james26  Patricia Potter   F
+3    mooreandrew    Wendy Ramirez   F
+4  melissabutler      Alexa Kelly   F
+
+                                                address                    mail  \
+0  59836 Carla Causeway Suite 939\nPort Eugene, I...  meltondenise@yahoo.com
+1  6408 Christopher Hill Apt. 459\nNew Benjamin, ...        dadams@gmail.com
+2          7977 Jonathan Meadow\nJerryside, OH 55205      jpatrick@gmail.com
+3        8089 Gonzalez Fields\nJordanville, KS 22824    mathew05@hotmail.com
+4              1904 Burke Roads\nPort Anne, DE 81252     douglas38@yahoo.com
+
+    birthdate
+0 1999-08-25
+1 1990-07-13
+2 2010-03-21
+3 2000-03-25
+4 2023-02-01
 ```

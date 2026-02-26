@@ -8,18 +8,19 @@ title: Agents (LangGraph)
         - AgentState
         - create_react_agent
 
-::: langgraph.prebuilt.tool_node.ToolNode
-    options:
-      show_if_no_docstring: true
-      inherited_members: false
-      members:
-        - inject_tool_args
-
 ::: langgraph.prebuilt.tool_node
     options:
+      show_docstring_description: true
+      show_docstring_examples: true
+      docstring_options:
+        ignore_init_summary: true
+      merge_init_into_class: true
+      filters: ["^__init__$"]
       members:
+        - ToolNode
         - InjectedState
         - InjectedStore
+        - ToolRuntime
         - tools_condition
 
 ::: langgraph.prebuilt.tool_validator.ValidationNode

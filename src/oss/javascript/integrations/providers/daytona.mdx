@@ -1,0 +1,236 @@
+---
+title: "Daytona"
+sidebarTitle: "Daytona"
+description: "Use Daytona sandbox backends with deepagents for isolated code execution with fast cold starts"
+---
+
+[Daytona](https://daytona.io) provides fast-starting sandbox environments with multi-language support. Best for TypeScript and Python development.
+
+## Setup
+
+<CodeGroup>
+    ```bash npm
+    npm install @langchain/daytona
+    ```
+
+    ```bash yarn
+    yarn add @langchain/daytona
+    ```
+
+    ```bash pnpm
+    pnpm add @langchain/daytona
+    ```
+</CodeGroup>
+
+### Authentication
+
+Get your API key from [app.daytona.io](https://app.daytona.io).
+
+```bash
+export DAYTONA_API_KEY=your_api_key
+```
+
+Or pass credentials directly:
+
+```typescript
+const sandbox = await DaytonaSandbox.create({
+  auth: { apiKey: "your-api-key-here" },
+});
+```
+
+## Usage with deepagents
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { DaytonaSandbox } from "@langchain/daytona";
+
+const sandbox = await DaytonaSandbox.create({
+  language: "typescript",
+  timeout: 300,
+});
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-sonnet-4-20250514" }),
+    systemPrompt: "You are a coding assistant with sandbox access.",
+    backend: sandbox,
+  });
+
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: "Create a hello world TypeScript app and run it" }],
+  });
+} finally {
+  await sandbox.close();
+}
+```
+:::
+
+## Standalone usage
+
+:::js
+```typescript
+import { DaytonaSandbox } from "@langchain/daytona";
+
+const sandbox = await DaytonaSandbox.create({
+  language: "typescript",
+  timeout: 300,
+});
+
+const result = await sandbox.execute("npm --version");
+console.log(result.output);
+
+await sandbox.close();
+```
+:::
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `language` | `string`  | `"typescript"` | Primary language runtime. Options: `"typescript" \| "python" \| "javascript"` |
+| `timeout` | `number` | `300` | Command timeout in seconds |
+| `target` | `string` | `"us"` | Region. Options: `"us" \| "eu"`  |
+| `image` | `string` | - | Custom Docker image (e.g., `"node:20"`, `"python:3.12"`) |
+| `snapshot` | `string` | - | Snapshot name (cannot be used with `image`) |
+| `resources` | `object` | - | CPU, memory, disk allocation (requires `image`) |
+| `autoStopInterval` | `number` | `15` | Auto-stop after N minutes idle (0 to disable) |
+| `labels` | `Record<string, string>` | - | Custom labels for organizing sandboxes |
+| `initialFiles` | `Record<string, string>` | - | Files to create on startup |
+
+## Custom resources
+
+To customize CPU, memory, or disk, you must specify a Docker image:
+
+:::js
+```typescript
+const sandbox = await DaytonaSandbox.create({
+  image: "node:20",
+  language: "typescript",
+  resources: {
+    cpu: 4,       // Number of CPUs
+    memory: 8,    // GiB
+    disk: 50,     // GiB
+  },
+});
+```
+:::
+
+## Available regions
+
+| Region | Location |
+|--------|----------|
+| `us` | United States |
+| `eu` | Europe |
+
+## Accessing the Daytona SDK
+
+For advanced features, access the underlying Daytona SDK:
+
+:::js
+```typescript
+const daytonaSandbox = await DaytonaSandbox.create();
+const sdk = daytonaSandbox.sandbox;
+
+// Use any Daytona SDK feature directly
+const workDir = await sdk.getWorkDir();
+const homeDir = await sdk.getUserHomeDir();
+await sdk.fs.createFolder("src", "755");
+```
+:::
+
+## Reconnecting to existing sandboxes
+
+:::js
+```typescript
+// Create sandbox with auto-stop interval
+const sandbox = await DaytonaSandbox.create({
+  language: "typescript",
+  autoStopInterval: 60,
+});
+const sandboxId = sandbox.id;
+
+// Stop the sandbox (keeps it available)
+await sandbox.stop();
+
+// Later: reconnect
+const reconnected = await DaytonaSandbox.connect(sandboxId);
+await reconnected.start();
+const result = await reconnected.execute("ls -la");
+```
+:::
+
+## Sandbox lifecycle
+
+:::js
+```typescript
+const sandbox = await DaytonaSandbox.create();
+
+await sandbox.stop();   // Stop (can be restarted)
+await sandbox.start();  // Start a stopped sandbox
+await sandbox.close();  // Delete permanently
+```
+:::
+
+## Factory functions
+
+:::js
+```typescript
+import { createDaytonaSandboxFactory, createDaytonaSandboxFactoryFromSandbox } from "@langchain/daytona";
+
+// Create new sandbox per invocation
+const factory = createDaytonaSandboxFactory({ language: "typescript" });
+
+// Or reuse an existing sandbox across invocations
+const sandbox = await DaytonaSandbox.create();
+const reuseFactory = createDaytonaSandboxFactoryFromSandbox(sandbox);
+```
+:::
+
+## Error handling
+
+```typescript
+import { DaytonaSandboxError } from "@langchain/daytona";
+
+try {
+  await sandbox.execute("some command");
+} catch (error) {
+  if (error instanceof DaytonaSandboxError) {
+    switch (error.code) {
+      case "NOT_INITIALIZED":
+        await sandbox.initialize();
+        break;
+      case "COMMAND_TIMEOUT":
+        console.error("Command took too long");
+        break;
+      case "AUTHENTICATION_FAILED":
+        console.error("Check your Daytona API key");
+        break;
+    }
+  }
+}
+```
+
+### Error codes
+
+| Code | Description |
+|------|-------------|
+| `NOT_INITIALIZED` | Sandbox not initialized - call `initialize()` |
+| `ALREADY_INITIALIZED` | Cannot initialize twice |
+| `AUTHENTICATION_FAILED` | Invalid or missing Daytona API key |
+| `SANDBOX_CREATION_FAILED` | Failed to create sandbox |
+| `SANDBOX_NOT_FOUND` | Sandbox ID not found or deleted |
+| `SANDBOX_NOT_STARTED` | Sandbox is not in started state |
+| `COMMAND_TIMEOUT` | Command execution timed out |
+| `COMMAND_FAILED` | Command execution failed |
+| `FILE_OPERATION_FAILED` | File read/write failed |
+| `RESOURCE_LIMIT_EXCEEDED` | CPU, memory, or storage limits exceeded |
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `DAYTONA_API_KEY` | Daytona API key (required) |
+| `DAYTONA_API_URL` | Custom Daytona API URL |
+| `DAYTONA_TARGET` | Default target region (us/eu) |
