@@ -1041,7 +1041,19 @@ graph.addConditionalEdges("nodeA", (state) => {
 
 ## `Command`
 
+@[`Command`] is a versatile primitive for controlling graph execution. It accepts four parameters:
+
+- **`update`**: Apply state updates (similar to returning updates from a node).
+- **`goto`**: Navigate to specific nodes (similar to [conditional edges](#conditional-edges)).
+- **`resume`**: Provide a value to resume execution after an [interrupt](/oss/langgraph/interrupts).
+- **`graph`**: Target a parent graph when navigating from [subgraphs](/oss/langgraph/use-subgraphs).
+
+`Command` is used in two contexts: **returned from node functions** to combine state updates with control flow, or **passed as input** to `invoke()`/`stream()` to resume after an interrupt. The sections below cover each use case.
+
+### Combine state updates and control flow
+
 :::python
+
 It can be useful to combine control flow (edges) and state updates (nodes). For example, you might want to BOTH perform state updates AND decide which node to go to next in the SAME node. LangGraph provides a way to do so by returning a @[`Command`] object from node functions:
 
 ```python
@@ -1086,6 +1098,7 @@ When returning @[`Command`] in your node functions, you must add return type ann
 :::
 
 :::js
+
 It can be useful to combine control flow (edges) and state updates (nodes). For example, you might want to BOTH perform state updates AND decide which node to go to next in the SAME node. LangGraph provides a way to do so by returning a @[`Command`] object from node functions:
 
 ```typescript
@@ -1146,12 +1159,7 @@ builder.addNode("myNode", myNode, {
 
 Check out this [how-to guide](/oss/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command) for an end-to-end example of how to use @[`Command`].
 
-### When should I use command instead of conditional edges?
-
-- Use @[`Command`] when you need to **both** update the graph state **and** route to a different node. For example, when implementing [multi-agent handoffs](/oss/langchain/multi-agent/handoffs) where it's important to route to a different agent and pass some information to that agent.
-- Use [conditional edges](#conditional-edges) to route between nodes conditionally without updating the state.
-
-### Navigating to a node in a parent graph
+### Navigate to a node in a parent graph
 
 :::python
 If you are using [subgraphs](/oss/langgraph/use-subgraphs), you might want to navigate from a node within a subgraph to a different subgraph (i.e. a different node in the parent graph). To do so, you can specify `graph=Command.PARENT` in @[`Command`]:
@@ -1205,20 +1213,144 @@ This is particularly useful when implementing [multi-agent handoffs](/oss/langch
 
 Check out [this guide](/oss/langgraph/use-graph-api#navigate-to-a-node-in-a-parent-graph) for detail.
 
+### Resume after an interrupt
+
+:::python
+
+Use `Command(resume=...)` to provide a value and resume graph execution after an [interrupt](/oss/langgraph/interrupts). The value passed to `resume` becomes the return value of the `interrupt()` call inside the paused node:
+
+```python
+from langgraph.types import Command, interrupt
+
+def human_review(state: State):
+    # Pauses the graph and waits for a value
+    answer = interrupt("Do you approve?")
+    return {"messages": [{"role": "user", "content": answer}]}
+
+# First invocation — hits the interrupt and pauses
+result = graph.invoke({"messages": [...]}, config)
+
+# Resume with a value — the interrupt() call returns "yes"
+result = graph.invoke(Command(resume="yes"), config)
+```
+
+Check out the [interrupts conceptual guide](/oss/langgraph/interrupts) for full details on interrupt patterns, including multiple interrupts and validation loops.
+
+:::
+
+:::js
+
+Use `new Command({ resume: ... })` to provide a value and resume graph execution after an [interrupt](/oss/langgraph/interrupts). The value passed to `resume` becomes the return value of the `interrupt()` call inside the paused node:
+
+```typescript
+import { Command, interrupt } from "@langchain/langgraph";
+
+const humanReview = async (state: typeof StateAnnotation.State) => {
+  // Pauses the graph and waits for a value
+  const answer = interrupt("Do you approve?");
+  return { messages: [{ role: "user", content: answer }] };
+};
+
+// First invocation — hits the interrupt and pauses
+const result = await graph.invoke({ messages: [...] }, config);
+
+// Resume with a value — the interrupt() call returns "yes"
+const resumed = await graph.invoke(new Command({ resume: "yes" }), config);
+```
+
+Check out the [interrupts conceptual guide](/oss/langgraph/interrupts) for full details on interrupt patterns, including multiple interrupts and validation loops.
+
+:::
+
 ### Using inside tools
 
 A common use case is updating graph state from inside a tool. For example, in a customer support application you might want to look up customer information based on their account number or ID in the beginning of the conversation.
 
 Refer to [this guide](/oss/langgraph/use-graph-api#use-inside-tools) for detail.
 
-### Human-in-the-loop
+### When should I use Command instead of conditional edges?
+
+- Use @[`Command`] when you need to **both** update the graph state **and** route to a different node. For example, when implementing [multi-agent handoffs](/oss/langchain/multi-agent/handoffs) where it's important to route to a different agent and pass some information to that agent.
+- Use [conditional edges](#conditional-edges) to route between nodes conditionally without updating the state.
+
+### Passing `Command` as input
+
+There are two ways to invoke a graph on an existing thread (a thread with prior checkpoints):
 
 :::python
-@[`Command`] is an important part of human-in-the-loop workflows: when using `interrupt()` to collect user input, @[`Command`] is then used to supply the input and resume execution via `Command(resume="User input")`. Check out [this conceptual guide](/oss/langgraph/interrupts) for more information.
+
+1. **Plain input dict** — restarts from `__start__` and processes new input. This is the correct approach for multi-turn conversations:
+
+    ```python
+    # Turn 1
+    graph.invoke({"messages": [{"role": "user", "content": "hi"}]}, config)
+
+    # Turn 2 — plain dict continues the conversation correctly
+    graph.invoke({"messages": [{"role": "user", "content": "follow up"}]}, config)
+    ```
+
+2. **`Command` as input** — resumes from the last checkpoint position instead of restarting from `__start__`. This is **only** intended for resuming after an [interrupt](/oss/langgraph/interrupts):
+
+    ```python
+    # Correct: resume after an interrupt
+    graph.invoke(Command(resume="approved"), config)
+    ```
+
+<Warning>
+
+Do **not** use `Command(update=...)` as input to `invoke()`/`stream()` to continue multi-turn conversations. Because `Command` as input resumes from the last checkpoint position (skipping `__start__`), the graph will appear stuck:
+
+```python
+# First turn
+graph.invoke({"messages": [{"role": "user", "content": "hi"}]}, config)
+
+# WRONG — graph resumes from end state, appears stuck
+graph.invoke(Command(update={"messages": [{"role": "user", "content": "follow up"}]}), config)  # [!code --]
+
+# CORRECT — plain dict restarts from __start__
+graph.invoke({"messages": [{"role": "user", "content": "follow up"}]}, config)  # [!code ++]
+```
+
+</Warning>
+
 :::
 
 :::js
-@[`Command`] is an important part of human-in-the-loop workflows: when using `interrupt()` to collect user input, @[`Command`] is then used to supply the input and resume execution via `new Command({ resume: "User input" })`. Check out the [human-in-the-loop conceptual guide](/oss/langgraph/interrupts) for more information.
+
+1. **Plain input object** — restarts from `__start__` and processes new input. This is the correct approach for multi-turn conversations:
+
+    ```typescript
+    // Turn 1
+    await graph.invoke({ messages: [{ role: "user", content: "hi" }] }, config);
+
+    // Turn 2 — plain object continues the conversation correctly
+    await graph.invoke({ messages: [{ role: "user", content: "follow up" }] }, config);
+    ```
+
+2. **`Command` as input** — resumes from the last checkpoint position instead of restarting from `__start__`. This is **only** intended for resuming after an [interrupt](/oss/langgraph/interrupts):
+
+    ```typescript
+    // Correct: resume after an interrupt
+    await graph.invoke(new Command({ resume: "approved" }), config);
+    ```
+
+<Warning>
+
+Do **not** use `new Command({ update: ... })` as input to `invoke()`/`stream()` to continue multi-turn conversations. Because `Command` as input resumes from the last checkpoint position (skipping `__start__`), the graph will appear stuck:
+
+```typescript
+// First turn
+await graph.invoke({ messages: [{ role: "user", content: "hi" }] }, config);
+
+// WRONG — graph resumes from end state, appears stuck
+await graph.invoke(new Command({ update: { messages: [{ role: "user", content: "follow up" }] } }), config);  // [!code --]
+
+// CORRECT — plain object restarts from __start__
+await graph.invoke({ messages: [{ role: "user", content: "follow up" }] }, config);  // [!code ++]
+```
+
+</Warning>
+
 :::
 
 ## Graph migrations
