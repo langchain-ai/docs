@@ -1,6 +1,6 @@
 ---
 title: "ChatNVIDIA integration"
-description: "Integrate with the ChatNVIDIA chat model using LangChain Python."
+description: "Integrate with ChatNVIDIA and ChatNVIDIADynamo chat models using LangChain Python."
 ---
 
 This will help you get started with NVIDIA [chat models](/oss/langchain/models). For detailed documentation of all `ChatNVIDIA` features and configurations head to the [API reference](https://python.langchain.com/api_reference/nvidia_ai_endpoints/chat_models/langchain_nvidia_ai_endpoints.chat_models.ChatNVIDIA.html).
@@ -366,6 +366,128 @@ response.tool_calls
 
 See [How to use chat models to call tools](/oss/langchain/tools) for additional examples.
 
+## Use with NVIDIA Dynamo
+
+[NVIDIA Dynamo](https://developer.nvidia.com/dynamo) is a distributed inference-serving framework built to deploy models in multi-node environments at data center scale. It simplifies and automates the complexities of distributed serving by disaggregating the various phases of inference across different GPUs, intelligently routing requests to the appropriate GPU to avoid redundant computation, and extending GPU memory through data caching to cost-effective storage tiers.
+
+`ChatNVIDIADynamo` is a drop-in replacement for `ChatNVIDIA` that automatically injects `nvext.agent_hints` into every request. These hints tell the Dynamo deployment:
+
+- **`osl`** (output sequence length) — how many tokens to expect, so the scheduler can plan memory allocation
+- **`iat`** (inter-arrival time) — how quickly requests arrive, so the router can anticipate load
+- **`latency_sensitivity`** — how latency-critical a request is, so interactive calls get priority routing
+- **`priority`** — request priority, so background work can yield to critical-path requests
+
+A unique `prefix_id` is auto-generated for every request, enabling the router to track KV cache affinity.
+
+<Note>
+This section assumes you have a running [NVIDIA Dynamo deployment](https://docs.nvidia.com/dynamo/latest/getting-started/quickstart).
+</Note>
+
+### Basic usage
+
+Swap `ChatNVIDIA` for `ChatNVIDIADynamo` and every request automatically includes routing hints. All standard `ChatNVIDIA` parameters are supported.
+
+```python
+from langchain_nvidia_ai_endpoints import ChatNVIDIA, ChatNVIDIADynamo
+
+BASE_URL = "http://localhost:8099/v1"
+MODEL = "your-model-name"
+
+# Standard ChatNVIDIA — no Dynamo hints
+llm_standard = ChatNVIDIA(base_url=BASE_URL, model=MODEL)
+
+# ChatNVIDIADynamo — identical interface, automatically injects agent_hints
+llm = ChatNVIDIADynamo(base_url=BASE_URL, model=MODEL)
+
+result = llm.invoke("What is KV cache optimization?")
+print(result.content)
+```
+
+`ChatNVIDIADynamo` accepts four additional parameters beyond those supported by `ChatNVIDIA`:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `osl` | `int` | `512` | Expected output sequence length (tokens) |
+| `iat` | `int` | `250` | Expected inter-arrival time (ms) |
+| `latency_sensitivity` | `float` | `1.0` | Higher latency sensitivities get priority routing |
+| `priority` | `int` | `1` | Lower priority settings receive more scheduling priority |
+
+### Set defaults at construction time
+
+Configure Dynamo hints when creating the model instance. This is useful when a model instance always serves a particular role, such as a high-priority interactive assistant versus a low-priority background summarizer.
+
+```python
+# High-priority: short responses, latency-critical
+llm_critical = ChatNVIDIADynamo(
+    base_url=BASE_URL,
+    model=MODEL,
+    osl=20,
+    priority=0,
+    latency_sensitivity=10.0,
+)
+
+# Low-priority: long responses, latency-tolerant
+llm_background = ChatNVIDIADynamo(
+    base_url=BASE_URL,
+    model=MODEL,
+    osl=512,
+    priority=10,
+    latency_sensitivity=0,
+)
+```
+
+### Override per invocation
+
+Dynamo parameters can also be overridden on each call. This is useful when the same model instance handles requests with varying characteristics.
+
+```python
+result = llm.invoke(
+    "Classify this as positive or negative: 'I love this product!'",
+    osl=10,
+    iat=100,
+    latency_sensitivity=1.0,
+    priority=10,
+)
+print(result.content)
+```
+
+### Stream with Dynamo hints
+
+Dynamo hints are included in the initial streaming request. Dynamo uses them to select the optimal worker before tokens start flowing.
+
+```python
+for chunk in llm_critical.stream("Give a one-sentence summary of GPU computing."):
+    print(chunk.content, end="", flush=True)
+```
+
+### Inspect the payload
+
+For debugging, inspect the exact payload that `ChatNVIDIADynamo` sends to the NIM endpoint using the internal `_get_payload` method.
+
+```python
+import json
+
+payload = llm_critical._get_payload(
+    inputs=[{"role": "user", "content": "Hello!"}],
+    stop=None,
+)
+print(json.dumps(payload["nvext"], indent=2))
+```
+
+This outputs the `nvext.agent_hints` section:
+
+```json
+{
+  "agent_hints": {
+    "prefix_id": "langchain-dynamo-a1b2c3d4e5f6",
+    "osl": 20,
+    "iat": 250,
+    "latency_sensitivity": 1.0,
+    "priority": 10
+  }
+}
+```
+
 ---
 
 ## API reference
@@ -380,3 +502,6 @@ For detailed documentation of all `ChatNVIDIA` features and configurations head 
 - [Overview of NeMo Retriever Reranking NIM](https://docs.nvidia.com/nim/nemo-retriever/text-reranking/latest/overview.html)
 - [`NVIDIAEmbeddings` Model for RAG Workflows](/oss/integrations/text_embedding/nvidia_ai_endpoints)
 - [NVIDIA Provider Page](/oss/integrations/providers/nvidia)
+- [NVIDIA Dynamo](https://developer.nvidia.com/dynamo) — open-source inference framework
+- [Dynamo Quickstart Guide](https://docs.nvidia.com/dynamo/latest/getting-started/quickstart) — get a local deployment running
+- [KV Cache-Aware Routing](https://docs.nvidia.com/dynamo/latest/user-guides/kv-cache-aware-routing) — how the Smart Router works

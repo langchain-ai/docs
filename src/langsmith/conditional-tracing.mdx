@@ -140,12 +140,11 @@ The @[`tracing_context`][tracing_context] context manager works with automatic t
 ```python
 import os
 import langsmith as ls
-from langsmith import traceable
 
 # Global environment variable set
 os.environ["LANGSMITH_TRACING"] = "true"
 
-@traceable
+@ls.traceable
 def process_data(data: str):
     return data.upper()
 
@@ -170,13 +169,12 @@ When you nest `tracing_context` blocks, the innermost context takes precedence.
 
 ```python Python
 import langsmith as ls
-from langsmith import traceable
 
-@traceable
+@ls.traceable
 def inner_function(data: str):
     return data
 
-@traceable
+@ls.traceable
 def outer_function(data: str):
     # This call respects the inner context
     return inner_function(data)
@@ -189,6 +187,57 @@ with ls.tracing_context(enabled=False):
 ```
 
 This can be useful when you want to temporarily enable tracing for debugging within a normally non-traced section.
+
+## Customize tracing in LangSmith Deployment
+
+Tracing is enabled by default within LangSmith Deployment's Agent Server. When using a [factory function](/langsmith/graph-rebuild) to rebuild your graph at runtime, you can wrap the yielded graph with `tracing_context` to control tracing per-execution. This is useful for disabling tracing entirely for a specific graph, or for customizing tracing based on the authenticated user.
+
+### Disable tracing for a graph
+
+```python
+import contextlib
+import langsmith as ls
+from langgraph_sdk.runtime import ServerRuntime
+
+
+@contextlib.asynccontextmanager
+async def make_graph(runtime: ServerRuntime):
+    graph = build_my_graph()
+
+    with ls.tracing_context(enabled=False):
+        yield graph
+```
+
+### Per-user tracing
+
+```python
+import contextlib
+import langsmith as ls
+from langgraph_sdk.runtime import ServerRuntime
+
+def get_project_for_user(user_id: str) -> str | None:
+    ...
+    return "my-project"
+
+graph = build_my_graph()
+
+@contextlib.asynccontextmanager
+async def make_graph(runtime: ServerRuntime):
+    user = runtime.user
+    # Route traces to a different project depending on user or disable tracing entirely
+    project_name = get_project_for_user(user.identity)
+
+    if project_name is None:
+        with ls.tracing_context(enabled=False):
+            yield graph
+    else:
+        with ls.tracing_context(
+            enabled=True,
+            project_name=project_name,
+            metadata={"user_id": user.identity, "foo": "bar"},
+        ):
+            yield graph
+```
 
 ## Reusable tracing wrapper
 
