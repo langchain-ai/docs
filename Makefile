@@ -67,12 +67,21 @@ clean:
 	@find . -name "__pycache__" -type d -exec rm -rf {} +
 
 # Mintlify commands (run from build directory where final docs are generated)
-# broken-links: Checks for broken links, excluding OpenAPI-generated pages (/langsmith/agent-server-api/)
+# broken-links: Checks for broken links, excluding OpenAPI-generated pages and snippet files
+# (snippets use relative paths that resolve when inlined; /oss/langchain/agents uses redirect)
+# Excluded: /langsmith/agent-server-api/, /api-reference/ (Mintlify-generated at deploy, not in local build)
+# Excluded: ../langchain/agents (snippet preprocessing: /oss/langchain/agents → relative path, resolves when inlined)
+# Failure: only when filtered output still has indented link lines (real broken links we care about)
+# Run mint, capture output, filter exclusions. Only show output when failing.
 broken-links: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
-	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt | grep -v '/langsmith/agent-server-api/'; \
-		grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -qE '^[[:space:]]+' && \
-		echo "❌ Broken links found" && exit 1; echo "✅ No broken links"
+	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/api-reference/' | grep -v '\.\./langchain/agents'); \
+		if echo "$$filtered" | grep -qE '^[[:space:]]+.*/'; then \
+			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
+		else \
+			echo "✅ No broken links"; \
+		fi
 
 check-openapi: build
 	@echo "Checking openapi spec validity"

@@ -2,18 +2,20 @@
 title: LangSmith Deployment
 sidebarTitle: Overview
 mode: wide
-description: _Build and deploy your agents and applications as [Agent Servers](/langsmith/agent-server)_
+description: Deploy and manage agents with durable execution, real-time streaming, and horizontal scaling.
 ---
 
+LangSmith Deployment is a workflow orchestration runtime purpose-built for agent workloads. It handles the infrastructure that agents need to run reliably: long-running stateful execution, human-in-the-loop pauses, real-time streaming, horizontal scaling — all with a first-class [Studio](/langsmith/studio) development environment.
+
 <Callout icon="rocket" color="#4F46E5" iconType="regular">
-**Start here if you're building or operating agent applications.** This section is about deploying **your application**. If you need to set up LangSmith infrastructure, the [Platform setup section](/langsmith/platform-setup) covers infrastructure options (cloud, hybrid, self-hosted) and setup guides for hybrid and self-hosted deployments.
+**Start here if you're building or operating agent applications.** This section is about deploying **your application**. If you need to set up LangSmith infrastructure, the [Platform setup section](/langsmith/platform-setup) covers infrastructure options (cloud, hybrid, self-hosted) and setup guides.
 </Callout>
 
-A typical deployment workflow consists of the following steps:
+A typical deployment workflow:
 
 <Steps>
   <Step title={<a href="/langsmith/local-server">Test locally</a>}>
-    Run your application on a local server.
+    Run your application on a local development server.
   </Step>
   <Step title={<a href="/langsmith/application-structure">Configure app for deployment</a>}>
     Set up dependencies, project structure, and environment configuration.
@@ -31,27 +33,61 @@ A typical deployment workflow consists of the following steps:
   </Step>
 </Steps>
 
-## What you'll learn
+---
 
-- Configure your [app for deployment](/langsmith/application-structure) (dependencies, [project setup](/langsmith/setup-app-requirements-txt), and [monorepo support](/langsmith/monorepo-support)).
-- Build, deploy, and update [Agent Servers](/langsmith/agent-server).
-- Secure your deployments with [authentication and access control](/langsmith/auth).
-- Customize your server runtime ([lifespan hooks](/langsmith/custom-lifespan), [middleware](/langsmith/custom-middleware), and [routes](/langsmith/custom-routes)).
-- Debug, observe, and troubleshoot deployed agents using the [Studio UI](/langsmith/studio).
+## Durable execution
 
-<Columns cols={1}>
-  <Card
-    title="Get started with deployment"
-    icon="robot"
-    href="/langsmith/application-structure"
-    cta="Configure your app"
-  >
-    Package, build, and deploy your agents and graphs to Agent Server.
-  </Card>
-</Columns>
+At its core, LangSmith Deployment is a durable execution engine. Your agents run on a managed task queue with automatic checkpointing, so any run can be retried, replayed, or resumed from the exact point of interruption — not from scratch.
 
-### Related
+Because execution is durable, agents can do things that would be fragile or impossible in a stateless runtime:
 
-- [Agent Server](/langsmith/agent-server)
-- [Application structure](/langsmith/application-structure)
-- [Local server testing](/langsmith/local-server)
+- **Wait for external input.** An agent calls [`interrupt()`](/langsmith/add-human-in-the-loop) and the runtime checkpoints its state, frees resources, and waits — for a human to approve a transaction, for a reviewer to edit a draft, for another system to return results. When [`Command(resume=...)`](/langsmith/add-human-in-the-loop) arrives hours or days later, execution picks up exactly where it stopped. This is the primitive underneath [human-in-the-loop](/langsmith/add-human-in-the-loop) workflows and [time-travel debugging](/langsmith/human-in-the-loop-time-travel).
+- **Run in the background.** [Background runs](/langsmith/background-run) execute without blocking the caller. The runtime manages the full lifecycle — queuing, execution, checkpointing, completion — while the client moves on.
+- **Run on a schedule.** [Cron jobs](/langsmith/cron-jobs) trigger agent execution on a recurring cadence. A daily summary agent, a weekly report, a periodic data sync — the runtime starts a new execution on schedule with the same durability guarantees.
+- **Handle concurrent input.** When a user sends new input while an agent is mid-run ([double-texting](/langsmith/double-texting)), the runtime can queue it, cancel the in-progress run, or process both in parallel — without data races or corrupted state.
+- **Retry on failure.** Configurable [retry policies](/oss/langgraph/use-graph-api#retry-policies) control backoff, max attempts, and which exceptions trigger retries on a per-node basis. Runs survive process restarts, infrastructure failures, and code revisions mid-execution.
+
+For details on how containers, processes, and the task queue work together, see [Agent Server: Runtime architecture](/langsmith/agent-server#runtime-architecture). For scaling and throughput tuning, see [Configure Agent Server for scale](/langsmith/agent-server-scale).
+
+## Streaming
+
+Agents need to show their work in real time. The runtime provides [resumable streaming](/langsmith/streaming) — if a client disconnects mid-stream (network switch, tab sleep, mobile backgrounding), it reconnects and picks up where it left off. Multiple [streaming modes](/langsmith/streaming) give you control over granularity, from full state snapshots after each step to token-by-token LLM output as it arrives from the provider.
+
+## Studio
+
+[LangGraph Studio](/langsmith/studio) connects to any Agent Server — local or deployed — and gives you an interactive environment for developing and debugging agents. Visualize execution graphs, inspect state at any checkpoint, step through runs, modify state mid-execution, and branch to explore alternative paths.
+
+## Agent composition
+
+Agents don't run in isolation. [RemoteGraph](/langsmith/use-remote-graph) lets any agent call other deployed agents using the same interface you use locally — a research agent delegates to a search agent on a different deployment, a routing agent dispatches to specialized sub-agents. The agents don't need to know whether they're calling something local or remote.
+
+Native support for [MCP](/langsmith/server-mcp) and [A2A](/langsmith/server-a2a) means your deployed agents can expose and consume tool interfaces and agent-to-agent protocols alongside the broader ecosystem.
+
+---
+
+## Deployment options
+
+- **[Cloud](/langsmith/deploy-to-cloud)** — Fully managed. Push from a git repo.
+- **[Hybrid](/langsmith/deploy-with-control-plane)** — Runs in your cloud, managed by the LangSmith [control plane](/langsmith/control-plane).
+- **[Self-hosted](/langsmith/deploy-standalone-server)** — Fully self-managed in your own infrastructure.
+
+Same runtime, same APIs. What changes is who manages the infrastructure. See [Platform setup](/langsmith/platform-setup) for a comparison.
+
+---
+
+## Go deeper
+
+### Securing and customizing your server
+
+- [Custom auth](/langsmith/auth) — Authentication and multi-tenant access control
+- [Server customization](/langsmith/custom-routes) — Custom routes, [middleware](/langsmith/custom-middleware), [lifespan hooks](/langsmith/custom-lifespan), [encryption](/langsmith/encryption)
+
+### Operations
+
+- [CI/CD pipelines](/langsmith/cicd-pipeline-example)
+- [TTL configuration](/langsmith/configure-ttl) for state and thread management
+- [Semantic search](/langsmith/semantic-search)
+
+### Reference
+
+- [Agent Server](/langsmith/agent-server) — Runtime architecture reference

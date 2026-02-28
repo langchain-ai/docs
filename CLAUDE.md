@@ -1,102 +1,135 @@
-# LangChain's unified documentation overview
+# LangChain Documentation Guidelines
 
-This repository encompasses the comprehensive documentation for LangChain's products and services, hosted on the Mintlify platform. The documentation is divided into sections for each product. This is a shared set of guidelines to ensure consistency and quality across all content.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored docs only—not `**/reference/**` directories or build artifacts.
 
-## Scope
+## Critical rules
 
-**These instructions apply to manually authored documentation only. They do NOT apply to:**
+1. **Always ask for clarification** rather than making assumptions
+2. **Never use markdown in frontmatter `description`** — breaks SEO
+3. **Never edit `reference/` directory** — auto-generated
+4. **Always update `src/docs.json`** when adding new pages
+5. **Use Tabler icons only** — not FontAwesome
+6. **Test code examples** before including them
 
-- Files in `**/reference/**` directories (auto-generated API reference documentation)
-- Build artifacts and generated files
+## Quick reference
 
-For reference documentation, see `.github/instructions/reference-docs.instructions.md`.
+| What | Where/How |
+|------|-----------|
+| LangSmith docs | `src/langsmith/` |
+| Open source docs | `src/oss/` (LangChain, LangGraph, DeepAgents) |
+| Python integrations | `src/oss/python/integrations/` |
+| JS integrations | `src/oss/javascript/integrations/` |
+| Reusable snippets | `src/snippets/` |
+| Images | `src/images/` |
+| Provider icons | `src/images/providers/` |
+| Navigation config | `src/docs.json` |
+| API reference (auto-generated) | `reference/` — do not edit |
+| Build system | `pipeline/` |
+| Icon library | Tabler — https://tabler.io/icons |
+| Mintlify components | https://mintlify.com/docs/components |
+| Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
-## Working relationship
+## Local development
 
-- You can push back on ideas-this can lead to better documentation. Cite sources and explain your reasoning when you do so
-- ALWAYS ask for clarification rather than making assumptions
-- NEVER lie, guess, or make up information
+See [Contributing to documentation](/oss/contributing/documentation) for setup instructions.
 
-## Project context
+## Frontmatter
 
-- Format: MDX files with YAML frontmatter. Mintlify syntax.
-- Config: docs.json for navigation, theme, settings
-- Components: Mintlify components
+Every MDX file requires:
 
-## Content strategy
-
-- Document just enough for user success - not too much, not too little
-- Prioritize accuracy and usability of information
-- Make content evergreen when possible
-- Search for existing information before adding new content. Avoid duplication unless it is done for a strategic reason. Reference existing content when possible
-- Check existing patterns for consistency
-- Start by making the smallest reasonable changes
-
-## docs.json
-
-- Refer to the [docs.json schema](https://mintlify.com/docs.json) when building the docs.json file and site navigation
-- If adding a new group, ensure the root `index.mdx` is included in the `pages` array like:
-
-```json
-{
-  "group": "New group",
-  "pages": ["new-group/index", "new-group/other-page"]
-}
+```yaml
+---
+title: Clear, concise page title
+description: SEO summary — no markdown allowed (no links, backticks, formatting)
+---
 ```
 
-If the trailing `/index` (no extension included) is omitted, the Mintlify parser will raise a warning even though the site will still build.
+**Integration page descriptions:** `"Integrate with the ClassName type using LangChain Python."`
+- Example: `"Integrate with the ChatOpenAI chat model using LangChain Python."`
 
-## Frontmatter requirements for pages
+## Syntax
 
-- title: Clear, descriptive, concise page title
-- description: Concise summary for SEO/navigation
+### Language-specific content
 
-## Custom code language fences
+Use `:::python` or `:::js` fences for language-specific content. Pages with these fences generate separate Python and JavaScript versions.
 
-We have implemented custom code language fences for Python and JavaScript/TypeScript. They are used to tag content that is specific to that language. Use either `:::python` or `:::js` to tag content that is specific to that language. Both are closed with the `:::` fence.
+```
+:::python
+Python-only content here
+:::
+```
 
-If any code fences like this exist on the code page, then two outputs (one for each language) will be created. For example, if this syntax is on the page in `/concepts/foo.mdx`, two pages will be created at `/python/concepts/foo.mdx` and `/javascript/concepts/foo.mdx`.
+### Code highlighting
 
-For implementation details, see `pipeline/preprocessors/markdown_preprocessor.py`.
+```python
+highlighted = True  # [!code highlight]
+added = True        # [!code ++]
+removed = True      # [!code --]
+```
 
-## Snippets
+### API reference links
 
-Snippet files in `src/snippets/` are reusable MDX content that can be imported into multiple pages. These snippets undergo special link preprocessing during the build process that converts absolute `/oss/` links to relative paths.
+Use `@[ClassName]` to auto-link to API docs. Defined in `pipeline/preprocessors/link_map.py`.
 
-**Important:** When writing links in snippets, be careful about path segments. Read the docstrings and comments in `pipeline/core/builder.py` method `_process_snippet_markdown_file` (lines 807-872) to understand how snippet link preprocessing works and why certain path structures are required.
+**Use for:** First mention of SDK classes/methods (`@[ChatOpenAI]`, `@[StateGraph]`, `@[create_agent]`)
+
+**Don't use for:** Repeated mentions, general concepts, or when a descriptive link is clearer
+
+## Assets
+
+**Images:** Store in `src/images/`. Use descriptive filenames and alt text.
+
+**Icons:** Use Tabler names only (`icon="home"`, `icon="brand-github"`). For missing icons, use SVG path: `icon="/images/providers/name.svg"`
+
+Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not play), `bulb` (not lightbulb), `alert-triangle` (not exclamation-triangle)
+
+## Components
+
+| Component | Use for |
+|-----------|---------|
+| `<Tabs>` / `<Tab>` | Python/JS examples |
+| `<Steps>` / `<Step>` | Numbered instructions |
+| `<Accordion>` | Collapsible content |
+| `<CodeGroup>` | Tabbed code blocks |
+| `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
+| `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 
 ## Style guide
 
-In general, follow the [Google Developer Documentation Style Guide](https://developers.google.com/style). You can also access this style guide through the [Vale-compatible implementation](https://github.com/errata-ai/Google).
+Follow [Google Developer Documentation Style Guide](https://developers.google.com/style).
 
-- Second-person voice ("you")
-- Prerequisites at start of procedural content
-- Test all code examples before publishing
-- Match style and formatting of existing pages
-- Include both basic and advanced use cases
-- Language tags on all code blocks
-- Alt text on all images
-- Root relative paths for internal links
-- Correct spelling
-- Correct grammar
-- Sentence-case for headings
-- Ensure American English spelling
+**Do:**
+- Reference existing pages for style patterns when creating new content
+- Be concise — no hyperbolic or redundant language
+- Second-person imperative present tense ("Run the following code…")
+- Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
+- American English spelling
+- Add cross-links where applicable
+- Use `@[ClassName]` link map for API references
+- Use `:::python`/`:::js` fencing on OSS docs
+- Language tags on all code blocks (use actual language, not `output`)
+- Test code examples and links before publishing
 
-## Do not
+**Don't:**
+- Skip frontmatter
+- Use absolute URLs for internal links
+- Use markdown in description fields
+- Use `/python/` or `/javascript/` in links (resolved by build pipeline)
+- Use model aliases — use full identifiers (e.g., `claude-sonnet-4-5-20250929`)
+- Use FontAwesome icon names
+- Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
+- Use H5 or H6 headings
+- Use excessive bold/italics in body text
+- Include "key features" lists
+- Use horizontal lines
+## Adding pages
 
-- Do not skip frontmatter on any MDX file
-- Do not use absolute URLs for internal links
-- Do not review code blocks (denoted by ```), as they are often not full snippets
-- Do not include untested code examples
-- Do not make assumptions - always ask for clarification
-- Do not include localization in relative links (e.g., `/python/` or `/javascript/`) - these are resolved automatically by the build pipeline
-- Do not use model aliases (e.g., "claude-sonnet-4-5") in code examples; always use full model names / identifiers (e.g., "claude-sonnet-4-5-20250929")
-- Do not use nested double quotes in Mintlify component attributes (e.g., `default='["a", "b"]'`). This causes escape characters to render in the frontend. Instead, use single quotes inside double quotes: `default="['a', 'b']"`
+1. Create MDX file with required frontmatter
+2. Update `src/docs.json` to add to navigation
+3. For new groups, include index: `"pages": ["group/index", "group/page"]`
 
-For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
+## Pull requests
 
-## Pull request guidelines
-
-- Describe the "why" of the changes, why the proposed solution is the right one.
-- Highlight areas of the proposed changes that require careful review.
-- Always add a disclaimer to the PR description mentioning how AI agents are involved with the contribution.
+- Explain the "why" of changes
+- Highlight areas needing careful review
+- Disclose AI agent involvement in description
