@@ -28,7 +28,7 @@ Here are the main patterns for building multi-agent systems, each suited to diff
 | [**Subagents**](/oss/langchain/multi-agent/subagents) | A main agent coordinates subagents as tools. All routing passes through the main agent, which decides when and how to invoke each subagent. |
 | [**Handoffs**](/oss/langchain/multi-agent/handoffs) | Behavior changes dynamically based on state. Tool calls update a state variable that triggers routing or configuration changes, switching agents or adjusting the current agent's tools and prompt. |
 | [**Skills**](/oss/langchain/multi-agent/skills) | Specialized prompts and knowledge loaded on-demand. A single agent stays in control while loading context from skills as needed. |
-| [**Router**](/oss/langchain/multi-agent/router) | A routing step classifies input and directs it to one or more specialized agents. Results are synthesized into a combined response. |
+| [**Router**](/oss/langchain/multi-agent/router) | A routing step classifies input and directs it to specialized agents. Two variations: **classifier** (single agent, direct response) or **synthesis** (multiple agents in parallel, combined response). |
 | [**Custom workflow**](/oss/langchain/multi-agent/custom-workflow) | Build bespoke execution flows with [LangGraph](/oss/langgraph/overview), mixing deterministic logic and agentic behavior. Embed other patterns as nodes in your workflow. |
 
 ### Choosing a pattern
@@ -42,14 +42,14 @@ Use this table to match your requirements to the right pattern:
 | [**Subagents**](/oss/langchain/multi-agent/subagents) | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ |
 | [**Handoffs**](/oss/langchain/multi-agent/handoffs) | — | — | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
 | [**Skills**](/oss/langchain/multi-agent/skills) | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| [**Router**](/oss/langchain/multi-agent/router) | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | — | ⭐⭐⭐ |
+| [**Router**](/oss/langchain/multi-agent/router) | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | — | ⭐ |
 
 </div>
 
-- **Distributed development**: Can different teams maintain components independently?
+- **Distributed development**: Can different teams maintain components independently? Subagents, Skills, and Router all support this—specialized agents or skills can be owned by different teams.
 - **Parallelization**: Can multiple agents execute concurrently?
 - **Multi-hop**: Does the pattern support calling multiple subagents in series?
-- **Direct user interaction**: Can subagents converse directly with the user?
+- **Direct user interaction**: Can specialized agents converse directly with the user while keeping multi-turn flow manageable? Handoffs and Skills excel here. Subagents and Router route through a central coordinator or synthesis step (no direct user interaction). A Router can pass through to a specialized agent for direct response, but multi-turn coordination becomes complex in that setup.
 
 <Tip>
     You can mix patterns! For example, a **subagents** architecture can invoke tools that invoke custom workflows or router agents. Subagents can even use the **skills** pattern to load context on-demand. The possibilities are endless!
@@ -204,6 +204,8 @@ The user repeats the same request in the same conversation.
 
 **Key insight:** Stateful patterns (Handoffs, Skills) save 40-50% of calls on repeat requests. Subagents maintain consistent cost per request—this stateless design provides strong context isolation but at the cost of repeated model calls.
 
+**Same-domain vs. cross-domain:** Handoffs and Skills save calls when conversation stays within a single domain (e.g., repeated coffee orders). When turns span multiple domains (e.g., "Buy coffee" then "What's the Python syntax for list comprehensions?"), Subagents and Router excel: each turn routes to the right specialist without carrying state from unrelated prior turns, and both support parallel execution when a single turn touches multiple domains.
+
 ### Multi-domain
 
 > **User:** "Compare Python, JavaScript, and Rust for web development"
@@ -283,7 +285,8 @@ Here's how patterns compare across all three scenarios:
 | Optimize for | [Subagents](/oss/langchain/multi-agent/subagents) | [Handoffs](/oss/langchain/multi-agent/handoffs) | [Skills](/oss/langchain/multi-agent/skills) | [Router](/oss/langchain/multi-agent/router) |
 |--------------|:---------:|:--------:|:------:|:------:|
 | Single requests | | ✅ | ✅ | ✅ |
-| Repeat requests | | ✅ | ✅ | |
+| Repeat requests (same domain) | | ✅ | ✅ | |
+| Cross-domain multi-turn | ✅ | | | ✅ |
 | Parallel execution | ✅ | | | ✅ |
 | Large-context domains | ✅ | | | ✅ |
 | Simple, focused tasks | | | ✅ | |
