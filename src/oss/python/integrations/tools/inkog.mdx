@@ -1,0 +1,215 @@
+---
+title: "Inkog integration"
+description: "Scan your LangChain and LangGraph agents for security vulnerabilities with Inkog."
+---
+
+[Inkog](https://inkog.io) is an open-source static analysis tool purpose-built for AI agent code. It scans your LangChain, LangGraph, CrewAI, and 20+ other agent framework projects to detect security vulnerabilities before they reach production.
+
+Inkog detects behavioral vulnerabilities unique to AI agents, including:
+
+- **Prompt injection** vectors in system prompts and tool inputs
+- **Infinite loops** and recursive tool calling without termination guards
+- **Token bombing** and resource exhaustion patterns
+- **SQL injection via LLM** where untrusted model output flows into database queries
+- **Missing human oversight** on high-risk tool operations
+- **Hardcoded credentials** and secrets in agent code
+
+All findings are mapped to industry standards: [OWASP LLM Top 10](https://owasp.org/www-project-top-10-for-large-language-model-applications/), EU AI Act, and NIST AI RMF.
+
+## Overview
+
+### How it works
+
+Inkog uses a Universal Intermediate Representation (IR) engine to convert your agent code into a framework-agnostic graph, then runs security rules against that graph. This means it understands LangChain and LangGraph constructs natively -- tools, chains, agents, graph nodes, and conditional edges are all analyzed with full data flow tracking.
+
+### Features
+
+| Feature | Details |
+| :--- | :--- |
+| Static analysis | No runtime execution required -- scans source code directly |
+| LangChain support | Native understanding of chains, agents, tools, and retrievers |
+| LangGraph support | Understands graph nodes, edges, conditional routing, and state |
+| Data flow tracking | Traces tainted data from user input through LLM calls to tool execution |
+| Compliance mapping | Findings mapped to OWASP LLM Top 10, EU AI Act, NIST AI RMF |
+| Multiple output formats | Text, JSON, SARIF (GitHub Security), HTML report |
+| CI/CD integration | GitHub Actions, CLI exit codes for pipeline gating |
+
+---
+
+## Setup
+
+Inkog runs as an external tool that scans your project. There is no Python package to install into your agent code.
+
+### Option 1: CLI via npx (recommended)
+
+The fastest way to scan your LangChain project:
+
+```bash
+npx -y @inkog-io/cli scan .
+```
+
+This downloads and runs the Inkog CLI in a single command. No installation required.
+
+### Option 2: Install via Homebrew
+
+```bash
+brew install inkog-io/tap/inkog
+```
+
+### Option 3: Install via npm (global)
+
+```bash
+npm install -g @inkog-io/cli
+```
+
+### API key
+
+Sign up at [app.inkog.io](https://app.inkog.io) to get a free API key, then set it as an environment variable:
+
+```bash
+export INKOG_API_KEY="your_api_key"
+```
+
+---
+
+## Scanning a LangChain project
+
+### Basic scan
+
+Point Inkog at your project directory:
+
+```bash
+npx -y @inkog-io/cli scan /path/to/your/langchain-project
+```
+
+### Example output
+
+```text
+  CRITICAL  Prompt Injection (OWASP LLM01)
+  File: src/agent.py:42
+  User input is passed directly into system prompt without sanitization.
+  Confidence: 0.92
+
+  HIGH  SQL Injection via LLM (OWASP LLM02)
+  File: src/tools/database.py:87
+  LLM output flows into SQL query via f-string interpolation.
+  Confidence: 0.88
+
+  MEDIUM  Missing Human Oversight (EU AI Act Art. 14)
+  File: src/graph.py:156
+  Financial transaction tool is invoked without human approval gate.
+  Confidence: 0.75
+
+  Found 3 findings (1 critical, 1 high, 1 medium)
+```
+
+### JSON output
+
+For programmatic use or CI pipelines:
+
+```bash
+npx -y @inkog-io/cli scan . --output json
+```
+
+### SARIF output (GitHub Security tab)
+
+Generate SARIF reports to display findings in GitHub's Security tab:
+
+```bash
+npx -y @inkog-io/cli scan . --output sarif > results.sarif
+```
+
+### Policy presets
+
+Inkog includes five built-in policy presets to control finding sensitivity:
+
+```bash
+# Default -- balanced signal-to-noise ratio
+npx -y @inkog-io/cli scan . --policy balanced
+
+# Production CI gates -- only high-confidence findings
+npx -y @inkog-io/cli scan . --policy low-noise
+
+# Full audit -- all findings including best-practice suggestions
+npx -y @inkog-io/cli scan . --policy comprehensive
+
+# EU AI Act compliance reporting
+npx -y @inkog-io/cli scan . --policy eu-ai-act
+
+# Governance focus (Article 14 human oversight)
+npx -y @inkog-io/cli scan . --policy governance
+```
+
+---
+
+## MCP server for Claude Desktop and Cursor
+
+Inkog also ships as an MCP (Model Context Protocol) server, so you can scan your code directly from Claude Desktop or Cursor:
+
+```json
+{
+  "mcpServers": {
+    "inkog": {
+      "command": "npx",
+      "args": ["-y", "@inkog-io/mcp"],
+      "env": {
+        "INKOG_API_KEY": "your_api_key"
+      }
+    }
+  }
+}
+```
+
+Once configured, you can ask Claude or Cursor to "scan this project for security issues" and Inkog will run automatically.
+
+---
+
+## GitHub Actions
+
+Add Inkog to your CI pipeline to catch vulnerabilities on every pull request:
+
+```yaml
+name: Security Scan
+on: [pull_request]
+
+jobs:
+  inkog-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Inkog scan
+        run: npx -y @inkog-io/cli scan . --output sarif > results.sarif
+        env:
+          INKOG_API_KEY: ${{ secrets.INKOG_API_KEY }}
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+```
+
+---
+
+## What Inkog detects in LangChain code
+
+Inkog has native adapters for LangChain and LangGraph that understand framework-specific patterns:
+
+| Pattern | Example | Severity |
+| :--- | :--- | :--- |
+| Prompt injection | User input concatenated into `SystemMessage` | Critical |
+| SQL injection via LLM | LLM output used in `SQLDatabaseChain` without parameterization | Critical |
+| Infinite loops | `AgentExecutor` without `max_iterations` | High |
+| Token bombing | Unbounded document loading into context window | High |
+| Missing human oversight | Tool with side effects (email, payment) without approval gate | Medium |
+| Hardcoded credentials | API keys in agent source code | High |
+| Recursive tool calling | Tool that invokes itself without depth limit | High |
+
+---
+
+## Links
+
+- [GitHub (open source)](https://github.com/inkog-io/inkog)
+- [npm: @inkog-io/cli](https://www.npmjs.com/package/@inkog-io/cli)
+- [npm: @inkog-io/mcp](https://www.npmjs.com/package/@inkog-io/mcp)
+- [Dashboard](https://app.inkog.io)
+- [Website](https://inkog.io)
+- [Documentation](https://docs.inkog.io)
