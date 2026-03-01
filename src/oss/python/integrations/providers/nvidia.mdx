@@ -3,30 +3,36 @@ title: "NVIDIA integrations"
 description: "Integrate with NVIDIA using LangChain Python."
 ---
 
-The `langchain-nvidia-ai-endpoints` package contains LangChain integrations for chat models and embeddings powered by [NVIDIA AI Foundation Models](https://www.nvidia.com/en-us/ai-data-science/foundation-models/), and hosted on the [NVIDIA API Catalog](https://build.nvidia.com/).
+The `langchain-nvidia-ai-endpoints` package provides LangChain integrations for chat, embeddings, reranking, and retrieval powered by NVIDIA AI — including [Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/), NVIDIA's open model family built for agentic AI, and hundreds of community models on the [NVIDIA API Catalog](https://build.nvidia.com/).
 
-NVIDIA AI Foundation models are community- and NVIDIA-built models that are optimized to deliver the best performance on NVIDIA-accelerated infrastructure. You can use the API to query live endpoints that are available on the NVIDIA API Catalog to get quick results from a DGX-hosted cloud compute environment, or you can download models from NVIDIA's API catalog with NVIDIA NIM, which is included with the NVIDIA AI Enterprise license. The ability to run models on-premises gives your enterprise ownership of your customizations and full control of your IP and AI application.
+Models run on NVIDIA NIM microservices: container images that expose a standard OpenAI-compatible API, optimized with TensorRT-LLM for peak throughput on NVIDIA hardware. They can be accessed via the hosted API Catalog or self-hosted on-premises.
 
-NIM microservices are packaged as container images on a per model/model family basis and are distributed as NGC container images through the [NVIDIA NGC Catalog](https://catalog.ngc.nvidia.com/). At their core, NIM microservices are containers that provide interactive APIs for running inference on an AI Model.
+## Components
 
-Use this documentation to learn how to install the `langchain-nvidia-ai-endpoints` package and use it for some common functionality for text-generative and embedding models.
+| Component | Class | Description |
+| :--- | :--- | :--- |
+| Chat | [`ChatNVIDIA`](#chat-chatnvidia) | Chat completions with any NVIDIA-hosted model or local NIM |
+| Chat (Dynamo) | [`ChatNVIDIADynamo`](#chat-chatnvidiadynamo) | `ChatNVIDIA` with KV cache routing hints for Dynamo deployments |
+| Embeddings | [`NVIDIAEmbeddings`](#embeddings-nvidiaembeddings) | Dense vector embeddings for semantic search and RAG |
+| Reranking | [`NVIDIARerank`](#reranking-nvidiarerank) | Document reranking by query relevance |
+| Retrieval | [`NVIDIARetriever`](#retrieval-nvidiaretriever) | Retrieval from an NVIDIA RAG Blueprint server |
 
-## Install the package
+
+### Chat: ChatNVIDIA
+
+`ChatNVIDIA` provides chat completions over NVIDIA-hosted models and local NIM deployments. It supports tool calling, structured output, image inputs, and streaming.
+
+#### Install
 
 ```bash
 pip install -qU langchain-nvidia-ai-endpoints
 ```
 
-## Access the NVIDIA API Catalog
-
-To get access to the NVIDIA API Catalog, do the following:
+#### Access the NVIDIA API Catalog
 
 1. Create a free account on the [NVIDIA API Catalog](https://build.nvidia.com/) and log in.
-2. Click your profile icon, and then click **API Keys**. The **API Keys** page appears.
-3. Click **Generate API Key**. The **Generate API Key** window appears.
-4. Click **Generate Key**. You should see **API Key Granted**, and your key appears.
-5. Copy and save the key as `NVIDIA_API_KEY`.
-6. To verify your key, use the following code.
+2. Click your profile icon, then **API Keys** > **Generate API Key**.
+3. Copy and save the key as `NVIDIA_API_KEY`.
 
 ```python
 import getpass
@@ -42,29 +48,98 @@ else:
     os.environ["NVIDIA_API_KEY"] = nvapi_key
 ```
 
-You can now use your key to access endpoints on the NVIDIA API Catalog.
+#### Nemotron: featured models for agentic AI
 
-## Work with the API Catalog
+[Nemotron](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/) is NVIDIA's open model family designed for agentic AI. The models use a hybrid Mamba-Transformer mixture-of-experts architecture that delivers leading benchmark performance with high throughput and support for up to 1M token context windows. Nemotron model weights, training data, and implementation recipes are published openly under the NVIDIA Open Model License.
+
 
 ```python
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-llm = ChatNVIDIA(model="mistralai/mixtral-8x22b-instruct-v0.1")
-result = llm.invoke("Write a ballad about LangChain.")
+# Nemotron 3 Nano — efficient reasoning and agentic tasks
+llm = ChatNVIDIA(model="nvidia/nemotron-3-nano-30b-a3b")
+result = llm.invoke("Plan a three-step research workflow for competitive analysis.")
 print(result.content)
 ```
+
+See the [`ChatNVIDIA` integration page](/oss/integrations/chat/nvidia_ai_endpoints) for full documentation including tool calling, multimodal inputs, and Nemotron-specific examples.
+
+
+### Chat: ChatNVIDIADynamo
+
+`ChatNVIDIADynamo` is a drop-in replacement for `ChatNVIDIA` for use with [NVIDIA Dynamo](https://developer.nvidia.com/dynamo) deployments. It automatically injects KV cache routing hints into every request, allowing the Dynamo scheduler to optimize memory allocation, load routing, and request priority.
+
+```python
+from langchain_nvidia_ai_endpoints import ChatNVIDIADynamo
+
+llm = ChatNVIDIADynamo(
+    base_url="http://localhost:8099/v1",
+    model="nvidia/nemotron-3-nano-30b-a3b",
+    osl=512,             # expected output sequence length (tokens)
+    iat=250,             # expected inter-arrival time (ms)
+    latency_sensitivity=1.0,
+    priority=1,
+)
+result = llm.invoke("Summarize KV cache routing in one sentence.")
+print(result.content)
+```
+
+See the [`ChatNVIDIA` integration page](/oss/integrations/chat/nvidia_ai_endpoints#use-with-nvidia-dynamo) for the full `ChatNVIDIADynamo` reference including per-invocation overrides and streaming.
+
+
+### Embeddings: NVIDIAEmbeddings
+
+`NVIDIAEmbeddings` generates dense vector embeddings for use in semantic search and RAG pipelines.
+
+```python
+from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
+
+embedder = NVIDIAEmbeddings(model="NV-Embed-QA")
+embedder.embed_query("What's the temperature today?")
+```
+
+See the [`NVIDIAEmbeddings` integration page](/oss/integrations/text_embedding/nvidia_ai_endpoints) for full documentation.
+
+
+### Reranking: NVIDIARerank
+
+`NVIDIARerank` reranks a list of documents by relevance to a query using a NeMo Retriever reranking NIM.
+
+```python
+from langchain_core.documents import Document
+from langchain_nvidia_ai_endpoints import NVIDIARerank
+
+ranker = NVIDIARerank(model="nvidia/llama-3.2-nv-rerankqa-1b-v1")
+docs = ranker.compress_documents(
+    query="What is GPU memory bandwidth?",
+    documents=[Document(page_content=p) for p in passages],
+)
+```
+
+
+### Retrieval: NVIDIARetriever
+
+`NVIDIARetriever` connects LangChain to a running [NVIDIA RAG Blueprint](https://docs.nvidia.com/ai-enterprise/rag-llm-operator/latest/overview.html) server and retrieves relevant documents via the `/v1/search` endpoint. It supports reranking, query rewriting, and metadata filtering.
+
+```python
+from langchain_nvidia_ai_endpoints import NVIDIARetriever
+
+retriever = NVIDIARetriever(base_url="http://localhost:8081", k=4)
+docs = retriever.invoke("What is NVIDIA NIM?")
+```
+
+See the [`NVIDIARetriever` integration page](/oss/integrations/retrievers/nvidia) for full documentation.
+
 
 ## Self-host with NVIDIA NIM Microservices
 
 When you are ready to deploy your AI application, you can self-host models with NVIDIA NIM. For more information, refer to [NVIDIA NIM Microservices](https://www.nvidia.com/en-us/ai-data-science/products/nim-microservices/).
 
-The following code connects to locally hosted NIM Microservices.
-
 ```python
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings, NVIDIARerank
 
 # connect to a chat NIM running at localhost:8000, specifying a model
-llm = ChatNVIDIA(base_url="http://localhost:8000/v1", model="meta/llama3-8b-instruct")
+llm = ChatNVIDIA(base_url="http://localhost:8000/v1", model="nvidia/nemotron-3-nano-30b-a3b")
 
 # connect to an embedding NIM running at localhost:8080
 embedder = NVIDIAEmbeddings(base_url="http://localhost:8080/v1")
@@ -73,11 +148,105 @@ embedder = NVIDIAEmbeddings(base_url="http://localhost:8080/v1")
 ranker = NVIDIARerank(base_url="http://localhost:2016/v1")
 ```
 
+
+## Accelerate LangGraph with langchain-nvidia-langgraph
+
+The `langchain-nvidia-langgraph` package provides NVIDIA-optimized execution strategies for LangGraph graphs. It offers two complementary optimizations applied at compile time:
+
+- **Parallel execution**: independent nodes are automatically identified and run concurrently, eliminating unnecessary sequential bottlenecks.
+- **Speculative execution**: both branches of a conditional edge run simultaneously; the wrong branch is discarded once the routing condition resolves.
+
+Neither optimization requires changes to node logic or graph edges.
+
+### Install
+
+```bash
+pip install -qU langchain-nvidia-langgraph
+```
+
+### Parallel execution
+
+Replace `StateGraph` with `NvidiaStateGraph`. The rest of your graph definition stays the same.
+
+```python
+from langchain_nvidia_langgraph import NvidiaStateGraph
+from langgraph.graph import END
+from typing import TypedDict
+
+class AgentState(TypedDict):
+    question: str
+    context: str
+    answer: str
+
+graph = NvidiaStateGraph(AgentState)
+graph.add_node("retrieve", retrieve_node)
+graph.add_node("rerank", rerank_node)
+graph.add_node("generate", generate_node)
+graph.add_edge("retrieve", "rerank")
+graph.add_edge("rerank", "generate")
+graph.add_edge("generate", END)
+graph.set_entry_point("retrieve")
+
+app = graph.compile()  # independent nodes run in parallel automatically
+```
+
+### Speculative execution
+
+Enable speculation at compile time. The executor runs both sides of conditional branches in parallel and keeps the result that matches the routing decision.
+
+```python
+app = graph.compile(speculation=True)
+```
+
+> **Limitations:** Speculative execution does not support LangGraph checkpointing, streaming, interrupts, or human-in-the-loop workflows. Use `speculation=False` (the default) when those features are needed.
+
+### Control parallelism with decorators
+
+Three decorators give explicit control over which nodes participate in optimization:
+
+```python
+from langchain_nvidia_langgraph import sequential, depends_on, speculation_unsafe
+
+# Prevent a node from being parallelized (e.g., it writes to shared state)
+@sequential
+def write_to_db(state):
+    ...
+
+# Declare a dependency not expressed in graph edges
+@depends_on("retrieve")
+def log_retrieval(state):
+    ...
+
+# Exclude a node from speculative execution (e.g., it has side effects)
+@speculation_unsafe
+def send_notification(state):
+    ...
+```
+
+### Wrap an existing compiled graph
+
+If you already have a compiled LangGraph app and want to add NVIDIA optimization without modifying your graph definition, use `with_app_compile`:
+
+```python
+from langchain_nvidia_langgraph import with_app_compile
+from langgraph.graph import StateGraph
+
+graph = StateGraph(AgentState)
+# ... add nodes and edges as normal ...
+
+app = with_app_compile(graph, speculation=False)
+```
+
+
 ## Related topics
 
 - [`langchain-nvidia-ai-endpoints` package README](https://github.com/langchain-ai/langchain-nvidia/blob/main/libs/ai-endpoints/README.md)
+- [`langchain-nvidia-langgraph` package](https://github.com/langchain-ai/langchain-nvidia/tree/main/libs/langgraph)
+- [Nemotron model family](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/)
 - [Overview of NVIDIA NIM for Large Language Models (LLMs)](https://docs.nvidia.com/nim/large-language-models/latest/introduction.html)
 - [Overview of NeMo Retriever Embedding NIM](https://docs.nvidia.com/nim/nemo-retriever/text-embedding/latest/overview.html)
 - [Overview of NeMo Retriever Reranking NIM](https://docs.nvidia.com/nim/nemo-retriever/text-reranking/latest/overview.html)
 - [`ChatNVIDIA` Model](/oss/integrations/chat/nvidia_ai_endpoints)
 - [`NVIDIAEmbeddings` Model for RAG Workflows](/oss/integrations/text_embedding/nvidia_ai_endpoints)
+- [`NVIDIARetriever`](/oss/integrations/retrievers/nvidia)
+- [NVIDIA Dynamo](https://developer.nvidia.com/dynamo)
