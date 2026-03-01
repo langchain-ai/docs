@@ -1,0 +1,107 @@
+---
+title: "NVIDIARetriever integration"
+description: "Integrate with the NVIDIARetriever using LangChain Python."
+---
+
+`NVIDIARetriever` connects LangChain to a running [NVIDIA RAG Blueprint](https://docs.nvidia.com/ai-enterprise/rag-llm-operator/latest/overview.html) server and retrieves relevant documents via the `/v1/search` endpoint. It supports sync and async retrieval, reranking, query rewriting, and metadata filtering.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| [NVIDIARetriever](https://python.langchain.com/api_reference/nvidia_ai_endpoints/retrievers/langchain_nvidia_ai_endpoints.retrievers.NVIDIARetriever.html) | [langchain-nvidia-ai-endpoints](https://python.langchain.com/api_reference/nvidia_ai_endpoints/index.html) | ✅ | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_nvidia_ai_endpoints?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_nvidia_ai_endpoints?style=flat-square&label=%20) |
+
+## Setup
+
+`NVIDIARetriever` requires a running NVIDIA RAG Blueprint server. Refer to the [NVIDIA RAG Blueprint documentation](https://docs.nvidia.com/ai-enterprise/rag-llm-operator/latest/overview.html) for deployment instructions. By default the server listens on `http://localhost:8081` and expects at least one ingested collection in its vector database.
+
+No API key is required for the retriever; authentication is handled by the RAG server.
+
+### Installation
+
+```bash
+pip install -qU langchain-nvidia-ai-endpoints
+```
+
+## Instantiation
+
+```python
+from langchain_nvidia_ai_endpoints import NVIDIARetriever
+
+retriever = NVIDIARetriever(
+    base_url="http://localhost:8081",
+    k=4,
+    collection_names=["my_collection"],
+)
+```
+
+Key parameters:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `base_url` | `str` | — | Base URL of the RAG Blueprint server |
+| `k` | `int` | `10` | Number of documents to return (0–25) |
+| `collection_names` | `list[str]` | `["multimodal_data"]` | Vector database collections to search |
+| `vdb_top_k` | `int` | `100` | Results retrieved before reranking (0–400) |
+| `enable_reranker` | `bool` | `True` | Enable reranking of retrieved results |
+| `enable_query_rewriting` | `bool` | `False` | Enable query rewriting before search |
+| `confidence_threshold` | `float` | `0.0` | Minimum relevance score (0.0–1.0) to include a document |
+| `timeout` | `float` | `60` | HTTP request timeout in seconds |
+
+## Usage
+
+```python
+docs = retriever.invoke("What is NVIDIA NIM?")
+for doc in docs:
+    print(doc.page_content)
+```
+
+Async retrieval is also supported:
+
+```python
+docs = await retriever.ainvoke("What is NVIDIA NIM?")
+```
+
+## Use within a chain
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIARetriever
+
+retriever = NVIDIARetriever(base_url="http://localhost:8081", k=4)
+llm = ChatNVIDIA(model="meta/llama3-8b-instruct")
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer the question based only on the following context:\n{context}\n\nQuestion: {question}"
+)
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+chain.invoke("What is NVIDIA NIM?")
+```
+
+
+## API reference
+
+For detailed documentation of all `NVIDIARetriever` features and configurations head to the [API reference](https://python.langchain.com/api_reference/nvidia_ai_endpoints/retrievers/langchain_nvidia_ai_endpoints.retrievers.NVIDIARetriever.html).
+
+## Related topics
+
+- [NVIDIA Provider Page](/oss/integrations/providers/nvidia)
+- [`ChatNVIDIA` integration](/oss/integrations/chat/nvidia_ai_endpoints)
+- [`NVIDIAEmbeddings` integration](/oss/integrations/text_embedding/nvidia_ai_endpoints)
+- [NVIDIA RAG Blueprint documentation](https://docs.nvidia.com/ai-enterprise/rag-llm-operator/latest/overview.html)
