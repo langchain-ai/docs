@@ -557,6 +557,229 @@ const agent = createDeepAgent({
 
 Each subagent works with clean context focused only on its task.
 
+## Context management
+
+When you invoke a parent agent with [runtime context](/oss/langchain/runtime), that context automatically propagates to all subagents. The parent's full `config` — including `context` — is passed through to each subagent invocation internally.
+
+This means tools running inside any subagent can access the same context values you provided to the parent:
+
+:::python
+```python
+from deepagents import create_deep_agent
+from langchain.agents import tool
+from pydantic import BaseModel
+
+@tool
+def get_user_data(query: str, config) -> str:
+    """Fetch data for the current user."""
+    user_id = config.get("context", {}).get("user_id")
+    return f"Data for user {user_id}: {query}"
+
+research_subagent = {
+    "name": "researcher",
+    "description": "Conducts research for the current user",
+    "system_prompt": "You are a research assistant.",
+    "tools": [get_user_data],
+}
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-5-20250929",
+    subagents=[research_subagent],
+    context_schema={"user_id": str, "session_id": str},
+)
+
+# Context flows to the researcher subagent and its tools automatically
+result = await agent.invoke(
+    {"messages": [HumanMessage("Look up my recent activity")]},
+    {"context": {"user_id": "user-123", "session_id": "abc"}},
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { tool } from "langchain";
+import { z } from "zod";
+
+const getUserData = tool(
+  (input, config) => {
+    const userId = config.context?.userId;
+    return `Data for user ${userId}: ${input.query}`;
+  },
+  {
+    name: "get_user_data",
+    description: "Fetch data for the current user",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const researchSubagent = {
+  name: "researcher",
+  description: "Conducts research for the current user",
+  systemPrompt: "You are a research assistant.",
+  tools: [getUserData],
+};
+
+const contextSchema = z.object({
+  userId: z.string(),
+  sessionId: z.string(),
+});
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-5-20250929",
+  subagents: [researchSubagent],
+  contextSchema,
+});
+
+// Context flows to the researcher subagent and its tools automatically
+const result = await agent.invoke(
+  { messages: [new HumanMessage("Look up my recent activity")] },
+  { context: { userId: "user-123", sessionId: "abc" } },
+);
+```
+:::
+
+### Per-subagent context
+
+All subagents receive the same parent context. To pass configuration that is specific to a particular subagent, use **namespaced keys** — prefix context keys with the subagent's name:
+
+:::python
+```python
+result = await agent.invoke(
+    {"messages": [HumanMessage("Research this and verify the claims")]},
+    {
+        "context": {
+            "user_id": "user-123",                        # shared by all agents
+            "researcher:max_depth": 3,                    # only for researcher
+            "fact-checker:strict_mode": True,             # only for fact-checker
+        }
+    },
+)
+```
+:::
+
+:::js
+```typescript
+const result = await agent.invoke(
+  { messages: [new HumanMessage("Research this and verify the claims")] },
+  {
+    context: {
+      userId: "user-123",                        // shared by all agents
+      "researcher:maxDepth": 3,                  // only for researcher
+      "fact-checker:strictMode": true,           // only for fact-checker
+    },
+  },
+);
+```
+:::
+
+Then read the relevant keys inside tools:
+
+:::python
+```python
+@tool
+def verify_claim(claim: str, config) -> str:
+    """Verify a factual claim."""
+    strict_mode = config.get("context", {}).get("fact-checker:strict_mode", False)
+    if strict_mode:
+        return strict_verification(claim)
+    return basic_verification(claim)
+```
+:::
+
+:::js
+```typescript
+const verifyClaim = tool(
+  (input, config) => {
+    const strictMode = config.context?.["fact-checker:strictMode"] ?? false;
+    if (strictMode) {
+      return strictVerification(input.claim);
+    }
+    return basicVerification(input.claim);
+  },
+  {
+    name: "verify_claim",
+    description: "Verify a factual claim",
+    schema: z.object({ claim: z.string() }),
+  }
+);
+```
+:::
+
+### Identifying which subagent called a tool
+
+When the same tool is shared between the parent and multiple subagents, you can use the `lc_agent_name` metadata (the same value used in [streaming](#streaming)) to determine which agent initiated the call:
+
+:::python
+```python
+@tool
+def shared_lookup(query: str, config) -> str:
+    """Look up information."""
+    agent_name = config.get("metadata", {}).get("lc_agent_name")
+    if agent_name == "fact-checker":
+        return strict_lookup(query)
+    return general_lookup(query)
+```
+:::
+
+:::js
+```typescript
+const sharedLookup = tool(
+  (input, config) => {
+    const agentName = config.metadata?.lc_agent_name;
+    if (agentName === "fact-checker") {
+      return strictLookup(input.query);
+    }
+    return generalLookup(input.query);
+  },
+  {
+    name: "shared_lookup",
+    description: "Look up information from various sources",
+    schema: z.object({ query: z.string() }),
+  }
+);
+```
+:::
+
+You can combine both patterns — use namespaced context for agent-specific configuration and `lc_agent_name` metadata for branching tool behavior:
+
+:::python
+```python
+@tool
+def flexible_search(query: str, config) -> str:
+    """Search with agent-specific settings."""
+    agent_name = config.get("metadata", {}).get("lc_agent_name", "unknown")
+    ctx = config.get("context", {})
+
+    max_results = ctx.get(f"{agent_name}:max_results", 5)
+    include_raw = ctx.get(f"{agent_name}:include_raw", False)
+
+    return perform_search(query, max_results=max_results, include_raw=include_raw)
+```
+:::
+
+:::js
+```typescript
+const flexibleSearch = tool(
+  (input, config) => {
+    const agentName = config.metadata?.lc_agent_name ?? "unknown";
+    const ctx = config.context ?? {};
+
+    const maxResults = ctx[`${agentName}:maxResults`] ?? 5;
+    const includeRaw = ctx[`${agentName}:includeRaw`] ?? false;
+
+    return performSearch(input.query, { maxResults, includeRaw });
+  },
+  {
+    name: "flexible_search",
+    description: "Search with agent-specific settings",
+    schema: z.object({ query: z.string() }),
+  }
+);
+```
+:::
+
 ## Troubleshooting
 
 ### Subagent not being called
