@@ -5,10 +5,13 @@ description: Choose and configure filesystem backends for deep agents. You can s
 
 import BackendState from '/snippets/backend-state.mdx';
 import BackendFilesystem from '/snippets/backend-filesystem.mdx';
+import BackendLocalShell from '/snippets/backend-local-shell.mdx';
 import BackendStore from '/snippets/backend-store.mdx';
 import BackendComposite from '/snippets/backend-composite.mdx';
 
 Deep agents expose a filesystem surface to the agent via tools like `ls`, `read_file`, `write_file`, `edit_file`, `glob`, and `grep`. These tools operate through a pluggable backend. The `read_file` tool natively supports image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) across all backends, returning them as multimodal content blocks.
+
+Sandboxes and the `LocalShellBackend` also provide and `execute` tool.
 
 ```mermaid
 graph TB
@@ -18,6 +21,7 @@ graph TB
     Backend --> Disk[Filesystem]
     Backend --> Store[Store]
     Backend --> Sandbox[Sandbox]
+    Backend --> LocalShell[Local Shell]
     Backend --> Composite[Composite]
     Backend --> Custom[Custom]
 
@@ -27,6 +31,7 @@ graph TB
     Router --> Store
 
     Sandbox --> Execute["#43; execute tool"]
+    LocalShell --> Execute["#43; execute tool"]
 ```
 
 This page explains how to [choose a backend](#specify-a-backend), [route different paths to different backends](#route-to-different-backends), [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres), [add policy hooks](#add-policy-hooks), and [comply with the backend protocol](#protocol-reference).
@@ -41,6 +46,7 @@ Here are a few pre-built filesystem backends that you can quickly use with your 
 | [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. |
 | [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(backend=lambda rt: StoreBackend(rt))` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
 | [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
+| [Local shell](#localshellbackend-local-shell) | `agent = create_deep_agent(backend=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}))` <br></br>Filesystem and shell execution directly on the host. No isolation—use only in controlled development environments. See [security considerations](#local-shell) below. |
 | [Composite](#compositebackend-router) | Ephemeral by default, `/memories/` persisted. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
 
 
@@ -98,6 +104,49 @@ Use with caution and only in appropriate environments.
 - Local projects on your machine
 - CI sandboxes
 - Mounted persistent volumes
+
+### LocalShellBackend (local shell)
+
+<Warning>
+This backend grants agents direct filesystem read/write access **and** unrestricted shell execution on your host.
+Use with extreme caution and only in appropriate environments.
+
+**Appropriate use cases:**
+- Local development CLIs (coding assistants, development tools)
+- Personal development environments where you trust the agent's code
+- CI/CD pipelines with proper secret management
+
+**Inappropriate use cases:**
+- Production environments (such as web servers, APIs, multi-tenant systems)
+- Processing untrusted user input or executing untrusted code
+
+**Security risks:**
+- Agents can execute **arbitrary shell commands** with your user's permissions
+- Agents can read any accessible file, including secrets (API keys, credentials, `.env` files)
+- Secrets may be exposed
+- File modifications and command execution are **permanent and irreversible**
+- Commands run directly on your host system
+- Commands can consume unlimited CPU, memory, disk
+
+**Recommended safeguards:**
+1. Enable [Human-in-the-Loop (HITL) middleware](/oss/deepagents/human-in-the-loop) to review and approve operations before execution. This is **strongly recommended**.
+2. Run in dedicated development environments only. Never use on shared or production systems.
+3. Use a [sandbox backend](/oss/deepagents/sandboxes) for production environments requiring shell execution.
+
+**Note:** `virtual_mode=True` provides no security with shell access enabled, since commands can access any path on the system.
+</Warning>
+
+<BackendLocalShell />
+
+**How it works:**
+- Extends `FilesystemBackend` with the `execute` tool for running shell commands on the host.
+- Commands run directly on your machine using `subprocess.run(shell=True)` with no sandboxing.
+- Supports `timeout` (default 120s), `max_output_bytes` (default 100,000), `env`, and `inherit_env` for environment variables.
+- Shell commands use `root_dir` as the working directory but can access any path on the system.
+
+**Best for:**
+- Local coding assistants and development tools
+- Quick iteration during development when you trust the agent
 
 ### StoreBackend (LangGraph store)
 
