@@ -1,0 +1,225 @@
+---
+title: "Deno"
+sidebarTitle: "Deno"
+description: "Use Deno sandbox backends with deepagents for isolated code execution in Linux microVMs"
+---
+
+[Deno Deploy](https://deno.com) provides Linux microVMs for isolated code execution. Best for Deno and JavaScript workloads.
+
+## Setup
+
+<CodeGroup>
+    ```bash npm
+    npm install @langchain/deno
+    ```
+
+    ```bash yarn
+    yarn add @langchain/deno
+    ```
+
+    ```bash pnpm
+    pnpm add @langchain/deno
+    ```
+</CodeGroup>
+
+### Authentication
+
+Get your token from [app.deno.com](https://app.deno.com) → Settings → Organization Tokens.
+
+```bash
+export DENO_DEPLOY_TOKEN=your_token
+```
+
+Or pass credentials directly:
+
+```typescript
+const sandbox = await DenoSandbox.create({
+  auth: { token: "your-token-here" },
+});
+```
+
+## Usage with deepagents
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { DenoSandbox } from "@langchain/deno";
+
+const sandbox = await DenoSandbox.create({
+  memoryMb: 1024,
+  lifetime: "10m",
+});
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-sonnet-4-20250514" }),
+    systemPrompt: "You are a coding assistant with sandbox access.",
+    backend: sandbox,
+  });
+
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: "Create a hello world Deno app and run it" }],
+  });
+} finally {
+  await sandbox.close();
+}
+```
+:::
+
+## Standalone usage
+
+:::js
+```typescript
+import { DenoSandbox } from "@langchain/deno";
+
+const sandbox = await DenoSandbox.create({
+  memoryMb: 1024,
+  lifetime: "10m",
+});
+
+const result = await sandbox.execute("deno --version");
+console.log(result.output);
+
+await sandbox.close();
+```
+:::
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `memoryMb` | `number` | `768` | Memory in MB (768-4096) |
+| `lifetime` | `"session" \| string` | `"session"` | Lifetime (`"session"`, `"5m"`, `"30s"`) |
+| `region` | `string` | - | Region. Options: `"ams" \| "ord"` |
+
+### Available regions
+
+| Region Code | Location |
+|-------------|----------|
+| `ams` | Amsterdam |
+| `ord` | Chicago |
+
+### Lifetime options
+
+- `"session"` (default): Sandbox shuts down when you close/dispose the client
+- Duration string: Keep sandbox alive for a specific time (e.g., `"5m"`, `"30s"`)
+
+## Accessing the Deno SDK
+
+For advanced features, access the underlying Deno SDK:
+
+:::js
+```typescript
+const denoSandbox = await DenoSandbox.create();
+const sdk = denoSandbox.sandbox;
+
+// Expose HTTP port
+const url = await sdk.exposeHttp({ port: 3000 });
+
+// Expose SSH
+const ssh = await sdk.exposeSsh();
+
+// Evaluate JavaScript
+const result = await sdk.eval("1 + 2");
+
+// Set environment variables
+await sdk.env.set("API_KEY", "secret");
+
+// Shell template literals
+const output = await sdk.sh`echo "Hello from Deno!"`.text();
+
+// Start a JavaScript runtime
+const runtime = await sdk.createJsRuntime({ entrypoint: "server.ts" });
+```
+:::
+
+## Reconnecting to existing sandboxes
+
+Reconnecting requires a duration-based lifetime (not `"session"`):
+
+:::js
+```typescript
+// Create with duration lifetime
+const sandbox = await DenoSandbox.create({
+  memoryMb: 1024,
+  lifetime: "30m",
+});
+const sandboxId = sandbox.id;
+await sandbox.close(); // Close connection, sandbox keeps running
+
+// Later: reconnect
+const reconnected = await DenoSandbox.connect(sandboxId);
+const result = await reconnected.execute("ls -la");
+```
+:::
+
+## Factory functions
+
+:::js
+```typescript
+import { createDenoSandboxFactory, createDenoSandboxFactoryFromSandbox } from "@langchain/deno";
+
+// Create new sandbox per invocation
+const factory = createDenoSandboxFactory({ memoryMb: 1024 });
+
+// Or reuse an existing sandbox across invocations
+const sandbox = await DenoSandbox.create();
+const reuseFactory = createDenoSandboxFactoryFromSandbox(sandbox);
+```
+:::
+
+## Error handling
+
+```typescript
+import { DenoSandboxError } from "@langchain/deno";
+
+try {
+  await sandbox.execute("some command");
+} catch (error) {
+  if (error instanceof DenoSandboxError) {
+    switch (error.code) {
+      case "NOT_INITIALIZED":
+        await sandbox.initialize();
+        break;
+      case "COMMAND_TIMEOUT":
+        console.error("Command took too long");
+        break;
+      case "AUTHENTICATION_FAILED":
+        console.error("Check your Deno Deploy token");
+        break;
+    }
+  }
+}
+```
+
+### Error codes
+
+| Code | Description |
+|------|-------------|
+| `NOT_INITIALIZED` | Sandbox not initialized - call `initialize()` |
+| `ALREADY_INITIALIZED` | Cannot initialize twice |
+| `AUTHENTICATION_FAILED` | Invalid or missing Deno Deploy token |
+| `SANDBOX_CREATION_FAILED` | Failed to create sandbox |
+| `SANDBOX_NOT_FOUND` | Sandbox ID not found or expired |
+| `COMMAND_TIMEOUT` | Command execution timed out |
+| `COMMAND_FAILED` | Command execution failed |
+| `FILE_OPERATION_FAILED` | File read/write failed |
+| `RESOURCE_LIMIT_EXCEEDED` | CPU, memory, or storage limits exceeded |
+
+## Limits and constraints
+
+| Constraint | Value |
+|------------|-------|
+| Minimum memory | 768 MB |
+| Maximum memory | 4096 MB (4 GB) |
+| Disk space | 10 GB |
+| vCPUs | 2 |
+| Working directory | `/home/app` |
+| Network access | Full (by default) |
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `DENO_DEPLOY_TOKEN` | Deno Deploy organization access token |

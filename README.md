@@ -6,6 +6,7 @@
 * 🛠️ `reference.langchain.com` is home to the API reference docs for LangChain, LangGraph, LangSmith, and LangChain integration packages (e.g., [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/)). These are static sites built from the source code and deployed to [Vercel](https://vercel.com).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
+* 💬 [`chat.langchain.com`](https://chat.langchain.com) is an AI-powered assistant that can answer questions about LangChain documentation.
 
 ---
 
@@ -154,9 +155,24 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 
 ## Troubleshooting
 
+### General Mintlify errors
+
+In some cases, we use new features that are only available in the latest Mintlify CLI. If you encounter errors, ensure you have the latest version installed:
+
+```bash
+mint update
+
+# or
+
+npm install -g mint
+```
+
 ### `docs dev` not working / running
 
 Re-do the [steps to set up your dev environment](https://docs.langchain.com/oss/python/contributing/documentation#set-up-local-environment), ensuring you have activated the virtual environment and installed all dependencies.
+
+> [!IMPORTANT]
+> Most of the time, `mint update` solves any `docs dev` / `make dev` issues!
 
 ### Mintlify `.venv` parsing error
 
@@ -201,14 +217,3 @@ If adding a new group, ensure the root `index.mdx` is included in the `pages` ar
 
 If the trailing `/index` (no extension included) is omitted, the Mintlify parser will raise a warning even though the site will still build.
 
-### General Mintlify errors
-
-In some cases, we use new features that are only available in the latest Mintlify CLI. If you encounter errors, ensure you have the latest version installed:
-
-```bash
-mint update
-
-# or
-
-npm install -g mint
-```

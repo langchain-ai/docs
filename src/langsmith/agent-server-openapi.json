@@ -22,7 +22,7 @@
       "description": "A run is an invocation of a graph / assistant, with no state or memory persistence."
     },
     {
-      "name": "Crons (Plus tier)",
+      "name": "Crons",
       "description": "A cron is a periodic run that recurs on a given schedule. The repeats can be isolated, or share state in a thread"
     },
     {
@@ -908,7 +908,7 @@
       "post": {
         "tags": ["Threads"],
         "summary": "Prune Threads",
-        "description": "Prune threads by ID. The 'delete' strategy removes threads entirely. The 'keep_latest' strategy prunes old checkpoints but keeps threads and their latest state (requires FF_USE_CORE_API=true).",
+        "description": "Prune threads by ID. The 'delete' strategy removes threads entirely. The 'keep_latest' strategy prunes old checkpoints but keeps threads and their latest state.",
         "operationId": "prune_threads_threads_prune_post",
         "requestBody": {
           "content": {
@@ -1816,7 +1816,7 @@
     },
     "/threads/{thread_id}/runs/crons": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Create Thread Cron",
         "description": "Create a cron to schedule runs on a thread.",
         "operationId": "create_thread_cron_threads__thread_id__runs_crons_post",
@@ -2429,7 +2429,7 @@
     },
     "/runs/crons": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Create Cron",
         "description": "Create a cron to schedule runs on new threads.",
         "operationId": "create_cron_runs_crons_post",
@@ -2479,7 +2479,7 @@
     },
     "/runs/crons/search": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Search Crons",
         "description": "Search all active crons",
         "operationId": "search_crons_runs_crons_post",
@@ -2523,7 +2523,7 @@
     },
     "/runs/crons/count": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Count Crons",
         "description": "Get the count of crons matching the specified criteria.",
         "operationId": "count_crons_runs_crons_count_post",
@@ -2889,8 +2889,68 @@
       }
     },
     "/runs/crons/{cron_id}": {
+      "patch": {
+        "tags": ["Crons"],
+        "summary": "Update Cron",
+        "description": "Update a cron job by ID.",
+        "operationId": "patch_cron_runs_crons__cron_id__patch",
+        "parameters": [
+          {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cron Id"
+            },
+            "name": "cron_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CronPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cron"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Delete Cron",
         "description": "Delete a cron by ID.",
         "operationId": "delete_cron_runs_crons__cron_id__delete",
@@ -3022,6 +3082,15 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "name": "refresh_ttl",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Whether to refresh the TTL on this read operation. If not provided, uses the store's default behavior."
           }
         ],
         "responses": {
@@ -3061,7 +3130,8 @@
     "/store/items/search": {
       "post": {
         "tags": ["Store"],
-        "summary": "Search for items within a namespace prefix.",
+        "summary": "Search or list items within a namespace prefix.",
+        "description": "Lists items ordered by last updated time. If a `query` is provided, performs a natural language search instead. Supports pagination via `limit` and `offset`, and filtering via `filter`.",
         "operationId": "search_items",
         "requestBody": {
           "required": true,
@@ -3746,6 +3816,22 @@
         }
       }
     },
+    "/docs": {
+      "get": {
+        "tags": ["System"],
+        "summary": "API Documentation",
+        "description": "A local reference to the Agent Server API documentation.",
+        "operationId": "docs_get",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/html": {}
+            }
+          }
+        }
+      }
+    },
     "/ok": {
       "get": {
         "tags": ["System"],
@@ -4071,6 +4157,12 @@
             "type": "object",
             "title": "Metadata",
             "description": "The cron metadata."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the cron job should be enabled. Disabled crons are not executed.",
+            "default": true
           }
         },
         "type": "object",
@@ -4081,7 +4173,8 @@
           "schedule",
           "created_at",
           "updated_at",
-          "payload"
+          "payload",
+          "enabled"
         ],
         "title": "Cron",
         "description": "Represents a scheduled task."
@@ -4206,6 +4299,69 @@
             "default": "delete",
             "title": "On Run Completed",
             "description": "What to do with the thread after the run completes. 'delete' removes the thread after execution. 'keep' creates a new thread for each execution but does not clean them up."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the cron job should be enabled. Disabled crons are not executed.",
+            "default": true
+          },
+          "stream_mode": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "messages",
+                    "messages-tuple",
+                    "tasks",
+                    "checkpoints",
+                    "updates",
+                    "events",
+                    "debug",
+                    "custom"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "values",
+                  "messages",
+                  "messages-tuple",
+                  "tasks",
+                  "checkpoints",
+                  "updates",
+                  "events",
+                  "debug",
+                  "custom"
+                ]
+              }
+            ],
+            "title": "Stream Mode",
+            "description": "The stream mode(s) to use.",
+            "default": ["values"]
+          },
+          "stream_subgraphs": {
+            "type": "boolean",
+            "title": "Stream Subgraphs",
+            "description": "Whether to stream output from subgraphs.",
+            "default": false
+          },
+          "stream_resumable": {
+            "type": "boolean",
+            "title": "Stream Resumable",
+            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "default": false
+          },
+          "durability": {
+            "type": "string",
+            "enum": ["sync", "async", "exit"],
+            "title": "Durability",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "default": "async"
           }
         },
         "type": "object",
@@ -4213,6 +4369,179 @@
         "additionalProperties": true,
         "title": "CronCreate",
         "description": "Payload for creating a stateless cron job (creates a new thread for each execution)."
+      },
+      "CronPatch": {
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "title": "Schedule",
+            "description": "The cron schedule to execute this job on."
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End Time",
+            "description": "The end date to stop running the cron."
+          },
+          "input": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "object"
+              }
+            ],
+            "title": "Input",
+            "description": "The input to the graph."
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata to merge with existing cron job metadata."
+          },
+          "config": {
+            "properties": {
+              "tags": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "title": "Tags"
+              },
+              "recursion_limit": {
+                "type": "integer",
+                "title": "Recursion Limit"
+              },
+              "configurable": {
+                "type": "object",
+                "title": "Configurable"
+              }
+            },
+            "type": "object",
+            "title": "Config",
+            "description": "The configuration for the assistant."
+          },
+          "context": {
+            "type": "object",
+            "title": "Context",
+            "description": "Static context added to the assistant."
+          },
+          "webhook": {
+            "type": "string",
+            "maxLength": 65536,
+            "minLength": 1,
+            "format": "uri-reference",
+            "title": "Webhook",
+            "description": "Webhook to call after LangGraph API call is done."
+          },
+          "interrupt_before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["*"]
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Interrupt Before",
+            "description": "Nodes to interrupt immediately before they get executed."
+          },
+          "interrupt_after": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["*"]
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Interrupt After",
+            "description": "Nodes to interrupt immediately after they get executed."
+          },
+          "on_run_completed": {
+            "type": "string",
+            "enum": ["delete", "keep"],
+            "title": "On Run Completed",
+            "description": "What to do with the thread after the run completes. 'delete' removes the thread after execution. 'keep' creates a new thread for each execution but does not clean them up."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Enable or disable the cron job."
+          },
+          "stream_mode": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "messages",
+                    "messages-tuple",
+                    "tasks",
+                    "checkpoints",
+                    "updates",
+                    "events",
+                    "debug",
+                    "custom"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "values",
+                  "messages",
+                  "messages-tuple",
+                  "tasks",
+                  "checkpoints",
+                  "updates",
+                  "events",
+                  "debug",
+                  "custom"
+                ]
+              }
+            ],
+            "title": "Stream Mode",
+            "description": "The stream mode(s) to use.",
+            "default": ["values"]
+          },
+          "stream_subgraphs": {
+            "type": "boolean",
+            "title": "Stream Subgraphs",
+            "description": "Whether to stream output from subgraphs.",
+            "default": false
+          },
+          "stream_resumable": {
+            "type": "boolean",
+            "title": "Stream Resumable",
+            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "default": false
+          },
+          "durability": {
+            "type": "string",
+            "enum": ["sync", "async", "exit"],
+            "title": "Durability",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "default": "async"
+          }
+        },
+        "type": "object",
+        "title": "CronPatch",
+        "description": "Payload for updating a cron job. All fields are optional."
       },
       "CronSearch": {
         "properties": {
@@ -4227,6 +4556,11 @@
             "format": "uuid",
             "title": "Thread Id",
             "description": "The thread ID to search for."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Filter by enabled status. If not provided, returns both enabled and disabled crons."
           },
           "limit": {
             "type": "integer",
@@ -4281,7 +4615,8 @@
                 "user_id",
                 "payload",
                 "next_run_date",
-                "metadata"
+                "metadata",
+                "enabled"
               ]
             },
             "title": "Select",
@@ -4721,7 +5056,7 @@
             },
             "type": "array",
             "title": "Feedback Keys",
-            "description": "Feedback keys to assign to run."
+            "description": "Generate pre-signed URLs for assigning feedback keys to the run.\n\nFor each key specified, a unique URL will be generated that can be called to assign the feedback key to the run. See [LangSmith Feedback](https://docs.langchain.com/langsmith/observability-concepts#feedback) for more details."
           },
           "multitask_strategy": {
             "type": "string",
@@ -4745,14 +5080,15 @@
           "checkpoint_during": {
             "type": "boolean",
             "title": "Checkpoint During",
-            "description": "Whether to checkpoint during the run.",
+            "description": "Whether to checkpoint during the run.\n\nDeprecated. Use `durability` instead to control checkpoint persistence behavior during the run.",
+            "deprecated": true,
             "default": false
           },
           "durability": {
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of 'sync', 'async', or 'exit'.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -4906,7 +5242,7 @@
             },
             "type": "array",
             "title": "Feedback Keys",
-            "description": "Feedback keys to assign to run."
+            "description": "Generate pre-signed URLs for assigning feedback keys to the run.\n\nFor each key specified, a unique URL will be generated that can be called to assign the feedback key to the run. See [LangSmith Feedback](https://docs.langchain.com/langsmith/observability-concepts#feedback) for more details."
           },
           "stream_subgraphs": {
             "type": "boolean",
@@ -4942,14 +5278,15 @@
           "checkpoint_during": {
             "type": "boolean",
             "title": "Checkpoint During",
-            "description": "Whether to checkpoint during the run.",
+            "description": "Whether to checkpoint during the run.\n\nDeprecated. Use `durability` instead to control checkpoint persistence behavior during the run.",
+            "deprecated": true,
             "default": false
           },
           "durability": {
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of 'sync', 'async', or 'exit'.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -5126,7 +5463,13 @@
           },
           "sort_by": {
             "type": "string",
-            "enum": ["thread_id", "status", "created_at", "updated_at"],
+            "enum": [
+              "thread_id",
+              "status",
+              "created_at",
+              "updated_at",
+              "state_updated_at"
+            ],
             "title": "Sort By",
             "description": "Sort by field."
           },
@@ -5144,6 +5487,7 @@
                 "thread_id",
                 "created_at",
                 "updated_at",
+                "state_updated_at",
                 "metadata",
                 "config",
                 "status",
@@ -5153,6 +5497,15 @@
             },
             "title": "Select",
             "description": "Specify which fields to return. If not provided, all fields are returned."
+          },
+          "extract": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Extract",
+            "description": "Map of alias to JSONB path for extracting specific values. Paths must start with values, metadata, config, or interrupts. Example: {\"last_msg\": \"values.messages[-1]\"}.",
+            "maxProperties": 10
           }
         },
         "type": "object",
@@ -5202,6 +5555,12 @@
             "title": "Updated At",
             "description": "The last time the thread was updated."
           },
+          "state_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "State Updated At",
+            "description": "The last time the thread state was updated."
+          },
           "metadata": {
             "type": "object",
             "title": "Metadata",
@@ -5248,6 +5607,11 @@
                 "description": "When the thread will expire."
               }
             }
+          },
+          "extracted": {
+            "type": "object",
+            "title": "Extracted",
+            "description": "Extracted values from thread JSONB columns, populated when extract is specified in search request."
           }
         },
         "type": "object",
@@ -5288,7 +5652,7 @@
               "strategy": {
                 "type": "string",
                 "enum": ["delete", "keep_latest"],
-                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state (requires FF_USE_CORE_API=true).",
+                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state.",
                 "default": "delete"
               },
               "ttl": {
@@ -5332,7 +5696,7 @@
               "strategy": {
                 "type": "string",
                 "enum": ["delete", "keep_latest"],
-                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state (requires FF_USE_CORE_API=true).",
+                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state.",
                 "default": "delete"
               },
               "ttl": {
@@ -5361,7 +5725,7 @@
             "type": "string",
             "enum": ["delete", "keep_latest"],
             "title": "Strategy",
-            "description": "The prune strategy. 'delete' removes threads entirely. 'keep_latest' prunes old checkpoints but keeps threads and their latest state (requires FF_USE_CORE_API=true).",
+            "description": "The prune strategy. 'delete' removes threads entirely. 'keep_latest' prunes old checkpoints but keeps threads and their latest state.",
             "default": "delete"
           }
         },
@@ -5640,6 +6004,22 @@
             "type": "object",
             "title": "Value",
             "description": "A dictionary containing the item's data."
+          },
+          "index": {
+            "oneOf": [
+              { "type": "boolean", "enum": [false] },
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "null" }
+            ],
+            "default": null,
+            "title": "Index",
+            "description": "Controls search indexing - null (use defaults), false (disable), or list of field paths to index."
+          },
+          "ttl": {
+            "type": ["number", "null"],
+            "default": null,
+            "title": "TTL",
+            "description": "Optional time-to-live in minutes for the item, or null for no expiration."
           }
         },
         "title": "StorePutRequest",
@@ -5698,11 +6078,17 @@
           "query": {
             "type": ["string", "null"],
             "title": "Query",
-            "description": "Query string for semantic/vector search."
+            "description": "Optional natural language search query. If not provided, items are returned ordered by last updated time (listing mode). If provided, performs a natural language search over item contents."
+          },
+          "refresh_ttl": {
+            "type": ["boolean", "null"],
+            "default": null,
+            "title": "Refresh TTL",
+            "description": "Whether to refresh the TTL on items returned by this search. If null, uses the store's default behavior."
           }
         },
         "title": "StoreSearchRequest",
-        "description": "Request to search for items within a namespace prefix."
+        "description": "Request to list or search for items within a namespace prefix. Without a query, lists items by last updated time. With a query, performs natural language search."
       },
       "StoreListNamespacesRequest": {
         "type": "object",
@@ -5963,6 +6349,69 @@
             "title": "Multitask Strategy",
             "description": "Multitask strategy to use. Must be one of 'reject', 'interrupt', 'rollback', or 'enqueue'.",
             "default": "enqueue"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the cron job should be enabled. Disabled crons are not executed.",
+            "default": true
+          },
+          "stream_mode": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "messages",
+                    "messages-tuple",
+                    "tasks",
+                    "checkpoints",
+                    "updates",
+                    "events",
+                    "debug",
+                    "custom"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "values",
+                  "messages",
+                  "messages-tuple",
+                  "tasks",
+                  "checkpoints",
+                  "updates",
+                  "events",
+                  "debug",
+                  "custom"
+                ]
+              }
+            ],
+            "title": "Stream Mode",
+            "description": "The stream mode(s) to use.",
+            "default": ["values"]
+          },
+          "stream_subgraphs": {
+            "type": "boolean",
+            "title": "Stream Subgraphs",
+            "description": "Whether to stream output from subgraphs.",
+            "default": false
+          },
+          "stream_resumable": {
+            "type": "boolean",
+            "title": "Stream Resumable",
+            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "default": false
+          },
+          "durability": {
+            "type": "string",
+            "enum": ["sync", "async", "exit"],
+            "title": "Durability",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "default": "async"
           }
         },
         "type": "object",

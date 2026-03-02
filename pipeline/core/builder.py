@@ -181,6 +181,10 @@ class DocumentationBuilder:
             # Only add links for files in the src/ directory
             relative_path = input_path.absolute().relative_to(self.src_dir.absolute())
 
+            # Do not add source links on the home page (root index.mdx)
+            if relative_path.parts == ("index.mdx",):
+                return content
+
             # Construct the GitHub URLs
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"
@@ -190,12 +194,14 @@ class DocumentationBuilder:
             # Create the callout section with Mintlify Callout component
             source_links_section = (
                 "\n\n---\n\n"
-                '<Callout icon="pen-to-square" iconType="regular">\n'
+                '<div className="source-links">\n'
+                '<Callout icon="edit">\n'
                 f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
                 "</Callout>\n"
-                '<Tip icon="terminal" iconType="regular">\n'
+                '<Callout icon="terminal-2">\n'
                 "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
-                "</Tip>\n"
+                "</Callout>\n"
+                "</div>\n"
             )
 
             # Append to content
@@ -483,8 +489,8 @@ class DocumentationBuilder:
             total=len(existing_files),
             desc="Building files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
         ) as pbar:
             for file_path in existing_files:
                 result = self._build_file_with_progress(file_path, pbar)
@@ -531,8 +537,8 @@ class DocumentationBuilder:
             total=len(all_files),
             desc=f"Building {output_dir} files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from oss/ directory
@@ -608,8 +614,8 @@ class DocumentationBuilder:
             total=len(all_files),
             desc=f"Building {output_dir} files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from source directory
