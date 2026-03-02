@@ -1048,12 +1048,15 @@ graph.addConditionalEdges("nodeA", (state) => {
 - **`graph`**: Target a parent graph when navigating from [subgraphs](/oss/langgraph/use-subgraphs).
 - **`resume`**: Provide a value to resume execution after an [interrupt](/oss/langgraph/interrupts).
 
-`Command` is used in two contexts:
+`Command` is used in three contexts:
 
-- **[Return from node functions](#combine-state-updates-and-control-flow)**: Use `update`, `goto`, and `graph` to combine state updates with control flow.
-- **[Pass as input](#resume-after-an-interrupt)** to `invoke()`/`stream()`: Use `resume` to continue execution after an interrupt.
+- **[Return from nodes](#return-from-nodes)**: Use `update`, `goto`, and `graph` to combine state updates with control flow.
+- **[Input to `invoke`/`stream`](#input-to-invokestream)**: Use `resume` to continue execution after an interrupt.
+- **[Return from tools](#return-from-tools)**: Use `update` to modify graph state from inside a tool.
 
-### Combine state updates and control flow
+### Return from nodes
+
+#### `update` and `goto`
 
 Return @[`Command`] from node functions to update state and route to the next node in a single step:
 
@@ -1137,7 +1140,7 @@ builder.addNode("myNode", myNode, {
 
 Check out this [how-to guide](/oss/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command) for an end-to-end example of how to use @[`Command`].
 
-### Navigate to a parent graph
+#### `graph`
 
 :::python
 If you are using [subgraphs](/oss/langgraph/use-subgraphs), you can navigate from a node within a subgraph to a different node in the parent graph by specifying `graph=Command.PARENT` in @[`Command`]:
@@ -1188,7 +1191,49 @@ When you send updates from a subgraph node to a parent graph node for a key that
 
 This is particularly useful when implementing [multi-agent handoffs](/oss/langchain/multi-agent/handoffs). Check out [this guide](/oss/langgraph/use-graph-api#navigate-to-a-node-in-a-parent-graph) for detail.
 
-### Resume after an interrupt
+### Input to `invoke`/`stream`
+
+:::python
+
+<Warning>
+
+`Command(resume=...)` is the **only** `Command` pattern intended as input to `invoke()`/`stream()`. Do not use `Command(update=...)` as input to continue multi-turn conversations — because passing any `Command` as input resumes from the last checkpoint position (skipping `__start__`), the graph will appear stuck. To continue a conversation on an existing thread, pass a plain input dict:
+
+```python
+# WRONG — graph resumes from end state, appears stuck
+graph.invoke(Command(update={  # [!code --]
+    "messages": [{"role": "user", "content": "follow up"}]  # [!code --]
+}), config)  # [!code --]
+
+# CORRECT — plain dict restarts from __start__
+graph.invoke( {  # [!code ++]
+    "messages": [{"role": "user", "content": "follow up"}]  # [!code ++]
+}, config)  # [!code ++]
+```
+
+</Warning>
+
+:::
+
+:::js
+
+<Warning>
+
+`new Command({ resume: ... })` is the **only** `Command` pattern intended as input to `invoke()`/`stream()`. Do not use `new Command({ update: ... })` as input to continue multi-turn conversations — because passing any `Command` as input resumes from the last checkpoint position (skipping `__start__`), the graph will appear stuck. To continue a conversation on an existing thread, pass a plain input object:
+
+```typescript
+// WRONG — graph resumes from end state, appears stuck
+await graph.invoke(new Command({ update: { messages: [{ role: "user", content: "follow up" }] } }), config);  // [!code --]
+
+// CORRECT — plain object restarts from __start__
+await graph.invoke({ messages: [{ role: "user", content: "follow up" }] }, config);  // [!code ++]
+```
+
+</Warning>
+
+:::
+
+#### `resume`
 
 :::python
 
@@ -1210,24 +1255,6 @@ result = graph.invoke(Command(resume="yes"), config)
 ```
 
 Check out the [interrupts conceptual guide](/oss/langgraph/interrupts) for full details on interrupt patterns, including multiple interrupts and validation loops.
-
-<Warning>
-
-`Command(resume=...)` is the **only** `Command` pattern intended as input to `invoke()`/`stream()`. Do not use `Command(update=...)` as input to continue multi-turn conversations — because passing any `Command` as input resumes from the last checkpoint position (skipping `__start__`), the graph will appear stuck. To continue a conversation on an existing thread, pass a plain input dict:
-
-```python
-# WRONG — graph resumes from end state, appears stuck
-graph.invoke(Command(update={  # [!code --]
-    "messages": [{"role": "user", "content": "follow up"}]  # [!code --]
-}), config)  # [!code --]
-
-# CORRECT — plain dict restarts from __start__
-graph.invoke( {  # [!code ++]
-    "messages": [{"role": "user", "content": "follow up"}]  # [!code ++]
-}, config)  # [!code ++]
-```
-
-</Warning>
 
 :::
 
@@ -1253,23 +1280,9 @@ const resumed = await graph.invoke(new Command({ resume: "yes" }), config);
 
 Check out the [interrupts conceptual guide](/oss/langgraph/interrupts) for full details on interrupt patterns, including multiple interrupts and validation loops.
 
-<Warning>
-
-`new Command({ resume: ... })` is the **only** `Command` pattern intended as input to `invoke()`/`stream()`. Do not use `new Command({ update: ... })` as input to continue multi-turn conversations — because passing any `Command` as input resumes from the last checkpoint position (skipping `__start__`), the graph will appear stuck. To continue a conversation on an existing thread, pass a plain input object:
-
-```typescript
-// WRONG — graph resumes from end state, appears stuck
-await graph.invoke(new Command({ update: { messages: [{ role: "user", content: "follow up" }] } }), config);  // [!code --]
-
-// CORRECT — plain object restarts from __start__
-await graph.invoke({ messages: [{ role: "user", content: "follow up" }] }, config);  // [!code ++]
-```
-
-</Warning>
-
 :::
 
-### Use inside tools
+### Return from tools
 
 A common use case is updating graph state from inside a tool. For example, in a customer support application you might want to look up customer information based on their account number or ID in the beginning of the conversation.
 
