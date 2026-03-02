@@ -1,0 +1,183 @@
+---
+title: Nimble Extract
+---
+
+>[Nimble's Extract API](https://docs.nimbleway.com/nimble-sdk/extract-api) extracts rendered content from specific URLs by browsing them with headless browsers. Unlike search APIs that discover content, the Extract tool handles known URLs—perfect for agent workflows that need to fetch and process specific web pages, including content behind pagination, filters, and client-side rendering.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support |  Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| [NimbleExtractTool](https://github.com/Nimbleway/langchain-nimble) | [langchain-nimble](https://pypi.org/project/langchain-nimble/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-nimble?style=flat-square&label=%20) |
+
+### Tool features
+
+| Returns artifact | Native async | Return data | Pricing |
+| :---: | :---: | :---: | :---: |
+| ❌ | ✅ | title, URL, content (markdown/plain_text/HTML), metadata | [Free trial available](https://www.nimbleway.com/) |
+
+**Key Features:**
+
+- **URL extraction**: Extract rendered content from 1-20 URLs in parallel
+- **Dynamic rendering**: Handles JavaScript, lazy loading, and client-side rendering
+- **Multiple formats**: plain_text (default), markdown, or simplified_html
+- **Configurable wait times**: Control page load behavior for slow-loading content
+- **Browser drivers**: Choose from vx6, vx8, or vx10 drivers for different rendering needs
+- **Production-ready**: Native async support, automatic retries, connection pooling
+
+## Setup
+
+The integration lives in the `langchain-nimble` package.
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-nimble
+```
+```bash uv
+uv add langchain-nimble
+```
+</CodeGroup>
+
+### Credentials
+
+You'll need a Nimble API key to use this tool. Sign up at [Nimble](https://www.nimbleway.com/) to get your API key and access their free trial.
+
+```python
+import getpass
+import os
+
+if not os.environ.get("NIMBLE_API_KEY"):
+    os.environ["NIMBLE_API_KEY"] = getpass.getpass("Nimble API key:\n")
+```
+
+## Instantiation
+
+Now we can instantiate the tool:
+
+```python
+from langchain_nimble import NimbleExtractTool
+
+# Basic usage
+tool = NimbleExtractTool()
+```
+
+## Use within an agent
+
+We can use the Nimble extract tool with an agent to give it URL content extraction capabilities. Here's a complete example using LangGraph:
+
+```python
+import os
+import getpass
+
+from langchain_nimble import NimbleExtractTool
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API key:\n")
+if not os.environ.get("NIMBLE_API_KEY"):
+    os.environ["NIMBLE_API_KEY"] = getpass.getpass("Nimble API key:\n")
+
+# Initialize Nimble Extract Tool
+extract_tool = NimbleExtractTool(
+    parsing_type="markdown"
+)
+
+# Create agent with the tool
+model = init_chat_model(model="gpt-4o", model_provider="openai", temperature=0)
+agent = create_agent(model, [extract_tool])
+
+# Ask the agent to extract and analyze content from LangChain documentation
+user_input = "Extract and summarize the key concepts from these LangChain docs: https://python.langchain.com/docs/concepts/retrievers/, https://python.langchain.com/docs/concepts/tools/"
+
+for step in agent.stream(
+    {"messages": user_input},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+```output
+================================ Human Message =================================
+
+Extract and summarize the key concepts from these LangChain docs: https://python.langchain.com/docs/concepts/retrievers/, https://python.langchain.com/docs/concepts/tools/
+
+================================== Ai Message ==================================
+Tool Calls:
+  nimble_extract (call_abc123)
+ Call ID: call_abc123
+  Args:
+    links: ['https://python.langchain.com/docs/concepts/retrievers/', 'https://python.langchain.com/docs/concepts/tools/']
+    parsing_type: markdown
+
+================================= Tool Message =================================
+Name: nimble_extract
+
+[{"title": "Retrievers | LangChain", "url": "https://python.langchain.com/docs/concepts/retrievers/", "content": "# Retrievers\n\nA retriever is an interface that returns documents given an unstructured query...\n\n## Key Concepts\n- Document retrieval from various sources\n- Integration with vector stores...", "metadata": {"extracted_at": "2025-12-10T..."}}, {"title": "Tools | LangChain", "url": "https://python.langchain.com/docs/concepts/tools/", "content": "# Tools\n\nTools are interfaces that agents can use to interact with the world...", "metadata": {...}}]
+
+================================== Ai Message ==================================
+
+Based on the extracted LangChain documentation, here are the key concepts:
+
+**Retrievers:**
+- Interface for returning documents based on unstructured queries
+- Supports various data sources including vector stores
+- Core component for RAG (Retrieval Augmented Generation) applications
+- Enables semantic search over document collections
+
+**Tools:**
+- Interfaces enabling agents to interact with external systems
+- Can be used for web search, API calls, calculations, and more
+- Agents use tools to extend their capabilities beyond text generation
+- Support both synchronous and asynchronous execution
+```
+
+## Advanced configuration
+
+The tool supports extensive configuration for URL extraction:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `links` | list[str] | None | URLs to extract (1-20) - provided by agent at runtime |
+| `parsing_type` | str | "plain_text" | Output format: "plain_text", "markdown", or "simplified_html" |
+| `driver` | str | "vx6" | Browser driver version: "vx6" (fast), "vx8" (balanced), or "vx10" (comprehensive) |
+| `wait` | int | None | Milliseconds to wait for page load (0-60000) |
+| `render` | bool | True | Enable JavaScript rendering |
+| `locale` | str | "en" | Page locale preference (e.g., "en-US") |
+| `country` | str | "US" | Country code for localized content (e.g., "US") |
+| `api_key` | str | env var | Nimble API key (defaults to NIMBLE_API_KEY environment variable) |
+
+## Best Practices
+
+### Driver selection
+
+- **vx6** (default): Fast extraction for standard websites
+- **vx8**: Balanced performance for moderately complex sites
+- **vx10**: Comprehensive rendering for JavaScript-heavy SPAs and complex dynamic content
+
+### When to use wait times
+
+- **No wait** (`wait=None`): Best for most modern websites with fast initial renders
+- **Short wait** (`wait=1000-2000`): For sites with lazy loading or dynamic content
+- **Longer wait** (`wait=5000+`): For slow-loading pages or complex SPA applications that need time to fully render
+
+### URL management
+
+- **Batch extraction**: Provide 1-20 URLs per call to extract in parallel
+- **Error handling**: Failed URLs will be reported in agent error handling
+- **Content validation**: Agent should validate extracted content before processing
+
+### Performance optimization
+
+- **Choose appropriate formats**: Use **plain_text** for speed, **markdown** for structure, **HTML** for detailed styling
+- **Tune wait times**: Only use wait times when necessary to balance speed and reliability
+- **Batch related URLs**: Extract multiple URLs from same domain in parallel for efficiency
+- **Use async**: Call `ainvoke()` when extracting many URLs concurrently
+
+---
+
+## API reference
+
+For detailed documentation of all `NimbleExtractTool` features and configurations, visit the [Nimble API documentation](https://docs.nimbleway.com/nimble-sdk/search-api/extract-api-quick-start).

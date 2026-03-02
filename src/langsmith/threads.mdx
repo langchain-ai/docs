@@ -37,61 +37,63 @@ This example demonstrates how to log and retrieve conversation history using a s
 
 ```python Python
 import os
-from typing import List, Dict, Any, Optional
+import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 import openai
 from langsmith import traceable, Client
-import langsmith as ls
 from langsmith.wrappers import wrap_openai
 
 # Initialize clients
-client = wrap_openai(openai.Client())
 langsmith_client = Client()
+client = wrap_openai(openai.Client())
 
 # Configuration
-LANGSMITH_PROJECT = "project-with-threads"
 THREAD_ID = "thread-id-1"
-langsmith_extra={"project_name": LANGSMITH_PROJECT, "metadata":{"session_id": THREAD_ID}}
+
+# Using a local directory to store thread history. For production use, use a persistent storage solution.
+THREADS_DIR = os.path.join(os.path.dirname(__file__), "threads")
 
 # gets a history of all LLM calls in the thread to construct conversation history
-def get_thread_history(thread_id: str, project_name: str):
-    # Filter runs by the specific thread and project
-    filter_string = f'and(in(metadata_key, ["session_id","conversation_id","thread_id"]), eq(metadata_value, "{thread_id}"))'
-    # Only grab the LLM runs
-    runs = [r for r in langsmith_client.list_runs(project_name=project_name, filter=filter_string, run_type="llm")]
+def get_thread_history(thread_id: str) -> list:
+    path = os.path.join(THREADS_DIR, f"{thread_id}.json")
+    if not os.path.exists(path):
+        return []
+    with open(path, "r") as f:
+        return json.load(f)
 
-    # Sort by start time to get the most recent interaction
-    runs = sorted(runs, key=lambda run: run.start_time, reverse=True)
-
-    # Reconstruct the conversation state
-    latest_run = runs[0]
-    return latest_run.inputs['messages'] + [latest_run.outputs['choices'][0]['message']]
+def save_thread_history(thread_id: str, messages: list):
+    os.makedirs(THREADS_DIR, exist_ok=True)
+    with open(os.path.join(THREADS_DIR, f"{thread_id}.json"), "w") as f:
+        json.dump(messages, f, indent=2, default=str)
 
 
-@traceable(name="Chat Bot")
+@traceable(name="Chat Bot", metadata={"thread_id": THREAD_ID})
 def chat_pipeline(messages: list, get_chat_history: bool = False):
     # Whether to continue an existing thread or start a new one
     if get_chat_history:
-        run_tree = ls.get_current_run_tree()
+        history_messages = get_thread_history(THREAD_ID)
         # Get existing conversation history and append new messages
-        history_messages = get_thread_history(run_tree.extra["metadata"]["session_id"], run_tree.session_name)
         all_messages = history_messages + messages
-        # Include the complete conversation in the input for tracing
-        input_messages = all_messages
     else:
         all_messages = messages
-        input_messages = messages
 
     # Invoke the model
     chat_completion = client.chat.completions.create(
         model="gpt-4.1-mini", messages=all_messages
     )
 
-    # Return the complete conversation including input and response
     response_message = chat_completion.choices[0].message
-    return {
-        "messages": input_messages + [response_message]
-    }
+    print("Response from model:", response_message)
+
+    full_conversation = all_messages + [{"role": response_message.role, "content": response_message.content}]
+    save_thread_history(THREAD_ID, full_conversation)
+
+    return {"messages": full_conversation}
+
 
 # Format message
 messages = [
@@ -100,165 +102,113 @@ messages = [
         "role": "user"
     }
 ]
-get_chat_history = False
 
 # Call the chat pipeline
-result = chat_pipeline(messages, get_chat_history, langsmith_extra=langsmith_extra)
+result = chat_pipeline(messages, get_chat_history=False)
 ```
 
 ```typescript TypeScript
-import 'dotenv/config';
-import OpenAI from 'openai';
-import { traceable, getCurrentRunTree } from 'langsmith/traceable';
-import { Client } from 'langsmith';
-import { wrapOpenAI } from 'langsmith/wrappers';
+import * as fs from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
+import * as dotenv from "dotenv";
+import OpenAI from "openai";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
 
-// Initialize clients
-const openai = new OpenAI();
-const client = wrapOpenAI(openai);
-const langsmithClient = new Client();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load environment variables from .env file
+dotenv.config();
+
+// Initialize client
+const client = wrapOpenAI(new OpenAI());
 
 // Configuration
-const LANGSMITH_PROJECT = "project-with-threads";
 const THREAD_ID = "thread-id-1";
-const langsmithExtra = {
-  project_name: LANGSMITH_PROJECT,
-  metadata: { session_id: THREAD_ID }
-};
 
-// Message type definition
-interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
+// Using a local directory to store thread history. For production use, use a persistent storage solution.
+const THREADS_DIR = path.join(__dirname, "threads");
+
+type Message = { role: string; content: string };
+
+// Gets a history of all LLM calls in the thread to construct conversation history
+function getThreadHistory(threadId: string): Message[] {
+  const filePath = path.join(THREADS_DIR, `${threadId}.json`);
+  if (!fs.existsSync(filePath)) return [];
+  return JSON.parse(fs.readFileSync(filePath, "utf-8"));
 }
 
-interface ChatResponse {
-  messages: Message[];
+function saveThreadHistory(threadId: string, messages: Message[]): void {
+  fs.mkdirSync(THREADS_DIR, { recursive: true });
+  fs.writeFileSync(
+    path.join(THREADS_DIR, `${threadId}.json`),
+    JSON.stringify(messages, null, 2)
+  );
 }
 
-interface ChatInput {
-  get_chat_history: boolean;
-  messages: Message[];
-}
-
-// gets a history of all LLM calls in the thread to construct conversation history
-async function getThreadHistory(threadId: string, projectName: string): Promise<Message[]> {
-  // Filter runs by the specific thread and project
-  const filterString = `and(in(metadata_key, ["session_id","conversation_id","thread_id"]), eq(metadata_value, "${threadId}"))`;
-
-  // Only grab the LLM runs
-  const runs: any[] = [];
-  for await (const run of langsmithClient.listRuns({
-    projectName: projectName,
-    filter: filterString,
-    runType: "llm"
-  })) {
-    if (run.run_type === "llm") {
-      runs.push(run);
+const chatPipeline = traceable(
+  async function chatPipeline({ messages, get_chat_history = false }: { messages: Message[]; get_chat_history?: boolean }) {
+    // Whether to continue an existing thread or start a new one
+    if (get_chat_history) {
+      const historyMessages = getThreadHistory(THREAD_ID);
+      // Get existing conversation history and append new messages
+      messages = [...historyMessages, ...messages];
     }
-  }
 
-  // Sort by start time to get the most recent interaction
-  runs.sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+    // Invoke the model
+    const chatCompletion = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages,
+    });
 
-  // Check if we have any runs
-  if (runs.length === 0) {
-    return [];
-  }
+    const responseMessage = chatCompletion.choices[0].message;
+    console.log("Response from model:", responseMessage);
 
-  // The current state of the conversation
-  const latestRun = runs[0];
-  const inputMessages = latestRun.inputs.messages as Message[];
-  const outputMessage = latestRun.outputs.choices[0].message as Message;
+    const fullConversation: Message[] = [
+      ...messages,
+      { role: responseMessage.role, content: responseMessage.content ?? "" },
+    ];
+    saveThreadHistory(THREAD_ID, fullConversation);
 
-  return [...inputMessages, outputMessage];
-}
+    return { messages: fullConversation };
+  },
+  { name: "Chat Bot", metadata: { thread_id: THREAD_ID } }
+);
 
-// Updated chat pipeline that accepts JSON input format
-const chatPipeline = traceable(async (input: ChatInput): Promise<ChatResponse> => {
-  const { messages, get_chat_history } = input;
-  let allMessages: Message[];
-  let inputMessages: Message[];
-
-  // Whether to continue an existing thread or start a new one
-  if (get_chat_history) {
-    const runTree = getCurrentRunTree();
-    // Get existing conversation history and append new messages
-    const sessionId = runTree.extra?.metadata?.session_id || THREAD_ID;
-    const historyMessages = await getThreadHistory(
-      sessionId,
-      runTree.project_name
-    );
-    allMessages = historyMessages.concat(messages);
-    // Include the complete conversation in the input for tracing
-    inputMessages = allMessages;
-  } else {
-    allMessages = messages;
-    inputMessages = messages;
-  }
-
-  // Invoke the model
-  const chatCompletion = await client.chat.completions.create({
-    model: "gpt-4.1-mini",
-    messages: allMessages
-  });
-
-  // Return the complete conversation including input and response
-  const responseMessage = chatCompletion.choices[0].message as Message;
-  return {
-    messages: [...inputMessages, responseMessage]
-  };
-}, { name: "Chat Bot" });
-
-// Example input in the requested JSON format
-const input: ChatInput = {
-  get_chat_history: false,
-  messages: [
-    {
-      content: "Hi, my name is Sally",
-      role: "user"
-    }
-  ]
-};
+// Format message
+const messages: Message[] = [{ role: "user", content: "Hi! My name is Sally" }];
 
 // Call the chat pipeline
-const result = await chatPipeline(input);
+await chatPipeline({ messages, get_chat_history: false });
 ```
 
 </CodeGroup>
 
-After waiting a few seconds, you can make the following calls to continue the conversation. By passing `get_chat_history=True,`/`getChatHistory: true`,
+Make the following calls to continue the conversation. By passing `get_chat_history=True,`/`getChatHistory: true`,
 you can continue the conversation from where it left off. This means that the LLM will receive the entire message history and respond to it,
 instead of just responding to the latest message.
 
 <CodeGroup>
 
 ```python Python
-# Continue the conversation.
+# Format message
 messages = [
     {
-        "content": "What is my name?",
+        "content": "What is my name",
         "role": "user"
     }
 ]
-get_chat_history = True
 
-chat_pipeline(messages, get_chat_history, langsmith_extra=langsmith_extra)
+# Call the chat pipeline
+result = chat_pipeline(messages, get_chat_history=True)
 ```
 
 ```typescript TypeScript
 // Continue the conversation.
-const input: ChatInput = {
-  get_chat_history: true,
-  messages: [
-    {
-      content: "What is my name?",
-      role: "user"
-    }
-  ]
-};
+const messages: Message[] = [{ role: "user", content: "What is my name" }];
 
-await chatPipeline(input);
+await chatPipeline(messages, true);
 ```
 </CodeGroup>
 
@@ -274,24 +224,15 @@ messages = [
         "role": "user"
     }
 ]
-get_chat_history = True
 
-chat_pipeline(messages, get_chat_history, langsmith_extra=langsmith_extra)
+chat_pipeline(messages, get_chat_history=True)
 ```
 
 ```typescript TypeScript
 // Continue the conversation.
-const input: ChatInput = {
-  get_chat_history: true,
-  messages: [
-    {
-      content: "What was the first message I sent you?",
-      role: "user"
-    }
-  ]
-};
+const messages: Message[] = [{ role: "user", content: "What was the first message I sent you?" }];
 
-await chatPipeline(input);
+await chatPipeline(messages, true);
 ```
 
 </CodeGroup>

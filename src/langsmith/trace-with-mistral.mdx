@@ -18,7 +18,7 @@ pip install mistralai langsmith
 ```
 
 ```bash JavaScript
-npm install @mistralai/mistralai langsmith
+npm install @mistralai/mistralai langsmith dotenv
 ```
 </CodeGroup>
 
@@ -70,38 +70,46 @@ export LANGSMITH_PROJECT="<your_project_name>"  # optional
     print("Mistral response:", result.content)
     ```
 
-    ```javascript JavaScript
-    const { Client } = require("langsmith");
-    const { traceable } = require("langsmith/traceable");
-    const { Mistral } = require("@mistralai/mistralai");
+    ```typescript TypeScript
+    import { Client } from "langsmith";
+    import { traceable } from "langsmith/traceable";
+    import { Mistral } from "@mistralai/mistralai";
+    import "dotenv/config";
 
     const mistral = new Mistral({
-    apiKey: process.env.MISTRAL_API_KEY,
+      apiKey: process.env.MISTRAL_API_KEY,
     });
 
     const langsmith = new Client();
 
     const tracedChatCompletion = traceable(
-    mistral.chat.complete.bind(mistral.chat),
-    {
+      async (params: {
+        model: string;
+        messages: Array<{ role: string; content: string }>;
+      }) => {
+        const response = await mistral.chat.complete(params);
+        // Return the message content so LangSmith captures it correctly
+        return response.choices[0].message.content;
+      },
+      {
         name: "Mistral Chat Completion",
         run_type: "llm",
         metadata: {
-        ls_provider: "mistral",
-        ls_model_name: "mistral-small-latest",
+          ls_provider: "mistral",
+          ls_model_name: "mistral-small-latest",
         },
-    }
+      }
     );
 
     async function main() {
-    const response = await tracedChatCompletion({
+      const response = await tracedChatCompletion({
         model: "mistral-small-latest",
         messages: [
-        { role: "user", content: "Say hello in one short sentence." },
+          { role: "user", content: "Say hello in one short sentence." },
         ],
-    });
+      });
 
-    console.log(response.choices[0].message.content);
+      console.log(response);
     }
 
     main();
