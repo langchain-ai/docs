@@ -109,6 +109,7 @@ Note down the workspace ID you choose as you will need this for future steps.
     - It is required to use the [Gateway API](/langsmith/self-host-ingress#option-2%3A-gateway-api) or an [Istio Gateway](/langsmith/self-host-ingress#option-3%3A-istio-gateway). Please adjust your `langsmith_config.yaml` file accordingly.
 2. Run a `helm upgrade` to update your self hosted LangSmith instance with the new config.
 3. Follow steps 2-6 in the [hybrid setup guide](/langsmith/deploy-hybrid#setup). The `config.langsmithWorkspaceId` value should be set to the workspace ID you noted in the prerequisites. Remember that `config.watchNamespaces` should be set to different namespaces than the one used by the existing data plane!
+4. Optionally configure access for the control plane to read Agent Server deployments logs from the other namespaces. For more details, see the [instructions](#optional-configure-access-for-reading-agent-server-deployments-logs-from-other-namespaces).
 
 ## (Optional) Configure authentication for private registries
 
@@ -186,6 +187,60 @@ operator:
 When you deploy or upgrade your LangSmith instance using Helm, this configuration will be applied. All user deployments created through the LangSmith UI will automatically inherit these registry credentials.
 
 For registry-specific authentication methods (AWS ECR, Azure ACR, GCP Artifact Registry, etc.), refer to the [Kubernetes documentation on pulling images from private registries](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/).
+
+## (Optional) Configure access for reading Agent Server deployments logs from other namespaces
+
+<Info>**Important**<br></br> Retrieving server logs is not supported for self-hosted deployments where the control plane (`host-backend`) and data plane (`listener`) are deployed in different Kubernetes clusters. </Info>
+
+For self-hosted deployments where the control plane (`host-backend`) and data plane (`listener`) are deployed in the same Kubernetes cluster, ensure that the control plane Kubernetes deployment (`host-backend`) has permission to `get`/`list`/`watch` Kubernetes `deployments`/`pods`/`replicasets`/`logs` from the Kubernetes namespace where the Agent Server deployment exists. There are different ways to achieve this, so implement the solution that works best for your use case.
+
+Example implementation:
+
+1. Create a `Role` with the required permissions in the Kubernetes namespace where the Agent Server is deployed. Replace `<data_plane_namespace>` in the following command:
+    ```
+    kubectl apply -n <data_plane_namespace> -f - <<EOF
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+    name: read-agent-server-logs-role
+    rules:
+    - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get","list","watch"]
+    - apiGroups: [""]
+        resources: ["pods/log"]
+        verbs: ["get","watch"]
+    - apiGroups: ["apps"]
+        resources: ["deployments"]
+        verbs: ["get","list","watch"]
+    - apiGroups: ["apps"]
+        resources: ["replicasets"]
+        verbs: ["get","list","watch"]
+    EOF
+    ```
+2. Get the control plane `ServiceAccount`. Replace `<control_plane_namespace>`:
+    ```
+    kubectl get serviceaccounts -n <control_plane_namespace> | grep host-backend
+    ```
+2. Bind that `Role` to the control plane `ServiceAccount`. Replace `<data_plane_namespace>`, `<control_plane_namespace>`, and `<control_plane_service_account>` in the following command:
+    ```
+    kubectl apply -n <data_plane_namespace> -f - <<EOF
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+    name: read-agent-server-logs-role-binding
+    subjects:
+    - kind: ServiceAccount
+        name: <control_plane_service_account>
+        namespace: <control_plane_namespace>
+    roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: read-agent-server-logs-role
+    EOF
+    ```
+
+In this example, the `Role` and `RoleBinding` are defined in the same Kubernetes namespace as the Agent Server deployment. You can assign any name to the `Role` and `RoleBinding` and customize them as needed.
 
 ## Next steps
 

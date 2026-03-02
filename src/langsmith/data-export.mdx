@@ -241,7 +241,7 @@ curl --request POST \
 
 ### Create an export job
 
-To export data, you will need to create an export job. This job will specify the destination, the project, the date range, and filter expression of the data to export. The filter expression is used to narrow down the set of runs exported and is optional. Not setting the filter field will export all runs. Refer to our [filter query language](/langsmith/trace-query-syntax#filter-query-language) and [examples](/langsmith/export-traces#use-filter-query-language) to determine the correct filter expression for your export.
+To export data, you will need to create an export job. This job will specify the destination, the project, the [date range](#time-filter-behavior), and filter expression of the data to export. The filter expression is used to narrow down the set of runs exported and is optional. Not setting the filter field will export all runs. Refer to our [filter query language](/langsmith/trace-query-syntax#filter-query-language) and [examples](/langsmith/export-traces#use-filter-query-language) to determine the correct filter expression for your export.
 
 You can use the following cURL command to create the job:
 
@@ -255,7 +255,7 @@ curl --request POST \
     "bulk_export_destination_id": "your_destination_id",
     "session_id": "project_uuid",
     "start_time": "2024-01-01T00:00:00Z",
-    "end_time": "2024-01-02T23:59:59Z",
+    "end_time": "2024-01-03T00:00:00Z",
     "filter": "and(eq(run_type, \"llm\"), eq(name, \"ChatOpenAI\"), eq(input_key, \"messages.content\"), like(input_value, \"%messages.content%\"))",
     "format_version": "v2_beta"
   }'
@@ -266,6 +266,15 @@ The `session_id` is also known as the Tracing Project ID, which can be copied fr
 </Note>
 
 Use the returned `id` to reference this export in subsequent bulk export operations.
+
+#### Time filter behavior
+
+Export time filters are based on `run.start_time`:
+- The export `start_time` is **inclusive** — runs with `start_time` equal to the export start time are included.
+- The export `end_time` is **exclusive** — runs with `start_time` equal to or after the export end time are excluded.
+- This inclusive/exclusive behavior also applies to each partition's start and end times.
+
+For example, an export with `start_time="2024-01-01T00:00:00Z"` and `end_time="2024-01-02T00:00:00Z"` will include all runs where `run.start_time >= 2024-01-01T00:00:00Z` and `run.start_time < 2024-01-02T00:00:00Z`.
 
 #### Exportable fields
 
@@ -349,7 +358,7 @@ curl --request POST \
     "bulk_export_destination_id": "your_destination_id",
     "session_id": "project_uuid",
     "start_time": "2024-01-01T00:00:00Z",
-    "end_time": "2024-01-02T23:59:59Z",
+    "end_time": "2024-01-03T00:00:00Z",
     "export_fields": ["id", "name", "run_type", "start_time", "end_time", "status", "total_tokens", "total_cost"],
     "format_version": "v2_beta"
   }'
@@ -412,6 +421,7 @@ curl --request POST \
 - `interval_hours` must be between 1 hour and 168 hours (1 week) inclusive.
 - For spawned exports, the first time range exported is `start_time=(scheduled_export_start_time), end_time=(start_time + interval_hours)`.
     Then `start_time=(previous_export_end_time), end_time=(this_export_start_time + interval_hours)`, and so on.
+    Since the end time is exclusive, consecutive exports do not overlap (see [Time filter behavior](#time-filter-behavior)).
 - `end_time` must be omitted for scheduled exports. `end_time` is still required for non-scheduled exports.
 - Scheduled exports can be stopped by [cancelling the export](#stop-an-export).
   - Exports that have been spawned by a scheduled export have the `source_bulk_export_id` attribute filled.
