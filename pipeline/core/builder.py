@@ -181,6 +181,10 @@ class DocumentationBuilder:
             # Only add links for files in the src/ directory
             relative_path = input_path.absolute().relative_to(self.src_dir.absolute())
 
+            # Do not add source links on the home page (root index.mdx)
+            if relative_path.parts == ("index.mdx",):
+                return content
+
             # Construct the GitHub URLs
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"
