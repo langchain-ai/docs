@@ -52,6 +52,9 @@ class DocumentationBuilder:
             ".css",
             ".js",
             ".txt",
+            ".woff2",
+            ".woff",
+            ".ttf",
         }
 
         # Mapping of language codes to full names for URLs
@@ -765,6 +768,10 @@ class DocumentationBuilder:
 
         # .well-known directory should be shared (security.txt, etc.)
         if ".well-known" in relative_path.parts:
+            return True
+
+        # Fonts directory should be shared
+        if "fonts" in relative_path.parts:
             return True
 
         # JavaScript and CSS files should be shared (used for custom scripts/styles)
