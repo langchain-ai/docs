@@ -186,6 +186,10 @@ temperature = 0.7
     Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
 </ResponseField>
 
+<ResponseField name="profile" type="object">
+    (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile.
+</ResponseField>
+
 <ResponseField name="class_path" type="string">
     Used for [arbitrary model](#arbitrary-providers) providers. Optional fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass.
 </ResponseField>
@@ -236,6 +240,31 @@ With this configuration:
 
 The merge is shallow: any key present in the model sub-table replaces the same key from the provider-level params, while keys only at the provider level are preserved.
 
+### Profile overrides
+
+**(Advanced)**
+
+Override fields in the model's runtime profile to change how the CLI interprets model capabilities. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier — useful for testing or for constraining context usage:
+
+```toml
+# Apply to all models from this provider
+[models.providers.anthropic.profile]
+max_input_tokens = 4096
+```
+
+Per-model sub-tables work the same way as `params` — the model-level value wins on conflict:
+
+```toml
+[models.providers.anthropic.profile]
+max_input_tokens = 4096
+
+# This model gets a higher limit
+[models.providers.anthropic.profile."claude-sonnet-4-5"]
+max_input_tokens = 8192
+```
+
+Profile overrides are merged into the model's profile after creation. Any feature that reads the profile — context-limit display in the status bar, auto-summarization thresholds, capability checks — will see the overridden values.
+
 #### CLI overrides with `--model-params`
 
 For one-off adjustments without editing the config file, pass a JSON object via `--model-params`:
@@ -248,6 +277,24 @@ deepagents -n "Summarize this repo" --model ollama:llama3 --model-params '{"temp
 ```
 
 These take the highest priority, overriding values from config file params.
+
+#### CLI profile overrides with `--profile-override`
+
+**(Advanced)**
+
+To override model profile fields at runtime without editing the config file, pass a JSON object via `--profile-override`:
+
+```bash
+deepagents --profile-override '{"max_input_tokens": 4096}'
+
+# Combine with --model
+deepagents --model anthropic:claude-sonnet-4-5 --profile-override '{"max_input_tokens": 4096}'
+
+# In non-interactive mode
+deepagents -n "Summarize this repo" --profile-override '{"max_input_tokens": 4096}'
+```
+
+These are merged on top of config file profile overrides (CLI wins). The priority chain is: model default &lt; config.toml profile &lt; CLI `--profile-override`.
 
 ### Specifying custom `base_url`
 
