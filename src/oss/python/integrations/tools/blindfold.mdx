@@ -1,0 +1,163 @@
+---
+title: Blindfold
+description: Integrate with the Blindfold PII protection tools using LangChain Python.
+---
+
+[Blindfold](https://blindfold.dev) provides PII detection and protection for AI applications. The `langchain-blindfold` package offers LangChain Runnables that tokenize PII before it reaches your LLM and restore original values in the output, plus a DocumentTransformer for protecting PII in RAG pipelines.
+
+## Overview
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `BlindfoldTokenizer` | `langchain-blindfold` | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-blindfold?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-blindfold?style=flat-square&label=%20) |
+| `BlindfoldDetokenizer` | `langchain-blindfold` | ❌ | ❌ | | |
+| `BlindfoldPIITransformer` | `langchain-blindfold` | ❌ | ❌ | | |
+
+## Setup
+
+### Credentials
+
+Sign up at [blindfold.dev](https://blindfold.dev) and set your API key:
+
+```python
+import getpass
+import os
+
+if "BLINDFOLD_API_KEY" not in os.environ:
+    os.environ["BLINDFOLD_API_KEY"] = getpass.getpass("Enter your Blindfold API key: ")
+```
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-blindfold
+    ```
+    ```python uv
+    uv add langchain-blindfold
+    ```
+</CodeGroup>
+
+## Chain protection
+
+Use `blindfold_protect()` to create a tokenizer/detokenizer pair that wraps your LLM chain. PII is replaced with tokens (e.g., `<Person_1>`) before reaching the model and restored in the output.
+
+```python
+from langchain_blindfold import blindfold_protect
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
+tokenize, detokenize = blindfold_protect(policy="basic")
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("user", "{input}"),
+])
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+chain = tokenize | prompt | llm | (lambda msg: msg.content) | detokenize
+
+# PII is tokenized before the LLM sees it, then restored in the output
+result = chain.invoke("Write a follow-up email to John Doe at john@example.com")
+```
+
+The tokenizer sends text to the Blindfold API, which detects PII and returns tokenized text with a mapping. The detokenizer replaces tokens with originals client-side (no API call).
+
+## RAG document transformer
+
+Use `BlindfoldPIITransformer` to protect PII in documents before indexing into a vector store:
+
+```python
+from langchain_blindfold import BlindfoldPIITransformer
+from langchain_core.documents import Document
+
+transformer = BlindfoldPIITransformer(pii_method="redact", policy="hipaa_us")
+
+docs = [
+    Document(page_content="Patient John Smith, SSN 123-45-6789, diagnosed on 03/15/2024"),
+    Document(page_content="Contact jane.doe@hospital.org for records"),
+]
+
+safe_docs = transformer.transform_documents(docs)
+# PII is redacted before documents enter the vector store
+```
+
+When using `pii_method="tokenize"`, the token mapping is stored in `doc.metadata["blindfold_mapping"]` so you can reverse it later.
+
+## Compliance policies
+
+| Policy | Best for | Entity focus |
+|--------|----------|--------------|
+| `basic` | General PII protection | Names, emails, phones, locations |
+| `gdpr_eu` | GDPR compliance | IBANs, EU addresses, dates of birth |
+| `hipaa_us` | HIPAA compliance | SSNs, medical record numbers, PHI |
+| `pci_dss` | Payment security | Card numbers, CVVs, expiry dates |
+| `strict` | Maximum detection | All entity types, lower confidence threshold |
+
+```python
+# GDPR-compliant processing in the EU region
+tokenize, detokenize = blindfold_protect(policy="gdpr_eu", region="eu")
+```
+
+## PII methods
+
+| Method | Output | Reversible |
+|--------|--------|-----------|
+| `tokenize` | `<Person_1>`, `<Email Address_1>` | Yes (via mapping) |
+| `redact` | `[REDACTED]` | No |
+| `mask` | `J****oe`, `j****om` | No |
+| `hash` | `HASH_abc123` | No |
+| `synthesize` | `Jane Smith`, `jane@example.org` | No |
+| `encrypt` | AES-256 encrypted blob | Yes (with key) |
+
+## Data residency
+
+Blindfold supports EU and US regions for data residency:
+
+```python
+# Process PII in the EU (Frankfurt)
+tokenize, detokenize = blindfold_protect(policy="basic", region="eu")
+
+# Process PII in the US (Virginia)
+tokenize, detokenize = blindfold_protect(policy="basic", region="us")
+```
+
+## Use with agents
+
+```python
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_blindfold import blindfold_protect
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+
+tokenize, detokenize = blindfold_protect(policy="strict")
+
+@tool
+def process_customer_request(request: str) -> str:
+    """Process a customer request with PII protection."""
+    safe_request = tokenize.invoke(request)
+    # Process the safe request...
+    return detokenize.invoke(f"Processed: {safe_request}")
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a customer service agent. Use the tools available to process requests safely."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_tool_calling_agent(llm, [process_customer_request], prompt)
+executor = AgentExecutor(agent=agent, tools=[process_customer_request], verbose=True)
+
+result = executor.invoke({"input": "Process the refund for John Doe, card ending 4242"})
+```
+
+## API reference
+
+- **`blindfold_protect()`** — Returns a `(BlindfoldTokenizer, BlindfoldDetokenizer)` tuple for use in chains
+- **`BlindfoldTokenizer`** — `RunnableSerializable[str, str]` that tokenizes PII via the Blindfold API
+- **`BlindfoldDetokenizer`** — `RunnableSerializable[str, str]` that restores original values client-side
+- **`BlindfoldPIITransformer`** — `BaseDocumentTransformer` for protecting PII in document pipelines
+
+For more details, visit the [Blindfold documentation](https://docs.blindfold.dev) and the [GitHub repository](https://github.com/blindfold-dev/langchain-blindfold).
