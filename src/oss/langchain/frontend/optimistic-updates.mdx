@@ -1,0 +1,412 @@
+---
+title: Optimistic Updates
+description: Show messages instantly while the server processes in the background
+---
+
+When a user sends a message, the round-trip to your LangGraph server — even on
+a fast connection — introduces a noticeable delay before the message appears in
+the chat. Optimistic updates eliminate this perceived latency by immediately
+rendering the user's message in the UI, then reconciling with the server's
+actual state once it responds.
+
+import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+
+<PatternEmbed pattern="optimistic-updates" />
+
+## Why optimistic updates matter
+
+Without optimistic updates, the typical flow is:
+
+1. User types a message and clicks send
+2. The message is sent to the server
+3. The UI waits for the server to acknowledge
+4. Only then does the message appear in the chat
+
+This delay — often 200-500ms or more — makes the chat feel sluggish. Users
+expect their message to appear *instantly*, the way it does in every modern
+messaging app.
+
+With optimistic updates:
+
+1. User types a message and clicks send
+2. The message **immediately** appears in the UI
+3. The server processes in the background
+4. When the server responds, the optimistic state is silently replaced with the
+   real state
+
+The user perceives zero latency for their own messages.
+
+## Using optimistic values with useStream
+
+The `useStream` hook supports optimistic updates through the `optimisticValues`
+option on the `submit` method. You pass a function that receives the previous
+state and returns the optimistic state to display immediately.
+
+<CodeGroup>
+```tsx React
+import { useStream } from "@langchain/react";
+import { v4 as uuidv4 } from "uuid";
+
+const AGENT_URL = "http://localhost:2024";
+
+export function Chat() {
+  const stream = useStream({
+    apiUrl: AGENT_URL,
+    assistantId: "optimistic_updates",
+  });
+
+  function handleSend(text: string) {
+    const newMessage = {
+      id: uuidv4(),
+      type: "human",
+      content: text,
+    };
+
+    stream.submit(
+      { messages: [newMessage] },
+      {
+        optimisticValues: (prev) => ({
+          ...prev,
+          messages: [...(prev?.messages ?? []), newMessage],
+        }),
+      }
+    );
+  }
+
+  return (
+    <div>
+      {stream.messages.map((msg) => (
+        <Message key={msg.id} message={msg} />
+      ))}
+      <ChatInput onSend={handleSend} disabled={stream.isLoading} />
+    </div>
+  );
+}
+```
+
+```vue Vue
+<script setup lang="ts">
+import { useStream } from "@langchain/vue";
+import { v4 as uuidv4 } from "uuid";
+
+const AGENT_URL = "http://localhost:2024";
+
+const stream = useStream({
+  apiUrl: AGENT_URL,
+  assistantId: "optimistic_updates",
+});
+
+function handleSend(text: string) {
+  const newMessage = {
+    id: uuidv4(),
+    type: "human",
+    content: text,
+  };
+
+  stream.submit(
+    { messages: [newMessage] },
+    {
+      optimisticValues: (prev) => ({
+        ...prev,
+        messages: [...(prev?.messages ?? []), newMessage],
+      }),
+    }
+  );
+}
+</script>
+
+<template>
+  <div>
+    <Message
+      v-for="msg in stream.messages.value"
+      :key="msg.id"
+      :message="msg"
+    />
+    <ChatInput @send="handleSend" :disabled="stream.isLoading.value" />
+  </div>
+</template>
+```
+
+```svelte Svelte
+<script lang="ts">
+  import { useStream } from "@langchain/svelte";
+  import { v4 as uuidv4 } from "uuid";
+
+  const AGENT_URL = "http://localhost:2024";
+
+  const { messages, isLoading, submit } = useStream({
+    apiUrl: AGENT_URL,
+    assistantId: "optimistic_updates",
+  });
+
+  function handleSend(text: string) {
+    const newMessage = {
+      id: uuidv4(),
+      type: "human",
+      content: text,
+    };
+
+    submit(
+      { messages: [newMessage] },
+      {
+        optimisticValues: (prev) => ({
+          ...prev,
+          messages: [...(prev?.messages ?? []), newMessage],
+        }),
+      }
+    );
+  }
+</script>
+
+<div>
+  {#each $messages as msg (msg.id)}
+    <Message message={msg} />
+  {/each}
+  <ChatInput onSend={handleSend} disabled={$isLoading} />
+</div>
+```
+
+```ts Angular
+import { Component } from "@angular/core";
+import { useStream } from "@langchain/angular";
+import { v4 as uuidv4 } from "uuid";
+
+const AGENT_URL = "http://localhost:2024";
+
+@Component({
+  selector: "app-chat",
+  template: `
+    @for (msg of stream.messages(); track msg.id) {
+      <app-message [message]="msg" />
+    }
+    <app-chat-input (send)="handleSend($event)" [disabled]="stream.isLoading()" />
+  `,
+})
+export class ChatComponent {
+  stream = useStream({
+    apiUrl: AGENT_URL,
+    assistantId: "optimistic_updates",
+  });
+
+  handleSend(text: string) {
+    const newMessage = {
+      id: uuidv4(),
+      type: "human",
+      content: text,
+    };
+
+    this.stream.submit(
+      { messages: [newMessage] },
+      {
+        optimisticValues: (prev) => ({
+          ...prev,
+          messages: [...(prev?.messages ?? []), newMessage],
+        }),
+      }
+    );
+  }
+}
+```
+</CodeGroup>
+
+## How optimistic values work
+
+The `optimisticValues` function follows a simple lifecycle:
+
+```
+┌──────────────┐     ┌──────────────────┐     ┌────────────────┐
+│  User sends  │────▶│ Optimistic state  │────▶│  Server state  │
+│   message    │     │ shown instantly   │     │ replaces it    │
+└──────────────┘     └──────────────────┘     └────────────────┘
+```
+
+1. **Predict** — the `optimisticValues` function receives the current state
+   (`prev`) and returns what the state *should* look like after the submission
+2. **Display** — `useStream` immediately uses the optimistic state for
+   rendering, so `stream.messages` includes the new message right away
+3. **Reconcile** — when the server sends back the first real state update, the
+   optimistic values are discarded and replaced with the server's state
+
+<Note>
+The optimistic state is only used until the first server event arrives. After
+that, all rendering is driven by the server's actual state. This means any
+discrepancy between your optimistic prediction and the server's state is
+automatically corrected.
+</Note>
+
+## The optimisticValues function
+
+The function signature is:
+
+```ts
+optimisticValues: (prev: State | undefined) => State
+```
+
+- `prev` is the current graph state (or `undefined` if there is no state yet,
+  e.g., first message in a new thread)
+- Returns the predicted next state
+
+The function should be **pure** — no side effects, no API calls. It simply
+produces the predicted state based on the current state and the submitted input.
+
+### Handling first messages
+
+When starting a new thread, `prev` will be `undefined`. Always handle this
+case:
+
+```ts
+optimisticValues: (prev) => ({
+  ...prev,
+  messages: [...(prev?.messages ?? []), newMessage],
+})
+```
+
+The `prev?.messages ?? []` pattern ensures the code works regardless of whether
+there are existing messages.
+
+## Combining with message editing
+
+Optimistic updates pair naturally with message editing. When a user edits a
+previous message, you can optimistically show the conversation truncated to
+that point with the updated message:
+
+```ts
+function handleEdit(
+  stream: ReturnType<typeof useStream>,
+  editedMsg: HumanMessage,
+  metadata: MessageMetadata,
+  newText: string
+) {
+  const checkpoint = metadata.firstSeenState?.parent_checkpoint;
+  if (!checkpoint) return;
+
+  const updatedMsg = { ...editedMsg, content: newText };
+
+  stream.submit(
+    { messages: [updatedMsg] },
+    {
+      checkpoint,
+      optimisticValues: (prev) => {
+        if (!prev?.messages) return { messages: [updatedMsg] };
+
+        const editIndex = prev.messages.findIndex(
+          (m) => m.id === editedMsg.id
+        );
+        if (editIndex === -1) return prev;
+
+        return {
+          ...prev,
+          messages: [...prev.messages.slice(0, editIndex), updatedMsg],
+        };
+      },
+    }
+  );
+}
+```
+
+This gives the user immediate visual feedback — the conversation rolls back to
+the edit point and shows the updated message, even before the server begins
+re-processing.
+
+<Tip>
+Combine `optimisticValues` with `fetchStateHistory: true` to support both
+instant message display and branching. The two features are fully compatible.
+</Tip>
+
+## Optimistic state for custom graph values
+
+If your graph state includes custom values beyond `messages`, you can
+optimistically update those too:
+
+```ts
+stream.submit(
+  {
+    messages: [newMessage],
+    selectedTool: "web_search",
+  },
+  {
+    optimisticValues: (prev) => ({
+      ...prev,
+      messages: [...(prev?.messages ?? []), newMessage],
+      selectedTool: "web_search",
+      isSearching: true,
+    }),
+  }
+);
+```
+
+This lets you show loading states, update sidebars, or trigger animations
+before the server has started processing.
+
+## Visual indicators for optimistic messages
+
+You may want to visually distinguish optimistic messages from confirmed ones.
+A common approach is to show a subtle "sending..." indicator:
+
+```tsx
+function Message({
+  message,
+  isOptimistic,
+}: {
+  message: BaseMessage;
+  isOptimistic?: boolean;
+}) {
+  return (
+    <div className={isOptimistic ? "opacity-70" : ""}>
+      <p>{message.content as string}</p>
+      {isOptimistic && (
+        <span className="text-xs text-gray-400">Sending...</span>
+      )}
+    </div>
+  );
+}
+```
+
+<Note>
+Detecting whether a message is optimistic depends on your implementation. One
+approach is to compare the current `stream.messages` against a known
+"confirmed" set. However, in most cases the reconciliation happens so quickly
+(under a second) that visual differentiation is unnecessary.
+</Note>
+
+## Error handling and rollback
+
+If the server request fails, `useStream` reverts the optimistic state and the
+message disappears from the UI. You should handle this gracefully:
+
+```tsx
+function Chat() {
+  const stream = useStream({
+    apiUrl: AGENT_URL,
+    assistantId: "optimistic_updates",
+    onError: (error) => {
+      toast.error("Failed to send message. Please try again.");
+    },
+  });
+
+  // ...
+}
+```
+
+The `onError` callback fires when the server rejects the submission or the
+connection fails. Since the optimistic state is automatically rolled back, you
+just need to inform the user.
+
+## Best practices
+
+<Info>
+Follow these guidelines for smooth optimistic updates:
+</Info>
+
+- **Generate stable IDs client-side** — use UUIDs for optimistic messages so
+  the server can match and reconcile them correctly.
+- **Keep the optimistic function pure** — no side effects, no async operations.
+  It should be a simple state transformation.
+- **Handle `undefined` prev state** — always account for the case where there
+  is no existing state (new threads).
+- **Don't over-predict** — only optimistically update values you can reliably
+  predict. Don't try to guess the AI's response.
+- **Combine with loading indicators** — while the user's message appears
+  instantly, show a typing indicator or spinner for the upcoming AI response.
+- **Test with slow connections** — throttle your network to verify the
+  optimistic UX feels right when reconciliation takes longer than usual.

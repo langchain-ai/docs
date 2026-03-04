@@ -1,0 +1,545 @@
+---
+title: Async Iterator Tools
+description: Show real-time progress for long-running tool executions
+---
+
+Async iterator tools yield progress updates as they execute, letting you show real-time feedback for long-running operations. Instead of a blank loading spinner while the agent searches, scrapes, or processes data, users see a live progress bar with status details.
+
+import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+
+<PatternEmbed pattern="async-iterator-tools" />
+
+## What are async iterator tools?
+
+Standard tools execute and return a single result. Async iterator tools are different — they **yield intermediate progress updates** during execution before producing a final result. This is implemented using async generators on the server side.
+
+Consider a web search tool that crawls multiple pages:
+
+1. Start searching → yield `{ status: "starting", completed: 0, total: 5 }`
+2. First page crawled → yield `{ status: "searching", completed: 1, total: 5, latest: "example.com" }`
+3. Second page crawled → yield `{ status: "searching", completed: 2, total: 5, latest: "docs.org" }`
+4. ...and so on until complete
+
+Each progress update streams to the client in real time via the `toolProgress` property on `useStream`.
+
+## Use cases
+
+- **Web scraping** — crawling multiple URLs with per-page progress
+- **File processing** — batch transformations on uploaded documents
+- **Database queries** — scanning large datasets with row-count progress
+- **API aggregation** — calling multiple third-party APIs sequentially
+- **Code analysis** — linting or testing across multiple files
+- **Data pipelines** — ETL steps with stage-level progress
+
+## The `toolProgress` property
+
+The `useStream` hook exposes `toolProgress`, an array of `ToolProgress` objects representing active and recently completed tool executions:
+
+```ts
+interface ToolProgress {
+  name: string;
+  toolCallId: string;
+  state: string;
+  data: {
+    total?: number;
+    completed?: number;
+    latest?: string;
+    status?: string;
+    [key: string]: unknown;
+  };
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | The name of the tool being executed |
+| `toolCallId` | `string` | Unique identifier linking this progress to a specific tool call |
+| `state` | `string` | Current state of the tool (e.g., `"starting"`, `"running"`, `"complete"`) |
+| `data` | `object` | Custom progress payload with flexible fields |
+| `data.total` | `number` | Total number of items to process |
+| `data.completed` | `number` | Number of items processed so far |
+| `data.latest` | `string` | Description of the most recently processed item |
+| `data.status` | `string` | Human-readable status label |
+
+## Accessing `toolProgress` from `useStream`
+
+<CodeGroup>
+
+```tsx React
+import { useStream } from "@langchain/react";
+
+function Chat() {
+  const stream = useStream({
+    apiUrl: "http://localhost:2024",
+    assistantId: "async_tools",
+  });
+
+  const toolProgress = stream.toolProgress ?? [];
+  const activeProgress = toolProgress.filter((tp) => tp.state !== "complete");
+
+  return (
+    <div>
+      <MessageList messages={stream.messages} />
+      {activeProgress.map((tp) => (
+        <ToolProgressCard key={tp.toolCallId} progress={tp} />
+      ))}
+      <ChatInput onSubmit={(text) =>
+        stream.submit({ messages: [{ type: "human", content: text }] })
+      } />
+    </div>
+  );
+}
+```
+
+```vue Vue
+<script setup lang="ts">
+import { useStream } from "@langchain/vue";
+import { computed } from "vue";
+
+const stream = useStream({
+  apiUrl: "http://localhost:2024",
+  assistantId: "async_tools",
+});
+
+const activeProgress = computed(() =>
+  (stream.toolProgress.value ?? []).filter((tp) => tp.state !== "complete")
+);
+</script>
+
+<template>
+  <div>
+    <MessageList :messages="stream.messages" />
+    <ToolProgressCard
+      v-for="tp in activeProgress"
+      :key="tp.toolCallId"
+      :progress="tp"
+    />
+    <ChatInput @submit="(text) =>
+      stream.submit({ messages: [{ type: 'human', content: text }] })
+    " />
+  </div>
+</template>
+```
+
+```svelte Svelte
+<script lang="ts">
+  import { useStream } from "@langchain/svelte";
+
+  const { messages, toolProgress, submit } = useStream({
+    apiUrl: "http://localhost:2024",
+    assistantId: "async_tools",
+  });
+
+  $: activeProgress = ($toolProgress ?? []).filter(
+    (tp) => tp.state !== "complete"
+  );
+</script>
+
+<div>
+  <MessageList messages={$messages} />
+  {#each activeProgress as tp (tp.toolCallId)}
+    <ToolProgressCard progress={tp} />
+  {/each}
+  <ChatInput on:submit={(e) =>
+    submit({ messages: [{ type: "human", content: e.detail }] })
+  } />
+</div>
+```
+
+```ts Angular
+import { Component, computed } from "@angular/core";
+import { useStream } from "@langchain/angular";
+
+@Component({
+  selector: "app-chat",
+  template: `
+    <message-list [messages]="stream.messages()" />
+    @for (tp of activeProgress(); track tp.toolCallId) {
+      <tool-progress-card [progress]="tp" />
+    }
+    <chat-input (onSubmit)="handleSubmit($event)" />
+  `,
+})
+export class ChatComponent {
+  stream = useStream({
+    apiUrl: "http://localhost:2024",
+    assistantId: "async_tools",
+  });
+
+  activeProgress = computed(() =>
+    (this.stream.toolProgress() ?? []).filter((tp) => tp.state !== "complete")
+  );
+
+  handleSubmit(text: string) {
+    this.stream.submit({
+      messages: [{ type: "human", content: text }],
+    });
+  }
+}
+```
+
+</CodeGroup>
+
+## Building a ToolProgressCard
+
+The `ToolProgressCard` component renders a visual progress bar with status information for each active tool execution:
+
+```tsx
+function ToolProgressCard({ progress }: { progress: ToolProgress }) {
+  const { name, state, data } = progress;
+
+  const pct =
+    data?.total && data?.completed
+      ? Math.round((data.completed / data.total) * 100)
+      : 0;
+
+  const statusLabel = getStatusLabel(state);
+  const statusColor = getStatusColor(state);
+
+  return (
+    <div className="tool-progress-card">
+      <div className="progress-header">
+        <span className={`status-badge ${statusColor}`}>{statusLabel}</span>
+        <span className="tool-name">{name}</span>
+      </div>
+
+      <div className="progress-bar-container">
+        <div className="progress-bar" style={{ width: `${pct}%` }} />
+      </div>
+
+      <div className="progress-details">
+        <span className="progress-pct">{pct}%</span>
+        {data?.total && (
+          <span className="progress-count">
+            {data.completed ?? 0} / {data.total}
+          </span>
+        )}
+        {data?.latest && (
+          <span className="progress-latest" title={data.latest}>
+            {data.latest}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+### Status mapping
+
+Map the tool's state to user-friendly labels and colors:
+
+```ts
+function getStatusLabel(state: string): string {
+  switch (state) {
+    case "starting":
+      return "Pending";
+    case "running":
+    case "searching":
+      return "Running";
+    case "complete":
+      return "Complete";
+    default:
+      return state;
+  }
+}
+
+function getStatusColor(state: string): string {
+  switch (state) {
+    case "starting":
+      return "status-pending";
+    case "running":
+    case "searching":
+      return "status-running";
+    case "complete":
+      return "status-complete";
+    default:
+      return "status-unknown";
+  }
+}
+```
+
+### Styling the progress card
+
+```css
+.tool-progress-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 8px 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tool-name {
+  font-weight: 500;
+  color: #374151;
+}
+
+.status-badge {
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-running {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-complete {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background: #f3f4f6;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85em;
+  color: #6b7280;
+}
+
+.progress-pct {
+  font-weight: 600;
+  color: #374151;
+}
+
+.progress-latest {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+```
+
+## Calculating progress percentage
+
+The percentage calculation is straightforward but needs guard checks for missing data:
+
+```ts
+const pct = tp.data?.total
+  ? Math.round((tp.data.completed / tp.data.total) * 100)
+  : 0;
+```
+
+<Note>
+Some tools may not report `total` upfront (e.g., when the number of items isn't known until partway through execution). In these cases, consider showing an indeterminate progress indicator instead of a bar at 0%.
+</Note>
+
+### Indeterminate progress fallback
+
+```tsx
+{data?.total ? (
+  <div className="progress-bar-container">
+    <div className="progress-bar" style={{ width: `${pct}%` }} />
+  </div>
+) : (
+  <div className="progress-bar-container">
+    <div className="progress-bar-indeterminate" />
+  </div>
+)}
+```
+
+```css
+.progress-bar-indeterminate {
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  border-radius: 3px;
+  animation: indeterminate 1.5s infinite ease-in-out;
+}
+
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+```
+
+## Filtering completed progress
+
+Once a tool completes, you typically want to remove its progress card and let the final result appear in the message stream. Filter by state:
+
+```ts
+const activeProgress = toolProgress.filter((tp) => tp.state !== "complete");
+```
+
+Alternatively, keep completed cards visible briefly with a fade-out animation:
+
+```tsx
+function ToolProgressCard({ progress }: { progress: ToolProgress }) {
+  const isComplete = progress.state === "complete";
+
+  return (
+    <div
+      className={`tool-progress-card ${isComplete ? "fade-out" : ""}`}
+    >
+      {/* ... card content ... */}
+    </div>
+  );
+}
+```
+
+```css
+.fade-out {
+  animation: fadeOut 1s ease forwards;
+  animation-delay: 0.5s;
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    height: 0;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+}
+```
+
+## Combining with regular tool calls
+
+Async iterator tools and standard tool calls can coexist in the same agent. The final result of an async iterator tool appears in the message stream as a regular tool response, while progress updates come through `toolProgress`.
+
+```tsx
+function MessageList({ messages, toolProgress }) {
+  return (
+    <div className="messages">
+      {messages.map((msg, i) => (
+        <MessageBubble key={i} message={msg} />
+      ))}
+
+      {toolProgress
+        .filter((tp) => tp.state !== "complete")
+        .map((tp) => (
+          <ToolProgressCard key={tp.toolCallId} progress={tp} />
+        ))}
+    </div>
+  );
+}
+```
+
+<Tip>
+Position progress cards inline with messages rather than in a separate panel. This creates a natural reading flow where users see the progress update followed by the result in the same conversation thread.
+</Tip>
+
+## Handling multiple concurrent tools
+
+An agent may execute multiple async iterator tools in parallel. Each has its own `toolCallId`, so they render as separate progress cards:
+
+```tsx
+{activeProgress.map((tp) => (
+  <ToolProgressCard key={tp.toolCallId} progress={tp} />
+))}
+```
+
+When multiple tools run simultaneously, consider stacking their progress cards vertically with clear labels so users can distinguish between them:
+
+```tsx
+function MultiToolProgress({ progressItems }: { progressItems: ToolProgress[] }) {
+  return (
+    <div className="multi-progress">
+      <div className="multi-progress-header">
+        {progressItems.length} tools running
+      </div>
+      {progressItems.map((tp) => (
+        <ToolProgressCard key={tp.toolCallId} progress={tp} />
+      ))}
+    </div>
+  );
+}
+```
+
+## Complete example
+
+```tsx
+function AsyncToolChat() {
+  const stream = useStream({
+    apiUrl: "http://localhost:2024",
+    assistantId: "async_tools",
+  });
+
+  const [input, setInput] = useState("");
+  const toolProgress = stream.toolProgress ?? [];
+  const activeProgress = toolProgress.filter((tp) => tp.state !== "complete");
+
+  const handleSubmit = () => {
+    if (!input.trim()) return;
+    stream.submit({
+      messages: [{ type: "human", content: input.trim() }],
+    });
+    setInput("");
+  };
+
+  return (
+    <div className="chat-container">
+      <div className="messages">
+        {stream.messages.map((msg, i) => (
+          <MessageBubble key={i} message={msg} />
+        ))}
+
+        {activeProgress.map((tp) => (
+          <ToolProgressCard key={tp.toolCallId} progress={tp} />
+        ))}
+
+        {stream.isLoading && activeProgress.length === 0 && (
+          <TypingIndicator />
+        )}
+      </div>
+
+      <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask something that triggers a search..."
+        />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  );
+}
+```
+
+## Best practices
+
+<Info>
+Progress updates arrive at the rate the server yields them. If updates are too frequent (e.g., per-row in a million-row scan), throttle rendering on the client side to avoid DOM thrashing.
+</Info>
+
+- **Show the latest item** — displaying `data.latest` gives users a sense of *what* is being processed, not just *how much*
+- **Use transitions on the progress bar** — `transition: width 0.3s ease` makes the bar animate smoothly between updates
+- **Handle missing totals** — fall back to an indeterminate progress bar when `data.total` is not yet known
+- **Clean up completed cards** — remove or fade out progress cards once the tool finishes to keep the UI uncluttered
+- **Throttle rapid updates** — if progress updates arrive faster than 60fps, debounce the state updates to maintain smooth rendering
+- **Provide cancel affordance** — if the agent supports interruption, add a cancel button to the progress card so users can abort long-running tools
