@@ -837,7 +837,11 @@ class DocumentationBuilder:
         so the build always uses the latest published component.
         """
         pkg_dist = (
-            self.src_dir.parent / "node_modules" / "@langchain" / "docs-sandbox" / "dist"
+            self.src_dir.parent
+            / "node_modules"
+            / "@langchain"
+            / "docs-sandbox"
+            / "dist"
         )
         if not pkg_dist.is_dir():
             logger.warning(
