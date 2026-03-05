@@ -24,7 +24,7 @@ const agent = createAgent({
 
 for await (const [token, metadata] of await agent.stream(
   { messages: [{ role: "user", content: "What is the weather in SF?" }] },
-  { streamMode: "messages" },
+  { streamMode: "messages" }, // [!code highlight]
 )) {
   if (!token.contentBlocks) continue;
   const reasoning = token.contentBlocks.filter((b) => b.type === "reasoning");

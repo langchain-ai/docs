@@ -23,14 +23,12 @@ agent: Runnable = create_agent(
 
 for token, metadata in agent.stream(
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
-    stream_mode="messages",
+    stream_mode="messages",  # [!code highlight]
 ):
     if not isinstance(token, AIMessageChunk):
         continue
-    reasoning = [
-        b for b in token.content_blocks if b["type"] == "reasoning"
-    ]  # [!code highlight]
-    text = [b for b in token.content_blocks if b["type"] == "text"]  # [!code highlight]
+    reasoning = [b for b in token.content_blocks if b["type"] == "reasoning"]
+    text = [b for b in token.content_blocks if b["type"] == "text"]
     if reasoning:
         print(f"[thinking] {reasoning[0]['reasoning']}", end="")
     if text:
