@@ -111,8 +111,7 @@ Built files are stored in `/reference/dist/{LANGUAGE}`, which is then deployed t
 
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
-* `make mint-broken-links` - Check for broken links in built documentation (excludes integrations)
-* `make mint-broken-links-all` - Check for broken links in built documentation (includes all directories)
+* `make broken-links` - Check for broken links in documentation
 * `make build-references` - Build reference docs
 * `make preview-references` - Preview reference docs using vercel
 * `make install` - Install all dependencies
