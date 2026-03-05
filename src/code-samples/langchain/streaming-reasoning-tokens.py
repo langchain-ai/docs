@@ -20,6 +20,7 @@ agent: Runnable = create_agent(
     model=model,
     tools=[get_weather],
 )
+
 for token, metadata in agent.stream(
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
     stream_mode="messages",
@@ -37,10 +38,6 @@ for token, metadata in agent.stream(
 # :snippet-end:
 
 # :remove-start:
-# This test is disabled because it requires an API key and would make actual API calls
-# To run manually:
-#   export ANTHROPIC_API_KEY=your_key
-#   python src/code-samples/langchain/streaming-reasoning-tokens.py
 if __name__ == "__main__":
-    print("\n✓ Code sample is syntactically valid")
+    print("\n✓ Code sample ran successfully")
 # :remove-end:
