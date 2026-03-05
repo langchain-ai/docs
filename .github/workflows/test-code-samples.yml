@@ -1,0 +1,106 @@
+---
+name: Test Code Samples
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - "src/code-samples/**"
+  schedule:
+    # Run every Sunday at 00:00 UTC
+    - cron: "0 0 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-code-samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get modified code sample paths
+        id: files
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "run_all=true" >> "$GITHUB_OUTPUT"
+            echo "Weekly run: testing all code samples"
+          else
+            echo "run_all=false" >> "$GITHUB_OUTPUT"
+
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              git fetch origin "${{ github.event.pull_request.base.ref }}"
+              BASE=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
+            else
+              BASE="${{ github.event.before }}"
+            fi
+
+            FILES=$(git diff --name-only "$BASE" HEAD -- src/code-samples/ \
+              | grep -E '\.(py|ts)$' \
+              | tr '\n' ' ' || true)
+
+            { echo "files<<FILESEND"; echo "$FILES"; echo "FILESEND"; } >> "$GITHUB_OUTPUT"
+            if [[ -n "$FILES" ]]; then
+              echo "Modified code samples: $FILES"
+            else
+              echo "No modified .py or .ts files in src/code-samples/"
+            fi
+          fi
+
+      - name: Set up Python and uv
+        uses: ./.github/actions/uv_setup
+        with:
+          python-version: "3.13"
+
+      - name: Install project dependencies
+        run: uv sync
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Test code samples
+        id: test
+        run: |
+          if [[ "${{ steps.files.outputs.run_all }}" == "true" ]]; then
+            echo "Running all code samples..."
+            make test-code-samples
+          else
+            FILES="${{ steps.files.outputs.files }}"
+            FILES=$(echo "$FILES" | tr -d '\n' | xargs)
+            if [[ -z "$FILES" ]]; then
+              echo "No code samples to test"
+              exit 0
+            fi
+            make test-code-samples FILES="$FILES"
+          fi
+
+  # Creates a Linear issue when the weekly scheduled test fails.
+  # Required setup: Add LINEAR_API_KEY (repo secret) and LINEAR_TEAM_KEY (repo variable)
+  create-linear-ticket:
+    needs: test-code-samples
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Linear issue
+        uses: ctriolo/action-create-linear-issue@v1.3
+        with:
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-title: "Weekly code samples test failed"
+          linear-issue-description: |
+            The scheduled weekly test of all code samples in `src/code-samples/` failed.
+
+            **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Please investigate and fix the failing samples.
+          linear-attachment-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          linear-attachment-title: "Failed workflow run"

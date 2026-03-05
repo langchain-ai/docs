@@ -1,4 +1,4 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix broken-links build-references preview-references format-check
+.PHONY: all dev build format lint test install clean lint_md lint_md_fix broken-links build-references preview-references format-check code-snippets test-code-samples
 
 # Default target
 all: help
@@ -91,6 +91,20 @@ check-openapi: build
 check-pnpm:
 	@command -v pnpm >/dev/null 2>&1 || { echo >&2 "pnpm is not installed. Please install pnpm to proceed (https://pnpm.io/installation)"; exit 1; }
 
+# Extract code snippets from src/code-samples using Bluehawk
+code-snippets:
+	@echo "Extracting code snippets with Bluehawk..."
+	@mkdir -p src/code-samples-generated
+	@npx --yes bluehawk snip -o src/code-samples-generated/ --ignore node_modules --ignore .DS_Store src/code-samples/
+	@PYTHONPATH=$(CURDIR) python scripts/generate_code_snippet_mdx.py
+
+# Run code samples. By default runs all; pass FILES to test specific paths.
+#   make test-code-samples
+#   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
+test-code-samples:
+	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent) || true; fi
+	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
+
 # Reference docs commands (in reference/ subdirectory)
 build-references: check-pnpm
 	@echo "Building references..."
@@ -113,5 +127,7 @@ help:
 	@echo "  make lint_md_fix        - Lint and fix markdown files"
 	@echo "  make test               - Run tests"
 	@echo "  make install            - Install dependencies"
+	@echo "  make code-snippets      - Extract code snippets with Bluehawk"
+	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"

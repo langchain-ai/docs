@@ -220,10 +220,121 @@ If using an access key and secret, you can also provide an existing Kubernetes s
 
 If using the [TTL](/langsmith/self-host-ttl) feature with LangSmith, you'll also have to configure TTL rules for your blob storage. Trace information stored on blob storage is stored on a particular prefix path, which determines the TTL for the data. When a trace's retention is extended, its corresponding blob storage path changes to ensure that it matches the new extended retention.
 
-The following TTL prefix are used:
+The following TTL prefixes are used:
 
-* `ttl_s/`: Short term TTL, configured for 14 days.
-* `ttl_l/`: Long term TTL, configured for 400 days.
+* `ttl_s/`: Short term (base) TTL, configured for 14 days.
+* `ttl_l/`: Long term (extended) TTL, configured for 400 days by default.
+
+### Custom workspace-level retention prefixes
+
+If you use [workspace-level extended retention](/langsmith/data-purging-compliance#customize-extended-retention-policy), LangSmith writes blob data to prefixes of the form `ttl_XXd/`, where `XX` is the number of days configured for that workspace. For example, if a workspace is configured with 90-day extended retention, blob data for that workspace is written to the `ttl_90d/` prefix.
+
+You must create a lifecycle rule for **each** custom retention period configured across your workspaces. Common examples:
+
+* `ttl_90d/` — 90-day retention
+* `ttl_180d/` — 180-day retention
+* `ttl_365d/` — 365-day retention
+
+<Warning>
+If a lifecycle rule is missing for a configured retention period, blob data under that prefix will never be automatically deleted. Ensure you add a matching lifecycle rule whenever you configure a new workspace retention period.
+</Warning>
+
+For example, if you have workspaces configured with 90-day and 180-day extended retention, you would add the following lifecycle rules **in addition to** the default `ttl_s` and `ttl_l` rules shown [below](#ttl-configuration):
+
+<Tabs>
+  <Tab title="AWS">
+
+```hcl
+rule {
+  id      = "ttl-90d"
+  prefix  = "ttl_90d/"
+  enabled = true
+  expiration {
+    days = 90
+  }
+}
+rule {
+  id      = "ttl-180d"
+  prefix  = "ttl_180d/"
+  enabled = true
+  expiration {
+    days = 180
+  }
+}
+```
+
+  </Tab>
+  <Tab title="GCP">
+
+```hcl
+lifecycle_rule {
+  condition {
+    age            = 90
+    matches_prefix = ["ttl_90d"]
+  }
+  action {
+    type = "Delete"
+  }
+}
+lifecycle_rule {
+  condition {
+    age            = 180
+    matches_prefix = ["ttl_180d"]
+  }
+  action {
+    type = "Delete"
+  }
+}
+```
+
+  </Tab>
+  <Tab title="Azure">
+
+```hcl
+rule {
+  name    = "ttl-90d"
+  enabled = true
+  type    = "Lifecycle"
+  filters {
+    prefix_match = ["my-container/ttl_90d"]
+    blob_types   = ["blockBlob"]
+  }
+  actions {
+    base_blob {
+      delete_after_days_since_creation_greater_than = 90
+    }
+    snapshot {
+      delete_after_days_since_creation_greater_than = 90
+    }
+    version {
+      delete_after_days_since_creation_greater_than = 90
+    }
+  }
+}
+rule {
+  name    = "ttl-180d"
+  enabled = true
+  type    = "Lifecycle"
+  filters {
+    prefix_match = ["my-container/ttl_180d"]
+    blob_types   = ["blockBlob"]
+  }
+  actions {
+    base_blob {
+      delete_after_days_since_creation_greater_than = 180
+    }
+    snapshot {
+      delete_after_days_since_creation_greater_than = 180
+    }
+    version {
+      delete_after_days_since_creation_greater_than = 180
+    }
+  }
+}
+```
+
+  </Tab>
+</Tabs>
 
 If you have customized the TTLs in your LangSmith configuration, you will need to adjust the TTLs in your blob storage configuration to match.
 
