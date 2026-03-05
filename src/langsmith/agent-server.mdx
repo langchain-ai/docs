@@ -72,6 +72,43 @@ Containers are **stateless* but persistent. At least 1 queue worker must listen 
 
 API servers and queue workers are separate container pools and [scale independently](/langsmith/data-plane#autoscaling).
 
+```mermaid
+flowchart TB
+    User["User"]
+
+    API["API Servers"]
+
+    subgraph WorkerContainer["Worker Container"]
+        QueueLoop["Queue Loop"]
+        W1["Worker"]
+        W2["Worker"]
+        Wn["..."]
+        QueueLoop -->|dispatch| W1
+        QueueLoop -->|dispatch| W2
+    end
+
+    DB[(Postgres)]
+    Redis[(Redis)]
+
+    User -->|request| API
+    API -->|create run| DB
+    API -->|notify| Redis
+
+    Redis -->|wake| QueueLoop
+    QueueLoop -->|claim next run| DB
+
+    WorkerContainer -->|save checkpoints / update status| DB
+    WorkerContainer -->|publish events| Redis
+
+    Redis -->|stream events| API
+    API -->|SSE response| User
+
+    style DB fill:#336791,stroke:#1e3a5f,color:#fff
+    style Redis fill:#D82C20,stroke:#a11b14,color:#fff
+    style API fill:#E0F3FF,stroke:#333,stroke-width:1px
+    style WorkerContainer fill:#E0FFE0,stroke:#333,stroke-width:1px
+```
+
 ### Run execution lifecycle
 
 When you invoke a run, the request flows through several components:
