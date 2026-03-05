@@ -32,6 +32,8 @@ LINK_MAPS: list[LinkMap] = [
             "langchain-core": "langchain-core/",
             "langchain-text-splitters": "langchain-text-splitters/",
             "langchain_text_splitters": "langchain-text-splitters/",
+            # Deep Agents
+            "create_deep_agent": "deepagents/graph/create_deep_agent",
             # Agents
             "create_agent": "langchain/agents/factory/create_agent",
             "create_agent(tools)": "langchain/agents/factory/create_agent",
@@ -483,6 +485,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "langchain-langgraph/index/Command",
             "CompiledStateGraph": "langchain-langgraph/index/CompiledStateGraph",
             "createAgent": "langchain/index/createAgent",
+            "createDeepAgent": "deepagents/agent/createDeepAgent",
             "createMiddleware": "langchain/index/createMiddleware",
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
             "createSupervisor": "langchain-langgraph-supervisor/createSupervisor",
