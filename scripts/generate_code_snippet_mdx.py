@@ -25,15 +25,17 @@ def main() -> None:
         ("*.snippet.*.ts", "ts"),
     ]
 
-    # Only process snippets that already have language suffix to avoid Bluehawk duplicates
+    # Only process snippets that already have language suffix to
+    # avoid Bluehawk duplicates
     lang_suffix = {"python": "-py", "ts": "-js"}
 
     for glob_pattern, language in snippet_configs:
         for snippet_file in generated_dir.glob(glob_pattern):
             snippet_name = ".".join(snippet_file.stem.split(".")[2:])
             expected_suffix = lang_suffix[language]
-            # Only process language-specific snippets (tool-return-object-py, not tool-return-object)
-            # to avoid duplicates when Bluehawk emits both suffixed and unsuffixed versions
+            # Only process language-specific snippets
+            # (tool-return-object-py, not tool-return-object) to avoid
+            # duplicates when Bluehawk emits both suffixed and unsuffixed versions
             if not snippet_name.endswith(expected_suffix):
                 continue
 
