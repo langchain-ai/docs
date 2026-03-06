@@ -1,18 +1,113 @@
 ---
 title: Run an evaluation with multimodal content
 sidebarTitle: Run an evaluation with multimodal content
+description: Learn how to create dataset examples with file attachments and use them in prompts and evaluators when running LangSmith evaluations with multimodal content.
 ---
 
-LangSmith lets you create dataset examples with file attachments—like images, audio files, or documents—so you can reference them when evaluating an application that uses multimodal inputs or outputs.
+LangSmith lets you create dataset examples with file attachments—like images, audio files, or documents—and use them in your prompts and evaluators when running evaluations with multimodal content.
 
-While you can include multimodal data in your examples by base64 encoding it, this approach is inefficient - the encoded data takes up more space than the original binary files, resulting in slower transfers to and from LangSmith. Using attachments instead provides two key benefits:
+While you can include multimodal data in your examples by base64 encoding it, this approach is inefficient—the encoded data takes up more space than the original binary files, resulting in slower transfers to and from LangSmith. Using attachments instead provides two key benefits:
 
-1. Faster upload and download speeds due to more efficient binary file transfers
-2. Enhanced visualization of different file types in the LangSmith UI
+- Faster upload and download speeds due to more efficient binary file transfers.
+- Enhanced visualization of different file types in the LangSmith UI.
 
-## SDK
+This guide covers how to create examples with attachments, build multimodal prompts and evaluators that use those attachments, and run evaluations with multimodal content—select the [**UI**](#ui) or [**SDK**](#sdk) following tabs to get started.
 
-### 1. Create examples with attachments
+**Choose your preferred method:**
+
+<Tabs>
+<Tab title="UI" icon="click">
+
+## 1. Create examples with attachments
+
+You can add examples with attachments to a dataset in a few different ways.
+
+#### From existing runs
+
+When adding runs to a LangSmith dataset, attachments can be selectively propagated from the source run to the destination example. To learn more, please see [this guide](/langsmith/manage-datasets-in-application#add-runs-from-the-tracing-project-ui).
+
+![Add trace with attachments to dataset](/langsmith/images/add-trace-with-attachments-to-dataset.png)
+
+#### From scratch
+
+You can create examples with attachments directly from the LangSmith UI. Click the `+ Example` button in the `Examples` tab of the dataset UI. Then upload attachments using the "Upload Files" button:
+
+![Create example with attachments](/langsmith/images/create-example-with-attachments.png)
+
+Once uploaded, you can view examples with attachments in the LangSmith UI. Each attachment will be rendered with a preview for easy inspection. ![Attachments with examples](/langsmith/images/attachments-with-examples.png)
+
+## 2. Create a multimodal prompt
+
+The LangSmith UI allows you to include attachments in your prompts when evaluating multimodal models:
+
+First, click the file icon in the message where you want to add multimodal content. Next, add a template variable for the attachment(s) you want to include for each example.
+
+- If you want to include a specifc attachment, you can use the suggested variable name, such as `{{attachment.file_name}}`, this will map the file with `file_name` in the attachment list to pass it to the evaluator
+- If you want to include all attachments, use the `{{attachments}`}` variable.
+
+![Adding multimodal variable](/langsmith/images/adding-multimodal-variable.gif)
+
+## 3. Define custom evaluators
+
+You can create evaluators that use multimodal content from your dataset examples.
+
+Since your dataset already has examples with attachments (added in step 1), you can reference them directly in your evaluator. To do so:
+
+1. Select **+ Evaluator** from the dataset page.
+1. In the **Template variables** editor, add a variable for the attachment(s) to include:
+   - If you want to include a specifc attachment, you can use the suggested variable name, such as `{{attachment.file_name}}`, this will map the file with `file_name` in the attachment list to pass it to the evaluator.
+    - If you want to include all attachments, use the `{{attachments}`}` variable.
+
+    <img
+        className="block dark:hidden"
+        src="/langsmith/images/evaluator-attach-file-light.png"
+        alt="Create evaluator modal with an audio attachment selected for output variable."
+    />
+
+    <img
+        className="hidden dark:block"
+        src="/langsmith/images/evaluator-attach-file-dark.png"
+        alt="Create evaluator modal with an audio attachment selected for output variable."
+    />
+
+
+The evaluator can then use these attachments along with the model's outputs to judge quality. For example, you could create an evaluator that:
+
+- Checks if an image description matches the actual image content.
+- Verifies if a transcription accurately reflects the audio.
+- Validates if extracted text from a PDF is correct.
+
+You can also create text-only evaluators that don't use attachments but evaluate the model's text output:
+
+- OCR → text correction: Use a vision model to extract text from a document, then evaluate the accuracy of the extracted output.
+- Speech-to-text → transcription quality: Use a voice model to transcribe audio to text, then evaluate the transcription against your reference.
+
+<Tip>
+If your traces contain base64-encoded multimodal content in their inputs or outputs (for example, if you followed the [log multimodal traces](/langsmith/log-multimodal-traces) guide), you don't need attachments to evaluate them. Use standard variable mapping—such as `{{input}}` or `{{output}}`—in your evaluator prompt, and the base64 content will be passed correctly to the LLM evaluator for visualization and evaluation.
+</Tip>
+
+For more information on defining custom evaluators, see the [LLM as Judge](/langsmith/llm-as-judge) guide.
+
+## 4. Update examples with attachments
+
+<Note>
+Attachments are limited to 20MB in size in the UI.
+</Note>
+
+When editing an example in the UI, you can:
+
+* Upload new attachments
+* Rename and delete attachments
+* Reset attachments to their previous state using the quick reset button
+
+Changes are not saved until you click submit.
+
+![Attachment editing](/langsmith/images/attachment-editing.gif)
+
+</Tab>
+<Tab title="SDK" icon="code">
+
+## 1. Create examples with attachments
 
 To upload examples with attachments using the SDK, use the [create_examples](https://docs.smith.langchain.com/reference/python/client/langsmith.client.Client#langsmith.client.Client.create_examples) / [update_examples](https://docs.smith.langchain.com/reference/python/client/langsmith.client.Client#langsmith.client.Client.update_examples) Python methods or the [uploadExamplesMultipart](https://docs.smith.langchain.com/reference/js/classes/client.Client#uploadexamplesmultipart) / [updateExamplesMultipart](https://docs.smith.langchain.com/reference/js/classes/client.Client#updateexamplesmultipart) TypeScript methods.
 
@@ -330,6 +425,8 @@ async function fileQA(inputs: Record<string, any>, config?: Record<string, any>)
 
 ### Define custom evaluators
 
+<Note>You can also define a multimodal evaluator in the UI that references these attachment inputs and outputs. UI-based evaluators run automatically on every experiment—including those invoked from the SDK. For instructions, refer to the [**UI**](#ui) tab.</Note>
+
 The exact same rules apply as above to determine whether the evaluator should receive attachments.
 
 The evaluator below uses an LLM to judge if the reasoning and the answer are consistent. To learn more about how to define llm-based evaluators, please see [this guide](/langsmith/llm-as-judge).
@@ -430,7 +527,7 @@ const resp = await evaluate(fileQA, {
 
 </CodeGroup>
 
-## Update examples with attachments
+## 3. Update examples with attachments
 
 In the code above, we showed how to add examples with attachments to a dataset. It is also possible to update these same examples using the SDK.
 
@@ -503,62 +600,5 @@ await langsmithClient.updateExamplesMultipart(dataset.id, [exampleUpdate]);
 
 </CodeGroup>
 
-## UI
-
-### 1. Create examples with attachments
-
-You can add examples with attachments to a dataset in a few different ways.
-
-#### From existing runs
-
-When adding runs to a LangSmith dataset, attachments can be selectively propagated from the source run to the destination example. To learn more, please see [this guide](/langsmith/manage-datasets-in-application#add-runs-from-the-tracing-project-ui).
-
-![Add trace with attachments to dataset](/langsmith/images/add-trace-with-attachments-to-dataset.png)
-
-#### From scratch
-
-You can create examples with attachments directly from the LangSmith UI. Click the `+ Example` button in the `Examples` tab of the dataset UI. Then upload attachments using the "Upload Files" button:
-
-![Create example with attachments](/langsmith/images/create-example-with-attachments.png)
-
-Once uploaded, you can view examples with attachments in the LangSmith UI. Each attachment will be rendered with a preview for easy inspection. ![Attachments with examples](/langsmith/images/attachments-with-examples.png)
-
-### 2. Create a multimodal prompt
-
-The LangSmith UI allows you to include attachments in your prompts when evaluating multimodal models:
-
-First, click the file icon in the message where you want to add multimodal content. Next, add a template variable for the attachment(s) you want to include for each example.
-
-* For a single attachment type: Use the suggested variable name. Note: all examples must have an attachment with this name.
-* For multiple attachments or if your attachments have varying names from one example to another: Use the `All attachments` variable to include all available attachments for each example.
-
-![Adding multimodal variable](/langsmith/images/adding-multimodal-variable.gif)
-
-### Define custom evaluators
-
-<Note>
-The LangSmith playground does not currently support pulling multimodal content into evaluators. If this would be helpful for your use case, please let us know in the [LangChain Forum](https://forum.langchain.com/) (sign up [here](https://www.langchain.com/join-community) if you're not already a member)!
-</Note>
-
-You can evaluate a model's text output by adding an evaluator that takes in the example's inputs and outputs. Even without multimodal support in your evaluators, you can still run text-only evaluations. For example:
-
-* OCR → text correction: Use a vision model to extract text from a document, then evaluate the accuracy of the extracted output.
-* Speech-to-text → transcription quality: Use a voice model to transcribe audio to text, then evaluate the transcription against your reference.
-
-For more information on defining custom evaluators, see the [LLM as Judge](/langsmith/llm-as-judge) guide.
-
-### Update examples with attachments
-
-<Note>
-Attachments are limited to 20MB in size in the UI.
-</Note>
-
-When editing an example in the UI, you can:
-
-* Upload new attachments
-* Rename and delete attachments
-* Reset attachments to their previous state using the quick reset button
-
-Changes are not saved until you click submit.
-
-![Attachment editing](/langsmith/images/attachment-editing.gif)
+</Tab>
+</Tabs>
