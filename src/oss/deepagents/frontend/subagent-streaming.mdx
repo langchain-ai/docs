@@ -3,41 +3,38 @@ title: Subagent Streaming
 description: Display specialist subagents with streaming content, progress tracking, and collapsible cards
 ---
 
-Deep agent subagent cards go beyond basic subagent streaming. Where the basic
-pattern gives you a `Map` of subagent data, this pattern uses **filtered message
-streams**, **per-message subagent lookup**, and a richer `SubagentStreamInterface`
-to build detailed, collapsible cards for each specialist worker. The coordinator
-agent spawns experts — a researcher, an analyst, a writer — and your UI shows
-each one's progress, task description, streaming content, and timing in real
-time.
+When a coordinator agent spawns specialist subagents — a researcher, an
+analyst, a writer — you need to render the orchestrator's messages separately
+from each subagent's streaming output. Set `filterSubagentMessages: true` in
+`useStream` to cleanly split these two streams, then use
+`getSubagentsByMessage` to attach each subagent's progress card to the
+coordinator message that triggered it.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
 
 <PatternEmbed pattern="deep-agent-subagent-cards" />
 
-## How it differs from basic subagent streaming
+## Why filter subagent messages
 
-The basic [subagent streaming](/oss/deepagents/frontend/subagent-streaming) pattern exposes a
-`subagents` map and lets you render status cards. Deep agent subagent cards add
-three important capabilities:
+Without filtering, every token produced by every subagent appears interleaved
+in the coordinator's message stream — making it unreadable. With
+`filterSubagentMessages: true`:
 
-| Feature | Basic | Deep |
-| --- | --- | --- |
-| Subagent tokens in main message stream | Yes | Filtered out with `filterSubagentMessages` |
-| Link subagents to specific AI messages | No | Yes, via `getSubagentsByMessage(msg.id)` |
-| Subagent interface | `SubagentData` | `SubagentStreamInterface` with richer metadata |
-| Task description & type | Not available | Available via `toolCall.args` |
-| Timing data | Not available | `startedAt` and `completedAt` timestamps |
+- `stream.messages` contains only the coordinator's messages
+- Each subagent's content is accessible through `stream.subagents` and
+  `stream.getSubagentsByMessage`
+- The UI stays clean: the coordinator's reasoning is separate from the
+  specialists' work
 
-This makes the deep pattern ideal for **complex multi-expert workflows** where
-users need to understand *what* each subagent was asked to do, *how* it's
-progressing, and *when* it finished.
+This separation lets you render the orchestrator's messages in one place and
+attach each subagent's progress card exactly where it belongs — beneath the
+coordinator message that spawned it.
 
 ## Setting up useStream
 
-The critical option is `filterSubagentMessages: true`. This removes subagent
-tokens from the main message stream so the coordinator's messages aren't
-cluttered with interleaved subagent output.
+Always set `filterSubagentMessages: true`. This removes subagent tokens from
+the main message stream so you can render the coordinator's messages and
+subagent output independently.
 
 :::python
 
@@ -174,20 +171,20 @@ subagraphs, so a higher recursion limit prevents premature termination:
 ```ts
 stream.submit(
   { messages: [{ type: "human", content: text }] },
-  { streamSubgraphs: true, config: { recursion_limit: 100 } }
+  { streamSubgraphs: true }
 );
 ```
 
 <Note>
-The default recursion limit is 25. For deep agent workflows with multiple
-nested subagents, increase this to avoid hitting the limit before all subagents
-finish. A value of 100 is a safe starting point for most multi-expert setups.
+DeepAgents sets a default recursion limit of 10,000, which is sufficient for
+most multi-expert setups. You can override this via `config.recursion_limit` if
+needed.
 </Note>
 
 ## The SubagentStreamInterface
 
-Each subagent exposes a `SubagentStreamInterface` with richer metadata than the
-basic `SubagentData`:
+Each subagent exposes a `SubagentStreamInterface` with metadata about the
+subagent's task, status, and timing:
 
 ```ts
 interface SubagentStreamInterface {
@@ -240,6 +237,8 @@ Each subagent card shows the specialist's name, task description, streaming
 content or final result, and timing information:
 
 ```tsx
+import { AIMessage } from "@langchain/core/messages";
+
 function SubagentCard({
   subagent,
 }: {
@@ -252,7 +251,7 @@ function SubagentCard({
   const description = subagent.toolCall?.args?.description ?? "";
 
   const lastAIMessage = subagent.messages
-    .filter((m) => m.type === "ai" && m.content)
+    .filter(AIMessage.isInstance)
     .at(-1);
 
   const displayContent =
@@ -451,25 +450,12 @@ workflows. A clear "Synthesizing results..." indicator prevents users from
 thinking the agent has stalled.
 </Tip>
 
-## The filterSubagentMessages option
+## Debug unfiltered output
 
-When `filterSubagentMessages` is set to `true`, subagent tokens are removed
-from the main `messages` array. Without this, every token produced by every
-subagent would appear interleaved in the coordinator's message stream, making
-it unreadable.
-
-With filtering enabled:
-- `stream.messages` contains only the coordinator's messages
-- Subagent content is accessible through `stream.subagents` and
-  `stream.getSubagentsByMessage`
-- The UI stays clean: the coordinator's reasoning is separate from the
-  specialists' work
-
-<Info>
-If you want to see raw, unfiltered output for debugging, set
-`filterSubagentMessages: false` temporarily. This can be useful during
-development to verify that subagent tokens are flowing correctly.
-</Info>
+During development, you can temporarily set `filterSubagentMessages: false` to
+see the raw, interleaved output from all subagents in the main message stream.
+This is useful for verifying that subagent tokens are flowing correctly, but
+should not be used in production UIs.
 
 ## Use cases
 
@@ -503,8 +489,8 @@ them.
 
 ## Best practices
 
-- **Always set `filterSubagentMessages: true`** for production UIs. Unfiltered
-  streams produce an unreadable interleaving of coordinator and subagent tokens.
+- **Always set `filterSubagentMessages: true`**. Unfiltered streams produce an
+  unreadable interleaving of coordinator and subagent tokens.
 - **Show task descriptions** — the `toolCall.args.description` field tells users
   exactly what each subagent was asked to do. Always display this prominently.
 - **Use collapsible cards** — in workflows with 5+ subagents, auto-collapse
