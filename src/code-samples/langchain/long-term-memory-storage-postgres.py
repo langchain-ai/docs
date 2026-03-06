@@ -2,7 +2,7 @@
 from collections.abc import Sequence
 
 from langgraph.store.base import IndexConfig
-from langgraph.store.postgres import PostgresStore
+from langgraph.store.postgres import PostgresStore  # type: ignore[import-not-found]
 
 
 def embed(texts: Sequence[str]) -> list[list[float]]:
