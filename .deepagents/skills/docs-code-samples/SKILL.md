@@ -203,8 +203,10 @@ To support additional languages, add config entries in that script.
 
 ## Guidelines
 
+- Do not change `pyproject.toml` when making code sample changes.
 - Always run `make test-code-samples FILES="path/to/your/file.py"` before `make code-snippets` to ensure new samples pass.
 - Run `make lint` once the code sample is written; fix any issues (or run `make format` to auto-fix).
+- Do not add code samples to linting ignore rules when making lint-related changes—fix the code instead.
 - `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets`.
 - Reference `CLAUDE.md` and `AGENTS.md` for docs style and rules.
 - Use `:::python` and `:::js` fences for language-specific content; the build produces separate Python and JavaScript doc versions.
