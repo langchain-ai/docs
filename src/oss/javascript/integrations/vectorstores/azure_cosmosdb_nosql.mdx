@@ -183,6 +183,203 @@ console.log(res.answer);
 await store.delete();
 ```
 
+## Advanced search options
+
+All search types are accessed through the unified `similaritySearch` and `similaritySearchWithScore` methods using the `searchType` parameter in the filter options. Search types are available as constants from `AzureCosmosDBNoSQLSearchType`:
+
+Available search types:
+
+- `AzureCosmosDBNoSQLSearchType.Vector` (default): Standard vector similarity search
+- `AzureCosmosDBNoSQLSearchType.VectorScoreThreshold`: Vector search with minimum score filter
+- `AzureCosmosDBNoSQLSearchType.FullTextSearch`: Full-text search using FullTextContains (preview)
+- `AzureCosmosDBNoSQLSearchType.FullTextRanking`: Full-text search with BM25 ranking (preview)
+- `AzureCosmosDBNoSQLSearchType.Hybrid`: Hybrid vector + full-text search using RRF (preview)
+- `AzureCosmosDBNoSQLSearchType.HybridScoreThreshold`: Hybrid search with score threshold (preview)
+
+You can also set a default search type when creating the store using the `defaultSearchType` configuration option, so you don't have to specify it in every query:
+
+```typescript
+import {
+  AzureCosmosDBNoSQLVectorStore,
+  AzureCosmosDBNoSQLSearchType,
+} from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+  defaultSearchType: AzureCosmosDBNoSQLSearchType.VectorScoreThreshold,
+});
+```
+
+### Vector search with score threshold
+
+Filter results based on a minimum similarity score:
+
+```typescript
+import {
+  AzureCosmosDBNoSQLVectorStore,
+  AzureCosmosDBNoSQLSearchType,
+} from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+});
+
+// Only return results with similarity score >= 0.8
+const results = await store.similaritySearchWithScore(
+  "What is the capital of France?",
+  10,
+  {
+    searchType: AzureCosmosDBNoSQLSearchType.VectorScoreThreshold,
+    threshold: 0.8,
+  }
+);
+
+for (const [doc, score] of results) {
+  console.log(`Score: ${score}, Content: ${doc.pageContent}`);
+}
+```
+
+### Maximal Marginal Relevance (MMR) search
+
+MMR search balances relevance with diversity in the results:
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+});
+
+const results = await store.maxMarginalRelevanceSearch("machine learning", {
+  k: 5, // Number of results to return
+  fetchK: 20, // Number of candidates to consider
+  lambda: 0.5, // 0 = max diversity, 1 = max relevance
+});
+```
+
+## Full-text and hybrid search (preview)
+
+<Warning>
+Full-text and hybrid search are preview features in Azure Cosmos DB. You need to configure your container with a full-text policy and appropriate indexing to use these features. See the [Azure Cosmos DB documentation](https://learn.microsoft.com/azure/cosmos-db/gen-ai/full-text-search) for setup instructions.
+</Warning>
+
+To use full-text or hybrid search, enable it when creating the store:
+
+```typescript
+import {
+  AzureCosmosDBNoSQLVectorStore,
+  AzureCosmosDBNoSQLSearchType,
+} from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+  fullTextSearchEnabled: true,
+  fullTextPolicy: {
+    defaultLanguage: "en-US",
+    fullTextPaths: [{ path: "/text", language: "en-US" }],
+  },
+  indexingPolicy: {
+    indexingMode: "consistent",
+    automatic: true,
+    includedPaths: [{ path: "/*" }],
+    excludedPaths: [{ path: "/_etag/?" }],
+    vectorIndexes: [{ path: "/vector", type: "quantizedFlat" }],
+    fullTextIndexes: [{ path: "/text" }],
+  },
+});
+```
+
+### Full-text search
+
+```typescript
+// Full-text search using FullTextContains in the filter clause
+const fullTextResults = await store.similaritySearch("", 10, {
+  searchType: AzureCosmosDBNoSQLSearchType.FullTextSearch,
+  filterClause: "WHERE FullTextContains(c.text, 'artificial intelligence')",
+});
+```
+
+### Full-text ranking
+
+```typescript
+// Full-text ranking with BM25 scoring
+const rankingResults = await store.similaritySearch("", 10, {
+  searchType: AzureCosmosDBNoSQLSearchType.FullTextRanking,
+  fullTextRankFilter: [
+    { searchField: "text", searchText: "artificial intelligence" },
+  ],
+});
+```
+
+### Hybrid search
+
+Hybrid search combines vector similarity with full-text search using Reciprocal Rank Fusion (RRF):
+
+```typescript
+// Hybrid search combining vector and full-text results
+const hybridResults = await store.similaritySearchWithScore(
+  "machine learning",
+  10,
+  {
+    searchType: AzureCosmosDBNoSQLSearchType.Hybrid,
+    fullTextRankFilter: [
+      { searchField: "text", searchText: "machine learning" },
+    ],
+  }
+);
+
+// Hybrid search with score threshold
+const filteredResults = await store.similaritySearchWithScore(
+  "machine learning",
+  10,
+  {
+    searchType: AzureCosmosDBNoSQLSearchType.HybridScoreThreshold,
+    fullTextRankFilter: [
+      { searchField: "text", searchText: "machine learning" },
+    ],
+    threshold: 0.5,
+  }
+);
+```
+
+## Utility methods
+
+### Delete documents
+
+```typescript
+// Delete specific documents by ID
+await store.delete({ ids: ["document-id-123"] });
+
+// Delete documents matching a filter
+await store.delete({
+  filter: {
+    query: "SELECT * FROM c WHERE c.metadata.category = @category",
+    parameters: [{ name: "@category", value: "old" }],
+  },
+});
+
+// Delete all documents
+await store.delete();
+```
+
+### Access the underlying container
+
+```typescript
+// Get direct access to the Cosmos DB container for advanced operations
+const container = store.getContainer();
+const { resources } = await container.items
+  .query("SELECT * FROM c WHERE c.metadata.category = 'tech'")
+  .fetchAll();
+```
+
 ## Related
 
 - Vector store [conceptual guide](/oss/integrations/vectorstores)
