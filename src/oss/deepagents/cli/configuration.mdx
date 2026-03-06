@@ -1,0 +1,453 @@
+---
+title: Configuration
+sidebarTitle: Configuration
+description: Configure the Deep Agents CLI with config.toml and hooks
+---
+
+The CLI stores its configuration in the `~/.deepagents/` directory. The two main config files are:
+
+| File | Format | Purpose |
+|------|--------|---------|
+| `config.toml` | [TOML](https://toml.io/) | Model defaults, provider settings, constructor params, profile overrides |
+| `hooks.json` | JSON | External tool subscriptions to CLI lifecycle events |
+
+## Config file
+
+`~/.deepagents/config.toml` lets you customize model providers, set defaults, and pass extra parameters to model constructors.
+
+### Default and recent model
+
+```toml
+[models]
+default = "ollama:qwen3:4b"             # your intentional long-term preference
+recent = "anthropic:claude-sonnet-4-5"   # last /model switch (written automatically)
+```
+
+`[models].default` always takes priority over `[models].recent`. The `/model` command only writes to `[models].recent`, so your configured default is never overwritten by mid-session switches. To remove the default, use `/model --default --clear` or delete the `default` key from the config file.
+
+### Provider configuration
+
+Each provider is a TOML table under `[models.providers]`:
+
+```toml
+[models.providers.<name>]
+models = ["gpt-4o"]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com/v1"
+class_path = "my_package.models:MyChatModel"
+
+[models.providers.<name>.params]
+temperature = 0
+max_tokens = 4096
+
+[models.providers.<name>.params."gpt-4o"]
+temperature = 0.7
+```
+
+**Keys:**
+
+<ResponseField name="models" type="string[]">
+    A list of model names to show in the interactive `/model` switcher for this provider. For providers that already ship with model profiles, any names you add here appear alongside the bundled ones — useful for newly released models that haven't been added to the package yet. For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
+
+    This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time.
+</ResponseField>
+
+<ResponseField name="api_key_env" type="string">
+    Optionally override the environment variable name checked for credentials.
+</ResponseField>
+
+<ResponseField name="base_url" type="string">
+    Optionally override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info.
+</ResponseField>
+
+<ResponseField name="params" type="object">
+    Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
+</ResponseField>
+
+<ResponseField name="profile" type="object">
+    (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile.
+</ResponseField>
+
+<ResponseField name="class_path" type="string">
+    Used for [arbitrary model](#arbitrary-providers) providers. Optional fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass.
+</ResponseField>
+
+### Model constructor params
+
+Any provider can use the `params` table to pass extra arguments to the model constructor:
+
+```toml
+[models.providers.ollama.params]
+temperature = 0
+num_ctx = 8192
+```
+
+#### Per-model overrides
+
+If a specific model needs different params, add a model-keyed sub-table under `params` to override individual values without duplicating the entire provider config:
+
+```toml
+[models.providers.ollama]
+models = ["qwen3:4b", "llama3"]
+
+[models.providers.ollama.params]
+temperature = 0
+num_ctx = 8192
+
+[models.providers.ollama.params."qwen3:4b"]
+temperature = 0.5
+num_ctx = 4000
+```
+
+With this configuration:
+
+* `ollama:qwen3:4b` gets `{temperature: 0.5, num_ctx: 4000}` — model overrides win.
+* `ollama:llama3` gets `{temperature: 0, num_ctx: 8192}` — no override, provider-level params only.
+
+The merge is shallow: any key present in the model sub-table replaces the same key from the provider-level params, while keys only at the provider level are preserved.
+
+#### CLI overrides with `--model-params`
+
+For one-off adjustments without editing the config file, pass a JSON object via `--model-params` at launch or mid-session with the `/model` command:
+
+```bash
+deepagents --model ollama:llama3 --model-params '{"temperature": 0.9, "num_ctx": 16384}'
+
+# In non-interactive mode
+deepagents -n "Summarize this repo" --model ollama:llama3 --model-params '{"temperature": 0}'
+```
+
+```txt title="Inside the TUI"
+/model --model-params '{"temperature": 0.9}' ollama:llama3
+/model --model-params '{"num_ctx": 16384}'  # opens selector, applies params to chosen model
+```
+
+These take the highest priority, overriding values from config file params. Mid-session params are applied for the current session only and are not persisted. `--model-params` cannot be combined with `--default`.
+
+### Profile overrides
+
+**(Advanced)**
+
+Override fields in the model's runtime profile to change how the CLI interprets model capabilities. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier — useful for testing or for constraining context usage:
+
+```toml
+# Apply to all models from this provider
+[models.providers.anthropic.profile]
+max_input_tokens = 4096
+```
+
+Per-model sub-tables work the same way as `params` — the model-level value wins on conflict:
+
+```toml
+[models.providers.anthropic.profile]
+max_input_tokens = 4096
+
+# This model gets a higher limit
+[models.providers.anthropic.profile."claude-sonnet-4-5"]
+max_input_tokens = 8192
+```
+
+Profile overrides are merged into the model's profile after creation. Any feature that reads the profile — context-limit display in the status bar, auto-summarization thresholds, capability checks — will see the overridden values.
+
+#### CLI profile overrides with `--profile-override`
+
+**(Advanced)**
+
+To override model profile fields at runtime without editing the config file, pass a JSON object via `--profile-override`:
+
+```bash
+deepagents --profile-override '{"max_input_tokens": 4096}'
+
+# Combine with --model
+deepagents --model anthropic:claude-sonnet-4-5 --profile-override '{"max_input_tokens": 4096}'
+
+# In non-interactive mode
+deepagents -n "Summarize this repo" --profile-override '{"max_input_tokens": 4096}'
+```
+
+These are merged on top of config file profile overrides (CLI wins). The priority chain is: model default &lt; config.toml profile &lt; CLI `--profile-override`.
+
+### Custom base URL
+
+Some provider packages accept a `base_url` to override the default endpoint. For example, `langchain-ollama` defaults to `http://localhost:11434` via the underlying `ollama` client. To point it elsewhere, set `base_url` in your configuration:
+
+```toml
+[models.providers.ollama]
+base_url = "http://your-host-here:port"
+```
+
+Refer to your provider's reference documentation for compatibility information and additional considerations.
+
+### Compatible APIs
+
+For providers that expose APIs that are wire-compatible with OpenAI or Anthropic, you can use the existing `langchain-openai` or `langchain-anthropic` packages by pointing `base_url` at the provider's endpoint:
+
+```toml
+[models.providers.openai]
+base_url = "https://api.example.com/v1"
+api_key_env = "EXAMPLE_API_KEY"
+models = ["my-model"]
+```
+
+```toml
+[models.providers.anthropic]
+base_url = "https://api.example.com"
+api_key_env = "EXAMPLE_API_KEY"
+models = ["my-model"]
+```
+
+<Note>
+    Any features added on top of the official spec by the provider will not be captured. If the provider offers a dedicated LangChain integration package, prefer that instead.
+</Note>
+
+### Adding models to the interactive switcher
+
+Some providers (e.g. `langchain-ollama`) don't bundle model profile data (see [Provider reference](/oss/deepagents/cli/providers#provider-reference) for full listing). When this is the case, the interactive `/model` switcher won't list models for that provider. You can fill in the gap by defining a `models` list in your config file for the provider:
+
+```toml
+[models.providers.ollama]
+models = ["llama3", "mistral", "codellama"]
+```
+
+The `/model` switcher will now include an Ollama section with these models listed.
+
+This is entirely optional. You can always switch to any model by specifying its full name directly:
+
+```txt
+/model ollama:llama3
+```
+
+### Arbitrary providers
+
+You can use any [LangChain `BaseChatModel`](https://reference.langchain.com/python/langchain_core/language_models/#langchain_core.language_models.BaseChatModel) subclass using `class_path`. The CLI will import and instantiate it directly:
+
+```toml
+[models.providers.my_custom]
+class_path = "my_package.models:MyChatModel"
+api_key_env = "MY_API_KEY"
+base_url = "https://my-endpoint.example.com"
+
+[models.providers.my_custom.params]
+temperature = 0
+max_tokens = 4096
+```
+
+The package must be installed in the same Python environment as `deepagents-cli`:
+
+```bash
+# If deepagents-cli was installed with uv tool:
+uv tool upgrade deepagents-cli --with my_package
+```
+
+When you switch to `my_custom:my-model-v1` (via `/model` or `--model`), the model name (`my-model-v1`) is passed as the `model` kwarg:
+
+```python
+MyChatModel(model="my-model-v1", base_url="...", api_key="...", temperature=0, max_tokens=4096)
+```
+
+<Warning>
+    `class_path` executes arbitrary Python code from your config file. This has the same trust model as `pyproject.toml` build scripts — you control your own machine.
+</Warning>
+
+Your provider package may optionally provide model profiles at a `_PROFILES` dict in `<package>.data._profiles` in lieu of defining them under the `models` key. See LangChain [model profiles](https://github.com/langchain-ai/langchain/tree/master/libs/model-profiles) for more info.
+
+---
+
+## Hooks
+
+Hooks let external programs react to CLI lifecycle events. Configure commands in `~/.deepagents/hooks.json` and the CLI pipes a JSON payload to each matching command's stdin whenever an event fires.
+
+Hooks run fire-and-forget in a background thread — they never block the CLI and failures are logged without interrupting your session.
+
+### Setup
+
+Create `~/.deepagents/hooks.json`:
+
+```json
+{
+  "hooks": [
+    {
+      "command": ["bash", "-c", "cat >> ~/deepagents-events.log"],
+      "events": ["session.start", "session.end"]
+    }
+  ]
+}
+```
+
+Now every time a session starts or ends, the CLI appends the event payload to `~/deepagents-events.log`.
+
+### Hook configuration
+
+The config file contains a single `hooks` array. Each entry has:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `command` | `list[str]` | Yes | Command and arguments to run (no shell expansion — use `["bash", "-c", "..."]` if needed) |
+| `events` | `list[str]` | No | Event names to subscribe to. Omit or leave empty to receive **all** events |
+
+```json
+{
+  "hooks": [
+    {
+      "command": ["python3", "my_handler.py"],
+      "events": ["session.start", "task.complete"]
+    },
+    {
+      "command": ["bash", "log_everything.sh"]
+    }
+  ]
+}
+```
+
+The second hook above has no `events` filter, so it receives every event the CLI emits.
+
+### Payload format
+
+Each hook command receives a JSON object on stdin with an `"event"` key plus event-specific fields:
+
+```json
+{
+  "event": "session.start",
+  "thread_id": "abc123"
+}
+```
+
+### Events reference
+
+#### `session.start`
+
+Fired when an agent session begins (both interactive and non-interactive modes).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `thread_id` | `string` | The session thread identifier |
+
+#### `session.end`
+
+Fired when a session exits.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `thread_id` | `string` | The session thread identifier |
+
+#### `user.prompt`
+
+Fired in interactive mode when the user submits a chat message.
+
+No additional fields.
+
+#### `input.required`
+
+Fired when the agent requires human input (human-in-the-loop interrupt).
+
+No additional fields.
+
+#### `permission.request`
+
+Fired before the approval dialog when one or more tool calls need user permission.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tool_names` | `list[str]` | Names of the tools requesting approval |
+
+#### `tool.error`
+
+Fired when a tool call returns an error.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tool_names` | `list[str]` | Names of the tool(s) that errored |
+
+#### `task.complete`
+
+Fired when the agent finishes its current task (the streaming loop ends without further interrupts).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `thread_id` | `string` | The session thread identifier |
+
+#### `context.compact`
+
+Fired before the CLI compacts (summarizes) the conversation context.
+
+No additional fields.
+
+### Execution model
+
+- **Background thread**: Hook subprocesses run in a thread via `asyncio.to_thread` so the main event loop is never blocked.
+- **Concurrent dispatch**: When multiple hooks match an event, they run concurrently in a thread pool.
+- **5-second timeout**: Each command has a 5-second timeout. Commands that exceed this are killed.
+- **Fire-and-forget**: Errors are caught per-hook and logged at debug/warning level. A failing hook never crashes or stalls the CLI.
+- **Lazy loading**: The config file is read once on the first event dispatch and cached for the rest of the session.
+- **No shell expansion**: Commands are executed directly (not through a shell). Wrap in `["bash", "-c", "..."]` if you need shell features like pipes or variable expansion.
+
+### Hook examples
+
+#### Log all events to a file
+
+```json
+{
+  "hooks": [
+    {
+      "command": ["bash", "-c", "jq -c . >> ~/.deepagents/hook-events.jsonl"],
+      "events": []
+    }
+  ]
+}
+```
+
+#### Desktop notification on task completion (macOS)
+
+```json
+{
+  "hooks": [
+    {
+      "command": [
+        "bash", "-c",
+        "osascript -e 'display notification \"Agent finished\" with title \"Deep Agents\"'"
+      ],
+      "events": ["task.complete"]
+    }
+  ]
+}
+```
+
+#### Python handler
+
+Write a handler script that reads the JSON payload from stdin:
+
+```python title="my_handler.py"
+import json
+import sys
+
+payload = json.load(sys.stdin)
+event = payload["event"]
+
+if event == "session.start":
+    print(f"Session started: {payload['thread_id']}", file=sys.stderr)
+elif event == "permission.request":
+    print(f"Approval needed for: {payload['tool_names']}", file=sys.stderr)
+```
+
+```json title="~/.deepagents/hooks.json"
+{
+  "hooks": [
+    {
+      "command": ["python3", "my_handler.py"],
+      "events": ["session.start", "permission.request"]
+    }
+  ]
+}
+```
+
+### Security considerations
+
+Hooks follow the same trust model as Git hooks or shell aliases — any user who can write to `~/.deepagents/hooks.json` can execute arbitrary commands. This is by design:
+
+- **No command injection**: Payload data flows only to stdin as JSON, never to command-line arguments. `json.dumps` handles escaping.
+- **No shell by default**: Commands run with `shell=False`, preventing shell injection.
+- **Malformed config**: Invalid JSON or unexpected types produce logged warnings, not security issues.
+
+<Warning>
+    Only add hooks from sources you trust. A hook has the same permissions as your user account.
+</Warning>

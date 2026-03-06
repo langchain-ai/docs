@@ -1,4 +1,4 @@
-// :snippet-start: tool-return-command
+// :snippet-start: tool-return-command-js
 import { tool, ToolMessage, type ToolRuntime } from "langchain";
 import { Command } from "@langchain/langgraph";
 import * as z from "zod";

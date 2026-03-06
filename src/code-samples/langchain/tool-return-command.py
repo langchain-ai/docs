@@ -1,4 +1,4 @@
-# :snippet-start: tool-return-command
+# :snippet-start: tool-return-command-py
 from langchain.messages import ToolMessage
 from langchain.tools import ToolRuntime, tool
 from langgraph.types import Command

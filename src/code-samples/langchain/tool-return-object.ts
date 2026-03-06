@@ -1,4 +1,4 @@
-// :snippet-start: tool-return-object
+// :snippet-start: tool-return-object-js
 import { tool } from "langchain";
 import * as z from "zod";
 
@@ -12,7 +12,7 @@ const getWeatherData = tool(
     name: "get_weather_data",
     description: "Get structured weather data for a city.",
     schema: z.object({ city: z.string() }),
-  }
+  },
 );
 // :snippet-end:
 

@@ -1,0 +1,197 @@
+---
+title: MCP Tools
+sidebarTitle: MCP Tools
+description: Load additional tools from MCP (Model Context Protocol) servers
+---
+
+[MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets you extend the Deep Agents CLI with tools from external servers — file systems, APIs, databases, and more — without modifying the agent itself. The CLI connects to MCP servers at startup, discovers their tools, and makes them available to the agent alongside the built-in tools.
+
+## Quickstart
+
+<Steps>
+    <Step title="Create a config file" icon="file">
+        Create a `.mcp.json` file at your project root. The format follows the [Claude Desktop convention](https://modelcontextprotocol.io/quickstart/user):
+
+        ```json title=".mcp.json"
+        {
+            "mcpServers": {
+                "docs-langchain": {
+                "type": "http",
+                "url": "https://docs.langchain.com/mcp"
+                }
+            }
+        }
+        ```
+    </Step>
+
+    <Step title="Launch the CLI" icon="terminal">
+        ```bash
+        deepagents
+        ```
+
+        On startup, the CLI automatically discovers your `.mcp.json`, spawns each configured server, discovers its tools, and prints a confirmation:
+
+        ```
+        ✓ Loaded 3 MCP tools
+        ```
+
+        The agent can now use those tools for the duration of the session. Sessions are kept alive — stdio servers are not restarted between tool calls.
+    </Step>
+</Steps>
+
+## Auto-discovery
+
+The CLI automatically searches for `.mcp.json` files in standard locations. No flags are needed — just place a config file and it gets picked up.
+
+### Discovery locations
+
+Configs are checked in this order (lowest to highest precedence):
+
+| Priority | Location | Scope |
+|----------|----------|-------|
+| 1 (lowest) | `~/.deepagents/.mcp.json` | User-level — applies to all projects |
+| 2 | `<project>/.deepagents/.mcp.json` | Project-level — `.deepagents` subdirectory |
+| 3 (highest) | `<project>/.mcp.json` | Project-level — root (Claude Code compatible) |
+
+The project root is the nearest parent directory containing a `.git` folder, falling back to the current working directory.
+
+When multiple config files exist, their `mcpServers` entries are merged. If the same server name appears in more than one file, the higher-precedence config wins.
+
+### Flags
+
+| Flag | Behavior |
+|------|----------|
+| `--mcp-config PATH` | Add an explicit config as the highest-precedence source (merged on top of auto-discovered configs) |
+| `--no-mcp` | Disable MCP entirely — no servers are loaded |
+
+<Note>
+    `--mcp-config` and `--no-mcp` are mutually exclusive.
+</Note>
+
+### Claude Code compatibility
+
+If you already have a `.mcp.json` at your project root for Claude Code, the Deep Agents CLI picks it up automatically — no extra setup needed.
+
+## Configuration format
+
+Each key under `mcpServers` is a server name. The server's fields determine how the CLI connects to it.
+
+### stdio servers (default)
+
+stdio servers are spawned as child processes. The CLI communicates with them over stdin/stdout.
+
+```json title="mcp-config.json"
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "env": {}
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "your-token" }
+    }
+  }
+}
+```
+
+<ResponseField name="command" type="string" required>
+    The executable to run.
+</ResponseField>
+
+<ResponseField name="args" type="string[]">
+    Arguments passed to the command.
+</ResponseField>
+
+<ResponseField name="env" type="object">
+    Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
+</ResponseField>
+
+### SSE and HTTP servers
+
+For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
+
+```json title="mcp-config.json"
+{
+  "mcpServers": {
+    "remote-api": {
+      "type": "sse",
+      "url": "https://api.example.com/mcp",
+      "headers": { "Authorization": "Bearer your-token" }
+    }
+  }
+}
+```
+
+<ResponseField name="type" type="string" required>
+    Transport type: `"sse"` for Server-Sent Events or `"http"` for streamable HTTP.
+</ResponseField>
+
+<ResponseField name="url" type="string" required>
+    The server endpoint URL.
+</ResponseField>
+
+<ResponseField name="headers" type="object">
+    HTTP headers sent with every request. Commonly used for authentication.
+</ResponseField>
+
+### Server types summary
+
+| Type | Required fields | Optional fields |
+|------|-----------------|-----------------|
+| stdio (default) | `command` | `args`, `env` |
+| sse | `type: "sse"`, `url` | `headers` |
+| http | `type: "http"`, `url` | `headers` |
+
+<Note>
+    The `type` field can also be written as `transport` for compatibility with other MCP clients.
+</Note>
+
+## Multiple servers
+
+You can configure as many servers as you need. Tools from all servers are merged and available to the agent:
+
+```json title="mcp-config.json"
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_TOKEN": "ghp_..." }
+    },
+    "database": {
+      "type": "sse",
+      "url": "https://db-mcp.internal:8080/mcp",
+      "headers": { "Authorization": "Bearer ..." }
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+    <Accordion title="Server fails to start (stdio)">
+        Verify the command works outside the CLI:
+
+        ```bash
+        npx -y @modelcontextprotocol/server-filesystem /tmp
+        ```
+
+        Common causes: the package isn't installed, `npx` isn't on `PATH`, or required environment variables are missing.
+    </Accordion>
+
+    <Accordion title="Connection refused (SSE/HTTP)">
+        Check that the remote server is running and the URL is correct. If the server requires authentication, make sure `headers` includes the correct credentials.
+    </Accordion>
+
+    <Accordion title="Tools not appearing">
+        The CLI prints the number of tools loaded at startup (e.g., `✓ Loaded 3 MCP tools`). If you see `0`, the server started successfully but didn't advertise any tools — check the server's own logs or documentation.
+    </Accordion>
+</AccordionGroup>

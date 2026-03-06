@@ -1,4 +1,4 @@
-# :snippet-start: tool-return-values
+# :snippet-start: tool-return-values-py
 from langchain.tools import tool
 
 
