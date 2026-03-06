@@ -1,0 +1,78 @@
+---
+title: "ArcadeDB integrations"
+description: "Integrate with ArcadeDB using LangChain Python."
+---
+
+>- ArcadeDB is an `open-source multi-model database` (Apache 2.0) supporting Graph, Document, Key/Value, Time Series, and Vector models in a single engine.
+>- ArcadeDB supports `Cypher`, SQL, Gremlin, GraphQL, and MongoDB query languages.
+>- ArcadeDB provides a native `Bolt protocol`, allowing connection via the standard Neo4j Python driver.
+>- With ArcadeDB, you can combine `graph traversals, vector search, and document queries` in one database without external dependencies.
+
+>Get started with ArcadeDB by visiting [their website](https://arcadedb.com/).
+
+## Installation and setup
+
+- Install the Python SDK with `pip install langchain-arcadedb`
+
+ArcadeDB must be running with the Bolt protocol plugin enabled:
+
+```bash
+docker run --rm -p 2480:2480 -p 7687:7687 \
+    -e JAVA_OPTS="-Darcadedb.server.plugins=Bolt:com.arcadedb.bolt.BoltProtocolPlugin" \
+    -e arcadedb.server.rootPassword=playwithdata \
+    arcadedata/arcadedb:latest
+```
+
+## GraphCypherQAChain
+
+There exists a wrapper around ArcadeDB graph database that allows you to generate Cypher statements based on user input
+and use them to retrieve relevant information from the database.
+
+```python
+from langchain_arcadedb import ArcadeDBGraph
+from langchain_neo4j import GraphCypherQAChain
+from langchain_openai import ChatOpenAI
+
+graph = ArcadeDBGraph(
+    url="bolt://localhost:7687",
+    username="root",
+    password="playwithdata",
+    database="mydb",
+)
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+chain = GraphCypherQAChain.from_llm(llm=llm, graph=graph, verbose=True)
+
+answer = chain.invoke({"query": "Who does Alice know?"})
+```
+
+## Constructing a knowledge graph from text
+
+You can extract entities and relationships from text and import them as graph documents into ArcadeDB:
+
+```python
+from langchain_arcadedb import ArcadeDBGraph, GraphDocument, Node, Relationship
+from langchain_core.documents import Document
+
+graph = ArcadeDBGraph(
+    url="bolt://localhost:7687",
+    username="root",
+    password="playwithdata",
+    database="mydb",
+)
+
+nodes = [
+    Node(id="alice", type="Person", properties={"name": "Alice", "age": 30}),
+    Node(id="bob", type="Person", properties={"name": "Bob", "age": 25}),
+]
+relationships = [
+    Relationship(source=nodes[0], target=nodes[1], type="KNOWS"),
+]
+doc = GraphDocument(
+    nodes=nodes,
+    relationships=relationships,
+    source=Document(page_content="Alice knows Bob"),
+)
+
+graph.add_graph_documents([doc])
+```
