@@ -124,10 +124,25 @@ const agent = createAgent({
 <ParamField body="trigger" type="ContextSize | list[ContextSize] | None">
     Condition(s) for triggering summarization. Can be:
 
-    - A single @[`ContextSize`] tuple (specified condition must be met)
-    - A list of @[`ContextSize`] tuples (any condition must be met - OR logic)
+    - **Single condition** — a single @[`ContextSize`] tuple. Summarization triggers when that one condition is met.
 
-    Condition should be one of the following:
+        ```python
+        # Trigger when token count reaches 4000
+        trigger=("tokens", 4000)
+        ```
+
+    - **Multiple conditions (OR logic)** — a list of @[`ContextSize`] tuples. Summarization triggers when **any** condition in the list is met.
+
+        ```python
+        # Trigger when tokens >= 3000 OR messages >= 6
+        trigger=[("tokens", 3000), ("messages", 6)]
+        ```
+
+    <Note>
+        Python's `ContextSize` is a single `("key", value)` tuple and holds exactly one threshold at a time. Unlike the JavaScript API (which accepts a multi-property object for AND logic), Python does **not** support requiring multiple different conditions to be true simultaneously. A list of tuples always evaluates as **OR logic** — summarization triggers when **any one** of the listed conditions is met.
+    </Note>
+
+    Each condition must be one of the following:
 
     - `fraction` (float): Fraction of model's context size (0-1)
     - `tokens` (int): Absolute token count
@@ -194,8 +209,19 @@ const agent = createAgent({
 <ParamField body="trigger" type="object | object[]">
     Conditions for triggering summarization. Can be:
 
-    - A single condition object (all properties must be met - AND logic)
-    - An array of condition objects (any condition must be met - OR logic)
+    - **Single condition (AND logic)** — a single object where **all** properties must be met simultaneously.
+
+        ```typescript
+        // Trigger when tokens >= 4000 AND messages >= 10
+        trigger: { tokens: 4000, messages: 10 }
+        ```
+
+    - **Multiple conditions (OR logic)** — an array of condition objects. Summarization triggers when **any** object's conditions are met.
+
+        ```typescript
+        // Trigger when tokens >= 3000 OR messages >= 6
+        trigger: [{ tokens: 3000 }, { messages: 6 }]
+        ```
 
     Each condition can include:
     - `fraction` (number): Fraction of model's context size (0-1)
@@ -245,11 +271,21 @@ const agent = createAgent({
 The summarization middleware monitors message token counts and automatically summarizes older messages when thresholds are reached.
 
 **Trigger conditions** control when summarization runs:
-- Single condition object (specified must be met)
-- Array of conditions (any condition must be met - OR logic)
-- Each condition can use `fraction` (of model's context size), `tokens` (absolute count), or `messages` (message count)
 
-**Keep condition** control how much context to preserve (specify exactly one):
+:::python
+- **Single condition** — pass a single tuple `("key", value)`. Triggers when that one condition is met.
+- **Multiple conditions (OR logic)** — pass a list of tuples `[("key1", v1), ("key2", v2)]`. Triggers when **any** condition in the list is met.
+- Each condition uses `fraction` (of model's context size), `tokens` (absolute count), or `messages` (message count).
+- **No AND logic** — Python's `ContextSize` tuple holds exactly one threshold. A list of tuples is always OR logic; there is no Python equivalent of JavaScript's multi-property AND object.
+:::
+
+:::js
+- **Single condition (AND logic)** — pass a single object `{ key: value, ... }`. All properties in the object must be met simultaneously.
+- **Multiple conditions (OR logic)** — pass an array of objects `[{ key1: v1 }, { key2: v2 }]`. Triggers when **any** object's conditions are met.
+- Each object can include `fraction` (of model's context size), `tokens` (absolute count), or `messages` (message count).
+:::
+
+**Keep condition** controls how much context to preserve after summarization (specify exactly one):
 - `fraction` - Fraction of model's context size to keep
 - `tokens` - Absolute token count to keep
 - `messages` - Number of recent messages to keep
@@ -308,7 +344,7 @@ agent3 = create_agent(
 ```typescript
 import { createAgent, summarizationMiddleware } from "langchain";
 
-// Single condition
+// Single condition (AND logic): trigger if tokens >= 4000 AND messages >= 10
 const agent = createAgent({
   model: "gpt-4.1",
   tools: [weatherTool, calculatorTool],
@@ -321,7 +357,8 @@ const agent = createAgent({
   ],
 });
 
-// Multiple conditions
+// Multiple conditions (OR logic): trigger if tokens >= 3000 OR messages >= 6
+// Each object in the array is an independent condition set; any match triggers summarization.
 const agent2 = createAgent({
   model: "gpt-4.1",
   tools: [weatherTool, calculatorTool],
@@ -329,7 +366,8 @@ const agent2 = createAgent({
     summarizationMiddleware({
       model: "gpt-4.1-mini",
       trigger: [
-        { tokens: 3000, messages: 6 },
+        { tokens: 3000 },
+        { messages: 6 },
       ],
       keep: { messages: 20 },
     }),
