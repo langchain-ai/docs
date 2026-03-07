@@ -99,6 +99,7 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 Follow [Google Developer Documentation Style Guide](https://developers.google.com/style).
 
 **Do:**
+
 - Reference existing pages for style patterns when creating new content
 - Be concise — no hyperbolic or redundant language
 - Second-person imperative present tense ("Run the following code…")
@@ -111,17 +112,19 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Test code examples and links before publishing
 
 **Don't:**
+
 - Skip frontmatter
 - Use absolute URLs for internal links
 - Use markdown in description fields
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
-- Use model aliases — use full identifiers (e.g., `claude-sonnet-4-5-20250929`)
+- Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use H5 or H6 headings
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
+
 ## Adding pages
 
 1. Create MDX file with required frontmatter

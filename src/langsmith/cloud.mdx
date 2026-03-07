@@ -132,6 +132,123 @@ The langchain endpoints map to the following static IP addresses:
 
 You may need to allowlist these to enable traffic from your private network to LangSmith SaaS endpoints (`api.smith.langchain.com`, `smith.langchain.com`, `beacon.langchain.com`, `eu.api.smith.langchain.com`, `eu.smith.langchain.com`, `eu.beacon.langchain.com`).
 
+### Private Service Connect (Enterprise)
+
+<Callout icon="lock" color="#4F46E5" iconType="regular">
+**Enterprise only.** Private Service Connect is available exclusively for Enterprise customers. Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) to enable this feature.
+</Callout>
+
+Enterprise customers on GCP can connect to LangSmith via [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect), providing private connectivity without exposing traffic to the public internet.
+
+#### Service attachment URIs
+
+Use the following service attachment URIs to create a PSC endpoint in your VPC:
+
+| Region | Service Attachment URI |
+|--------|----------------------|
+| US (`us-central1`) | `projects/langchain-prod/regions/us-central1/serviceAttachments/gateway-psc-publish` |
+| EU (`europe-west4`) | `projects/langchain-prod/regions/europe-west4/serviceAttachments/gateway-psc-publish` |
+
+#### PSC domains
+
+After setup, use the following domains to connect to LangSmith over your PSC connection:
+
+| Region | Domain |
+|--------|--------|
+| US | `us-central1.p.api.smith.langchain.com` |
+| EU | `europe-west4.p.api.smith.langchain.com` |
+
+#### Setup
+
+**Request access:** Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your GCP project ID. LangChain will add your project to the service attachment's allowed consumer list.
+
+After access is granted, create a PSC endpoint and configure DNS using either the gcloud CLI or Terraform.
+
+#### Create a PSC endpoint
+
+Create a forwarding rule in your VPC targeting the service attachment:
+
+<CodeGroup>
+```bash gcloud CLI
+# Create the PSC endpoint
+gcloud compute forwarding-rules create langsmith-psc-endpoint \
+  --region=<REGION> \
+  --network=<YOUR_VPC_NETWORK> \
+  --subnet=<YOUR_SUBNET> \
+  --target-service-attachment=projects/langchain-prod/regions/<REGION>/serviceAttachments/gateway-psc-publish \
+  --load-balancing-scheme=""
+
+# Get the assigned IP address
+gcloud compute forwarding-rules describe langsmith-psc-endpoint \
+  --region=<REGION> \
+  --format="value(IPAddress)"
+```
+
+```hcl Terraform
+resource "google_compute_forwarding_rule" "langsmith_psc" {
+  name                  = "langsmith-psc-endpoint"
+  project               = "<YOUR_PROJECT_ID>"
+  region                = "<REGION>"
+  network               = "<YOUR_VPC_NETWORK>"
+  subnetwork            = "<YOUR_SUBNET>"
+  target                = "projects/langchain-prod/regions/<REGION>/serviceAttachments/gateway-psc-publish"
+  load_balancing_scheme = ""
+}
+```
+</CodeGroup>
+
+#### Configure DNS
+
+Create a private DNS zone in your VPC and add an A record pointing to the PSC endpoint IP:
+
+<CodeGroup>
+```bash gcloud CLI
+# Create a private DNS zone
+gcloud dns managed-zones create langsmith-psc \
+  --dns-name="<REGION>.p.api.smith.langchain.com." \
+  --visibility=private \
+  --networks=<YOUR_VPC_NETWORK>
+
+# Add an A record pointing to the PSC endpoint IP
+gcloud dns record-sets create "<REGION>.p.api.smith.langchain.com." \
+  --zone=langsmith-psc \
+  --type=A \
+  --rrdatas=<PSC_ENDPOINT_IP>
+```
+
+```hcl Terraform
+resource "google_dns_managed_zone" "langsmith_psc" {
+  name        = "langsmith-psc"
+  project     = "<YOUR_PROJECT_ID>"
+  dns_name    = "<REGION>.p.api.smith.langchain.com."
+  visibility  = "private"
+
+  private_visibility_config {
+    networks {
+      network_url = "<YOUR_VPC_NETWORK_SELF_LINK>"
+    }
+  }
+}
+
+resource "google_dns_record_set" "langsmith_psc" {
+  name         = "<REGION>.p.api.smith.langchain.com."
+  project      = "<YOUR_PROJECT_ID>"
+  managed_zone = google_dns_managed_zone.langsmith_psc.name
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_forwarding_rule.langsmith_psc.ip_address]
+}
+```
+</CodeGroup>
+
+#### Verify connectivity
+
+From a VM in your VPC:
+
+```bash
+curl https://<REGION>.p.api.smith.langchain.com/ok
+```
+
 ### API rate limits
 
 LangSmith enforces rate limits on API endpoints to ensure service stability and fair usage. The following table shows the rate limits for different endpoints in both US and EU regions. Note that:
