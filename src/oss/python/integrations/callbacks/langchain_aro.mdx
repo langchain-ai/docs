@@ -1,0 +1,109 @@
+---
+title: "langchain-aro: Execution Integrity Artifacts for LangChain Runs"
+description: "Integrate langchain-aro with LangChain to export portable execution integrity artifacts."
+---
+
+`langchain-aro` is an external middleware integration for LangChain-style runs. It focuses on execution integrity artifacts: capturing a minimal run journal, exporting a portable artifact, and verifying that artifact after a run. It does not replace tracing or observability systems.
+
+## Why use it
+
+Use `langchain-aro` when you want a small execution-integrity layer around a LangChain run:
+
+* record run journals
+* generate execution hashes
+* export verifiable artifacts
+* replay or verify artifacts after a run
+
+## Installation
+
+Install from source:
+
+```bash
+pip install -e 'git+https://github.com/joy7758/langchain-aro.git#egg=langchain-aro'
+```
+
+For local development:
+
+```bash
+git clone https://github.com/joy7758/langchain-aro.git
+cd langchain-aro
+pip install -e '.[dev]'
+```
+
+## Quickstart
+
+```python
+from langchain_core.runnables import RunnableLambda
+from langchain_aro import ARORecorder, verify_artifact
+
+chain = RunnableLambda(lambda x: {"output": x["input"].upper()})
+
+recorder = ARORecorder(project="demo", output_dir="artifacts")
+
+result = chain.invoke(
+    {"input": "hello"},
+    config={"callbacks": [recorder.callback_handler()]},
+)
+
+artifact = recorder.finalize()
+report = verify_artifact(artifact.path)
+
+print(result)
+print(report.ok)
+```
+
+The current MVP is middleware-first and artifact-first. The callback handler captures a minimal event stream and writes a portable `run.json` artifact to the local filesystem.
+
+## How it works
+
+```text
+LangChain Runtime
+       |
+       v
+ARO Middleware
+       |
+       v
+Run Journal
+       |
+       v
+Execution Hash
+       |
+       v
+Verifiable Artifact
+```
+
+During a run, `ARORecorder` collects a small journal of callback events such as run start, input, output, finish, or error. When `finalize()` is called, the journal is serialized into an artifact, an execution hash is computed from canonical JSON, and the result is written to disk.
+
+## Verification
+
+`verify_artifact()` loads an exported artifact and performs four basic checks:
+
+* load artifact from disk
+* validate required fields
+* recompute execution hash
+* return a structured verification report
+
+This keeps the verification path separate from runtime capture. A run can be captured in one environment and verified later in another.
+
+## Scope and limits
+
+`langchain-aro` is intentionally small in its current form:
+
+* early MVP
+* artifact-first
+* middleware-first
+* not a full tracing platform
+* not a hosted observability service
+
+The current goal is to make execution-integrity artifacts portable and verifiable, not to provide full tracing coverage or a hosted monitoring workflow.
+
+## Validation status
+
+The current MVP is validated against a real `langchain-core` callback flow.
+The project should currently be considered experimental.
+
+## Resources
+
+* GitHub repository: https://github.com/joy7758/langchain-aro
+* README: https://github.com/joy7758/langchain-aro/blob/main/README.md
+* architecture doc: https://github.com/joy7758/langchain-aro/blob/main/docs/architecture.md
