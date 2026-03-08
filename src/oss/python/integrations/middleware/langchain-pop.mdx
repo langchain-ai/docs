@@ -1,0 +1,177 @@
+---
+title: "LangChain POP middleware"
+description: "Integrate with the langchain-pop middleware using LangChain Python."
+---
+
+Portable persona middleware for LangChain agents. Learn more about [middleware](/oss/langchain/middleware/overview).
+
+`langchain-pop` is a middleware-style toolkit for loading portable persona objects into LangChain agents. It loads persona objects into runtime state, converts them into system-level persona framing, and enforces boundary-aware tool filtering.
+
+## Why use langchain-pop
+
+Many agent personas are still represented as prompt fragments or local configuration blocks. `langchain-pop` provides a more structured path by treating persona as a portable object that can be loaded, migrated, and interpreted at runtime.
+
+Use `langchain-pop` when you want:
+
+- structured persona loading instead of prompt-only role injection
+- legacy `pop-0.1` migration into a canonical runtime shape
+- runtime persona state with explicit identity fields
+- boundary-aware tool filtering before tool use
+
+## Installation
+
+```bash
+pip install langchain-pop
+pip install langchain-openai
+```
+
+For local development:
+
+```bash
+pip install -e .
+pip install -e ".[openai]"
+```
+
+## Quickstart
+
+```python
+from langchain_openai import ChatOpenAI
+
+from langchain_pop.agent import create_pop_agent
+
+
+pop_object = {
+    "kind": "persona-object",
+    "id": "persona:mentor:quickstart",
+    "version": "1.0.0",
+    "role": "mentor",
+    "traits": ["calm", "analytical", "structured"],
+    "boundaries": {
+        "financial_advice": False
+    },
+    "status": "active",
+    "provenance": {
+        "issuer": "langchain-pop-docs",
+        "created": "2026-03-08"
+    }
+}
+
+agent = create_pop_agent(
+    pop_source=pop_object,
+    model=ChatOpenAI(model="gpt-4o", api_key="test-key", temperature=0.0),
+    tools=[],
+    name="mentor_agent",
+)
+
+print(type(agent).__name__)
+```
+
+```text
+CompiledStateGraph
+```
+
+## Inspect middleware output
+
+Inspect runtime persona configuration without invoking a live model:
+
+```bash
+python examples/langchain_middleware_demo.py --print-config
+```
+
+This prints:
+
+- persona state
+- generated system prompt
+- allowed tools
+- blocked tools
+
+## Add boundary-aware tool filtering
+
+`POPMiddleware` loads the active persona object, builds runtime persona framing, and filters tools according to persona boundaries.
+
+For example, if a persona object disallows finance-related actions, a tool such as `salary_estimator` can be removed from the runtime tool set before use.
+
+```python
+from langchain_pop.middleware import POPMiddleware
+
+
+def knowledge_lookup(topic: str) -> str:
+    """Look up a topic in a mock knowledge base."""
+    return topic
+
+
+def salary_estimator(role: str) -> str:
+    """Estimate salary bands for a role."""
+    return role
+
+
+middleware = POPMiddleware(
+    {
+        "kind": "persona-object",
+        "id": "persona:mentor:boundaries",
+        "version": "1.0.0",
+        "role": "mentor",
+        "traits": ["calm", "analytical"],
+        "boundaries": {
+            "tool.salary_estimator": {
+                "decision": "disallow",
+                "reason": "Salary estimation is outside this mentor persona's approved scope."
+            }
+        },
+        "status": "active",
+        "provenance": {
+            "issuer": "langchain-pop-docs",
+            "created": "2026-03-08"
+        }
+    }
+)
+
+allowed_tools, blocked_tools = middleware.filter_tools(
+    [knowledge_lookup, salary_estimator]
+)
+```
+
+This allows persona constraints to affect runtime behavior through middleware rather than existing only as prompt text.
+
+## Migrate legacy persona objects
+
+Legacy `pop-0.1` inputs are supported through automatic migration.
+
+```python
+from langchain_openai import ChatOpenAI
+
+from langchain_pop.agent import create_pop_agent
+
+
+legacy_pop_object = {
+    "schema_version": "pop-0.1",
+    "id": "urn:pop:mentor:legacy-example",
+    "name": "Structured Mentor",
+    "description": "A mentor persona oriented toward practical guidance.",
+    "traits": ["patient", "structured"],
+    "anchors": [
+        {"type": "role", "value": "skill-building mentor"},
+        {"type": "boundary", "value": "does not provide legal advice"},
+    ],
+    "behavior": {
+        "tone": "calm and direct",
+        "boundaries": ["does not provide medical advice"],
+    },
+}
+
+agent = create_pop_agent(
+    pop_source=legacy_pop_object,
+    model=ChatOpenAI(model="gpt-4o", api_key="test-key", temperature=0.0),
+    tools=[],
+)
+
+print(type(agent).__name__)
+```
+
+## Project status
+
+`langchain-pop` is an early integration preview.
+
+It demonstrates that portable persona objects can be consumed by a real LangChain agent runtime and converted into middleware-governed persona behavior.
+
+It is not a LangChain core primitive, a full interoperability benchmark, or a production governance framework.
