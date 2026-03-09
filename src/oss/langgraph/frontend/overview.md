@@ -7,7 +7,7 @@ Build frontends that visualize LangGraph pipelines in real time. These patterns 
 
 ## Architecture
 
-LangGraph graphs are composed of named nodes connected by edges. Each node executes a step — classify, research, analyze, synthesize — and writes output to a specific state key. On the frontend, `useStream` provides reactive access to node outputs, streaming tokens, and graph metadata so you can map each node to a UI card.
+LangGraph graphs are composed of named nodes connected by edges. Each node executes a step (classify, research, analyze, synthesize) and writes output to a specific state key. On the frontend, `useStream` provides reactive access to node outputs, streaming tokens, and graph metadata so you can map each node to a UI card.
 
 ```mermaid
 %%{
@@ -117,4 +117,4 @@ function Pipeline() {
 
 ## Related patterns
 
-The [LangChain frontend patterns](/oss/langchain/frontend/overview) — markdown messages, tool calling, optimistic updates, and more — work with any LangGraph graph. The `useStream` hook provides the same core API whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.
+The [LangChain frontend patterns](/oss/langchain/frontend/overview)—markdown messages, tool calling, optimistic updates, and more—work with any LangGraph graph. The `useStream` hook provides the same core API whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.
