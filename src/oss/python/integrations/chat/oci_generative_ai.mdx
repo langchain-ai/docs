@@ -69,23 +69,33 @@ llm = ChatOCIGenAI(
 ```python
 messages = [
     ("system", "You are a code review assistant."),
-    ("human", "Review this Python function for security issues:\n\n```python\ndef login(username, password):\n    query = f\"SELECT * FROM users WHERE name='{username}' AND pass='{password}'\"\n    return db.execute(query)\n```"),
+    ("human", """Review this Python function for security issues:
+
+def login(username, password):
+    query = f"SELECT * FROM users WHERE name='{username}' AND pass='{password}'"
+    return db.execute(query)
+"""),
 ]
 response = llm.invoke(messages)
 print(response.content)
 ```
 
+```text
+This function has a critical SQL injection vulnerability. The username and password
+are directly interpolated into the SQL query string, allowing attackers to bypass
+authentication or extract data. Use parameterized queries instead:
+
+    cursor.execute("SELECT * FROM users WHERE name=? AND pass=?", (username, password))
+```
+
 **Multi-turn conversations** maintain context across messages:
 
 ```python
-from langchain.messages import HumanMessage, AIMessage
-
 messages = [
-    HumanMessage(content="Analyze error rate spike at 14:30 UTC"),
-    AIMessage(content="The spike correlates with deploy-v2.1.3. Checking logs..."),
-    HumanMessage(content="What was the root cause?"),
+    ("user", "Analyze error rate spike at 14:30 UTC"),
+    ("assistant", "The spike correlates with deploy-v2.1.3. Checking logs..."),
+    ("user", "What was the root cause?"),
 ]
-
 response = llm.invoke(messages)
 # Model references previous context about deploy-v2.1.3
 ```
@@ -95,7 +105,7 @@ response = llm.invoke(messages)
 Get responses as they're generated:
 
 ```python
-for chunk in llm.stream(messages):
+for chunk in llm.stream("Explain Python generators in 3 sentences"):
     print(chunk.content, end="", flush=True)
 ```
 
@@ -107,21 +117,16 @@ Process multiple requests concurrently for better throughput:
 import asyncio
 
 # Analyze multiple code files concurrently
-async def analyze_codebase(files):
-    tasks = [
-        llm.ainvoke(f"Find security vulnerabilities in:\n{code}")
-        for code in files
-    ]
-    results = await asyncio.gather(*tasks)
-    return results
+async def analyze_codebase(files: list[str]) -> list:
+    tasks = [llm.ainvoke(f"Find vulnerabilities in:\n{code}") for code in files]
+    return await asyncio.gather(*tasks)
 
 # Stream responses for real-time UI updates
-async def generate_documentation(code):
-    async for chunk in llm.astream(
-        f"Generate API documentation for:\n{code}"
-    ):
+async def stream_response():
+    async for chunk in llm.astream("Explain async/await in Python"):
         print(chunk.content, end="", flush=True)
-        # Send chunk to websocket, update UI, etc.
+
+asyncio.run(stream_response())
 ```
 
 ## Tool Calling
@@ -130,56 +135,77 @@ Give models access to APIs, databases, and custom functions:
 
 ```python
 from langchain.tools import tool
-import requests
 
 @tool
-def query_user_analytics(user_id: str, metric: str) -> dict:
-    """Query analytics database for user metrics.
+def get_order_status(order_id: str) -> dict:
+    """Check the status of a customer order.
 
     Args:
-        user_id: The user ID to query
-        metric: Metric name (revenue, sessions, conversions)
+        order_id: The order ID to look up
     """
-    # Example: Call your analytics API
-    response = requests.get(
-        f"https://api.example.com/analytics/{user_id}",
-        params={"metric": metric}
-    )
-    return response.json()
+    # In production, query your database
+    return {"order_id": order_id, "status": "shipped", "eta": "2024-03-15"}
 
 @tool
-def get_stock_price(ticker: str) -> float:
-    """Get current stock price from financial API.
+def get_account_balance(account_id: str) -> dict:
+    """Get current account balance.
 
     Args:
-        ticker: Stock ticker symbol (e.g., AAPL, GOOGL)
+        account_id: The account ID
     """
-    # Example: Call financial data API
-    response = requests.get(f"https://api.example.com/stocks/{ticker}")
-    return response.json()["price"]
+    return {"account_id": account_id, "balance": 1250.00, "currency": "USD"}
 
-llm_with_tools = llm.bind_tools([query_user_analytics, get_stock_price])
+# Bind tools to the model
+tools = [get_order_status, get_account_balance]
+llm_with_tools = llm.bind_tools(tools)
 
-# Model analyzes query and calls appropriate tool
-response = llm_with_tools.invoke(
-    "What's user 12345's revenue and current AAPL stock price?"
-)
+# Model decides which tool to call
+response = llm_with_tools.invoke("What's the status of order ORD-12345?")
 
-# Inspect tool calls made by model
-for tool_call in response.tool_calls:
-    print(f"Called: {tool_call['name']}")
-    print(f"Args: {tool_call['args']}")
+# Check if model wants to call a tool
+if response.tool_calls:
+    tool_call = response.tool_calls[0]
+    print(f"Tool: {tool_call['name']}, Args: {tool_call['args']}")
+    # Output: Tool: get_order_status, Args: {'order_id': 'ORD-12345'}
+```
+
+**Complete tool execution loop** - execute the tool and return results:
+
+```python
+from langchain.messages import HumanMessage, AIMessage, ToolMessage
+
+messages = [HumanMessage(content="What's the status of order ORD-12345?")]
+response = llm_with_tools.invoke(messages)
+
+# Execute each tool call and collect results
+if response.tool_calls:
+    messages.append(response)  # Add AI response with tool calls
+
+    for tool_call in response.tool_calls:
+        # Find and execute the tool
+        tool_fn = {"get_order_status": get_order_status,
+                   "get_account_balance": get_account_balance}[tool_call["name"]]
+        result = tool_fn.invoke(tool_call["args"])
+
+        # Add tool result to messages
+        messages.append(ToolMessage(content=str(result), tool_call_id=tool_call["id"]))
+
+    # Get final response with tool results
+    final_response = llm_with_tools.invoke(messages)
+    print(final_response.content)
+    # Output: Order ORD-12345 has been shipped and is expected to arrive on March 15, 2024.
 ```
 
 **Parallel tool execution** (Llama 4+) for concurrent API calls:
 
 ```python
-llm = ChatOCIGenAI(model_id="meta.llama-4-scout-17b-16e-instruct", ...)
-llm_with_tools = llm.bind_tools(
-    [query_user_analytics, get_stock_price],
-    parallel_tool_calls=True,  # Execute tools concurrently
+llm = ChatOCIGenAI(
+    model_id="meta.llama-4-scout-17b-16e-instruct",
+    service_endpoint="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com",
+    compartment_id="ocid1.compartment.oc1..your-compartment-id",
 )
-# Model calls both tools at once, reducing latency
+llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=True)
+# Model can call multiple tools at once, reducing latency
 ```
 
 ## Structured Output
@@ -201,18 +227,20 @@ class SupportTicket(BaseModel):
 structured_llm = llm.with_structured_output(SupportTicket)
 
 # Parse unstructured support email
-ticket = structured_llm.invoke("""
-From: customer@example.com
+email_text = """From: customer@example.com
 Subject: URGENT - Cannot access production database
 
 Our production API has been returning 500 errors for the past hour.
 The database connection pool appears exhausted. This is affecting
-our payment processing and user authentication services.
-""")
+our payment processing and user authentication services."""
 
-print(ticket.severity)  # "critical"
-print(ticket.category)  # "technical"
-print(ticket.affected_services)  # ["payment", "authentication"]
+ticket = structured_llm.invoke(email_text)
+```
+
+```python
+print(ticket.severity)           # "critical"
+print(ticket.category)           # "technical"
+print(ticket.affected_services)  # ["payment processing", "user authentication"]
 ```
 
 Use for log parsing, invoice extraction, or data classification pipelines.
@@ -225,73 +253,82 @@ Process images for data extraction, analysis, and automation:
 from langchain.messages import HumanMessage
 from langchain_oci import ChatOCIGenAI, load_image
 
-llm = ChatOCIGenAI(model_id="meta.llama-3.2-90b-vision-instruct", ...)
+llm = ChatOCIGenAI(
+    model_id="meta.llama-3.2-90b-vision-instruct",
+    service_endpoint="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com",
+    compartment_id="ocid1.compartment.oc1..your-compartment-id",
+)
 
-# Extract data from chart/graph
+# Analyze an architecture diagram
 message = HumanMessage(content=[
-    {"type": "text", "text": """
-    Extract all data points from this time-series chart.
-    Return as JSON with timestamp and value pairs.
-    """},
-    load_image("./metrics_chart.png"),
+    {"type": "text", "text": "List all services and their connections in this diagram."},
+    load_image("./architecture_diagram.png"),  # Local file or URL
 ])
-chart_data = llm.invoke([message])
-
-# Analyze architectural diagram
-message = HumanMessage(content=[
-    {"type": "text", "text": """
-    Identify all services and their connections in this architecture diagram.
-    List components, data flows, and external dependencies.
-    """},
-    load_image("https://example.com/architecture.png"),
-])
-architecture = llm.invoke([message])
+response = llm.invoke([message])
+print(response.content)
 ```
 
-**Use cases:** Document processing, diagram analysis, receipt/invoice parsing, chart data extraction
+```text
+The diagram shows 4 services:
+1. API Gateway - receives external traffic, routes to internal services
+2. Auth Service - handles authentication, connects to User DB
+3. Order Service - processes orders, connects to Orders DB and Payment API
+4. Notification Service - sends emails/SMS, triggered by Order Service
+```
 
-**Vision models:** Llama 3.2 Vision, Gemini 2.0/2.5, Grok 4, Command A Vision
+**Use cases:** Diagram analysis, receipt/invoice parsing, chart data extraction, document processing
+
+**Vision models:** Llama 3.2 Vision (11B, 90B), Gemini 2.0/2.5, Grok 4, Cohere Command A
 
 ## Gemini Multimodal (PDF, Video, Audio)
 
-Process documents, videos, and audio for automation pipelines:
+Process documents, videos, and audio with Gemini models:
 
 ```python
 import base64
 from langchain.messages import HumanMessage
+from langchain_oci import ChatOCIGenAI
 
-llm = ChatOCIGenAI(model_id="google.gemini-2.5-flash", ...)
+llm = ChatOCIGenAI(
+    model_id="google.gemini-2.5-flash",
+    service_endpoint="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com",
+    compartment_id="ocid1.compartment.oc1..your-compartment-id",
+)
 
-# Extract structured data from contract PDF
+# Extract data from a PDF
 with open("contract.pdf", "rb") as f:
     pdf_data = base64.b64encode(f.read()).decode()
 
 message = HumanMessage(content=[
-    {"type": "text", "text": """
-    Extract: contract parties, effective date, termination clauses,
-    payment terms, and key obligations. Return as structured JSON.
-    """},
-    {"type": "media", "data": pdf_data, "mime_type": "application/pdf"}
+    {"type": "text", "text": "Extract the contract parties, effective date, and payment terms as JSON."},
+    {"type": "document_url", "document_url": {"url": f"data:application/pdf;base64,{pdf_data}"}}
 ])
-contract_data = llm.invoke([message])
+response = llm.invoke([message])
+print(response.content)
+```
 
-# Analyze meeting recording
+```text
+{
+  "parties": ["Acme Corp", "TechStart Inc"],
+  "effective_date": "2024-01-15",
+  "payment_terms": "Net 30, monthly invoicing"
+}
+```
+
+**Video/Audio analysis:**
+
+```python
 with open("meeting.mp4", "rb") as f:
     video_data = base64.b64encode(f.read()).decode()
 
 message = HumanMessage(content=[
-    {"type": "text", "text": """
-    Summarize key decisions, action items, and deadlines from this meeting.
-    Include who is responsible for each action item.
-    """},
-    {"type": "media", "data": video_data, "mime_type": "video/mp4"}
+    {"type": "text", "text": "List the action items and who is responsible for each."},
+    {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{video_data}"}}
 ])
-meeting_notes = llm.invoke([message])
+response = llm.invoke([message])
 ```
 
-**Use cases:** Contract analysis, meeting transcription, compliance auditing, document processing
-
-**Formats:** PDF, MP4/MOV video, MP3/WAV audio (Gemini 2.0/2.5 only)
+**Supported formats:** PDF, MP4/MOV video, MP3/WAV audio (Gemini 2.0/2.5 only)
 
 ## Configuration
 
@@ -300,12 +337,13 @@ Control model behavior with `model_kwargs`:
 ```python
 llm = ChatOCIGenAI(
     model_id="meta.llama-3.3-70b-instruct",
+    service_endpoint="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com",
+    compartment_id="ocid1.compartment.oc1..your-compartment-id",
     model_kwargs={
-        "temperature": 0.7,    # Creativity (0-1)
-        "max_tokens": 500,     # Response length limit
-        "top_p": 0.9,         # Nucleus sampling
+        "temperature": 0.7,    # Creativity: 0 = deterministic, 1 = creative
+        "max_tokens": 500,     # Maximum response length
+        "top_p": 0.9,          # Nucleus sampling threshold
     },
-    # ... other params
 )
 ```
 
