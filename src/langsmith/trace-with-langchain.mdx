@@ -1,5 +1,5 @@
 ---
-title: Trace with LangChain (Python and JS/TS)
+title: Trace LangChain applications (Python and JS/TS)
 sidebarTitle: LangChain
 ---
 
@@ -70,7 +70,7 @@ prompt = ChatPromptTemplate.from_messages([
     ("user", "Question: {question}\nContext: {context}")
 ])
 
-model = ChatOpenAI(model="gpt-4o-mini")
+model = ChatOpenAI(model="gpt-4.1-mini")
 output_parser = StrOutputParser()
 chain = prompt | model | output_parser
 
@@ -90,7 +90,7 @@ const prompt = ChatPromptTemplate.fromMessages([
   ["user", "Question: {question}\nContext: {context}"],
 ]);
 
-const model = new ChatOpenAI({ modelName: "gpt-4o-mini" });
+const model = new ChatOpenAI({ modelName: "gpt-4.1-mini" });
 const outputParser = new StringOutputParser();
 const chain = prompt.pipe(model).pipe(outputParser);
 
@@ -106,7 +106,7 @@ await chain.invoke({ question: question, context: context });
 
 By default, the trace will be logged to the project with the name `default`. An example of a trace logged using the above code is made public and can be viewed [here](https://smith.langchain.com/public/e6a46eb2-d785-4804-a1e3-23f167a04300/r).
 
-![](/langsmith/images/langchain-trace.png)
+![Langchain trace](/langsmith/images/langchain-trace.png)
 
 ## Trace selectively
 
@@ -274,12 +274,87 @@ await chain.invoke({ input: "What is the meaning of life?" }, {runName: "MyCusto
 </CodeGroup>
 
 <Note>
-The `run_name` parameter only changes the name of the runnable you invoke (e.g., a chain, function). It does not rename the nested run automatically created when you invoke an LLM object like @[`ChatOpenAI`] (`gpt-4o-mini`). In the example, the enclosing run will appear in LangSmith as `MyCustomChain`, while the nested LLM run still shows the model’s default name.
+The `run_name` parameter only changes the name of the runnable you invoke (e.g., a chain, function). It does not rename the nested run automatically created when you invoke an LLM object like @[`ChatOpenAI`] (`gpt-4.1-mini`). In the example, the enclosing run will appear in LangSmith as `MyCustomChain`, while the nested LLM run still shows the model’s default name.
 
 To give the LLM run a more meaningful name, you can either:
 
 - Wrap the model in another runnable and assign a `run_name` to that step.
 - Use a tracing decorator or helper (e.g., `@traceable` in Python, or `traceable` from `langsmith` in JS/TS) to create a custom run around the model call.
+</Note>
+
+## Override model name in traces
+
+When tracing LangChain model calls, LangSmith automatically captures the model identifier used in the API call. However, you may want to display a different, more descriptive name in traces for organizational purposes or to distinguish between different model configurations. You can do this by passing the `ls_model_name` [metadata parameter](/langsmith/ls-metadata-parameters#ls-model-name) when constructing or configuring your LangChain model.
+
+This is particularly useful when:
+
+- Working with self-hosted or local models where the model ID might not be descriptive.
+- Using the same model with different configurations and wanting to distinguish them in traces.
+- Creating aliases for models to make traces more readable for your team.
+- Standardizing model names across different deployment environments.
+
+<CodeGroup>
+
+```python Python
+from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
+
+# Override model name for a local model
+llm = ChatOllama(
+    model="llama2:13b-chat",  # Actual model ID
+    metadata={"ls_model_name": "llama2-13b-production"}  # Name shown in LangSmith
+)
+
+# Or with OpenAI to distinguish configurations
+llm_creative = ChatOpenAI(
+    model="gpt-4.1",
+    temperature=0.9,
+    metadata={"ls_model_name": "gpt-4.1-creative"}
+)
+
+llm_factual = ChatOpenAI(
+    model="gpt-4.1",
+    temperature=0.1,
+    metadata={"ls_model_name": "gpt-4.1-factual"}
+)
+
+# The metadata is inherited when the model is used in a chain
+result = llm.invoke("What is the meaning of life?")
+```
+
+```typescript TypeScript
+import { ChatOpenAI } from "@langchain/openai";
+import { ChatOllama } from "@langchain/ollama";
+
+// Override model name for a local model
+const llm = new ChatOllama({
+  model: "llama2:13b-chat",  // Actual model ID
+  metadata: { ls_model_name: "llama2-13b-production" }  // Name shown in LangSmith
+});
+
+// Or with OpenAI to distinguish configurations
+const llmCreative = new ChatOpenAI({
+  modelName: "gpt-4.1",
+  temperature: 0.9,
+  metadata: { ls_model_name: "gpt-4.1-creative" }
+});
+
+const llmFactual = new ChatOpenAI({
+  modelName: "gpt-4.1",
+  temperature: 0.1,
+  metadata: { ls_model_name: "gpt-4.1-factual" }
+});
+
+// The metadata is inherited when the model is used in a chain
+const result = await llm.invoke("What is the meaning of life?");
+```
+
+</CodeGroup>
+
+When you pass `ls_model_name` in the model's metadata, this name will appear in the LangSmith UI for all traces involving that model instance. This works for any LangChain chat model or LLM and is inherited by all runs that use the model, including when it's part of a chain.
+
+<Note>
+The `ls_model_name` metadata parameter is also used for [cost tracking](/langsmith/cost-tracking). When combined with the `ls_provider` parameter, LangSmith can automatically calculate costs for custom or self-hosted models. For more information about all available metadata parameters, see the [metadata parameters reference](/langsmith/ls-metadata-parameters).
 </Note>
 
 ## Customize run ID
@@ -333,7 +408,7 @@ prompt = ChatPromptTemplate.from_messages([
     ("system", "You are a helpful assistant. Please respond to the user's request only based on the given context."),
     ("user", "Question: {question}\n\nContext: {context}")
 ])
-model = ChatOpenAI(model="gpt-4o-mini")
+model = ChatOpenAI(model="gpt-4.1-mini")
 output_parser = StrOutputParser()
 
 chain = prompt | model | output_parser
@@ -355,7 +430,7 @@ const prompt = ChatPromptTemplate.fromMessages([
   ["system", "You are a helpful assistant. Please respond to the user's request only based on the given context."],
   ["user", "Question: {question}\n\nContext: {context}"],
 ]);
-const model = new ChatOpenAI({ modelName: "gpt-4o-mini" });
+const model = new ChatOpenAI({ modelName: "gpt-4.1-mini" });
 const outputParser = new StringOutputParser();
 
 const chain = prompt.pipe(model).pipe(outputParser);
@@ -510,7 +585,7 @@ prompt = ChatPromptTemplate.from_messages([
     ("user", "Question: {question}\nContext: {context}")
 ])
 
-model = ChatOpenAI(model="gpt-4o-mini")
+model = ChatOpenAI(model="gpt-4.1-mini")
 output_parser = StrOutputParser()
 chain = prompt | model | output_parser
 
@@ -526,7 +601,7 @@ def invoke_runnnable(question, context):
 invoke_runnnable("Can you summarize this morning's meetings?", "During this morning's meeting, we solved all world conflict.")
 ```
 
-This will produce the following trace tree: ![](/langsmith/images/trace-tree-python-interop.png)
+This will produce the following trace tree: ![Trace tree python interop](/langsmith/images/trace-tree-python-interop.png)
 
 ## Interoperability between LangChain.JS and LangSmith SDK
 
@@ -550,7 +625,7 @@ const prompt = ChatPromptTemplate.fromMessages([
   ["user", "Question: {question}\nContext: {context}"],
 ]);
 
-const model = new ChatOpenAI({ modelName: "gpt-4o-mini" });
+const model = new ChatOpenAI({ modelName: "gpt-4.1-mini" });
 const outputParser = new StringOutputParser();
 const chain = prompt.pipe(model).pipe(outputParser);
 

@@ -1,4 +1,4 @@
-!!! warning "Reference docs"
+!!! note "Reference docs"
 
     This page contains **reference documentation** for Middleware. See [the docs](https://docs.langchain.com/oss/python/langchain/middleware) for conceptual guides, tutorials, and examples on using Middleware.
 
@@ -49,6 +49,15 @@ Core types for building middleware:
 | [`ModelResponse`](#langchain.agents.middleware.ModelResponse) | Response details from model calls |
 | [`ClearToolUsesEdit`](#langchain.agents.middleware.ClearToolUsesEdit) | Utility for clearing tool usage history from context |
 | [`InterruptOnConfig`](#langchain.agents.middleware.InterruptOnConfig) | Configuration for human-in-the-loop interruptions |
+
+[`SummarizationMiddleware`](#langchain.agents.middleware.SummarizationMiddleware) types:
+
+| TYPE | DESCRIPTION |
+| ---- | ----------- |
+| [`ContextSize`](#langchain.agents.middleware.summarization.ContextSize) | Union type |
+| [`ContextFraction`](#langchain.agents.middleware.summarization.ContextFraction) | Summarize at fraction of total context |
+| [`ContextTokens`](#langchain.agents.middleware.summarization.ContextTokens) | Summarize at token threshold |
+| [`ContextMessages`](#langchain.agents.middleware.summarization.ContextMessages) | Summarize at message threshold |
 
 <!-- TODO: `ignore_init_summary` doesn't seem to work.  -->
 
@@ -185,6 +194,13 @@ Core types for building middleware:
 ::: langchain.agents.middleware.InterruptOnConfig
     options:
       merge_init_into_class: true
+
+<!-- Summarization types -->
+
+::: langchain.agents.middleware.summarization.ContextSize
+::: langchain.agents.middleware.summarization.ContextFraction
+::: langchain.agents.middleware.summarization.ContextTokens
+::: langchain.agents.middleware.summarization.ContextMessages
 
 <!-- Copy and paste the above for each new entry -->
 <!-- (Don't use "members") -->

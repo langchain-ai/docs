@@ -6,12 +6,7 @@
 * 🛠️ `reference.langchain.com` is home to the API reference docs for LangChain, LangGraph, LangSmith, and LangChain integration packages (e.g., [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/)). These are static sites built from the source code and deployed to [Vercel](https://vercel.com).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
-
-> [!IMPORTANT]
->
-> The LangSmith API and [SDK](https://github.com/langchain-ai/langsmith-sdk) references are not yet fully consolidated to this repo. Visit their documentation:
-> * [`HTTP API Reference`](https://api.smith.langchain.com/redoc)
-> * [`JavaScript/TypeScript SDK reference`](https://docs.smith.langchain.com/reference/js)
+* 💬 [`chat.langchain.com`](https://chat.langchain.com) is an AI-powered assistant that can answer questions about LangChain documentation.
 
 ---
 
@@ -35,7 +30,25 @@
 
 ## Contribute
 
-To contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
+To run a local preview of the documentation:
+
+```bash
+git clone https://github.com/langchain-ai/docs.git
+```
+
+```bash
+cd docs
+```
+
+```bash
+make install
+```
+
+```bash
+make dev
+```
+
+For more information on how to contribute to LangChain documentation, follow the steps outlined in the [contributing guide](https://docs.langchain.com/oss/python/contributing/overview). The contributing guide also explains our documentation types and their writing and quality standards.
 
 For detailed information about setting up your development environment and contributing to documentation, see the [documentation contributing guide](https://docs.langchain.com/oss/python/contributing/documentation).
 
@@ -61,7 +74,7 @@ pyproject.toml            # Dependencies
 
 # --- reference.langchain.com -----------------------------------------
 reference/                # Reference docs build pipelines
-    dist/                 # Build docs (DO NOT EDIT)
+    dist/                 # Built docs (DO NOT EDIT)
     javascript/           # JS/TS reference build pipeline
     python/               # Python reference build pipeline and source
     package.json          # Vercel commands and dependencies
@@ -77,7 +90,7 @@ The Mintlify docs pipeline is structured with `.mdx` source files in `/src` and 
 
 The `/src/docs.json` file is used to configure the Mintlify site navigation and settings. Refer to the [Mintlify documentation](https://www.mintlify.com/docs/organize/navigation) for detailed syntax and component usage.
 
-Documentation changes follow a PR workflow where all tests must pass before merging. See the [contributing guidelines](/oss/contributing/documentation) for more details.
+Documentation changes follow a PR workflow where all tests must pass before merging. See the [contributing guidelines](https://docs.langchain.com/oss/python/contributing/documentation) for more details.
 
 #### `reference.langchain.com`
 
@@ -98,8 +111,7 @@ Built files are stored in `/reference/dist/{LANGUAGE}`, which is then deployed t
 
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
-* `make mint-broken-links` - Check for broken links in built documentation (excludes integrations)
-* `make mint-broken-links-all` - Check for broken links in built documentation (includes all directories)
+* `make broken-links` - Check for broken links in documentation
 * `make build-references` - Build reference docs
 * `make preview-references` - Preview reference docs using vercel
 * `make install` - Install all dependencies
@@ -142,9 +154,24 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 
 ## Troubleshooting
 
+### General Mintlify errors
+
+In some cases, we use new features that are only available in the latest Mintlify CLI. If you encounter errors, ensure you have the latest version installed:
+
+```bash
+mint update
+
+# or
+
+npm install -g mint
+```
+
 ### `docs dev` not working / running
 
-Re-do the [steps to set up your dev environment](#set-up-a-local-dev-environment), ensuring you have activated the virtual environment and installed all dependencies.
+Re-do the [steps to set up your dev environment](https://docs.langchain.com/oss/python/contributing/documentation#set-up-local-environment), ensuring you have activated the virtual environment and installed all dependencies.
+
+> [!IMPORTANT]
+> Most of the time, `mint update` solves any `docs dev` / `make dev` issues!
 
 ### Mintlify `.venv` parsing error
 
@@ -189,14 +216,3 @@ If adding a new group, ensure the root `index.mdx` is included in the `pages` ar
 
 If the trailing `/index` (no extension included) is omitted, the Mintlify parser will raise a warning even though the site will still build.
 
-### General Mintlify errors
-
-In some cases, we use new features that are only available in the latest Mintlify CLI. If you encounter errors, ensure you have the latest version installed:
-
-```bash
-mint update
-
-# or
-
-npm install -g mint
-```

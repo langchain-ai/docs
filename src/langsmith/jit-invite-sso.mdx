@@ -1,0 +1,209 @@
+---
+title: Manage user access in SSO organizations
+sidebarTitle: User access in SSO organizations
+---
+
+LangSmith provides flexible controls for managing how users join your [organization](/langsmith/administration-overview#organizations) when using [Single Sign-On (SSO) authentication](/langsmith/authentication-methods). You can independently enable or disable both Just-In-Time (JIT) provisioning and user invites to match your organization's security and onboarding requirements.
+
+When SSO is enabled, you have two independent settings: [JIT provisioning](#jit-provisioning) automatically adds users when they sign in via SSO, while [invites](#invites) allow administrators to invite users manually before they can access the organization. [Configure these settings](#configuration-scenarios) in any combination to control your user onboarding workflow.
+
+This page explains how the settings work and how to configure them.
+
+## Settings
+
+You can control the following two settings independently to manage how users join your organization.
+
+### JIT provisioning
+
+The `jit_provisioning_enabled` setting controls automatic user provisioning. When enabled, users who authenticate via your SSO provider are automatically added to your [organization](/langsmith/administration-overview#organizations) and assigned to default [workspaces](/langsmith/administration-overview#workspaces) with a default [role](/langsmith/rbac). For more details, refer to [Configure default SSO settings](#configure-default-sso-settings). When disabled, users must be explicitly invited or added via [SCIM](#scim-integration) before they can access the organization.
+
+### Invites
+
+The `invites_enabled` setting controls manual user invitations. When enabled, [organization administrators](/langsmith/administration-overview#organization-roles) can send invitations to users before they sign in. Invited users can claim their invite when signing in via SSO. When disabled, manual invitations are not allowed and users can only join via JIT provisioning or [SCIM](#scim-integration).
+
+### Update settings
+
+You can update these settings in the LangSmith UI or with the LangSmith API:
+
+<Tabs>
+<Tab title="UI" icon="layout">
+
+In the [LangSmith UI](https://smith.langchain.com):
+
+1. Navigate to **Settings** → **Organization** → **Access and Security** → **General**.
+1. Toggle **Enable JIT provisioning** and **Allow invites** as needed.
+1. [Configure SSO default workspaces and roles](#configure-default-sso-settings) in **Settings** → **Organization** → **SSO Configuration**.
+
+</Tab>
+<Tab title="API" icon="code">
+
+Update organization settings programmatically using the [Update organization info](https://api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch) endpoint:
+
+```bash
+curl -X PATCH https://api.smith.langchain.com/api/v1/organizations/current/info \
+  -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jit_provisioning_enabled": true,
+    "invites_enabled": true
+  }'
+```
+
+Response includes updated current organization configuration:
+
+```json
+{
+  "id": "org-uuid",
+  "display_name": "My Organization",
+  "jit_provisioning_enabled": true,
+  "invites_enabled": true,
+  "sso_login_slug": "my-org",
+  ...
+}
+```
+
+</Tab>
+</Tabs>
+
+<Note>
+Consider the following if you are using [LangSmith self-hosted](/langsmith/self-hosted):
+
+- The JIT provisioning and the invites settings only apply to the default organization (identified by `default_sso_provision=true`). Other organizations must use invites in self-hosted.
+- The environment variable `SELF_HOSTED_JIT_PROVISIONING_ENABLED` can globally override the JIT provisioning setting. When set to `false`, JIT provisioning is disabled for all organizations regardless of their individual settings.
+- For additional self-hosted user management customizations, refer to [Customize user management](/langsmith/self-host-user-management).
+</Note>
+
+## How user access works
+
+When a user attempts to sign in via SSO, LangSmith follows this decision flow:
+
+
+1. User authenticates with SSO provider.
+1. LangSmith checks if user already has organization access:
+    ```
+    ├─ YES → User is signed in
+    └─ NO → Continue to step 3
+    ```
+1. Check if invites are enabled **and** a pending invite exists:
+    ```
+   ├─ YES → Provision into organization with invite's organization role; provision into workspaces if invite included workspaces
+   └─ NO → Continue to step 4
+    ```
+1. Check if JIT provisioning is enabled:
+    ```
+   ├─ YES → Automatically provision user with default SSO workspaces/role
+   └─ NO → Deny access (user must be added via SCIM or by administrator)
+    ```
+
+<Note>
+When both JIT provisioning and invites are enabled, **invites take precedence**. If a user has a pending invitation, they are added with the invite's contents, not the default SSO settings.
+</Note>
+
+## Configuration scenarios
+
+### Open access (both enabled)
+
+**Configuration:**
+- ✓ JIT Provisioning enabled
+- ✓ Invites enabled
+
+**Behavior:**
+- Users can sign in immediately via SSO and are auto-provisioned.
+- Admins can send invites to assign specific roles or workspaces.
+- Invited users get the invite configuration; non-invited users get default SSO configuration.
+
+**Example:**
+```
+User alex@company.com signs in via SSO:
+  - No invite exists → Added to default workspaces with Viewer role
+
+User billy@company.com signs in via SSO:
+  - Invite exists for Editor role in "Production" workspace → Added only to "Production" workspace with Editor role (invite takes precedence)
+```
+
+### JIT only (invites disabled)
+
+**Configuration:**
+- ✓ JIT Provisioning enabled
+- ✗ Invites disabled
+
+**Behavior:**
+- All users who authenticate via SSO are automatically provisioned.
+- Admins cannot send invitations.
+- All new users receive the same default workspaces and role.
+
+### Invite only (JIT disabled)
+
+**Configuration:**
+- ✗ JIT Provisioning disabled
+- ✓ Invites enabled
+
+**Behavior:**
+- Users must be invited before they can access the organization.
+- Users without invites are denied access even with valid SSO credentials.
+- Fine-grained control over who can access the organization.
+
+**Example:**
+```
+User alex@company.com signs in via SSO:
+  - Has pending invite → Successfully joins organization
+
+User billy@company.com signs in via SSO:
+  - No invite → Access denied (must request invite from administrator)
+```
+
+### Closed access (both disabled)
+
+**Configuration:**
+- ✗ JIT Provisioning disabled
+- ✗ Invites disabled
+
+**Behavior:**
+- SSO users cannot join the organization automatically.
+- Invitations cannot be sent.
+- Users must be provisioned through SCIM or directly by an administrator once they are already part of the organization via SCIM.
+
+## User access quick reference
+
+| JIT enabled | Invites enabled | Pending invite | Result |
+|-------------|-----------------|----------------|---------|
+| ✓ | ✓ | Yes | Invite claimed (invite configuration used) |
+| ✓ | ✓ | No | Auto-provisioned (default SSO configuration) |
+| ✓ | ✗ | N/A | Auto-provisioned (default SSO configuration) |
+| ✗ | ✓ | Yes | Invite claimed |
+| ✗ | ✓ | No | **Access denied** - must be invited |
+| ✗ | ✗ | N/A | **Access denied** - must use [SCIM](#scim-integration) or admin |
+
+## Configure default SSO settings
+
+When [JIT provisioning](#jit-provisioning) is enabled, configure default settings for new users:
+
+1. Default workspace role. Choose the [workspace role](/langsmith/rbac#workspace-roles) that users receive when automatically provisioned. For details on what each role can do, refer to [Organization and workspace operations](/langsmith/organization-workspace-operations). Options include:
+
+    - **[Viewer](/langsmith/rbac#workspace-viewer)**: Read-only access
+    - **[User](/langsmith/rbac#organization-user)**: Standard access
+    - **[Editor](/langsmith/rbac#workspace-editor)**: Can modify resources
+    - **[Admin](/langsmith/rbac#workspace-admin)**: Full workspace control
+
+1. Default workspaces. Select one or more workspaces that users are automatically added to. Users receive the same role in all selected workspaces. To configure:
+
+    1. Go to **Settings** → **Organization** → **SSO Configuration**.
+    1. Set **Default workspace role**.
+    1. Select **Default workspaces**.
+    1. Save your configuration.
+
+## SCIM integration
+
+If your organization uses [SCIM](/langsmith/user-management#set-up-scim-for-your-organization) (System for Cross-domain Identity Management), users can be automatically provisioned and managed through your identity provider. SCIM provides an additional mechanism for user management that works alongside JIT and invite settings.
+
+<Note>
+SCIM group membership overrides manually assigned roles or roles assigned via JIT provisioning. If you're using SCIM, consider disabling JIT provisioning to avoid conflicts.
+</Note>
+
+## Related documentation
+
+- [Set up SSO with OAuth2.0 and OIDC](/langsmith/self-host-sso) (Self-hosted)
+- [Set up SAML SSO](/langsmith/user-management#set-up-saml-sso-for-your-organization) (Cloud)
+- [Set up SCIM](/langsmith/user-management#set-up-scim-for-your-organization)
+- [User management](/langsmith/user-management)
+- [Role-based access control](/langsmith/rbac)

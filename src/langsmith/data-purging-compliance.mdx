@@ -11,6 +11,35 @@ LangSmith provides automatic data retention capabilities to help with compliance
 
 For detailed information about data retention configuration and management, please refer to the [Data Retention concepts](/langsmith/administration-overview#data-retention) documentation.
 
+## Customize extended retention policy
+
+<Note>
+This feature is available for [Enterprise](/langsmith/pricing-plans) plan customers. For [self-hosted](/langsmith/self-hosted) Enterprise customers, refer to the [workspace-level configuration section](#workspace-level-extended-retention-for-self-hosted).
+</Note>
+
+[Enterprise](/langsmith/pricing-plans) customers can customize the extended data retention period for traces at the [workspace](/langsmith/administration-overview#workspaces) level to meet specific compliance requirements. By default, extended retention is set to 400 days, but you can adjust this based on your organization's needs. Changes to the retention period apply to new traces only.
+
+### Configure extended retention
+
+In the [LangSmith UI](https://smith.langchain.com):
+
+1. Navigate to **Settings** at the bottom of the page.
+1. Select **Usage configuration** from the left-hand menu.
+1. Find the workspace in the list that you would like to configure.
+1. Click on the value under the **Data retention policy** column for that workspace.
+1. On the **workspace usage configurations** modal, customize the extended policy using the dropdown for **Extended - All traces are retained for** option.
+1. Select **Save**.
+
+### Workspace-level extended retention for self-hosted
+
+Self-hosted [Enterprise](/langsmith/pricing-plans) customers can also use workspace-level extended retention configuration instead of system-wide TTL settings. This provides more granular control over data retention for different workspaces without requiring environment variable changes.
+
+<Warning>
+If you use blob storage, you **must** add a lifecycle rule for each custom retention period you configure. For example, setting a workspace to 90-day retention means blob data is written to the `ttl_90d/` prefix, which requires a matching lifecycle rule to be cleaned up automatically. See [blob storage TTL configuration](/langsmith/self-host-blob-storage#custom-workspace-level-retention-prefixes) for details and examples.
+</Warning>
+
+To configure this for self-hosted deployments, refer to the [self-hosted TTL documentation](/langsmith/self-host-ttl) for the legacy system-wide approach or contact [support](https://support.langchain.com).
+
 ## Trace deletes
 
 You can use the API to complete trace deletes. The API supports two methods for deleting traces:
@@ -31,6 +60,10 @@ Trace deletions are processed during non-peak usage times and are not instant. L
 ### Delete specific traces
 
 To delete specific traces by their trace IDs from a single session:
+
+<Note>
+The `session_id` is the project ID for the trace you are trying to delete. You can find it on the tracing project page in the LangSmith UI.
+</Note>
 
 ```bash
 curl -X POST "https://api.smith.langchain.com/api/v1/runs/delete" \
@@ -107,16 +140,17 @@ This will return examples that have either `user_id: "user123"` **or** `environm
 
 Once you have the example IDs, send a delete request. This will zero-out the inputs, outputs, and metadata from all versions of the dataset for that example.
 
-[DELETE /examples](https://api.smith.langchain.com/redoc#tag/examples/operation/delete_examples_api_v1_examples_delete)
+[POST /v1/platform/datasets/examples/delete/](https://api.smith.langchain.com/redoc?#tag/examples/paths/~1v1~1platform~1datasets~1examples~1delete/post)
 
-- Specify example IDs and add `"hard_delete": true` to the query params of the request
+- Specify `example_ids` (list of example IDs) and `hard_delete` (boolean) in the request body
 
 ```bash
-curl -X DELETE "https://api.smith.langchain.com/api/v1/examples?hard_delete=true" \
+curl -X POST "https://api.smith.langchain.com/v1/platform/datasets/examples/delete/" \
   -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "example_ids": ["example-id-1", "example-id-2", "example-id-3"]
+    "example_ids": ["example-id-1", "example-id-2", "example-id-3"],
+    "hard_delete": true
   }'
 ```
 
@@ -132,6 +166,4 @@ curl -X DELETE "https://api.smith.langchain.com/api/v1/examples?hard_delete=true
 
 - Permanently removes inputs, outputs, and metadata from ALL dataset versions
 - Complete data removal when compliance requires zero-out across all versions
-- Add `"hard_delete": true` to the query parameters
-
-For more details, refer to the [API spec](https://api.smith.langchain.com/redoc#tag/examples/operation/delete_examples_api_v1_examples_delete).
+- Set `"hard_delete": true` in the request body
