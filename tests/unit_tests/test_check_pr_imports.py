@@ -371,7 +371,7 @@ index d51f18f8a..077e9ba03 100644
  from langchain.chat_models import init_chat_model
 +from langchain_core import AIMessage, SystemMessage
 
- model = init_chat_model("gpt-4.1-mini")
+ model = init_chat_model("gpt-5.2")
 """
 
     issues = analyze_diff(diff, mapping_dict)

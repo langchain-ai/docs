@@ -129,7 +129,7 @@ Using @[`init_chat_model`], pass these parameters as inline <Tooltip tip="Arbitr
 
 ```python Initialize using model parameters
 model = init_chat_model(
-    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-6",
     # Kwargs passed to the model:
     temperature=0.7,
     timeout=30,
@@ -143,7 +143,7 @@ Using `initChatModel`, pass these parameters as inline parameters:
 
 ```typescript Initialize using model parameters
 const model = await initChatModel(
-    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-6",
     { temperature: 0.7, timeout: 30, maxTokens: 1000, maxRetries: 6 }
 )
 ```
@@ -1055,6 +1055,34 @@ Models can be requested to provide their response in a format matching a given s
         console.log(response)  // {'title': 'Inception', 'year': 2010, ...}
         ```
     </Tab>
+    <Tab title="Standard Schema">
+        Any schema from a library implementing the [Standard Schema](https://standardschema.dev/) specification is also supported. Standard Schema objects are validated at runtime via the schema's `~standard.validate()` method.
+
+        ```typescript
+        import * as v from "valibot";
+        import { toStandardJsonSchema } from "@valibot/to-json-schema";
+
+        const Movie = toStandardJsonSchema(
+          v.object({
+            title: v.pipe(v.string(), v.description("The title of the movie")),
+            year: v.pipe(v.number(), v.description("The year the movie was released")),
+            director: v.pipe(v.string(), v.description("The director of the movie")),
+            rating: v.pipe(v.number(), v.description("The movie's rating out of 10")),
+          })
+        );
+
+        const modelWithStructure = model.withStructuredOutput(Movie);
+
+        const response = await modelWithStructure.invoke("Provide details about the movie Inception");
+        console.log(response);
+        // {
+        //   title: "Inception",
+        //   year: 2010,
+        //   director: "Christopher Nolan",
+        //   rating: 8.8,
+        // }
+        ```
+    </Tab>
 </Tabs>
 :::
 
@@ -1079,7 +1107,8 @@ Models can be requested to provide their response in a format matching a given s
 
     - **Method parameter**: Some providers support different methods (`'jsonSchema'`, `'functionCalling'`, `'jsonMode'`)
     - **Include raw**: Use @[`includeRaw: true`][BaseChatModel.with_structured_output(include_raw)] to get both the parsed output and the raw @[`AIMessage`]
-    - **Validation**: Zod models provide automatic validation, while JSON Schema requires manual validation
+    - **Validation**: Zod and Standard Schema objects provide automatic validation, while JSON Schema requires manual validation
+    - **Standard Schema**: Any schema library implementing the [Standard Schema](https://standardschema.dev/) spec is supported and validated at runtime
 
     See your [provider's integration page](/oss/integrations/providers/overview) for supported methods and configuration options.
 </Note>
@@ -1553,11 +1582,19 @@ To help manage rate limits, chat model integrations accept a `rate_limiter` para
 </Accordion>
 :::
 
-### Base URL or proxy
+### Base URL and proxy settings
 
-For many chat model integrations, you can configure the base URL for API requests, which allows you to use model providers that have OpenAI-compatible APIs or to use a proxy server.
+You can configure a custom base URL for providers that implement the OpenAI Chat Completions API.
 
-<Accordion title="Base URL" icon="link">
+<Warning>
+    `model_provider="openai"` (or direct `ChatOpenAI` usage) targets the official OpenAI API specification. Provider-specific fields from routers and proxies may not be extracted or preserved.
+
+    For OpenRouter and LiteLLM, prefer the dedicated integrations:
+    - [OpenRouter via `ChatOpenRouter`](/oss/integrations/chat/openrouter) (`langchain-openrouter`)
+    - [LiteLLM via `ChatLiteLLM` / `ChatLiteLLMRouter`](/oss/integrations/chat) (`langchain-litellm`)
+</Warning>
+
+<Accordion title="Custom base URL" icon="link">
     :::python
     Many model providers offer OpenAI-compatible APIs (e.g., [Together AI](https://www.together.ai/), [vLLM](https://github.com/vllm-project/vllm)). You can use @[`init_chat_model`] with these providers by specifying the appropriate `base_url` parameter:
 
@@ -1592,7 +1629,7 @@ For many chat model integrations, you can configure the base URL for API request
 </Accordion>
 
 :::python
-<Accordion title="Proxy configuration" icon="shield">
+<Accordion title="HTTP proxy configuration" icon="shield">
     For deployments requiring HTTP proxies, some model integrations support proxy configuration:
 
     ```python
@@ -1840,7 +1877,7 @@ configurable_model.invoke(
 )
 configurable_model.invoke(
     "what's your name",
-    config={"configurable": {"model": "claude-sonnet-4-5-20250929"}},  # Run with Claude
+    config={"configurable": {"model": "claude-sonnet-4-6"}},  # Run with Claude
 )
 ```
 
@@ -1863,7 +1900,7 @@ configurable_model.invoke(
         "what's your name",
         config={
             "configurable": {
-                "first_model": "claude-sonnet-4-5-20250929",
+                "first_model": "claude-sonnet-4-6",
                 "first_temperature": 0.5,
                 "first_max_tokens": 100,
             }
@@ -1919,7 +1956,7 @@ configurable_model.invoke(
     ```python
     model_with_tools.invoke(
         "what's bigger in 2024 LA or NYC",
-        config={"configurable": {"model": "claude-sonnet-4-5-20250929"}},
+        config={"configurable": {"model": "claude-sonnet-4-6"}},
     ).tool_calls
     ```
     ```
