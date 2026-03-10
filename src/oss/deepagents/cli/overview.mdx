@@ -19,6 +19,7 @@ The Deep Agents CLI has the following built-in capabilities:
 * <Icon icon="brain" size={16} /> **Memory storage and retrieval** - store and retrieve information across sessions, enabling agents to remember project conventions and learned patterns.
 * <Icon icon="user" size={16} /> **Human-in-the-loop** - require human approval for sensitive tool operations.
 * <Icon icon="puzzle" size={16} /> **Skills** - extend agent capabilities with custom expertise and instructions stored in skill directories.
+* <Icon icon="plug" size={16} /> **[MCP tools](/oss/deepagents/cli/mcp-tools)** - load external tools from [Model Context Protocol](https://modelcontextprotocol.io/) servers via auto-discovered or explicit config files.
 
 <Accordion title="Full list of built-in tools">
     ## Built-in tools
@@ -95,12 +96,12 @@ The Deep Agents CLI has the following built-in capabilities:
     <Step title="Install and run the CLI" icon="terminal">
         <CodeGroup>
             ```bash Quick install (recommended)
-            curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/main/scripts/install.sh | bash
+            curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/scripts/install.sh | bash
             ```
 
             ```bash Quick install with extra model providers
             # (OpenAI is included by default)
-            DEEPAGENTS_EXTRAS="anthropic,groq" curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/main/scripts/install.sh | bash
+            DEEPAGENTS_EXTRAS="anthropic,groq" curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/scripts/install.sh | bash
             ```
 
             ```bash Install globally with uv
@@ -161,7 +162,7 @@ API keys can be set as environment variables or in a `.env` file.
 
 ## Tracing with LangSmith
 
-Enable LangSmith tracing to see agent operations in your LangSmith dashboard:
+Enable LangSmith tracing to see agent operations in a LangSmith project:
 
 1. Enable LangSmith tracing:
 
@@ -190,9 +191,7 @@ When configured, the CLI displays:
 
 ## Configuration
 
-Each agent has its own configuration directory at `~/.deepagents/<agent_name>/`.
-The default agent name is `agent`.
-As you start the agent if no folder for that agent name exists then it's created at that path `~/.deepagents/<new_agent>/`.
+Each agent has its own configuration directory at `~/.deepagents/<agent_name>/`. The default agent name is `agent`.
 
 ```bash
 # List all configured agents
@@ -225,13 +224,16 @@ deepagents --sandbox-id dbx_123   # reuse existing sandbox
         | `-r`, `--resume [ID]`  | Resume a session: `-r` for most recent, `-r <ID>` for a specific thread |
         | `-m`, `--message TEXT` | Initial prompt to auto-submit when the session starts (interactive mode) |
         | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
-        | `-q`, `--quiet`        | Clean output for piping — only the agent's response goes to stdout. Requires `-n` or piped stdin |
+        | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
         | `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
         | `--auto-approve`       | Auto-approve all tool calls without prompting (disables human-in-the-loop). Toggle with `Shift+Tab` during an interactive session |
-        | `--shell-allow-list LIST` | Comma-separated shell commands to auto-approve, or `'recommended'` for safe defaults. Applies to both `-n` and interactive modes |
+        | `--shell-allow-list LIST` | Comma-separated shell commands to auto-approve, `'recommended'` for safe defaults, or `'all'` to allow any command. Applies to both `-n` and interactive modes |
         | `--sandbox TYPE`       | Remote sandbox for code execution: `none` (default), `modal`, `daytona`, `runloop`, `langsmith` |
         | `--sandbox-id ID`      | Reuse an existing sandbox (skips creation and cleanup)      |
         | `--sandbox-setup PATH` | Path to setup script to run in sandbox after creation       |
+        | `--mcp-config PATH`    | Add an explicit MCP config as the highest-precedence source (merged with auto-discovered configs) |
+        | `--no-mcp`             | Disable all MCP tool loading                                |
+        | `--trust-project-mcp`  | Trust project-level MCP configs with stdio servers (skip approval prompt) |
         | `-v`, `--version`      | Display version                                             |
         | `-h`, `--help`         | Show help                                                   |
     </Accordion>
@@ -247,7 +249,7 @@ deepagents --sandbox-id dbx_123   # reuse existing sandbox
         | `deepagents skills create NAME [--project]`    | Create a new skill with template `SKILL.md` |
         | `deepagents skills info NAME [--project]`      | Show detailed information about a skill |
         | `deepagents skills delete NAME [--project] [-f]` | Delete a skill and its contents |
-        | `deepagents threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20 |
+        | `deepagents threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. `-n` is a short flag for `--limit` |
         | `deepagents threads delete ID`       | Delete a session                       |
     </Accordion>
 </AccordionGroup>
@@ -261,30 +263,32 @@ The agent will use its built-in tools, skills, and memory to help you with tasks
     <Accordion title="Slash commands" icon="slash">
         Use these commands within the CLI session:
 
-        - `/model` - Open the interactive model selector
+        - `/model` - Open the interactive model selector. The selector shows a detail footer with context window size, input modalities, and capabilities for the highlighted model
         - `/model <provider:model>` - Switch directly to a specific model (e.g., `/model anthropic:claude-sonnet-4-5`)
+        - `/model --model-params JSON [provider:model]` - Switch with extra model constructor params (e.g., `/model --model-params '{"temperature": 0.7}' anthropic:claude-sonnet-4-5`). Use `Tab` to autocomplete the currently highlighted model name
         - `/model --default <provider:model>` - Set a persistent default model
         - `/model --default --clear` - Clear the saved default model
         - `/remember [context]` - Review conversation and update memory and skills. Optionally pass additional context
         - `/tokens` - Display current context window token usage
         - `/clear` - Clear conversation history and start a new thread
-        - `/threads` - Browse and resume previous conversation threads
+        - `/threads` - Browse and resume previous conversation threads. Supports fuzzy search, configurable columns (`thread_id`, `agent_name`, `messages`, `created_at`, `updated_at`, `git_branch`, `initial_prompt`), sort order toggle, and inline deletion with `Ctrl+D`. Column visibility and sort preferences persist to `config.toml`
+        - `/reload` - Refresh runtime configuration (API keys, `.env` changes, project root, shell allow-list) without restarting the session. Conversation state is preserved. Reports which fields changed (API keys are masked). Does not reload the active model or agent graph
         - `/trace` - Open the current thread in LangSmith (requires `LANGSMITH_API_KEY`)
         - `/changelog` - Open the CLI changelog in your browser
         - `/docs` - Open the documentation in your browser
         - `/feedback` - Open the GitHub issues page to file a bug report or feature request
         - `/version` - Show installed `deepagents-cli` and SDK versions
         - `/help` - Show help and available commands
-        - `/quit` (or `/q`) - Exit the CLI
+        - `/quit` - Exit the CLI
     </Accordion>
 
-    <Accordion title="Bash commands" icon="terminal">
-        Execute shell commands directly by prefixing with `!`:
+    <Accordion title="Shell commands" icon="terminal">
+        Type `!` to enter shell mode, then type your command.
 
         ```bash
-        !git status
-        !npm test
-        !ls -la
+        git status
+        npm test
+        ls -la
         ```
     </Accordion>
 
@@ -334,12 +338,22 @@ deepagents -n "Generate a .gitignore for Python" -q > .gitignore
 deepagents -n "List dependencies" -q --no-stream | sort
 ```
 
-By default, shell execution is disabled in non-interactive mode. Use `--shell-allow-list` to allow specific commands:
+By default, shell execution is disabled in non-interactive mode. Use `--shell-allow-list` to enable it:
 
 ```bash
+# Allow specific commands (validated against the list)
 deepagents -n "Run the tests and fix failures" --shell-allow-list "pytest,git,make"
+
+# Use the curated safe-command list
 deepagents -n "Build the project" --shell-allow-list recommended
+
+# Allow any shell command
+deepagents -n "Fix the build" --shell-allow-list all
 ```
+
+<Warning>
+    `--shell-allow-list all` lets the agent execute arbitrary shell commands with no human confirmation. Use with caution.
+</Warning>
 
 ## Switch models
 
@@ -354,9 +368,18 @@ You can switch models during a session without restarting the CLI using the `/mo
 deepagents --model openai:gpt-4o
 ```
 
-Run `/model` with no arguments to open an interactive model selector that displays available models grouped by provider.
+Run `/model` with no arguments to open an interactive model selector that displays available models grouped by provider. The selector shows a detail footer for the highlighted model with context window size, input modalities (text, image, audio, PDF, video), and capabilities (reasoning, tool calling, structured output). Values overridden by `--profile-override` or `config.toml` are marked with a yellow `*` prefix.
 
-For full details on switching models, setting a default, configuring custom providers, and using the `~/.deepagents/config.toml` config file, see [Custom model providers](/oss/deepagents/cli/providers).
+You can also pass extra model constructor parameters when switching mid-session using `--model-params`:
+
+```txt
+> /model --model-params '{"temperature": 0.7}' anthropic:claude-sonnet-4-5
+> /model --model-params '{"temperature": 0.7}'  # opens selector, applies params to chosen model
+```
+
+These are session-only overrides and take the highest priority, overriding values from config file `params`. `--model-params` cannot be combined with `--default`.
+
+For full details on switching models, setting a default, and configuring custom providers, see [Model providers](/oss/deepagents/cli/providers). For `config.toml` reference and lifecycle hooks, see [Configuration](/oss/deepagents/cli/configuration).
 
 ## Teach your agent project conventions
 
@@ -401,7 +424,7 @@ There are two primary ways to customize any agent:
 
 ### Provide project or user context
 
-[`AGENTS.md` files](https://agents.md/) files provide persistent memory that is always loaded at session start.
+[`AGENTS.md` files](https://agents.md/) provide persistent memory that is always loaded at session start.
 
 You can provide global user memory for the agent in `~/.deepagents/<agent_name>/AGENTS.md`.
 This file is always loaded when you start a new deep agent session.
@@ -498,6 +521,10 @@ To use a remote sandbox, follow these steps:
 
     Note that sandbox APIs are evolving rapidly, and we expect more providers to support proxies that help mitigate prompt injection and secrets management concerns.
 </Warning>
+
+## Use MCP tools
+
+Extend the CLI with tools from external [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. Place a `.mcp.json` at your project root and the CLI discovers it automatically. See the [MCP tools guide](/oss/deepagents/cli/mcp-tools) for configuration format, auto-discovery, and troubleshooting.
 
 ## Use skills
 

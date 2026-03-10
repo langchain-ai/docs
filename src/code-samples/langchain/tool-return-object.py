@@ -1,4 +1,4 @@
-# :snippet-start: tool-return-object
+# :snippet-start: tool-return-object-py
 from langchain.tools import tool
 
 
