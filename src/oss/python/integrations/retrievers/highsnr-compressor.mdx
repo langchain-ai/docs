@@ -1,0 +1,97 @@
+---
+title: "HighSNR compressor integration"
+description: "Integrate with the HighSNR compressor retriever using LangChain Python."
+---
+
+>[HighSNR](https://www.high-snr.com) is a deterministic, privacy-first context optimizer API.
+>Pass a document or pre-split chunks and a token budget — get back only the high signal chunks.
+>No text is stored; compression is sub-second for most documents.
+
+This notebook shows how to use [langchain-highsnr](https://github.com/HighSNRInc/langchain-highsnr) for document compression and retrieval.
+
+## Setup
+
+```bash
+pip install -qU langchain-highsnr
+```
+
+Get a free API key at [console.high-snr.com](https://console.high-snr.com) (no card required).
+
+```python
+import os
+
+os.environ["HIGHSNR_API_KEY"] = "snr-..."
+```
+
+## Compress retrieved chunks (post-retrieval)
+
+`HighSNRDocumentCompressor` compresses retrieved chunks before they reach the LLM.
+The user's query is automatically used as a selection hint.
+
+By default, chunks are grouped by `metadata["source"]` and one API call is made per
+source document — this is the [benchmark-validated](https://github.com/HighSNRInc/highsnr-benchmarks) pattern.
+
+```python
+from langchain_highsnr import HighSNRDocumentCompressor
+from langchain.retrievers import ContextualCompressionRetriever
+
+compressor = HighSNRDocumentCompressor(
+    max_output_tokens=2000,  # token budget across all chunks
+)
+
+retriever = ContextualCompressionRetriever(
+    base_compressor=compressor,
+    base_retriever=vectorstore.as_retriever(search_kwargs={"k": 20}),
+)
+
+docs = retriever.invoke("what is the main finding?")
+# docs are compressed to 2000 tokens, query-aware
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `api_key` | `None` | Falls back to `HIGHSNR_API_KEY` env var |
+| `max_output_tokens` | `2000` | Token budget across all chunks in one call |
+| `include_boundaries` | `False` | Keep first and last chunk |
+| `group_by_source` | `True` | Group chunks by `metadata["source"]` (one API call per source) |
+
+## Compress documents before indexing (pre-indexing)
+
+`HighSNRDocumentTransformer` compresses each document before embedding, producing a leaner vector index.
+
+```python
+from langchain_highsnr import HighSNRDocumentTransformer
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+
+transformer = HighSNRDocumentTransformer(
+    max_output_tokens=800,   # token budget per document
+    context_hint="clinical trial methodology",  # optional topic hint
+)
+
+compressed = transformer.transform_documents(raw_docs)
+vectorstore = FAISS.from_documents(compressed, OpenAIEmbeddings())
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `api_key` | `None` | Falls back to `HIGHSNR_API_KEY` env var |
+| `max_output_tokens` | `1000` | Token budget per document |
+| `include_boundaries` | `True` | Keep first and last chunk |
+| `context_hint` | `None` | Topic or query to bias chunk selection |
+
+## Benchmarks
+
+Evaluated on LongBench v1 with GPT-4o (n=200 per dataset). At 80% budget with hint:
+
+- **HotpotQA**: F1 **70.96** — exceeds full-context GPT-4o (69.71)
+- **Qasper**: F1 **45.21** — retains 96% of full-context GPT-4o (47.22)
+
+Full results and reproduction scripts: [github.com/HighSNRInc/highsnr-benchmarks](https://github.com/HighSNRInc/highsnr-benchmarks)
+
+## Links
+
+- PyPI: [langchain-highsnr](https://pypi.org/project/langchain-highsnr/)
+- Source: [github.com/HighSNRInc/langchain-highsnr](https://github.com/HighSNRInc/langchain-highsnr)
+- API docs: [high-snr.com/docs.html](https://www.high-snr.com/docs.html)
+- Console: [console.high-snr.com](https://console.high-snr.com)
