@@ -59,10 +59,17 @@ Pass one or more of the following stream modes as a list to the @[`stream`][Comp
 :::python
 LangGraph graphs expose the @[`stream`][Pregel.stream] (sync) and @[`astream`][Pregel.astream] (async) methods to yield streamed outputs as iterators.
 
-```python
+<CodeGroup>
+```python v2
+for chunk in graph.stream(inputs, stream_mode="updates", version="v2"):
+    if chunk["type"] == "updates":
+        print(chunk["data"])
+```
+```python v1
 for chunk in graph.stream(inputs, stream_mode="updates"):
     print(chunk)
 ```
+</CodeGroup>
 
 :::
 
@@ -110,8 +117,10 @@ for await (const chunk of await graph.stream(inputs, {
       # Set stream_mode="updates" to stream only the updates to the graph state after each node
       # Other stream modes are also available. See supported stream modes for details
       stream_mode="updates",  # [!code highlight]
+      version="v2",  # [!code highlight]
   ):
-      print(chunk)
+      if chunk["type"] == "updates":
+          print(chunk["data"])
 ```
   :::
 
@@ -159,12 +168,21 @@ for await (const chunk of await graph.stream(inputs, {
 :::python
 You can pass a list as the `stream_mode` parameter to stream multiple modes at once.
 
-The streamed outputs will be tuples of `(mode, chunk)` where `mode` is the name of the stream mode and `chunk` is the data streamed by that mode.
+With `version="v2"`, every chunk is a `StreamPart` dict. Use `chunk["type"]` to distinguish between modes:
 
-```python
+<CodeGroup>
+```python v2
+for chunk in graph.stream(inputs, stream_mode=["updates", "custom"], version="v2"):
+    if chunk["type"] == "updates":
+        print(chunk["data"])
+    elif chunk["type"] == "custom":
+        print(chunk["data"])
+```
+```python v1
 for mode, chunk in graph.stream(inputs, stream_mode=["updates", "custom"]):
     print(chunk)
 ```
+</CodeGroup>
 :::
 
 :::js
@@ -251,8 +269,10 @@ const graph = new StateGraph(State)
     for chunk in graph.stream(
         {"topic": "ice cream"},
         stream_mode="updates",  # [!code highlight]
+        version="v2",  # [!code highlight]
     ):
-        print(chunk)
+        if chunk["type"] == "updates":
+            print(chunk["data"])
     ```
     :::
 
@@ -275,8 +295,10 @@ const graph = new StateGraph(State)
     for chunk in graph.stream(
         {"topic": "ice cream"},
         stream_mode="values",  # [!code highlight]
+        version="v2",  # [!code highlight]
     ):
-        print(chunk)
+        if chunk["type"] == "values":
+            print(chunk["data"])
     ```
     :::
 
@@ -392,8 +414,13 @@ for await (const chunk of await graph.stream(
       stream_mode="updates",
       # Set subgraphs=True to stream outputs from subgraphs
       subgraphs=True,  # [!code highlight]
+      version="v2",  # [!code highlight]
   ):
-      print(chunk)
+      if chunk["type"] == "updates":
+          if chunk["ns"]:
+              print(f"Subgraph {chunk['ns']}: {chunk['data']}")
+          else:
+              print(f"Root: {chunk['data']}")
   ```
   :::
 
@@ -448,10 +475,10 @@ for await (const chunk of await graph.stream(
 
   :::python
   ```
-  ((), {'node_1': {'foo': 'hi! foo'}})
-  (('node_2:dfddc4ba-c3c5-6887-5012-a243b5b377c2',), {'subgraph_node_1': {'bar': 'bar'}})
-  (('node_2:dfddc4ba-c3c5-6887-5012-a243b5b377c2',), {'subgraph_node_2': {'foo': 'hi! foobar'}})
-  ((), {'node_2': {'foo': 'hi! foobar'}})
+  Root: {'node_1': {'foo': 'hi! foo'}}
+  Subgraph ('node_2:dfddc4ba-c3c5-6887-5012-a243b5b377c2',): {'subgraph_node_1': {'bar': 'bar'}}
+  Subgraph ('node_2:dfddc4ba-c3c5-6887-5012-a243b5b377c2',): {'subgraph_node_2': {'foo': 'hi! foobar'}}
+  Root: {'node_2': {'foo': 'hi! foobar'}}
   ```
   :::
 
@@ -477,8 +504,10 @@ Use the `debug` streaming mode to stream as much information as possible through
 for chunk in graph.stream(
     {"topic": "ice cream"},
     stream_mode="debug",  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    print(chunk)
+    if chunk["type"] == "debug":
+        print(chunk["data"])
 ```
 :::
 
@@ -543,15 +572,17 @@ graph = (
     .compile()
 )
 
-# The "messages" stream mode returns an iterator of tuples (message_chunk, metadata)
-# where message_chunk is the token streamed by the LLM and metadata is a dictionary
-# with information about the graph node where the LLM was called and other information
-for message_chunk, metadata in graph.stream(
+# The "messages" stream mode streams LLM tokens with metadata
+# Use version="v2" for a unified StreamPart format
+for chunk in graph.stream(
     {"topic": "ice cream"},
     stream_mode="messages",  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    if message_chunk.content:
-        print(message_chunk.content, end="|", flush=True)
+    if chunk["type"] == "messages":
+        message_chunk, metadata = chunk["data"]
+        if message_chunk.content:
+            print(message_chunk.content, end="|", flush=True)
 ```
 :::
 
@@ -620,14 +651,17 @@ graph = ... # define a graph that uses these LLMs
 
 # The stream_mode is set to "messages" to stream LLM tokens
 # The metadata contains information about the LLM invocation, including the tags
-async for msg, metadata in graph.astream(
+async for chunk in graph.astream(
     {"topic": "cats"},
     stream_mode="messages",  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    # Filter the streamed tokens by the tags field in the metadata to only include
-    # the tokens from the LLM invocation with the "joke" tag
-    if metadata["tags"] == ["joke"]:
-        print(msg.content, end="|", flush=True)
+    if chunk["type"] == "messages":
+        msg, metadata = chunk["data"]
+        # Filter the streamed tokens by the tags field in the metadata to only include
+        # the tokens from the LLM invocation with the "joke" tag
+        if metadata["tags"] == ["joke"]:
+            print(msg.content, end="|", flush=True)
 ```
 :::
 
@@ -711,12 +745,15 @@ for await (const [msg, metadata] of await graph.stream(
 
   # The stream_mode is set to "messages" to stream LLM tokens
   # The metadata contains information about the LLM invocation, including the tags
-  async for msg, metadata in graph.astream(
+  async for chunk in graph.astream(
         {"topic": "cats"},
         stream_mode="messages",
+        version="v2",
   ):
-      if metadata["tags"] == ["joke"]:
-          print(msg.content, end="|", flush=True)
+      if chunk["type"] == "messages":
+          msg, metadata = chunk["data"]
+          if metadata["tags"] == ["joke"]:
+              print(msg.content, end="|", flush=True)
 ```
   :::
 
@@ -789,17 +826,19 @@ To stream tokens only from specific nodes, use `stream_mode="messages"` and filt
 
 :::python
 ```python
-# The "messages" stream mode returns a tuple of (message_chunk, metadata)
-# where message_chunk is the token streamed by the LLM and metadata is a dictionary
-# with information about the graph node where the LLM was called and other information
-for msg, metadata in graph.stream(
+# The "messages" stream mode streams LLM tokens with metadata
+# Use version="v2" for a unified StreamPart format
+for chunk in graph.stream(
     inputs,
     stream_mode="messages",  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    # Filter the streamed tokens by the langgraph_node field in the metadata
-    # to only include the tokens from the specified node
-    if msg.content and metadata["langgraph_node"] == "some_node_name":
-        ...
+    if chunk["type"] == "messages":
+        msg, metadata = chunk["data"]
+        # Filter the streamed tokens by the langgraph_node field in the metadata
+        # to only include the tokens from the specified node
+        if msg.content and metadata["langgraph_node"] == "some_node_name":
+            ...
 ```
 :::
 
@@ -863,17 +902,19 @@ for await (const [msg, metadata] of await graph.stream(
         .compile()
   )
 
-  # The "messages" stream mode returns a tuple of (message_chunk, metadata)
-  # where message_chunk is the token streamed by the LLM and metadata is a dictionary
-  # with information about the graph node where the LLM was called and other information
-  for msg, metadata in graph.stream(
+  # The "messages" stream mode streams LLM tokens with metadata
+  # Use version="v2" for a unified StreamPart format
+  for chunk in graph.stream(
       {"topic": "cats"},
       stream_mode="messages",  # [!code highlight]
+      version="v2",  # [!code highlight]
   ):
-      # Filter the streamed tokens by the langgraph_node field in the metadata
-      # to only include the tokens from the write_poem node
-      if msg.content and metadata["langgraph_node"] == "write_poem":
-          print(msg.content, end="|", flush=True)
+      if chunk["type"] == "messages":
+          msg, metadata = chunk["data"]
+          # Filter the streamed tokens by the langgraph_node field in the metadata
+          # to only include the tokens from the write_poem node
+          if msg.content and metadata["langgraph_node"] == "write_poem":
+              print(msg.content, end="|", flush=True)
   ```
   :::
 
@@ -975,8 +1016,9 @@ See [Async with Python < 3.11](#async) for usage examples.
     inputs = {"query": "example"}
 
     # Set stream_mode="custom" to receive the custom data in the stream
-    for chunk in graph.stream(inputs, stream_mode="custom"):
-        print(chunk)
+    for chunk in graph.stream(inputs, stream_mode="custom", version="v2"):
+        if chunk["type"] == "custom":
+            print(chunk["data"])
     ```
     </Tab>
     <Tab title="tool">
@@ -1000,8 +1042,9 @@ See [Async with Python < 3.11](#async) for usage examples.
     graph = ... # define a graph that uses this tool
 
     # Set stream_mode="custom" to receive the custom data in the stream
-    for chunk in graph.stream(inputs, stream_mode="custom"):
-        print(chunk)
+    for chunk in graph.stream(inputs, stream_mode="custom", version="v2"):
+        if chunk["type"] == "custom":
+            print(chunk["data"])
 ```
     </Tab>
 </Tabs>
@@ -1398,10 +1441,11 @@ graph = (
 for chunk in graph.stream(
     {"topic": "cats"},
     stream_mode="custom",  # [!code highlight]
-
+    version="v2",  # [!code highlight]
 ):
-    # The chunk will contain the custom data streamed from the llm
-    print(chunk)
+    if chunk["type"] == "custom":
+        # The chunk data will contain the custom data streamed from the llm
+        print(chunk["data"])
 ```
 :::
 
@@ -1558,8 +1602,10 @@ for await (const chunk of await graph.stream(
   async for chunk in graph.astream(
       inputs,
       stream_mode="custom",
+      version="v2",
   ):
-      print(chunk["content"], end="|", flush=True)
+      if chunk["type"] == "custom":
+          print(chunk["data"]["content"], end="|", flush=True)
   ```
   :::
 
@@ -1748,7 +1794,7 @@ Not all chat model integrations support the `streaming` parameter. If your model
 ## v2 streaming format
 
 <Note>
-Requires LangGraph >= 1.1.
+Requires LangGraph >= 1.1. All examples in this page use `version="v2"`.
 </Note>
 
 Pass `version="v2"` to `stream()` or `astream()` to get a unified output format. Every chunk is a `StreamPart` dict with a consistent shape — regardless of stream mode, number of modes, or subgraph settings:
@@ -1927,12 +1973,15 @@ This limits LangGraph ability to automatically propagate context, and affects La
   )
 
   # Set stream_mode="messages" to stream LLM tokens
-  async for chunk, metadata in graph.astream(
+  async for chunk in graph.astream(
       {"topic": "ice cream"},
       stream_mode="messages",  # [!code highlight]
+      version="v2",  # [!code highlight]
   ):
-      if chunk.content:
-          print(chunk.content, end="|", flush=True)
+      if chunk["type"] == "messages":
+          message_chunk, metadata = chunk["data"]
+          if message_chunk.content:
+              print(message_chunk.content, end="|", flush=True)
   ```
 </Accordion>
 
@@ -1962,8 +2011,10 @@ This limits LangGraph ability to automatically propagate context, and affects La
   async for chunk in graph.astream(
         {"topic": "ice cream"},
         stream_mode="custom",
+        version="v2",
   ):
-        print(chunk)
+        if chunk["type"] == "custom":
+            print(chunk["data"])
   ```
 </Accordion>
 :::
