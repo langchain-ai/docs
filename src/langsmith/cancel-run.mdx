@@ -213,7 +213,9 @@ By default, the cancel request returns after the cancellation is requested and t
 
 ## Cancel multiple runs
 
-The bulk cancel endpoint can be used to cancel multiple runs by thread ID and (optionally) run IDs or status. `status` filter (`pending`, `running`, or `all`).
+The bulk cancel endpoint cancels multiple runs in one request. Both the interrupt and rollback actions are supported.
+
+### Cancel by thread ID and run IDs
 
 <Tabs>
     <Tab title="Python">
@@ -287,11 +289,99 @@ The bulk cancel endpoint can be used to cancel multiple runs by thread ID and (o
       --header 'Content-Type: application/json' \
       --data '{"thread_id": "<THREAD_ID>", "run_ids": ["<RUN_ID_1>", "<RUN_ID_2>"]}'
 
-    # Or cancel all running runs on the thread
+    # List runs to confirm
+    curl --request GET \
+      --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs
+    ```
+    </Tab>
+</Tabs>
+
+### Cancel by status
+
+Cancel all runs that match a status across all threads in a deployment. Valid status options are `pending`, `running`, or `all`.
+
+<Tabs>
+    <Tab title="Python">
+    ```python
+    await client.runs.create(
+        thread["thread_id"],
+        assistant_id,
+        input={"messages": [{"role": "user", "content": "Long task"}]},
+    )
+    thread2 = await client.threads.create()
+    await client.runs.create(
+        thread2["thread_id"],
+        assistant_id,
+        input={"messages": [{"role": "user", "content": "Long task"}]},
+    )
+
+    await client.runs.cancel_runs(
+        status="running",
+        action="interrupt",
+    )
+
+    runs_after = await client.runs.list(thread["thread_id"])
+    print(runs_after)  # running run is now "interrupted"
+    runs_after2 = await client.runs.list(thread2["thread_id"])
+    print(runs_after2)  # runs are cancelled across all threads
+    ```
+    </Tab>
+    <Tab title="Javascript">
+    ```js
+    await client.runs.create(
+        thread["thread_id"],
+        assistantID,
+        { input: { messages: [{ role: "user", content: "Long task" }] } }
+    );
+    const thread2 = await client.threads.create();
+    await client.runs.create(
+        thread2["thread_id"],
+        assistantID,
+        { input: { messages: [{ role: "user", content: "Long task" }] } }
+    );
+
+    await client.runs.cancelRuns({
+        status: "running",
+        action: "interrupt",
+    });
+
+    const runsAfter = await client.runs.list(thread["thread_id"]);
+    console.log(runsAfter);  // running run is now "interrupted"
+    const runsAfter2 = await client.runs.list(thread2["thread_id"]);
+    console.log(runsAfter2);  // runs are cancelled across all threads
+    ```
+    </Tab>
+    <Tab title="CURL">
+    ```bash
+    # Create a run
+    curl --request POST \
+      --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs \
+      --header 'Content-Type: application/json' \
+      --data '{"assistant_id": "agent", "input": {"messages": [{"role": "user", "content": "Long task"}]}}'
+
+    # Create a second thread
+    curl --request POST \
+      --url <DEPLOYMENT_URL>/threads \
+      --header 'Content-Type: application/json' \
+      --data '{}'
+
+    # Create a run in the second thread
+    curl --request POST \
+      --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs \
+      --header 'Content-Type: application/json' \
+      --data '{"assistant_id": "agent", "input": {"messages": [{"role": "user", "content": "Long task"}]}}'
+
+    # Cancel all running runs
     curl --request POST \
       --url "<DEPLOYMENT_URL>/runs/cancel?action=interrupt" \
       --header 'Content-Type: application/json' \
-      --data '{"thread_id": "<THREAD_ID>", "status": "running"}'
+      --data '{"status": "running"}'
+
+    # List runs to confirm
+    curl --request GET \
+      --url <DEPLOYMENT_URL>/threads/<THREAD_ID>/runs
+    curl --request GET \
+      --url <DEPLOYMENT_URL>/threads/<THREAD_ID_2>/runs
     ```
     </Tab>
 </Tabs>
