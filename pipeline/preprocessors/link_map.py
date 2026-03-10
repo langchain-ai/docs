@@ -280,6 +280,15 @@ LINK_MAPS: list[LinkMap] = [
             "Pregel.stream": "langgraph/pregel/#langgraph.pregel.Pregel.stream",
             "Runtime": "langgraph/runtime/Runtime",
             "Send": "langgraph/types/Send",
+            "GraphOutput": "langgraph/types/GraphOutput",
+            "StreamPart": "langgraph/types/StreamPart",
+            "ValuesStreamPart": "langgraph/types/ValuesStreamPart",
+            "UpdatesStreamPart": "langgraph/types/UpdatesStreamPart",
+            "MessagesStreamPart": "langgraph/types/MessagesStreamPart",
+            "CustomStreamPart": "langgraph/types/CustomStreamPart",
+            "CheckpointStreamPart": "langgraph/types/CheckpointStreamPart",
+            "TasksStreamPart": "langgraph/types/TasksStreamPart",
+            "DebugStreamPart": "langgraph/types/DebugStreamPart",
             "Topic": "langgraph/channels/topic/Topic",
             # LangSmith Deployment SDK
             # Main client
