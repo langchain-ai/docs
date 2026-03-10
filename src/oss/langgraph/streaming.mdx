@@ -17,7 +17,7 @@ What's possible with LangGraph streaming:
 * <Icon icon="stack-push" size={16} /> [**Use multiple streaming modes**](#stream-multiple-modes)—choose from `values` (full state), `updates` (state deltas), `messages` (LLM tokens + metadata), `custom` (arbitrary user data), `tools` (tool lifecycle events), or `debug` (detailed traces).
 :::
 :::python
-* <Icon icon="stack-push" size={16} /> [**Use multiple streaming modes**](#stream-multiple-modes)—choose from `values` (full state), `updates` (state deltas), `messages` (LLM tokens + metadata), `custom` (arbitrary user data), or `debug` (detailed traces).
+* <Icon icon="stack-push" size={16} /> [**Use multiple streaming modes**](#stream-multiple-modes)—choose from `values` (full state), `updates` (state deltas), `messages` (LLM tokens + metadata), `custom` (arbitrary user data), `checkpoints`, `tasks`, or `debug` (detailed traces).
 * <Icon icon="arrows-sort" size={16} /> [**Use v2 streaming format**](#v2-streaming-format)—opt into a unified, type-safe streaming format with `version="v2"` (requires LangGraph >= 1.1).
 :::
 
@@ -49,7 +49,9 @@ Pass one or more of the following stream modes as a list to the @[`stream`][Comp
 | `updates` | Streams the updates to the state after each step of the graph. If multiple updates are made in the same step (e.g., multiple nodes are run), those updates are streamed separately. |
 | `custom` | Streams custom data from inside your graph nodes. |
 | `messages` | Streams 2-tuples (LLM token, metadata) from any graph nodes where an LLM is invoked. |
-| `debug` | Streams as much information as possible throughout the execution of the graph. |
+| `checkpoints` | Streams checkpoint events in the same format as `get_state()`. Requires a checkpointer. |
+| `tasks` | Streams task start and finish events, including results and errors. Requires a checkpointer. |
+| `debug` | Streams as much information as possible throughout the execution of the graph (combines `checkpoints` and `tasks` events with additional metadata). |
 :::
 
 ## Basic usage example
@@ -1746,18 +1748,20 @@ Not all chat model integrations support the `streaming` parameter. If your model
 ## v2 streaming format
 
 <Note>
-Requires LangGraph >= 1.1. See the [release notes](/oss/releases/langgraph-v1.1) for full details.
+Requires LangGraph >= 1.1.
 </Note>
 
 Pass `version="v2"` to `stream()` or `astream()` to get a unified output format. Every chunk is a `StreamPart` dict with a consistent shape — regardless of stream mode, number of modes, or subgraph settings:
 
 ```python
 {
-    "type": "values" | "updates" | "messages" | "custom" | "debug" | ...,
+    "type": "values" | "updates" | "messages" | "custom" | "checkpoints" | "tasks" | "debug",
     "ns": (),           # namespace tuple, populated for subgraph events
     "data": ...,        # the actual payload (type varies by stream mode)
 }
 ```
+
+Each stream mode has a corresponding `TypedDict` — @[`ValuesStreamPart`], @[`UpdatesStreamPart`], @[`MessagesStreamPart`], @[`CustomStreamPart`], @[`CheckpointStreamPart`], @[`TasksStreamPart`], @[`DebugStreamPart`] — all importable from `langgraph.types`. The union type @[`StreamPart`] is a discriminated union on `part["type"]`, enabling full type narrowing in editors and type checkers.
 
 With v1 (default), the output format changes based on your streaming options (single mode returns raw data, multiple modes return `(mode, data)` tuples, subgraphs return `(namespace, data)` tuples). With v2, the format is always the same:
 
@@ -1777,14 +1781,20 @@ for chunk in graph.stream(inputs, stream_mode="updates"):
 The v2 format also enables type narrowing — you can filter chunks by `chunk["type"]` and get the correct payload type:
 
 ```python
-for chunk in graph.stream(
-    inputs, stream_mode=["values", "updates"], version="v2"
-):
-    if chunk["type"] == "values":
-        state = chunk["data"]
-        interrupts = chunk["interrupts"]
-    elif chunk["type"] == "updates":
-        node_updates = chunk["data"]
+for part in graph.stream(inputs, version="v2"):
+    if part["type"] == "values":
+        part["data"]        # full state (dict, Pydantic model, or dataclass)
+        part["interrupts"]  # tuple[Interrupt, ...]
+    elif part["type"] == "updates":
+        part["data"]        # dict[str, Any]
+    elif part["type"] == "messages":
+        part["data"]        # tuple[BaseMessage, dict]
+    elif part["type"] == "custom":
+        part["data"]        # Any
+    elif part["type"] == "tasks":
+        part["data"]        # TaskPayload | TaskResultPayload
+    elif part["type"] == "debug":
+        part["data"]        # DebugPayload
 ```
 
 ### Subgraph streaming with v2
@@ -1826,13 +1836,20 @@ for chunk in graph.stream(
 Pass `version="v2"` to `invoke()` or `ainvoke()` to get a @[`GraphOutput`] object with `.value` and `.interrupts` attributes:
 
 ```python
-result = graph.invoke(inputs, version="v2")
-print(result.value)       # state dict, Pydantic model, or dataclass
-print(result.interrupts)  # tuple of Interrupt objects (empty if none)
+from langgraph.types import GraphOutput
 
-# Backwards-compatible dict access still works
-print(result["key"])
+result = graph.invoke(inputs, version="v2")
+
+assert isinstance(result, GraphOutput)
+result.value       # your output — dict, Pydantic model, or dataclass
+result.interrupts  # tuple[Interrupt, ...], empty if none occurred
 ```
+
+With a non-`"values"` stream mode, `invoke(..., stream_mode="updates", version="v2")` returns `list[StreamPart]` instead of `list[tuple]`.
+
+<Warning>
+Dict-style access on `GraphOutput` (`result["key"]`, `"key" in result`, `result["__interrupt__"]`) still works for backwards compatibility but is **deprecated** and will be removed in a future version. Migrate to `result.value` and `result.interrupts`.
+</Warning>
 
 This cleanly separates state from interrupt metadata. With v1, interrupts are embedded in the returned dict under `__interrupt__`:
 
