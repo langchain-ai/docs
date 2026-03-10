@@ -94,16 +94,18 @@ from langgraph.types import Command
 config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
 # Invoke the agent
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "Delete the file temp.txt"}]
-}, config=config)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Delete the file temp.txt"}]},
+    config=config,
+    version="v2",  # [!code highlight]
+)
 
 # Check if execution was interrupted
-if result.get("__interrupt__"):
+if result.interrupts:  # [!code highlight]
     # Extract interrupt information
-    interrupts = result["__interrupt__"][0].value
-    action_requests = interrupts["action_requests"]
-    review_configs = interrupts["review_configs"]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_requests = interrupt_value["action_requests"]
+    review_configs = interrupt_value["review_configs"]
 
     # Create a lookup map from tool name to review config
     config_map = {cfg["action_name"]: cfg for cfg in review_configs}
@@ -123,11 +125,12 @@ if result.get("__interrupt__"):
     # Resume execution with decisions
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config  # Must use the same config!
+        config=config,  # Must use the same config!
+        version="v2",
     )
 
 # Process final result
-print(result["messages"][-1].content)
+print(result.value["messages"][-1].content)  # [!code highlight]
 ```
 :::
 
@@ -189,16 +192,18 @@ When the agent calls multiple tools that require approval, all interrupts are ba
 ```python
 config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
-result = agent.invoke({
-    "messages": [{
+result = agent.invoke(
+    {"messages": [{
         "role": "user",
         "content": "Delete temp.txt and send an email to admin@example.com"
-    }]
-}, config=config)
+    }]},
+    config=config,
+    version="v2",  # [!code highlight]
+)
 
-if result.get("__interrupt__"):
-    interrupts = result["__interrupt__"][0].value
-    action_requests = interrupts["action_requests"]
+if result.interrupts:  # [!code highlight]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_requests = interrupt_value["action_requests"]
 
     # Two tools need approval
     assert len(action_requests) == 2
@@ -211,7 +216,8 @@ if result.get("__interrupt__"):
 
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config
+        config=config,
+        version="v2",
     )
 ```
 :::
@@ -254,9 +260,9 @@ When `"edit"` is in the allowed decisions, you can modify the tool arguments bef
 
 :::python
 ```python
-if result.get("__interrupt__"):
-    interrupts = result["__interrupt__"][0].value
-    action_request = interrupts["action_requests"][0]
+if result.interrupts:  # [!code highlight]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_request = interrupt_value["action_requests"][0]
 
     # Original args from the agent
     print(action_request["args"])  # {"to": "everyone@company.com", ...}
@@ -272,7 +278,8 @@ if result.get("__interrupt__"):
 
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config
+        config=config,
+        version="v2",
     )
 ```
 :::
@@ -359,7 +366,7 @@ const agent = createDeepAgent({
 ```
 :::
 
-When a subagent triggers an interrupt, the handling is the same—check for `__interrupt__` and resume with `Command`.
+When a subagent triggers an interrupt, the handling is the same—check for `interrupts` on the result and resume with `Command`.
 
 ### Interrupts within tool calls
 
@@ -434,11 +441,12 @@ def main():
             ]
         },
         config=config,
+        version="v2",  # [!code highlight]
     )
 
     # Check for interrupt
-    if result.get("__interrupt__"):
-        interrupt_value = result["__interrupt__"][0].value
+    if result.interrupts:  # [!code highlight]
+        interrupt_value = result.interrupts[0].value  # [!code highlight]
         print(f"\nInterrupt received!")
         print(f"  Type: {interrupt_value.get('type')}")
         print(f"  Action: {interrupt_value.get('action')}")
@@ -448,12 +456,13 @@ def main():
         result2 = parent_agent.invoke(
             Command(resume={"approved": True}),
             config=config,
+            version="v2",  # [!code highlight]
         )
 
-        if "__interrupt__" not in result2:
+        if not result2.interrupts:  # [!code highlight]
             print("\nExecution completed!")
             # Find the tool response
-            tool_msgs = [m for m in result2.get("messages", []) if m.type == "tool"]
+            tool_msgs = [m for m in result2.value.get("messages", []) if m.type == "tool"]  # [!code highlight]
             if tool_msgs:
                 print(f"  Tool result: {tool_msgs[-1].content}")
         else:
@@ -645,10 +654,10 @@ When resuming, you must use the same config with the same `thread_id`:
 ```python
 # First call
 config = {"configurable": {"thread_id": "my-thread"}}
-result = agent.invoke(input, config=config)
+result = agent.invoke(input, config=config, version="v2")
 
 # Resume (use same config)
-result = agent.invoke(Command(resume={...}), config=config)
+result = agent.invoke(Command(resume={...}), config=config, version="v2")
 ```
 :::
 
@@ -658,9 +667,9 @@ The decisions list must match the order of `action_requests`:
 
 :::python
 ```python
-if result.get("__interrupt__"):
-    interrupts = result["__interrupt__"][0].value
-    action_requests = interrupts["action_requests"]
+if result.interrupts:  # [!code highlight]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_requests = interrupt_value["action_requests"]
 
     # Create one decision per action, in order
     decisions = []
@@ -670,7 +679,8 @@ if result.get("__interrupt__"):
 
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config
+        config=config,
+        version="v2",
     )
 ```
 :::

@@ -74,10 +74,12 @@ agent = create_agent(
 for chunk in agent.stream(  # [!code highlight]
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
     stream_mode="updates",
+    version="v2",  # [!code highlight]
 ):
-    for step, data in chunk.items():
-        print(f"step: {step}")
-        print(f"content: {data['messages'][-1].content_blocks}")
+    if chunk["type"] == "updates":  # [!code highlight]
+        for step, data in chunk["data"].items():  # [!code highlight]
+            print(f"step: {step}")
+            print(f"content: {data['messages'][-1].content_blocks}")
 ```
 
 ```shell title="Output"
@@ -190,13 +192,16 @@ agent = create_agent(
     model="gpt-5-nano",
     tools=[get_weather],
 )
-for token, metadata in agent.stream(  # [!code highlight]
+for chunk in agent.stream(  # [!code highlight]
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
     stream_mode="messages",
+    version="v2",  # [!code highlight]
 ):
-    print(f"node: {metadata['langgraph_node']}")
-    print(f"content: {token.content_blocks}")
-    print("\n")
+    if chunk["type"] == "messages":  # [!code highlight]
+        token, metadata = chunk["data"]  # [!code highlight]
+        print(f"node: {metadata['langgraph_node']}")
+        print(f"content: {token.content_blocks}")
+        print("\n")
 ```
 
 ```shell title="Output" expandable
@@ -357,9 +362,11 @@ agent = create_agent(
 
 for chunk in agent.stream(
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
-    stream_mode="custom"  # [!code highlight]
+    stream_mode="custom",  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    print(chunk)
+    if chunk["type"] == "custom":  # [!code highlight]
+        print(chunk["data"])  # [!code highlight]
 ```
 
 ```shell title="Output"
@@ -425,7 +432,7 @@ Acquired data for city: San Francisco
 :::python
 You can specify multiple streaming modes by passing stream mode as a list: `stream_mode=["updates", "custom"]`.
 
-The streamed outputs will be tuples of `(mode, chunk)` where `mode` is the name of the stream mode and `chunk` is the data streamed by that mode.
+Each streamed chunk is a `StreamPart` dict with `type`, `ns`, and `data` keys. Use `chunk["type"]` to determine the stream mode and `chunk["data"]` to access the payload.
 
 ```python title="Streaming multiple modes"
 from langchain.agents import create_agent
@@ -444,12 +451,13 @@ agent = create_agent(
     tools=[get_weather],
 )
 
-for stream_mode, chunk in agent.stream(  # [!code highlight]
+for chunk in agent.stream(  # [!code highlight]
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
-    stream_mode=["updates", "custom"]
+    stream_mode=["updates", "custom"],
+    version="v2",  # [!code highlight]
 ):
-    print(f"stream_mode: {stream_mode}")
-    print(f"content: {chunk}")
+    print(f"stream_mode: {chunk['type']}")  # [!code highlight]
+    print(f"content: {chunk['data']}")  # [!code highlight]
     print("\n")
 ```
 
@@ -614,16 +622,17 @@ def _render_completed_message(message: AnyMessage) -> None:
 
 
 input_message = {"role": "user", "content": "What is the weather in Boston?"}
-for stream_mode, data in agent.stream(
+for chunk in agent.stream(
     {"messages": [input_message]},
     stream_mode=["messages", "updates"],  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    if stream_mode == "messages":
-        token, metadata = data
+    if chunk["type"] == "messages":  # [!code highlight]
+        token, metadata = chunk["data"]  # [!code highlight]
         if isinstance(token, AIMessageChunk):
             _render_message_chunk(token)  # [!code highlight]
-    if stream_mode == "updates":
-        for source, update in data.items():
+    elif chunk["type"] == "updates":  # [!code highlight]
+        for source, update in chunk["data"].items():  # [!code highlight]
             if source in ("model", "tools"):  # `source` captures node name
                 _render_completed_message(update["messages"][-1])  # [!code highlight]
 ```
@@ -735,21 +744,22 @@ def _render_completed_message(message: AnyMessage) -> None:
 
 
 input_message = {"role": "user", "content": "What is the weather in Boston?"}
-for stream_mode, data in agent.stream(
+for chunk in agent.stream(
     {"messages": [input_message]},
     stream_mode=["messages", "updates", "custom"],  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    if stream_mode == "messages":
-        token, metadata = data
+    if chunk["type"] == "messages":  # [!code highlight]
+        token, metadata = chunk["data"]  # [!code highlight]
         if isinstance(token, AIMessageChunk):
             _render_message_chunk(token)
-    if stream_mode == "updates":
-        for source, update in data.items():
+    elif chunk["type"] == "updates":  # [!code highlight]
+        for source, update in chunk["data"].items():  # [!code highlight]
             if source in ("model", "tools"):
                 _render_completed_message(update["messages"][-1])
-    if stream_mode == "custom":  # [!code highlight]
+    elif chunk["type"] == "custom":  # [!code highlight]
         # access completed message in stream
-        print(f"Tool calls: {data.tool_calls}")  # [!code highlight]
+        print(f"Tool calls: {chunk['data'].tool_calls}")  # [!code highlight]
 ```
 ```shell title="Output" expandable
 [{'name': 'get_weather', 'args': '', 'id': 'call_je6LWgxYzuZ84mmoDalTYMJC', 'index': 0, 'type': 'tool_call_chunk'}]
@@ -773,12 +783,13 @@ Alternatively, if you aren't able to add custom events to the stream, you can ag
 ```python
 input_message = {"role": "user", "content": "What is the weather in Boston?"}
 full_message = None  # [!code highlight]
-for stream_mode, data in agent.stream(
+for chunk in agent.stream(
     {"messages": [input_message]},
     stream_mode=["messages", "updates"],
+    version="v2",  # [!code highlight]
 ):
-    if stream_mode == "messages":
-        token, metadata = data
+    if chunk["type"] == "messages":  # [!code highlight]
+        token, metadata = chunk["data"]  # [!code highlight]
         if isinstance(token, AIMessageChunk):
             _render_message_chunk(token)
             full_message = token if full_message is None else full_message + token  # [!code highlight]
@@ -786,8 +797,8 @@ for stream_mode, data in agent.stream(
                 if full_message.tool_calls:  # [!code highlight]
                     print(f"Tool calls: {full_message.tool_calls}")  # [!code highlight]
                 full_message = None  # [!code highlight]
-    if stream_mode == "updates":
-        for source, update in data.items():
+    elif chunk["type"] == "updates":  # [!code highlight]
+        for source, update in chunk["data"].items():  # [!code highlight]
             if source == "tools":
                 _render_completed_message(update["messages"][-1])
 ```
@@ -856,17 +867,18 @@ input_message = {
 }
 config = {"configurable": {"thread_id": "some_id"}}  # [!code highlight]
 interrupts = []  # [!code highlight]
-for stream_mode, data in agent.stream(
+for chunk in agent.stream(
     {"messages": [input_message]},
     config=config,  # [!code highlight]
     stream_mode=["messages", "updates"],
+    version="v2",  # [!code highlight]
 ):
-    if stream_mode == "messages":
-        token, metadata = data
+    if chunk["type"] == "messages":  # [!code highlight]
+        token, metadata = chunk["data"]  # [!code highlight]
         if isinstance(token, AIMessageChunk):
             _render_message_chunk(token)
-    if stream_mode == "updates":
-        for source, update in data.items():
+    elif chunk["type"] == "updates":  # [!code highlight]
+        for source, update in chunk["data"].items():  # [!code highlight]
             if source in ("model", "tools"):
                 _render_completed_message(update["messages"][-1])
             if source == "__interrupt__":  # [!code highlight]
@@ -943,18 +955,19 @@ decisions
 We can then resume by passing a [command](/oss/langchain/human-in-the-loop#responding-to-interrupts) into the same streaming loop:
 ```python
 interrupts = []
-for stream_mode, data in agent.stream(
+for chunk in agent.stream(
     Command(resume=decisions),  # [!code highlight]
     config=config,
     stream_mode=["messages", "updates"],
+    version="v2",  # [!code highlight]
 ):
     # Streaming loop is unchanged
-    if stream_mode == "messages":
-        token, metadata = data
+    if chunk["type"] == "messages":  # [!code highlight]
+        token, metadata = chunk["data"]  # [!code highlight]
         if isinstance(token, AIMessageChunk):
             _render_message_chunk(token)
-    if stream_mode == "updates":
-        for source, update in data.items():
+    elif chunk["type"] == "updates":  # [!code highlight]
+        for source, update in chunk["data"].items():  # [!code highlight]
             if source in ("model", "tools"):
                 _render_completed_message(update["messages"][-1])
             if source == "__interrupt__":
@@ -1043,21 +1056,22 @@ def _render_completed_message(message: AnyMessage) -> None:
 
 input_message = {"role": "user", "content": "What is the weather in Boston?"}
 current_agent = None  # [!code highlight]
-for _, stream_mode, data in agent.stream(
+for chunk in agent.stream(
     {"messages": [input_message]},
     stream_mode=["messages", "updates"],
     subgraphs=True,  # [!code highlight]
+    version="v2",  # [!code highlight]
 ):
-    if stream_mode == "messages":
-        token, metadata = data
+    if chunk["type"] == "messages":  # [!code highlight]
+        token, metadata = chunk["data"]  # [!code highlight]
         if agent_name := metadata.get("lc_agent_name"):  # [!code highlight]
             if agent_name != current_agent:  # [!code highlight]
                 print(f"🤖 {agent_name}: ")  # [!code highlight]
                 current_agent = agent_name  # [!code highlight]
         if isinstance(token, AIMessage):
             _render_message_chunk(token)
-    if stream_mode == "updates":
-        for source, update in data.items():
+    elif chunk["type"] == "updates":  # [!code highlight]
+        for source, update in chunk["data"].items():  # [!code highlight]
             if source in ("model", "tools"):
                 _render_completed_message(update["messages"][-1])
 ```
@@ -1146,6 +1160,51 @@ Not all chat model integrations support the `streaming` parameter. If your model
 :::
 
 See the [LangGraph streaming guide](/oss/langgraph/streaming#disable-streaming-for-specific-chat-models) for more details.
+
+:::python
+## v2 streaming format
+
+<Note>
+Requires LangGraph >= 1.1.
+</Note>
+
+Pass `version="v2"` to `stream()` or `astream()` to get a unified output format. Every chunk is a `StreamPart` dict with `type`, `ns`, and `data` keys — the same shape regardless of stream mode or number of modes:
+
+<CodeGroup>
+```python v2 (new)
+# Unified format — no more tuple unpacking
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+    stream_mode=["updates", "custom"],
+    version="v2",
+):
+    print(chunk["type"])  # "updates" or "custom"
+    print(chunk["data"])  # payload
+```
+```python v1 (current default)
+# Must unpack (mode, data) tuples
+for mode, chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+    stream_mode=["updates", "custom"],
+):
+    print(mode)   # "updates" or "custom"
+    print(chunk)  # payload
+```
+</CodeGroup>
+
+The v2 format also improves `invoke()` — it returns a `GraphOutput` object with `.value` and `.interrupts` attributes, cleanly separating state from interrupt metadata:
+
+```python
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Hello"}]},
+    version="v2",
+)
+print(result.value)       # state (dict, Pydantic model, or dataclass)
+print(result.interrupts)  # tuple of Interrupt objects (empty if none)
+```
+
+See the [LangGraph streaming docs](/oss/langgraph/streaming#v2-streaming-format) for more details on the v2 format, including type narrowing, Pydantic/dataclass coercion, and subgraph streaming.
+:::
 
 ## Related
 
