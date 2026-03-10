@@ -11,20 +11,68 @@ LangGraph implements a streaming system to surface real-time updates. Streaming 
 ### Basic usage
 
 :::python
-LangGraph graphs expose the @[`stream`][Pregel.stream] (sync) and @[`astream`][Pregel.astream] (async) methods to yield streamed outputs as iterators.
+LangGraph graphs expose the @[`stream`][Pregel.stream] (sync) and @[`astream`][Pregel.astream] (async) methods to yield streamed outputs as iterators. Pass one or more [stream modes](#stream-modes) to control what data you receive.
 
-<CodeGroup>
-```python v2
-for chunk in graph.stream(inputs, stream_mode="updates", version="v2"):
+```python
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode=["updates", "custom"],  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
     if chunk["type"] == "updates":
-        print(chunk["data"])
+        for node_name, state in chunk["data"].items():
+            print(f"Node {node_name} updated: {state}")
+    elif chunk["type"] == "custom":
+        print(f"Status: {chunk['data']['status']}")
 ```
-```python v1
-for chunk in graph.stream(inputs, stream_mode="updates"):
-    print(chunk)
-```
-</CodeGroup>
 
+```shell title="Output"
+Status: thinking of a joke...
+Node generate_joke updated: {'joke': 'Why did the ice cream go to school? To get a sundae education!'}
+```
+
+<Accordion title="Full example">
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.config import get_stream_writer
+
+
+class State(TypedDict):
+    topic: str
+    joke: str
+
+
+def generate_joke(state: State):
+    writer = get_stream_writer()
+    writer({"status": "thinking of a joke..."})
+    return {"joke": f"Why did the {state['topic']} go to school? To get a sundae education!"}
+
+graph = (
+    StateGraph(State)
+    .add_node(generate_joke)
+    .add_edge(START, "generate_joke")
+    .add_edge("generate_joke", END)
+    .compile()
+)
+
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode=["updates", "custom"],
+    version="v2",
+):
+    if chunk["type"] == "updates":
+        for node_name, state in chunk["data"].items():
+            print(f"Node {node_name} updated: {state}")
+    elif chunk["type"] == "custom":
+        print(f"Status: {chunk['data']['status']}")
+```
+
+```shell title="Output"
+Status: thinking of a joke...
+Node generate_joke updated: {'joke': 'Why did the ice cream go to school? To get a sundae education!'}
+```
+</Accordion>
 :::
 
 :::js
@@ -38,84 +86,6 @@ for await (const chunk of await graph.stream(inputs, {
 }
 ```
 :::
-
-<Accordion title="Extended example: streaming updates">
-  :::python
-  ```python
-  from typing import TypedDict
-  from langgraph.graph import StateGraph, START, END
-
-  class State(TypedDict):
-      topic: str
-      joke: str
-
-  def refine_topic(state: State):
-      return {"topic": state["topic"] + " and cats"}
-
-  def generate_joke(state: State):
-      return {"joke": f"This is a joke about {state['topic']}"}
-
-  graph = (
-      StateGraph(State)
-      .add_node(refine_topic)
-      .add_node(generate_joke)
-      .add_edge(START, "refine_topic")
-      .add_edge("refine_topic", "generate_joke")
-      .add_edge("generate_joke", END)
-      .compile()
-  )
-
-  # The stream() method returns an iterator that yields streamed outputs
-  for chunk in graph.stream(  # [!code highlight]
-      {"topic": "ice cream"},
-      # Set stream_mode="updates" to stream only the updates to the graph state after each node
-      # Other stream modes are also available. See supported stream modes for details
-      stream_mode="updates",  # [!code highlight]
-      version="v2",  # [!code highlight]
-  ):
-      if chunk["type"] == "updates":
-          print(chunk["data"])
-```
-  :::
-
-  :::js
-  ```typescript
-  import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
-  import { z } from "zod/v4";
-
-  const State = new StateSchema({
-    topic: z.string(),
-    joke: z.string(),
-  });
-
-  const graph = new StateGraph(State)
-    .addNode("refineTopic", (state) => {
-      return { topic: state.topic + " and cats" };
-    })
-    .addNode("generateJoke", (state) => {
-      return { joke: `This is a joke about ${state.topic}` };
-    })
-    .addEdge(START, "refineTopic")
-    .addEdge("refineTopic", "generateJoke")
-    .addEdge("generateJoke", END)
-    .compile();
-
-  for await (const chunk of await graph.stream(
-    { topic: "ice cream" },
-    // Set streamMode: "updates" to stream only the updates to the graph state after each node
-    // Other stream modes are also available. See supported stream modes for details
-    { streamMode: "updates" }
-  )) {
-    console.log(chunk);
-  }
-  ```
-  :::
-
-  ```python
-  {'refineTopic': {'topic': 'ice cream and cats'}}
-  {'generateJoke': {'joke': 'This is a joke about ice cream and cats'}}
-  ```
-</Accordion>
 
 :::python
 ### Stream output format (v2)
@@ -151,23 +121,28 @@ for chunk in graph.stream(inputs, stream_mode="updates"):
 ```
 </CodeGroup>
 
-The v2 format also enables type narrowing, which means you can filter chunks by `chunk["type"]` and get the correct payload type:
+The v2 format also enables type narrowing, which means you can filter chunks by `chunk["type"]` and get the correct payload type. Each branch narrows `part["data"]` to the specific type for that mode:
 
 ```python
-for part in graph.stream(inputs, version="v2"):
+for part in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode=["values", "updates", "messages", "custom"],
+    version="v2",
+):
     if part["type"] == "values":
-        part["data"]        # full state (dict, Pydantic model, or dataclass)
-        part["interrupts"]  # tuple[Interrupt, ...]
+        # ValuesStreamPart — full state snapshot after each step
+        print(f"State: topic={part['data']['topic']}")
     elif part["type"] == "updates":
-        part["data"]        # dict[str, Any]
+        # UpdatesStreamPart — only the changed keys from each node
+        for node_name, state in part["data"].items():
+            print(f"Node `{node_name}` updated: {state}")
     elif part["type"] == "messages":
-        part["data"]        # tuple[BaseMessage, dict]
+        # MessagesStreamPart — (message_chunk, metadata) from LLM calls
+        msg, metadata = part["data"]
+        print(msg.content, end="", flush=True)
     elif part["type"] == "custom":
-        part["data"]        # Any
-    elif part["type"] == "tasks":
-        part["data"]        # TaskPayload | TaskResultPayload
-    elif part["type"] == "debug":
-        part["data"]        # DebugPayload
+        # CustomStreamPart — arbitrary data from get_stream_writer()
+        print(f"Progress: {part['data']['progress']}%")
 ```
 :::
 
@@ -176,28 +151,28 @@ for part in graph.stream(inputs, version="v2"):
 :::python
 Pass one or more of the following stream modes as a list to the @[`stream`][CompiledStateGraph.stream] or @[`astream`][CompiledStateGraph.astream] methods:
 
-| Mode | Description |
-| ---- | ----------- |
-| [`values`](#graph-state) | Streams the full value of the state after each step of the graph. |
-| [`updates`](#graph-state) | Streams the updates to the state after each step of the graph. If multiple updates are made in the same step (e.g., multiple nodes are run), those updates are streamed separately. |
-| [`messages`](#llm-tokens) | Streams 2-tuples (LLM token, metadata) from any graph nodes where an LLM is invoked. |
-| [`custom`](#custom-data) | Streams custom data from inside your graph nodes. |
-| [`checkpoints`](#checkpoints) | Streams checkpoint events in the same format as `get_state()`. Requires a checkpointer. |
-| [`tasks`](#tasks) | Streams task start and finish events, including results and errors. Requires a checkpointer. |
-| [`debug`](#debug) | Streams as much information as possible throughout the execution of the graph (combines `checkpoints` and `tasks` events with additional metadata). |
+| Mode | Type | Description |
+| :--- | :--- | :---------- |
+| [values](#graph-state) | @[`ValuesStreamPart`] | Full state after each step. |
+| [updates](#graph-state) | @[`UpdatesStreamPart`] | State updates after each step. Multiple updates in the same step are streamed separately. |
+| [messages](#llm-tokens) | @[`MessagesStreamPart`] | 2-tuples of (LLM token, metadata) from LLM calls. |
+| [custom](#custom-data) | @[`CustomStreamPart`] | Custom data emitted from nodes via @[`get_stream_writer`]. |
+| [checkpoints](#checkpoints) | @[`CheckpointStreamPart`] | Checkpoint events (same format as `get_state()`). Requires a checkpointer. |
+| [tasks](#tasks) | @[`TasksStreamPart`] | Task start/finish events with results and errors. Requires a checkpointer. |
+| [debug](#debug) | @[`DebugStreamPart`] | All available info — combines `checkpoints` and `tasks` with extra metadata. |
 :::
 
 :::js
 Pass one or more of the following stream modes as a list to the @[`stream`][CompiledStateGraph.stream] method:
 
 | Mode | Description |
-| ---- | ----------- |
-| [`values`](#graph-state) | Streams the full value of the state after each step of the graph. |
-| [`updates`](#graph-state) | Streams the updates to the state after each step of the graph. If multiple updates are made in the same step (e.g., multiple nodes are run), those updates are streamed separately. |
-| [`messages`](#llm-tokens) | Streams 2-tuples (LLM token, metadata) from any graph nodes where an LLM is invoked. |
-| [`custom`](#custom-data) | Streams custom data from inside your graph nodes. |
-| [`tools`](#tool-progress) | Streams tool-call lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`) from tool execution. |
-| [`debug`](#debug) | Streams as much information as possible throughout the execution of the graph. |
+| :--- | :---------- |
+| [values](#graph-state) | Full state after each step. |
+| [updates](#graph-state) | State updates after each step. Multiple updates in the same step are streamed separately. |
+| [messages](#llm-tokens) | 2-tuples of (LLM token, metadata) from LLM calls. |
+| [custom](#custom-data) | Custom data emitted from nodes via the `writer` config parameter. |
+| [tools](#tool-progress) | Tool-call lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`). |
+| [debug](#debug) | All available info throughout graph execution. |
 :::
 
 <a id="messages"></a>
@@ -275,7 +250,13 @@ const graph = new StateGraph(State)
         version="v2",  # [!code highlight]
     ):
         if chunk["type"] == "updates":
-            print(chunk["data"])
+            for node_name, state in chunk["data"].items():
+                print(f"Node `{node_name}` updated: {state}")
+    ```
+
+    ```shell title="Output"
+    Node `refine_topic` updated: {'topic': 'ice cream and cats'}
+    Node `generate_joke` updated: {'joke': 'This is a joke about ice cream and cats'}
     ```
     :::
 
@@ -285,7 +266,9 @@ const graph = new StateGraph(State)
       { topic: "ice cream" },
       { streamMode: "updates" }
     )) {
-      console.log(chunk);
+      for (const [nodeName, state] of Object.entries(chunk)) {
+        console.log(`Node ${nodeName} updated:`, state);
+      }
     }
     ```
     :::
@@ -301,7 +284,13 @@ const graph = new StateGraph(State)
         version="v2",  # [!code highlight]
     ):
         if chunk["type"] == "values":
-            print(chunk["data"])
+            print(f"topic: {chunk['data']['topic']}, joke: {chunk['data']['joke']}")
+    ```
+
+    ```shell title="Output"
+    topic: ice cream, joke:
+    topic: ice cream and cats, joke:
+    topic: ice cream and cats, joke: This is a joke about ice cream and cats
     ```
     :::
 
@@ -311,7 +300,7 @@ const graph = new StateGraph(State)
       { topic: "ice cream" },
       { streamMode: "values" }
     )) {
-      console.log(chunk);
+      console.log(`topic: ${chunk.topic}, joke: ${chunk.joke}`);
     }
     ```
     :::
@@ -813,7 +802,7 @@ See [Async with Python < 3.11](#async) for usage examples.
     # Set stream_mode="custom" to receive the custom data in the stream
     for chunk in graph.stream(inputs, stream_mode="custom", version="v2"):
         if chunk["type"] == "custom":
-            print(chunk["data"])
+            print(f"Custom event: {chunk['data']['custom_key']}")
     ```
     </Tab>
     <Tab title="tool">
@@ -839,7 +828,7 @@ See [Async with Python < 3.11](#async) for usage examples.
     # Set stream_mode="custom" to receive the custom data in the stream
     for chunk in graph.stream(inputs, stream_mode="custom", version="v2"):
         if chunk["type"] == "custom":
-            print(chunk["data"])
+            print(f"{chunk['data']['type']}: {chunk['data']['data']}")
 ```
     </Tab>
 </Tabs>
@@ -1489,9 +1478,10 @@ With `version="v2"`, every chunk is a `StreamPart` dict. Use `chunk["type"]` to 
 ```python v2
 for chunk in graph.stream(inputs, stream_mode=["updates", "custom"], version="v2"):
     if chunk["type"] == "updates":
-        print(chunk["data"])
+        for node_name, state in chunk["data"].items():
+            print(f"Node `{node_name}` updated: {state}")
     elif chunk["type"] == "custom":
-        print(chunk["data"])
+        print(f"Custom event: {chunk['data']}")
 ```
 ```python v1
 for mode, chunk in graph.stream(inputs, stream_mode=["updates", "custom"]):
