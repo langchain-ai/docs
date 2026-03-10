@@ -83,6 +83,7 @@ def has_redirect_for_page(page_path: str, redirects: list[dict]) -> bool:
     Redirects in docs.json can use various formats:
     - "langsmith/home" or "/langsmith/home"
     - "langsmith/home.mdx" or "/langsmith/home.mdx"
+    - Wildcards: "/path/:path*" matches /path, /path/index, /path/anything, etc.
     """
     page_normalized = normalize_page_for_comparison(page_path)
     if page_normalized == "":
@@ -96,6 +97,12 @@ def has_redirect_for_page(page_path: str, redirects: list[dict]) -> bool:
 
         if source_normalized == page_normalized:
             return True
+
+        # Support :path* wildcard (Vercel/Next.js style) - matches prefix and any suffix
+        if ":path*" in source_normalized:
+            prefix = source_normalized.replace(":path*", "").rstrip("/")
+            if page_normalized == prefix or page_normalized.startswith(prefix + "/"):
+                return True
 
     return False
 
