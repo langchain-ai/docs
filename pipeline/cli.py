@@ -345,9 +345,12 @@ def main() -> None:
 
     # Run the command
     if asyncio.iscoroutinefunction(args.func):
-        asyncio.run(args.func(args))
+        result = asyncio.run(args.func(args))
     else:
-        args.func(args)
+        result = args.func(args)
+
+    if type(result) is int:
+        sys.exit(result)
 
 
 if __name__ == "__main__":

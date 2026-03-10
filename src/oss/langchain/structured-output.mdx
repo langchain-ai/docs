@@ -63,6 +63,7 @@ LangChain's prebuilt ReAct agent `createAgent` handles structured output automat
 ```ts
 type ResponseFormat = (
     | ZodSchema<StructuredResponseT> // a Zod schema
+    | StandardSchema<StructuredResponseT> // any Standard Schema library
     | Record<string, unknown> // a JSON Schema
 )
 
@@ -74,7 +75,7 @@ const agent = createAgent({
 
 ## Response format
 
-Controls how the agent returns structured data. You can provide either a Zod object or JSON schema. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
+Controls how the agent returns structured data. You can provide a Zod schema, any [Standard Schema](https://standardschema.dev/)-compatible schema, or a JSON Schema object. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
 
 You can control the behavior by wrapping `ResponseFormat` in a `toolStrategy` or `providerStrategy` function call:
 
@@ -243,13 +244,14 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
 :::js
 ```ts
 function providerStrategy<StructuredResponseT>(
-    schema: ZodSchema<StructuredResponseT> | JsonSchemaFormat
+    schema: ZodSchema<StructuredResponseT> | SerializableSchema | JsonSchemaFormat
 ): ProviderStrategy<StructuredResponseT>
 ```
 
 <ParamField path="schema" required>
     The schema defining the structured output format. Supports:
     - **Zod Schema**: A zod schema
+    - **Standard Schema**: Any schema implementing the [Standard Schema](https://standardschema.dev/) spec
     - **JSON Schema**: A JSON schema object
 </ParamField>
 
@@ -265,6 +267,33 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
         email: z.string().describe("The email address of the person"),
         phone: z.string().describe("The phone number of the person"),
     });
+
+    const agent = createAgent({
+        model: "gpt-5",
+        tools: [],
+        responseFormat: providerStrategy(ContactInfo)
+    });
+
+    const result = await agent.invoke({
+        messages: [{"role": "user", "content": "Extract contact info from: John Doe, john@example.com, (555) 123-4567"}]
+    });
+
+    console.log(result.structuredResponse);
+    // { name: "John Doe", email: "john@example.com", phone: "(555) 123-4567" }
+    ```
+
+    ```ts Standard Schema
+    import * as v from "valibot";
+    import { toStandardJsonSchema } from "@valibot/to-json-schema";
+    import { createAgent, providerStrategy } from "langchain";
+
+    const ContactInfo = toStandardJsonSchema(
+        v.object({
+            name: v.pipe(v.string(), v.description("The name of the person")),
+            email: v.pipe(v.string(), v.description("The email address of the person")),
+            phone: v.pipe(v.string(), v.description("The phone number of the person")),
+        })
+    );
 
     const agent = createAgent({
         model: "gpt-5",
@@ -590,7 +619,8 @@ function toolStrategy<StructuredResponseT>(
     responseFormat:
         | JsonSchemaFormat
         | ZodSchema<StructuredResponseT>
-        | (ZodSchema<StructuredResponseT> | JsonSchemaFormat)[]
+        | SerializableSchema
+        | (ZodSchema<StructuredResponseT> | SerializableSchema | JsonSchemaFormat)[]
     options?: ToolStrategyOptions
 ): ToolStrategy<StructuredResponseT>
 ```
@@ -598,6 +628,7 @@ function toolStrategy<StructuredResponseT>(
 <ParamField path="schema" required>
     The schema defining the structured output format. Supports:
     - **Zod Schema**: A zod schema
+    - **Standard Schema**: Any schema implementing the [Standard Schema](https://standardschema.dev/) spec
     - **JSON Schema**: A JSON schema object
 </ParamField>
 
@@ -633,6 +664,33 @@ function toolStrategy<StructuredResponseT>(
 
     const result = await agent.invoke({
         "messages": [{"role": "user", "content": "Analyze this review: 'Great product: 5 out of 5 stars. Fast shipping, but expensive'"}]
+    })
+
+    console.log(result.structuredResponse);
+    // { "rating": 5, "sentiment": "positive", "keyPoints": ["fast shipping", "expensive"] }
+    ```
+
+    ```ts Standard Schema
+    import * as v from "valibot";
+    import { toStandardJsonSchema } from "@valibot/to-json-schema";
+    import { createAgent, toolStrategy } from "langchain";
+
+    const ProductReview = toStandardJsonSchema(
+        v.object({
+            rating: v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(5))),
+            sentiment: v.picklist(["positive", "negative"]),
+            keyPoints: v.pipe(v.array(v.string()), v.description("The key points of the review. Lowercase, 1-3 words each.")),
+        })
+    );
+
+    const agent = createAgent({
+        model: "gpt-5",
+        tools: [],
+        responseFormat: toolStrategy(ProductReview)
+    })
+
+    const result = await agent.invoke({
+        messages: [{"role": "user", "content": "Analyze this review: 'Great product: 5 out of 5 stars. Fast shipping, but expensive'"}]
     })
 
     console.log(result.structuredResponse);
