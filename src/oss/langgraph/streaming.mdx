@@ -18,6 +18,7 @@ What's possible with LangGraph streaming:
 :::
 :::python
 * <Icon icon="stack-push" size={16} /> [**Use multiple streaming modes**](#stream-multiple-modes)—choose from `values` (full state), `updates` (state deltas), `messages` (LLM tokens + metadata), `custom` (arbitrary user data), or `debug` (detailed traces).
+* <Icon icon="arrows-sort" size={16} /> [**Use v2 streaming format**](#v2-streaming-format)—opt into a unified, type-safe streaming format with `version="v2"` (requires LangGraph >= 1.1).
 :::
 
 ## Supported stream modes
@@ -297,15 +298,34 @@ To include outputs from [subgraphs](/oss/langgraph/use-subgraphs) in the streame
 
 The outputs will be streamed as tuples `(namespace, data)`, where `namespace` is a tuple with the path to the node where a subgraph is invoked, e.g. `("parent_node:<task_id>", "child_node:<task_id>")`.
 
-```python
-for chunk in graph.stream(
-    {"foo": "foo"},
-    # Set subgraphs=True to stream outputs from subgraphs
-    subgraphs=True,  # [!code highlight]
-    stream_mode="updates",
-):
-    print(chunk)
-```
+<Tabs>
+    <Tab title="v2 (LangGraph >= 1.1)">
+    With `version="v2"`, subgraph events use the same `StreamPart` format. The `ns` field identifies the source:
+
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        subgraphs=True,  # [!code highlight]
+        stream_mode="updates",
+        version="v2", # [!code highlight]
+    ):
+        print(chunk["type"])  # "updates"
+        print(chunk["ns"])    # () for root, ("node_name:<task_id>",) for subgraph
+        print(chunk["data"])  # {"node_name": {"key": "value"}}
+    ```
+    </Tab>
+    <Tab title="v1 (default)">
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        # Set subgraphs=True to stream outputs from subgraphs
+        subgraphs=True,  # [!code highlight]
+        stream_mode="updates",
+    ):
+        print(chunk)
+    ```
+    </Tab>
+</Tabs>
 :::
 
 :::js
@@ -1722,6 +1742,134 @@ Not all chat model integrations support the `streaming` parameter. If your model
 :::
 
 :::python
+
+## v2 streaming format
+
+<Note>
+Requires LangGraph >= 1.1. See the [release notes](/oss/releases/langgraph-v1.1) for full details.
+</Note>
+
+Pass `version="v2"` to `stream()` or `astream()` to get a unified output format. Every chunk is a `StreamPart` dict with a consistent shape — regardless of stream mode, number of modes, or subgraph settings:
+
+```python
+{
+    "type": "values" | "updates" | "messages" | "custom" | "debug" | ...,
+    "ns": (),           # namespace tuple, populated for subgraph events
+    "data": ...,        # the actual payload (type varies by stream mode)
+}
+```
+
+With v1 (default), the output format changes based on your streaming options (single mode returns raw data, multiple modes return `(mode, data)` tuples, subgraphs return `(namespace, data)` tuples). With v2, the format is always the same:
+
+<CodeGroup>
+```python v2 (new)
+for chunk in graph.stream(inputs, stream_mode="updates", version="v2"):
+    print(chunk["type"])  # "updates"
+    print(chunk["ns"])    # ()
+    print(chunk["data"])  # {"node_name": {"key": "value"}}
+```
+```python v1 (current default)
+for chunk in graph.stream(inputs, stream_mode="updates"):
+    print(chunk)  # {"node_name": {"key": "value"}}
+```
+</CodeGroup>
+
+The v2 format also enables type narrowing — you can filter chunks by `chunk["type"]` and get the correct payload type:
+
+```python
+for chunk in graph.stream(
+    inputs, stream_mode=["values", "updates"], version="v2"
+):
+    if chunk["type"] == "values":
+        state = chunk["data"]
+        interrupts = chunk["interrupts"]
+    elif chunk["type"] == "updates":
+        node_updates = chunk["data"]
+```
+
+### Subgraph streaming with v2
+
+With v2, subgraph events use the same `StreamPart` format. The `ns` field identifies the source graph:
+
+```python
+for chunk in graph.stream(
+    inputs, stream_mode="updates", subgraphs=True, version="v2"
+):
+    if chunk["ns"] == ():
+        print("Root graph:", chunk["data"])
+    else:
+        print(f"Subgraph {chunk['ns']}:", chunk["data"])
+```
+
+### Pydantic and dataclass state coercion
+
+When your graph state is a Pydantic model or dataclass, v2 `values` mode automatically coerces output to the correct type:
+
+```python
+from pydantic import BaseModel
+from typing import Annotated
+import operator
+
+class MyState(BaseModel):
+    value: str
+    items: Annotated[list[str], operator.add]
+
+# With version="v2", chunk["data"] is a MyState instance
+for chunk in graph.stream(
+    {"value": "x", "items": []}, stream_mode="values", version="v2"
+):
+    print(type(chunk["data"]))  # <class 'MyState'>
+```
+
+### v2 invoke format
+
+Pass `version="v2"` to `invoke()` or `ainvoke()` to get a @[`GraphOutput`] object with `.value` and `.interrupts` attributes:
+
+```python
+result = graph.invoke(inputs, version="v2")
+print(result.value)       # state dict, Pydantic model, or dataclass
+print(result.interrupts)  # tuple of Interrupt objects (empty if none)
+
+# Backwards-compatible dict access still works
+print(result["key"])
+```
+
+This cleanly separates state from interrupt metadata. With v1, interrupts are embedded in the returned dict under `__interrupt__`:
+
+<CodeGroup>
+```python v2 (new)
+config = {"configurable": {"thread_id": "thread-1"}}
+result = graph.invoke(inputs, config=config, version="v2")
+
+if result.interrupts:
+    print(result.interrupts[0].value)
+    graph.invoke(Command(resume=True), config=config, version="v2")
+```
+```python v1 (current default)
+config = {"configurable": {"thread_id": "thread-1"}}
+result = graph.invoke(inputs, config=config)
+
+if "__interrupt__" in result:
+    print(result["__interrupt__"][0].value)
+    graph.invoke(Command(resume=True), config=config)
+```
+</CodeGroup>
+
+### Migrate to v2
+
+The table below summarizes the format changes when migrating from v1 to v2:
+
+| Scenario | v1 (default) | v2 (`version="v2"`) |
+|---|---|---|
+| Single stream mode | Raw data (dict) | `StreamPart` dict with `type`, `ns`, `data` |
+| Multiple stream modes | `(mode, data)` tuples | Same `StreamPart` dict, filter on `chunk["type"]` |
+| Subgraph streaming | `(namespace, data)` tuples | Same `StreamPart` dict, check `chunk["ns"]` |
+| Multiple modes + subgraphs | `(namespace, mode, data)` triples | Same `StreamPart` dict |
+| `invoke()` return type | Plain dict (state) | `GraphOutput` with `.value` and `.interrupts` |
+| Interrupt location (stream) | `__interrupt__` key in state dict | `interrupts` field on `values` stream parts |
+| Interrupt location (invoke) | `__interrupt__` key in result dict | `.interrupts` attribute on `GraphOutput` |
+| Pydantic/dataclass output | Returns plain dict | Coerces to model/dataclass instance |
+
 <a id="async"></a>
 ### Async with Python < 3.11
 

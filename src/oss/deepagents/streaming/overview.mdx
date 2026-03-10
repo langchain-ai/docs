@@ -872,6 +872,47 @@ for (const [id, sub] of activeSubagents) {
 ```
 :::
 
+:::python
+## v2 streaming format
+
+<Note>
+Requires LangGraph >= 1.1. See the [LangGraph v1.1 release notes](/oss/releases/langgraph-v1.1) for full details.
+</Note>
+
+Pass `version="v2"` to `stream()` or `astream()` to get a unified output format. Every chunk is a `StreamPart` dict with `type`, `ns`, and `data` keys — the same shape regardless of stream mode, number of modes, or subgraph settings.
+
+This is especially useful for deep agents, where you're typically combining multiple modes with `subgraphs=True`:
+
+<CodeGroup>
+```python v2 (new)
+# Unified format — no more nested tuple unpacking
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "Research quantum computing"}]},
+    stream_mode=["updates", "messages", "custom"],
+    subgraphs=True,
+    version="v2",
+):
+    print(chunk["type"])  # "updates", "messages", or "custom"
+    print(chunk["ns"])    # () for main agent, ("tools:<id>",) for subagent
+    print(chunk["data"])  # payload
+```
+```python v1 (current default)
+# Must handle (namespace, (mode, data)) nested tuples
+for namespace, chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "Research quantum computing"}]},
+    stream_mode=["updates", "messages", "custom"],
+    subgraphs=True,
+):
+    mode, data = chunk[0], chunk[1]
+    print(mode)       # "updates", "messages", or "custom"
+    print(namespace)  # () for main agent, ("tools:<id>",) for subagent
+    print(data)       # payload
+```
+</CodeGroup>
+
+See the [LangGraph streaming docs](/oss/langgraph/streaming#v2-streaming-format) for more details on the v2 format, including type narrowing and Pydantic/dataclass coercion.
+:::
+
 ## Related
 
 - [Subagents](/oss/deepagents/subagents)—Configure and use subagents with deep agents

@@ -70,23 +70,42 @@ When you call @[`interrupt`], here's what happens:
 After an interrupt pauses execution, you resume the graph by invoking it again with a `Command` that contains the resume value. The resume value is passed back to the `interrupt` call, allowing the node to continue execution with the external input.
 
 :::python
-```python
-from langgraph.types import Command
+<Tabs>
+    <Tab title="v2 (LangGraph >= 1.1)">
+    ```python
+    from langgraph.types import Command
 
-# Initial run - hits the interrupt and pauses
-# thread_id is the persistent pointer (stores a stable ID in production)
-config = {"configurable": {"thread_id": "thread-1"}}
-result = graph.invoke({"input": "data"}, config=config)
+    # Initial run - hits the interrupt and pauses
+    # thread_id is the persistent pointer (stores a stable ID in production)
+    config = {"configurable": {"thread_id": "thread-1"}}
+    result = graph.invoke({"input": "data"}, config=config, version="v2")
 
-# Check what was interrupted
-# __interrupt__ contains the payload that was passed to interrupt()
-print(result["__interrupt__"])
-# > [Interrupt(value='Do you approve this action?')]
+    # result is a GraphOutput with .value and .interrupts
+    # .interrupts contains the payloads passed to interrupt()
+    print(result.interrupts)
+    # > (Interrupt(value='Do you approve this action?'),)
 
-# Resume with the human's response
-# The resume payload becomes the return value of interrupt() inside the node
-graph.invoke(Command(resume=True), config=config)
-```
+    # Resume with the human's response
+    # The resume payload becomes the return value of interrupt() inside the node
+    graph.invoke(Command(resume=True), config=config, version="v2")
+    ```
+    </Tab>
+    <Tab title="v1 (default)">
+    ```python
+    from langgraph.types import Command
+
+    config = {"configurable": {"thread_id": "thread-1"}}
+    result = graph.invoke({"input": "data"}, config=config)
+
+    # __interrupt__ contains the payload that was passed to interrupt()
+    print(result["__interrupt__"])
+    # > [Interrupt(value='Do you approve this action?')]
+
+    # Resume with the human's response
+    graph.invoke(Command(resume=True), config=config)
+    ```
+    </Tab>
+</Tabs>
 
 **Key points about resuming:**
 
@@ -156,41 +175,72 @@ Use multiple stream modes (`"messages"` and `"updates"`) with `subgraphs=True` (
 - Detect when the graph encounters an interrupt
 - Handle user input and resume execution seamlessly
 
-```python
-async for metadata, mode, chunk in graph.astream(
-    initial_input,
-    stream_mode=["messages", "updates"],
-    subgraphs=True,
-    config=config
-):
-    if mode == "messages":
-        # Handle streaming message content
-        msg, _ = chunk
-        if isinstance(msg, AIMessageChunk) and msg.content:
-            # Display content in real-time
-            display_streaming_content(msg.content)
+:::python
+<Tabs>
+    <Tab title="v2 (LangGraph >= 1.1)">
+    With `version="v2"`, every chunk has the same `StreamPart` shape regardless of options:
 
-    elif mode == "updates":
-        # Check for interrupts
-        if "__interrupt__" in chunk:
-            # Stop streaming display
-            interrupt_info = chunk["__interrupt__"][0].value
+    ```python
+    async for chunk in graph.astream(
+        initial_input,
+        stream_mode=["messages", "updates"],
+        subgraphs=True,
+        config=config,
+        version="v2",
+    ):
+        if chunk["type"] == "messages":
+            # Handle streaming message content
+            msg, _ = chunk["data"]
+            if isinstance(msg, AIMessageChunk) and msg.content:
+                display_streaming_content(msg.content)
 
-            # Handle user input
-            user_response = get_user_input(interrupt_info)
+        elif chunk["type"] == "updates":
+            # Check for interrupts in the updates data
+            if "__interrupt__" in chunk["data"]:
+                interrupt_info = chunk["data"]["__interrupt__"][0].value
+                user_response = get_user_input(interrupt_info)
+                initial_input = Command(resume=user_response)
+                break
+            else:
+                current_node = list(chunk["data"].keys())[0]
+    ```
 
-            # Resume graph with updated input
-            initial_input = Command(resume=user_response)
-            break
+    - **`version="v2"`**: All chunks are `StreamPart` dicts with `type`, `ns`, and `data` keys
+    - **`chunk["type"]`**: Filter by stream mode (`"messages"`, `"updates"`, etc.)
+    - **`chunk["ns"]`**: Identifies the source graph (empty tuple for root, populated for subgraphs)
+    </Tab>
+    <Tab title="v1 (default)">
+    ```python
+    async for metadata, mode, chunk in graph.astream(
+        initial_input,
+        stream_mode=["messages", "updates"],
+        subgraphs=True,
+        config=config
+    ):
+        if mode == "messages":
+            # Handle streaming message content
+            msg, _ = chunk
+            if isinstance(msg, AIMessageChunk) and msg.content:
+                display_streaming_content(msg.content)
 
-        else:
-            # Track node transitions
-            current_node = list(chunk.keys())[0]
-```
+        elif mode == "updates":
+            # Check for interrupts
+            if "__interrupt__" in chunk:
+                interrupt_info = chunk["__interrupt__"][0].value
+                user_response = get_user_input(interrupt_info)
+                initial_input = Command(resume=user_response)
+                break
+            else:
+                current_node = list(chunk.keys())[0]
+    ```
 
-- **`stream_mode=["messages", "updates"]`**: Enables dual streaming of both message chunks and graph state updates
-- **`subgraphs=True`**: Required for interrupt detection in nested graphs
-- **`"__interrupt__"` detection**: Signals when human input is needed
+    - **`stream_mode=["messages", "updates"]`**: Enables dual streaming of both message chunks and graph state updates
+    - **`subgraphs=True`**: Required for interrupt detection in nested graphs
+    - **`"__interrupt__"` detection**: Signals when human input is needed
+    </Tab>
+</Tabs>
+:::
+
 - **`Command(resume=...)`**: Resumes graph execution with user-provided data
 
 ### Handling multiple interrupts

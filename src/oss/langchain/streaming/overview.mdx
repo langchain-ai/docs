@@ -1147,6 +1147,51 @@ Not all chat model integrations support the `streaming` parameter. If your model
 
 See the [LangGraph streaming guide](/oss/langgraph/streaming#disable-streaming-for-specific-chat-models) for more details.
 
+:::python
+## v2 streaming format
+
+<Note>
+Requires LangGraph >= 1.1. See the [LangGraph v1.1 release notes](/oss/releases/langgraph-v1.1) for full details.
+</Note>
+
+Pass `version="v2"` to `stream()` or `astream()` to get a unified output format. Every chunk is a `StreamPart` dict with `type`, `ns`, and `data` keys — the same shape regardless of stream mode or number of modes:
+
+<CodeGroup>
+```python v2 (new)
+# Unified format — no more tuple unpacking
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+    stream_mode=["updates", "custom"],
+    version="v2",
+):
+    print(chunk["type"])  # "updates" or "custom"
+    print(chunk["data"])  # payload
+```
+```python v1 (current default)
+# Must unpack (mode, data) tuples
+for mode, chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+    stream_mode=["updates", "custom"],
+):
+    print(mode)   # "updates" or "custom"
+    print(chunk)  # payload
+```
+</CodeGroup>
+
+The v2 format also improves `invoke()` — it returns a `GraphOutput` object with `.value` and `.interrupts` attributes, cleanly separating state from interrupt metadata:
+
+```python
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Hello"}]},
+    version="v2",
+)
+print(result.value)       # state (dict, Pydantic model, or dataclass)
+print(result.interrupts)  # tuple of Interrupt objects (empty if none)
+```
+
+See the [LangGraph streaming docs](/oss/langgraph/streaming#v2-streaming-format) for more details on the v2 format, including type narrowing, Pydantic/dataclass coercion, and subgraph streaming.
+:::
+
 ## Related
 
 - [Frontend streaming](/oss/langchain/streaming/frontend)—Build React UIs with `useStream` for real-time agent interactions
