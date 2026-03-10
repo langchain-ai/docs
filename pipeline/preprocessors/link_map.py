@@ -488,6 +488,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "langchain-langgraph/index/Command",
             "CompiledStateGraph": "langchain-langgraph/index/CompiledStateGraph",
             "createAgent": "langchain/index/createAgent",
+            "fakeModel": "langchain/index/fakeModel",
             "createDeepAgent": "deepagents/agent/createDeepAgent",
             "createMiddleware": "langchain/index/createMiddleware",
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
