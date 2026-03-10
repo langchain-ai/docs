@@ -738,6 +738,290 @@ response.content_blocks[0]
  'args': {'queries': ['deep research by OpenAI']}}
 ```
 
+### Tool search
+
+<Info>
+Requires `langchain-openai>=1.1.11`
+</Info>
+
+OpenAI supports a [tool search](https://developers.openai.com/api/docs/guides/tools-tool-search/) feature allowing models to search for and load tools into its context as needed. OpenAI injects the retrieved tool definitions at the end of the active context to preserve its [cache](#prompt-caching).
+
+To engage tool search, mark tools with `@tool(extras={"defer_loading": True})` and add OpenAI's search tool to available tools. See below for examples.
+
+<Accordion title="Server-side tool search">
+
+OpenAI can search across available tools and return the loaded tool (together with a tool call if appropriate) in the same response:
+```python
+@tool(extras={"defer_loading": True})  # [!code highlight]
+def get_weather(location: str) -> str:
+    """Get the current weather for a location."""
+    return f"The weather in {location} is sunny and 72°F"
+
+@tool(extras={"defer_loading": True})  # [!code highlight]
+def get_recipe(query: str) -> None:
+    """Get a recipe for chicken soup."""
+
+model = ChatOpenAI(model="gpt-5.4", use_responses_api=True)
+
+agent = create_agent(
+    model=model,
+    tools=[
+        get_weather,
+        get_recipe,
+        {"type": "tool_search"}  # [!code highlight]
+    ],
+)
+input_message = {"role": "user", "content": "What's the weather in San Francisco?"}
+result = agent.invoke({"messages": [input_message]})
+
+for message in result["messages"]:
+    message.pretty_print()
+```
+``` Result expandable
+================================ Human Message =================================
+
+What's the weather in San Francisco?
+================================== Ai Message ==================================
+
+[
+  {
+    "id": "tsc_0667642bae2ae6c70069ad6cb31f0c819c838b18b0e1cf1279",
+    "arguments": {
+      "paths": [
+        "get_weather"
+      ]
+    },
+    "execution": "server",
+    "status": "completed",
+    "type": "tool_search_call"
+  },
+  {
+    "id": "tso_0667642bae2ae6c70069ad6cb339dc819c9bbc05cb432f347e",
+    "execution": "server",
+    "status": "completed",
+    "tools": [
+      {
+        "name": "get_weather",
+        "parameters": {
+          "properties": {
+            "location": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "location"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "strict": true,
+        "type": "function",
+        "defer_loading": true,
+        "description": "Get the current weather for a location."
+      }
+    ],
+    "type": "tool_search_output"
+  },
+  {
+    "arguments": "{\"location\":\"San Francisco\"}",
+    "call_id": "call_nwy9NDI24fTe8qESIRqZGtYm",
+    "name": "get_weather",
+    "type": "function_call",
+    "id": "fc_0667642bae2ae6c70069ad6cb37adc819cbc55cde85e111e32",
+    "namespace": "get_weather",
+    "status": "completed"
+  }
+]
+Tool Calls:
+  get_weather (call_nwy9NDI24fTe8qESIRqZGtYm)
+ Call ID: call_nwy9NDI24fTe8qESIRqZGtYm
+  Args:
+    location: San Francisco
+================================= Tool Message =================================
+Name: get_weather
+
+The weather in San Francisco is sunny and 72°F
+================================== Ai Message ==================================
+
+[
+  {
+    "type": "text",
+    "text": "It\u2019s currently sunny and 72\u00b0F in San Francisco.",
+    "annotations": [],
+    "id": "msg_0667642bae2ae6c70069ad6cb4829c819c8e26bc7ccc68dcd7"
+  }
+]
+```
+</Accordion>
+
+<Accordion title="Client-executed tool search">
+For full control of the underlying tool search process, you can specify `"execution": "client"` in the search tool definition. If the model elects to search for a tool, it will include a `tool_search_call` block in its response. You can then supply a `tool_search_output` block that includes the tool definition.
+
+The following example shows how you can orchestrate this using [custom middleware](/oss/langchain/middleware/custom). The example implements a callable defining the search logic. The middleware then includes:
+1. An `after_model` hook to check for `tool_search_call` blocks and invoke our callable
+2. A `wrap_tool_call` hook for [runtime tool registration](/oss/langchain/agents#runtime-tool-registration)
+
+```python
+@tool
+def get_weather(location: str) -> str:
+    """Get the current weather for a location."""
+    return f"The weather in {location} is sunny and 72°F"
+
+# Implement a callable that returns a tool definition
+def search_tools(goal: str) -> list[dict]:
+    """Search for available tools to help answer the question."""
+    # Arbitrary logic here
+    return [
+        {
+            "type": "function",
+            "defer_loading": True,
+            **convert_to_openai_tool(get_weather)["function"],
+        }
+    ]
+
+tool_search_schema = convert_to_openai_tool(search_tools, strict=True)
+tool_search_config: dict = {
+    "type": "tool_search",
+    "execution": "client",
+    "description": tool_search_schema["function"]["description"],
+    "parameters": tool_search_schema["function"]["parameters"],
+}
+
+# Implement middleware to invoke the callable and register the tool.
+class ClientToolSearchMiddleware(AgentMiddleware):
+
+    @hook_config(can_jump_to=["model"])
+    def after_model(self, state: AgentState, runtime: Any) -> dict[str, Any] | None:
+        last_message = state["messages"][-1]
+        if not isinstance(last_message, AIMessage):
+            return None
+        for block in last_message.content:
+            if isinstance(block, dict) and block.get("type") == "tool_search_call":
+                call_id = block.get("call_id")
+                args = block.get("arguments", {})
+                goal = args.get("goal", "") if isinstance(args, dict) else ""
+                loaded_tools = search_tools(goal)
+                tool_search_output = {
+                    "type": "tool_search_output",
+                    "execution": "client",
+                    "call_id": call_id,
+                    "status": "completed",
+                    "tools": loaded_tools,
+                }
+                return {
+                    "messages": [HumanMessage(content=[tool_search_output])],
+                    "jump_to": "model",
+                }
+        return None
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Any,
+    ) -> Any:
+        if request.tool_call["name"] == "get_weather":
+            return handler(request.override(tool=get_weather))
+        return handler(request)
+
+llm = ChatOpenAI(model="gpt-5.4", use_responses_api=True)
+
+agent = create_agent(
+    model=llm,
+    tools=[tool_search_config],
+    middleware=[ClientToolSearchMiddleware()],
+)
+
+result = agent.invoke(
+    {"messages": [HumanMessage("What's the weather in San Francisco?")]}
+)
+
+for message in result["messages"]:
+    message.pretty_print()
+```
+``` Result expandable
+================================ Human Message =================================
+
+What's the weather in San Francisco?
+================================== Ai Message ==================================
+
+[
+  {
+    "id": "tsc_0311ca847e392d540069acdd40394c8196a99345e2992eb657",
+    "arguments": {
+      "goal": "Find available tool(s) or weather capability to get current weather for San Francisco."
+    },
+    "call_id": "call_EcvKsh3r9IamaBW4Zz9r7RiK",
+    "execution": "client",
+    "status": "completed",
+    "type": "tool_search_call"
+  }
+]
+================================ Human Message =================================
+
+[
+  {
+    "type": "tool_search_output",
+    "execution": "client",
+    "call_id": "call_EcvKsh3r9IamaBW4Zz9r7RiK",
+    "status": "completed",
+    "tools": [
+      {
+        "type": "function",
+        "defer_loading": true,
+        "name": "get_weather",
+        "description": "Get the current weather for a location.",
+        "parameters": {
+          "properties": {
+            "location": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "location"
+          ],
+          "type": "object"
+        }
+      }
+    ]
+  }
+]
+================================== Ai Message ==================================
+
+[
+  {
+    "arguments": "{\"location\":\"San Francisco\"}",
+    "call_id": "call_wH09dZpqDoVtpeu7uBdvY91l",
+    "name": "get_weather",
+    "type": "function_call",
+    "id": "fc_0311ca847e392d540069acdd41502881968b29d96840633746",
+    "namespace": "get_weather",
+    "status": "completed"
+  }
+]
+Tool Calls:
+  get_weather (call_wH09dZpqDoVtpeu7uBdvY91l)
+ Call ID: call_wH09dZpqDoVtpeu7uBdvY91l
+  Args:
+    location: San Francisco
+================================= Tool Message =================================
+Name: get_weather
+
+The weather in San Francisco is sunny and 72°F
+================================== Ai Message ==================================
+
+[
+  {
+    "type": "text",
+    "text": "San Francisco is sunny and 72\u00b0F.",
+    "annotations": [],
+    "id": "msg_0311ca847e392d540069acdd420b648196a603306f5546fabd"
+  }
+]
+```
+
+</Accordion>
+
+
 ### Computer use
 
 @[`ChatOpenAI`] supports the `"computer-use-preview"` model, which is a specialized model for the built-in computer use tool. To enable, pass a [computer use tool](https://platform.openai.com/docs/guides/tools-computer-use) as you would pass another tool.
