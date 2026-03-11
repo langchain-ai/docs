@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Check docs.json: removed pages have redirects, and all pages exist as source files.
+"""Check docs.json: removed pages have redirects (when source is deleted), and all pages exist as source files.
 
-1. Redirect check: When a page is removed from the navigation, existing links
-   and bookmarks will break unless a redirect is added. Compares docs.json
-   between the base branch and the PR branch.
+1. Redirect check: When a page is removed from the navigation and its source
+   file no longer exists, existing links and bookmarks will break unless a
+   redirect is added. If the source file still exists, no redirect is required.
+   Compares docs.json between the base branch and the PR branch.
 
 2. Pages exist check: All page paths in docs.json must correspond to existing
    .mdx or .md files in src/. Handles special cases like oss/python/reference/*
@@ -202,7 +203,7 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    # Check 2: Removed pages must have redirects
+    # Check 2: Removed pages must have redirects (only if source file no longer exists)
     base_pages = extract_all_pages(base_docs)
     head_pages = extract_all_pages(head_docs)
     head_redirects = head_docs.get("redirects", [])
@@ -217,6 +218,10 @@ def main() -> int:
 
         pages_without_redirect: list[str] = []
         for page in sorted(removed_pages):
+            # Skip if source file still exists - page is reachable, no redirect needed
+            candidates = page_to_source_paths(page, src_dir)
+            if any(p.exists() for p in candidates):
+                continue
             if not has_redirect_for_page(page, doc_redirects):
                 pages_without_redirect.append(page)
 
@@ -240,7 +245,7 @@ def main() -> int:
             )
         elif not missing_pages:
             print(
-                f"✅ All {len(removed_pages)} removed page(s) have corresponding redirects. All pages exist. Check passed."
+                "✅ All removed page(s) either have redirects or source files still exist. All pages exist. Check passed."
             )
     elif not missing_pages:
         print("✅ No pages removed from docs.json. All pages exist. Check passed.")
