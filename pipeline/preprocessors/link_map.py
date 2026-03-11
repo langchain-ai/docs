@@ -129,6 +129,8 @@ LINK_MAPS: list[LinkMap] = [
             "ChatAnthropic.get_num_tokens_from_messages": "langchain-anthropic/chat_models/ChatAnthropic/get_num_tokens_from_messages",
             "AnthropicLLM": "langchain-anthropic/llms/AnthropicLLM",
             "AnthropicPromptCachingMiddleware": "langchain-anthropic/middleware/prompt_caching/AnthropicPromptCachingMiddleware",
+            # langchain-aws
+            "BedrockPromptCachingMiddleware": "langchain-aws/middleware/prompt_caching/BedrockPromptCachingMiddleware",
             # langchain-google
             "langchain-google": "integrations/langchain_google",
             "langchain-google-genai": "langchain-google-genai/",
