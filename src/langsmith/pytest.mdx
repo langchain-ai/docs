@@ -223,6 +223,44 @@ You can name an experiment using the `LANGSMITH_EXPERIMENT` env var:
 LANGSMITH_TEST_SUITE="SQL app tests" LANGSMITH_EXPERIMENT="baseline" pytest tests/
 ```
 
+## Experiment metadata
+
+You can attach custom metadata to the experiment (project) created by each test run. This is useful for tracking which model, prompt version, or environment was used for a given experiment.
+
+**Option 1: Fixture (recommended)**
+
+Define a session-scoped fixture in your `conftest.py`:
+
+```python
+# conftest.py
+import os
+import pytest
+
+@pytest.fixture(scope="session")
+def langsmith_experiment_metadata():
+    return {
+        "model": "gpt-4o",
+        "prompt_version": "v2.3",
+        "environment": os.environ.get("ENV", "local"),
+    }
+```
+
+The fixture is dynamic (can read env vars, call functions, etc.) and follows pytest's `conftest.py` hierarchy so it can be scoped per directory.
+
+**Option 2: Environment variable**
+
+Set `LANGSMITH_EXPERIMENT_METADATA` to a JSON string. This is useful in CI/CD pipelines where you don't want to modify code:
+
+```bash
+LANGSMITH_EXPERIMENT_METADATA='{"model":"gpt-4o","env":"staging"}' pytest tests/
+```
+
+If both the fixture and the env var are set, the fixture takes precedence. System-managed metadata keys (like `revision_id` and git info) always take precedence over user-supplied keys.
+
+<Note>
+This feature requires `langsmith>=0.7.13`.
+</Note>
+
 ## Caching
 
 LLMs on every commit in CI can get expensive. To save time and resources, LangSmith lets you cache HTTP requests to disk. To enable caching, install with `langsmith[pytest]` and set an env var: `LANGSMITH_TEST_CACHE=/my/cache/path`:
