@@ -31,7 +31,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 
 ## Repository structure
 
-```
+```txt
 docs/
 ├── src/                        # All manually authored content
 │   ├── docs.json               # Mintlify config + navigation (88KB)
@@ -67,9 +67,11 @@ docs/
 Navigation is defined in `src/docs.json`. The site has 4 products. When adding pages, find the correct product/tab/group below, then update the matching section in `docs.json`.
 
 ### Home
+
 Single page (`src/index.mdx`). No tabs.
 
 ### LangSmith (`src/langsmith/`)
+
 7 tabs, all files in `src/langsmith/`:
 
 | Tab | Groups | Key files/directories |
@@ -83,13 +85,16 @@ Single page (`src/index.mdx`). No tabs.
 | Reference | LangSmith Deployment (Agent Server API, Control Plane API), Releases | `reference/` |
 
 ### Agent Builder (`src/langsmith/`)
+
 Flat groups (no tabs), files in `src/langsmith/agent-builder/`:
+
 - Get started
 - Tools and integrations
 - Advanced
 - Additional resources
 
 ### Open source (`src/oss/`)
+
 2 language dropdowns (Python, TypeScript), each with 7 identical tabs:
 
 | Tab | Directory | Notes |
@@ -118,6 +123,7 @@ description: SEO summary — no markdown allowed (no links, backticks, formattin
 ```
 
 **Integration page descriptions:** `"Integrate with the ClassName type using LangChain Python."`
+
 - Example: `"Integrate with the ChatOpenAI chat model using LangChain Python."`
 
 ## Syntax
@@ -126,7 +132,7 @@ description: SEO summary — no markdown allowed (no links, backticks, formattin
 
 Use `:::python` or `:::js` fences for language-specific content. Pages with these fences generate separate Python and JavaScript versions.
 
-```
+```txt
 :::python
 Python-only content here
 :::
@@ -207,22 +213,45 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 ### Common workflows
 
 **Add a new LangSmith doc:**
+
 1. Create `src/langsmith/<name>.mdx` with frontmatter
 2. Find the correct tab and group in `src/docs.json` under `navigation.products[1]` (LangSmith)
 3. Add the page path (e.g., `"langsmith/<name>"`) to that group's `pages` array
 
 **Add a new integration page (Python):**
+
 1. Create `src/oss/python/integrations/<provider>/<component>.mdx`
 2. Add to `src/docs.json` under Open source → Python dropdown → Integrations tab
 3. Use description format: `"Integrate with the ClassName type using LangChain Python."`
 
 **Add a new integration page (TypeScript):**
+
 1. Create `src/oss/javascript/integrations/<provider>/<component>.mdx`
 2. Add to `src/docs.json` under Open source → TypeScript dropdown → Integrations tab
 
 **Add a reusable snippet:**
+
 1. Create `src/snippets/<product>/<name>.mdx`
 2. Reference with `<Snippet file="<product>/<name>.mdx" />`
+
+## Debugging CI broken-links failures
+
+`make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
+
+```txt
+found N broken links in M files
+
+some-file.mdx                    ← file header (always printed)
+ ⎿  /path/to/broken-target       ← indented = actual broken link
+
+another-file.mdx                 ← no indented lines = all its links were filtered out (false positive)
+```
+
+**Shortcut:** Skip straight to `⎿` lines — those are the only real failures. File headers without `⎿` lines beneath them are OpenAPI pages that exist at deploy time but not locally.
+
+**Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
+
+To run locally: `make broken-links`
 
 ## Pull requests
 
