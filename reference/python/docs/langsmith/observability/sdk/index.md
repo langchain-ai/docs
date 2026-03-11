@@ -8,7 +8,7 @@ title: LangSmith SDK
 
 Welcome to the LangSmith Python SDK reference docs! These pages detail the core interfaces you will use when building with LangSmith's Observability and Evaluations tools.
 
-For user guides, tutorials, and conceptual overviews, please visit the [LangSmith documentation](https://docs.langchain.com/langsmith/home).
+For user guides, tutorials, and conceptual overviews, please visit the [LangSmith documentation](/langsmith/home).
 
 ## Quick Reference
 

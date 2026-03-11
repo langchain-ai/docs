@@ -52,6 +52,9 @@ class DocumentationBuilder:
             ".css",
             ".js",
             ".txt",
+            ".woff2",
+            ".woff",
+            ".ttf",
         }
 
         # Mapping of language codes to full names for URLs
@@ -181,6 +184,10 @@ class DocumentationBuilder:
             # Only add links for files in the src/ directory
             relative_path = input_path.absolute().relative_to(self.src_dir.absolute())
 
+            # Do not add source links on the home page (root index.mdx)
+            if relative_path.parts == ("index.mdx",):
+                return content
+
             # Construct the GitHub URLs
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"
@@ -190,12 +197,14 @@ class DocumentationBuilder:
             # Create the callout section with Mintlify Callout component
             source_links_section = (
                 "\n\n---\n\n"
+                '<div className="source-links">\n'
                 '<Callout icon="edit">\n'
                 f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
                 "</Callout>\n"
                 '<Callout icon="terminal-2">\n'
                 "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
                 "</Callout>\n"
+                "</div>\n"
             )
 
             # Append to content
@@ -759,6 +768,10 @@ class DocumentationBuilder:
 
         # .well-known directory should be shared (security.txt, etc.)
         if ".well-known" in relative_path.parts:
+            return True
+
+        # Fonts directory should be shared
+        if "fonts" in relative_path.parts:
             return True
 
         # JavaScript and CSS files should be shared (used for custom scripts/styles)

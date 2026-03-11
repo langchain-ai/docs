@@ -38,6 +38,9 @@ def test_builder_initialization() -> None:
             ".css",
             ".js",
             ".txt",
+            ".woff2",
+            ".woff",
+            ".ttf",
         }
 
 
