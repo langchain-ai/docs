@@ -152,6 +152,27 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 * **`docs build`** - Build documentation files
   * `--watch` - Watch for file changes after building
 
+## Linting
+
+After running `make install`, you can use `make lint_prose` to ensure your writing meets our style guide rules.
+
+You can also follow these steps to enable `vale` with VS Code or Cursor:
+
+1. Install the [Vale extension](https://marketplace.visualstudio.com/items?itemName=chrischinchilla.vale-vscode) (Vale by Chris Chinchilla)
+2. Install Vale CLI: `brew install vale` (macOS) or see [Vale installation](https://vale.sh/docs/vale-cli/installation/) for other platforms
+3. Navigate to the Vale extension settings:
+   - Set `Vale CLI: Config` to the absolute path to `.vale.ini` (in the root of this repo)
+   - Set `Vale CLI: Min Alert Level` to `suggestion` (many rules are coded as suggestions)
+
+If you cannot use the VS Code UI to configure Vale, add these settings to your `settings.json`:
+
+```json
+    "vale.valeCLI.config": "/path/to/docs/.vale.ini",
+    "vale.valeCLI.minAlertLevel": "suggestion"
+```
+
+**Note:** The extension requires Vale on your `PATH`. If annotations don't appear (e.g., when Cursor is launched from the Dock), launch Cursor from a terminal so it inherits your PATH, or ensure Homebrew is in your shell profile.
+
 ## Troubleshooting
 
 ### General Mintlify errors
