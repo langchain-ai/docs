@@ -169,15 +169,16 @@ const graph = builder.compile();
   builder.add_edge("node_1", "node_2")
   graph = builder.compile()
 
-  for chunk in graph.stream({"foo": "foo"}, subgraphs=True):
-      print(chunk)
+  for chunk in graph.stream({"foo": "foo"}, subgraphs=True, version="v2"):
+      if chunk["type"] == "updates":
+          print(chunk["ns"], chunk["data"])
   ```
 
   ```
-  ((), {'node_1': {'foo': 'hi! foo'}})
-  (('node_2:577b710b-64ae-31fb-9455-6a4d4cc2b0b9',), {'subgraph_node_1': {'baz': 'baz'}})
-  (('node_2:577b710b-64ae-31fb-9455-6a4d4cc2b0b9',), {'subgraph_node_2': {'bar': 'hi! foobaz'}})
-  ((), {'node_2': {'foo': 'hi! foobaz'}})
+  () {'node_1': {'foo': 'hi! foo'}}
+  ('node_2:577b710b-64ae-31fb-9455-6a4d4cc2b0b9',) {'subgraph_node_1': {'baz': 'baz'}}
+  ('node_2:577b710b-64ae-31fb-9455-6a4d4cc2b0b9',) {'subgraph_node_2': {'bar': 'hi! foobaz'}}
+  () {'node_2': {'foo': 'hi! foobaz'}}
   ```
   :::
 
@@ -314,16 +315,17 @@ const graph = builder.compile();
 
   parent_graph = parent.compile()
 
-  for chunk in parent_graph.stream({"my_key": "Bob"}, subgraphs=True):
-      print(chunk)
+  for chunk in parent_graph.stream({"my_key": "Bob"}, subgraphs=True, version="v2"):
+      if chunk["type"] == "updates":
+          print(chunk["ns"], chunk["data"])
   ```
 
   ```
-  ((), {'parent_1': {'my_key': 'hi Bob'}})
-  (('child:2e26e9ce-602f-862c-aa66-1ea5a4655e3b', 'child_1:781bb3b1-3971-84ce-810b-acf819a03f9c'), {'grandchild_1': {'my_grandchild_key': 'hi Bob, how are you'}})
-  (('child:2e26e9ce-602f-862c-aa66-1ea5a4655e3b',), {'child_1': {'my_child_key': 'hi Bob, how are you today?'}})
-  ((), {'child': {'my_key': 'hi Bob, how are you today?'}})
-  ((), {'parent_2': {'my_key': 'hi Bob, how are you today? bye!'}})
+  () {'parent_1': {'my_key': 'hi Bob'}}
+  ('child:2e26e9ce-602f-862c-aa66-1ea5a4655e3b', 'child_1:781bb3b1-3971-84ce-810b-acf819a03f9c') {'grandchild_1': {'my_grandchild_key': 'hi Bob, how are you'}}
+  ('child:2e26e9ce-602f-862c-aa66-1ea5a4655e3b',) {'child_1': {'my_child_key': 'hi Bob, how are you today?'}}
+  () {'child': {'my_key': 'hi Bob, how are you today?'}}
+  () {'parent_2': {'my_key': 'hi Bob, how are you today? bye!'}}
   ```
   :::
 
@@ -527,8 +529,9 @@ const graph = builder.compile();
   builder.add_edge("node_1", "node_2")
   graph = builder.compile()
 
-  for chunk in graph.stream({"foo": "foo"}):
-      print(chunk)
+  for chunk in graph.stream({"foo": "foo"}, version="v2"):
+      if chunk["type"] == "updates":
+          print(chunk["data"])
   ```
 
   ```
@@ -1437,14 +1440,33 @@ Viewing subgraph state requires that LangGraph can **statically discover** the s
 To include outputs from subgraphs in the streamed outputs, you can set the subgraphs option in the stream method of the parent graph. This will stream outputs from both the parent graph and any subgraphs.
 
 :::python
-```python
-for chunk in graph.stream(
-    {"foo": "foo"},
-    subgraphs=True, # [!code highlight]
-    stream_mode="updates",
-):
-    print(chunk)
-```
+<Tabs>
+    <Tab title="v2 (LangGraph >= 1.1)">
+    With `version="v2"`, subgraph events use the same `StreamPart` format. The `ns` field identifies the source graph:
+
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        subgraphs=True, # [!code highlight]
+        stream_mode="updates",
+        version="v2", # [!code highlight]
+    ):
+        print(chunk["type"])  # "updates"
+        print(chunk["ns"])    # () for root, ("node_2:<task_id>",) for subgraph
+        print(chunk["data"])  # {"node_name": {"key": "value"}}
+    ```
+    </Tab>
+    <Tab title="v1 (default)">
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        subgraphs=True, # [!code highlight]
+        stream_mode="updates",
+    ):
+        print(chunk)
+    ```
+    </Tab>
+</Tabs>
 :::
 
 :::js
@@ -1507,15 +1529,17 @@ for await (const chunk of await graph.stream(
       {"foo": "foo"},
       stream_mode="updates",
       subgraphs=True, # [!code highlight]
+      version="v2", # [!code highlight]
   ):
-      print(chunk)
+      if chunk["type"] == "updates":
+          print(chunk["ns"], chunk["data"])
   ```
 
   ```
-  ((), {'node_1': {'foo': 'hi! foo'}})
-  (('node_2:e58e5673-a661-ebb0-70d4-e298a7fc28b7',), {'subgraph_node_1': {'bar': 'bar'}})
-  (('node_2:e58e5673-a661-ebb0-70d4-e298a7fc28b7',), {'subgraph_node_2': {'foo': 'hi! foobar'}})
-  ((), {'node_2': {'foo': 'hi! foobar'}})
+  () {'node_1': {'foo': 'hi! foo'}}
+  ('node_2:e58e5673-a661-ebb0-70d4-e298a7fc28b7',) {'subgraph_node_1': {'bar': 'bar'}}
+  ('node_2:e58e5673-a661-ebb0-70d4-e298a7fc28b7',) {'subgraph_node_2': {'foo': 'hi! foobar'}}
+  () {'node_2': {'foo': 'hi! foobar'}}
   ```
   :::
 
