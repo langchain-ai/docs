@@ -20,24 +20,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check if docs.json changed
-        id: changed
-        run: |
-          git fetch origin "${{ github.base_ref }}"
-          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- src/docs.json 2>/dev/null; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.base_ref }}"
 
       - name: Set up Python
-        if: steps.changed.outputs.changed == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Get base branch docs.json
-        if: steps.changed.outputs.changed == 'true'
         run: |
           BASE_REF="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE_REF" ]; then
@@ -45,8 +36,7 @@ jobs:
           fi
           git show "${BASE_REF}:src/docs.json" > base_docs.json
 
-      - name: Run redirect check
-        if: steps.changed.outputs.changed == 'true'
+      - name: Run docs.json checks
         id: check
         run: |
           set +e
@@ -61,7 +51,7 @@ jobs:
           fi
 
       - name: Comment on PR on failure
-        if: steps.changed.outputs.changed == 'true' && steps.check.outputs.exit_code == '1'
+        if: steps.check.outputs.exit_code == '1'
         uses: actions/github-script@v8
         with:
           script: |
@@ -117,7 +107,7 @@ jobs:
             }
 
       - name: Fail if docs.json validation failed
-        if: steps.changed.outputs.changed == 'true' && steps.check.outputs.exit_code == '1'
+        if: steps.check.outputs.exit_code == '1'
         run: |
           echo "❌ Please fix docs.json issues (see PR comment for details)"
           exit 1
