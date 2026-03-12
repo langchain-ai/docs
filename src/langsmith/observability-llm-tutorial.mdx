@@ -1,13 +1,13 @@
 ---
 title: Trace an LLM application tutorial
-sidebarTitle: Trace an LLM application
+sidebarTitle: Tutorial
 description: Add LangSmith observability to an LLM application across prototyping, beta testing, and production.
 icon: "school"
 ---
 
 import project from '/snippets/langsmith/trace-ingestion-project.mdx';
 
-In this tutorial, you will build a customer support chatbot using retrieval-augmented generation (RAG) and add LangSmith observability at each stage of development — from early prototyping through production.
+In this tutorial, you will build a customer support chatbot using retrieval-augmented generation (RAG) and add LangSmith observability at each stage of development—from early prototyping through production.
 
 By the end, you will know how to:
 
@@ -15,6 +15,8 @@ By the end, you will know how to:
 - Collect and query user feedback.
 - Log metadata and use it for filtering and A/B testing.
 - Use monitoring dashboards to track production performance.
+
+The application will retrieve relevant documentation snippets and use them to answer user questions. The retriever is mocked in this tutorial; in a real application you would replace it with a vector search or similar.
 
 ## Prerequisites
 
@@ -38,18 +40,39 @@ npm install langsmith openai
 
 </CodeGroup>
 
-## The application
+## Prototyping
 
-The following is a simple customer support chatbot. It retrieves relevant documentation snippets and uses them to answer user questions. The retriever is mocked here — in a real application you would replace it with a vector search or similar.
+Having observability set up from the start lets you iterate faster. You can see exactly what is being sent to the model, what is coming back, and where time is being spent—without adding print statements or running a debugger.
+
+### Set up your environment
+
+Create an API key by navigating to the [LangSmith settings page](https://smith.langchain.com/settings). Then, set the following environment variables in your shell:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY="<your-api-key>"
+```
+
+<project />
+
+<Note>
+You may see these variables referenced as `LANGCHAIN_*` in other places. Both work, but `LANGSMITH_TRACING` and `LANGSMITH_API_KEY` are the recommended names.
+</Note>
+
+### Trace LLM calls
+
+Start by tracing your OpenAI calls, where the model is actually invoked. This gives you immediate visibility into the prompts your app sends and the responses the model returns.
+
+Wrap the OpenAI client with @[`wrap_openai`] (Python) or [`wrapOpenAI`](https://reference.langchain.com/javascript/langsmith/wrappers/wrapOpenAI) (TypeScript):
 
 <CodeGroup>
 
 ```python Python
 from openai import OpenAI
+from langsmith.wrappers import wrap_openai
 
-client = OpenAI()
+client = wrap_openai(OpenAI())
 
-# Product documentation — replace with your own data source
 docs = [
     "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
     "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
@@ -57,7 +80,6 @@ docs = [
 ]
 
 def retriever(query: str) -> list[str]:
-    # Replace with a vector search or another retrieval method
     return docs
 
 def support_bot(question: str) -> str:
@@ -82,10 +104,10 @@ if __name__ == "__main__":
 
 ```typescript TypeScript
 import OpenAI from "openai";
+import { wrapOpenAI } from "langsmith/wrappers";
 
-const client = new OpenAI();
+const client = wrapOpenAI(new OpenAI());
 
-// Product documentation — replace with your own data source
 const docs = [
     "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
     "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
@@ -93,7 +115,6 @@ const docs = [
 ];
 
 function retriever(query: string): string[] {
-    // Replace with a vector search or another retrieval method
     return docs;
 }
 
@@ -120,95 +141,11 @@ async function supportBot(question: string): Promise<string> {
 
 </CodeGroup>
 
-## Prototyping
-
-Having observability set up from the start lets you iterate faster. You can see exactly what is being sent to the model, what is coming back, and where time is being spent — without adding print statements or running a debugger.
-
-### Set up your environment
-
-Create an API key by navigating to the [LangSmith settings page](https://smith.langchain.com/settings). Then set the following environment variables:
-
-```bash
-export LANGSMITH_TRACING=true
-export LANGSMITH_API_KEY="<your-api-key>"
-```
-
-<project />
-
-<Note>
-You may see these variables referenced as `LANGCHAIN_*` in other places. Both work, but `LANGSMITH_TRACING` and `LANGSMITH_API_KEY` are the recommended names.
-</Note>
-
-### Trace LLM calls
-
-The first thing to trace is your OpenAI calls — this is where the model is actually invoked, so it gives you immediate visibility into what prompts are being sent and what responses are coming back.
-
-Wrap the OpenAI client with `wrap_openai`:
-
-<CodeGroup>
-
-```python Python
-from openai import OpenAI
-from langsmith.wrappers import wrap_openai
-
-client = wrap_openai(OpenAI())
-
-def retriever(query: str) -> list[str]:
-    return docs
-
-def support_bot(question: str) -> str:
-    context = retriever(question)
-    system_message = (
-        "You are a helpful customer support agent. "
-        "Answer using only the information provided below:\n\n"
-        + "\n".join(context)
-    )
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": question},
-        ],
-    )
-    return response.choices[0].message.content
-```
-
-```typescript TypeScript
-import OpenAI from "openai";
-import { wrapOpenAI } from "langsmith/wrappers";
-
-const client = wrapOpenAI(new OpenAI());
-
-function retriever(query: string): string[] {
-    return docs;
-}
-
-async function supportBot(question: string): Promise<string> {
-    const context = retriever(question);
-    const systemMessage =
-        "You are a helpful customer support agent. " +
-        "Answer using only the information provided below:\n\n" +
-        context.join("\n");
-    const response = await client.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-            { role: "system", content: systemMessage },
-            { role: "user", content: question },
-        ],
-    });
-    return response.choices[0].message?.content ?? "";
-}
-```
-
-</CodeGroup>
-
-Calling `support_bot("How many users can I have on the Starter plan?")` now produces a trace of the OpenAI call — it should look similar to [this](https://smith.langchain.com/public/e7b7d256-10fe-4d49-a8d5-36ca8e5af0d2/r).
-
-![Tracing tutorial openai](/langsmith/images/tracing-tutorial-openai.png)
+Calling `support_bot("How many users can I have on the Starter plan?")` produces a trace of the OpenAI call.
 
 ### Trace the whole pipeline
 
-Tracing the LLM call is useful, but tracing the full pipeline — including retrieval — gives you a complete picture of your application's behavior. Add `@traceable` to the main function:
+Tracing the LLM call is useful, but tracing the full pipeline—including retrieval—gives you a complete overview of your application's behavior. Add @[`@traceable`] (Python) or [`traceable`](https://reference.langchain.com/javascript/langsmith/traceable) (TypeScript) to the main function:
 
 <CodeGroup>
 
@@ -218,6 +155,12 @@ from langsmith import traceable
 from langsmith.wrappers import wrap_openai
 
 client = wrap_openai(OpenAI())
+
+docs = [
+    "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
+    "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
+    "API rate limits are 1,000 requests per hour on the Starter plan and 10,000 requests per hour on Enterprise.",
+]
 
 def retriever(query: str) -> list[str]:
     return docs
@@ -238,6 +181,9 @@ def support_bot(question: str) -> str:
         ],
     )
     return response.choices[0].message.content
+
+if __name__ == "__main__":
+    print(support_bot("How many users can I have on the Starter plan?"))
 ```
 
 ```typescript TypeScript
@@ -245,6 +191,12 @@ import OpenAI from "openai";
 import { wrapOpenAI, traceable } from "langsmith/wrappers";
 
 const client = wrapOpenAI(new OpenAI());
+
+const docs = [
+    "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
+    "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
+    "API rate limits are 1,000 requests per hour on the Starter plan and 10,000 requests per hour on Enterprise.",
+];
 
 function retriever(query: string): string[] {
     return docs;
@@ -265,97 +217,55 @@ const supportBot = traceable(async (question: string): Promise<string> => {
     });
     return response.choices[0].message?.content ?? "";
 });
+
+(async () => {
+    console.log(await supportBot("How many users can I have on the Starter plan?"));
+})();
 ```
 
 </CodeGroup>
 
-Calling `support_bot("How many users can I have on the Starter plan?")` now produces a trace of the full RAG pipeline — it should look similar to [this](https://smith.langchain.com/public/8cafba6a-1a6d-4a73-8565-483186f31c29/r).
+Calling `support_bot("How many users can I have on the Starter plan?")` now produces a trace of the full RAG pipeline.
 
-![Tracing tutorial chain](/langsmith/images/tracing-tutorial-chain.png)
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/trace-whole-pipeline.png"
+    alt="LangSmith UI showing a trace with an outer application span and a nested LLM call span."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/trace-whole-pipeline-dark.png"
+    alt="LangSmith UI showing a trace with an outer application span and a nested LLM call span."
+/>
 
 ## Beta testing
 
-Once your app is working well in prototyping, you release it to a small group of real users. At this stage, you often don't know exactly how users will interact with your app, so you need richer observability — not just what the app did, but how users responded to it.
+Once your app is working well in prototyping, you release it to a small group of real users. At this stage, you often don't know exactly how users will interact with your app, so you need richer observability—not just what the app did, but how users responded to it.
 
 ### Collect feedback
 
-Linking user feedback to specific traces lets you identify which responses were helpful or unhelpful. The simplest approach is to assign a run ID to each call and use it to attach feedback afterward.
-
-<CodeGroup>
-
-```python Python
-from langsmith import uuid7
-
-run_id = str(uuid7())
-support_bot(
-    "How many users can I have on the Starter plan?",
-    langsmith_extra={"run_id": run_id},
-)
-```
-
-```typescript TypeScript
-import { v4 as uuidv4 } from "uuid";
-
-const runId = uuidv4();
-await supportBot("How many users can I have on the Starter plan?", {
-    langsmithExtra: { runId },
-});
-```
-
-</CodeGroup>
-
-Once you have a run ID, attach feedback using the LangSmith client:
-
-<CodeGroup>
-
-```python Python
-from langsmith import Client
-
-ls_client = Client()
-ls_client.create_feedback(
-    run_id,
-    key="user-score",
-    score=1.0,
-)
-```
-
-```typescript TypeScript
-import { Client } from "langsmith";
-
-const lsClient = new Client();
-await lsClient.createFeedback(runId, "user-score", { score: 1.0 });
-```
-
-</CodeGroup>
-
-The feedback appears in the **Metadata** tab when you inspect the run in LangSmith:
-
-![Tracing tutorial feedback](/langsmith/images/tracing-tutorial-feedback.png)
-
-You can then filter runs by feedback score using the filtering controls in the runs table:
-
-![Tracing tutorial filtering](/langsmith/images/tracing-tutorial-filtering.png)
-
-### Log metadata
-
-Metadata lets you tag runs with attributes useful for filtering and comparison — for example, which model version was used or which user made the request.
-
-The following example traces both the retriever (with `run_type="retriever"`) and the main function (with a `metadata` attribute for the model name):
+Linking [user feedback](/langsmith/attach-user-feedback) to specific traces lets you identify which responses were helpful or unhelpful. Update `app.py` (or `app.ts`) from the previous step to add a run ID to each call and attach a score afterward:
 
 <CodeGroup>
 
 ```python Python
 from openai import OpenAI
-from langsmith import traceable
+from langsmith import traceable, Client, uuid7  # [!code highlight]
 from langsmith.wrappers import wrap_openai
 
 client = wrap_openai(OpenAI())
 
-@traceable(run_type="retriever")
+docs = [
+    "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
+    "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
+    "API rate limits are 1,000 requests per hour on the Starter plan and 10,000 requests per hour on Enterprise.",
+]
+
 def retriever(query: str) -> list[str]:
     return docs
 
-@traceable(metadata={"llm": "gpt-4.1-mini"})
+@traceable
 def support_bot(question: str) -> str:
     context = retriever(question)
     system_message = (
@@ -371,6 +281,113 @@ def support_bot(question: str) -> str:
         ],
     )
     return response.choices[0].message.content
+
+if __name__ == "__main__":
+    run_id = str(uuid7())  # [!code highlight]
+    support_bot(  # [!code highlight]
+        "How many users can I have on the Starter plan?",  # [!code highlight]
+        langsmith_extra={"run_id": run_id},  # [!code highlight]
+    )  # [!code highlight]
+    ls_client = Client()  # [!code highlight]
+    ls_client.create_feedback(run_id, key="user-score", score=1.0)  # [!code highlight]
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+import { wrapOpenAI, traceable } from "langsmith/wrappers";
+import { Client } from "langsmith"; // [!code highlight]
+import { v4 as uuidv4 } from "uuid"; // [!code highlight]
+
+const client = wrapOpenAI(new OpenAI());
+
+const docs = [
+    "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
+    "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
+    "API rate limits are 1,000 requests per hour on the Starter plan and 10,000 requests per hour on Enterprise.",
+];
+
+function retriever(query: string): string[] {
+    return docs;
+}
+
+const supportBot = traceable(async (question: string): Promise<string> => {
+    const context = retriever(question);
+    const systemMessage =
+        "You are a helpful customer support agent. " +
+        "Answer using only the information provided below:\n\n" +
+        context.join("\n");
+    const response = await client.chat.completions.create({
+        model: "gpt-4.1-mini",
+        messages: [
+            { role: "system", content: systemMessage },
+            { role: "user", content: question },
+        ],
+    });
+    return response.choices[0].message?.content ?? "";
+});
+
+(async () => {
+    const runId = uuidv4(); // [!code highlight]
+    await supportBot("How many users can I have on the Starter plan?", { // [!code highlight]
+        langsmithExtra: { runId }, // [!code highlight]
+    }); // [!code highlight]
+    const lsClient = new Client(); // [!code highlight]
+    await lsClient.createFeedback(runId, "user-score", { score: 1.0 }); // [!code highlight]
+})();
+```
+
+</CodeGroup>
+
+<Note>
+In production, these two pieces would live in separate locations: the `support_bot` call with `run_id` stays in your app, and `create_feedback` moves to whichever endpoint receives user feedback (for example, a `/feedback` API route). The `run_id` is passed from one to the other so the feedback can be linked to the correct trace.
+</Note>
+
+The feedback appears in the **Feedback** tab when you inspect the run in the UI. You can then filter runs by feedback score using the filtering controls in the **Runs** table.
+
+### Log metadata
+
+[Metadata](/langsmith/add-metadata-tags) lets you tag runs with attributes useful for filtering and comparison. For example, which model version was used or which user made the request.
+
+The following example traces both the retriever (with `run_type="retriever"`) and the main function (with a `metadata` attribute for the model name). Update `app.py` (or `app.ts`) from the previous step:
+
+<CodeGroup>
+
+```python Python
+from openai import OpenAI
+from langsmith import traceable
+from langsmith.wrappers import wrap_openai
+
+client = wrap_openai(OpenAI())
+
+docs = [
+    "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
+    "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
+    "API rate limits are 1,000 requests per hour on the Starter plan and 10,000 requests per hour on Enterprise.",
+]
+
+@traceable(run_type="retriever")  # [!code highlight]
+def retriever(query: str) -> list[str]:
+    return docs
+
+@traceable(metadata={"llm": "gpt-4.1-mini"})  # [!code highlight]
+def support_bot(question: str) -> str:
+    context = retriever(question)
+    system_message = (
+        "You are a helpful customer support agent. "
+        "Answer using only the information provided below:\n\n"
+        + "\n".join(context)
+    )
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": question},
+        ],
+    )
+    return response.choices[0].message.content
+
+if __name__ == "__main__":
+    support_bot("How many users can I have on the Starter plan?")
 ```
 
 ```typescript TypeScript
@@ -379,10 +396,16 @@ import { wrapOpenAI, traceable } from "langsmith/wrappers";
 
 const client = wrapOpenAI(new OpenAI());
 
-const retriever = traceable(
-    (query: string): string[] => docs,
-    { runType: "retriever" }
-);
+const docs = [
+    "Acme Cloud supports unlimited users on Enterprise plans. Starter plans are limited to 5 users.",
+    "To reset your password, click 'Forgot password' on the login page and follow the instructions sent to your email.",
+    "API rate limits are 1,000 requests per hour on the Starter plan and 10,000 requests per hour on Enterprise.",
+];
+
+const retriever = traceable(  // [!code highlight]
+    (query: string): string[] => docs,  // [!code highlight]
+    { runType: "retriever" }  // [!code highlight]
+);  // [!code highlight]
 
 const supportBot = traceable(
     async (question: string): Promise<string> => {
@@ -400,42 +423,17 @@ const supportBot = traceable(
         });
         return response.choices[0].message?.content ?? "";
     },
-    { metadata: { llm: "gpt-4.1-mini" } }
+    { metadata: { llm: "gpt-4.1-mini" } }  // [!code highlight]
 );
+
+(async () => {
+    await supportBot("How many users can I have on the Starter plan?");
+})();
 ```
 
 </CodeGroup>
 
-You can also attach metadata at call time — for example, to record which user made the request:
-
-<CodeGroup>
-
-```python Python
-from langsmith import uuid7
-
-run_id = str(uuid7())
-support_bot(
-    "How many users can I have on the Starter plan?",
-    langsmith_extra={"run_id": run_id, "metadata": {"user_id": "user-123"}},
-)
-```
-
-```typescript TypeScript
-const runId = uuidv4();
-await supportBot("How many users can I have on the Starter plan?", {
-    langsmithExtra: { runId, metadata: { userId: "user-123" } },
-});
-```
-
-</CodeGroup>
-
-Both metadata values appear on the trace:
-
-![Tracing tutorial metadata](/langsmith/images/tracing-tutorial-metadata.png)
-
-You can filter runs by metadata using the filtering controls:
-
-![Tracing tutorial metadata filtering](/langsmith/images/tracing-tutorial-metadata-filtering.png)
+Both metadata values appear on the trace. You can filter runs by metadata using the filtering controls in the **Runs** table.
 
 ## Production
 
@@ -443,9 +441,19 @@ With strong observability in place, you can confidently ship to production. In p
 
 ### Monitoring
 
-Click the **Monitor** tab in a tracing project to see charts tracking key metrics over time: number of traces, latency, time-to-first-token, feedback scores, and more.
+From **Monitoring** in the UI sidebar, select the tracing project you would like to monitor from the dropdown at the top of the page. This will open charts tracking key metrics for that tracing project over time, including trace count, latency, error rate, feedback scores, and costs. For more on available metrics and chart configuration, refer to [Dashboards](/langsmith/dashboards).
 
-![Tracing tutorial monitor](/langsmith/images/tracing-tutorial-monitor.png)
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/monitoring-page-light.png"
+    alt="LangSmith UI showing the monitoring page with the trace count chart and available tabs."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/monitoring-page-dark.png"
+    alt="LangSmith UI showing the monitoring page with the trace count chart and available tabs."
+/>
 
 ### A/B testing
 
@@ -453,26 +461,30 @@ Click the **Monitor** tab in a tracing project to see charts tracking key metric
 Group-by functionality requires at least two different values for a given metadata key.
 </Note>
 
-Because you have been logging the `llm` metadata attribute, you can group monitoring charts by that attribute to compare model performance over time. Click **Metadata** at the top of the Monitor tab to select a grouping attribute:
-
-![Tracing tutorial monitor metadata](/langsmith/images/tracing-tutorial-monitor-metadata.png)
-
-The charts update to show results grouped by that attribute:
-
-![Tracing tutorial monitor grouped](/langsmith/images/tracing-tutorial-monitor-grouped.png)
+Because you have been logging the `llm` metadata attribute, you can group monitoring charts by that attribute to compare model performance over time. Click **Metadata** at the top of the Monitor tab to select a grouping attribute. The charts update to show results grouped by that attribute. For more on grouping and custom charts, refer to [Dashboards](/langsmith/dashboards).
 
 ### Drilldown
 
-When a monitoring chart shows something unexpected, click a data point to jump directly to the filtered runs table for that time window:
+When a monitoring chart shows something unexpected, click a data point to jump directly to the filtered runs table for that time window. For more on searching and filtering runs, refer to [Filter traces](/langsmith/filter-traces-in-application).
 
-![Tracing tutorial monitor drilldown](/langsmith/images/tracing-tutorial-monitor-drilldown.png)
+<img
+    className="block dark:hidden"
+    src="/langsmith/images/drilldown-monitoring-light.png"
+    alt="LangSmith UI showing the monitoring page with a specific point on the Input Tokens chart highlighted."
+/>
+
+<img
+    className="hidden dark:block"
+    src="/langsmith/images/drilldown-monitoring-dark.png"
+    alt="LangSmith UI showing the monitoring page with a specific point on the Input Tokens chart highlighted."
+/>
 
 ## Conclusion
 
-In this tutorial you added LangSmith observability to a RAG application across its full development lifecycle. The same tracing setup that helps you iterate quickly during prototyping will continue to provide value in production — giving you visibility into individual traces and aggregate performance trends.
+In this tutorial, you added LangSmith observability to an application across its full development lifecycle. The same tracing setup that helps you iterate quickly during prototyping will continue to provide value in production. You'll have visibility into individual traces and aggregate performance trends.
 
 For more, see:
 
-- [Observability concepts](/langsmith/observability-concepts) — terminology and core ideas.
-- [Tracing integrations](/langsmith/trace-with-langchain) — LangChain, LangGraph, Anthropic, and other providers.
-- [Automations](/langsmith/rules) — rules and online evaluations that run automatically on your traces.
+- [Observability concepts](/langsmith/observability-concepts): terminology and core ideas.
+- [Tracing integrations](/langsmith/trace-with-langchain): LangChain, LangGraph, Anthropic, and other providers.
+- [Automations](/langsmith/rules): rules and online evaluations that run automatically on your traces.
