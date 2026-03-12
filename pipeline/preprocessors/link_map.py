@@ -147,6 +147,9 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-groq
             "langchain-groq": "langchain-groq/",
             "ChatGroq": "langchain-groq/chat_models/ChatGroq",
+            # langchain-fireworks
+            "langchain-fireworks": "langchain-fireworks/",
+            "ChatFireworks": "langchain-fireworks/chat_models/ChatFireworks",
             # langchain-deepseek
             "langchain-deepseek": "langchain-deepseek/",
             "ChatDeepSeek": "langchain-deepseek/chat_models/ChatDeepSeek",
