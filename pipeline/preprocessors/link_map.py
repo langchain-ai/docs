@@ -129,6 +129,8 @@ LINK_MAPS: list[LinkMap] = [
             "ChatAnthropic.get_num_tokens_from_messages": "langchain-anthropic/chat_models/ChatAnthropic/get_num_tokens_from_messages",
             "AnthropicLLM": "langchain-anthropic/llms/AnthropicLLM",
             "AnthropicPromptCachingMiddleware": "langchain-anthropic/middleware/prompt_caching/AnthropicPromptCachingMiddleware",
+            # langchain-aws
+            "BedrockPromptCachingMiddleware": "langchain-aws/middleware/prompt_caching/BedrockPromptCachingMiddleware",
             # langchain-google
             "langchain-google": "integrations/langchain_google",
             "langchain-google-genai": "langchain-google-genai/",
@@ -173,6 +175,7 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.with_retry": "langchain_core/language_models/#langchain_core.language_models.BaseChatModel.with_retry",
             # ??
             "ChatPromptTemplate": "langchain-core/prompts/chat/ChatPromptTemplate",
+            "GenericFakeChatModel": "langchain-core/language_models/fake_chat_models/GenericFakeChatModel",
             # Tools
             "@tool": "langchain-core/tools/convert/tool",
             "BaseTool": "langchain-core/tools/base/BaseTool",
@@ -238,6 +241,7 @@ LINK_MAPS: list[LinkMap] = [
             "RemoteGraph": "langgraph/pregel/remote/RemoteGraph",
             "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
             "get_stream_writer": "langgraph/config/get_stream_writer",
+            "get_state": "langgraph/graphs/#langgraph.graph.state.CompiledStateGraph.get_state",
             "StateGraph": "langgraph/graph/state/StateGraph",
             "StateGraph.compile": "langgraph/graph/state/StateGraph/compile",
             "add_edge": "langgraph/pregel/_draw/add_edge",
@@ -280,6 +284,15 @@ LINK_MAPS: list[LinkMap] = [
             "Pregel.stream": "langgraph/pregel/#langgraph.pregel.Pregel.stream",
             "Runtime": "langgraph/runtime/Runtime",
             "Send": "langgraph/types/Send",
+            "GraphOutput": "langgraph/types/GraphOutput",
+            "StreamPart": "langgraph/types/StreamPart",
+            "ValuesStreamPart": "langgraph/types/ValuesStreamPart",
+            "UpdatesStreamPart": "langgraph/types/UpdatesStreamPart",
+            "MessagesStreamPart": "langgraph/types/MessagesStreamPart",
+            "CustomStreamPart": "langgraph/types/CustomStreamPart",
+            "CheckpointStreamPart": "langgraph/types/CheckpointStreamPart",
+            "TasksStreamPart": "langgraph/types/TasksStreamPart",
+            "DebugStreamPart": "langgraph/types/DebugStreamPart",
             "Topic": "langgraph/channels/topic/Topic",
             # LangSmith Deployment SDK
             # Main client
@@ -388,6 +401,8 @@ LINK_MAPS: list[LinkMap] = [
             "StdioConnection": "langchain-mcp-adapters/sessions/StdioConnection",
             "StreamableHttpConnection": "langchain-mcp-adapters/sessions/StreamableHttpConnection",
             "WebsocketConnection": "langchain-mcp-adapters/sessions/WebsocketConnection",
+            # JS-only references added here for cross-scope compatibility
+            "createAgent": "https://reference.langchain.com/javascript/langchain/index/createAgent",
             # LangSmith SDK - Vitest/Jest references (JS-only, but added here for cross-scope compatibility)
             "langsmith.vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
             "langsmith/vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
@@ -487,6 +502,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "langchain-langgraph/index/Command",
             "CompiledStateGraph": "langchain-langgraph/index/CompiledStateGraph",
             "createAgent": "langchain/index/createAgent",
+            "fakeModel": "langchain/index/fakeModel",
             "createDeepAgent": "deepagents/agent/createDeepAgent",
             "createMiddleware": "langchain/index/createMiddleware",
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
@@ -510,6 +526,13 @@ LINK_MAPS: list[LinkMap] = [
             "updateState": "classes/_langchain_langgraph.pregel.Pregel.html#updateState",
             "Runtime": "langchain/index/Runtime",
             "ToolNode": "langchain-langgraph/prebuilt/ToolNode",
+            # Python-named aliases for cross-scope compatibility
+            "get_state": "classes/_langchain_langgraph.pregel.Pregel.html#getState",
+            "create_agent": "langchain/index/createAgent",
+            "init_chat_model": "langchain/chat_models/universal/initChatModel",
+            "tools_condition": "langchain-langgraph/prebuilt/toolsCondition",
+            "ToolRuntime": "langchain/index/Runtime",
+            "RunnableLambda": "langchain-core/runnables/RunnableLambda",
             # LangSmith Deployment SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
