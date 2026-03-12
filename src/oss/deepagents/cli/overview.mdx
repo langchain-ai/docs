@@ -228,6 +228,7 @@ deepagents --sandbox-id dbx_123   # reuse existing sandbox
         | `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
         | `--auto-approve`       | Auto-approve all tool calls without prompting (disables human-in-the-loop). Toggle with `Shift+Tab` during an interactive session |
         | `--shell-allow-list LIST` | Comma-separated shell commands to auto-approve, `'recommended'` for safe defaults, or `'all'` to allow any command. Applies to both `-n` and interactive modes |
+        | `--json`               | Emit machine-readable JSON from management subcommands (`list`, `reset`, `threads`, `skills`). Output envelope: `{"schema_version": 1, "command": "...", "data": ...}` |
         | `--sandbox TYPE`       | Remote sandbox for code execution: `none` (default), `modal`, `daytona`, `runloop`, `langsmith` |
         | `--sandbox-id ID`      | Reuse an existing sandbox (skips creation and cleanup)      |
         | `--sandbox-setup PATH` | Path to setup script to run in sandbox after creation       |
@@ -249,8 +250,10 @@ deepagents --sandbox-id dbx_123   # reuse existing sandbox
         | `deepagents skills create NAME [--project]`    | Create a new skill with template `SKILL.md` |
         | `deepagents skills info NAME [--project]`      | Show detailed information about a skill |
         | `deepagents skills delete NAME [--project] [-f]` | Delete a skill and its contents |
-        | `deepagents threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. `-n` is a short flag for `--limit` |
+        | `deepagents threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. `-n` is a short flag for `--limit`. Additional flags: `--sort {created,updated}`, `--branch TEXT` (filter by git branch), `-v`/`--verbose` (show all columns including branch, created time, and initial prompt), `-r`/`--relative` (relative timestamps) |
         | `deepagents threads delete ID`       | Delete a session                       |
+
+        All management subcommands support `--json` for machine-readable output. See [command-line options](#command-line-options) for details.
     </Accordion>
 </AccordionGroup>
 
@@ -269,7 +272,7 @@ The agent will use its built-in tools, skills, and memory to help you with tasks
         - `/model --default <provider:model>` - Set a persistent default model
         - `/model --default --clear` - Clear the saved default model
         - `/remember [context]` - Review conversation and update memory and skills. Optionally pass additional context
-        - `/tokens` - Display current context window token usage
+        - `/tokens` - Display current context window token usage with a tree breakdown showing system prompt and conversation sizes
         - `/clear` - Clear conversation history and start a new thread
         - `/threads` - Browse and resume previous conversation threads. Supports fuzzy search, configurable columns (`thread_id`, `agent_name`, `messages`, `created_at`, `updated_at`, `git_branch`, `initial_prompt`), sort order toggle, and inline deletion with `Ctrl+D`. Column visibility and sort preferences persist to `config.toml`
         - `/reload` - Refresh runtime configuration (API keys, `.env` changes, project root, shell allow-list) without restarting the session. Conversation state is preserved. Reports which fields changed (API keys are masked). Does not reload the active model or agent graph
@@ -337,6 +340,8 @@ Use `-q` for clean output suitable for piping into other commands, and `--no-str
 deepagents -n "Generate a .gitignore for Python" -q > .gitignore
 deepagents -n "List dependencies" -q --no-stream | sort
 ```
+
+In non-interactive mode, the agent is instructed to make reasonable assumptions and proceed autonomously rather than ask clarifying questions. It also favors non-interactive command variants (e.g., `npm init -y`, `apt-get install -y`).
 
 By default, shell execution is disabled in non-interactive mode. Use `--shell-allow-list` to enable it:
 
@@ -565,7 +570,7 @@ If you would like to explicitly prompt your deep agent to update skills and memo
 1. Open the generated `SKILL.md` and edit the file to include your instructions.
 
 1. Optionally add additional scripts or other resources to the `test-skill` folder.
-   For more information, see [Examples](/oss/deepagents/skills#examples).
+   For more information, see [Examples](/oss/deepagents/skills#example).
 
 If you already have a skills folder with containing skills files, you can also copy them directly to the agent's folder:
 
