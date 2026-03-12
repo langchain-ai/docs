@@ -175,6 +175,7 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.with_retry": "langchain_core/language_models/#langchain_core.language_models.BaseChatModel.with_retry",
             # ??
             "ChatPromptTemplate": "langchain-core/prompts/chat/ChatPromptTemplate",
+            "GenericFakeChatModel": "langchain-core/language_models/fake_chat_models/GenericFakeChatModel",
             # Tools
             "@tool": "langchain-core/tools/convert/tool",
             "BaseTool": "langchain-core/tools/base/BaseTool",
@@ -501,6 +502,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "langchain-langgraph/index/Command",
             "CompiledStateGraph": "langchain-langgraph/index/CompiledStateGraph",
             "createAgent": "langchain/index/createAgent",
+            "fakeModel": "langchain/index/fakeModel",
             "createDeepAgent": "deepagents/agent/createDeepAgent",
             "createMiddleware": "langchain/index/createMiddleware",
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
