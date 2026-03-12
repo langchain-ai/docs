@@ -160,7 +160,6 @@ preview-references: check-pnpm
 
 help:
 	@echo "Available commands:"
-	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
 	@echo "  make broken-links       - Check for broken links in built documentation"
