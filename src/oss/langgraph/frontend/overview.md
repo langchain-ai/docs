@@ -15,8 +15,7 @@ LangGraph graphs are composed of named nodes connected by edges. Each node execu
     "fontFamily": "monospace",
     "flowchart": {
       "curve": "curve"
-    },
-    "themeVariables": {"edgeLabelBackground": "#ffffff"}
+    }
   }
 }%%
 graph LR
