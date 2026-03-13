@@ -5,6 +5,10 @@ sidebarTitle: Connect to an external Redis database
 
 LangSmith uses Redis to back our queuing/caching operations. By default, LangSmith Self-Hosted will use an internal Redis instance. However, you can configure LangSmith to use an external Redis instance. By configuring an external Redis instance, you can more easily manage backups, scaling, and other operational tasks for your Redis instance.
 
+<Warning>
+Each LangSmith installation must use its own dedicated Redis instance. Redis cannot be shared across separate LangSmith installations (for example, between an existing and new cluster during a migration). Sharing it across installations causes deployment tasks to be routed to the wrong cluster.
+</Warning>
+
 <Tip>
 **If you're using a managed Redis service**, we recommend:
 - [Amazon ElastiCache](https://aws.amazon.com/elasticache/redis/) (AWS)
@@ -24,6 +28,7 @@ For cloud-specific IAM/Workload Identity authentication, refer to the [IAM authe
 
 * Note: We only officially support Redis versions >= 5.
 * We support both Standalone and Redis Cluster. See the appropriate sections for deployment instructions.
+* **Azure Cache for Redis:** LangSmith does not support the Enterprise clustering policy. Use the OSS clustering policy instead. See [Azure clustering policy documentation](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-best-practices-enterprise-tiers#clustering-policy) for details.
 * We support no authentication, password, and [IAM/Workload Identity](#iam-authentication) authentication.
 * By default, we recommend an instance with at least 2 vCPUs and 8GB of memory. However, the actual requirements will depend on your tracing workload. We recommend monitoring your Redis instance and scaling up as needed.
 
@@ -348,6 +353,8 @@ IAM authentication is supported for both standalone Redis and Redis Cluster conf
 <Tabs>
   <Tab title="AWS">
 
+<a id="amazon-elasticache"></a>
+
 ### ElastiCache for Redis IAM authentication
 
 ElastiCache for Redis supports [IAM authentication](https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/auth-iam.html), which allows you to authenticate using AWS IAM credentials instead of Redis AUTH passwords.
@@ -398,7 +405,7 @@ redis:
 
 You must apply the ServiceAccount annotations required by AWS IRSA to all LangSmith components that connect to Redis:
 
-**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`
+**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`, `ingestQueue`
 
 Example configuration:
 
@@ -422,12 +429,19 @@ hostBackend:
   serviceAccount:
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<role-name>"
+
+ingestQueue:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<account-id>:role/<role-name>"
 ```
 
 See the [Helm values reference](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml) for the full list of configurable services.
 
   </Tab>
   <Tab title="GCP">
+
+<a id="google-cloud-memorystore"></a>
 
 ### Memorystore for Redis IAM authentication
 
@@ -472,7 +486,7 @@ stringData:
 
 You must apply the ServiceAccount annotations required by GCP Workload Identity to all LangSmith components that connect to Redis:
 
-**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`
+**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`, `ingestQueue`
 
 Example configuration:
 
@@ -496,12 +510,19 @@ hostBackend:
   serviceAccount:
     annotations:
       iam.gke.io/gcp-service-account: "<service-account>@<project>.iam.gserviceaccount.com"
+
+ingestQueue:
+  serviceAccount:
+    annotations:
+      iam.gke.io/gcp-service-account: "<service-account>@<project>.iam.gserviceaccount.com"
 ```
 
 See the [Helm values reference](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml) for the full list of configurable services.
 
   </Tab>
   <Tab title="Azure">
+
+<a id="azure-cache-for-redis"></a>
 
 ### Azure Cache for Redis with Microsoft Entra authentication
 
@@ -553,7 +574,7 @@ redis:
 
 You must apply the ServiceAccount annotations and pod labels required by Azure Workload Identity to all LangSmith components that connect to Redis:
 
-**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`
+**Deployments:** `backend`, `queue`, `platformBackend`, `hostBackend`, `ingestQueue`
 
 Example configuration:
 
@@ -583,6 +604,14 @@ platformBackend:
       azure.workload.identity/use: "true"
 
 hostBackend:
+  serviceAccount:
+    annotations:
+      azure.workload.identity/client-id: "<managed-identity-client-id>"
+  deployment:
+    labels:
+      azure.workload.identity/use: "true"
+
+ingestQueue:
   serviceAccount:
     annotations:
       azure.workload.identity/client-id: "<managed-identity-client-id>"

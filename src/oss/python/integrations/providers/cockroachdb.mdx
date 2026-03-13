@@ -1,0 +1,289 @@
+---
+title: "CockroachDB integrations"
+description: "Integrate with CockroachDB using LangChain Python."
+---
+
+>[CockroachDB](https://www.cockroachlabs.com/) is a distributed SQL database built on a transactional and strongly-consistent key-value store. It scales horizontally, survives disk, machine, rack, and even datacenter failures with minimal latency disruption and no manual intervention.
+
+**Key features:**
+- **Distributed SQL**: Scale out while maintaining ACID guarantees
+- **Native vector support**: Built-in `VECTOR` type (v24.2+) and C-SPANN indexes (v25.2+)
+- **PostgreSQL compatible**: Drop-in replacement for PostgreSQL applications
+- **Global replication**: Multi-region deployments with low latency
+- **Automatic sharding**: Data automatically distributed across nodes
+- **SERIALIZABLE isolation**: Strongest isolation level by default
+
+## Installation and Setup
+
+Install the LangChain integration:
+
+```bash
+pip install langchain-cockroachdb
+```
+
+### Get your CockroachDB connection string
+
+You'll need a CockroachDB cluster. Choose one option:
+
+**Option 1: CockroachDB Cloud (Recommended)**
+1. Sign up at [cockroachlabs.cloud](https://cockroachlabs.cloud)
+2. Create a free cluster
+3. Get your connection string: `cockroachdb://user:pass@host:26257/db?sslmode=verify-full`
+
+**Option 2: Docker (Development)**
+
+```bash
+docker run -d --name cockroachdb -p 26257:26257 \
+  cockroachdb/cockroach:latest start-single-node --insecure
+```
+
+Connection string: `cockroachdb://root@localhost:26257/defaultdb?sslmode=disable`
+
+**Option 3: Local Binary**
+
+Download from [cockroachlabs.com/docs/releases](https://www.cockroachlabs.com/docs/releases/)
+
+## Integrations
+
+### Vector Store
+
+CockroachDB can be used as a vector store with native `VECTOR` type and C-SPANN distributed indexes.
+
+**Key features:**
+- Native vector support (v24.2+)
+- C-SPANN indexes optimized for distributed systems (v25.2+)
+- Advanced metadata filtering
+- Multi-tenancy with prefix columns
+- Horizontal scalability
+
+See [CockroachDB vector store documentation](/oss/integrations/vectorstores/cockroachdb) for detailed usage.
+
+**Quick example:**
+
+```python
+from langchain_cockroachdb import AsyncCockroachDBVectorStore, CockroachDBEngine
+from langchain_openai import OpenAIEmbeddings
+
+# Initialize
+engine = CockroachDBEngine.from_connection_string(
+    "cockroachdb://user:pass@host:26257/db"
+)
+
+await engine.ainit_vectorstore_table(
+    table_name="documents",
+    vector_dimension=1536,
+)
+
+vectorstore = AsyncCockroachDBVectorStore(
+    engine=engine,
+    embeddings=OpenAIEmbeddings(),
+    collection_name="documents",
+)
+
+# Use it
+ids = await vectorstore.aadd_texts(["Hello world"])
+results = await vectorstore.asimilarity_search("Hi", k=1)
+```
+
+### Chat Message History
+
+Store conversation history in CockroachDB for persistent, distributed chat applications.
+
+**Key features:**
+- Distributed storage with automatic replication
+- Strong consistency (SERIALIZABLE)
+- Session-based organization
+- High availability
+
+See [CockroachDB chat history documentation](/oss/integrations/chat_message_histories/cockroachdb) for detailed usage.
+
+**Quick example:**
+
+```python
+from langchain_cockroachdb import CockroachDBChatMessageHistory
+import uuid
+
+chat_history = CockroachDBChatMessageHistory(
+    session_id=str(uuid.uuid4()),
+    connection_string=CONNECTION_STRING,
+    table_name="chat_history",
+)
+
+from langchain.messages import HumanMessage, AIMessage
+
+await chat_history.aadd_message(HumanMessage(content="Hello!"))
+await chat_history.aadd_message(AIMessage(content="Hi there!"))
+
+messages = await chat_history.aget_messages()
+```
+
+### LangGraph Checkpointer
+
+Persist LangGraph workflow state in CockroachDB for short-term memory, human-in-the-loop interactions, and fault tolerance.
+
+Both sync (`CockroachDBSaver`) and async (`AsyncCockroachDBSaver`) implementations are available.
+
+<Tip>
+Call `checkpointer.setup()` (or `await checkpointer.setup()`) the first time you use the CockroachDB checkpointer to create the required tables.
+</Tip>
+
+<Tabs>
+    <Tab title="Sync">
+```python
+import os
+from langchain.chat_models import init_chat_model
+from langgraph.graph import StateGraph, MessagesState, START
+from langchain_cockroachdb import CockroachDBSaver
+
+model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+DB_URI = os.environ["COCKROACHDB_URI"]
+# Example: "cockroachdb://user:password@host:26257/defaultdb?sslmode=verify-full"
+with CockroachDBSaver.from_conn_string(DB_URI) as checkpointer:
+    # checkpointer.setup()
+
+    def call_model(state: MessagesState):
+        response = model.invoke(state["messages"])
+        return {"messages": response}
+
+    builder = StateGraph(MessagesState)
+    builder.add_node(call_model)
+    builder.add_edge(START, "call_model")
+
+    graph = builder.compile(checkpointer=checkpointer)
+
+    config = {"configurable": {"thread_id": "1"}}
+
+    for chunk in graph.stream(
+        {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
+        config,
+        stream_mode="values"
+    ):
+        chunk["messages"][-1].pretty_print()
+
+    for chunk in graph.stream(
+        {"messages": [{"role": "user", "content": "what's my name?"}]},
+        config,
+        stream_mode="values"
+    ):
+        chunk["messages"][-1].pretty_print()
+```
+    </Tab>
+    <Tab title="Async">
+```python
+import os
+from langchain.chat_models import init_chat_model
+from langgraph.graph import StateGraph, MessagesState, START
+from langchain_cockroachdb import AsyncCockroachDBSaver
+
+model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+DB_URI = os.environ["COCKROACHDB_URI"]
+# Example: "cockroachdb://user:password@host:26257/defaultdb?sslmode=verify-full"
+async with AsyncCockroachDBSaver.from_conn_string(DB_URI) as checkpointer:
+    # await checkpointer.setup()
+
+    async def call_model(state: MessagesState):
+        response = await model.ainvoke(state["messages"])
+        return {"messages": response}
+
+    builder = StateGraph(MessagesState)
+    builder.add_node(call_model)
+    builder.add_edge(START, "call_model")
+
+    graph = builder.compile(checkpointer=checkpointer)
+
+    config = {"configurable": {"thread_id": "1"}}
+
+    async for chunk in graph.astream(
+        {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
+        config,
+        stream_mode="values"
+    ):
+        chunk["messages"][-1].pretty_print()
+
+    async for chunk in graph.astream(
+        {"messages": [{"role": "user", "content": "what's my name?"}]},
+        config,
+        stream_mode="values"
+    ):
+        chunk["messages"][-1].pretty_print()
+```
+    </Tab>
+</Tabs>
+
+<Note>
+See [Get your CockroachDB connection string](#get-your-cockroachdb-connection-string) above for connection options including CockroachDB Cloud (recommended for production), Docker, and local binary installs. For local development, `sslmode=disable` is acceptable; always use `sslmode=verify-full` in production.
+</Note>
+
+<Tip>
+The checkpointer uses raw `psycopg3` connections (not SQLAlchemy) for compatibility with LangGraph's checkpoint interface. The `from_conn_string` factory accepts `cockroachdb://` URLs and converts them automatically.
+</Tip>
+
+### Multi-tenancy
+
+Isolate vector data by tenant using an opt-in namespace column. When enabled, all CRUD and search operations are scoped to the specified namespace.
+
+CockroachDB's C-SPANN indexes support prefix columns, so namespace filtering uses the vector index directly without a separate scan.
+
+```python
+from langchain_cockroachdb import AsyncCockroachDBVectorStore, CockroachDBEngine
+from langchain_openai import OpenAIEmbeddings
+
+engine = CockroachDBEngine.from_connection_string(CONNECTION_STRING)
+
+# Create the table with a namespace column
+await engine.ainit_vectorstore_table(
+    table_name="documents",
+    vector_dimension=1536,
+    namespace_column="namespace",
+)
+
+# Create a vectorstore scoped to a specific tenant
+vectorstore = AsyncCockroachDBVectorStore(
+    engine=engine,
+    embeddings=OpenAIEmbeddings(),
+    collection_name="documents",
+    namespace="tenant_a",
+)
+
+# All operations are scoped to tenant_a
+ids = await vectorstore.aadd_texts(["Tenant A document"])
+results = await vectorstore.asimilarity_search("query", k=5)
+```
+
+## Why CockroachDB for AI applications?
+
+### Distributed by design
+- **Horizontal scalability**: Add nodes to handle more load
+- **Multi-region deployments**: Serve users globally with low latency
+- **Automatic rebalancing**: Data distributes automatically across nodes
+
+### Production-ready reliability
+- **High availability**: Survives node, rack, and datacenter failures
+- **Zero-downtime upgrades**: Rolling updates without downtime
+- **Backups and restores**: Point-in-time recovery
+
+### Vector search at scale
+- **C-SPANN indexes**: Distributed approximate nearest neighbor search
+- **Native vector type**: First-class support for embeddings
+- **Real-time indexing**: No rebuild needed for new vectors
+- **Multi-tenancy**: Prefix columns for efficient tenant isolation
+
+### PostgreSQL compatibility
+- **Easy migration**: Drop-in replacement for PostgreSQL
+- **Familiar SQL**: Standard PostgreSQL syntax
+- **Existing tools**: Works with PostgreSQL drivers and tools
+
+## Resources
+
+- [CockroachDB Documentation](https://www.cockroachlabs.com/docs/)
+- [langchain-cockroachdb GitHub](https://github.com/cockroachdb/langchain-cockroachdb)
+- [langchain-cockroachdb PyPI](https://pypi.org/project/langchain-cockroachdb/)
+- [CockroachDB Cloud](https://cockroachlabs.cloud)
+- [CockroachDB University](https://university.cockroachlabs.com/) (free courses)
+
+## Support
+
+- [CockroachDB Community Forum](https://forum.cockroachlabs.com/)
+- [GitHub Issues](https://github.com/cockroachdb/langchain-cockroachdb/issues)

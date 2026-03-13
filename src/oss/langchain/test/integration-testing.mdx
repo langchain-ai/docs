@@ -1,0 +1,434 @@
+---
+title: Integration testing
+description: Test agents with real LLM APIs by organizing tests, managing keys, handling flakiness, and controlling costs.
+---
+
+Integration tests verify that your agent works correctly with model APIs and external services. Unlike [unit tests](/oss/langchain/test/unit-testing) that use fakes and mocks, integration tests make actual network calls to confirm that components work together, credentials are valid, and latency is acceptable.
+
+Because LLM responses are nondeterministic, integration tests require different strategies than traditional software tests. This guide covers how to organize, write, and run integration tests for your agents. For general test infrastructure when contributing to LangChain itself, see [Contributing to code](/oss/contributing/code#running-tests).
+
+## Separate unit and integration tests
+
+Integration tests are slower and require API credentials, so keep them separate from unit tests. This lets you run fast unit tests on every change and reserve integration tests for CI or pre-deploy checks.
+
+:::python
+Use pytest markers to tag integration tests:
+
+```python
+import pytest
+
+@pytest.mark.integration
+def test_agent_with_real_model():
+    agent = create_agent("claude-sonnet-4-6", tools=[get_weather])
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's the weather in SF?")]
+    })
+    assert len(result["messages"]) > 1
+```
+
+Configure pytest to recognize the marker and exclude integration tests from default runs:
+
+<CodeGroup>
+```ini pytest.ini
+[pytest]
+markers =
+    integration: tests that call real LLM APIs
+addopts = -m "not integration"
+```
+```toml pyproject.toml
+[tool.pytest.ini_options]
+markers = [
+  "integration: tests that call real LLM APIs"
+]
+addopts = "-m 'not integration'"
+```
+</CodeGroup>
+
+Run integration tests explicitly:
+
+```bash
+pytest -m integration
+```
+:::
+
+:::js
+Use a file naming convention to separate integration tests. Name integration test files `*.int.test.ts` and configure vitest to exclude them from default runs:
+
+```ts vitest.config.ts
+import { configDefaults, defineConfig } from "vitest/config";
+
+export default defineConfig((env) => {
+  if (env.mode === "int") {
+    return {
+      test: {
+        testTimeout: 100_000,
+        include: ["**/*.int.test.ts"],
+        setupFiles: ["dotenv/config"],
+      },
+    };
+  }
+
+  return {
+    test: {
+      testTimeout: 30_000,
+      exclude: ["**/*.int.test.ts", ...configDefaults.exclude],
+    },
+  };
+});
+```
+
+Add scripts to `package.json`:
+
+```json
+{
+  "scripts": {
+    "test": "vitest",
+    "test:integration": "vitest --mode int"
+  }
+}
+```
+
+Run integration tests explicitly:
+
+```bash
+npm run test:integration
+```
+:::
+
+## Manage API keys
+
+Integration tests require real API credentials. Load them from environment variables so keys stay out of source control.
+
+:::python
+Use a `conftest.py` fixture to validate that required keys are available:
+
+```python
+import os
+import pytest
+
+@pytest.fixture(autouse=True)
+def check_api_keys():
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
+```
+
+For local development, store keys in a `.env` file and load them with [`python-dotenv`](https://pypi.org/project/python-dotenv/):
+
+```bash .env
+OPENAI_API_KEY=sk-...
+```
+
+```python conftest.py
+from dotenv import load_dotenv
+
+load_dotenv()
+```
+:::
+
+:::js
+Add `dotenv/config` as a vitest setup file so environment variables load automatically from `.env`:
+
+```ts vitest.config.ts
+export default defineConfig({
+  test: {
+    setupFiles: ["dotenv/config"],
+  },
+});
+```
+
+```bash .env
+OPENAI_API_KEY=sk-...
+```
+
+Skip tests when keys are missing:
+
+```ts
+import { test } from "vitest";
+
+test.skipIf(!process.env.OPENAI_API_KEY)(
+  "agent responds with tool call",
+  async () => {
+    // ...
+  }
+);
+```
+:::
+
+<Warning>
+    Add `.env` to your `.gitignore` to avoid committing credentials. In CI, inject secrets through your provider's secrets management (e.g., GitHub Actions secrets).
+</Warning>
+
+## Assert on structure, not content
+
+LLM responses vary between runs. Instead of asserting on exact output strings, verify the structural properties of the response: message types, tool call names, argument shapes, and message count.
+
+:::python
+```python
+def test_agent_calls_weather_tool():
+    agent = create_agent("claude-sonnet-4-6", tools=[get_weather])
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's the weather in SF?")]
+    })
+
+    messages = result["messages"]
+    tool_calls = [
+        tc
+        for msg in messages
+        if hasattr(msg, "tool_calls")
+        for tc in (msg.tool_calls or [])
+    ]
+
+    assert any(tc["name"] == "get_weather" for tc in tool_calls)
+    assert isinstance(messages[-1], AIMessage)
+    assert len(messages[-1].content) > 0
+```
+:::
+
+:::js
+```ts
+test("agent calls weather tool", async () => {
+  const agent = createAgent({ model: "claude-sonnet-4-6", tools: [getWeather] });
+  const result = await agent.invoke({
+    messages: [new HumanMessage("What's the weather in SF?")]
+  });
+
+  const aiMsg = result.messages.find(
+    (m) => AIMessage.isInstance(m) && m.tool_calls?.length
+  );
+  expect(aiMsg).toContainToolCall({ name: "get_weather" });
+  expect(result.messages.at(-1)).toBeAIMessage();
+});
+```
+
+This example uses [custom test matchers](#use-custom-test-matchers). See the section below for setup and the full matcher reference.
+:::
+
+<Tip>
+    For more rigorous trajectory assertions, use the [AgentEvals](/oss/langchain/test/evals) evaluators which support fuzzy matching modes like `unordered` and `superset`.
+</Tip>
+
+:::js
+
+## Use custom test matchers
+`langchain` ships [custom vitest matchers](https://vitest.dev/guide/extending-matchers.html) that make structural assertions more readable and produce clear error messages on failure. Register them once in a setup file and they become available on every `expect()` call.
+
+### Set up
+
+Add a vitest setup file that extends `expect` with the LangChain matchers:
+
+```ts vitest.setup.ts
+import { langchainMatchers } from "@langchain/core/testing";
+
+expect.extend(langchainMatchers);
+```
+
+Reference it in your vitest config:
+
+```ts vitest.config.ts
+export default defineConfig({
+  test: {
+    setupFiles: ["vitest.setup.ts"],
+  },
+});
+```
+
+TypeScript types are included automatically, so no extra configuration is needed for autocomplete.
+
+### Check message types
+
+Each message class has a corresponding matcher: `toBeHumanMessage()`, `toBeAIMessage()`, `toBeSystemMessage()`, and `toBeToolMessage()`. Call without arguments to check only the type, or pass a string to also match content:
+
+```ts
+const response = await agent.invoke({
+  messages: [new HumanMessage("What's the weather?")]
+});
+const lastMessage = response.messages.at(-1);
+
+expect(lastMessage).toBeAIMessage();
+expect(lastMessage).toBeAIMessage("It's 72°F and sunny.");
+```
+
+Pass an object to match specific fields:
+
+```ts
+expect(lastMessage).toBeAIMessage({ name: "weather-bot" });
+expect(toolMsg).toBeToolMessage({ tool_call_id: "call_1" });
+```
+
+### Assert on tool calls
+
+Three matchers cover tool call assertions on an @[`AIMessage`]:
+
+```ts
+const response = await agent.invoke({
+  messages: [new HumanMessage("Weather in SF and NYC?")]
+});
+const aiMsg = response.messages.find(
+  (m) => AIMessage.isInstance(m) && m.tool_calls?.length
+);
+
+// Check that specific tool calls are present (order-independent)
+expect(aiMsg).toHaveToolCalls([
+  { name: "get_weather", args: { city: "San Francisco" } },
+  { name: "get_weather", args: { city: "New York" } },
+]);
+
+// Check only the count
+expect(aiMsg).toHaveToolCallCount(2);
+
+// Check that at least one tool call matches (supports .not)
+expect(aiMsg).toContainToolCall({ name: "get_weather" });
+expect(aiMsg).not.toContainToolCall({ name: "send_email" });
+```
+
+### Assert on tool messages
+
+`toHaveToolMessages()` takes the full message array and checks the @[`ToolMessage`] instances within it, in order:
+
+```ts
+expect(response.messages).toHaveToolMessages([
+  { content: "72°F and sunny in San Francisco" },
+  { content: "68°F and cloudy in New York" },
+]);
+```
+
+### Assert on interrupts and structured responses
+
+`toHaveBeenInterrupted()` checks for a `__interrupt__` field in a [LangGraph interrupt](/oss/langchain/human-in-the-loop) result. Pass a value to match the interrupt payload:
+
+```ts
+const result = await graph.invoke(input);
+
+expect(result).toHaveBeenInterrupted();
+expect(result).toHaveBeenInterrupted("confirm_action");
+```
+
+`toHaveStructuredResponse()` checks for a `structuredResponse` field on the result. Pass an object to match specific fields:
+
+```ts
+expect(result).toHaveStructuredResponse();
+expect(result).toHaveStructuredResponse({ name: "Alice", age: 30 });
+```
+
+### Matcher reference
+
+| Matcher | Description |
+| --- | --- |
+| `toBeHumanMessage(expected?)` | Check that the value is a `HumanMessage`. Optionally match content (string) or fields (object). |
+| `toBeAIMessage(expected?)` | Check that the value is an `AIMessage`. Optionally match content or fields. |
+| `toBeSystemMessage(expected?)` | Check that the value is a `SystemMessage`. Optionally match content or fields. |
+| `toBeToolMessage(expected?)` | Check that the value is a `ToolMessage`. Optionally match content or fields like `tool_call_id`. |
+| `toHaveToolCalls(expected)` | Check that an `AIMessage` has exactly the given tool calls (order-independent). |
+| `toHaveToolCallCount(n)` | Check that an `AIMessage` has exactly `n` tool calls. |
+| `toContainToolCall(expected)` | Check that an `AIMessage` contains at least one matching tool call. Supports `.not`. |
+| `toHaveToolMessages(expected)` | Check that a message array contains the given `ToolMessage` instances, in order. |
+| `toHaveBeenInterrupted(value?)` | Check that a result has an `__interrupt__`. Optionally match the interrupt value. |
+| `toHaveStructuredResponse(expected?)` | Check that a result has a `structuredResponse`. Optionally match specific fields. |
+
+:::
+
+## Reduce cost and latency
+
+Integration tests that call LLM APIs incur real costs. A few practices help keep test suites fast and affordable:
+
+- **Use smaller models**: `gemini-3.1-flash-lite-preview` or equivalent for tests that only need to verify tool calling and response structure.
+- **Set `maxTokens`**: Cap response length to avoid long, expensive completions.
+- **Limit test scope**: Test one behavior per test. Avoid end-to-end scenarios that chain many LLM calls when a single-turn test suffices.
+- **Run selectively**: Use the test separation from [above](#separate-unit-and-integration-tests) to run integration tests only in CI or before deploy, not on every file save.
+
+:::python
+```python
+agent = create_agent(
+    "gemini-3.1-flash-lite-preview",
+    tools=[get_weather],
+    model_kwargs={"max_tokens": 256},
+)
+```
+:::
+
+:::js
+```ts
+const agent = createAgent({
+  model: "gemini-3.1-flash-lite-preview",
+  tools: [getWeather],
+  modelArgs: { maxTokens: 256 },
+});
+```
+:::
+
+:::python
+
+## Record and replay HTTP calls
+
+For tests that run frequently in CI, you can record HTTP interactions on the first run and replay them on subsequent runs without making real API calls. This eliminates cost and latency after the initial recording.
+
+[`vcrpy`](https://pypi.org/project/vcrpy/1.5.2/) records HTTP request/response pairs into YAML "cassette" files. The [`pytest-recording`](https://pypi.org/project/pytest-recording/) plugin integrates this with pytest.
+
+Set up your `conftest.py` to filter sensitive information from cassettes:
+
+```py conftest.py
+import pytest
+
+@pytest.fixture(scope="session")
+def vcr_config():
+    return {
+        "filter_headers": [
+            ("authorization", "XXXX"),
+            ("x-api-key", "XXXX"),
+        ],
+        "filter_query_parameters": [
+            ("api_key", "XXXX"),
+            ("key", "XXXX"),
+        ],
+    }
+```
+
+Configure your project to recognize the `vcr` marker:
+
+<CodeGroup>
+```ini pytest.ini
+[pytest]
+markers =
+    vcr: record/replay HTTP via VCR
+addopts = --record-mode=once
+```
+```toml pyproject.toml
+[tool.pytest.ini_options]
+markers = [
+  "vcr: record/replay HTTP via VCR"
+]
+addopts = "--record-mode=once"
+```
+</CodeGroup>
+
+<Info>
+    The `--record-mode=once` option records HTTP interactions on the first run and replays them on subsequent runs.
+</Info>
+
+Decorate your tests with the `vcr` marker:
+
+```python
+@pytest.mark.vcr()
+def test_agent_trajectory():
+    agent = create_agent("claude-sonnet-4-6", tools=[get_weather])
+    result = agent.invoke({
+        "messages": [HumanMessage(content="What's the weather in SF?")]
+    })
+    assert any(
+        tc["name"] == "get_weather"
+        for msg in result["messages"]
+        if hasattr(msg, "tool_calls")
+        for tc in (msg.tool_calls or [])
+    )
+```
+
+The first run makes real network calls and generates a cassette file in `tests/cassettes/`. Subsequent runs replay the recorded responses.
+
+<Warning>
+    When you modify prompts, add new tools, or change expected trajectories, your saved cassettes will become outdated and your existing tests **will fail**. Delete the corresponding cassette files and rerun the tests to record fresh interactions.
+</Warning>
+:::
+
+## Next steps
+
+Learn how to evaluate agent trajectories with deterministic matching or LLM-as-judge evaluators in [Evals](/oss/langchain/test/evals).
