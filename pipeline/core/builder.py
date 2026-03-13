@@ -5,6 +5,7 @@ import logging
 import re
 import shutil
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 from tqdm import tqdm
@@ -205,7 +206,8 @@ class DocumentationBuilder:
                 "\n\n---\n\n"
                 '<div className="source-links">\n'
                 '<Callout icon="edit">\n'
-                f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
+                f"    [Edit this page on GitHub]({edit_url}) "
+                f"or [file an issue]({issue_url}).\n"
                 "</Callout>\n"
                 '<Callout icon="terminal-2">\n'
                 "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
@@ -749,38 +751,24 @@ class DocumentationBuilder:
         Returns:
             True if the file should be shared, False if it should be version-specific.
         """
-        # Shared files: docs.json, images directory, JavaScript files, snippets
         relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
 
-        # docs.json should be shared
         if file_path.name == "docs.json":
             return True
 
-        # index.mdx at root should be shared
-        if file_path.name == "index.mdx" and len(relative_path.parts) == 1:
+        # Root-level files that should be shared
+        if len(relative_path.parts) == 1 and file_path.name in {
+            "index.mdx",
+            "use-these-docs.mdx",
+        }:
             return True
 
-        # use-these-docs.mdx at root should be shared
-        if file_path.name == "use-these-docs.mdx" and len(relative_path.parts) == 1:
+        # Directories whose contents should be shared
+        shared_dirs = {"images", "snippets", ".well-known", "fonts"}
+        if shared_dirs & set(relative_path.parts):
             return True
 
-        # Images directory should be shared
-        if "images" in relative_path.parts:
-            return True
-
-        # Snippets directory should be shared
-        if "snippets" in relative_path.parts:
-            return True
-
-        # .well-known directory should be shared (security.txt, etc.)
-        if ".well-known" in relative_path.parts:
-            return True
-
-        # Fonts directory should be shared
-        if "fonts" in relative_path.parts:
-            return True
-
-        # JavaScript and CSS files should be shared (used for custom scripts/styles)
+        # JavaScript and CSS files should be shared (custom scripts/styles)
         return file_path.suffix.lower() in {".js", ".css"}
 
     def _copy_shared_files(self) -> None:
@@ -826,7 +814,7 @@ class DocumentationBuilder:
         logger.info("✅ Shared files copied: %d files", copied_count)
 
     # Maps npm dist filenames to their output names in build/snippets/
-    _NPM_SNIPPET_FILES: dict[str, str] = {
+    _NPM_SNIPPET_FILES: ClassVar[dict[str, str]] = {
         "PatternEmbed.jsx": "pattern-embed.jsx",
     }
 

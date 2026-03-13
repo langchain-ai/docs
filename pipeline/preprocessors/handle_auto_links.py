@@ -100,20 +100,20 @@ CONDITIONAL_FENCE_PATTERN = re.compile(
 )
 CROSS_REFERENCE_PATTERN = re.compile(
     r"""
-    (?:                     # Non-capturing group for two possible formats:
-        (?<!\\)@\[          # @ symbol (not preceded by backslash) followed by opening bracket
-        (?P<title>[^\]]+)   # Custom title - one or more non-bracket characters
+    (?:                     # Two possible formats:
+        (?<!\\)@\[          # Unescaped @ followed by [
+        (?P<title>[^\]]+)   # Custom title (non-bracket chars)
         \]                  # Closing bracket for title
         \[                  # Opening bracket for link name
-        (?P<backtick_with_title>`)?  # Optional backtick before link name
-        (?P<link_name_with_title>[^`\]]+)  # Link name - non-backtick/bracket chars
-        (?(backtick_with_title)`|)  # Closing backtick if opening backtick present
+        (?P<backtick_with_title>`)?  # Optional opening backtick
+        (?P<link_name_with_title>[^`\]]+)  # Link name
+        (?(backtick_with_title)`|)  # Closing backtick if opened
         \]                  # Closing bracket for link name
         |                   # OR
-        (?<!\\)@\[          # @ symbol (not preceded by backslash) followed by opening bracket
-        (?P<backtick>`)?    # Optional backtick before link name
-        (?P<link_name>[^`\]]+)   # Link name - non-backtick/bracket characters
-        (?(backtick)`|)     # Closing backtick if opening backtick present
+        (?<!\\)@\[          # Unescaped @ followed by [
+        (?P<backtick>`)?    # Optional opening backtick
+        (?P<link_name>[^`\]]+)   # Link name
+        (?(backtick)`|)     # Closing backtick if opened
         \]                  # Closing bracket
     )
     """,
