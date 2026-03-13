@@ -1,4 +1,4 @@
-// :snippet-start: tool-return-values
+// :snippet-start: tool-return-values-js
 import { tool } from "langchain";
 import * as z from "zod";
 

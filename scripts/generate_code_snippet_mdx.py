@@ -19,20 +19,30 @@ def main() -> None:
 
     snippets_dir.mkdir(parents=True, exist_ok=True)
 
-    # Mapping: (glob_pattern, language, suffix) for each snippet type
+    # Mapping: (glob_pattern, language) for each snippet type
     snippet_configs = [
-        ("*.snippet.*.py", "python", "-py"),
-        ("*.snippet.*.ts", "ts", "-js"),
+        ("*.snippet.*.py", "python"),
+        ("*.snippet.*.ts", "ts"),
     ]
 
-    for glob_pattern, language, suffix in snippet_configs:
+    # Only process snippets that already have language suffix to
+    # avoid Bluehawk duplicates
+    lang_suffix = {"python": "-py", "ts": "-js"}
+
+    for glob_pattern, language in snippet_configs:
         for snippet_file in generated_dir.glob(glob_pattern):
+            snippet_name = ".".join(snippet_file.stem.split(".")[2:])
+            expected_suffix = lang_suffix[language]
+            # Only process language-specific snippets
+            # (tool-return-object-py, not tool-return-object) to avoid
+            # duplicates when Bluehawk emits both suffixed and unsuffixed versions
+            if not snippet_name.endswith(expected_suffix):
+                continue
+
             content = snippet_file.read_text(encoding="utf-8")
             # Create MDX with fenced code block
             mdx_content = f"```{language}\n{content.rstrip()}\n```\n"
-            # Output filename: tool-return-values-py.mdx from return-a-string.snippet.tool-return-values.py
-            snippet_name = ".".join(snippet_file.stem.split(".")[2:])
-            mdx_path = snippets_dir / f"{snippet_name}{suffix}.mdx"
+            mdx_path = snippets_dir / f"{snippet_name}.mdx"
             mdx_path.write_text(mdx_content, encoding="utf-8")
             print(f"Generated {mdx_path.relative_to(repo_root)}")
 
