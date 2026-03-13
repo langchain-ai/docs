@@ -1,0 +1,51 @@
+---
+name: Lint prose
+
+on:
+  pull_request:
+    paths:
+      - "src/**/*.md"
+      - "src/**/*.mdx"
+
+jobs:
+  lint-prose:
+    name: Vale on changed docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get changed doc files
+        id: changed-files
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE" HEAD -- src/ |
+            grep -E '\.(md|mdx)$' || true)
+          if [ -z "$FILES" ]; then
+            echo "No doc files changed, skipping"
+            echo "count=0" >> $GITHUB_OUTPUT
+          else
+            echo "count=$(echo "$FILES" | wc -l)" >> $GITHUB_OUTPUT
+            echo "files<<EOF" >> $GITHUB_OUTPUT
+            printf '%s\n' "$FILES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Vale
+        if: steps.changed-files.outputs.count != '0'
+        run: sudo snap install vale
+
+      - name: Lint prose
+        if: steps.changed-files.outputs.count != '0'
+        env:
+          CHANGED_FILES: ${{ steps.changed-files.outputs.files }}
+        run: |
+          echo "Linting changed files:"
+          echo "$CHANGED_FILES" | sed 's/^/  - /'
+          make lint_prose FILES="$(echo "$CHANGED_FILES" | tr '\n' ' ')"

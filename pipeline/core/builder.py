@@ -51,7 +51,12 @@ class DocumentationBuilder:
             ".yaml",
             ".css",
             ".js",
+            ".jsx",
+            ".tsx",
             ".txt",
+            ".woff2",
+            ".woff",
+            ".ttf",
         }
 
         # Mapping of language codes to full names for URLs
@@ -99,6 +104,10 @@ class DocumentationBuilder:
         # Copy shared files (docs.json, images, etc.)
         logger.info("Copying shared files...")
         self._copy_shared_files()
+
+        # Copy snippet components from @langchain/docs-sandbox npm package
+        logger.info("Copying npm snippet components...")
+        self._copy_npm_snippets()
 
         logger.info("✅ New structure build complete")
 
@@ -181,6 +190,10 @@ class DocumentationBuilder:
             # Only add links for files in the src/ directory
             relative_path = input_path.absolute().relative_to(self.src_dir.absolute())
 
+            # Do not add source links on the home page (root index.mdx)
+            if relative_path.parts == ("index.mdx",):
+                return content
+
             # Construct the GitHub URLs
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"
@@ -190,12 +203,14 @@ class DocumentationBuilder:
             # Create the callout section with Mintlify Callout component
             source_links_section = (
                 "\n\n---\n\n"
-                '<Callout icon="pen-to-square" iconType="regular">\n'
+                '<div className="source-links">\n'
+                '<Callout icon="edit">\n'
                 f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
                 "</Callout>\n"
-                '<Tip icon="terminal" iconType="regular">\n'
+                '<Callout icon="terminal-2">\n'
                 "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
-                "</Tip>\n"
+                "</Callout>\n"
+                "</div>\n"
             )
 
             # Append to content
@@ -761,6 +776,10 @@ class DocumentationBuilder:
         if ".well-known" in relative_path.parts:
             return True
 
+        # Fonts directory should be shared
+        if "fonts" in relative_path.parts:
+            return True
+
         # JavaScript and CSS files should be shared (used for custom scripts/styles)
         return file_path.suffix.lower() in {".js", ".css"}
 
@@ -805,6 +824,42 @@ class DocumentationBuilder:
                     copied_count += 1
 
         logger.info("✅ Shared files copied: %d files", copied_count)
+
+    # Maps npm dist filenames to their output names in build/snippets/
+    _NPM_SNIPPET_FILES: dict[str, str] = {
+        "PatternEmbed.jsx": "pattern-embed.jsx",
+    }
+
+    def _copy_npm_snippets(self) -> None:
+        """Copy snippet components from the @langchain/docs-sandbox npm package.
+
+        Overwrites any source-tree versions already copied by _copy_shared_files
+        so the build always uses the latest published component.
+        """
+        pkg_dist = (
+            self.src_dir.parent
+            / "node_modules"
+            / "@langchain"
+            / "docs-sandbox"
+            / "dist"
+        )
+        if not pkg_dist.is_dir():
+            logger.warning(
+                "@langchain/docs-sandbox not installed — run `npm install` first"
+            )
+            return
+
+        snippets_dir = self.build_dir / "snippets"
+        snippets_dir.mkdir(parents=True, exist_ok=True)
+
+        for src_name, dest_name in self._NPM_SNIPPET_FILES.items():
+            src_file = pkg_dist / src_name
+            if not src_file.is_file():
+                logger.warning("Expected file not found in npm package: %s", src_file)
+                continue
+            dest_file = snippets_dir / dest_name
+            shutil.copy2(src_file, dest_file)
+            logger.info("Copied npm snippet: %s → snippets/%s", src_name, dest_name)
 
     def _process_snippet_markdown_file(
         self, input_path: Path, output_path: Path
