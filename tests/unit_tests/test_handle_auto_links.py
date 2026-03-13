@@ -84,16 +84,7 @@ def test_whitespace_only_lines_preserved() -> None:
 
 def test_mixed_conditional_and_code_fences() -> None:
     """Conditional fences inside code blocks should not change scope."""
-    md = (
-        ":::python\n"
-        "@[StateGraph]\n"
-        "```\n"
-        ":::js\n"
-        "@[StateGraph]\n"
-        "```\n"
-        "@[Command]\n"
-        ":::\n"
-    )
+    md = ":::python\n@[StateGraph]\n```\n:::js\n@[StateGraph]\n```\n@[Command]\n:::\n"
     result = replace_autolinks(md, "test.mdx")
     # Outside code block: both autolinks should be transformed (python scope)
     assert "[StateGraph](/ref/stategraph)" in result
@@ -161,9 +152,7 @@ def test_regex_pattern_in_code_block_no_warning() -> None:
     This is the original issue (#2069).
     """
     md = (
-        "```python\n"
-        'pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"\n'
-        "```\n"
+        '```python\npattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"\n```\n'
     )
     result = replace_autolinks(md, "test.mdx")
     assert "@[a-zA-Z0-9.-]" in result
