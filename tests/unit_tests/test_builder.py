@@ -37,6 +37,8 @@ def test_builder_initialization() -> None:
             ".yaml",
             ".css",
             ".js",
+            ".jsx",
+            ".tsx",
             ".txt",
             ".woff2",
             ".woff",
