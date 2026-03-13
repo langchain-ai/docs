@@ -22,7 +22,7 @@ PYTHON_FILES=.
 lint:
 	uv run ruff format $(PYTHON_FILES) --diff
 	uv run ruff check $(PYTHON_FILES) --diff
-	uv run mypy $(PYTHON_FILES)
+	uv run ty check
 
 format:
 	uv run ruff format $(PYTHON_FILES)
