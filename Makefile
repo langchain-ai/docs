@@ -5,10 +5,12 @@ all: help
 
 dev:
 	@echo "Starting development mode..."
+	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline dev
 
 build:
 	@echo "Building documentation..."
+	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline build
 
 # Define a variable for the test file path.
@@ -64,6 +66,7 @@ test:
 install:
 	@echo "Installing all dependencies"
 	uv sync --all-groups
+	npm install
 	npm install -g mint@latest
 
 clean:
@@ -132,9 +135,6 @@ check-openapi: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
 	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
-check-pnpm:
-	@command -v pnpm >/dev/null 2>&1 || { echo >&2 "pnpm is not installed. Please install pnpm to proceed (https://pnpm.io/installation)"; exit 1; }
-
 # Extract code snippets from src/code-samples using Bluehawk
 code-snippets:
 	@echo "Extracting code snippets with Bluehawk..."
@@ -162,6 +162,7 @@ preview-references: check-pnpm
 	@echo "Previewing references..."
 	cd reference && pnpm i && pnpm run preview
 
+
 help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
@@ -169,8 +170,6 @@ help:
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
-	@echo "  make build-references   - Build reference docs"
-	@echo "  make preview-references - Preview reference docs"
 	@echo "  make format             - Format code"
 	@echo "  make lint               - Lint code"
 	@echo "  make lint_md            - Lint markdown files"

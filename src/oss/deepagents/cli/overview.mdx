@@ -206,10 +206,6 @@ deepagents --model gpt-4o
 
 # Auto-approve tool usage (skip human-in-the-loop prompts)
 deepagents --auto-approve
-
-# Execute code in a remote sandbox
-deepagents --sandbox modal        # or runloop, daytona
-deepagents --sandbox-id dbx_123   # reuse existing sandbox
 ```
 
 <AccordionGroup>
@@ -468,63 +464,121 @@ The additional files will not be read on startup but the agent can reference and
 
 ## Use remote sandboxes
 
-Execute code in isolated remote environments for safety and flexibility. Remote sandboxes provide the following benefits:
+The CLI uses the [sandbox as tool](/oss/deepagents/sandboxes#sandbox-as-tool-pattern) pattern: the CLI process (LLM loop, memory, tool dispatch) runs on your machine, but agent tool calls (`read_file`, `write_file`, `execute`, etc.) target the remote sandbox, not your local filesystem. To get files into the sandbox, use a [setup script](#setup-scripts) or the provider's file transfer APIs (see [Working with files](/oss/deepagents/sandboxes#working-with-files)).
 
-  - **Safety**: Protect your local machine from potentially harmful code execution
-  - **Clean environments**: Use specific dependencies or OS configurations without local setup
-  - **Parallel execution**: Run multiple agents simultaneously in isolated environments
-  - **Long-running tasks**: Execute time-intensive operations without blocking your machine
-  - **Reproducibility**: Ensure consistent execution environments across teams
+For a deeper look at sandbox architecture, integration patterns, and security best practices, see [Sandboxes](/oss/deepagents/sandboxes).
 
-To use a remote sandbox, follow these steps:
+<Steps>
+    <Step title="Install provider dependency" icon="download">
+        Install the LangChain integration package for your sandbox provider:
 
-1. Configure your sandbox provider ([Runloop](https://www.runloop.ai/), [Daytona](https://www.daytona.io/), or [Modal](https://modal.com/)):
+        <Tabs>
+            <Tab title="Daytona">
+                ```bash
+                uv tool upgrade deepagents-cli --with langchain-daytona
+                ```
+            </Tab>
+            <Tab title="Runloop">
+                ```bash
+                uv tool upgrade deepagents-cli --with langchain-runloop
+                ```
+            </Tab>
+            <Tab title="Modal">
+                ```bash
+                uv tool upgrade deepagents-cli --with langchain-modal
+                ```
+            </Tab>
+        </Tabs>
+    </Step>
 
-    ```bash
-    # Runloop
-    export RUNLOOP_API_KEY="your-key"
+    <Step title="Set provider credentials" icon="key">
+        <Tabs>
+            <Tab title="Daytona">
+                ```bash
+                export DAYTONA_API_KEY="your-key"
+                ```
+            </Tab>
+            <Tab title="Runloop">
+                ```bash
+                export RUNLOOP_API_KEY="your-key"
+                ```
+            </Tab>
+            <Tab title="Modal">
+                ```bash
+                modal setup
+                ```
+            </Tab>
+        </Tabs>
+    </Step>
 
-    # Daytona
-    export DAYTONA_API_KEY="your-key"
+    <Step title="Run the CLI with a sandbox" icon="terminal">
+        <Tabs>
+            <Tab title="Daytona">
+                ```bash
+                deepagents --sandbox daytona
+                ```
+            </Tab>
+            <Tab title="Runloop">
+                ```bash
+                deepagents --sandbox runloop
+                ```
+            </Tab>
+            <Tab title="Modal">
+                ```bash
+                deepagents --sandbox modal
+                ```
+            </Tab>
+        </Tabs>
+    </Step>
+</Steps>
 
-    # Modal
-    modal setup
-    ```
+### Sandbox flags
 
-1. Run the CLI with a sandbox:
+| Flag | Description |
+|------|-------------|
+| `--sandbox TYPE` | Sandbox provider to use: `modal`, `daytona`, or `runloop` (default: `none`) |
+| `--sandbox-id ID` | Reuse an existing sandbox by ID instead of creating a new one. Skips creation and cleanup. Refer to your sandbox documentation for more |
+| `--sandbox-setup PATH` | Path to a setup script to run inside the sandbox upon creation |
 
-    ```bash
-    uvx deepagents-cli --sandbox runloop --sandbox-setup ./setup.sh
-    ```
+Examples:
 
-    The agent runs locally but executes all code operations in the remote sandbox. Optional setup scripts can configure environment variables, clone repositories, and prepare dependencies.
+```bash
+# Create a new Daytona sandbox
+deepagents --sandbox daytona
 
-1. (Optional) Create a `setup.sh` file to configure your sandbox environment:
+# Reuse an existing sandbox (skips creation and cleanup)
+deepagents --sandbox runloop --sandbox-id dbx_abc123
 
-    ```bash
-    #!/bin/bash
-    set -e
+# Run a setup script after sandbox creation
+deepagents --sandbox modal --sandbox-setup ./setup.sh
+```
 
-    # Clone repository using GitHub token
-    git clone https://x-access-token:${GITHUB_TOKEN}@github.com/username/repo.git $HOME/workspace
-    cd $HOME/workspace
+### Setup scripts
 
-    # Make environment variables persistent
-    cat >> ~/.bashrc <<'EOF'
-    export GITHUB_TOKEN="${GITHUB_TOKEN}"
-    export OPENAI_API_KEY="${OPENAI_API_KEY}"
-    cd $HOME/workspace
-    EOF
+Use `--sandbox-setup` to run a shell script inside the sandbox after creation. This is useful for cloning repos, installing dependencies, and configuring environment variables.
 
-    source ~/.bashrc
-    ```
+```bash title="setup.sh"
+#!/bin/bash
+set -e
 
-    Store secrets in a local `.env` file for the setup script to access.
+# Clone repository using GitHub token
+git clone https://x-access-token:${GITHUB_TOKEN}@github.com/username/repo.git $HOME/workspace
+cd $HOME/workspace
+
+# Make environment variables persistent
+cat >> ~/.bashrc <<'EOF'
+export GITHUB_TOKEN="${GITHUB_TOKEN}"
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
+cd $HOME/workspace
+EOF
+
+source ~/.bashrc
+```
+
+The CLI expands `${VAR}` references in setup scripts using your local environment variables. Store secrets in a local `.env` file for the setup script to access.
 
 <Warning>
-    Sandboxes isolate code execution, but agents remain vulnerable to prompt injection with untrusted inputs. Use human-in-the-loop approval, short-lived secrets, and trusted setup scripts only.
-
-    Note that sandbox APIs are evolving rapidly, and we expect more providers to support proxies that help mitigate prompt injection and secrets management concerns.
+    Sandboxes isolate code execution, but agents remain vulnerable to prompt injection with untrusted inputs. Use human-in-the-loop approval, short-lived secrets, and trusted setup scripts only. See [Security considerations](/oss/deepagents/sandboxes#security-considerations) for details.
 </Warning>
 
 ## Use MCP tools
