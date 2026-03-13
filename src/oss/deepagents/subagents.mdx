@@ -43,72 +43,48 @@ Subagents solve the **context bloat problem**. When agents use tools with large 
 
 ### SubAgent (Dictionary-based)
 
-For most use cases, define subagents as dictionaries:
+For most use cases, define subagents as dictionaries with the following fields:
 
-**Required fields:**
+:::python
 
-<ParamField body="name" type="str" required>
-    Unique identifier for the subagent.
-    The main agent uses this name when calling the `task()` tool.
-    The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents.
-</ParamField>
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Required. Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
+| `description` | `str` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
+| `system_prompt` | `str` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
+| `tools` | `list[Callable]` | Required. Tools the subagent can use. Custom subagents specify their own. Keep this minimal and include only what's needed.<br></br>Does not inherit from main agent. |
+| `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5'` (using the `'provider:model'` format) or a LangChain chat model object (`init_chat_model("gpt-5")` or `ChatOpenAI(model="gpt-5")`). |
+| `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from main agent. |
+| `interrupt_on` | `dict[str, bool]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Subagent value overrides main agent. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
+| `skills` | `list[str]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent `SkillsMiddleware` instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
 
-<ParamField body="description" type="str" required>
-    Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate.
-</ParamField>
+:::
 
-<ParamField body="system_prompt" type="str" required>
-    Instructions for the subagent. Include tool usage guidance and output format requirements.
-</ParamField>
+:::js
 
-<ParamField body="tools" type="list[Callable]" required>
-    Tools the subagent can use. Keep this minimal and include only what's needed.
-</ParamField>
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Required. Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
+| `description` | `str` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
+| `system_prompt` | `str` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
+| `tools` | `list[Callable]` | Required. Tools the subagent can use. Custom subagents specify their own. Keep this minimal and include only what's needed.<br></br>Does not inherit from main agent. |
+| `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5")` or `new ChatOpenAI({ model: "gpt-5" })`). |
+| `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from main agent. |
+| `interrupt_on` | `dict[str, bool]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Subagent value overrides main agent. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
+| `skills` | `list[str]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent `SkillsMiddleware` instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
 
-**Optional fields:**
+:::
 
-<ParamField body="model" type="str | BaseChatModel">
-    :::python
-    Override the main agent's model. You can pass either a model identifier string like `'openai:gpt-5'` (using the `'provider:model'` format) or a LangChain chat model object (`init_chat_model("gpt-5")` or `ChatOpenAI(model="gpt-5")`).
-    :::
-    :::js
-    Override the main agent's model. You can pass either a model identifier string like `'openai:gpt-5'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5")` or `new ChatOpenAI({ model: "gpt-5" })`).
-    :::
-</ParamField>
-
-<ParamField body="middleware" type="list[Middleware]">
-    Additional middleware for custom behavior, logging, or rate limiting.
-</ParamField>
-
-<ParamField body="interrupt_on" type="dict[str, bool]">
-    Configure human-in-the-loop for specific tools. Requires a checkpointer.
-</ParamField>
-
-<ParamField body="skills" type="list[str]">
-    [Skills](/oss/deepagents/skills) source paths for the subagent's SkillsMiddleware.
-    When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`).
-    This allows subagents to have different skill sets than the main agent.
-    **Note:** Custom subagents do NOT inherit skills from the main agent by default—only the general-purpose subagent inherits the main agent's skills.
-
-    When a subagent has skills, it runs its own independent `SkillsMiddleware` instance. Skill state is fully isolated — a subagent's loaded skills are not visible to the parent, and vice versa.
-</ParamField>
 
 ### CompiledSubAgent
 
-For complex workflows, use a pre-built LangGraph graph:
+For complex workflows, use a prebuilt LangGraph graph:
 
-<ParamField body="name" type="str" required>
-    Unique identifier for the subagent.
-    The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents.
-</ParamField>
-
-<ParamField body="description" type="str" required>
-    What this subagent does.
-</ParamField>
-
-<ParamField body="runnable" type="Runnable" required>
-    A compiled LangGraph graph (must call `.compile()` first).
-</ParamField>
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Required. Unique identifier for the subagent. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
+| `description` | `str` | Required. What this subagent does. |
+| `runnable` | `Runnable` | Required. A compiled LangGraph graph (must call `.compile()` first). |
 
 ## Using SubAgent
 
@@ -117,7 +93,7 @@ For complex workflows, use a pre-built LangGraph graph:
 ## Using CompiledSubAgent
 
 For more complex use cases, you can provide your custom subagents.
-You can create a custom subagent using LangChain's `create_agent` or by making a custom LangGraph graph using the [graph API](https://github.com/langchain-ai/docs/pull/).
+You can create a custom subagent using LangChain's `create_agent` or by making a custom LangGraph graph using the [graph API](/oss/langgraph/graph-api).
 
 If you're creating a custom LangGraph graph, make sure that the graph has a [state key called `"messages"`](/oss/langgraph/quickstart#2-define-state):
 
@@ -143,7 +119,7 @@ custom_subagent = CompiledSubAgent(
 subagents = [custom_subagent]
 
 agent = create_deep_agent(
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     tools=[internet_search],
     system_prompt=research_instructions,
     subagents=subagents
@@ -173,7 +149,7 @@ const customSubagent: CompiledSubAgent = {
 const subagents = [customSubagent];
 
 const agent = createDeepAgent({
-  model: "claude-sonnet-4-5-20250929",
+  model: "claude-sonnet-4-6",
   tools: [internetSearch],
   systemPrompt: researchInstructions,
   subagents: subagents,
@@ -215,12 +191,12 @@ research_subagent = {
     "description": "Used to research more in depth questions",
     "system_prompt": "You are a great researcher",
     "tools": [internet_search],
-    "model": "claude-sonnet-4-5-20250929",  # Optional override, defaults to main agent model
+    "model": "claude-sonnet-4-6",  # Optional override, defaults to main agent model
 }
 subagents = [research_subagent]
 
 agent = create_deep_agent(
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     subagents=subagents,
     name="main-agent"
 )
@@ -233,7 +209,7 @@ In this case the subagent with the name `"research-agent"`, will have `{'lc_agen
 
 ## Structured output
 
-All subagents support [structured ouput](/oss/langchain/structured-output) which you can use to validate the subagent's output.
+All subagents support [structured output](/oss/langchain/structured-output) which you can use to validate the subagent's output.
 
 :::python
 You can set a desired structured output schema by passing it as the `response_format` argument to the call to `create_agent()`.
@@ -252,10 +228,61 @@ For more information, see [response format](/oss/langchain/structured-output#res
 ## The general-purpose subagent
 
 In addition to any user-defined subagents, deep agents have access to a `general-purpose` subagent at all times. This subagent:
+
 - Has the same system prompt as the main agent
 - Has access to all the same tools
 - Uses the same model (unless overridden)
 - Inherits skills from the main agent (when skills are configured)
+
+### Override the general-purpose subagent
+
+:::python
+Include a subagent with `name="general-purpose"` in your `subagents` list to replace the default. Use this to configure a different model, tools, or system prompt for the general-purpose subagent:
+
+```python
+from deepagents import create_deep_agent
+
+# Main agent uses Claude; general-purpose subagent uses GPT
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    tools=[internet_search],
+    subagents=[
+        {
+            "name": "general-purpose",
+            "description": "General-purpose agent for research and multi-step tasks",
+            "system_prompt": "You are a general-purpose assistant.",
+            "tools": [internet_search],
+            "model": "openai:gpt-4o",  # Different model for delegated tasks
+        },
+    ],
+)
+```
+:::
+
+:::js
+Include a subagent with `name: "general-purpose"` in your `subagents` list to replace the default. Use this to configure a different model, tools, or system prompt for the general-purpose subagent:
+
+```typescript
+import { createDeepAgent } from "deepagents";
+
+// Main agent uses Claude; general-purpose subagent uses GPT
+const agent = await createDeepAgent({
+  model: "claude-sonnet-4-6",
+  tools: [internetSearch],
+  subagents: [
+    {
+      name: "general-purpose",
+      description: "General-purpose agent for research and multi-step tasks",
+      systemPrompt: "You are a general-purpose assistant.",
+      tools: [internetSearch],
+      model: "openai:gpt-4o",  // Different model for delegated tasks
+    },
+  ],
+});
+```
+:::
+
+When you provide a subagent with the general-purpose name, the default general-purpose subagent is not added. Your spec fully replaces it.
 
 ### When to use it
 
@@ -273,7 +300,7 @@ When configuring [skills](/oss/deepagents/skills) with `create_deep_agent`:
 - **Custom subagents**: Do NOT inherit skills by default—use the `skills` parameter to give them their own skills
 
 <Note>
-    Only subagents configured with skills get a `SkillsMiddleware` instance — custom subagents without a `skills` parameter do not. When present, skill state is fully isolated in both directions: the parent's skills are not visible to the child, and the child's skills are not propagated back to the parent.
+    Only subagents configured with skills get a `SkillsMiddleware` instance—custom subagents without a `skills` parameter do not. When present, skill state is fully isolated in both directions: the parent's skills are not visible to the child, and the child's skills are not propagated back to the parent.
 </Note>
 
 :::python
@@ -290,7 +317,7 @@ research_subagent = {
 }
 
 agent = create_deep_agent(
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     skills=["/skills/main/"],  # Main agent and GP subagent get these
     subagents=[research_subagent],  # Gets only /skills/research/ and /skills/web-search/
 )
@@ -311,7 +338,7 @@ const researchSubagent: SubAgent = {
 };
 
 const agent = createDeepAgent({
-  model: "claude-sonnet-4-5-20250929",
+  model: "claude-sonnet-4-6",
   skills: ["/skills/main/"],  // Main agent and GP subagent get these
   subagents: [researchSubagent],  // Gets only /skills/research/ and /skills/web-search/
 });
@@ -426,7 +453,7 @@ subagents = [
         "description": "Reviews legal documents and contracts",
         "system_prompt": "You are an expert legal reviewer...",
         "tools": [read_document, analyze_contract],
-        "model": "claude-sonnet-4-5-20250929",  # Large context for long documents
+        "model": "claude-sonnet-4-6",  # Large context for long documents
     },
     {
         "name": "financial-analyst",
@@ -447,7 +474,7 @@ const subagents = [
     description: "Reviews legal documents and contracts",
     systemPrompt: "You are an expert legal reviewer...",
     tools: [readDocument, analyzeContract],
-    model: "claude-sonnet-4-5-20250929",  // Large context for long documents
+    model: "claude-sonnet-4-6",  // Large context for long documents
   },
   {
     name: "financial-analyst",
@@ -532,7 +559,7 @@ subagents = [
 ]
 
 agent = create_deep_agent(
-    model="claude-sonnet-4-5-20250929",
+    model="claude-sonnet-4-6",
     system_prompt="You coordinate data analysis and reporting. Use subagents for specialized tasks.",
     subagents=subagents
 )
@@ -565,7 +592,7 @@ const subagents = [
 ];
 
 const agent = createDeepAgent({
-  model: "claude-sonnet-4-5-20250929",
+  model: "claude-sonnet-4-6",
   systemPrompt: "You coordinate data analysis and reporting. Use subagents for specialized tasks.",
   subagents: subagents,
 });
@@ -580,6 +607,229 @@ const agent = createDeepAgent({
 5. Compiles final output
 
 Each subagent works with clean context focused only on its task.
+
+## Context management
+
+When you invoke a parent agent with [runtime context](/oss/langchain/runtime), that context automatically propagates to all subagents. The parent's full `config` (including `context`) is passed through to each subagent invocation internally.
+
+This means tools running inside any subagent can access the same context values you provided to the parent:
+
+:::python
+```python
+from deepagents import create_deep_agent
+from langchain.agents import tool
+from pydantic import BaseModel
+
+@tool
+def get_user_data(query: str, config) -> str:
+    """Fetch data for the current user."""
+    user_id = config.get("context", {}).get("user_id")
+    return f"Data for user {user_id}: {query}"
+
+research_subagent = {
+    "name": "researcher",
+    "description": "Conducts research for the current user",
+    "system_prompt": "You are a research assistant.",
+    "tools": [get_user_data],
+}
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    subagents=[research_subagent],
+    context_schema={"user_id": str, "session_id": str},
+)
+
+# Context flows to the researcher subagent and its tools automatically
+result = await agent.invoke(
+    {"messages": [HumanMessage("Look up my recent activity")]},
+    {"context": {"user_id": "user-123", "session_id": "abc"}},
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { tool } from "langchain";
+import { z } from "zod";
+
+const getUserData = tool(
+  (input, config) => {
+    const userId = config.context?.userId;
+    return `Data for user ${userId}: ${input.query}`;
+  },
+  {
+    name: "get_user_data",
+    description: "Fetch data for the current user",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const researchSubagent = {
+  name: "researcher",
+  description: "Conducts research for the current user",
+  systemPrompt: "You are a research assistant.",
+  tools: [getUserData],
+};
+
+const contextSchema = z.object({
+  userId: z.string(),
+  sessionId: z.string(),
+});
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-6",
+  subagents: [researchSubagent],
+  contextSchema,
+});
+
+// Context flows to the researcher subagent and its tools automatically
+const result = await agent.invoke(
+  { messages: [new HumanMessage("Look up my recent activity")] },
+  { context: { userId: "user-123", sessionId: "abc" } },
+);
+```
+:::
+
+### Per-subagent context
+
+All subagents receive the same parent context. To pass configuration that is specific to a particular subagent, use **namespaced keys**: prefix context keys with the subagent's name:
+
+:::python
+```python
+result = await agent.invoke(
+    {"messages": [HumanMessage("Research this and verify the claims")]},
+    {
+        "context": {
+            "user_id": "user-123",                        # shared by all agents
+            "researcher:max_depth": 3,                    # only for researcher
+            "fact-checker:strict_mode": True,             # only for fact-checker
+        }
+    },
+)
+```
+:::
+
+:::js
+```typescript
+const result = await agent.invoke(
+  { messages: [new HumanMessage("Research this and verify the claims")] },
+  {
+    context: {
+      userId: "user-123",                        // shared by all agents
+      "researcher:maxDepth": 3,                  // only for researcher
+      "fact-checker:strictMode": true,           // only for fact-checker
+    },
+  },
+);
+```
+:::
+
+Then read the relevant keys inside tools:
+
+:::python
+```python
+@tool
+def verify_claim(claim: str, config) -> str:
+    """Verify a factual claim."""
+    strict_mode = config.get("context", {}).get("fact-checker:strict_mode", False)
+    if strict_mode:
+        return strict_verification(claim)
+    return basic_verification(claim)
+```
+:::
+
+:::js
+```typescript
+const verifyClaim = tool(
+  (input, config) => {
+    const strictMode = config.context?.["fact-checker:strictMode"] ?? false;
+    if (strictMode) {
+      return strictVerification(input.claim);
+    }
+    return basicVerification(input.claim);
+  },
+  {
+    name: "verify_claim",
+    description: "Verify a factual claim",
+    schema: z.object({ claim: z.string() }),
+  }
+);
+```
+:::
+
+### Identifying which subagent called a tool
+
+When the same tool is shared between the parent and multiple subagents, you can use the `lc_agent_name` metadata (the same value used in [streaming](#streaming)) to determine which agent initiated the call:
+
+:::python
+```python
+@tool
+def shared_lookup(query: str, config) -> str:
+    """Look up information."""
+    agent_name = config.get("metadata", {}).get("lc_agent_name")
+    if agent_name == "fact-checker":
+        return strict_lookup(query)
+    return general_lookup(query)
+```
+:::
+
+:::js
+```typescript
+const sharedLookup = tool(
+  (input, config) => {
+    const agentName = config.metadata?.lc_agent_name;
+    if (agentName === "fact-checker") {
+      return strictLookup(input.query);
+    }
+    return generalLookup(input.query);
+  },
+  {
+    name: "shared_lookup",
+    description: "Look up information from various sources",
+    schema: z.object({ query: z.string() }),
+  }
+);
+```
+:::
+
+You can combine both patterns—use namespaced context for agent-specific configuration and `lc_agent_name` metadata for branching tool behavior:
+
+:::python
+```python
+@tool
+def flexible_search(query: str, config) -> str:
+    """Search with agent-specific settings."""
+    agent_name = config.get("metadata", {}).get("lc_agent_name", "unknown")
+    ctx = config.get("context", {})
+
+    max_results = ctx.get(f"{agent_name}:max_results", 5)
+    include_raw = ctx.get(f"{agent_name}:include_raw", False)
+
+    return perform_search(query, max_results=max_results, include_raw=include_raw)
+```
+:::
+
+:::js
+```typescript
+const flexibleSearch = tool(
+  (input, config) => {
+    const agentName = config.metadata?.lc_agent_name ?? "unknown";
+    const ctx = config.context ?? {};
+
+    const maxResults = ctx[`${agentName}:maxResults`] ?? 5;
+    const includeRaw = ctx[`${agentName}:includeRaw`] ?? false;
+
+    return performSearch(input.query, { maxResults, includeRaw });
+  },
+  {
+    name: "flexible_search",
+    description: "Search with agent-specific settings",
+    schema: z.object({ query: z.string() }),
+  }
+);
+```
+:::
 
 ## Troubleshooting
 
