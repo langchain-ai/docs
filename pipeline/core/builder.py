@@ -5,6 +5,7 @@ import logging
 import re
 import shutil
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 from tqdm import tqdm
@@ -80,7 +81,7 @@ class DocumentationBuilder:
         Displays:
             Progress bars showing build progress for each version.
         """
-        logger.info(
+        logger.debug(
             "Building versioned documentation from %s to %s",
             self.src_dir,
             self.build_dir,
@@ -92,24 +93,24 @@ class DocumentationBuilder:
         self.build_dir.mkdir(parents=True, exist_ok=True)
 
         # Build LangGraph versioned content (oss/ -> oss/python/ and oss/javascript/)
-        logger.info("Building LangGraph Python version...")
+        logger.debug("Building LangGraph Python version...")
         self._build_langgraph_version("oss/python", "python")
 
-        logger.info("Building LangGraph JavaScript version...")
+        logger.debug("Building LangGraph JavaScript version...")
         self._build_langgraph_version("oss/javascript", "js")
 
-        logger.info("Building LangSmith content...")
+        logger.debug("Building LangSmith content...")
         self._build_unversioned_content("langsmith", "langsmith")
 
         # Copy shared files (docs.json, images, etc.)
-        logger.info("Copying shared files...")
+        logger.debug("Copying shared files...")
         self._copy_shared_files()
 
         # Copy snippet components from @langchain/docs-sandbox npm package
-        logger.info("Copying npm snippet components...")
+        logger.debug("Copying npm snippet components...")
         self._copy_npm_snippets()
 
-        logger.info("✅ New structure build complete")
+        logger.debug("New structure build complete")
 
     def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
         """Convert a YAML file to JSON format.
@@ -205,7 +206,8 @@ class DocumentationBuilder:
                 "\n\n---\n\n"
                 '<div className="source-links">\n'
                 '<Callout icon="edit">\n'
-                f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
+                f"    [Edit this page on GitHub]({edit_url}) "
+                f"or [file an issue]({issue_url}).\n"
                 "</Callout>\n"
                 '<Callout icon="terminal-2">\n'
                 "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
@@ -345,12 +347,12 @@ class DocumentationBuilder:
         # Build Python version
         python_output = self.build_dir / "oss" / "python" / oss_relative
         if self._build_single_file_to_path(file_path, python_output, "python"):
-            logger.info("Built Python version: oss/python/%s", oss_relative)
+            logger.debug("Built Python version: oss/python/%s", oss_relative)
 
         # Build JavaScript version
         js_output = self.build_dir / "oss" / "javascript" / oss_relative
         if self._build_single_file_to_path(file_path, js_output, "js"):
-            logger.info("Built JavaScript version: oss/javascript/%s", oss_relative)
+            logger.debug("Built JavaScript version: oss/javascript/%s", oss_relative)
 
     def _build_unversioned_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an unversioned file (langsmith).
@@ -361,7 +363,7 @@ class DocumentationBuilder:
         """
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, "python"):
-            logger.info("Built: %s", relative_path)
+            logger.debug("Built: %s", relative_path)
 
     def _build_shared_file(self, file_path: Path, relative_path: Path) -> None:
         """Build a shared file (images, docs.json, JS/CSS files).
@@ -372,7 +374,7 @@ class DocumentationBuilder:
         """
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, None):
-            logger.info("Built shared file: %s", relative_path)
+            logger.debug("Built shared file: %s", relative_path)
 
     def _build_simple_file(self, file_path: Path, relative_path: Path) -> None:
         """Build a simple file (root-level files).
@@ -383,7 +385,7 @@ class DocumentationBuilder:
         """
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, None):
-            logger.info("Built: %s", relative_path)
+            logger.debug("Built: %s", relative_path)
 
     def _build_single_file_to_path(
         self, file_path: Path, output_path: Path, target_language: str | None
@@ -749,38 +751,24 @@ class DocumentationBuilder:
         Returns:
             True if the file should be shared, False if it should be version-specific.
         """
-        # Shared files: docs.json, images directory, JavaScript files, snippets
         relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
 
-        # docs.json should be shared
         if file_path.name == "docs.json":
             return True
 
-        # index.mdx at root should be shared
-        if file_path.name == "index.mdx" and len(relative_path.parts) == 1:
+        # Root-level files that should be shared
+        if len(relative_path.parts) == 1 and file_path.name in {
+            "index.mdx",
+            "use-these-docs.mdx",
+        }:
             return True
 
-        # use-these-docs.mdx at root should be shared
-        if file_path.name == "use-these-docs.mdx" and len(relative_path.parts) == 1:
+        # Directories whose contents should be shared
+        shared_dirs = {"images", "snippets", ".well-known", "fonts"}
+        if shared_dirs & set(relative_path.parts):
             return True
 
-        # Images directory should be shared
-        if "images" in relative_path.parts:
-            return True
-
-        # Snippets directory should be shared
-        if "snippets" in relative_path.parts:
-            return True
-
-        # .well-known directory should be shared (security.txt, etc.)
-        if ".well-known" in relative_path.parts:
-            return True
-
-        # Fonts directory should be shared
-        if "fonts" in relative_path.parts:
-            return True
-
-        # JavaScript and CSS files should be shared (used for custom scripts/styles)
+        # JavaScript and CSS files should be shared (custom scripts/styles)
         return file_path.suffix.lower() in {".js", ".css"}
 
     def _copy_shared_files(self) -> None:
@@ -826,7 +814,7 @@ class DocumentationBuilder:
         logger.info("✅ Shared files copied: %d files", copied_count)
 
     # Maps npm dist filenames to their output names in build/snippets/
-    _NPM_SNIPPET_FILES: dict[str, str] = {
+    _NPM_SNIPPET_FILES: ClassVar[dict[str, str]] = {
         "PatternEmbed.jsx": "pattern-embed.jsx",
     }
 
@@ -859,7 +847,7 @@ class DocumentationBuilder:
                 continue
             dest_file = snippets_dir / dest_name
             shutil.copy2(src_file, dest_file)
-            logger.info("Copied npm snippet: %s → snippets/%s", src_name, dest_name)
+            logger.debug("Copied npm snippet: %s → snippets/%s", src_name, dest_name)
 
     def _process_snippet_markdown_file(
         self, input_path: Path, output_path: Path
