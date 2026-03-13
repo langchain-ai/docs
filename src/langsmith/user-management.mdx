@@ -19,7 +19,7 @@ RBAC (Role-Based Access Control) is a feature that is only available to Enterpri
 You may find it helpful to read the [Administration overview](/langsmith/administration-overview) page before setting up access control.
 </Check>
 
-LangSmith relies on RBAC to manage user permissions within a [workspace](/langsmith/administration-overview#workspaces). This allows you to control who can access your LangSmith workspace and what they can do within it. Only users with the `workspace:manage` permission can manage access control settings for a workspace.
+LangSmith relies on RBAC to manage user permissions within a [workspace](/langsmith/administration-overview#workspaces). This allows you to control who can access your LangSmith workspace and what they can do within it. Users with the `workspaces:manage` permission can manage workspace settings, and users with the `workspaces:manage-members` permission can add, remove, and update workspace members. The built-in Workspace Admin role includes both permissions.
 
 For a complete reference of workspace roles and their permissions, refer to the [Role-based access control](/langsmith/rbac#workspace-roles) guide. For specific operations each role can perform, refer to the [Organization and workspace operations reference](/langsmith/organization-workspace-operations).
 
@@ -67,7 +67,7 @@ SSO services permit a user to use one set of credentials (for example, a name or
 
 ### Just-in-time (JIT) provisioning
 
-LangSmith supports Just-in-time provisioning when using SAML SSO. This allows someone signing in via SAML SSO to join the organization and selected workspaces automatically as a member.
+LangSmith supports Just-in-time provisioning when using SAML SSO. This allows someone signing in via SAML SSO to join the organization and selected workspaces automatically as a member. For detailed information on managing JIT provisioning and user invites, refer to [Manage user access in SSO organizations](/langsmith/jit-invite-sso).
 
 <Note>
 JIT provisioning only runs for new users, that is, users who do not already have access to the organization with the same email address via a [different login method](/langsmith/authentication-methods#cloud).
@@ -84,7 +84,7 @@ Once you have completed your configuration of SAML SSO for your organization, us
 ### Enforce SAML SSO only
 
 <Note>
-User invites are not supported in organizations enforcing SAML SSO only. Initial workspace membership and role is determined by JIT provisioning, and changes afterwards can be managed in the UI.
+User invites are not supported in organizations enforcing SAML SSO only. Initial workspace membership and role is determined by [JIT provisioning](/langsmith/jit-invite-sso#jit-provisioning), and changes afterwards can be managed in the UI.
 For additional flexibility in automated user management, LangSmith supports SCIM.
 </Note>
 
@@ -386,7 +386,7 @@ SCIM eliminates the need for manual user management and ensures that user access
 - Your Identity Provider (IdP) must support SCIM 2.0.
 - Only [Organization Admins](/langsmith/administration-overview#organization-roles) can configure SCIM.
 - For cloud customers: [SAML SSO](#set-up-saml-sso-for-your-organization) must be configurable for your organization.
-- For self-hosted customers: [OAuth with Client Secret](/langsmith/self-host-sso#with-secret) authentication mode must be enabled.
+- For self-hosted customers: [OAuth with Client Secret](/langsmith/self-host-sso#with-client-secret-recommended) authentication mode must be enabled.
 - For self-hosted customers, network traffic must be allowed from the identity provider to LangSmith:
   - Microsoft Entra ID supports allowlisting IP ranges or an agent-based solution to provide connectivity.
     ([details](https://learn.microsoft.com/en-us/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups#ip-ranges)).
@@ -407,7 +407,7 @@ When a user belongs to multiple groups for the same workspace, the following pre
 <Note>
 When a group is deleted or a user is removed from a group, their access is updated according to their remaining group membership, following the precedence rules.
 
-SCIM group membership will override manually assigned roles or roles assigned via Just-in-time (JIT) provisioning. We recommend disabling JIT provisioning to avoid conflicts.
+SCIM group membership overrides manually assigned roles or roles assigned via Just-in-time (JIT) provisioning. We recommend disabling JIT provisioning to avoid conflicts. For more details, refer to [Manage user access in SSO organizations](/langsmith/jit-invite-sso#scim-integration).
 </Note>
 
 #### Email verification
@@ -424,7 +424,7 @@ The link expires in 24 hours, and can be resent if needed by removing and re-add
 Renaming groups is **not** supported via SCIM. Group names are persistent because they must match role names and/or workspace names in LangSmith.
 </Warning>
 
-Group membership maps to LangSmith workspace membership and workspace roles with a specific naming convention:
+Group membership maps to LangSmith workspace membership and workspace roles with a specific naming convention. By default, the separator between components is a colon (`:`), but you can [configure a custom separator](#configure-custom-separator) for your organization.
 
 **Organization Admin Groups**
 
@@ -438,13 +438,41 @@ Examples:
 
 **Workspace-Specific Groups**
 
-Format: `<optional_prefix><org_role_name>:<workspace_name>:<workspace_role_name>`
+Format: `<optional_prefix><org_role_name><separator><workspace_name><separator><workspace_role_name>`
 
-Examples:
+The separator defaults to `:` (colon). Supported separators are: `:` (colon), `-` (hyphen), `_` (underscore), ` ` (space), `&` (ampersand).
+
+Examples with default colon separator:
 
 - `LS:Organization User:Production:Annotators`
 - `Groups-Organization User:Engineering:Developers`
 - `Organization User:Marketing:Viewers`
+
+Examples with hyphen separator:
+
+- `LS-Organization User-Production-Annotators`
+- `Organization User-Engineering-Developers`
+
+<Note>
+If your workspace names contain the separator character (e.g., workspace `my-team` with separator `-`), LangSmith will automatically try all possible splits to find a valid workspace and role combination.
+</Note>
+
+#### Configure custom separator
+
+To change the SCIM group name separator for your organization, use the `PATCH /api/v1/orgs/current/info` [endpoint](https://api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch):
+
+```bash
+curl -X PATCH $LANGCHAIN_ENDPOINT/api/v1/orgs/current/info \
+  -H "X-Api-Key: $LANGCHAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"scim_group_name_separator": "-"}'
+```
+
+The separator must be a single character and one of: `:` (colon), `-` (hyphen), `_` (underscore), ` ` (space), or `&` (ampersand). The default is `:` (colon).
+
+<Note>
+Changing the separator does not rename existing SCIM groups. If you change the separator, you must also update your group names in your identity provider to use the new separator.
+</Note>
 
 ### Mapping
 
@@ -502,7 +530,7 @@ The NameID format must be `Persistent`, unless you are using a field, like email
 
 ### Step 2 - disable JIT provisioning
 
-Before enabling SCIM, disable [Just-in-time (JIT) provisioning](/langsmith/user-management#just-in-time-jit-provisioning) to prevent conflicts between automatic and manual user provisioning.
+Before enabling SCIM, disable [Just-in-time (JIT) provisioning](/langsmith/jit-invite-sso#jit-provisioning) to prevent conflicts between automatic and manual user provisioning.
 
 #### Disabling JIT for cloud
 

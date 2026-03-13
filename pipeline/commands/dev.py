@@ -5,6 +5,7 @@ file watching, and live serving for an optimal development experience.
 """
 
 import asyncio
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -89,7 +90,7 @@ async def dev_command(
         build_result = build_command(args)
         if build_result != 0:
             logger.error("Initial build failed")
-            sys.exit(1)
+            return 1
 
     # Start file watcher
     watcher = FileWatcher(src_dir, build_dir)
@@ -97,51 +98,90 @@ async def dev_command(
     # Start mint dev in background
     logger.info("Starting mint dev...")
 
-    # Use shell on Windows for .CMD compatibility, keep exec on Unix
-    if sys.platform == "win32":
-        # Windows requires shell for .CMD files
-        mint_process = await asyncio.create_subprocess_shell(
-            "mint dev --port 3000",
-            cwd=build_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+    try:
+        # Use shell on Windows for .CMD compatibility, keep exec on Unix
+        if sys.platform == "win32":
+            # Windows requires shell for .CMD files
+            mint_process = await asyncio.create_subprocess_shell(
+                "mint dev --port 3000",
+                cwd=build_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        else:
+            # Unix systems can use exec directly
+            mint_process = await asyncio.create_subprocess_exec(
+                "mint",
+                "dev",
+                "--port",
+                "3000",
+                cwd=build_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+    except FileNotFoundError:
+        logger.exception(
+            "Could not find `mint`. Run `make install` and retry "
+            "(or install Mintlify CLI directly with `npm install -g mint@latest`)."
         )
-    else:
-        # Unix systems can use exec directly
-        mint_process = await asyncio.create_subprocess_exec(
-            "mint",
-            "dev",
-            "--port",
-            "3000",
-            cwd=build_dir,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        return 1
 
     # Start log forwarding tasks
     stdout_task = asyncio.create_task(_forward_logs(mint_process.stdout, "mint-stdout"))
     stderr_task = asyncio.create_task(_forward_logs(mint_process.stderr, "mint-stderr"))
+    watcher_task = asyncio.create_task(watcher.start())
+    mint_wait_task = asyncio.create_task(mint_process.wait())
+    exit_code = 0
 
     try:
-        # Start file watching
         logger.info("Watching for file changes...")
-        await watcher.start()
+        done, _ = await asyncio.wait(
+            {watcher_task, mint_wait_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if mint_wait_task in done:
+            exit_code = mint_wait_task.result()
+            if exit_code != 0:
+                logger.error("mint dev exited with code %d", exit_code)
+        elif watcher_task.cancelled():
+            logger.error("File watcher stopped unexpectedly")
+            exit_code = 1
+        else:
+            watcher_error = watcher_task.exception()
+            if watcher_error is not None:
+                raise watcher_error
+            logger.error("File watcher stopped unexpectedly")
+            exit_code = 1
     except KeyboardInterrupt:
         logger.info("\nShutting down...")
     finally:
-        # Cleanup
-        mint_process.terminate()
+        if not watcher_task.done():
+            await watcher.shutdown()
+            watcher_task.cancel()
 
-        # Cancel log forwarding tasks
+        if mint_process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                mint_process.terminate()
+
+        if not mint_wait_task.done():
+            try:
+                await asyncio.wait_for(mint_wait_task, timeout=5)
+            except TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    mint_process.kill()
+                await mint_process.wait()
+
         stdout_task.cancel()
         stderr_task.cancel()
 
-        try:
-            await asyncio.wait_for(mint_process.wait(), timeout=5)
-        except TimeoutError:
-            mint_process.kill()
-
         # Wait for log forwarding tasks to complete
-        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+        await asyncio.gather(
+            watcher_task,
+            mint_wait_task,
+            stdout_task,
+            stderr_task,
+            return_exceptions=True,
+        )
 
-    return 0
+    return exit_code

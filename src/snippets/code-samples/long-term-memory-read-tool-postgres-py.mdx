@@ -1,0 +1,39 @@
+```python
+from dataclasses import dataclass
+
+from langchain.agents import create_agent
+from langchain.tools import ToolRuntime, tool
+from langchain_core.runnables import Runnable
+from langgraph.store.postgres import PostgresStore
+
+
+@dataclass
+class Context:
+    user_id: str
+
+
+DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+
+with PostgresStore.from_conn_string(DB_URI) as store:
+    store.setup()
+    store.put(("users",), "user_123", {"name": "John Smith", "language": "English"})
+
+    @tool
+    def get_user_info(runtime: ToolRuntime[Context]) -> str:
+        """Look up user info."""
+        assert runtime.store is not None
+        user_info = runtime.store.get(("users",), runtime.context.user_id)
+        return str(user_info.value) if user_info else "Unknown user"
+
+    agent: Runnable = create_agent(
+        "claude-sonnet-4-6",
+        tools=[get_user_info],
+        store=store,
+        context_schema=Context,
+    )
+
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": "look up user information"}]},
+        context=Context(user_id="user_123"),
+    )
+```
