@@ -1,4 +1,4 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors build-references preview-references format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
 
 # Default target
 all: help
@@ -152,16 +152,6 @@ test-code-samples:
 # Check that all @[ref] cross-references in source files resolve against link_map.py
 check-cross-refs:
 	@PYTHONPATH=$(CURDIR) uv run python scripts/check_cross_refs.py
-
-# Reference docs commands (in reference/ subdirectory)
-build-references: check-pnpm
-	@echo "Building references..."
-	cd reference && pnpm i && pnpm build
-
-preview-references: check-pnpm
-	@echo "Previewing references..."
-	cd reference && pnpm i && pnpm run preview
-
 
 help:
 	@echo "Available commands:"

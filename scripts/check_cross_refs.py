@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from pipeline.preprocessors.handle_auto_links import (
+    CODE_FENCE_PATTERN,
     CONDITIONAL_FENCE_PATTERN,
     CROSS_REFERENCE_PATTERN,
 )
@@ -32,6 +33,7 @@ def _default_scopes_for_file(rel_path: str) -> list[str]:
             return scopes
     if rel_path.startswith("oss/"):
         return ["python", "js"]
+    # Non-OSS content (e.g., langsmith/) only generates Python-scope pages
     return ["python"]
 
 
@@ -47,7 +49,7 @@ def _extract_refs(
     for line_number, line in enumerate(content.splitlines(), 1):
         stripped = line.strip()
 
-        if stripped.startswith("```"):
+        if CODE_FENCE_PATTERN.match(stripped):
             in_code_block = not in_code_block
             continue
         if in_code_block:
@@ -63,8 +65,7 @@ def _extract_refs(
             continue
 
         for match in CROSS_REFERENCE_PATTERN.finditer(line):
-            if match.start() > 0 and line[match.start() - 1] == "\\":
-                continue
+            # CROSS_REFERENCE_PATTERN uses (?<!\\) lookbehind to skip escaped refs
             ref_name = match.group("link_name_with_title") or match.group("link_name")
             if ref_name:
                 refs.append((line_number, ref_name, list(current_scopes)))
@@ -88,7 +89,11 @@ def check_cross_refs(src_dir: Path) -> list[tuple[str, int, str, list[str]]]:
         if "node_modules" in rel_path:
             continue
 
-        content = file_path.read_text(encoding="utf-8")
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            print(f"  WARNING: skipping {rel_path} (not valid UTF-8: {exc})")
+            continue
         default_scopes = _default_scopes_for_file(rel_path)
         refs = _extract_refs(content, default_scopes)
 

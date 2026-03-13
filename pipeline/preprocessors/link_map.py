@@ -259,7 +259,6 @@ LINK_MAPS: list[LinkMap] = [
             "CompiledStateGraph.invoke": "langgraph/graphs/#langgraph.graph.state.CompiledStateGraph.invoke",
             "CompiledStateGraph.stream": "langgraph/graphs/#langgraph.graph.state.CompiledStateGraph.stream",
             "get_state_history": "langgraph/graphs/#langgraph.graph.state.CompiledStateGraph.get_state_history",
-            "get_state": "langgraph/pregel/main/Pregel/get_state",
             "update_state": "langgraph/graphs/#langgraph.graph.state.CompiledStateGraph.update_state",
             "InjectedState": "langgraph/agents/#langgraph.prebuilt.tool_node.InjectedState",
             "InjectedStore": "langgraph/agents/#langgraph.prebuilt.tool_node.InjectedStore",
@@ -538,7 +537,6 @@ LINK_MAPS: list[LinkMap] = [
             "Runtime": "langchain/index/Runtime",
             "ToolNode": "langchain-langgraph/prebuilt/ToolNode",
             # Python-named aliases for cross-scope compatibility
-            "get_state": "classes/_langchain_langgraph.pregel.Pregel.html#getState",
             "create_agent": "langchain/index/createAgent",
             "init_chat_model": "langchain/chat_models/universal/initChatModel",
             "tools_condition": "langchain-langgraph/prebuilt/toolsCondition",

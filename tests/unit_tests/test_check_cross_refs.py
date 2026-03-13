@@ -42,13 +42,13 @@ def test_js_scope_fence() -> None:
 
 
 def test_js_only_ref_in_python_scope_fails() -> None:
-    """JS-only ref in python-only file is unresolved."""
+    """JS-only ref is unresolved when file defaults to Python scope."""
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp)
-        _write(src, "oss/python/page.mdx", "@[createAgent]")
+        _write(src, "oss/python/page.mdx", "@[wrapVitest]")
         errors = check_cross_refs(src)
         assert len(errors) == 1
-        assert errors[0][2] == "createAgent"
+        assert errors[0][2] == "wrapVitest"
 
 
 def test_oss_shared_file_checks_both_scopes() -> None:
