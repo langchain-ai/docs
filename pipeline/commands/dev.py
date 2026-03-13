@@ -86,7 +86,7 @@ async def dev_command(
             )
     else:
         # Perform a full build
-        logger.info("Performing initial build...")
+        logger.debug("Performing initial build...")
         build_result = build_command(args)
         if build_result != 0:
             logger.error("Initial build failed")
@@ -96,7 +96,7 @@ async def dev_command(
     watcher = FileWatcher(src_dir, build_dir)
 
     # Start mint dev in background
-    logger.info("Starting mint dev...")
+    logger.debug("Starting mint dev...")
 
     try:
         # Use shell on Windows for .CMD compatibility, keep exec on Unix
