@@ -117,6 +117,13 @@ def _enrich_package(p: dict) -> dict | None:
     # Handling for package URLs
     ref_doc_name = p["name"].replace("-", "_")
 
+    if p.get("has_reference_docs") and p.get("integration") == "false":
+        msg = (
+            f"{p['name']}: has_reference_docs=true and integration=false "
+            "is not a supported combination"
+        )
+        raise ValueError(msg)
+
     if p["type"] in ("monorepo", "langchain-org") or p.get("has_reference_docs"):
         if p.get("integration") == "false":
             p["package_url"] = f"https://reference.langchain.com/python/{p['name']}/"
