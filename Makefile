@@ -1,14 +1,16 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links build-references preview-references format-check code-snippets test-code-samples
+.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors build-references preview-references format-check code-snippets test-code-samples
 
 # Default target
 all: help
 
 dev:
 	@echo "Starting development mode..."
+	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline dev
 
 build:
 	@echo "Building documentation..."
+	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline build
 
 # Define a variable for the test file path.
@@ -64,6 +66,7 @@ test:
 install:
 	@echo "Installing all dependencies"
 	uv sync --all-groups
+	npm install
 	npm install -g mint@latest
 
 clean:
@@ -98,6 +101,28 @@ broken-links: build
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
 	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
+		if echo "$$filtered" | grep -qE '^[[:space:]]+.*/'; then \
+			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
+		else \
+			echo "✅ No broken links"; \
+		fi
+
+broken-links-with-anchors: build
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
+	@mint_version=$$(mint --version 2>/dev/null | tr -d '\n' | xargs); \
+		if [ -n "$$mint_version" ] && [ "$$mint_version" != "4.2.406" ]; then \
+			echo "⚠️  Warning: CI uses mint@4.2.406. You have: $$mint_version"; \
+			echo "   Run 'npm install -g mint@4.2.406' to match CI and avoid local/CI discrepancies."; \
+			echo ""; \
+		fi
+	@KATEX_MJS="$$(npm root -g 2>/dev/null)/mint/node_modules/katex/dist/katex.mjs"; \
+		if [ -f "$$KATEX_MJS" ] && grep -q '__VERSION__' "$$KATEX_MJS" 2>/dev/null; then \
+			KATEX_DIR="$$(cd "$$(dirname "$$KATEX_MJS")/.." && pwd)"; \
+			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
+			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
+		fi
+	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
 		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+.*/'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
@@ -141,6 +166,7 @@ help:
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
 	@echo "  make broken-links       - Check for broken links in built documentation"
+	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
 	@echo "  make build-references   - Build reference docs"
 	@echo "  make preview-references - Preview reference docs"
 	@echo "  make format             - Format code"

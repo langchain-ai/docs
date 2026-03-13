@@ -14,3 +14,12 @@
         - Command
         - Overwrite
         - interrupt
+        - GraphOutput
+        - StreamPart
+        - ValuesStreamPart
+        - UpdatesStreamPart
+        - MessagesStreamPart
+        - CustomStreamPart
+        - CheckpointStreamPart
+        - TasksStreamPart
+        - DebugStreamPart
