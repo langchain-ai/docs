@@ -35,7 +35,7 @@ MIN_DOWNLOADS = 100_000
 DOCS_DIR = Path(__file__).parents[2]
 PROVIDERS_PATH = Path() / "src" / "oss" / "python" / "integrations" / "providers"
 REFERENCE_INTEGRATIONS_PATH = Path() / "reference" / "python" / "docs" / "integrations"
-PACKAGE_YML = Path() / "reference" / "packages.yml"
+PACKAGE_YML = Path() / "packages.yml"
 
 # Load package registry
 with PACKAGE_YML.open() as f:

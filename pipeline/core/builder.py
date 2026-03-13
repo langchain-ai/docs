@@ -51,6 +51,8 @@ class DocumentationBuilder:
             ".yaml",
             ".css",
             ".js",
+            ".jsx",
+            ".tsx",
             ".txt",
             ".woff2",
             ".woff",
@@ -102,6 +104,10 @@ class DocumentationBuilder:
         # Copy shared files (docs.json, images, etc.)
         logger.info("Copying shared files...")
         self._copy_shared_files()
+
+        # Copy snippet components from @langchain/docs-sandbox npm package
+        logger.info("Copying npm snippet components...")
+        self._copy_npm_snippets()
 
         logger.info("✅ New structure build complete")
 
@@ -818,6 +824,42 @@ class DocumentationBuilder:
                     copied_count += 1
 
         logger.info("✅ Shared files copied: %d files", copied_count)
+
+    # Maps npm dist filenames to their output names in build/snippets/
+    _NPM_SNIPPET_FILES: dict[str, str] = {
+        "PatternEmbed.jsx": "pattern-embed.jsx",
+    }
+
+    def _copy_npm_snippets(self) -> None:
+        """Copy snippet components from the @langchain/docs-sandbox npm package.
+
+        Overwrites any source-tree versions already copied by _copy_shared_files
+        so the build always uses the latest published component.
+        """
+        pkg_dist = (
+            self.src_dir.parent
+            / "node_modules"
+            / "@langchain"
+            / "docs-sandbox"
+            / "dist"
+        )
+        if not pkg_dist.is_dir():
+            logger.warning(
+                "@langchain/docs-sandbox not installed — run `npm install` first"
+            )
+            return
+
+        snippets_dir = self.build_dir / "snippets"
+        snippets_dir.mkdir(parents=True, exist_ok=True)
+
+        for src_name, dest_name in self._NPM_SNIPPET_FILES.items():
+            src_file = pkg_dist / src_name
+            if not src_file.is_file():
+                logger.warning("Expected file not found in npm package: %s", src_file)
+                continue
+            dest_file = snippets_dir / dest_name
+            shutil.copy2(src_file, dest_file)
+            logger.info("Copied npm snippet: %s → snippets/%s", src_name, dest_name)
 
     def _process_snippet_markdown_file(
         self, input_path: Path, output_path: Path
