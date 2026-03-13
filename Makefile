@@ -1,4 +1,4 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors build-references preview-references format-check code-snippets test-code-samples
+.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples
 
 # Default target
 all: help
@@ -135,9 +135,6 @@ check-openapi: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
 	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
-check-pnpm:
-	@command -v pnpm >/dev/null 2>&1 || { echo >&2 "pnpm is not installed. Please install pnpm to proceed (https://pnpm.io/installation)"; exit 1; }
-
 # Extract code snippets from src/code-samples using Bluehawk
 code-snippets:
 	@echo "Extracting code snippets with Bluehawk..."
@@ -152,23 +149,12 @@ test-code-samples:
 	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent) || true; fi
 	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
 
-# Reference docs commands (in reference/ subdirectory)
-build-references: check-pnpm
-	@echo "Building references..."
-	cd reference && pnpm i && pnpm build
-
-preview-references: check-pnpm
-	@echo "Previewing references..."
-	cd reference && pnpm i && pnpm run preview
-
 help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
-	@echo "  make build-references   - Build reference docs"
-	@echo "  make preview-references - Preview reference docs"
 	@echo "  make format             - Format code"
 	@echo "  make lint               - Lint code"
 	@echo "  make lint_md            - Lint markdown files"
