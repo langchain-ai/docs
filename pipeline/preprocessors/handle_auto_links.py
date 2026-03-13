@@ -22,29 +22,9 @@ The transformation value depends on the scope in which the link is used.
 import logging
 import re
 
-from markdown_it import MarkdownIt
-from markdown_it.token import Token
-
 from .link_map import SCOPE_LINK_MAPS
 
 logger = logging.getLogger(__name__)
-
-
-def _get_markdown_token(line: str) -> Token:
-    """Get the token for a given line of markdown.
-
-    Args:
-        line: A single line of markdown text.
-
-    Returns:
-        The first Token object parsed from the line.
-
-    Raises:
-        IndexError: If no tokens are found in the line.
-    """
-    md = MarkdownIt(config="commonmark")
-    tokens = md.parse(line)
-    return tokens[0]
 
 
 def _transform_link(
@@ -106,6 +86,7 @@ def _transform_link(
     return None
 
 
+CODE_FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
 CONDITIONAL_FENCE_PATTERN = re.compile(
     r"""
     ^                       # Start of line
@@ -214,26 +195,15 @@ def replace_autolinks(
     for line_number, line in enumerate(lines, 1):
         line_stripped = line.strip()
 
-        try:
-            token = _get_markdown_token(line_stripped)
-
-            # Check for code block fences to avoid processing inside code blocks
-            if (
-                token
-                and token.type == "fence"
-                and token.tag == "code"
-                and token.markup == "```"
-            ):
-                in_code_block_fence = not in_code_block_fence
-                processed_lines.append(line)
-                continue
-
-            # If we are still inside a code block, skip processing
-            if in_code_block_fence:
-                processed_lines.append(line)
-                continue
-        except IndexError:
+        # Skip code fence markers and content inside fenced code blocks
+        if CODE_FENCE_PATTERN.match(line_stripped):
+            in_code_block_fence = not in_code_block_fence
             processed_lines.append(line)
+            continue
+
+        if in_code_block_fence:
+            processed_lines.append(line)
+            continue
 
         # Check if this line defines a new conditional fence scope
         fence_match = CONDITIONAL_FENCE_PATTERN.match(line_stripped)
