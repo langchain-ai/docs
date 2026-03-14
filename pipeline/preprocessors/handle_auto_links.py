@@ -86,6 +86,7 @@ def _transform_link(
     return None
 
 
+CODE_FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
 CONDITIONAL_FENCE_PATTERN = re.compile(
     r"""
     ^                       # Start of line
@@ -99,20 +100,20 @@ CONDITIONAL_FENCE_PATTERN = re.compile(
 )
 CROSS_REFERENCE_PATTERN = re.compile(
     r"""
-    (?:                     # Non-capturing group for two possible formats:
-        (?<!\\)@\[          # @ symbol (not preceded by backslash) followed by opening bracket
-        (?P<title>[^\]]+)   # Custom title - one or more non-bracket characters
+    (?:                     # Two possible formats:
+        (?<!\\)@\[          # Unescaped @ followed by [
+        (?P<title>[^\]]+)   # Custom title (non-bracket chars)
         \]                  # Closing bracket for title
         \[                  # Opening bracket for link name
-        (?P<backtick_with_title>`)?  # Optional backtick before link name
-        (?P<link_name_with_title>[^`\]]+)  # Link name - non-backtick/bracket chars
-        (?(backtick_with_title)`|)  # Closing backtick if opening backtick present
+        (?P<backtick_with_title>`)?  # Optional opening backtick
+        (?P<link_name_with_title>[^`\]]+)  # Link name
+        (?(backtick_with_title)`|)  # Closing backtick if opened
         \]                  # Closing bracket for link name
         |                   # OR
-        (?<!\\)@\[          # @ symbol (not preceded by backslash) followed by opening bracket
-        (?P<backtick>`)?    # Optional backtick before link name
-        (?P<link_name>[^`\]]+)   # Link name - non-backtick/bracket characters
-        (?(backtick)`|)     # Closing backtick if opening backtick present
+        (?<!\\)@\[          # Unescaped @ followed by [
+        (?P<backtick>`)?    # Optional opening backtick
+        (?P<link_name>[^`\]]+)   # Link name
+        (?(backtick)`|)     # Closing backtick if opened
         \]                  # Closing bracket
     )
     """,
@@ -189,9 +190,20 @@ def replace_autolinks(
     current_scope = default_scope
     lines = markdown.splitlines(keepends=True)
     processed_lines = []
+    in_code_block_fence = False
 
     for line_number, line in enumerate(lines, 1):
         line_stripped = line.strip()
+
+        # Skip code fence markers and content inside fenced code blocks
+        if CODE_FENCE_PATTERN.match(line_stripped):
+            in_code_block_fence = not in_code_block_fence
+            processed_lines.append(line)
+            continue
+
+        if in_code_block_fence:
+            processed_lines.append(line)
+            continue
 
         # Check if this line defines a new conditional fence scope
         fence_match = CONDITIONAL_FENCE_PATTERN.match(line_stripped)

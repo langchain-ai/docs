@@ -1,9 +1,9 @@
 ---
-title: Add encryption at-rest
-sidebarTitle: Encryption at-rest
+title: Add encryption at rest
+sidebarTitle: Encryption at rest
 ---
 
-Agent Server supports encryption at-rest for checkpoint data and metadata. You can choose between basic encryption with a single key or custom encryption for advanced use cases.
+Agent Server supports encryption at rest for checkpoint data and metadata. You can choose between basic encryption with a single key or custom encryption for advanced use cases.
 
 ## Choosing an encryption method
 
@@ -43,7 +43,7 @@ These keys are encrypted wherever they appear in thread, assistant, run, cron, a
 Encrypted fields cannot be searched or filtered.
 </Warning>
 
-System fields cannot be encrypted: `langgraph_version`, `langgraph_api_version`, `langgraph_plan`, `langgraph_host`, `langgraph_api_url`, `langgraph_request_id`, `langgraph_auth_user_id`, `langgraph_auth_permissions`.
+System fields cannot be encrypted: `langgraph_version`, `langgraph_api_version`, `langgraph_plan`, `langgraph_host`, `langgraph_api_url`, `langgraph_request_id`, `langgraph_auth_user_id`, and `langgraph_auth_permissions`.
 
 ## Custom encryption
 
@@ -210,27 +210,29 @@ async def decrypt_json(ctx: EncryptionContext, data: dict) -> dict:
 **Performance consideration:** Per-key encryption means one encryption call per field. If your encryption involves round-trips to an external service (e.g., KMS), this can significantly impact latency. Consider caching data keys locally or using envelope encryption where you encrypt a local data key with KMS and use it for multiple fields.
 </Note>
 
-Common fields to leave **unencrypted** for search and filtering:
+User-defined fields for authorization (e.g., `tenant_id`, `owner`) should generally be left **unencrypted**, as should fields used for search and filtering. Additionally, **some system-managed fields will never be encrypted**:
 
-- Fields used as filters in your [`@auth.on` handlers](/langsmith/set-up-custom-auth) (e.g., `owner`, `tenant_id`) — if these are encrypted, auth isolation silently breaks because the stored value no longer matches the plaintext filter. LangGraph Server will return a 422 error if it detects this at write time.
-- Other user-defined fields for access control queries
-- `run_id`, `thread_id`, `graph_id`, `assistant_id`, `user_id`, `checkpoint_id` — system-populated identifiers
-- `source`, `step`, `parents`, `run_attempt` — system-populated execution state
-- `langgraph_version`, `langgraph_api_version`, `langgraph_plan`, `langgraph_host`, `langgraph_api_url`, `langgraph_request_id`, `langgraph_auth_user`, `langgraph_auth_user_id`, `langgraph_auth_permissions` — system-populated platform metadata
+- Resource identifiers (`thread_id`, `run_id`, `assistant_id`, `graph_id`, `checkpoint_id`, `task_id`)
+- Most fields beginning with `langgraph_` (except for `langgraph_auth_user`)
+- Required checkpoint metadata (`source`, `step`, `parents`, `run_attempt`)
+- Internal fields used for scheduling and orchestration (`__after_seconds__`, `__request_start_time_ms__`, most fields beginning with `__pregel`)
+- Run-level execution limits (`max_concurrency`, `recursion_limit`) specified in a run's `config`
+- Thread TTL updates (`ttl`) specified in a run's `config.configurable`
+
 
 #### What gets encrypted
 
-**JSON handlers** (`@encryption.encrypt.json` / `@encryption.decrypt.json`):
-
+**JSON handlers** (`@encryption.encrypt.json` / `@encryption.decrypt.json`) are applied recursively to the following fields:
 - `thread.metadata`, `thread.values`
 - `assistant.metadata`, `assistant.context`
 - `run.metadata`, `run.kwargs`
 - `cron.metadata`, `cron.payload`
 - `store.value`
 
-**Blob handlers** (`@encryption.encrypt.blob` / `@encryption.decrypt.blob`):
+[Some fields are excluded from encryption.](#what-gets-encrypted) Unless otherwise noted, these exclusions apply at every level of a nested JSON object, not just the root level.
 
-- Checkpoint blobs (graph execution state)
+**Blob handlers** (`@encryption.encrypt.blob` / `@encryption.decrypt.blob`) are applied to checkpoint blobs (graph execution state).
+
 
 #### Deriving context from authentication
 
