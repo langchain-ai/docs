@@ -1,0 +1,103 @@
+---
+title: "Polaris news retriever"
+description: "Use Polaris News Intelligence as a LangChain retriever for RAG."
+---
+
+[Polaris](https://thepolarisreport.com) is a verified news intelligence platform. The `PolarisRetriever` implements LangChain's `BaseRetriever` interface, returning `Document` objects with confidence-scored news briefs for RAG pipelines.
+
+## Setup
+
+```bash
+pip install -qU langchain-polaris
+```
+
+```python
+import getpass
+import os
+
+if not os.environ.get("POLARIS_API_KEY"):
+    os.environ["POLARIS_API_KEY"] = getpass.getpass("Polaris API key:\n")
+```
+
+## Instantiation
+
+```python
+from langchain_polaris import PolarisRetriever
+
+retriever = PolarisRetriever(
+    api_key="demo",
+    category="technology",
+    min_confidence=0.7,
+    limit=5,
+)
+```
+
+### Retriever options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | str | None | Polaris API key (auto-reads from `POLARIS_API_KEY` env var if omitted) |
+| `category` | str | None | Category filter (e.g. `technology`, `politics`, `finance`) |
+| `min_confidence` | float | None | Minimum confidence score (0-1) |
+| `limit` | int | 10 | Max results to return |
+| `include_sources` | str | None | Comma-separated source domains to include |
+| `exclude_sources` | str | None | Comma-separated source domains to exclude |
+
+## Usage
+
+```python
+from langchain_polaris import PolarisRetriever
+
+retriever = PolarisRetriever(api_key="demo", limit=3)
+docs = retriever.invoke("AI regulation")
+
+for doc in docs:
+    print(doc.page_content[:200])
+    print(f"  confidence: {doc.metadata.get('confidence')}")
+    print(f"  bias_score: {doc.metadata.get('bias_score')}")
+    print()
+```
+
+Each `Document` contains:
+- **page_content**: Headline, summary, and body text
+- **metadata**: `brief_id`, `confidence`, `bias_score`, `category`, `published_at`, `counter_argument`, `sources`, `entities`
+
+## Use in a RAG chain
+
+```python
+pip install -qU langchain-openai
+```
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_polaris import PolarisRetriever
+
+retriever = PolarisRetriever(
+    api_key="demo",
+    category="technology",
+    min_confidence=0.7,
+    limit=5,
+)
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer based on these verified news briefs:\n\n{context}\n\nQuestion: {question}"
+)
+
+chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | ChatOpenAI(model="gpt-4o")
+    | StrOutputParser()
+)
+
+print(chain.invoke("What are the latest developments in AI?"))
+```
+
+---
+
+## API reference
+
+For detailed documentation, visit [thepolarisreport.com/docs](https://thepolarisreport.com/docs).
