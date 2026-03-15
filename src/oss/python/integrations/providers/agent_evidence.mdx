@@ -7,14 +7,23 @@ description: "Integrate Agent Evidence with LangChain Python."
 
 ## Installation and setup
 
-While the package is being prepared for PyPI publication, install it directly from GitHub:
+Install the package from PyPI:
 
 ```bash
-pip install git+https://github.com/joy7758/agent-evidence.git
-pip install langchain langchain-openai
+pip install agent-evidence==0.2.0 langchain langchain-openai
 ```
 
-Once the package is published to PyPI, the SQL and signing extras will be available as `agent-evidence[sql,signing]`.
+You can also install the latest published version with:
+
+```bash
+pip install agent-evidence
+```
+
+Links:
+
+- GitHub: https://github.com/joy7758/agent-evidence
+- PyPI: https://pypi.org/project/agent-evidence/0.2.0/
+- Release: https://github.com/joy7758/agent-evidence/releases/tag/v0.1.0
 
 ## Capture LangChain callbacks
 
@@ -72,7 +81,36 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-## Export verifiable evidence bundles
+## OpenAI Agents exporter
+
+Agent Evidence also includes a companion OpenAI Agents SDK integration built on custom trace processors. This is useful if you want one evidence format across both LangChain and OpenAI Agents workloads.
+
+```python
+from agents import trace
+from agents.tracing import custom_span
+
+from agent_evidence import EvidenceRecorder, LocalEvidenceStore, export_json_bundle
+from agent_evidence.integrations import install_openai_agents_processor
+
+store = LocalEvidenceStore("data/openai-agents.evidence.jsonl")
+recorder = EvidenceRecorder(store)
+install_openai_agents_processor(recorder, replace=True)
+
+with trace(
+    "support-workflow",
+    group_id="session-001",
+    metadata={"session_id": "session-001"},
+):
+    with custom_span("collect_context", {"channel": "chat"}):
+        pass
+
+export_json_bundle(
+    store.query(source="openai_agents"),
+    "exports/openai-agents.bundle.json",
+)
+```
+
+## Export and verify evidence bundles
 
 Agent Evidence supports:
 
@@ -80,6 +118,23 @@ Agent Evidence supports:
 - SQLite and PostgreSQL backends for queryable storage
 - JSON, CSV, and XML export
 - signed manifests with key rotation and threshold policies
+
+You can export bundles from the CLI as JSON or CSV and attach signed manifests:
+
+```bash
+agent-evidence export \
+  --store ./data/langchain.evidence.jsonl \
+  --format json \
+  --output ./exports/langchain.bundle.json
+
+agent-evidence export \
+  --store ./data/langchain.evidence.jsonl \
+  --format csv \
+  --output ./exports/langchain.csv \
+  --manifest-output ./exports/langchain.csv.manifest.json \
+  --private-key ./keys/manifest-private.pem \
+  --key-id evidence-demo
+```
 
 Example verification flow:
 
@@ -90,12 +145,22 @@ result = verify_json_bundle("exports/langchain.bundle.json")
 print(result)
 ```
 
-## OpenAI Agents SDK companion integration
+## Storage backends
 
-Agent Evidence also includes a separate OpenAI Agents SDK integration built on custom trace processors. That path is useful when you want one evidence format across both LangChain and OpenAI Agents workloads, but the LangChain callback integration is enough for standard LangChain capture.
+Agent Evidence starts with append-only JSONL storage and also supports SQLite and PostgreSQL backends when you need indexed queries over event type, actor, span identifiers, timestamps, and hash ranges.
+
+```bash
+agent-evidence query \
+  --store sqlite+pysqlite:///./data/evidence.db \
+  --event-type tool.call \
+  --source langchain
+```
+
+That lets you keep a local audit log during development and move to a queryable backend for larger production traces.
 
 ## Links
 
 - GitHub: https://github.com/joy7758/agent-evidence
+- PyPI: https://pypi.org/project/agent-evidence/0.2.0/
 - Release notes: https://github.com/joy7758/agent-evidence/releases/tag/v0.1.0
 - OpenAI Agents integration branch: https://github.com/joy7758/agent-evidence/tree/feat/openai-agents-exporter
