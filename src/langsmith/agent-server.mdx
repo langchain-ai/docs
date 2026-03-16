@@ -1,10 +1,18 @@
 ---
 title: Agent Server
+sidebarTitle: Overview
 ---
 
 LangSmith Deployment's **Agent Server** offers an API for creating and managing agent-based applications. It is built on the concept of [assistants](/langsmith/assistants), which are agents configured for specific tasks, and includes built-in [persistence](/oss/langgraph/persistence#memory-store) and a **task queue**. This versatile API supports a wide range of agentic application use cases, from background processing to real-time interactions.
 
-Use Agent Server to create and manage [assistants](/langsmith/assistants), [threads](/oss/langgraph/persistence#threads), [runs](/langsmith/assistants#execution), [cron jobs](/langsmith/cron-jobs), [webhooks](/langsmith/use-webhooks), and more.
+Use Agent Server to create and manage:
+
+<CardGroup cols={4}>
+  <Card title="Assistants" icon="robot" href="/langsmith/assistants" />
+  <Card title="Threads" icon="messages" href="/oss/langgraph/persistence#threads" />
+  <Card title="Runs" icon="player-play" href="/langsmith/assistants#execution" />
+  <Card title="Cron jobs" icon="clock" href="/langsmith/cron-jobs" />
+</CardGroup>
 
 <Tip>
 **API reference**<br></br>
@@ -35,31 +43,39 @@ We often think of a graph as implementing an [agent](/oss/langgraph/workflows-ag
 chatbot that only supports back-and-forth conversation, without the ability to influence any application control flow. In reality, as applications get more complex, a graph will often implement a more complex flow that may use [multiple agents](/oss/langchain/multi-agent) working in tandem.
 </Note>
 
-### Persistence and task queue
+### Persistence
 
-Agent Server leverages a database for [persistence](/oss/langgraph/persistence) and a task queue.
+[PostgreSQL](https://www.postgresql.org/) is the primary persistence layer. It stores all server resources—threads, runs, assistants, cron jobs, and long-term memory store items—and is required regardless of the checkpointer backend you configure.
 
-[PostgreSQL](https://www.postgresql.org/) is supported as a database for Agent Server and [Redis](https://redis.io/) as the task queue. Checkpoints can optionally be stored using custom adapters, or in MongoDB using our native implementation. See [Configure checkpointer backend](/langsmith/configure-checkpointer) for details.
+Checkpoints are snapshots of graph execution state that Agent Server writes at each step. They make runs durable: if a worker is interrupted, the run can resume from the last checkpoint rather than from scratch. By default, PostgreSQL stores checkpoints. You can switch to [MongoDB](https://www.mongodb.com/) or provide a custom implementation. See [Configure checkpointer backend](/langsmith/configure-checkpointer) for details.
 
-If you're deploying using [LangSmith cloud](/langsmith/cloud), these components are managed for you. If you're deploying Agent Server on your [own infrastructure](/langsmith/self-hosted), you'll need to set up and manage these components yourself.
+Durability mode controls checkpoint frequency. `async` (default) writes after each step; `exit` stores only the final state. Set durability to the minimum level your use case requires to reduce write load.
 
-For more information on how these components are set up and managed, review the [hosting options](/langsmith/platform-setup) guide.
+[LangSmith cloud](/langsmith/cloud) manages the database for you. If you're deploying on your [own infrastructure](/langsmith/self-hosted), you'll need to set it up yourself.
 
-### How to deploy
+### Task queue
 
-Agent Server can be deployed using different methods depending on your infrastructure:
+[Redis](https://redis.io/) coordinates communication between API servers and queue workers. It stores only ephemeral data—no user or run data persists in Redis.
 
-- [Cloud](/langsmith/deploy-to-cloud): Deploy from GitHub repositories with fully managed infrastructure.
-- [Hybrid or self-hosted with control plane](/langsmith/deploy-with-control-plane): Build Docker images and deploy via the UI.
-- [Standalone servers](/langsmith/deploy-standalone-server): Deploy Agent Servers directly without the control plane.
+Redis serves three purposes:
 
-<Note>
-Cloud deployments are available on all LangSmith plans. Hybrid and self-hosted options require an Enterprise plan and license key. To acquire a license key, [contact our sales team](https://www.langchain.com/contact-sales).
-</Note>
+- **Run signaling**: when a client creates a run, the API server writes a sentinel value to a Redis list. A queue worker picks up the signal and fetches the full run data from PostgreSQL.
+- **Cancellation**: a Redis pub/sub channel lets the API server signal a worker to cancel a run in progress.
+- **Streaming**: workers publish output events to a Redis pub/sub channel. Open `/stream` connections subscribe to that channel and forward events to the client in real time.
+
+For more information on how to set up and manage these components, review the [hosting options](/langsmith/platform-setup) guide.
 
 ## Runtime architecture
 
-The following description applies to the non-distributed runtime variant of LangSmith Deployment.
+### Deployment modes
+
+Agent Server supports three runtime configurations:
+
+- **Single host**: The API server manages the task queue directly with no separate queue workers. This is the default for self-hosted deployments and is suitable for development and low-traffic use cases.
+- **Split API and queue**: Dedicated queue workers handle run execution on separate hosts from the API server. Enable this by setting `queue.enabled: true` in your configuration. Each tier scales independently—API servers scale on request volume, queue workers scale on pending run count.
+- **Distributed runtime**: A high-performance configuration that uses a separate Go-based executor tier for run execution. Use this for large-scale deployments with high concurrency requirements.
+
+The container architecture and run lifecycle described below apply to single host and split API and queue configurations.
 
 ### Container architecture
 
@@ -130,10 +146,14 @@ Each worker handles up to [`N_JOBS_PER_WORKER`](/langsmith/env-var#n_jobs_per_wo
 
 How and when your graph is compiled depends on how you register it in your [application structure](/langsmith/application-structure):
 
-1. **Compiled graph**: If you export an already-compiled graph (a `CompiledGraph` instance), it is loaded once at container startup and reused for every run. This is the most efficient path.
-2. **Factory function**: If you export an agent factory function, the server invokes it each time it needs the graph. Factories receive the run's configuration, enabling per-run graph customization (for example, choosing different models or tools based on the assistant config). Keep factory functions lightweight for best performance.
+1. **Compiled graph** (recommended): Export an already-compiled `CompiledGraph` instance. The server loads it once at container startup and reuses it for every run—no compilation overhead per request.
+2. **Factory function**: Export an agent factory function that the server invokes each time it needs the graph. Use this only when you need per-run graph customization (for example, choosing different models or tools based on the assistant config). Keep factory functions lightweight, since they run on every invocation.
 
-In both cases, the server automatically injects the checkpointer and memory store configured for that deployment at runtime. **You should not configure these in your graph code**, since the server needs to manage these for other operations.
+<Tip>
+Use a compiled graph unless you specifically need per-run customization. Factory functions add overhead on every invocation; compiled graphs do not.
+</Tip>
+
+In both cases, the server automatically injects the checkpointer and memory store configured for that deployment at runtime. **Do not configure these in your graph code** because the server needs to manage them for other operations.
 
 ## Learn more
 
