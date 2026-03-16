@@ -90,7 +90,7 @@ def install_packages(temp_dir: Path, packages: list[str]) -> None:
     ]
 
     print(f"Installing packages: {packages}")
-    result = subprocess.run(uv_cmd, check=False, capture_output=True, text=True)  # noqa: S603
+    result = subprocess.run(uv_cmd, check=False, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Error installing packages: {result.stderr}")
         msg = f"Failed to install packages: {result.stderr}"

@@ -36,7 +36,7 @@ def build_command(
     Prints:
         Progress messages and error messages to stdout.
     """
-    logger.info("Building documentation...")
+    logger.debug("Building documentation...")
     src_dir_path = Path(src_dir)
     build_dir_path = Path(build_dir)
 
@@ -50,5 +50,5 @@ def build_command(
     # Initialize builder and build docs
     builder = DocumentationBuilder(src_dir_path, build_dir_path)
     builder.build_all()
-    logger.info("Documentation built successfully in %s", build_dir_path)
+    logger.debug("Documentation built successfully in %s", build_dir_path)
     return 0

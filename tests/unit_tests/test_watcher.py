@@ -22,7 +22,7 @@ def test_should_ignore_backup_files() -> None:
     """
     with file_system([]) as fs:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-        event_queue = asyncio.Queue()  # type: ignore[var-annotated]
+        event_queue = asyncio.Queue()
         loop = asyncio.new_event_loop()
 
         handler = DocsFileHandler(builder, event_queue, loop)
@@ -45,7 +45,7 @@ def test_should_ignore_temporary_files() -> None:
     """Test that various temporary files are properly ignored."""
     with file_system([]) as fs:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-        event_queue = asyncio.Queue()  # type: ignore[var-annotated]
+        event_queue = asyncio.Queue()
         loop = asyncio.new_event_loop()
 
         handler = DocsFileHandler(builder, event_queue, loop)
@@ -70,7 +70,7 @@ def test_should_not_ignore_valid_files() -> None:
     """Test that valid documentation files are NOT ignored."""
     with file_system([]) as fs:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-        event_queue = asyncio.Queue()  # type: ignore[var-annotated]
+        event_queue = asyncio.Queue()
         loop = asyncio.new_event_loop()
 
         handler = DocsFileHandler(builder, event_queue, loop)
@@ -101,7 +101,7 @@ def test_edge_cases() -> None:
     """Test edge cases for file filtering."""
     with file_system([]) as fs:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-        event_queue = asyncio.Queue()  # type: ignore[var-annotated]
+        event_queue = asyncio.Queue()
         loop = asyncio.new_event_loop()
 
         handler = DocsFileHandler(builder, event_queue, loop)
