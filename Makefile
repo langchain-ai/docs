@@ -1,4 +1,4 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples
+.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
 
 # Default target
 all: help
@@ -22,7 +22,7 @@ PYTHON_FILES=.
 lint:
 	uv run ruff format $(PYTHON_FILES) --diff
 	uv run ruff check $(PYTHON_FILES) --diff
-	uv run mypy $(PYTHON_FILES)
+	uv run ty check
 
 format:
 	uv run ruff format $(PYTHON_FILES)
@@ -149,11 +149,16 @@ test-code-samples:
 	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent) || true; fi
 	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
 
+# Check that all @[ref] cross-references in source files resolve against link_map.py
+check-cross-refs:
+	@PYTHONPATH=$(CURDIR) uv run python scripts/check_cross_refs.py
+
 help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
 	@echo "  make broken-links       - Check for broken links in built documentation"
+	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
 	@echo "  make format             - Format code"
 	@echo "  make lint               - Lint code"

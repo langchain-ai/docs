@@ -36,6 +36,7 @@ models = ["gpt-4o"]
 api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
 class_path = "my_package.models:MyChatModel"
+enabled = true
 
 [models.providers.<name>.params]
 temperature = 0
@@ -73,6 +74,10 @@ temperature = 0.7
 
 <ResponseField name="class_path" type="string">
     Used for [arbitrary model](#arbitrary-providers) providers. Optional fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" default="true">
+    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
 </ResponseField>
 
 ### Model constructor params
@@ -224,7 +229,7 @@ This is entirely optional. You can always switch to any model by specifying its 
 
 ### Arbitrary providers
 
-You can use any [LangChain `BaseChatModel`](https://reference.langchain.com/python/langchain_core/language_models/#langchain_core.language_models.BaseChatModel) subclass using `class_path`. The CLI will import and instantiate it directly:
+You can use any [LangChain `BaseChatModel`](https://reference.langchain.com/python/langchain_core/language_models/#langchain_core.language_models.BaseChatModel) subclass using `class_path`. The CLI imports and instantiates the class directly — no built-in provider package required.
 
 ```toml
 [models.providers.my_custom]
@@ -237,7 +242,33 @@ temperature = 0
 max_tokens = 4096
 ```
 
-The package must be installed in the same Python environment as `deepagents-cli`:
+`api_key_env` and `base_url` are optional. `class_path` providers are expected to handle their own authentication internally — useful when your model uses custom auth (JWT tokens, proprietary headers, mTLS, etc.) rather than a standard API key:
+
+```toml
+[models.providers.xyz]
+class_path = "abc.integrations.deepagents:DeepAgentsXYZChat"
+models = ["abc-xyz-1"]
+
+[models.providers.xyz.params]
+bypass_auth = true
+temperature = 0
+```
+
+With this config, switch to the model with `/model xyz:abc-xyz-1` or `--model xyz:abc-xyz-1`.
+
+<Note>
+    Deep Agents requires **tool calling** support. If your custom model supports tool calling but the CLI doesn't know about it, declare it in the provider profile:
+
+    ```toml
+    [models.providers.xyz.profile]
+    tool_calling = true
+    max_input_tokens = 128000
+    ```
+
+    Set `max_input_tokens` to what your model supports to enable accurate context length tracking and auto-summarization.
+</Note>
+
+The provider package must be installed in the same Python environment as `deepagents-cli`:
 
 ```bash
 # If deepagents-cli was installed with uv tool:
