@@ -1,0 +1,141 @@
+---
+title: "Querit search integration"
+description: "Integrate with the Querit search tool using LangChain Python."
+---
+
+This guide shows how to use the **WebSearchTool** from Querit Search API with LangChain.
+
+## Installation
+
+First, install the Querit search package:
+
+```bash
+pip install langchain-querit
+```
+
+## Basic Usage
+
+Set your API key as an environment variable:
+
+```python
+import os
+os.environ["QUERIT_API_KEY"] = "your-querit-api-key"
+```
+
+Create a search tool:
+
+```python
+from langchain.tools import tool
+from langchain_websearch import WebSearchTool
+
+search_tool = WebSearchTool()
+
+@tool
+def querit_search(query: str) -> str:
+    """Search Querit for recent results."""
+    return search_tool._run(query)
+```
+
+Test the tool:
+
+```python
+querit_search.invoke("latest Python programming news")
+```
+
+## Advanced Configuration
+
+### Configuring Results Count
+
+```python
+# Configure to return specific number of results
+search_tool = WebSearchTool(num_results=5)
+
+@tool
+def querit_search_limited(query: str) -> str:
+    """Search Querit and return up to 5 results."""
+    return search_tool._run(query)
+```
+
+### Using in LangChain Agents
+
+```python
+from langchain.agents import initialize_agent, AgentType
+from langchain_openai import ChatOpenAI
+from langchain_websearch import WebSearchTool
+
+# Initialize LLM
+llm = ChatOpenAI(temperature=0)
+
+# Create web search tool
+search_tool = WebSearchTool(name="web_search", description="Search the web for information")
+
+# Initialize agent
+agent = initialize_agent(
+    tools=[search_tool],
+    llm=llm,
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    verbose=True
+)
+
+# Run the agent
+agent.run("What are the latest developments in AI research?")
+```
+
+### Tool Registration with LangChain
+
+```python
+from langchain.agents import load_tools
+from langchain_websearch import WebSearchTool
+
+# Create and register the tool
+search_tool = WebSearchTool()
+
+# Use with langchain tools
+tools = load_tools(["python_repl", "requests"], llm=llm)
+tools.append(search_tool)
+```
+
+## Configuration Options
+
+| Parameter | Description | Default | Range |
+| ----------- | ------------- | --------- | ------- |
+| `num_results` | Number of search results to return | 10 | 1-50 |
+| `region` | Search region/language | "en-US" | - |
+| `safe_search` | Enable safe search filtering | True | bool |
+
+## Example: Complete Agent Setup
+
+```python
+import os
+from langchain.agents import create_agent, AgentExecutor
+from langchain_openai import ChatOpenAI
+from langchain_websearch import WebSearchTool
+from langchain.agents import Tool
+
+# Set API keys
+os.environ["QUERIT_API_KEY"] = "your-querit-api-key"
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+
+# Initialize components
+llm = ChatOpenAI(temperature=0)
+web_search = WebSearchTool(num_results=5)
+
+# Create tools
+tools = [
+    Tool(
+        name="Web Search",
+        func=web_search._run,
+        description="Search the web for current information"
+    )
+]
+
+# Create agent
+agent = create_agent(
+    llm=llm,
+    tools=tools,
+    verbose=True
+)
+
+# Execute query
+agent.invoke("Find recent news about quantum computing")
+```
