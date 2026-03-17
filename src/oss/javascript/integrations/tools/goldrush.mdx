@@ -1,0 +1,184 @@
+---
+title: "GoldRush (Covalent) integration"
+description: "Integrate with GoldRush on-chain data tools using LangChain JavaScript — 36 blockchain endpoints covering token balances, NFTs, transactions, and more."
+---
+
+[GoldRush](https://goldrush.dev) by [Covalent](https://covalent.network) is a unified on-chain data API supporting 60+ blockchain networks. It provides structured access to token balances, NFT holdings, transaction histories, Bitcoin data, cross-chain queries, pricing, and gas data.
+
+The `@covalenthq/langchain-goldrush` package exposes all GoldRush endpoints as 36 production-ready LangChain `StructuredTool` instances with Zod-validated inputs, consistent JSON output envelopes, BigInt-safe serialization, and automatic retry logic.
+
+This guide provides a quick overview for getting started with the GoldRush toolkit. For detailed documentation, visit the [GoldRush API docs](https://goldrush.dev/docs).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Version |
+| :--- | :--- | :---: |
+| [GoldRushToolkit](https://github.com/dinxsh/goldrush-langchain) | [`@covalenthq/langchain-goldrush`](https://www.npmjs.com/package/@covalenthq/langchain-goldrush) | ![NPM - Version](https://img.shields.io/npm/v/@covalenthq/langchain-goldrush?style=flat-square&label=%20&) |
+
+### Tool features
+
+The toolkit ships **36 tools** across eight service groups:
+
+- **Cross-Chain** (3 tools): Address activity, multichain balances, multichain transactions
+- **Balance** (6 tools): Token holdings, historical balances, native balance, ERC20 transfers, portfolio history, token holders
+- **Transactions** (8 tools): Recent transactions, block details, time-bucketed transaction summaries
+- **NFTs** (3 tools): NFT inventory, collection info, ownership verification
+- **Security** (1 tool): Token approval tracking
+- **Bitcoin** (4 tools): Bitcoin transaction and balance history
+- **Pricing** (3 tools): Historical prices, spot rates, gas fees
+- **Utility** (8 tools): Chain info, block data, log events
+
+## Setup
+
+The integration lives in the `@covalenthq/langchain-goldrush` package:
+
+<CodeGroup>
+```bash npm
+npm install @covalenthq/langchain-goldrush @covalenthq/client-sdk @langchain/core zod
+```
+```bash yarn
+yarn add @covalenthq/langchain-goldrush @covalenthq/client-sdk @langchain/core zod
+```
+```bash pnpm
+pnpm add @covalenthq/langchain-goldrush @covalenthq/client-sdk @langchain/core zod
+```
+</CodeGroup>
+
+### Credentials
+
+Get a free API key at [goldrush.dev](https://goldrush.dev) and set it as an environment variable:
+
+```typescript
+process.env.GOLDRUSH_API_KEY = "YOUR_GOLDRUSH_API_KEY"
+```
+
+It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com/) for observability:
+
+```typescript
+process.env.LANGSMITH_TRACING="true"
+process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+## Instantiation
+
+Import and instantiate the `GoldRushToolkit` to get all 36 tools at once:
+
+```typescript
+import { GoldRushToolkit } from "@covalenthq/langchain-goldrush";
+
+const toolkit = new GoldRushToolkit({
+  apiKey: process.env.GOLDRUSH_API_KEY!,
+  // defaultQuoteCurrency: "USD",   // default: "USD"
+  // maxResponseSize: 32_000,       // max chars before truncation
+  // timeout: 30_000,               // per-request timeout in ms
+  // retries: 3,                    // retry count on 5xx errors
+  // services: ["balance", "nft"],  // optional: load a subset of services
+});
+
+const tools = toolkit.getTools();
+```
+
+### Use individual tools
+
+You can also import specific tool classes for tree-shaking:
+
+```typescript
+import { GoldRushClient, TokenBalancesTool } from "@covalenthq/langchain-goldrush";
+
+const client = new GoldRushClient({ apiKey: process.env.GOLDRUSH_API_KEY! });
+const tool = new TokenBalancesTool(client);
+```
+
+## Invocation
+
+### Invoke directly with args
+
+```typescript
+const toolkit = new GoldRushToolkit({ apiKey: process.env.GOLDRUSH_API_KEY! });
+const tools = toolkit.getTools();
+
+// Find a specific tool by name
+const tokenBalancesTool = tools.find(t => t.name === "goldrush_token_balances");
+
+const result = await tokenBalancesTool!.invoke({
+  chainName: "eth-mainnet",
+  address: "vitalik.eth",
+});
+
+const parsed = JSON.parse(result);
+// { tool: "goldrush_token_balances", success: true, timestamp: "...", data: {...} }
+```
+
+### Invoke with ToolCall
+
+```typescript
+const modelGeneratedToolCall = {
+  args: {
+    chainName: "eth-mainnet",
+    address: "vitalik.eth",
+  },
+  id: "1",
+  name: "goldrush_token_balances",
+  type: "tool_call",
+};
+
+await tokenBalancesTool!.invoke(modelGeneratedToolCall);
+```
+
+## Use within an agent
+
+Here's a complete example using GoldRush tools in a LangGraph agent:
+
+```typescript
+import { GoldRushToolkit } from "@covalenthq/langchain-goldrush";
+import { ChatOpenAI } from "@langchain/openai";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+
+const toolkit = new GoldRushToolkit({ apiKey: process.env.GOLDRUSH_API_KEY! });
+
+const agent = createReactAgent({
+  llm: new ChatOpenAI({ model: "gpt-4o" }),
+  tools: toolkit.getTools(),
+});
+
+const result = await agent.invoke({
+  messages: [
+    {
+      role: "user",
+      content: "What tokens does vitalik.eth hold on Ethereum mainnet?",
+    },
+  ],
+});
+
+console.log(result.messages[result.messages.length - 1].content);
+```
+
+### Use only specific services
+
+Load a targeted subset of tools to reduce context window usage:
+
+```typescript
+const toolkit = new GoldRushToolkit({
+  apiKey: process.env.GOLDRUSH_API_KEY!,
+  services: ["balance", "transaction"], // 14 tools instead of 36
+});
+```
+
+## Agents
+
+For guides on how to use LangChain tools in agents, see the [LangGraph.js](https://langchain-ai.github.io/langgraphjs/how-tos/#tool-calling) docs.
+
+---
+
+## API reference
+
+For detailed documentation of all GoldRush API endpoints:
+
+- [GoldRush API docs](https://goldrush.dev/docs)
+- [Package source on GitHub](https://github.com/dinxsh/goldrush-langchain)
+
+## Related
+
+[Tool docs](/oss/langchain/tools)
