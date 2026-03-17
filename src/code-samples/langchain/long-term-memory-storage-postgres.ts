@@ -11,6 +11,15 @@ const DB_URI =
 const store = PostgresStore.fromConnString(DB_URI, {
   index: { embed, dims: 2 },
 });
+// :remove-start:
+// Drop tables from prior runs (Python samples use different schema; CI shares one DB)
+await (
+  store as { core: { pool: { query: (q: string) => Promise<unknown> } } }
+).core.pool.query(
+  "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE;",
+);
+await store.setup();
+// :remove-end:
 
 const userId = "my-user";
 const applicationContext = "chitchat";

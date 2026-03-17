@@ -36,9 +36,10 @@ from pathlib import Path
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-key")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from conftest import get_postgres_uri
+from conftest import get_postgres_uri, prepare_postgres_store
 
 DB_URI = get_postgres_uri()
+prepare_postgres_store(DB_URI)
 # :remove-end:
 
 with PostgresStore.from_conn_string(DB_URI) as store:

@@ -89,3 +89,23 @@ def get_postgres_uri() -> str:
 
     # Fall back to default (assumes postgres is running locally)
     return "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+
+
+def prepare_postgres_store(uri: str) -> None:
+    """Drop existing store tables so setup() creates a fresh schema.
+
+    Use before PostgresStore.from_conn_string when tests share a database
+    (e.g. CI) and may see leftover tables from a different schema version.
+    """
+    try:
+        import psycopg
+
+        with psycopg.connect(uri, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DROP TABLE IF EXISTS public.store_vectors CASCADE; "
+                    "DROP TABLE IF EXISTS public.store CASCADE; "
+                    "DROP TABLE IF EXISTS public.store_migrations CASCADE;"
+                )
+    except Exception:
+        pass  # Ignore if tables don't exist or connection fails
