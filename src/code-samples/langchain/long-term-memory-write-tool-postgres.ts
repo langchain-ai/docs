@@ -4,6 +4,7 @@ import { tool, createAgent, type ToolRuntime } from "langchain";
 import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
 
 const DB_URI =
+  process.env.POSTGRES_URI ??
   "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
 const store = PostgresStore.fromConnString(DB_URI);
 

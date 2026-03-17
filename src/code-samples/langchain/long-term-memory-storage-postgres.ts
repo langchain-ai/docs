@@ -6,6 +6,7 @@ const embed = (texts: string[]): number[][] => {
 };
 
 const DB_URI =
+  process.env.POSTGRES_URI ??
   "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
 const store = PostgresStore.fromConnString(DB_URI, {
   index: { embed, dims: 2 },
