@@ -7,7 +7,10 @@ utilities to work with environment-configured postgres.
 
 import os
 import subprocess
+import sys
 import time
+
+_DEFAULT_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
 
 
 def get_postgres_uri() -> str:
@@ -16,7 +19,8 @@ def get_postgres_uri() -> str:
     Tries multiple approaches in order:
     1. Check POSTGRES_URI environment variable
     2. Attempt to use testcontainers to spin up postgres
-    3. Fall back to default local postgres connection
+    3. Try docker directly
+    4. Fall back to default local postgres connection
     """
     # Check environment variable first
     if env_uri := os.environ.get("POSTGRES_URI"):
@@ -39,7 +43,7 @@ def get_postgres_uri() -> str:
 
         return get_postgres_uri._container.get_connection_url()  # type: ignore[attr-defined]
     except ImportError:
-        pass
+        print("conftest: testcontainers not installed, trying docker", file=sys.stderr)
 
     # Try to use docker directly if testcontainers not available
     try:
@@ -83,12 +87,23 @@ def get_postgres_uri() -> str:
             # Give it time to start
             time.sleep(3)
 
-        return "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
-    except (subprocess.SubprocessError, FileNotFoundError):
-        pass
+        return _DEFAULT_URI
+    except FileNotFoundError:
+        print("conftest: docker not found, using default URI", file=sys.stderr)
+    except subprocess.TimeoutExpired as e:
+        print(
+            f"conftest: docker timed out after {e.timeout}s, using default URI",
+            file=sys.stderr,
+        )
+    except subprocess.CalledProcessError as e:
+        print(
+            f"conftest: docker failed (exit {e.returncode}), using default URI",
+            file=sys.stderr,
+        )
 
     # Fall back to default (assumes postgres is running locally)
-    return "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+    print(f"conftest: falling back to default URI: {_DEFAULT_URI}", file=sys.stderr)
+    return _DEFAULT_URI
 
 
 def prepare_postgres_store(uri: str) -> None:
@@ -97,9 +112,9 @@ def prepare_postgres_store(uri: str) -> None:
     Use before PostgresStore.from_conn_string when tests share a database
     (e.g. CI) and may see leftover tables from a different schema version.
     """
-    try:
-        import psycopg
+    import psycopg
 
+    try:
         with psycopg.connect(uri, autocommit=True) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -107,5 +122,7 @@ def prepare_postgres_store(uri: str) -> None:
                     "DROP TABLE IF EXISTS public.store CASCADE; "
                     "DROP TABLE IF EXISTS public.store_migrations CASCADE;"
                 )
-    except Exception:
-        pass  # Ignore if tables don't exist or connection fails
+    except psycopg.OperationalError as e:
+        print(f"conftest: could not connect to clean tables: {e}", file=sys.stderr)
+    except psycopg.Error as e:
+        print(f"conftest: failed to drop store tables: {e}", file=sys.stderr)
