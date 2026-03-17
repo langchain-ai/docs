@@ -7,7 +7,7 @@ from langgraph.store.postgres import PostgresStore  # type: ignore[import-not-fo
 
 def embed(texts: Sequence[str]) -> list[list[float]]:
     # Replace with an actual embedding function or LangChain embeddings object
-    return [[1.0, 2.0] * len(texts)]
+    return [[1.0, 2.0] for _ in texts]
 
 
 DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
