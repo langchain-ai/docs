@@ -18,8 +18,8 @@ await (
 ).core.pool.query(
   "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE;",
 );
-await store.setup();
 // :remove-end:
+await store.setup();
 
 const userId = "my-user";
 const applicationContext = "chitchat";

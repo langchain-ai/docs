@@ -5,6 +5,7 @@ import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
 const DB_URI =
   "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
 const store = PostgresStore.fromConnString(DB_URI);
+await store.setup();
 
 const agent = createAgent({
   model: "claude-sonnet-4-6",
