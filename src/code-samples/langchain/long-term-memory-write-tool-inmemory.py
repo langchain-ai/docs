@@ -54,14 +54,7 @@ item = store.get(("users",), "user_123")
 # :snippet-end:
 
 # :remove-start:
-assert item is not None  # Exists after agent invocation above
-item.value
-import os
-
 if __name__ == "__main__":
-    # Set a dummy API key for testing
-    os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-key")
-
     # Test by putting data directly into the store
     store.put(("users",), "user_123", {"name": "John Smith"})
 

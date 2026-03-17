@@ -55,12 +55,7 @@ agent.invoke(
 # :snippet-end:
 
 # :remove-start:
-import os
-
 if __name__ == "__main__":
-    # Set a dummy API key for testing
-    os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-key")
-
     # Verify the store has the data
     result = store.get(("users",), "user_123")
     assert result is not None
