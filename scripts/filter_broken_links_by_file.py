@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Filter mint broken-links output to only include blocks for specified files.
+
 Reads from stdin, writes to stdout.
 Usage: mint broken-links 2>&1 | python filter_broken_links_by_file.py [pattern1 pattern2 ...]
 Patterns match if the build path (e.g. langsmith/admin.mdx) contains the pattern.
