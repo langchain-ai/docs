@@ -819,6 +819,7 @@ class DocumentationBuilder:
     # Maps npm dist filenames to their output names in build/snippets/
     _NPM_SNIPPET_FILES: ClassVar[dict[str, str]] = {
         "PatternEmbed.jsx": "pattern-embed.jsx",
+        "ExampleEmbed.jsx": "example-embed.jsx",
     }
 
     def _copy_npm_snippets(self) -> None:
