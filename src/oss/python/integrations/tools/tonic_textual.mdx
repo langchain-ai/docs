@@ -1,9 +1,9 @@
 ---
 title: "Tonic Textual integration"
-description: "Detect and transform PII in text, JSON, HTML, and files using Tonic Textual and LangChain Python."
+description: "Detect, extract, and transform PII in text, JSON, HTML, and files using Tonic Textual and LangChain Python."
 ---
 
-[Tonic Textual](https://textual.tonic.ai) is a PII detection and transformation platform. The `langchain-textual` integration provides tools to find sensitive data—names, emails, addresses, and more—in text, JSON, HTML, and files, then synthesize it with realistic fake values or tokenize it with reversible placeholders.
+[Tonic Textual](https://textual.tonic.ai) is a PII detection and transformation platform. The `langchain-textual` integration provides tools to find sensitive data—names, emails, addresses, and more—in text, JSON, HTML, and files. Extract the raw entities for auditing or custom logic, synthesize them with realistic fake values, or tokenize them with reversible placeholders.
 
 ## Overview
 
@@ -11,14 +11,15 @@ description: "Detect and transform PII in text, JSON, HTML, and files using Toni
 
 | Class | Package | Serializable | [JS support](/oss/integrations/tools/tonic_textual) | Version |
 | :--- | :--- | :---: | :---: | :---: |
-| `TonicTextualRedactText`, `TonicTextualRedactJson`, `TonicTextualRedactHtml`, `TonicTextualRedactFile`, `TonicTextualPiiTypes` | [langchain-textual](https://pypi.org/project/langchain-textual/) | N/A | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-textual?style=flat-square&label=%20) |
+| `TonicTextualExtractEntities`, `TonicTextualRedactText`, `TonicTextualRedactJson`, `TonicTextualRedactHtml`, `TonicTextualRedactFile`, `TonicTextualPiiTypes` | [langchain-textual](https://pypi.org/project/langchain-textual/) | N/A | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-textual?style=flat-square&label=%20) |
 
 ### Tool features
 
-- **`TonicTextualRedactText`**: Redact PII from plain text strings.
-- **`TonicTextualRedactJson`**: Redact PII from JSON data.
-- **`TonicTextualRedactHtml`**: Redact PII from HTML content.
-- **`TonicTextualRedactFile`**: Redact PII from files (PDF, JPG, PNG, CSV, TSV).
+- **`TonicTextualExtractEntities`**: Extract PII entities from plain text with type, value, location, and confidence score.
+- **`TonicTextualRedactText`**: Synthesize or tokenize PII in plain text strings.
+- **`TonicTextualRedactJson`**: Synthesize or tokenize PII in JSON data.
+- **`TonicTextualRedactHtml`**: Synthesize or tokenize PII in HTML content.
+- **`TonicTextualRedactFile`**: Synthesize or tokenize PII in files (PDF, JPG, PNG, CSV, TSV).
 - **`TonicTextualPiiTypes`**: List all supported PII entity types.
 
 ## Setup
@@ -57,6 +58,7 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ```python Initialize tools icon="robot"
 from langchain_textual import (
+    TonicTextualExtractEntities,
     TonicTextualRedactText,
     TonicTextualRedactJson,
     TonicTextualRedactHtml,
@@ -64,6 +66,7 @@ from langchain_textual import (
     TonicTextualPiiTypes,
 )
 
+extract_tool = TonicTextualExtractEntities()
 text_tool = TonicTextualRedactText()
 json_tool = TonicTextualRedactJson()
 html_tool = TonicTextualRedactHtml()
@@ -73,30 +76,41 @@ pii_types_tool = TonicTextualPiiTypes()
 
 ## Invocation
 
-### Redact plain text
+### Extract entities
 
-```python Redact text icon="rocket"
+Detect all PII entities in text and return them as a JSON array with type, value, location, and confidence:
+
+```python Extract entities icon="magnifying-glass"
+extract_tool.invoke("My name is John Smith and my email is john@example.com.")
+# '[{"label": "NAME_GIVEN", "text": "John", "start": 11, "end": 15, "score": 0.9}, ...]'
+```
+
+### Tokenize plain text
+
+Replace PII with reversible placeholder tokens:
+
+```python Tokenize text icon="rocket"
 text_tool.invoke("My name is John Smith and my email is john@example.com.")
 # "My name is [NAME_GIVEN_xxxx] [NAME_FAMILY_xxxx] and my email is [EMAIL_ADDRESS_xxxx]."
 ```
 
-### Redact JSON
+### Tokenize JSON
 
-```python Redact JSON icon="rocket"
+```python Tokenize JSON icon="rocket"
 json_tool.invoke('{"name": "John Smith", "email": "john@example.com"}')
 # '{"name": "[NAME_GIVEN_xxxx] [NAME_FAMILY_xxxx]", "email": "[EMAIL_ADDRESS_xxxx]"}'
 ```
 
-### Redact HTML
+### Tokenize HTML
 
-```python Redact HTML icon="rocket"
+```python Tokenize HTML icon="rocket"
 html_tool.invoke("<p>Contact John Smith at john@example.com</p>")
 # "<p>Contact [NAME_GIVEN_xxxx] [NAME_FAMILY_xxxx] at [EMAIL_ADDRESS_xxxx]</p>"
 ```
 
-### Redact files
+### Process files
 
-```python Redact a file icon="rocket"
+```python Process a file icon="rocket"
 file_tool.invoke({"file_path": "/path/to/scan.pdf"})
 # "/path/to/scan_redacted.pdf"
 ```
@@ -110,10 +124,10 @@ You can also invoke a tool with a model-generated `ToolCall`, in which case a @[
 model_generated_tool_call = {
     "args": {"text": "My SSN is 123-45-6789"},
     "id": "1",
-    "name": text_tool.name,
+    "name": extract_tool.name,
     "type": "tool_call",
 }
-text_tool.invoke(model_generated_tool_call)
+extract_tool.invoke(model_generated_tool_call)
 ```
 
 ## Configuration
@@ -173,6 +187,7 @@ Every tool in this package is a standard LangChain tool, so they work anywhere t
 
 ```python Agent with tools icon="robot"
 from langchain_textual import (
+    TonicTextualExtractEntities,
     TonicTextualRedactText,
     TonicTextualRedactJson,
     TonicTextualRedactFile,
@@ -182,6 +197,7 @@ from langchain.chat_models import init_chat_model
 llm = init_chat_model("claude-sonnet-4-6")
 
 tools = [
+    TonicTextualExtractEntities(),
     TonicTextualRedactText(),
     TonicTextualRedactJson(),
     TonicTextualRedactFile(),
@@ -192,7 +208,7 @@ from langgraph.prebuilt import create_react_agent
 agent = create_react_agent(llm, tools)
 
 events = agent.stream(
-    {"messages": [("user", "Redact PII from: My name is Jane Doe, email jane@example.com")]},
+    {"messages": [("user", "What PII is in: My name is Jane Doe, email jane@example.com")]},
     stream_mode="values",
 )
 
