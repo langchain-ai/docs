@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -11,6 +12,8 @@ import yaml
 from tqdm import tqdm
 
 from pipeline.preprocessors import preprocess_markdown
+
+_IS_CI = os.environ.get("CI", "").lower() in ("true", "1")
 
 logger = logging.getLogger(__name__)
 
@@ -502,6 +505,8 @@ class DocumentationBuilder:
             unit="file",
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
             dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
         ) as pbar:
             for file_path in existing_files:
                 result = self._build_file_with_progress(file_path, pbar)
@@ -550,6 +555,8 @@ class DocumentationBuilder:
             unit="file",
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
             dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from oss/ directory
@@ -627,6 +634,8 @@ class DocumentationBuilder:
             unit="file",
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
             dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from source directory
@@ -816,6 +825,7 @@ class DocumentationBuilder:
     # Maps npm dist filenames to their output names in build/snippets/
     _NPM_SNIPPET_FILES: ClassVar[dict[str, str]] = {
         "PatternEmbed.jsx": "pattern-embed.jsx",
+        "ExampleEmbed.jsx": "example-embed.jsx",
     }
 
     def _copy_npm_snippets(self) -> None:
