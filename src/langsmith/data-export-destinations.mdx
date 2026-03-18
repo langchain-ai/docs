@@ -17,6 +17,7 @@ This page covers:
 - The [configuration fields](#configuration-fields) needed to set up a destination.
 - Required bucket [permissions](#permissions-required) for AWS S3 and GCS.
 - How to [create a destination](#create-a-destination) via the API, including provider-specific examples and credential options.
+- How to [rotate destination credentials](#rotate-destination-credentials) without recreating the destination.
 - How to [debug destination errors](#debug-destination-errors).
 
 ## Configuration fields
@@ -223,6 +224,63 @@ curl --request POST \
     }
   }'
 ```
+
+## Rotate destination credentials
+
+Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}` to update the credentials on an existing destination. This lets you rotate or replace credentials without recreating the destination or its associated bulk exports. The destination configuration (bucket, prefix, region, endpoint, etc.) is unchanged—only the credentials are replaced.
+
+### Credential rotation behavior
+
+The changeover is not instantaneous:
+
+- **New bulk export runs** use the updated credentials immediately after the PATCH completes.
+- **Already running bulk export runs** continue using the previous credentials until they finish.
+- **Both sets of credentials are active simultaneously** during the transition period. This window lasts up to the maximum runtime of a single bulk export run.
+
+Plan your rotation accordingly: the old credentials must remain valid until all in-flight runs complete.
+
+### Request
+
+```bash
+curl --request PATCH \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations/{destination_id}' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "credentials": {
+      "access_key_id": "YOUR_NEW_ACCESS_KEY_ID",
+      "secret_access_key": "YOUR_NEW_SECRET_ACCESS_KEY"
+    }
+  }'
+```
+
+The `session_token` field is optional, which you can include for [temporary credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html).
+
+[**Required permission**](/langsmith/organization-workspace-operations): `WORKSPACES_MANAGE`
+
+Before storing new credentials, LangSmith validates them by performing a test write to the bucket using the existing destination configuration. The request fails with `400` if the credentials do not have sufficient write permissions. If the request fails, refer to [Debug destination errors](#debug-destination-errors).
+
+### Response
+
+Returns the updated destination object. Credential values are never returned—only the credential field names are included in the response under `credentials_keys`.
+
+```json
+{
+  "id": "destination-uuid",
+  "tenant_id": "tenant-uuid",
+  "created_at": "2025-01-01T00:00:00Z",
+  "updated_at": "2025-06-01T00:00:00Z",
+  "credentials_keys": ["access_key_id", "secret_access_key"]
+}
+```
+
+### Rotation checklist
+
+1. Provision new credentials in your cloud provider with write access to the destination bucket and prefix.
+1. Call the PATCH endpoint with the new credentials. LangSmith validates them before saving.
+1. Keep old credentials active until all in-flight bulk export runs finish (up to the [maximum run duration](/langsmith/data-export-monitor#automatic-retry-behavior)).
+1. Revoke old credentials once no runs are using them.
 
 ## Debug destination errors
 
