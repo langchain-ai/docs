@@ -1,0 +1,193 @@
+---
+title: "HuangtingFlux (Huangting Protocol MCP Server)"
+description: "Integrate with HuangtingFlux — a remote MCP server that reduces AI Agent token usage by 40% via a three-stage SOP workflow."
+---
+
+[HuangtingFlux](https://huangting.ai) is an open-source remote MCP server that enforces a three-stage Standard Operating Procedure (SOP) for AI Agents: **input compression** (`start_task`), **rolling summarization** (`report_step_result`), and **output refinement** (`finalize_and_report`). It reduces token consumption by 30–60% and appends a verifiable performance report to every task output.
+
+## Overview
+
+### Details
+
+| Feature | Value |
+| :--- | :--- |
+| **MCP Endpoint** | `https://mcp.huangting.ai/mcp` |
+| **Transport** | Streamable HTTP (MCP 2025-12-11) |
+| **Authentication** | None required (public access) |
+| **Package** | `langchain-mcp-adapters` |
+| **GitHub** | [XianDAO-Labs/huangting-flux-hub](https://github.com/XianDAO-Labs/huangting-flux-hub) |
+| **MCP Registry** | [io.github.XianDAO-Labs/huangting-flux](https://registry.modelcontextprotocol.io) |
+
+### Features
+
+- **Token compression**: `start_task` compresses verbose input prompts, saving 30–60% tokens at task start
+- **Rolling summarization**: `report_step_result` replaces full conversation history with a rolling summary after each step
+- **Output refinement**: `finalize_and_report` distills the final output and appends a verifiable performance table
+- **Network statistics**: `get_network_stats` returns real-time global stats (total agents, tokens saved, savings ratio)
+- No authentication required — plug in the endpoint URL and start saving tokens immediately
+
+---
+
+## Setup
+
+HuangtingFlux is a **remote MCP server** accessible via Streamable HTTP. No API key or account is needed.
+
+### Installation
+
+Install the LangChain MCP adapter:
+
+<CodeGroup>
+    ```bash pip
+    pip install langchain-mcp-adapters langchain-openai
+    ```
+    ```bash uv
+    uv add langchain-mcp-adapters langchain-openai
+    ```
+</CodeGroup>
+
+---
+
+## Quick Start
+
+### Connect and load tools
+
+```python Connect to HuangtingFlux icon="robot"
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+async def main():
+    client = MultiServerMCPClient(
+        {
+            "huangting": {
+                "transport": "http",
+                "url": "https://mcp.huangting.ai/mcp",
+            }
+        }
+    )
+
+    # Load the four HuangtingFlux tools:
+    # start_task, report_step_result, finalize_and_report, get_network_stats
+    tools = await client.get_tools()
+
+    model = ChatOpenAI(model="gpt-4o")
+    agent = create_react_agent(model, tools)
+
+    result = await agent.ainvoke({
+        "messages": [{
+            "role": "user",
+            "content": "Analyze the key differences between LangChain and CrewAI frameworks."
+        }]
+    })
+    print(result)
+
+asyncio.run(main())
+```
+
+### Stateful session (recommended for long tasks)
+
+For tasks that span multiple steps, use a stateful session to maintain `task_id` consistency across tool calls:
+
+```python Stateful session icon="flask"
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+async def main():
+    client = MultiServerMCPClient({
+        "huangting": {
+            "transport": "http",
+            "url": "https://mcp.huangting.ai/mcp",
+        }
+    })
+
+    async with client.session("huangting") as session:
+        tools = await load_mcp_tools(session)
+        model = ChatOpenAI(model="gpt-4o")
+        agent = create_react_agent(model, tools)
+
+        result = await agent.ainvoke({
+            "messages": [{
+                "role": "user",
+                "content": "Research the MCP protocol ecosystem and summarize key findings."
+            }]
+        })
+        print(result)
+
+asyncio.run(main())
+```
+
+### Multi-server mode (HuangtingFlux as SOP layer)
+
+Use HuangtingFlux alongside other MCP tool servers — it acts as the token-optimization SOP layer while other servers provide domain-specific tools:
+
+```python Multi-server icon="briefcase"
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+async def main():
+    client = MultiServerMCPClient({
+        "huangting": {
+            "transport": "http",
+            "url": "https://mcp.huangting.ai/mcp",
+            # No authentication required
+        },
+        # Add other MCP tool servers here
+        # "your_tools": {
+        #     "transport": "http",
+        #     "url": "https://your-tool-server.com/mcp",
+        #     "headers": {"Authorization": "Bearer YOUR_TOKEN"},
+        # },
+    })
+
+    tools = await client.get_tools()
+    model = ChatOpenAI(model="gpt-4o")
+    agent = create_react_agent(model, tools)
+
+    result = await agent.ainvoke({
+        "messages": [{"role": "user", "content": "Start a multi-step research task"}]
+    })
+    print(result)
+
+asyncio.run(main())
+```
+
+---
+
+## Tool Reference
+
+HuangtingFlux exposes four MCP tools:
+
+| Tool | Stage | Description |
+|------|-------|-------------|
+| `start_task` | 1 | Compresses input prompt; returns `task_id`, `compressed_brief`, `baseline_tokens` |
+| `report_step_result` | 2 | Generates rolling summary after each step; returns `rolling_summary`, `tokens_used_this_step` |
+| `finalize_and_report` | 3 | Refines final output; returns `refined_output` + verifiable performance table |
+| `get_network_stats` | — | Returns global stats: `total_reports`, `total_tokens_saved`, `average_savings_ratio` |
+
+### `task_type` parameter
+
+Pass `task_type` to `start_task` for optimized baseline calculation:
+
+| Value | Description | Avg. Savings |
+|-------|-------------|--------------|
+| `complex_research` | Deep research tasks | 55–65% |
+| `multi_agent_coordination` | Multi-agent workflows | 50–60% |
+| `code_generation` | Code generation | 40–50% |
+| `data_analysis` | Data analysis | 45–55% |
+| `writing` | Content writing | 35–45% |
+| `optimization` | Cost optimization | 40–50% |
+
+---
+
+## API Reference
+
+- **MCP Endpoint**: `https://mcp.huangting.ai/mcp`
+- **GitHub**: [XianDAO-Labs/huangting-flux-hub](https://github.com/XianDAO-Labs/huangting-flux-hub)
+- **MCP Registry**: [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io) — search `io.github.XianDAO-Labs/huangting-flux`
+- **Integration Guide**: [huangting.ai/integrations/langchain](https://huangting.ai/integrations/langchain)
