@@ -770,6 +770,7 @@ class DocumentationBuilder:
         if len(relative_path.parts) == 1 and file_path.name in {
             "index.mdx",
             "use-these-docs.mdx",
+            "playground.mdx",
         }:
             return True
 
