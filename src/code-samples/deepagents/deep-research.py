@@ -1,128 +1,75 @@
----
-title: Build a deep research agent
-sidebarTitle: Deep Research
-description: Build a multi-step web research agent with subagent delegation and strategic reflection
----
+"""Deep research agent with custom tools and subagent delegation."""
 
-import DeepResearchToolsPy from '/snippets/code-samples/deep-research-tools-py.mdx';
-import DeepResearchAgentClaudePy from '/snippets/code-samples/deep-research-agent-claude-py.mdx';
-import DeepResearchRunSyncPy from '/snippets/code-samples/deep-research-run-sync-py.mdx';
-import DeepResearchRunStreamPy from '/snippets/code-samples/deep-research-run-stream-py.mdx';
+# :snippet-start: deep-research-tools-py
+import os
 
-## Overview
+import httpx
+from langchain_core.tools import InjectedToolArg, tool
+from markdownify import markdownify
+from tavily import TavilyClient
+from typing_extensions import Annotated, Literal
 
-This guide demonstrates how to build a multi-step web research agent from scratch using [deep agents](/oss/deepagents). The agent decomposes research questions into focused tasks, delegates them to specialized sub-agents, and synthesizes findings into a comprehensive report.
+tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
-The agent you build will:
 
-1. Plan research using a todo list
-1. Delegate focused research tasks to sub-agents with isolated context
-1. Reflect between searches to assess progress and plan next steps
-1. Synthesize findings with proper citations into a final report
+def fetch_webpage_content(url: str, timeout: float = 10.0) -> str:
+    """Fetch webpage and convert HTML to markdown."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    try:
+        response = httpx.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        return markdownify(response.text)
+    except Exception as e:
+        return f"Error fetching {url}: {str(e)}"
 
-The spawned sub-agents will conduct web searches with Tavily, fetching full webpage content for analysis.
 
-### Key concepts
+@tool(parse_docstring=True)
+def tavily_search(
+    query: str,
+    max_results: Annotated[int, InjectedToolArg] = 1,
+    topic: Annotated[
+        Literal["general", "news", "finance"], InjectedToolArg
+    ] = "general",
+) -> str:
+    """Search the web for information on a given query.
 
-This tutorial covers:
+    Uses Tavily to discover relevant URLs, then fetches and returns full webpage content as markdown.
 
-- [Subagents](/oss/deepagents/subagents) for parallel, context-isolated research
-- Custom [tools](/oss/langchain/tools) for web search and strategic reflection
-- Multi-step planning with the [built-in planning tool](/oss/deepagents/harness#planning-capabilities)
+    Args:
+        query: Search query to execute
+        max_results: Maximum number of results to return (default: 1)
+        topic: Topic filter - 'general', 'news', or 'finance' (default: 'general')
 
-## Prerequisites
+    Returns:
+        Formatted search results with full webpage content
+    """
+    search_results = tavily_client.search(
+        query,
+        max_results=max_results,
+        topic=topic,
+    )
+    result_texts = []
+    for result in search_results.get("results", []):
+        url = result["url"]
+        title = result["title"]
+        content = fetch_webpage_content(url)
+        result_texts.append(f"## {title}\n**URL:** {url}\n\n{content}\n---")
 
-API keys for:
+    return f"Found {len(result_texts)} result(s) for '{query}':\n\n" + "\n".join(result_texts)
 
-- Anthropic (Claude) or Google (Gemini)
-- [Tavily](https://www.tavily.com/) for web search (free tier)
-- [LangSmith](https://smith.langchain.com/) for tracing (optional)
 
-## Setup
+@tool(parse_docstring=True)
+def think_tool(reflection: str) -> str:
+    """Strategic reflection on research progress. Use after each search to analyze results and plan next steps.
 
-:::python
-<Steps>
-<Step title="Create project directory">
+    Args:
+        reflection: Your reflection on findings, gaps, and whether to continue or conclude
+    """
+    return f"Reflection recorded: {reflection}"
+# :snippet-end:
 
-```bash
-mkdir deep-research-agent
-cd deep-research-agent
-```
-
-</Step>
-<Step title="Install dependencies">
-
-<Tabs>
-<Tab title="Claude">
-<CodeGroup>
-```bash pip wrap
-pip install deepagents tavily-python httpx markdownify langchain-anthropic langchain-core
-```
-
-```bash uv wrap
-uv init
-uv add deepagents tavily-python httpx markdownify langchain-anthropic langchain-core
-uv sync
-```
-</CodeGroup>
-</Tab>
-<Tab title="Gemini">
-<CodeGroup>
-```bash pip wrap
-pip install deepagents tavily-python httpx markdownify langchain-google-genai langchain-core
-```
-
-```bash uv wrap
-uv init
-uv add deepagents tavily-python httpx markdownify langchain-google-genai langchain-core
-uv sync
-```
-</CodeGroup>
-</Tab>
-</Tabs>
-
-</Step>
-<Step title="Set API keys">
-
-<Tabs>
-<Tab title="Claude">
-```bash
-export ANTHROPIC_API_KEY="your_anthropic_api_key"
-export TAVILY_API_KEY="your_tavily_api_key"
-export LANGSMITH_API_KEY="your_langsmith_api_key"   # Optional
-```
-</Tab>
-<Tab title="Gemini">
-```bash
-export GOOGLE_API_KEY="your_google_api_key"
-export TAVILY_API_KEY="your_tavily_api_key"
-export LANGSMITH_API_KEY="your_langsmith_api_key"   # Optional
-```
-</Tab>
-</Tabs>
-
-</Step>
-</Steps>
-:::
-
-## Build the agent
-
-Create `agent.py` in your project directory:
-
-<Steps>
-<Step title="Add tools">
-
-Add custom search and reflection tools. The `tavily_search` tool uses Tavily for URL discovery, then fetches full webpage content (converted to markdown) so the agent can analyze complete sources instead of summaries.
-The `think_tool` adds strategic reflection after each search—the agent uses it to analyze results, identify gaps, and decide whether to continue or conclude.
-
-<DeepResearchToolsPy />
-
-</Step>
-<Step title="Add prompts">
-
-Add the orchestrator workflow and sub-agent prompt templates to `agent.py`:
-
-```python expandable wrap
 RESEARCH_WORKFLOW_INSTRUCTIONS = """# Research Workflow
 
 Follow this workflow for all research requests:
@@ -186,9 +133,7 @@ Simply list items with details - no introduction needed:
  [1] AI Research Paper: https://example.com/paper
  [2] Industry Analysis: https://example.com/analysis
 """
-```
 
-```python expandable wrap
 RESEARCHER_INSTRUCTIONS = """You are a research assistant conducting research on the user's input topic. For context, today's date is {date}.
 
 Your job is to use tools to gather information about the user's input topic.
@@ -232,7 +177,6 @@ When providing your findings back to the orchestrator:
 
 Example:
 ## Key Findings
-
 Context engineering is a critical technique for AI agents [1]. Studies show that proper context management can improve performance by 40% [2].
 
 ### Sources
@@ -241,9 +185,7 @@ Context engineering is a critical technique for AI agents [1]. Studies show that
 
 The orchestrator will consolidate citations from all sub-agents into the final report.
 """
-```
 
-```python expandable wrap
 SUBAGENT_DELEGATION_INSTRUCTIONS = """# Sub-Agent Research Coordination
 
 Your role is to coordinate research by delegating tasks from your TODO list to specialized research sub-agents.
@@ -280,23 +222,12 @@ Your role is to coordinate research by delegating tasks from your TODO list to s
 - Stop after {max_researcher_iterations} delegation rounds if you haven't found adequate sources
 - Stop when you have sufficient information to answer comprehensively
 - Bias towards focused research over exhaustive exploration"""
-```
 
-</Step>
-<Step title="Create the agent">
-
-Add the model initialization and agent creation to `agent.py`. Choose your provider:
-
-<Tabs>
-<Tab title="Claude">
-<DeepResearchAgentClaudePy />
-</Tab>
-<Tab title="Gemini">
-```python
+# :snippet-start: deep-research-agent-claude-py
 from datetime import datetime
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from deepagents import create_deep_agent
+from langchain.chat_models import init_chat_model
 
 max_concurrent_research_units = 3
 max_researcher_iterations = 3
@@ -321,7 +252,7 @@ research_sub_agent = {
     "tools": [tavily_search, think_tool],
 }
 
-model = ChatGoogleGenerativeAI(model="gemini-3-pro-preview", temperature=0.0)
+model = init_chat_model(model="anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
 
 agent = create_deep_agent(
     model=model,
@@ -329,51 +260,55 @@ agent = create_deep_agent(
     system_prompt=INSTRUCTIONS,
     subagents=[research_sub_agent],
 )
-```
-</Tab>
-</Tabs>
+# :snippet-end:
 
-</Step>
-</Steps>
 
-## Run the agent
+# :snippet-start: deep-research-run-sync-py
+if __name__ == "__main__":
+    from langchain_core.messages import HumanMessage
 
-You can run the agent synchronously, meaning it will wait for the full result and then print it, or you can stream updates as they come in.
-Add the code from the respective tab at the bottom of `agent.py`:
+    result = agent.invoke({
+        "messages": [
+            HumanMessage(content="What are the main differences between RAG and fine-tuning for LLM applications?")
+        ]
+    })
 
-<Tabs>
-<Tab title="Run synchronously" value="sync">
+    for msg in result.get("messages", []):
+        if hasattr(msg, "content") and msg.content:
+            print(msg.content)
+# :snippet-end:
 
-<DeepResearchRunSyncPy />
+# :snippet-start: deep-research-run-stream-py
+if __name__ == "__main__":
+    from langchain_core.messages import HumanMessage
+    from langgraph.types import Overwrite
 
-</Tab>
-<Tab title="Stream updates" value="stream">
+    for chunk in agent.stream(
+        {"messages": [HumanMessage(content="Compare Python vs JavaScript for web development")]},
+        stream_mode="updates",
+    ):
+        for node, update in chunk.items():
+            if messages := update.get("messages"):
+                msg_list = messages.value if isinstance(messages, Overwrite) else messages
+                for msg in msg_list:
+                    if hasattr(msg, "content") and msg.content:
+                        print(msg.content)
+# :snippet-end:
 
-<DeepResearchRunStreamPy />
 
-</Tab>
-</Tabs>
-
-Run the agent from the project root:
-
-```sh
-python agent.py
-```
-
-If you set the `LANGSMITH_API_KEY` environment variable before running, you can view the agent's traces in [LangSmith](/langsmith/home) to debug and monitor multi-step behavior.
-
-## Full code
-
-View the complete [Deep Research example](https://github.com/langchain-ai/deepagents/tree/main/examples/deep_research) on GitHub.
-
-## Next steps
-
-Now that you've built the agent, customize it by changing the prompt constants in `agent.py` to adjust the workflow, delegation strategy, or researcher behavior.
-You can also tune the delegation limits to allow for more parallel sub-agents or delegation rounds.
-
-For more information on the concepts in this tutorial, check out the following resources:
-
-- [Subagents](/oss/deepagents/subagents): Learn how to configure subagents with different tools and prompts
-- [Customization](/oss/deepagents/customization): Customize models, tools, system prompts, and planning behavior
-- [LangSmith](/langsmith/home): Trace research runs and debug multi-step behavior
-- [Deep Research Course](https://academy.langchain.com/courses/deep-research-with-langgraph): Full course on deep research with LangGraph
+# :remove-start:
+if __name__ == "__main__":
+    # Test that components are defined correctly
+    assert tavily_search.name == "tavily_search"
+    assert think_tool.name == "think_tool"
+    assert len(RESEARCH_WORKFLOW_INSTRUCTIONS) > 0
+    assert len(RESEARCHER_INSTRUCTIONS) > 0
+    assert len(SUBAGENT_DELEGATION_INSTRUCTIONS) > 0
+    assert len(INSTRUCTIONS) > 0
+    assert research_sub_agent is not None
+    assert model is not None
+    assert agent is not None
+    assert hasattr(agent, "invoke")
+    assert hasattr(agent, "stream")
+    print("✓ Deep research agent components defined correctly")
+# :remove-end:
