@@ -425,6 +425,7 @@ LINK_MAPS: list[LinkMap] = [
             "ls.logFeedback": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#logFeedback",
             "Client.listExamples": "https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#listexamples",
             "Example": "https://reference.langchain.com/javascript/interfaces/langsmith.Example.html",
+            "useStream": "https://reference.langchain.com/javascript/langchain-react/index/useStream",
         },
     },
     {
@@ -584,6 +585,7 @@ LINK_MAPS: list[LinkMap] = [
             "listRuns": "langsmith/client/Client/listRuns",
             "Client.listExamples": "classes/langsmith.client.Client.html#listexamples",
             "Example": "langchain-core/prompts/Example",
+            "useStream": "langchain-react/index/useStream",
         },
     },
     {
