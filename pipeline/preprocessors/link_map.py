@@ -129,6 +129,8 @@ LINK_MAPS: list[LinkMap] = [
             "ChatAnthropic.get_num_tokens_from_messages": "langchain-anthropic/chat_models/ChatAnthropic/get_num_tokens_from_messages",
             "AnthropicLLM": "langchain-anthropic/llms/AnthropicLLM",
             "AnthropicPromptCachingMiddleware": "langchain-anthropic/middleware/prompt_caching/AnthropicPromptCachingMiddleware",
+            # langchain-aws
+            "BedrockPromptCachingMiddleware": "langchain-aws/middleware/prompt_caching/BedrockPromptCachingMiddleware",
             # langchain-google
             "langchain-google": "integrations/langchain_google",
             "langchain-google-genai": "langchain-google-genai/",
@@ -145,6 +147,9 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-groq
             "langchain-groq": "langchain-groq/",
             "ChatGroq": "langchain-groq/chat_models/ChatGroq",
+            # langchain-fireworks
+            "langchain-fireworks": "langchain-fireworks/",
+            "ChatFireworks": "langchain-fireworks/chat_models/ChatFireworks",
             # langchain-deepseek
             "langchain-deepseek": "langchain-deepseek/",
             "ChatDeepSeek": "langchain-deepseek/chat_models/ChatDeepSeek",
@@ -173,6 +178,7 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.with_retry": "langchain_core/language_models/#langchain_core.language_models.BaseChatModel.with_retry",
             # ??
             "ChatPromptTemplate": "langchain-core/prompts/chat/ChatPromptTemplate",
+            "GenericFakeChatModel": "langchain-core/language_models/fake_chat_models/GenericFakeChatModel",
             # Tools
             "@tool": "langchain-core/tools/convert/tool",
             "BaseTool": "langchain-core/tools/base/BaseTool",
@@ -215,6 +221,9 @@ LINK_MAPS: list[LinkMap] = [
             "expect": "langsmith/observability/sdk/expect/",
             "Client": "langsmith/client/Client",
             "Client.evaluate": "langsmith/client/Client/evaluate",
+            "list_threads": "langsmith/client/Client/list_threads",
+            "read_thread": "langsmith/client/Client/read_thread",
+            "list_runs": "langsmith/client/Client/list_runs",
             "Client.aevaluate": "langsmith/client/Client/aevaluate",
             "Client.get_experiment_results": "langsmith/client/Client/get_experiment_results",
             "ExperimentResults": "langsmith/schemas/ExperimentResults",
@@ -238,6 +247,7 @@ LINK_MAPS: list[LinkMap] = [
             "RemoteGraph": "langgraph/pregel/remote/RemoteGraph",
             "RemoteGraph.as_tool": "langsmith/deployment/remote_graph/#langgraph.pregel.remote.RemoteGraph.as_tool",
             "get_stream_writer": "langgraph/config/get_stream_writer",
+            "get_state": "langgraph/graphs/#langgraph.graph.state.CompiledStateGraph.get_state",
             "StateGraph": "langgraph/graph/state/StateGraph",
             "StateGraph.compile": "langgraph/graph/state/StateGraph/compile",
             "add_edge": "langgraph/pregel/_draw/add_edge",
@@ -271,7 +281,10 @@ LINK_MAPS: list[LinkMap] = [
             "SqliteSaver": "langgraph/checkpoints/#langgraph.checkpoint.sqlite.SqliteSaver",
             "JsonPlusSerializer": "langgraph/checkpoints/#langgraph.checkpoint.serde.jsonplus.JsonPlusSerializer",
             "PostgresSaver": "langgraph/checkpoints/#langgraph.checkpoint.postgres.PostgresSaver",
+            "CosmosDBSaver": "langgraph-checkpoint-cosmosdb/",
+            "AsyncCosmosDBSaver": "langgraph-checkpoint-cosmosdb/",
             "PostgresStore": "langgraph/store/#langgraph.store.postgres.PostgresStore",
+            "AsyncSqliteStore": "langgraph/store/#langgraph.store.sqlite.AsyncSqliteStore",
             "create_react_agent": "langchain-classic/agents/react/agent/create_react_agent",
             "LastValue": "langgraph/channels/last_value/LastValue",
             "START": "langgraph/constants/START",
@@ -280,6 +293,15 @@ LINK_MAPS: list[LinkMap] = [
             "Pregel.stream": "langgraph/pregel/#langgraph.pregel.Pregel.stream",
             "Runtime": "langgraph/runtime/Runtime",
             "Send": "langgraph/types/Send",
+            "GraphOutput": "langgraph/types/GraphOutput",
+            "StreamPart": "langgraph/types/StreamPart",
+            "ValuesStreamPart": "langgraph/types/ValuesStreamPart",
+            "UpdatesStreamPart": "langgraph/types/UpdatesStreamPart",
+            "MessagesStreamPart": "langgraph/types/MessagesStreamPart",
+            "CustomStreamPart": "langgraph/types/CustomStreamPart",
+            "CheckpointStreamPart": "langgraph/types/CheckpointStreamPart",
+            "TasksStreamPart": "langgraph/types/TasksStreamPart",
+            "DebugStreamPart": "langgraph/types/DebugStreamPart",
             "Topic": "langgraph/channels/topic/Topic",
             # LangSmith Deployment SDK
             # Main client
@@ -388,6 +410,8 @@ LINK_MAPS: list[LinkMap] = [
             "StdioConnection": "langchain-mcp-adapters/sessions/StdioConnection",
             "StreamableHttpConnection": "langchain-mcp-adapters/sessions/StreamableHttpConnection",
             "WebsocketConnection": "langchain-mcp-adapters/sessions/WebsocketConnection",
+            # JS-only references added here for cross-scope compatibility
+            "createAgent": "https://reference.langchain.com/javascript/langchain/index/createAgent",
             # LangSmith SDK - Vitest/Jest references (JS-only, but added here for cross-scope compatibility)
             "langsmith.vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
             "langsmith/vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
@@ -487,6 +511,7 @@ LINK_MAPS: list[LinkMap] = [
             "Command": "langchain-langgraph/index/Command",
             "CompiledStateGraph": "langchain-langgraph/index/CompiledStateGraph",
             "createAgent": "langchain/index/createAgent",
+            "fakeModel": "langchain/index/fakeModel",
             "createDeepAgent": "deepagents/agent/createDeepAgent",
             "createMiddleware": "langchain/index/createMiddleware",
             "createReactAgent": "langchain-langgraph/prebuilt/createReactAgent",
@@ -494,6 +519,7 @@ LINK_MAPS: list[LinkMap] = [
             "entrypoint": "langchain-langgraph/index/entrypoint",
             "entrypoint.final": "functions/_langchain_langgraph.index.entrypoint.html#final",
             "get_state_history": "classes/_langchain_langgraph.pregel.Pregel.html#getStateHistory",
+            "get_state": "classes/_langchain_langgraph.pregel.Pregel.html#getState",
             "getStateHistory": "classes/_langchain_langgraph.pregel.Pregel.html#getStateHistory",
             "HumanInterrupt": "langchain-langgraph/prebuilt/HumanInterrupt",
             "interrupt": "langchain-langgraph/index/interrupt",
@@ -510,6 +536,12 @@ LINK_MAPS: list[LinkMap] = [
             "updateState": "classes/_langchain_langgraph.pregel.Pregel.html#updateState",
             "Runtime": "langchain/index/Runtime",
             "ToolNode": "langchain-langgraph/prebuilt/ToolNode",
+            # Python-named aliases for cross-scope compatibility
+            "create_agent": "langchain/index/createAgent",
+            "init_chat_model": "langchain/chat_models/universal/initChatModel",
+            "tools_condition": "langchain-langgraph/prebuilt/toolsCondition",
+            "ToolRuntime": "langchain/index/Runtime",
+            "RunnableLambda": "langchain-core/runnables/RunnableLambda",
             # LangSmith Deployment SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
@@ -547,6 +579,9 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith/jest": "modules/langsmith.jest.html",
             "wrapJest": "langsmith/jest/wrapJest",
             # LangSmith SDK - Core client references
+            "listThreads": "langsmith/client/Client/listThreads",
+            "readThread": "langsmith/client/Client/readThread",
+            "listRuns": "langsmith/client/Client/listRuns",
             "Client.listExamples": "classes/langsmith.client.Client.html#listexamples",
             "Example": "langchain-core/prompts/Example",
         },
