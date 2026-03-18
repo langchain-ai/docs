@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
 from langchain_core.runnables import Runnable
-from langgraph.store.postgres import PostgresStore
+from langgraph.store.postgres import PostgresStore  # type: ignore[import-not-found]
 
 
 @dataclass
