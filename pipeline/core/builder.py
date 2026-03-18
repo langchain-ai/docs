@@ -61,6 +61,7 @@ class DocumentationBuilder:
             ".woff2",
             ".woff",
             ".ttf",
+            ".html",
         }
 
         # Mapping of language codes to full names for URLs
