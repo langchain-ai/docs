@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "src/code-samples/**"
+      - ".github/workflows/test-code-samples.yml"
   schedule:
     # Run every Sunday at 00:00 UTC
     - cron: "0 0 * * 0"
@@ -20,6 +21,19 @@ jobs:
   test-code-samples:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -67,10 +81,33 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if python3 -c "
+          import socket
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.settimeout(2)
+          try:
+            s.connect(('127.0.0.1', 5432))
+            s.close()
+          except OSError:
+            exit(1)
+          "; then
+              echo "PostgreSQL is ready"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/30)"
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready"
+          exit 1
+
       - name: Test code samples
         id: test
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          POSTGRES_URI: postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
         run: |
           if [[ "${{ steps.files.outputs.run_all }}" == "true" ]]; then
             echo "Running all code samples..."
