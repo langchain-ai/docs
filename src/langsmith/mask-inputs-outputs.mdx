@@ -10,7 +10,7 @@ When working with LangSmith traces, you may need to prevent sensitive informatio
 - [Apply rule-based masking](#rule-based-masking-of-inputs-and-outputs) with regex patterns or anonymization libraries to selectively redact sensitive information.
 - [Process inputs and outputs for individual functions](#processing-inputs-and-outputs-for-a-single-function) with function-level customization.
 - [Use third-party anonymizers](#examples) like Microsoft Presidio and Amazon Comprehend for advanced PII detection.
-- [Batch process run operations](#batch-processing-for-high-throughput-masking) to apply expensive masking logic across groups of runs at once, avoiding per-run overhead.
+- [Batch process run operations](#batch-processing-for-high-throughput-masking) to apply expensive masking logic across groups of runs at once, avoiding per-run overhead. Processing runs in a background thread so it doesn't block your application.
 
 <Note>
 If your compliance or privacy requirements mandate that certain operations should never be traced at all (for example, clients with zero-retention policies), consider using [conditional tracing](/langsmith/conditional-tracing) to disable tracing selectively for specific requests instead of masking data.
@@ -776,6 +776,32 @@ Your function receives the batch as a list of raw run dicts and must return a li
 <Warning>
 The buffer only flushes automatically when the size limit is reached or the timeout elapses. Always call `client.flush()` before your program exits to avoid dropping buffered runs.
 </Warning>
+
+Each run dict in the batch is either a create operation (with `inputs`, sent when the run starts) or an update operation (with `outputs`, sent when it ends). Here's what a typical pair looks like for a single traced call:
+
+```json
+# Create op — sent when the run starts
+{
+    "id": "018f1b2c-...",
+    "name": "my_llm_call",
+    "run_type": "llm",
+    "inputs": {"messages": [{"role": "user", "content": "My name is Jane Smith..."}]},
+    "start_time": "2024-01-01T00:00:00.000Z",
+    "trace_id": "018f1b2c-...",
+    "dotted_order": "20240101T000000000000Z018f1b2c-...",
+    "extra": {"metadata": {}, "runtime": {...}},
+    "session_name": "default",
+}
+
+# Update op — sent when the run ends (same id, adds outputs)
+{
+    "id": "018f1b2c-...",
+    "outputs": {"choices": [{"message": {"role": "assistant", "content": "Hello Jane..."}}]},
+    "end_time": "2024-01-01T00:00:01.000Z",
+    "trace_id": "018f1b2c-...",
+    "dotted_order": "20240101T000000000000Z018f1b2c-...",
+}
+```
 
 The following example uses Comprehend's [`batch_detect_pii_entities` endpoint](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_BatchDetectEntities.html), which accepts up to 25 texts per call. With the per-run approach (`hide_inputs`) you would make one API call per run. Here, all message texts across the entire buffer are gathered first, then sent to Comprehend in chunks of 25, which results in significantly fewer API calls at high throughput.
 
