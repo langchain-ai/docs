@@ -813,6 +813,8 @@ def get_message_count(runtime: ToolRuntime) -> str:
 ```
 :::
 
+For more details on accessing state, context, and long-term memory from tools, see [Access context](#access-context).
+
 ## Dynamic tool selection
 
 With dynamic tools, the set of tools available to the agent is modified at runtime rather than defined all upfront. Not every tool is appropriate for every situation. Too many tools may overwhelm the model (overload context) and increase errors; too few limit capabilities. Dynamic tool selection enables adapting the available toolset based on authentication state, user permissions, feature flags, or conversation stage.
@@ -1235,6 +1237,181 @@ There are two approaches depending on whether tools are known ahead of time:
 
   </Tab>
 </Tabs>
+
+## Headless tools
+
+Some tools should run **where your user's app runs** (typically the browser), not inside the process. **Headless tools** are tool definitions, e.g. name, description, and argument schema, that you register on the **server** with your agent, while the **implementation** is registered only on the **client** and executed after a short interrupt/resume handshake.
+
+This is different from ordinary tools whose function body runs on the server, and from [server-side tool use](#server-side-tool-use) where the model provider executes built-in tools remotely.
+
+### When to use headless tools
+
+Use them when the work depends on **environment, device, or UI** that only exists on the client:
+
+- **Browser APIs:** Geolocation, IndexedDB, Clipboard, Canvas 2D, file pickers, Battery API, etc.
+- **Privacy and locality:** Data stays on the device (for example local “memory” in IndexedDB).
+- **Latency:** No extra server round trip for purely local operations.
+- **Structured, safe effects:** Prefer many small, typed tools (for example one tool per canvas primitive) instead of sending arbitrary code to `eval`.
+
+### How the pattern works
+
+1. **Define** the tool with `tool({ name, description, schema })` from `langchain`, metadata and validation only, no server-side runner.
+2. **Implement** the real behavior with `.implement(async (args) => { ... })`, which returns a **headless tool implementation** (definition + `execute` function).
+
+:::python
+    <Info>
+        There is no `.implement()` API for this pattern in Python. If your agent is defined in Python, you must **redefine** each headless tool on the **frontend**.
+    </Info>
+:::
+:::js
+    <Info>
+        Put **tool definitions** (`tool({ name, description, schema })`) and **implementations** (`.implement(...)`) in **separate modules**. Import the shared definition file from your server agent and from your frontend so names and schemas stay aligned; keep client-only execute logic in implementation modules the server never loads.
+    </Info>
+:::
+
+3. **Server agent:** Pass the **definitions** (the objects from step 1) to `createAgent` / your graph so the model sees the tools in its usual tool-calling loop.
+4. **Client:** Pass the **implementations** from step 2 to your streaming hook's `tools` option (for example `useStream` from `@langchain/react`, `@langchain/svelte`, `@langchain/vue` or `@langchain/angular`).
+
+When the model issues a tool call for one of these tools, the run **interrupts** with a small payload the SDK recognizes. The client finds the matching implementation, runs it (for example calling `navigator.geolocation` or drawing on a canvas), then **resumes** the graph with the tool result so the agent can continue. You do not need to wire that resume manually when using the supported SDK hooks—they detect headless-tool interrupts, execute the client code, and submit the resume command for you.
+
+Use the optional **`onTool`** callback to observe lifecycle events (`start`, `success`, `error`) for UI feedback such as spinners or toasts.
+
+### Example
+
+Split **definitions** (shared between server and UI) from **implementations** (client-only). The server agent registers the tool so the model can call it; `useStream` registers `.implement(...)` handlers that run when the headless-tool interrupt fires.
+
+<CodeGroup>
+
+:::python
+```python agent.py
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+
+
+@tool
+def save_note(key: str, text: str) -> str:
+    """Persist a short note in the user's browser (local only)."""
+    # Body is not used when the client handles the tool call; keep name, description,
+    # and parameters aligned with `tools.ts`.
+    return ""
+
+
+agent = create_agent(
+    model=ChatOpenAI(model="gpt-4o-mini"),
+    tools=[save_note],
+    checkpointer=MemorySaver(),
+)
+```
+
+```ts tools.ts
+import * as z from "zod";
+import { tool } from "langchain";
+
+/** Mirror the Python tool’s name, description, and fields for the client SDK. */
+export const saveNote = tool({
+  name: "save_note",
+  description: "Persist a short note in the user's browser (local only).",
+  schema: z.object({
+    key: z.string(),
+    text: z.string(),
+  }),
+});
+```
+
+```tsx App.tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import { saveNote } from "./tools";
+
+export function App() {
+  const stream = useStream({
+    assistantId: "my-agent",
+    apiUrl: "http://localhost:2024",
+    tools: [
+      saveNote.implement(async ({ key, text }) => {
+        localStorage.setItem(key, text);
+        return { ok: true as const, key };
+      }),
+    ],
+    onTool: (event) => {
+      if (event.phase === "error") {
+        console.error(event.name, event.error);
+      }
+    },
+  });
+
+  return null;
+}
+```
+
+:::
+
+:::js
+```ts agent.ts
+import { createAgent } from "langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { MemorySaver } from "@langchain/langgraph";
+
+import { saveNote } from "./tools";
+
+export const agent = createAgent({
+  model: new ChatOpenAI({ model: "gpt-4o-mini" }),
+  tools: [saveNote],
+  checkpointer: new MemorySaver(),
+});
+```
+
+```ts tools.ts
+import * as z from "zod";
+import { tool } from "langchain";
+
+export const saveNote = tool({
+  name: "save_note",
+  description: "Persist a short note in the user's browser (local only).",
+  schema: z.object({
+    key: z.string(),
+    text: z.string(),
+  }),
+});
+```
+
+```tsx App.tsx
+import { useStream } from "@langchain/langgraph-sdk/react";
+import type { agent } from "./agent";
+import { saveNote } from "./tools";
+
+export function App() {
+  const stream = useStream<typeof agent>({
+    assistantId: "my-agent",
+    apiUrl: "http://localhost:2024",
+    tools: [
+      saveNote.implement(async ({ key, text }) => {
+        localStorage.setItem(key, text);
+        return { ok: true as const, key };
+      }),
+    ],
+    onTool: (event) => {
+      if (event.phase === "error") {
+        console.error(event.name, event.error);
+      }
+    },
+  });
+
+  return null;
+}
+```
+
+:::
+
+</CodeGroup>
+
+<Info>
+    End-to-end demos in the LangGraph.js repo show two contrasting styles:
+
+    - **[Browser tools](https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/browser-tools)** — IndexedDB-backed memory tools plus geolocation; geolocation is wrapped with human-in-the-loop while other tools run automatically on the client.
+    - **[Canvas drawing](https://github.com/langchain-ai/langgraphjs/tree/main/examples/ui-react/src/examples/canvas-drawing)** — Many small canvas tools mapping to safe Canvas 2D operations (no arbitrary code execution).
+</Info>
 
 ## Prebuilt tools
 
