@@ -5,7 +5,7 @@ import os
 from typing import Annotated, Literal
 
 import httpx
-from langchain_core.tools import InjectedToolArg, tool
+from langchain.tools import InjectedToolArg, tool
 from markdownify import markdownify
 from tavily import TavilyClient
 
@@ -266,11 +266,10 @@ agent = create_deep_agent(
 )
 # :snippet-end:
 
-
 # :snippet-start: deep-research-run-sync-py
-if __name__ == "__main__":
-    from langchain_core.messages import HumanMessage
+from langchain.messages import HumanMessage
 
+if __name__ == "__main__":
     result = agent.invoke(
         {
             "messages": [
@@ -284,13 +283,16 @@ if __name__ == "__main__":
     for msg in result.get("messages", []):
         if hasattr(msg, "content") and msg.content:
             print(msg.content)
+    # :remove-start:
+    assert result is not None
+    # :remove-end:
 # :snippet-end:
 
 # :snippet-start: deep-research-run-stream-py
-if __name__ == "__main__":
-    from langchain_core.messages import HumanMessage
-    from langgraph.types import Overwrite
+from langchain.messages import HumanMessage
+from langgraph.types import Overwrite
 
+if __name__ == "__main__":
     for chunk in agent.stream(
         {
             "messages": [
@@ -302,12 +304,13 @@ if __name__ == "__main__":
         for node, update in chunk.items():
             if not update or not (messages := update.get("messages")):
                 continue
-                msg_list = (
-                    messages.value if isinstance(messages, Overwrite) else messages
-                )
-                for msg in msg_list:
-                    if hasattr(msg, "content") and msg.content:
-                        print(msg.content)
+            msg_list = messages.value if isinstance(messages, Overwrite) else messages
+            for msg in msg_list:
+                if hasattr(msg, "content") and msg.content:
+                    print(msg.content)
+    # :remove-start:
+    assert msg_list is not None
+    # :remove-end:
 # :snippet-end:
 
 
