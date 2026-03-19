@@ -2,12 +2,12 @@
 
 # :snippet-start: deep-research-tools-py
 import os
+from typing import Annotated, Literal
 
 import httpx
 from langchain_core.tools import InjectedToolArg, tool
 from markdownify import markdownify
 from tavily import TavilyClient
-from typing_extensions import Annotated, Literal
 
 tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
@@ -22,7 +22,7 @@ def fetch_webpage_content(url: str, timeout: float = 10.0) -> str:
         response.raise_for_status()
         return markdownify(response.text)
     except Exception as e:
-        return f"Error fetching {url}: {str(e)}"
+        return f"Error fetching {url}: {e!s}"
 
 
 @tool(parse_docstring=True)
@@ -57,7 +57,9 @@ def tavily_search(
         content = fetch_webpage_content(url)
         result_texts.append(f"## {title}\n**URL:** {url}\n\n{content}\n---")
 
-    return f"Found {len(result_texts)} result(s) for '{query}':\n\n" + "\n".join(result_texts)
+    return f"Found {len(result_texts)} result(s) for '{query}':\n\n" + "\n".join(
+        result_texts
+    )
 
 
 @tool(parse_docstring=True)
@@ -68,6 +70,8 @@ def think_tool(reflection: str) -> str:
         reflection: Your reflection on findings, gaps, and whether to continue or conclude
     """
     return f"Reflection recorded: {reflection}"
+
+
 # :snippet-end:
 
 RESEARCH_WORKFLOW_INSTRUCTIONS = """# Research Workflow
@@ -267,11 +271,15 @@ agent = create_deep_agent(
 if __name__ == "__main__":
     from langchain_core.messages import HumanMessage
 
-    result = agent.invoke({
-        "messages": [
-            HumanMessage(content="What are the main differences between RAG and fine-tuning for LLM applications?")
-        ]
-    })
+    result = agent.invoke(
+        {
+            "messages": [
+                HumanMessage(
+                    content="What are the main differences between RAG and fine-tuning for LLM applications?"
+                )
+            ]
+        }
+    )
 
     for msg in result.get("messages", []):
         if hasattr(msg, "content") and msg.content:
@@ -284,12 +292,19 @@ if __name__ == "__main__":
     from langgraph.types import Overwrite
 
     for chunk in agent.stream(
-        {"messages": [HumanMessage(content="Compare Python vs JavaScript for web development")]},
+        {
+            "messages": [
+                HumanMessage(content="Compare Python vs JavaScript for web development")
+            ]
+        },
         stream_mode="updates",
     ):
         for node, update in chunk.items():
-            if messages := update.get("messages"):
-                msg_list = messages.value if isinstance(messages, Overwrite) else messages
+            if not update or not (messages := update.get("messages")):
+                continue
+                msg_list = (
+                    messages.value if isinstance(messages, Overwrite) else messages
+                )
                 for msg in msg_list:
                     if hasattr(msg, "content") and msg.content:
                         print(msg.content)
