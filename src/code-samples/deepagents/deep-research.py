@@ -308,9 +308,13 @@ if __name__ == "__main__":
             for msg in msg_list:
                 if hasattr(msg, "content") and msg.content:
                     print(msg.content)
-    # :remove-start:
-    assert msg_list is not None
-    # :remove-end:
+            # :remove-start:
+            assert msg_list is not None
+            # :remove-end:
+        # :remove-start:
+        if os.environ.get("CI"):
+            break  # Don't wait for full response in CI
+        # :remove-end:
 # :snippet-end:
 
 
