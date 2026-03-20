@@ -28,8 +28,8 @@ Async subagents require [LangSmith Deployments](/langsmith/agent-deployment/over
 |----------------------|-----------------------------------------------------------------|-------------------------------------------------------------------|
 | **Execution model**  | Supervisor blocks until subagent completes                      | Returns job ID immediately; supervisor continues                  |
 | **Concurrency**      | Parallel but blocking                                           | Parallel and non-blocking                                         |
-| **Mid-task updates** | Not possible                                                    | Send follow-up instructions via `update_async_subagent`           |
-| **Cancellation**     | Not possible                                                    | Cancel running tasks via `cancel_async_subagent`                  |
+| **Mid-task updates** | Not possible                                                    | Send follow-up instructions via `update_async_task`           |
+| **Cancellation**     | Not possible                                                    | Cancel running tasks via `cancel_async_task`                  |
 | **Statefulness**     | Stateless -- no persistent state between invocations            | Stateful -- maintains state on its own thread across interactions |
 | **Best for**         | Tasks where the agent should wait for results before continuing | Long-running, complex tasks managed interactively in a chat       |
 
@@ -39,16 +39,16 @@ Define async subagents as a list of specs, each pointing to a graph deployed on 
 
 :::python
 ```python
-from deepagents import create_deep_agent, DeployedSubAgent
+from deepagents import AsyncSubAgent, create_deep_agent
 
 async_subagents = [
-    DeployedSubAgent(
+    AsyncSubAgent(
         name="researcher",
         description="Research agent for information gathering and synthesis",
         graph_id="researcher",
         # No url → ASGI transport (co-deployed in the same deployment)
     ),
-    DeployedSubAgent(
+    AsyncSubAgent(
         name="coder",
         description="Coding agent for code generation and review",
         graph_id="coder",
@@ -58,7 +58,7 @@ async_subagents = [
 
 agent = create_deep_agent(
     model="claude-sonnet-4-6",
-    async_subagents=async_subagents,
+    subagents=async_subagents,
 )
 ```
 
@@ -121,7 +121,7 @@ The `AsyncSubAgentMiddleware` gives the supervisor five tools:
 
 | Tool | Purpose | Returns |
 |------|---------|---------|
-| `launch_async_task` | Start a new background task | Task ID (immediately) |
+| `start_async_task` | Start a new background task | Task ID (immediately) |
 | `check_async_task` | Get current status and result of a task | Status + result (if complete) |
 | `update_async_task` | Send new instructions to a running task | Confirmation + updated status |
 | `cancel_async_task` | Stop a running task | Confirmation |
@@ -164,7 +164,7 @@ sequenceDiagram
 ## Understand state management
 
 :::python
-Task metadata is stored in a dedicated state channel (`async_subagent_tasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/customization#summarization) when the context window fills up -- if task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
+Task metadata is stored in a dedicated state channel (`async_tasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/customization#summarization) when the context window fills up -- if task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
 
 Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`created_at`, `last_checked_at`, `last_updated_at`).
 :::
@@ -189,7 +189,7 @@ Add a `url` field to switch to HTTP transport, where SDK calls go over the netwo
 
 :::python
 ```python
-DeployedSubAgent(
+AsyncSubAgent(
     name="researcher",
     description="Research agent",
     graph_id="researcher",
@@ -230,13 +230,13 @@ Some subagents co-deployed via ASGI, others remote via HTTP:
 :::python
 ```python
 async_subagents = [
-    DeployedSubAgent(
+    AsyncSubAgent(
         name="researcher",
         description="Research agent",
         graph_id="researcher",
         # No url → ASGI (co-deployed)
     ),
-    DeployedSubAgent(
+    AsyncSubAgent(
         name="coder",
         description="Coding agent",
         graph_id="coder",
@@ -373,14 +373,14 @@ The supervisor uses descriptions to decide which subagent to launch. Be specific
 :::python
 ```python
 # Good
-DeployedSubAgent(
+AsyncSubAgent(
     name="researcher",
     description="Conducts in-depth research using web search. Use for questions requiring multiple searches and synthesis.",
     graph_id="researcher",
 )
 
 # Bad
-DeployedSubAgent(
+AsyncSubAgent(
     name="helper",
     description="helps with stuff",
     graph_id="helper",
@@ -426,7 +426,7 @@ agent = create_deep_agent(
 
     After launching an async subagent, ALWAYS return control to the user.
     Never call check_async_task immediately after launch.""",
-    async_subagents=async_subagents,
+    subagents=async_subagents,
 )
 ```
 :::
