@@ -99,6 +99,8 @@ def main() -> int:
         success = False
 
         try:
+            # Pass full env so POSTGRES_URI, ANTHROPIC_API_KEY etc. reach child processes
+            env = os.environ.copy()
             if lang == "python":
                 result = subprocess.run(
                     ["uv", "run", "python", str(file_path)],
@@ -107,6 +109,7 @@ def main() -> int:
                     capture_output=True,
                     text=True,
                     timeout=TIMEOUT_SECONDS,
+                    env=env,
                 )
                 success = result.returncode == 0
                 stdout = result.stdout or ""
@@ -120,6 +123,7 @@ def main() -> int:
                     capture_output=True,
                     text=True,
                     timeout=TIMEOUT_SECONDS,
+                    env=env,
                 )
                 success = result.returncode == 0
                 stdout = result.stdout or ""

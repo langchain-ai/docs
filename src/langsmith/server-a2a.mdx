@@ -149,7 +149,7 @@ graph = (
 
 ## Agent-to-agent communication
 
-Once your agents are running locally via `langgraph dev` or [deployed to production](/langsmith/deployments), you can facilitate communication between them using the A2A protocol.
+Once your agents are running locally via `langgraph dev` or [deployed to production](/langsmith/deployment), you can facilitate communication between them using the A2A protocol.
 
 This example demonstrates how two agents can communicate by sending JSON-RPC messages to each other's A2A endpoints. The script simulates a multi-turn conversation where each agent processes the other's response and continues the dialogue.
 
