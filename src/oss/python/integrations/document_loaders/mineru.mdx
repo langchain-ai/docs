@@ -1,0 +1,243 @@
+---
+title: "MinerU integration"
+description: "Integrate with the MinerU document loader using LangChain Python."
+sidebarTitle: "MinerU"
+---
+
+[MinerU](https://github.com/opendatalab/MinerU) is an open-source document parsing tool that converts complex documents such as PDFs, Word files, PowerPoint files, and images into machine-readable formats like Markdown and JSON.
+
+This integration exposes MinerU through the `MinerULoader` document loader so the parsed output can be used directly in LangChain retrieval and RAG workflows.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support |
+| :--- | :--- | :---: | :---: | :---: |
+| `MinerULoader` | `langchain-mineru` | ✅ | ❌ | ❌ |
+
+### Loader features
+
+| Source | Document Lazy Loading | Native Async Support |
+| :--- | :---: | :---: |
+| `MinerULoader` | ✅ | ❌ |
+
+The `MinerULoader` enables you to:
+
+- load documents from a local file path or URL
+- support `precision` mode formats: `.pdf`, images, `.DOC`, `.DOCX`, `.PPT`, `.PPTX`, `html`
+- support `flash` mode formats: `.pdf`, images, `DOCX`, `PPTX`, `XLS`, `XLSX`
+- support single and multi-document input with `lazy_load` streaming
+- process a single source or multiple sources in one loader
+- optionally split PDFs by page and return one LangChain `Document` per page
+- use two parsing modes: `flash` (no token) and `precision` (token required)
+- run directly in LangChain RAG pipelines for chunking, embedding, and retrieval
+
+## Requirements
+
+- Python >= 3.10
+
+## Installation
+
+```bash
+pip install -U langchain-mineru
+```
+
+## Quick start
+
+```python
+from langchain_mineru import MinerULoader
+
+loader = MinerULoader(source="demo.pdf")
+docs = loader.load()
+
+print(docs[0].page_content[:500])
+print(docs[0].metadata)
+```
+
+By default, `MinerULoader` uses `mode="flash"` and does not require an API token.
+
+## Initialization
+
+`MinerULoader` accepts the following parameters:
+
+- `source`: local file path, URL, or a list of file paths / URLs
+- `mode`: parsing mode, either `"flash"` (token free) or `"precision"` (token required)
+- `token`: MinerU token, required for `"precision"` mode (or set `MINERU_TOKEN`). Apply at [https://mineru.net/apiManage/token](https://mineru.net/apiManage/token).
+- `language`: OCR language code (for example, `"ch"` and `"en"`). For the complete list, refer to the [standard API documentation](https://mineru.net/apiManage/docs).
+- `pages`: optional page range for PDFs, such as `"1-5"` or `"3"`; when `split_pages=True`, only selected pages are split and parsed
+- `timeout`: maximum time to wait for extraction per file
+- `split_pages`: whether to split a PDF into one `Document` per page
+- `ocr`: OCR toggle, effective in `"precision"` mode
+- `formula`: formula recognition toggle, effective in `"precision"` mode
+- `table`: table recognition toggle, effective in `"precision"` mode
+
+Basic initialization:
+
+```python
+from langchain_mineru import MinerULoader
+
+loader = MinerULoader(
+    source="/path/to/demo.pdf",
+    mode="flash",
+    language="en",
+    pages="1-10",
+    timeout=300,
+    split_pages=False,
+)
+```
+
+## Load
+
+```python
+from langchain_mineru import MinerULoader
+
+loader = MinerULoader(
+    source="report.pdf",
+    split_pages=True,
+)
+
+docs = loader.load()
+for doc in docs:
+    print(f"Page {doc.metadata['page']}: {doc.page_content[:200]}")
+```
+
+For `precision` mode, provide a token:
+
+```python
+from langchain_mineru import MinerULoader
+
+loader = MinerULoader(
+    source="/path/to/demo.pdf",
+    mode="precision",
+    token="your-token",  # or set MINERU_TOKEN
+    language="en",
+    split_pages=True,
+    pages="1-5",
+    timeout=300,
+    ocr=True,
+    formula=True,
+    table=True,
+)
+
+docs = loader.load()
+for doc in docs:
+    print(doc.metadata["source"], "-", doc.page_content[:100])
+```
+
+Apply for a `precision` mode token here: [https://mineru.net/apiManage/token](https://mineru.net/apiManage/token).
+
+## Load from multiple sources
+
+```python
+from langchain_mineru import MinerULoader
+
+loader = MinerULoader(
+    source=[
+        "/path/to/a.pdf",
+        "/path/to/b.pdf",
+        "https://example.com/demo.pdf",
+    ],
+)
+
+docs = loader.load()
+for doc in docs:
+    print(doc.metadata["source"], "-", doc.page_content[:100])
+```
+
+## Lazy load
+
+```python
+from langchain_mineru import MinerULoader
+
+loader = MinerULoader(
+    source=["/path/to/a.pdf", "/path/to/b.pdf"],
+    split_pages=True,
+)
+
+for doc in loader.lazy_load():
+    print(doc.metadata)
+```
+
+## Parameters
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `source` | `str | list[str]` | required | Local file path(s) or URL(s). Supported formats depend on `mode`: `precision` supports `.pdf`, images, `.DOC`, `.DOCX`, `.PPT`, `.PPTX`, `html`; `flash` supports `.pdf`, images, `DOCX`, `PPTX`, `XLS`, `XLSX`. URL sources are supported when they point to files in these formats. |
+| `mode` | `str` | `"flash"` | Parsing mode. `"flash"` is speed-first and token-free; `"precision"` requires token and uses standard extraction API. |
+| `token` | `str | None` | `None` | MinerU token. Required for `mode="precision"`. Apply at [https://mineru.net/apiManage/token](https://mineru.net/apiManage/token). If omitted, `MINERU_TOKEN` is used. |
+| `language` | `str` | `"ch"` | OCR language code. Common values: `"ch"`, `"en"`. For the complete list, refer to the [standard API documentation](https://mineru.net/apiManage/docs). |
+| `pages` | `str | None` | `None` | Page range to extract, such as `"1-5"` or `"3"`. Only applies to PDFs. With `split_pages=True`, only selected pages are split and parsed locally. |
+| `timeout` | `int` | `1200` | Maximum number of seconds to wait for extraction per file. |
+| `split_pages` | `bool` | `False` | PDF only. When `True`, splits the PDF into one `Document` per page and includes `metadata["page"]`. Non-PDF files are unaffected. |
+| `ocr` | `bool` | `False` | Effective for `mode="precision"`. In `mode="flash"`, OCR is built in and this parameter is ignored. |
+| `formula` | `bool` | `True` | Effective only for `mode="precision"`. Passing a non-default value in `mode="flash"` raises an error. |
+| `table` | `bool` | `True` | Effective only for `mode="precision"`. Passing a non-default value in `mode="flash"` raises an error. |
+
+## Document metadata
+
+Each returned `Document` includes metadata similar to the following:
+
+```python
+{
+    "source": "report.pdf",
+    "loader": "mineru",
+    "output_format": "markdown",
+    "mode": "flash",
+    "language": "ch",
+    "pages": None,
+    "split_pages": True,
+    "filename": "report.pdf",
+    "page": 1,                       # only present when split_pages=True
+    "page_source": "report.pdf",     # only present when split_pages=True
+}
+```
+
+
+## Example: use in a RAG pipeline
+
+```python
+from langchain_mineru import MinerULoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+
+loader = MinerULoader(source="manual.pdf")
+docs = loader.load()
+
+splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
+chunks = splitter.split_documents(docs)
+
+vs = FAISS.from_documents(chunks, OpenAIEmbeddings())
+results = vs.similarity_search("how to configure OCR?", k=3)
+for r in results:
+    print(r.page_content[:200])
+```
+
+## Supported file formats
+
+- `precision` mode: `.pdf`, images, `.DOC`, `.DOCX`, `.PPT`, `.PPTX`, `html`
+- `flash` mode: `.pdf`, images, `DOCX`, `PPTX`, `XLS`, `XLSX`
+
+URL sources are supported when they point to files in the listed formats.
+
+
+## Limitations
+
+- Output format is Markdown only.
+- `flash` mode follows MinerU flash API limits.
+- `precision` mode requires a valid token and available account quota.
+
+## API reference
+
+For langchain-mineru source code and more related resources, see:
+
+- [GitHub Repository](https://github.com/opendatalab/MinerU): Source code, issues, and releases
+- [User Manual](https://opendatalab.github.io/MinerU/): Complete MinerU documentation
+- [API Documentation](https://mineru.net/apiManage/docs): RESTful API for document parsing
+- [MinerU SaaS](https://mineru.net/): MinerU SaaS platform
+- [MinerU Online Platform](https://mineru.net/OpenSourceTools/Extractor): MinerU online experience platform
+- [Rate Limiting](https://mineru.net/apiManage/limit): API quota and rate limit policies
+- [Desktop Client](https://mineru.net/client): Free desktop application for Windows, macOS, and Linux
+- [Hugging Face Demo](https://huggingface.co/spaces/opendatalab/MinerU): Try MinerU online without installation
+- [MinerU Ecosystem GitHub](https://github.com/opendatalab/MinerU-Ecosystem): MinerU-Ecosystem repository, including langchain-mineru, CLI, MCP, and SDK
