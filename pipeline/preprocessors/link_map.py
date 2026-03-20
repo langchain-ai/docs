@@ -220,6 +220,7 @@ LINK_MAPS: list[LinkMap] = [
             "wrapGemini": "https://reference.langchain.com/javascript/functions/langsmith.wrappers_gemini.wrapGemini.html",
             "expect": "langsmith/observability/sdk/expect/",
             "Client": "langsmith/client/Client",
+            "process_buffered_run_ops": "langsmith/client/Client",
             "Client.evaluate": "langsmith/client/Client/evaluate",
             "list_threads": "langsmith/client/Client/list_threads",
             "read_thread": "langsmith/client/Client/read_thread",
@@ -425,6 +426,7 @@ LINK_MAPS: list[LinkMap] = [
             "ls.logFeedback": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#logFeedback",
             "Client.listExamples": "https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#listexamples",
             "Example": "https://reference.langchain.com/javascript/interfaces/langsmith.Example.html",
+            "useStream": "https://reference.langchain.com/javascript/langchain-react/index/useStream",
         },
     },
     {
@@ -584,6 +586,7 @@ LINK_MAPS: list[LinkMap] = [
             "listRuns": "langsmith/client/Client/listRuns",
             "Client.listExamples": "classes/langsmith.client.Client.html#listexamples",
             "Example": "langchain-core/prompts/Example",
+            "useStream": "langchain-react/index/useStream",
         },
     },
     {
