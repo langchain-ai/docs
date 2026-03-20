@@ -220,6 +220,7 @@ LINK_MAPS: list[LinkMap] = [
             "wrapGemini": "https://reference.langchain.com/javascript/functions/langsmith.wrappers_gemini.wrapGemini.html",
             "expect": "langsmith/observability/sdk/expect/",
             "Client": "langsmith/client/Client",
+            "process_buffered_run_ops": "langsmith/client/Client",
             "Client.evaluate": "langsmith/client/Client/evaluate",
             "list_threads": "langsmith/client/Client/list_threads",
             "read_thread": "langsmith/client/Client/read_thread",
