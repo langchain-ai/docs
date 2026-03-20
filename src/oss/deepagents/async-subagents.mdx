@@ -269,92 +269,63 @@ const asyncSubagents: AsyncSubAgent[] = [
 
 ## Notify on completion
 
-By default, the supervisor only learns about subagent completion when it uses the check tool. For a more proactive experience, add custom [middleware](/oss/deepagents/customization#middleware) to the subagent graph that sends a message to the supervisor's thread when the subagent finishes.
+By default, the supervisor only learns about subagent completion when it uses the check tool. For a more proactive experience, add `CompletionNotifierMiddleware` to the subagent's [middleware](/oss/deepagents/customization#middleware) stack. When the subagent finishes (or errors), the middleware sends a message to the supervisor's thread, waking the supervisor so it can proactively relay results.
 
-This is not built into the async subagent harness -- you bring your own middleware that calls back to the supervisor thread using the LangGraph SDK:
+Add the middleware to the **subagent's** graph, not the supervisor's:
 
 :::python
 ```python
-from langchain.agents.middleware.types import AgentMiddleware
-from langgraph_sdk import get_client
+from deepagents import CompletionNotifierMiddleware
+from langchain.agents import create_agent
 
+# Same deployment (ASGI transport):
+notifier = CompletionNotifierMiddleware(parent_graph_id="supervisor")
 
-class CompletionNotifierMiddleware(AgentMiddleware):
-    """Notify the parent agent when this subagent completes."""
+# Remote deployment (supervisor on a different server):
+notifier = CompletionNotifierMiddleware(
+    parent_graph_id="supervisor",
+    url="https://supervisor.langsmith.dev",
+)
 
-    def __init__(self, parent_thread_id: str, parent_assistant_id: str, subagent_name: str):
-        self.parent_thread_id = parent_thread_id
-        self.parent_assistant_id = parent_assistant_id
-        self.subagent_name = subagent_name
-
-    async def aafter_agent(self, state, runtime):
-        messages = state.get("messages", [])
-        summary = str(messages[-1].content)[:500] if messages else "(no output)"
-
-        client = get_client()
-        await client.runs.create(
-            thread_id=self.parent_thread_id,
-            assistant_id=self.parent_assistant_id,
-            input={
-                "messages": [{
-                    "role": "user",
-                    "content": f"[Subagent '{self.subagent_name}' completed] Result: {summary}",
-                }],
-            },
-        )
-        return None
+subagent = create_agent(
+    model=model,
+    tools=[...],
+    middleware=[notifier],
+)
 ```
 :::
 
 :::js
 ```typescript
-import { createMiddleware } from "langchain";
-import { Client } from "@langchain/langgraph-sdk";
+import { createCompletionNotifierMiddleware, createDeepAgent } from "deepagents";
 
-function createCompletionNotifier({
-  parentThreadId,
-  parentAssistantId,
-  subagentName,
-}: {
-  parentThreadId: string;
-  parentAssistantId: string;
-  subagentName: string;
-}) {
-  return createMiddleware({
-    name: "CompletionNotifierMiddleware",
-    afterAgent: async (state) => {
-      const messages = state.messages ?? [];
-      const last = messages[messages.length - 1];
-      const summary = typeof last?.content === "string"
-        ? last.content.slice(0, 500)
-        : "(no output)";
+// url is required in JS (no in-process ASGI transport):
+const notifier = createCompletionNotifierMiddleware({
+  parentGraphId: "supervisor",
+  url: "https://my-deployment.langsmith.dev",
+});
 
-      const client = new Client();
-      await client.runs.create(parentThreadId, {
-        assistantId: parentAssistantId,
-        input: {
-          messages: [{
-            role: "user",
-            content: `[Subagent '${subagentName}' completed] Result: ${summary}`,
-          }],
-        },
-      });
-    },
-  });
-}
+const subagent = createDeepAgent({
+  model: "claude-sonnet-4-6",
+  middleware: [notifier],
+});
 ```
 :::
 
-This wakes the supervisor, which can then proactively relay results to the user without waiting for a `check` call.
+### How it works
 
-<Tip>
-:::python
-Pass `parent_thread_id` and `parent_assistant_id` to the subagent graph via `config.configurable` when the supervisor creates the assistant or thread. This lets the subagent know where to send notifications.
-:::
-:::js
-Pass `parentThreadId` and `parentAssistantId` to the subagent graph via `config.configurable` when the supervisor creates the assistant or thread. This lets the subagent know where to send notifications.
-:::
-</Tip>
+The supervisor's `start_async_task` tool automatically injects `parent_thread_id` into the subagent's input state. The notifier reads this from state (not config), so it survives thread interrupts and `update_async_task` calls. If `parent_thread_id` is not present (e.g., the subagent was launched manually without a supervisor), the middleware silently does nothing.
+
+Notifications include the `task_id` for correlation when multiple tasks run concurrently:
+
+```text
+[task_id=thread_abc] Completed. Result: <summary of last message>
+[task_id=thread_abc] Error: <error message>
+```
+
+<Note>
+`CompletionNotifierMiddleware` is experimental and may change in future releases.
+</Note>
 
 ## Best practices
 
