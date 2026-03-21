@@ -445,35 +445,13 @@ class DocumentationBuilder:
         Returns:
             True if the file was copied, False if it was skipped.
         """
-        # Skip template files
-        if file_path.name == "TEMPLATE.mdx":
-            return False
-
         relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
         output_path = self.build_dir / relative_path
 
         # Update progress bar description with current file
         pbar.set_postfix_str(f"{relative_path}")
 
-        # Create output directory if needed
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Handle special case for docs.yml files
-        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
-            ".yml",
-            ".yaml",
-        }:
-            self._convert_yaml_to_json(file_path, output_path)
-            return True
-        # Copy other supported files directly
-        if file_path.suffix.lower() in self.copy_extensions:
-            # Handle markdown files with preprocessing
-            if file_path.suffix.lower() in {".md", ".mdx"}:
-                self._process_markdown_file(file_path, output_path)
-                return True
-            shutil.copy2(file_path, output_path)
-            return True
-        return False
+        return self._build_single_file_to_path(file_path, output_path, None)
 
     def build_files(self, file_paths: list[Path]) -> None:
         """Build specific files by copying them to the build directory.
@@ -684,32 +662,10 @@ class DocumentationBuilder:
         Returns:
             True if the file was copied, False if it was skipped.
         """
-        # Skip template files
-        if file_path.name == "TEMPLATE.mdx":
-            return False
-
         # Update progress bar description with current file
         pbar.set_postfix_str(display_path)
 
-        # Create output directory if needed
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Handle special case for docs.yml files
-        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
-            ".yml",
-            ".yaml",
-        }:
-            self._convert_yaml_to_json(file_path, output_path)
-            return True
-        # Copy other supported files
-        if file_path.suffix.lower() in self.copy_extensions:
-            # Handle markdown files with preprocessing
-            if file_path.suffix.lower() in {".md", ".mdx"}:
-                self._process_markdown_file(file_path, output_path, target_language)
-                return True
-            shutil.copy2(file_path, output_path)
-            return True
-        return False
+        return self._build_single_file_to_path(file_path, output_path, target_language)
 
     def _build_version_file_with_progress(
         self, file_path: Path, version_dir: str, target_language: str, pbar: tqdm
@@ -732,25 +688,7 @@ class DocumentationBuilder:
         # Update progress bar description with current file
         pbar.set_postfix_str(f"{version_dir}/{relative_path}")
 
-        # Create output directory if needed
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Handle special case for docs.yml files
-        if file_path.name == "docs.yml" and file_path.suffix.lower() in {
-            ".yml",
-            ".yaml",
-        }:
-            self._convert_yaml_to_json(file_path, output_path)
-            return True
-        # Copy other supported files
-        if file_path.suffix.lower() in self.copy_extensions:
-            # Handle markdown files with preprocessing
-            if file_path.suffix.lower() in {".md", ".mdx"}:
-                self._process_markdown_file(file_path, output_path, target_language)
-                return True
-            shutil.copy2(file_path, output_path)
-            return True
-        return False
+        return self._build_single_file_to_path(file_path, output_path, target_language)
 
     def is_shared_file(self, file_path: Path) -> bool:
         """Check if a file should be shared between versions rather than duplicated.

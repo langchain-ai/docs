@@ -193,8 +193,8 @@ def convert_file(file_path: str, *, dry_run: bool = False) -> bool:
             if not dry_run:
                 file_obj.write_text(converted_content, encoding="utf-8")
             return True
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception as e:  # noqa: BLE001
+        print(f"Error converting {file_path}: {e}")
     return False
 
 
@@ -228,15 +228,22 @@ def main() -> None:
         files = [str(f) for f in search_path.rglob("*.mdx")]
 
     if not files:
+        print("No MDX files found.")
         return
-
-    if args.dry_run:
-        pass
 
     converted_count = 0
     for file_path in files:
         if convert_file(file_path, dry_run=args.dry_run):
             converted_count += 1
+            if args.dry_run:
+                print(f"Would convert: {file_path}")
+            else:
+                print(f"Converted: {file_path}")
+
+    print(
+        f"\n{converted_count} of {len(files)} file(s) "
+        f"{'would be converted' if args.dry_run else 'converted'}."
+    )
 
 
 if __name__ == "__main__":

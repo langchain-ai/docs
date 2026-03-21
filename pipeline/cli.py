@@ -166,7 +166,7 @@ def migrate_command(args) -> None:  # noqa: ANN001
 
     # Determine if the path is a file or a directory
     if not input_path.exists():
-        logger.exception("Path %s does not exist", input_path)
+        logger.error("Path %s does not exist", input_path)
         sys.exit(1)
 
     # Find all files to migrate
