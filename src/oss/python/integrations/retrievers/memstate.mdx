@@ -1,0 +1,213 @@
+---
+title: "Memstate AI integration"
+description: "Integrate with the MemstateRetriever retriever using LangChain Python."
+---
+
+# MemstateRetriever
+
+This will help you get started with the Memstate AI [retriever](/oss/langchain/retrieval). For full documentation of all features and configurations head to the [langchain-memstate GitHub repo](https://github.com/memstate-ai/langchain-memstate).
+
+> Memstate AI is a structured, versioned long-term memory store for AI agents. Unlike vector stores, Memstate organizes facts in a **keypath hierarchy** (e.g., `users.alice.preferences.language`) so agents can store, retrieve, and browse structured knowledge with full version history and time-travel retrieval built in.
+
+### Integration details
+
+Bring-your-own data (index and search a custom corpus of structured facts):
+
+| Retriever | Self-host | Cloud offering | Package |
+| :--- | :---: | :---: | :---: |
+| `MemstateRetriever` | ❌ | ✅ | [`langchain-memstate`](https://pypi.org/project/langchain-memstate/) |
+
+## Setup
+
+Get a free API key at [memstate.ai](https://memstate.ai).
+
+```python
+import os
+os.environ["MEMSTATE_API_KEY"] = "your-api-key-here"
+```
+
+If you want automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = "your-langsmith-key"
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+```bash
+pip install -qU langchain-memstate
+```
+
+## Instantiation
+
+```python
+from langchain_memstate import MemstateRetriever
+
+retriever = MemstateRetriever(
+    api_key=os.environ["MEMSTATE_API_KEY"],
+    k=5,
+    # Optional: restrict search to a keypath prefix
+    # keypath_prefix="users.alice",
+)
+```
+
+## Usage
+
+### Store facts and retrieve them
+
+Memstate organizes memories by **keypath** -- a dot-separated hierarchy like a filesystem path. This lets agents store structured knowledge and retrieve it semantically.
+
+```python
+import httpx
+
+api_key = os.environ["MEMSTATE_API_KEY"]
+base_url = "https://api.memstate.ai/api/v1"
+headers = {"Authorization": f"Bearer {api_key}"}
+
+# Store some structured facts about a user
+facts = [
+    ("users.alice.profile.role", "Senior backend engineer"),
+    ("users.alice.profile.language", "Python"),
+    ("users.alice.preferences.framework", "FastAPI"),
+    ("users.alice.project.current", "Building a distributed task queue"),
+    ("users.alice.project.stack", "Python, Redis, PostgreSQL"),
+]
+
+for keypath, content in facts:
+    httpx.post(
+        f"{base_url}/memories",
+        headers=headers,
+        json={"keypath": keypath, "content": content},
+    )
+
+# Now retrieve relevant facts
+docs = retriever.invoke("What is Alice working on?")
+for doc in docs:
+    print(f"[{doc.metadata['keypath']}] {doc.page_content}")
+```
+
+```txt
+[users.alice.project.current] Building a distributed task queue
+[users.alice.project.stack] Python, Redis, PostgreSQL
+[users.alice.profile.role] Senior backend engineer
+```
+
+### Browse all facts under a keypath prefix
+
+Pass an empty query string to browse all memories under a namespace instead of running a semantic search:
+
+```python
+from langchain_memstate import MemstateRetriever
+
+# Browse everything stored under users.alice
+browse_retriever = MemstateRetriever(
+    api_key=api_key,
+    k=20,
+    keypath_prefix="users.alice",
+)
+
+all_facts = browse_retriever.invoke("")
+for doc in all_facts:
+    print(f"[{doc.metadata['keypath']}] {doc.page_content}")
+```
+
+### Use with a chain
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer the question using only the provided context.\n\n"
+    "Context:\n{context}\n\n"
+    "Question: {question}"
+)
+
+def format_docs(docs):
+    return "\n".join(
+        f"[{d.metadata.get('keypath', 'unknown')}]: {d.page_content}"
+        for d in docs
+    )
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+)
+
+response = chain.invoke("What programming language does Alice prefer?")
+print(response.content)
+```
+
+```txt
+Alice prefers Python.
+```
+
+## Versioning and time-travel
+
+Every time you update a fact at the same keypath, Memstate automatically creates a new version. The current value is always returned by default, but you can retrieve any previous version using the `MemstateStore` with `get_at_revision`.
+
+```python
+# Update Alice's current project -- Memstate creates a new version automatically
+httpx.post(
+    f"{base_url}/memories",
+    headers=headers,
+    json={
+        "keypath": "users.alice.project.current",
+        "content": "Migrating the task queue to Celery",
+    },
+)
+
+# Retrieve the latest value
+docs = retriever.invoke("What project is Alice on?")
+print(docs[0].page_content)
+```
+
+```txt
+Migrating the task queue to Celery
+```
+
+Retrieve facts as they existed at any point in the past:
+
+```python
+from langchain_memstate import MemstateStore
+
+store = MemstateStore(api_key=api_key)
+
+# Get Alice's project fact as it was at revision 1
+snapshot = store.get_at_revision(
+    namespace=("users", "alice", "project"),
+    key="current",
+    revision=1,
+)
+print(snapshot.value)
+```
+
+```txt
+{'content': 'Building a distributed task queue'}
+```
+
+## Use as a LangGraph store
+
+Use `MemstateStore` as the `store=` argument on any LangGraph agent for persistent, versioned agent memory that survives across sessions and deployments:
+
+```python
+from langgraph.graph import StateGraph
+from langchain_memstate import MemstateStore
+
+store = MemstateStore(api_key=api_key)
+
+# Pass to your LangGraph agent
+# graph = builder.compile(store=store)
+```
+
+## API reference
+
+- [langchain-memstate on PyPI](https://pypi.org/project/langchain-memstate/)
+- [GitHub repo](https://github.com/memstate-ai/langchain-memstate)
+- [Memstate AI docs](https://memstate.ai/docs)
+- [Memstate AI LangChain integration guide](https://memstate.ai/docs/integrations/langchain)
