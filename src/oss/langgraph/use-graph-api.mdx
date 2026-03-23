@@ -1562,6 +1562,44 @@ By default, the retry policy retries on any exception except for the following:
 </Accordion>
 
 :::python
+
+### Access execution info inside a node
+
+Requires `langgraph>=1.1.3`. When a node has a retry policy, you can inspect the current attempt number and the time of the first attempt via `runtime.execution_info`. This is useful for adjusting behavior based on retry state (e.g., switching to a fallback provider after the first attempt fails).
+
+| Attribute | Description |
+| --------- | ----------- |
+| `node_attempt` | Current execution attempt number (1-indexed). `1` on the first try, `2` on the first retry, etc. |
+| `node_first_attempt_time` | Unix timestamp (seconds) of when the first attempt started. Stays the same across retries. |
+
+```python
+from langgraph.graph import StateGraph, START, END
+from langgraph.runtime import Runtime
+from langgraph.types import RetryPolicy
+from typing_extensions import TypedDict
+
+class State(TypedDict):
+    result: str
+
+def my_node(state: State, runtime: Runtime):
+    info = runtime.execution_info
+    if info.node_attempt > 1:  # [!code highlight]
+        # use a fallback on retries
+        return {"result": call_fallback_api()}
+    return {"result": call_primary_api()}
+
+builder = StateGraph(State)
+builder.add_node("my_node", my_node, retry_policy=RetryPolicy(max_attempts=3))
+builder.add_edge(START, "my_node")
+builder.add_edge("my_node", END)
+graph = builder.compile()
+```
+
+`execution_info` is available on the `Runtime` object even without a retry policy — `node_attempt` defaults to `1` and `node_first_attempt_time` is set to the time the node starts executing.
+
+:::
+
+:::python
 ## Add node caching
 
 Node caching is useful in cases where you want to avoid repeating operations, like when doing something expensive (either in terms of time or cost). LangGraph lets you add individualized caching policies to nodes in a graph.
