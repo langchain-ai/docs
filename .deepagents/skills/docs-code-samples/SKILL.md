@@ -51,6 +51,8 @@ src/
         └── ...
 ```
 
+**Multiple snippets in one file**: A single code sample file can contain multiple named snippets using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. This is useful for keeping related code samples together in one testable file.
+
 ## Step-by-step instructions
 
 ### 1. Create the code sample file

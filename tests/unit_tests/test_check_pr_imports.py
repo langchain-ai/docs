@@ -30,8 +30,8 @@ def test_load_existing_mappings() -> None:
     with patch("scripts.check_pr_imports.Path") as mock_path:
         mock_path.return_value.exists.return_value = True
         temp_file_path = Path(temp_path)
-        mock_path.return_value.open.return_value.__enter__ = (
-            lambda _: temp_file_path.open()
+        mock_path.return_value.open.return_value.__enter__ = lambda _: (
+            temp_file_path.open()
         )
         mock_path.return_value.open.return_value.__exit__ = Mock(return_value=None)
 
