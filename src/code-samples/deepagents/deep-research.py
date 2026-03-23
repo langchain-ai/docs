@@ -60,6 +60,8 @@ def tavily_search(
     return f"Found {len(result_texts)} result(s) for '{query}':\n\n" + "\n".join(
         result_texts
     )
+
+
 # :snippet-end:
 
 RESEARCH_WORKFLOW_INSTRUCTIONS = """# Research Workflow
