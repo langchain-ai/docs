@@ -1,0 +1,66 @@
+---
+title: "MrScraperCreateScraper integration"
+description: "Create and run AI scrapers with MrScraper in LangChain."
+---
+
+`MrScraperCreateScraper` creates and runs an AI scraper from natural-language extraction instructions.
+
+## Setup
+
+```python
+import os
+from langchain_mrscraper import MrScraperCreateScraper
+
+# Option 1: pass API key directly
+tool = MrScraperCreateScraper(mrscraper_api_key="your-api-key")
+
+# Option 2: auto-read from environment variable
+os.environ["MRSCRAPER_API_KEY"] = "your-api-key"
+tool = MrScraperCreateScraper()
+```
+
+## Invocation
+
+```python
+result = tool.invoke(
+    {
+        "url": "https://example.com/products",
+        "message": "Extract product names, prices, and ratings",
+        "agent": "listing",
+    }
+)
+print(result)
+```
+
+## Choosing an agent type
+
+Each agent is tuned for different page shapes. Pick the one that matches the URL and task.
+
+- **`general`** — Default and best choice when the user does not specify a mode or the model is unsure. Strong on typical pages (including product detail pages) and works well across many layouts.
+- **`listing`** — For listing-style pages: product grids, job boards, directory indexes, and similar “many items on one page” UIs. Use when you can confidently tell the URL is a listing, not a single article or product detail page.
+- **`map`** — For crawling a **site** (subdomains and internal links), not a single page. Use when the goal is breadth across the domain rather than one URL. Map mode accepts the extra parameters below to control crawling and extraction.
+
+## Parameters
+
+| Parameter | Type | Description |
+| :-- | :-- | :-- |
+| `url` | `str` | Target URL |
+| `message` | `str` | Natural-language extraction instructions |
+| `agent` | `"general" \| "listing" \| "map"` | Scraper strategy (default: `"general"`) |
+| `proxy_country` | `str \| None` | Optional two-letter proxy country code |
+| `max_depth` | `int` | **Map only.** Crawl depth from the start URL (default: `2`) |
+| `max_pages` | `int` | **Map only.** Max pages to process (default: `50`) |
+| `limit` | `int` | **Map only.** Max records extracted across pages (default: `1000`) |
+| `include_patterns` | `str` | **Map only.** URL regex patterns to crawl (default: `""`) |
+| `exclude_patterns` | `str` | **Map only.** URL regex patterns to skip (default: `""`) |
+
+### Map-mode crawling options
+
+These arguments only apply when `agent` is `"map"`. They tune link following and how much data is collected.
+
+- **`max_depth`** — Maximum depth from the starting URL. Depth `0` is only the start URL; depth `1` adds direct links; depth `2` adds another hop, and so on. Prefer **1–2** for focused crawls; **3** is a practical upper bound for many jobs; higher values widen reach but increase cost and runtime.
+- **`max_pages`** — Hard cap on pages scraped, regardless of depth. Use roughly **10–50** for quick passes and **100–500** when you need broad coverage (within API and quota limits).
+- **`limit`** — Stops once this many **records** have been extracted across all pages, even if more URLs remain. Use it to bound dataset size.
+- **`include_patterns`** / **`exclude_patterns`** — Regex patterns that control which discovered URLs are followed. Separate multiple patterns with **`||`** (double pipe), for example `*/products/*||*/blog/*` to include only those paths, or `*/cart/*||*.pdf` to exclude checkout and PDFs.
+
+If `include_patterns` is an empty string, all URLs are included (subject to `exclude_patterns`). If `exclude_patterns` is an empty string, no URLs are excluded by these patterns.
