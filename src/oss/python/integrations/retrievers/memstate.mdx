@@ -56,7 +56,9 @@ retriever = MemstateRetriever(
 
 ### Store facts and retrieve them
 
-Memstate organizes memories by **keypath** -- a dot-separated hierarchy like a filesystem path. This lets agents store structured knowledge and retrieve it semantically.
+There are two ways to store facts in Memstate:
+
+**Option 1: `remember` (recommended)** -- pass any text and Memstate's custom-trained AI automatically extracts facts and organizes them into keypaths:
 
 ```python
 import httpx
@@ -65,7 +67,27 @@ api_key = os.environ["MEMSTATE_API_KEY"]
 base_url = "https://api.memstate.ai/api/v1"
 headers = {"Authorization": f"Bearer {api_key}"}
 
-# Store some structured facts about a user
+# Let Memstate automatically extract and organize facts from any text
+response = httpx.post(
+    f"{base_url}/memories/remember",
+    headers=headers,
+    json={
+        "project_id": "my-agent",
+        "content": (
+            "Alice is a Senior Backend Engineer. She prefers Python and FastAPI. "
+            "She is currently building a distributed task queue using Python, Redis, and PostgreSQL."
+        ),
+        "source": "agent",
+    },
+)
+# Returns a job_id -- Memstate processes async (~15-20s)
+print(response.json())  # {"job_id": "job_abc123", "status": "pending"}
+```
+
+**Option 2: `store`** -- store a specific value at an exact keypath you control:
+
+```python
+# Store structured facts at specific keypaths
 facts = [
     ("users.alice.profile.role", "Senior backend engineer"),
     ("users.alice.profile.language", "Python"),
@@ -76,9 +98,9 @@ facts = [
 
 for keypath, content in facts:
     httpx.post(
-        f"{base_url}/memories",
+        f"{base_url}/memories/store",
         headers=headers,
-        json={"keypath": keypath, "content": content},
+        json={"keypath": keypath, "content": content, "project_id": "my-agent"},
     )
 
 # Now retrieve relevant facts
@@ -154,11 +176,12 @@ Every time you update a fact at the same keypath, Memstate automatically creates
 ```python
 # Update Alice's current project -- Memstate creates a new version automatically
 httpx.post(
-    f"{base_url}/memories",
+    f"{base_url}/memories/store",
     headers=headers,
     json={
         "keypath": "users.alice.project.current",
         "content": "Migrating the task queue to Celery",
+        "project_id": "my-agent",
     },
 )
 
