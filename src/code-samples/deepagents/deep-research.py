@@ -60,18 +60,6 @@ def tavily_search(
     return f"Found {len(result_texts)} result(s) for '{query}':\n\n" + "\n".join(
         result_texts
     )
-
-
-@tool(parse_docstring=True)
-def think_tool(reflection: str) -> str:
-    """Strategic reflection on research progress. Use after each search to analyze results and plan next steps.
-
-    Args:
-        reflection: Your reflection on findings, gaps, and whether to continue or conclude
-    """
-    return f"Reflection recorded: {reflection}"
-
-
 # :snippet-end:
 
 RESEARCH_WORKFLOW_INSTRUCTIONS = """# Research Workflow
@@ -138,16 +126,14 @@ Simply list items with details - no introduction needed:
  [2] Industry Analysis: https://example.com/analysis
 """
 
+# :snippet-start: researcher-instructions-py
 RESEARCHER_INSTRUCTIONS = """You are a research assistant conducting research on the user's input topic. For context, today's date is {date}.
 
 Your job is to use tools to gather information about the user's input topic.
-You can use any of the research tools provided to you to find resources that can help answer the research question.
-You can call these tools in series or in parallel, your research is conducted in a tool-calling loop.
+You can use the tavily_search tool to find resources that can help answer the research question.
+You can call it in series or in parallel, your research is conducted in a tool-calling loop.
 
-You have access to two specific research tools:
-1. **tavily_search**: For conducting web searches to gather information
-2. **think_tool**: For reflection and strategic planning during research
-**CRITICAL: Use think_tool after each search to reflect on results and plan next steps**
+You have access to the tavily_search tool for conducting web searches.
 
 Think like a human researcher with limited time. Follow these steps:
 
@@ -167,11 +153,7 @@ Think like a human researcher with limited time. Follow these steps:
 - You have 3+ relevant examples/sources for the question
 - Your last 2 searches returned similar information
 
-After each search tool call, use think_tool to analyze the results:
-- What key information did I find?
-- What's missing?
-- Do I have enough to answer the question comprehensively?
-- Should I search more or provide my answer?
+After each search, assess results before continuing: What key information did I find? What's missing? Do I have enough to answer? Should I search more or provide my answer?
 
 When providing your findings back to the orchestrator:
 
@@ -189,6 +171,7 @@ Context engineering is a critical technique for AI agents [1]. Studies show that
 
 The orchestrator will consolidate citations from all sub-agents into the final report.
 """
+# :snippet-end:
 
 SUBAGENT_DELEGATION_INSTRUCTIONS = """# Sub-Agent Research Coordination
 
@@ -253,14 +236,14 @@ research_sub_agent = {
     "name": "research-agent",
     "description": "Delegate research to the sub-agent. Give one topic at a time.",
     "system_prompt": RESEARCHER_INSTRUCTIONS.format(date=current_date),
-    "tools": [tavily_search, think_tool],
+    "tools": [tavily_search],
 }
 
 model = init_chat_model(model="anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
 
 agent = create_deep_agent(
     model=model,
-    tools=[tavily_search, think_tool],
+    tools=[tavily_search],
     system_prompt=INSTRUCTIONS,
     subagents=[research_sub_agent],
 )
@@ -322,7 +305,6 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     # Test that components are defined correctly
     assert tavily_search.name == "tavily_search"
-    assert think_tool.name == "think_tool"
     assert len(RESEARCH_WORKFLOW_INSTRUCTIONS) > 0
     assert len(RESEARCHER_INSTRUCTIONS) > 0
     assert len(SUBAGENT_DELEGATION_INSTRUCTIONS) > 0

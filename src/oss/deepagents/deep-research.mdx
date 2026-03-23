@@ -1,7 +1,7 @@
 ---
 title: Build a deep research agent
 sidebarTitle: Deep Research
-description: Build a multi-step web research agent with subagent delegation and strategic reflection
+description: Build a multi-step web research agent with subagent delegation
 ---
 
 import DeepResearchToolsPy from '/snippets/code-samples/deep-research-tools-py.mdx';
@@ -11,13 +11,13 @@ import DeepResearchRunStreamPy from '/snippets/code-samples/deep-research-run-st
 
 ## Overview
 
-This guide demonstrates how to build a multi-step web research agent from scratch using [deep agents](/oss/deepagents). The agent decomposes research questions into focused tasks, delegates them to specialized sub-agents, and synthesizes findings into a comprehensive report.
+This guide demonstrates how to build a multi-step web research agent from scratch using [Deep Agents](/oss/deepagents). The agent decomposes research questions into focused tasks, delegates them to specialized sub-agents, and synthesizes findings into a comprehensive report.
 
 The agent you build will:
 
 1. Plan research using a todo list
 1. Delegate focused research tasks to sub-agents with isolated context
-1. Reflect between searches to assess progress and plan next steps
+1. Assess search results and plan next steps as you gather information
 1. Synthesize findings with proper citations into a final report
 
 The spawned sub-agents will conduct web searches with Tavily, fetching full webpage content for analysis.
@@ -27,7 +27,7 @@ The spawned sub-agents will conduct web searches with Tavily, fetching full webp
 This tutorial covers:
 
 - [Subagents](/oss/deepagents/subagents) for parallel, context-isolated research
-- Custom [tools](/oss/langchain/tools) for web search and strategic reflection
+- Custom [tools](/oss/langchain/tools) for web search
 - Multi-step planning with the [built-in planning tool](/oss/deepagents/harness#planning-capabilities)
 
 ## Prerequisites
@@ -112,8 +112,7 @@ Create `agent.py` in your project directory:
 <Steps>
 <Step title="Add tools">
 
-Add custom search and reflection tools. The `tavily_search` tool uses Tavily for URL discovery, then fetches full webpage content (converted to markdown) so the agent can analyze complete sources instead of summaries.
-The `think_tool` adds strategic reflection after each search—the agent uses it to analyze results, identify gaps, and decide whether to continue or conclude.
+Add the custom search tool. The `tavily_search` tool uses Tavily for URL discovery, then fetches full webpage content (converted to markdown) so the agent can analyze complete sources instead of summaries.
 
 <DeepResearchToolsPy />
 
@@ -192,13 +191,10 @@ Simply list items with details - no introduction needed:
 RESEARCHER_INSTRUCTIONS = """You are a research assistant conducting research on the user's input topic. For context, today's date is {date}.
 
 Your job is to use tools to gather information about the user's input topic.
-You can use any of the research tools provided to you to find resources that can help answer the research question.
-You can call these tools in series or in parallel, your research is conducted in a tool-calling loop.
+You can use the tavily_search tool to find resources that can help answer the research question.
+You can call it in series or in parallel, your research is conducted in a tool-calling loop.
 
-You have access to two specific research tools:
-1. **tavily_search**: For conducting web searches to gather information
-2. **think_tool**: For reflection and strategic planning during research
-**CRITICAL: Use think_tool after each search to reflect on results and plan next steps**
+You have access to the tavily_search tool for conducting web searches.
 
 Think like a human researcher with limited time. Follow these steps:
 
@@ -218,11 +214,7 @@ Think like a human researcher with limited time. Follow these steps:
 - You have 3+ relevant examples/sources for the question
 - Your last 2 searches returned similar information
 
-After each search tool call, use think_tool to analyze the results:
-- What key information did I find?
-- What's missing?
-- Do I have enough to answer the question comprehensively?
-- Should I search more or provide my answer?
+After each search, assess results before continuing: What key information did I find? What's missing? Do I have enough to answer? Should I search more or provide my answer?
 
 When providing your findings back to the orchestrator:
 
@@ -318,14 +310,14 @@ research_sub_agent = {
     "name": "research-agent",
     "description": "Delegate research to the sub-agent. Give one topic at a time.",
     "system_prompt": RESEARCHER_INSTRUCTIONS.format(date=current_date),
-    "tools": [tavily_search, think_tool],
+    "tools": [tavily_search],
 }
 
 model = ChatGoogleGenerativeAI(model="gemini-3-pro-preview", temperature=0.0)
 
 agent = create_deep_agent(
     model=model,
-    tools=[tavily_search, think_tool],
+    tools=[tavily_search],
     system_prompt=INSTRUCTIONS,
     subagents=[research_sub_agent],
 )
