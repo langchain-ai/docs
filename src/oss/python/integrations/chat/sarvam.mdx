@@ -3,7 +3,7 @@ title: "ChatSarvam integration"
 description: "Integrate with the ChatSarvam chat model using LangChain Python."
 ---
 
-[Sarvam AI](https://www.sarvam.ai) is India's sovereign AI platform with comprehensive support for 22+ Indian languages. You can find information about available models and the Sarvam API in the [Sarvam AI portal](https://portal.sarvam.ai).
+[Sarvam AI](https://www.sarvam.ai) is India's sovereign AI platform with comprehensive support for 22+ Indian languages. You can find information about available models and the Sarvam API in the [Sarvam AI dashboard](https://dashboard.sarvam.ai).
 
 <Tip>
     **API Reference**
@@ -42,7 +42,7 @@ To access Sarvam models you'll need to install the `langchain-sarvamcloud` integ
 
 ### Credentials
 
-Head to the [Sarvam AI portal](https://portal.sarvam.ai) to sign up and generate an API key. Once you've done this, set the `SARVAM_API_KEY` environment variable:
+Head to [dashboard.sarvam.ai](https://dashboard.sarvam.ai) to sign up and generate an API key. Once you've done this, set the `SARVAM_API_KEY` environment variable:
 
 ```python
 import getpass
@@ -67,16 +67,28 @@ Now we can instantiate our model object and generate chat completions:
 from langchain_sarvamcloud import ChatSarvam
 
 model = ChatSarvam(
-    model="sarvam-m",
-    # temperature=0.7,
-    # max_tokens=4096,
-    # top_p=0.95,
-    # stop=None,
+    model="sarvam-105b",
+    temperature=0.2,
+    # max_tokens=None,
+    # top_p=1.0,
+    # reasoning_effort="medium",  # "low", "medium", or "high"
     # ...
 )
 ```
 
 See the @[`ChatSarvam`] API reference for details on all available instantiation parameters.
+
+## Available models
+
+All Sarvam models are free to use.
+
+| Model | Context window | Tool calling | Notes |
+| :--- | :---: | :---: | :--- |
+| `sarvam-105b` | 128,000 tokens | ✅ | Flagship model (default) |
+| `sarvam-105b-32k` | 32,000 tokens | ✅ | Short-context variant |
+| `sarvam-30b` | 32,000 tokens | ✅ | Balanced speed and quality |
+| `sarvam-30b-16k` | 16,000 tokens | ✅ | Short-context variant |
+| `sarvam-m` | 8,192 tokens | ❌ | Legacy model |
 
 ## Invocation
 
@@ -94,68 +106,111 @@ See the @[`ChatSarvam`] API reference for details on all available instantiation
             ),
         ]
         ai_msg = model.invoke(messages)
-        print(ai_msg.text)
+        print(ai_msg.content)
         ```
     </Accordion>
     <Accordion title="Stream">
         ```python
         for chunk in model.stream(messages):
-            print(chunk.text, end="")
+            print(chunk.content, end="", flush=True)
         ```
     </Accordion>
     <Accordion title="Async">
         ```python
         ai_msg = await model.ainvoke(messages)
-        print(ai_msg.text)
+        print(ai_msg.content)
+
+        # Async streaming
+        async for chunk in model.astream(messages):
+            print(chunk.content, end="", flush=True)
         ```
     </Accordion>
 </AccordionGroup>
 
 ## Tool calling
 
-`ChatSarvam` supports tool calling via `bind_tools`:
+`ChatSarvam` supports tool calling via `bind_tools` on `sarvam-105b` and `sarvam-30b` models:
 
 ```python
 from langchain.tools import tool
+from langchain_sarvamcloud import ChatSarvam
 
 @tool
-def add(a: int, b: int) -> int:
-    """Add two numbers."""
-    return a + b
+def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return f"The weather in {city} is sunny and 28°C."
 
-model_with_tools = model.bind_tools([add])
-response = model_with_tools.invoke([("human", "What is 3 + 5?")])
+model = ChatSarvam(model="sarvam-105b")
+model_with_tools = model.bind_tools([get_weather])
+
+response = model_with_tools.invoke([("human", "What is the weather in Mumbai?")])
 print(response.tool_calls)
 ```
 
-## Indian language support
+## Structured output
 
-Sarvam models are optimized for Indian languages. The `sarvam-m` model supports 22+ languages including:
+Use `with_structured_output` to extract structured data from model responses:
 
-| Language | Code |
-| :--- | :--- |
-| Hindi | `hi` |
-| Bengali | `bn` |
-| Gujarati | `gu` |
-| Kannada | `kn` |
-| Malayalam | `ml` |
-| Marathi | `mr` |
-| Punjabi | `pa` |
-| Tamil | `ta` |
-| Telugu | `te` |
-| Urdu | `ur` |
-| Odia | `or` |
-| Assamese | `as` |
+```python
+from pydantic import BaseModel
+from langchain_sarvamcloud import ChatSarvam
 
-Pass messages in any supported language and the model will respond accordingly:
+class PersonInfo(BaseModel):
+    name: str
+    age: int
+    city: str
+
+model = ChatSarvam(model="sarvam-105b")
+structured_model = model.with_structured_output(PersonInfo)
+
+result = structured_model.invoke("Ravi is 28 years old and lives in Chennai")
+print(result.name)   # Ravi
+print(result.age)    # 28
+print(result.city)   # Chennai
+```
+
+## Reasoning effort
+
+`sarvam-105b` and `sarvam-30b` support a `reasoning_effort` parameter that controls how much the model thinks before responding:
 
 ```python
 from langchain_sarvamcloud import ChatSarvam
 
-model = ChatSarvam(model="sarvam-m")
-response = model.invoke([("human", "தமிழில் ஒரு கவிதை எழுதுங்கள்.")])
-print(response.text)
+# For complex tasks
+model = ChatSarvam(model="sarvam-105b", reasoning_effort="high")
+response = model.invoke("Explain the differences between transformers and RNNs in Tamil.")
+
+# For fast, simple responses
+model = ChatSarvam(model="sarvam-105b", reasoning_effort="low")
+response = model.invoke("What is the capital of India?")
 ```
+
+## Indian language support
+
+Sarvam models support 22+ Indian languages. Pass messages in any supported language and the model responds accordingly:
+
+```python
+from langchain_sarvamcloud import ChatSarvam
+
+model = ChatSarvam(model="sarvam-105b")
+response = model.invoke([("human", "தமிழில் ஒரு கவிதை எழுதுங்கள்.")])
+print(response.content)
+```
+
+| Language | BCP-47 code |
+| :--- | :--- |
+| Hindi | `hi-IN` |
+| Tamil | `ta-IN` |
+| Telugu | `te-IN` |
+| Kannada | `kn-IN` |
+| Malayalam | `ml-IN` |
+| Marathi | `mr-IN` |
+| Gujarati | `gu-IN` |
+| Bengali | `bn-IN` |
+| Punjabi | `pa-IN` |
+| Odia | `od-IN` |
+| Assamese | `as-IN` |
+| Urdu | `ur-IN` |
 
 ## API reference
 
