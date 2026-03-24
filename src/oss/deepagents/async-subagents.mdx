@@ -279,66 +279,6 @@ const asyncSubagents: AsyncSubAgent[] = [
 ```
 :::
 
-## Notify on completion
-
-By default, the supervisor only learns about subagent completion when it uses the check tool. For a more proactive experience, add `CompletionNotifierMiddleware` to the subagent's [middleware](/oss/deepagents/customization#middleware) stack. When the subagent finishes (or errors), the middleware sends a message to the supervisor's thread, waking the supervisor so it can proactively relay results.
-
-Add the middleware to the **subagent's** graph, not the supervisor's:
-
-:::python
-```python
-from deepagents import CompletionNotifierMiddleware
-from langchain.agents import create_agent
-
-# Same deployment (ASGI transport):
-notifier = CompletionNotifierMiddleware(parent_graph_id="supervisor")
-
-# Remote deployment (supervisor on a different server):
-notifier = CompletionNotifierMiddleware(
-    parent_graph_id="supervisor",
-    url="https://supervisor.langsmith.dev",
-)
-
-subagent = create_agent(
-    model=model,
-    tools=[...],
-    middleware=[notifier],
-)
-```
-:::
-
-:::js
-```typescript
-import { createCompletionNotifierMiddleware, createDeepAgent } from "deepagents";
-
-// url is required in JS (no in-process ASGI transport):
-const notifier = createCompletionNotifierMiddleware({
-  parentGraphId: "supervisor",
-  url: "https://my-deployment.langsmith.dev",
-});
-
-const subagent = createDeepAgent({
-  model: "claude-sonnet-4-6",
-  middleware: [notifier],
-});
-```
-:::
-
-### How it works
-
-The supervisor's `start_async_task` tool automatically injects `parent_thread_id` into the subagent's input state. The notifier reads this from state (not config), so it survives thread interrupts and `update_async_task` calls. If `parent_thread_id` is not present (e.g., the subagent was launched manually without a supervisor), the middleware silently does nothing.
-
-Notifications include the `task_id` for correlation when multiple tasks run concurrently:
-
-```text
-[task_id=thread_abc] Completed. Result: <summary of last message>
-[task_id=thread_abc] Error: <error message>
-```
-
-<Note>
-`CompletionNotifierMiddleware` is experimental and may change in future releases.
-</Note>
-
 ## Best practices
 
 ### Size the worker pool for local development
