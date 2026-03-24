@@ -77,18 +77,21 @@ const agent = await createDeepAgent({
 
 :::python
 The `system_prompt` parameter is static which means it does not change per invocation.
-For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from the store.
-If your prompt depends on context or the store, use `@dynamic_prompt` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`. See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
+If your prompt depends on context or `runtime.store`, use `@dynamic_prompt` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`.
+See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
-You do **not** need middleware when tools alone use context or store; tools receive `config.context` and `runtime.store` directly. Add middleware only when tools should be packaged with an update to the system prompt.
+You do **not** need middleware when tools alone use context or `runtime.store`; tools receive `config.context` and `runtime.store` directly. Add middleware only when tools should be packaged with an update to the system prompt.
 :::
 
 :::js
 The `systemPrompt` parameter is static which means it does not change per invocation.
-For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from the store.
-If your prompt depends on context or the store, use `dynamicSystemPromptMiddleware` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`. See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
+If your prompt depends on context or `runtime.store`, use `dynamicSystemPromptMiddleware` to build context-aware instructions.
+Your middleware can read `request.runtime.context` and `request.runtime.store`.
+See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
-You do **not** need middleware when tools alone use context or store; tools receive `config.context` and `runtime.store` directly. Add middleware only when the system prompt itself must vary per request.
+You do **not** need middleware when tools alone use context or `runtime.store`; tools receive `config.context` and `runtime.store` directly. Add middleware only when the system prompt itself must vary per request.
 :::
 
 ### Memory
@@ -141,7 +144,7 @@ Keep each skill focused on a single workflow or domain; broad or overlapping ski
 
 ### Tool prompts
 
-[Tool](/oss/langchain/tools) prompts are instructions that tell the model how to use tools. They come from two mechanisms:
+[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. Deep Agents built-in tools are packaged in middleware and typically also update the system prompt with more guidance for those tools.
 
 **Built-in tools** – Middleware that adds harness capabilities (planning, filesystem, subagents) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively:
 - Planning prompt – Instructions for `write_todos` to maintain a structured task list
@@ -199,9 +202,9 @@ order status. Always filter by the provided status.`,
 
 See [Harness](/oss/deepagents/harness) for built-in capabilities and [Customization](/oss/deepagents/customization#tools) for passing tools directly.
 
-### Complete prompt
+### Complete system prompt
 
-The final deep agent prompt consists of the following parts:
+The deep agent's system message—the assembled system prompt the model receives at the start of a run—consists of the following parts:
 
 1. Custom `system_prompt` (if provided)
 1. [Base agent prompt](https://github.com/langchain-ai/deepagents/blob/e18e9dcd0e6edc72c0a4a5b76ae752c4bc539752/libs/deepagents/deepagents/graph.py#L37)
@@ -212,11 +215,10 @@ The final deep agent prompt consists of the following parts:
 1. Subagent prompt: Task tool usage
 1. User-provided middleware prompts (if custom middleware is provided)
 1. Human-in-the-loop prompt (when `interrupt_on` is set)
-1. Local context prompt: Current directory, project info (when using CLI locally)
 
 ## Runtime context
 
-Runtime context is static configuration passed when you invoke the agent. Use it for user metadata (IDs, preferences, roles), API keys, database connections, feature flags, or other values your tools need. Tools and subagents receive this context from the `config` argument:
+Runtime context is per-run configuration you pass when you invoke the agent. It is not automatically included in the model prompt; the model only sees it if a tool, middleware, or other logic reads it and adds it to messages or the system prompt. Use runtime context for user metadata (IDs, preferences, roles), API keys, database connections, feature flags, or other values your tools and harness need. Tools and subagents receive this context from the `config` argument:
 
 :::python
 ```python
@@ -362,7 +364,7 @@ See [API reference](https://reference.langchain.com/python/deepagents/middleware
 
 ## Context isolation with subagents
 
-Subagents solve the **context bloat problem**. When the main agent uses tools with large outputs (web search, file reads, database queries), the context window fills quickly. Subagents isolate this work—the main agent receives only the final result, not the dozens of tool calls that produced it.
+Subagents solve the **context bloat problem**. When the main agent uses tools with large outputs (web search, file reads, database queries), the context window fills quickly. Subagents isolate this work—the main agent receives only the final result, not the dozens of tool calls that produced it. You can also configure each subagent separately from the main agent (for example, model, tools, system prompt, and skills).
 
 **How it works:**
 
@@ -467,8 +469,8 @@ See [Long-term memory](/oss/deepagents/long-term-memory) for setup and use cases
 
 1. **Start with the right input context** – Keep memory minimal for always-relevant conventions; use focused skills for task-specific capabilities.
 2. **Leverage subagents for heavy work** – Delegate multi-step, output-heavy tasks to keep the main agent's context clean.
-3. **Instruct subagents to be concise** – Subagent responses should summarize, not dump raw data.
-4. **Use the filesystem** – Offload large results; the agent can read or search content as needed.
+3. **Require concise subagent outputs in configuration** – The main agent delegates via the `task` tool, but you control each subagent's `system_prompt`. Use it to ask for short summaries and synthesized findings instead of pasting raw tool output back to the parent.
+4. **Use the filesystem** – Persist large outputs to files (for example subagent writes or [automatic offloading](#offloading)) so the active context stays small; the model can pull in fragments with `read_file` and `grep` when it needs details.
 5. **Document long-term memory structure** – Tell the agent what lives in `/memories/` and how to use it.
 6. **Pass runtime context for tools** – Use `context` for user metadata, API keys, and other static configuration that tools need.
 7. **Choose the right backend** – StateBackend for ephemeral; CompositeBackend for hybrid; StoreBackend for full persistence.
