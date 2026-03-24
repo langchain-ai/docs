@@ -21,6 +21,8 @@ For complete cloud-specific setup and architecture guides, see [AWS](/langsmith/
 
 <Note>
 Azure blob storage is available in Helm chart versions 0.8.9 and greater. [Deleting trace projects](/langsmith/observability-concepts#deleting-traces-from-langsmith) is supported in Azure starting in Helm chart version 0.10.43.
+
+Native GCS blob storage engine support (using `engine: "GCS"`) is available in Helm chart versions 0.13.29 and greater. For earlier versions, GCS is supported via the S3-compatible API by setting `engine: "S3"` with HMAC credentials.
 </Note>
 
 * Access to a valid blob storage service
@@ -30,12 +32,12 @@ Azure blob storage is available in Helm chart versions 0.8.9 and greater. [Delet
   * [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs)
 
 * A bucket/directory in your blob storage to store the data. We highly recommend creating a separate bucket/directory for LangSmith data.
-  * **If you are using TTLs**, you will need to set up a lifecycle policy to delete old data. You can find more information on configuring TTLs [here](/langsmith/self-host-ttl). These policies should mirror the TTLs you have set in your LangSmith configuration, or you may experience data loss. See [here](#ttl-configuration) on how to setup the lifecycle rules for TTLs for blob storage.
+  * **If you are using TTLs**, you will need to set up a lifecycle policy to delete old data. For more information, see [configuring TTLs](/langsmith/self-host-ttl). These policies should mirror the TTLs you have set in your LangSmith configuration, or you may experience data loss. See [TTL configuration for blob storage](#ttl-configuration) for how to set up the lifecycle rules.
 
 * Credentials to permit LangSmith Services to access the bucket/directory
   * You will need to provide your LangSmith instance with the necessary credentials to access the bucket/directory. Read the authentication [section](#authentication) below for more information.
 
-* If using S3 or GCS, an API url for your blob storage service
+* If using S3 or GCS, an API URL for your blob storage service
 
   * This will be the URL that LangSmith uses to access your blob storage system
   * For Amazon S3, this will be the URL of the S3 endpoint. Something like: `https://s3.amazonaws.com` or `https://s3.us-west-1.amazonaws.com` if using a regional endpoint.
@@ -111,9 +113,14 @@ Your service account will need the `Storage Admin` role or a custom role with eq
 Once you have a provisioned service account, you will need to generate a [`HMAC key`](https://cloud.google.com/storage/docs/authentication/hmackeys) for that service account. This key and secret will be used to authenticate with Google Cloud Storage.
 
 <Note>
-Google Cloud Storage (GCS) exposes an S3-compatible API. When using GCS, set the blob storage engine to "S3", configure the `apiURL` to your GCS endpoint (for example, `https://storage.googleapis.com`), and authenticate using a service account HMAC access key and secret (using `accessKey` and `accessKeySecret`).
+As of Helm chart version **0.13.29**, you can set the blob storage engine to `"GCS"` directly. This supports two authentication methods:
 
-You must use **HMAC** access key and secret for GCS. We do not support service account annotations.
+1. **GCP Workload Identity (recommended)**: Leave `accessKey` and `accessKeySecret` empty. LangSmith will use [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials). You will need to add the workload identity annotation to the `backend`, `platform-backend`, `queue`, and `ingest-queue` service accounts.
+2. **HMAC keys**: Set `accessKey` and `accessKeySecret` to your GCS [HMAC credentials](https://cloud.google.com/storage/docs/authentication/hmackeys).
+
+For both methods, set `apiURL` to `https://storage.googleapis.com` and `bucketName` to your GCS bucket name.
+
+For Helm chart versions prior to 0.13.29, GCS is supported via the S3-compatible API by setting `engine: "S3"` with HMAC credentials.
 </Note>
 
   </Tab>
@@ -149,7 +156,7 @@ After creating your bucket and obtaining the necessary credentials, you can conf
 config:
   blobStorage:
     enabled: true
-    engine: "S3" # Or "Azure". This is case-sensitive.
+    engine: "S3" # Or "GCS" or "Azure". This is case-sensitive.
     chSearchEnabled: true # Set to false if you want to disable CH search (Recommended for LangSmith Managed Clickhouse)
     bucketName: "your-bucket-name"
     apiURL: "Your connection url"
@@ -161,7 +168,7 @@ config:
     azureStorageContainerName: "your-container-name" # Required
     azureStorageConnectionString: "" # Optional.
     azureStorageServiceUrlOverride: "" # Optional
-  backend: # Optional, only required if using IAM role for service account on AWS or workload identity on AKS
+  backend: # Optional, only required if using IAM role for service account on AWS, workload identity on GKE, or workload identity on AKS
     deployment: # Azure only
       labels:
         azure.workload.identity/use: true
@@ -169,7 +176,8 @@ config:
       annotations:
         azure.workload.identity/client-id: "<client_id>" # Azure only
         eks.amazonaws.com/role-arn: "<role_arn>" # AWS only
-  platformBackend: # Optional, only required if using IAM role for service account on AWS or workload identity on AKS
+        iam.gke.io/gcp-service-account: "<gsa_name>@<project_id>.iam.gserviceaccount.com" # GCP only
+  platformBackend: # Optional, only required if using IAM role for service account on AWS, workload identity on GKE, or workload identity on AKS
     deployment: # Azure only
       labels:
         azure.workload.identity/use: true
@@ -177,7 +185,8 @@ config:
       annotations:
         azure.workload.identity/client-id: "<client_id>" # Azure only
         eks.amazonaws.com/role-arn: "<role_arn>" # AWS only
-  queue: # Optional, only required if using IAM role for service account on AWS or workload identity on AKS
+        iam.gke.io/gcp-service-account: "<gsa_name>@<project_id>.iam.gserviceaccount.com" # GCP only
+  queue: # Optional, only required if using IAM role for service account on AWS, workload identity on GKE, or workload identity on AKS
     deployment: # Azure only
       labels:
         azure.workload.identity/use: true
@@ -185,7 +194,8 @@ config:
       annotations:
         azure.workload.identity/client-id: "<client_id>" # Azure only
         eks.amazonaws.com/role-arn: "<role_arn>" # AWS only
-  ingestQueue: # Optional, only required if using IAM role for service account on AWS or workload identity on AKS
+        iam.gke.io/gcp-service-account: "<gsa_name>@<project_id>.iam.gserviceaccount.com" # GCP only
+  ingestQueue: # Optional, only required if using IAM role for service account on AWS, workload identity on GKE, or workload identity on AKS
     deployment: # Azure only
       labels:
         azure.workload.identity/use: true
@@ -193,12 +203,13 @@ config:
       annotations:
         azure.workload.identity/client-id: "<client_id>" # Azure only
         eks.amazonaws.com/role-arn: "<role_arn>" # AWS only
+        iam.gke.io/gcp-service-account: "<gsa_name>@<project_id>.iam.gserviceaccount.com" # GCP only
 ```
 
 ```bash Docker
 # In your .env file
 FF_BLOB_STORAGE_ENABLED=false # Set to true if you want to enable blob storage
-BLOB_STORAGE_ENGINE=S3 # Or Azure
+BLOB_STORAGE_ENGINE=S3 # Or GCS or Azure
 BLOB_STORAGE_BUCKET_NAME=langsmith-blob-storage # Required for using S3. Change to your desired blob storage bucket name
 BLOB_STORAGE_API_URL=https://s3.us-west-2.amazonaws.com # Change to your desired blob storage API URL
 BLOB_STORAGE_ACCESS_KEY=your-access-key # Change to your desired blob storage access key
@@ -239,7 +250,7 @@ You must create a lifecycle rule for **each** custom retention period configured
 If a lifecycle rule is missing for a configured retention period, blob data under that prefix will never be automatically deleted. Ensure you add a matching lifecycle rule whenever you configure a new workspace retention period.
 </Warning>
 
-For example, if you have workspaces configured with 90-day and 180-day extended retention, you would add the following lifecycle rules **in addition to** the default `ttl_s` and `ttl_l` rules shown [below](#ttl-configuration):
+For example, if you have workspaces configured with 90-day and 180-day extended retention, you would add the following lifecycle rules **in addition to** the [default `ttl_s` and `ttl_l` rules](#ttl-configuration):
 
 <Tabs>
   <Tab title="AWS">

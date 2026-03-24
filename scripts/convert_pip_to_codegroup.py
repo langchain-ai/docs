@@ -111,7 +111,7 @@ def convert_pip_block_to_codegroup(content: str) -> str:
     # Match only bash blocks where pip install appears within the first few lines
     # This prevents matching across unrelated code blocks
     pip_pattern = re.compile(
-        r"```(?:bash|shell|sh)?\s*\n((?:[^\n]*\n){0,3}[^\n]*pip install[^\n]*(?:\n(?!```)[^\n]*)*)\n```",  # noqa: E501
+        r"```(?:bash|shell|sh)?\s*\n((?:[^\n]*\n){0,3}[^\n]*pip install[^\n]*(?:\n(?!```)[^\n]*)*)\n```",
         re.MULTILINE,
     )
 
@@ -144,7 +144,7 @@ def convert_pip_block_to_codegroup(content: str) -> str:
                 other_lines.append(line)
 
         # Only convert if we have pip install commands and minimal other content
-        if pip_lines and len(other_lines) <= 2:  # noqa: PLR2004
+        if pip_lines and len(other_lines) <= 2:
             # Create the CodeGroup replacement
             pip_block_lines = []
             uv_block_lines = []

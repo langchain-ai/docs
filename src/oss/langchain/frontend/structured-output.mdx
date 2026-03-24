@@ -1,0 +1,410 @@
+---
+title: Structured output
+description: Render structured agent responses with custom UI components instead of plain text
+---
+
+Structured output lets the agent return typed, machine-readable data instead of plain text. Instead of rendering a single string, you get a structured object you can map to any UI: cards, tables, charts, step-by-step breakdowns, or domain-specific renderers.
+
+import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+
+<PatternEmbed pattern="structured-output-latex" />
+
+## What is structured output?
+
+Instead of returning a free-form text response, the agent uses a tool call to return a structured object conforming to a predefined schema. This gives you:
+
+- **Type-safe data**: parse the response into a known TypeScript type
+- **Precise rendering control**: render each field with its own UI treatment
+- **Consistent formatting**: every response follows the same structure regardless of the underlying model
+
+The agent accomplishes this by calling a "structured output" tool whose arguments contain the response data. The tool itself doesn't execute any logic and is purely a vehicle for returning typed data.
+
+## Use cases
+
+- **Product comparisons**: feature tables, pros/cons lists, ratings
+- **Data analysis**: summaries with metrics, breakdowns, and highlights
+- **Step-by-step guides**: ordered instructions with descriptions and code snippets
+- **Recipes**: ingredients, steps, timings, and nutritional info
+- **Math and science**: formulas rendered with LaTeX, step-by-step derivations
+- **Travel planning**: itineraries with dates, locations, and cost estimates
+
+## Define a schema
+
+Define a TypeScript type for the structured data the agent returns. The shape of this schema determines how you render the UI.
+
+Here's an example for a recipe assistant:
+
+```ts
+interface Ingredient {
+  name: string;
+  amount: string;
+  unit: string;
+}
+
+interface RecipeStep {
+  instruction: string;
+  duration?: string;
+}
+
+interface Recipe {
+  title: string;
+  description: string;
+  servings: number;
+  ingredients: Ingredient[];
+  steps: RecipeStep[];
+  totalTime: string;
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `title` | `string` | Name of the recipe |
+| `description` | `string` | Short summary of the dish |
+| `servings` | `number` | Number of servings |
+| `ingredients` | `Ingredient[]` | List of ingredients with amounts and units |
+| `steps` | `RecipeStep[]` | Ordered preparation steps |
+| `totalTime` | `string` | Estimated total preparation and cooking time |
+
+Your schema can be anything. The pattern works the same way regardless of shape.
+
+## Extract structured output from messages
+
+The structured output lives in the `tool_calls` array of the last `AIMessage`. Extract it by finding the AI message and accessing the first tool call's arguments:
+
+```ts
+import { AIMessage } from "@langchain/core/messages";
+
+function extractStructuredOutput<T>(messages: any[]): T | null {
+  const aiMessages = messages.filter(AIMessage.isInstance);
+  if (aiMessages.length === 0) return null;
+
+  const lastAI = aiMessages[aiMessages.length - 1];
+  const toolCall = lastAI.tool_calls?.[0];
+  if (!toolCall) return null;
+
+  return toolCall.args as T;
+}
+```
+
+<Note>
+The structured output tool call may not have `args` populated until the agent finishes streaming. During streaming, `args` may be partially populated or undefined. Always check for completeness before rendering.
+</Note>
+
+## Set up `useStream`
+
+:::python
+
+Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
+
+```ts
+import type { BaseMessage } from "@langchain/core/messages";
+
+interface AgentState {
+  messages: BaseMessage[];
+}
+```
+
+:::
+
+:::js
+
+Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
+
+```ts
+import type { myAgent } from "./agent";
+```
+
+:::
+
+<CodeGroup>
+
+```tsx React
+import { useStream } from "@langchain/react";
+import { AIMessage } from "@langchain/core/messages";
+
+function RecipeChat() {
+  const stream = useStream<typeof myAgent>({
+    apiUrl: "http://localhost:2024",
+    assistantId: "recipe_assistant",
+  });
+
+  const recipe = extractStructuredOutput<Recipe>(stream.messages);
+
+  return (
+    <div>
+      {!recipe && !stream.isLoading && (
+        <PromptInput onSubmit={(text) =>
+          stream.submit({ messages: [{ type: "human", content: text }] })
+        } />
+      )}
+      {stream.isLoading && <LoadingIndicator />}
+      {recipe && <RecipeCard recipe={recipe} />}
+    </div>
+  );
+}
+```
+
+```vue Vue
+<script setup lang="ts">
+import { useStream } from "@langchain/vue";
+import { AIMessage } from "@langchain/core/messages";
+import { computed } from "vue";
+
+const stream = useStream<typeof myAgent>({
+  apiUrl: "http://localhost:2024",
+  assistantId: "recipe_assistant",
+});
+
+const recipe = computed(() =>
+  extractStructuredOutput<Recipe>(stream.messages.value)
+);
+
+function handleSubmit(text: string) {
+  stream.submit({ messages: [{ type: "human", content: text }] });
+}
+</script>
+
+<template>
+  <div>
+    <PromptInput v-if="!recipe && !stream.isLoading" @submit="handleSubmit" />
+    <LoadingIndicator v-if="stream.isLoading" />
+    <RecipeCard v-if="recipe" :recipe="recipe" />
+  </div>
+</template>
+```
+
+```svelte Svelte
+<script lang="ts">
+  import { useStream } from "@langchain/svelte";
+  import { AIMessage } from "@langchain/core/messages";
+
+  const { messages, isLoading, submit } = useStream<typeof myAgent>({
+    apiUrl: "http://localhost:2024",
+    assistantId: "recipe_assistant",
+  });
+
+  $: recipe = extractStructuredOutput<Recipe>($messages);
+
+  function handleSubmit(text: string) {
+    submit({ messages: [{ type: "human", content: text }] });
+  }
+</script>
+
+<div>
+  {#if !recipe && !$isLoading}
+    <PromptInput on:submit={(e) => handleSubmit(e.detail)} />
+  {/if}
+  {#if $isLoading}
+    <LoadingIndicator />
+  {/if}
+  {#if recipe}
+    <RecipeCard {recipe} />
+  {/if}
+</div>
+```
+
+```ts Angular
+import { Component, computed } from "@angular/core";
+import { useStream } from "@langchain/angular";
+
+@Component({
+  selector: "app-recipe-chat",
+  template: `
+    @if (!recipe() && !stream.isLoading()) {
+      <prompt-input (onSubmit)="handleSubmit($event)" />
+    }
+    @if (stream.isLoading()) {
+      <loading-indicator />
+    }
+    @if (recipe()) {
+      <recipe-card [recipe]="recipe()" />
+    }
+  `,
+})
+export class RecipeChatComponent {
+  stream = useStream<typeof myAgent>({
+    apiUrl: "http://localhost:2024",
+    assistantId: "recipe_assistant",
+  });
+
+  recipe = computed(() =>
+    extractStructuredOutput<Recipe>(this.stream.messages())
+  );
+
+  handleSubmit(text: string) {
+    this.stream.submit({
+      messages: [{ type: "human", content: text }],
+    });
+  }
+}
+```
+
+</CodeGroup>
+
+## Render the structured data
+
+Once you have a typed object, build a component that maps each field to the
+appropriate UI element. This is the core of the pattern: turning structured
+data into a purpose-built interface.
+
+```tsx
+function RecipeCard({ recipe }: { recipe: Recipe }) {
+  return (
+    <div className="recipe-card">
+      <div className="recipe-header">
+        <h3>{recipe.title}</h3>
+        <p className="recipe-description">{recipe.description}</p>
+        <div className="recipe-meta">
+          <span>{recipe.servings} servings</span>
+          <span>{recipe.totalTime}</span>
+        </div>
+      </div>
+
+      <div className="recipe-ingredients">
+        <h4>Ingredients</h4>
+        <ul>
+          {recipe.ingredients.map((ing, i) => (
+            <li key={i}>
+              <strong>{ing.amount} {ing.unit}</strong> {ing.name}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="recipe-steps">
+        <h4>Instructions</h4>
+        {recipe.steps.map((step, i) => (
+          <div key={i} className="step">
+            <div className="step-number">Step {i + 1}</div>
+            <p className="step-instruction">{step.instruction}</p>
+            {step.duration && (
+              <span className="step-duration">{step.duration}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+The same approach works for any domain. Map each field to the UI element that best represents it:
+
+| Data type | Rendering strategy |
+|---|---|
+| Plain text | Paragraphs, headings, list items |
+| Numbers/metrics | Stat cards, progress bars, badges |
+| Arrays | Lists, tables, grids |
+| Nested objects | Nested cards, accordion sections |
+| Markdown | Markdown renderer (e.g. `react-markdown`) |
+| LaTeX/math | KaTeX or MathJax |
+| Dates/times | Formatted timestamps, relative time |
+| URLs | Links, embedded previews |
+
+## Handle partial streaming data
+
+During streaming, the tool call arguments may be incomplete JSON. Guard against this in your extraction logic:
+
+```ts
+function extractStructuredOutput<T>(
+  messages: any[],
+  requiredFields: string[] = [],
+): T | null {
+  const aiMessages = messages.filter(AIMessage.isInstance);
+  if (aiMessages.length === 0) return null;
+
+  const lastAI = aiMessages[aiMessages.length - 1];
+  const toolCall = lastAI.tool_calls?.[0];
+  if (!toolCall?.args) return null;
+
+  const args = toolCall.args as Record<string, unknown>;
+  const hasRequired = requiredFields.every(
+    (field) => args[field] !== undefined
+  );
+
+  if (requiredFields.length > 0 && !hasRequired) return null;
+  return args as T;
+}
+```
+
+Use the `requiredFields` parameter to wait until critical fields are populated before rendering:
+
+```ts
+const recipe = extractStructuredOutput<Recipe>(stream.messages, [
+  "title",
+  "ingredients",
+  "steps",
+]);
+```
+
+## Render progressively during streaming
+
+Rather than waiting for the complete structured output, render fields as they arrive. This gives users immediate feedback while the agent is still generating:
+
+```tsx
+function ProgressiveRecipeCard({ messages }: { messages: any[] }) {
+  const partial = extractStructuredOutput<Partial<Recipe>>(messages);
+  if (!partial) return null;
+
+  return (
+    <div className="recipe-card">
+      {partial.title && <h3>{partial.title}</h3>}
+      {partial.description && <p>{partial.description}</p>}
+
+      {partial.ingredients && partial.ingredients.length > 0 && (
+        <div className="recipe-ingredients">
+          <h4>Ingredients</h4>
+          <ul>
+            {partial.ingredients.map((ing, i) => (
+              <li key={i}>
+                {ing.amount} {ing.unit} {ing.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {partial.steps && partial.steps.length > 0 && (
+        <div className="recipe-steps">
+          <h4>Instructions</h4>
+          {partial.steps.map((step, i) => (
+            <div key={i} className="step">
+              <div className="step-number">Step {i + 1}</div>
+              <p>{step.instruction}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+<Tip>
+Progressive rendering works well when the schema has a natural top-to-bottom
+order: title, then description, then details. The agent typically generates
+fields in schema order, so the UI fills in naturally.
+</Tip>
+
+## Reset and re-submit
+
+To let the user submit a new query after viewing a result, add a button that starts a new thread:
+
+```tsx
+{recipe && (
+  <button onClick={() => stream.switchThread(null)}>
+    Start over
+  </button>
+)}
+```
+
+This clears the current conversation and lets the user begin a fresh interaction.
+
+## Best practices
+
+- **Validate before rendering**: always check that required fields exist before rendering, since streaming may deliver partial data
+- **Use a generic extraction function**: parameterize your extraction logic with a type and required fields so it works across different schemas
+- **Render progressively**: show fields as they arrive rather than waiting for the complete object, so users see immediate feedback
+- **Provide fallback representations**: if a field supports rich rendering (LaTeX, Markdown, charts), also include a plain-text equivalent in your schema as a fallback
+- **Keep schemas flat when possible**: deeply nested schemas are harder to render progressively and more likely to break during partial streaming
+- **Match UI to data**: choose the rendering strategy that best represents each field type (tables for arrays, cards for nested objects, badges for status fields)
