@@ -240,6 +240,8 @@ LINK_MAPS: list[LinkMap] = [
             "wrap_gemini": "langsmith/wrappers/_gemini/wrap_gemini",
             "traceable": "langsmith/run_helpers/traceable",
             "@traceable": "langsmith/run_helpers/traceable",
+            "trace": "langsmith/run_helpers/trace",
+            "uuid7": "langsmith/run_helpers/uuid7",
             "tracing_context": "langsmith/run_helpers/tracing_context",
             "tracingEnabled": "https://reference.langchain.com/javascript/classes/langsmith.run_trees.RunTree.html#tracingenabled",
             "langsmith_extra": "langsmith/run_helpers/SupportsLangsmithExtra",
