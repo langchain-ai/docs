@@ -64,11 +64,8 @@ async def dev_command(
 
     Returns:
         Exit code: 0 for success, 1 for failure.
-
-    Raises:
-        KeyboardInterrupt: When the user interrupts the development server.
     """
-    logger.info("Starting development mode...")
+    logger.info("Starting development mode... (press Ctrl+C to stop)")
 
     # Check if we should skip the initial build
     skip_build = getattr(args, "skip_build", False) if args else False
@@ -153,7 +150,7 @@ async def dev_command(
                 raise watcher_error
             logger.error("File watcher stopped unexpectedly")
             exit_code = 1
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("\nShutting down...")
     finally:
         if not watcher_task.done():
