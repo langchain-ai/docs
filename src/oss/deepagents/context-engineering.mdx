@@ -1,0 +1,484 @@
+---
+title: Context engineering in Deep Agents
+sidebarTitle: Context engineering
+description: Control what context your deep agent has access to and how it is managed across long-running tasks
+---
+
+Context engineering is providing the right information and tools in the right format so your deep agent can accomplish tasks reliably.
+
+Deep agents have access to several kinds of context.
+Some sources are provided to the agent at startup; others become available during runtime, such as user input.
+Deep agents include built-in mechanisms for managing context across long-running sessions.
+
+This page provides an overview of the different kinds of context your deep agent has access to and manages.
+
+<Tip>
+New to context engineering? See the [conceptual overview](/oss/concepts/context) for the different types of context and when to use them.
+</Tip>
+
+## Types of context
+
+| Context Type | What You Control | Scope |
+|--------------|------------------|-------|
+| **[Input context](#input-context)** | What goes into the agent's prompt at startup (system prompt, memory, skills) | Static, applied each run |
+| **[Runtime context](#runtime-context)** | Static configuration passed at invoke time (user metadata, API keys, connections) | Per run, propagates to subagents |
+| **[Context compression](#context-compression)** | Built-in offloading and summarization to keep context within window limits | Automatic, when limits approached |
+| **[Context isolation](#context-isolation-with-subagents)** | Use subagents to quarantine heavy work, returning only results to the main agent | Per subagent, when delegated |
+| **[Long-term memory](#long-term-memory)** | Persistent storage across threads using the virtual filesystem | Persistent across conversations |
+
+## Input context
+
+Input context is information provided to your deep agent at startup that becomes part of its system prompt. The final prompt consists of several sources:
+
+<CardGroup cols={2}>
+  <Card title="System prompt" icon="message-2" href="#system-prompt">
+    Custom instructions you provide plus built-in agent guidance.
+  </Card>
+  <Card title="Memory" icon="database" href="#memory">
+    Persistent `AGENTS.md` files always loaded when configured.
+  </Card>
+  <Card title="Skills" icon="tool" href="#skills">
+    On-demand capabilities loaded when relevant (progressive disclosure).
+  </Card>
+  <Card title="Tool prompts" icon="list" href="#tool-prompts">
+    Instructions for using built-in tools or custom tools.
+  </Card>
+</CardGroup>
+
+### System prompt
+
+Your custom system prompt is prepended to the built-in system prompt, which includes guidance for planning, filesystem tools, and subagents. Use it to define the agent's role, behavior, and knowledge:
+
+:::python
+```python
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    system_prompt=(
+        "You are a research assistant specializing in scientific literature. "
+        "Always cite sources. Use subagents for parallel research on different topics."
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+
+const agent = await createDeepAgent({
+  model: "claude-sonnet-4-6",
+  systemPrompt: `You are a research assistant specializing in scientific literature.
+  Always cite sources. Use subagents for parallel research on different topics.`,
+});
+```
+:::
+
+:::python
+The `system_prompt` parameter is static which means it does not change per invocation.
+For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
+If your prompt depends on context or `runtime.store`, use `@dynamic_prompt` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`.
+See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+
+You do **not** need middleware when tools alone use context or `runtime.store`; tools receive `config.context` and `runtime.store` directly. Add middleware only when tools should be packaged with an update to the system prompt.
+:::
+
+:::js
+The `systemPrompt` parameter is static which means it does not change per invocation.
+For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
+If your prompt depends on context or `runtime.store`, use `dynamicSystemPromptMiddleware` to build context-aware instructions.
+Your middleware can read `request.runtime.context` and `request.runtime.store`.
+See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+
+You do **not** need middleware when tools alone use context or `runtime.store`; tools receive `config.context` and `runtime.store` directly. Add middleware only when the system prompt itself must vary per request.
+:::
+
+### Memory
+
+Memory files ([`AGENTS.md`](https://agents.md/)) provide persistent context that is **always loaded** into the system prompt. Use memory for project conventions, user preferences, and critical guidelines that should apply to every conversation:
+
+:::python
+```python
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    memory=["/project/AGENTS.md", "~/.deepagents/preferences.md"],
+)
+```
+:::
+
+:::js
+```typescript
+const agent = await createDeepAgent({
+  model: "claude-sonnet-4-6",
+  memory: ["/project/AGENTS.md", "~/.deepagents/preferences.md"],
+});
+```
+:::
+
+Unlike skills, memory is always injected—there is no progressive disclosure. Keep memory minimal to avoid context overload; use [skills](/oss/deepagents/skills) for detailed workflows and domain-specific content. See [Memory](/oss/deepagents/customization#memory) for configuration details.
+
+### Skills
+
+Skills provide **on-demand** capabilities. The agent reads frontmatter from each `SKILL.md` at startup, then loads full skill content only when it determines the skill is relevant. This reduces token usage while still providing specialized workflows:
+
+:::python
+```python
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    skills=["/skills/research/", "/skills/web-search/"],
+)
+```
+:::
+
+:::js
+```typescript
+const agent = await createDeepAgent({
+  model: "claude-sonnet-4-6",
+  skills: ["/skills/research/", "/skills/web-search/"],
+});
+```
+:::
+
+Keep each skill focused on a single workflow or domain; broad or overlapping skills dilute relevance and bloat context when loaded. Within a skill, keep the main content concise and move detailed reference material to separate files that are referenced in the skill file. Put always-relevant conventions in [memory](#memory). See [Skills](/oss/deepagents/skills) for authoring and configuration.
+
+### Tool prompts
+
+[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. Deep Agents built-in tools are packaged in middleware and typically also update the system prompt with more guidance for those tools.
+
+**Built-in tools** – Middleware that adds harness capabilities (planning, filesystem, subagents) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively:
+- Planning prompt – Instructions for `write_todos` to maintain a structured task list
+- Filesystem prompt – Documentation for `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` (and `execute` when using a sandbox backend)
+- Subagent prompt – Guidance for delegating work with the `task` tool
+- Human-in-the-loop prompt – Usage for pausing at specified tool calls (when `interrupt_on` is set)
+- Local context prompt – Current directory and project info (CLI only)
+
+**Tools you provide** – Tools passed via the `tools` parameter get their descriptions (from the tool schema) sent to the model. You can also add [custom middleware](/oss/langchain/middleware) that adds tools and appends its own system prompt instructions.
+
+For tools you provide, make sure to provide a clear name, description, and argument descriptions. These guide the model's reasoning about when and how to use the tool. Include *when* to use the tool in the description and describe what each argument does.
+
+:::python
+```python
+@tool(parse_docstring=True)
+def search_orders(
+    user_id: str,
+    status: str,
+    limit: int = 10
+) -> str:
+    """Search for user orders by status.
+
+    Use this when the user asks about order history or wants to check
+    order status. Always filter by the provided status.
+
+    Args:
+        user_id: Unique identifier for the user
+        status: Order status: 'pending', 'shipped', or 'delivered'
+        limit: Maximum number of results to return
+    """
+    # Implementation here
+    ...
+```
+:::
+
+:::js
+```typescript
+const searchOrders = tool(
+  async ({ userId, status, limit }) => { /* ... */ },
+  {
+    name: "search_orders",
+    description: `Search for user orders by status.
+
+Use this when the user asks about order history or wants to check
+order status. Always filter by the provided status.`,
+    schema: z.object({
+      userId: z.string().describe("Unique identifier for the user"),
+      status: z.enum(["pending", "shipped", "delivered"]).describe("Order status to filter by"),
+      limit: z.number().default(10).describe("Maximum number of results to return"),
+    }),
+  }
+);
+```
+:::
+
+See [Harness](/oss/deepagents/harness) for built-in capabilities and [Customization](/oss/deepagents/customization#tools) for passing tools directly.
+
+### Complete system prompt
+
+The deep agent's system message—the assembled system prompt the model receives at the start of a run—consists of the following parts:
+
+1. Custom `system_prompt` (if provided)
+1. [Base agent prompt](https://github.com/langchain-ai/deepagents/blob/e18e9dcd0e6edc72c0a4a5b76ae752c4bc539752/libs/deepagents/deepagents/graph.py#L37)
+1. To-do list prompt: Instructions for how to plan with to do lists
+1. Memory prompt: `AGENTS.md` + memory usage guidelines (only when `memory` provided)
+1. Skills prompt: Skills locations + list of skills with frontmatter information + usage (only when skills provided)
+1. Virtual filesystem prompt (filesystem + execute tool docs if applicable)
+1. Subagent prompt: Task tool usage
+1. User-provided middleware prompts (if custom middleware is provided)
+1. Human-in-the-loop prompt (when `interrupt_on` is set)
+
+## Runtime context
+
+Runtime context is per-run configuration you pass when you invoke the agent. It is not automatically included in the model prompt; the model only sees it if a tool, middleware, or other logic reads it and adds it to messages or the system prompt. Use runtime context for user metadata (IDs, preferences, roles), API keys, database connections, feature flags, or other values your tools and harness need. Tools and subagents receive this context from the `config` argument:
+
+:::python
+```python
+from langchain.agents import tool
+
+@tool
+def fetch_user_data(query: str, config) -> str:
+    """Fetch data for the current user."""
+    user_id = config.get("context", {}).get("user_id")
+    return f"Data for user {user_id}: {query}"
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    tools=[fetch_user_data],
+    context_schema={"user_id": str, "api_key": str},
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Get my recent activity"}]},
+    config={"context": {"user_id": "user-123", "api_key": "sk-..."}},
+)
+```
+:::
+
+:::js
+```typescript
+import { tool } from "langchain";
+import { z } from "zod";
+
+const fetchUserData = tool(
+  (input, config) => {
+    const userId = config.context?.userId;
+    return `Data for user ${userId}: ${input.query}`;
+  },
+  {
+    name: "fetch_user_data",
+    description: "Fetch data for the current user",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const contextSchema = z.object({
+  userId: z.string(),
+  apiKey: z.string(),
+});
+
+const agent = await createDeepAgent({
+  model: "claude-sonnet-4-6",
+  tools: [fetchUserData],
+  contextSchema,
+});
+
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "Get my recent activity" }] },
+  { context: { userId: "user-123", apiKey: "sk-..." } },
+);
+```
+:::
+
+Runtime context **propagates to all subagents**. When a subagent runs, it receives the same `config` (including `context`) as the parent. See [Subagents](/oss/deepagents/subagents#context-management) for per-subagent context (namespaced keys).
+
+## Context compression
+
+Long-running tasks produce large tool outputs and long conversation history.
+Context compression reduces the size of information in an agent's working memory while preserving details relevant to the task.
+The following techniques are the built-in mechanisms to ensure the context passed to LLMs stays within its context window limit:
+
+<CardGroup cols={2}>
+  <Card title="Offloading" icon="file-export" href="#offloading">
+    Large tool inputs and results are stored in the filesystem and replaced with references.
+  </Card>
+  <Card title="Summarization" icon="article" href="#summarization">
+    Old messages are compressed into an LLM-generated summary when limits are approached.
+  </Card>
+</CardGroup>
+
+### Offloading
+
+Deep Agents use the [built-in filesystem tools](#virtual-filesystem-access) to automatically offload content and to search and retrieve that offloaded content as needed.
+Content offloading happens when tool call inputs or results exceed a token threshold (default 20,000):
+
+1. **Tool call inputs exceed 20,000 tokens**: File write and edit operations leave behind tool calls containing the complete file content in the agent's conversation history.
+    Since this content is already persisted to the filesystem, it's often redundant.
+    As the session context crosses 85% of the model's available window, deep agents truncate older tool calls, replacing them with a pointer to the file on disk and reducing the size of the active context.
+
+    ![An example of offloading showing a large input which is saved to disk and the truncated version is used for the tool call](/oss/images/deepagents/offloading-inputs.png)
+
+2. **Tool call results exceed 20,000 tokens**: When this occurs, the deep agent offloads the response to the configured backend and substitutes it with a file path reference and a preview of the first 10 lines. Agents can then re-read or search the content as needed.
+
+    ![An example of offloading showing a large tool response that is replaced with a message about the location of the offloaded results and the first 10 lines of the result](/oss/images/deepagents/offloading-results.png)
+
+### Summarization
+
+When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history.
+
+This process has two components:
+
+- **In-context summary**: An LLM generates a structured summary of the conversation including session intent, artifacts created, and next steps—which replaces the full conversation history in the agent's working memory.
+- **Filesystem preservation**: The complete, original conversation messages are written to the filesystem as a canonical record.
+
+This dual approach ensures the agent maintains awareness of its goals and progress (via the summary) while preserving the ability to recover specific details when needed (via filesystem search).
+
+![An example of summarization showing an agent's conversation history, where several steps get compacted](/oss/images/deepagents/summarization.png)
+
+**Configuration:**
+- Triggers at 85% of the model's `max_input_tokens` from its [model profile](/oss/langchain/models#model-profiles)
+- Keeps 10% of tokens as recent context
+- Falls back to 170,000-token trigger / 6 messages kept if model profile is unavailable
+- If any model call raises a standard `ContextOverflowError`, Deep Agents immediately falls back to summarization and retries with summary + recent preserved messages
+- Older messages are summarized by the model
+
+:::python
+
+##### Summarization Tool
+
+Deep Agents includes an optional [tool](/oss/langchain/tools) for summarization, enabling agents to trigger summarization at opportune times—such as between tasks—instead of at fixed token intervals.
+
+You can enable this tool by appending it to the middleware list:
+
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import StateBackend
+from deepagents.middleware.summarization import (
+    create_summarization_tool_middleware,
+)
+
+backend = StateBackend  # if using default backend
+
+model = "openai:gpt-5.4"
+agent = create_deep_agent(
+    model=model,
+    middleware=[  # [!code highlight]
+        create_summarization_tool_middleware(model, backend),  # [!code highlight]
+    ],  # [!code highlight]
+)
+```
+
+Enabling this feature does not disable the default summarization action at 85% of the model's context limit.
+
+See [API reference](https://reference.langchain.com/python/deepagents/middleware/summarization/SummarizationToolMiddleware) for details.
+
+:::
+
+## Context isolation with subagents
+
+Subagents solve the **context bloat problem**. When the main agent uses tools with large outputs (web search, file reads, database queries), the context window fills quickly. Subagents isolate this work—the main agent receives only the final result, not the dozens of tool calls that produced it. You can also configure each subagent separately from the main agent (for example, model, tools, system prompt, and skills).
+
+**How it works:**
+
+- Main agent has a `task` tool to delegate work
+- Subagent runs with its own fresh context
+- Subagent executes autonomously until completion
+- Subagent returns a single final report to the main agent
+- Main agent's context stays clean
+
+**Best practices:**
+
+1. **Delegate complex tasks**: Use subagents for multi-step work that would clutter the main agent's context.
+2. **Keep subagent responses concise**: Instruct subagents to return summaries, not raw data:
+
+    :::python
+    ```python
+    research_subagent = {
+        "name": "researcher",
+        "description": "Conducts research on a topic",
+        "system_prompt": """You are a research assistant.
+        IMPORTANT: Return only the essential summary (under 500 words).
+        Do NOT include raw search results or detailed tool outputs.""",
+        "tools": [web_search],
+    }
+    ```
+    :::
+
+    :::js
+    ```typescript
+    const researchSubagent = {
+    name: "researcher",
+    description: "Conducts research on a topic",
+    systemPrompt: `You are a research assistant.
+    IMPORTANT: Return only the essential summary (under 500 words).
+    Do NOT include raw search results or detailed tool outputs.`,
+    tools: [webSearch],
+    };
+    ```
+    :::
+
+3. **Use the filesystem for large data**: Subagents can write results to files; the main agent reads what it needs.
+
+See [Subagents](/oss/deepagents/subagents) for configuration and [context management](/oss/deepagents/subagents#context-management) for runtime context propagation and per-subagent namespacing.
+
+## Long-term memory
+
+When using the default filesystem, your deep agent stores its working memory files in agent state, which only persists within a single thread.
+Long-term memory enables your deep agent to persist information across different threads and conversations.
+Deep agents can use long-term memory for storing user preferences, accumulated knowledge, research progress, or any information that should persist beyond a single session.
+
+To use long-term memory, you must use a `CompositeBackend` that routes specific paths (typically `/memories/`) to a LangGraph Store, which provides durable cross-thread persistence.
+The `CompositeBackend` is a hybrid storage system where some files persist indefinitely while others remain scoped to a single thread.
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from langgraph.store.memory import InMemoryStore
+
+def make_backend(runtime):
+    return CompositeBackend(
+        default=StateBackend(runtime),
+        routes={"/memories/": StoreBackend(runtime)},
+    )
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    store=InMemoryStore(),
+    backend=make_backend,
+    system_prompt="""When users tell you their preferences, save them to
+    /memories/user_preferences.txt so you remember them in future conversations.""",
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph-checkpoint";
+
+const agent = await createDeepAgent({
+  model: "claude-sonnet-4-6",
+  store: new InMemoryStore(),
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    { "/memories/": new StoreBackend(config) },
+  ),
+  systemPrompt: `When users tell you their preferences, save them to /memories/user_preferences.txt so you remember them in future conversations.`,
+});
+```
+:::
+
+You do not need to pre-populate `/memories/` with files.
+You provide the backend config, store, and system prompt instructions that tell the agent *what* to save and *where*.
+For example, you may prompt the agent to store preferences in `/memories/preferences.txt`.
+The path starts empty and the agent creates files on demand using its filesystem tools (`write_file`, `edit_file`) when users share information worth remembering.
+
+To pre-seed memories, use the [Store API](/langsmith/custom-store) when deploying on LangSmith.
+See [Long-term memory](/oss/deepagents/long-term-memory) for setup and use cases.
+
+## Best practices
+
+1. **Start with the right input context** – Keep memory minimal for always-relevant conventions; use focused skills for task-specific capabilities.
+2. **Leverage subagents for heavy work** – Delegate multi-step, output-heavy tasks to keep the main agent's context clean.
+3. **Adjust subagent outputs in configuration** – If you notice when debugging that subagents generate long output, you can add guidance to the subagent's `system_prompt` to create summaries and synthesized findings.
+4. **Use the filesystem** – Persist large outputs to files (for example subagent writes or [automatic offloading](#offloading)) so the active context stays small; the model can pull in fragments with `read_file` and `grep` when it needs details.
+5. **Document long-term memory structure** – Tell the agent what lives in `/memories/` and how to use it.
+6. **Pass runtime context for tools** – Use `context` for user metadata, API keys, and other static configuration that tools need.
+
+## Related resources
+
+- [Harness](/oss/deepagents/harness) – Context management overview, offloading, summarization
+- [Subagents](/oss/deepagents/subagents) – Context isolation, runtime context propagation
+- [Long-term memory](/oss/deepagents/long-term-memory) – Cross-thread persistence
+- [Skills](/oss/deepagents/skills) – Progressive disclosure and skill authoring
+- [Backends](/oss/deepagents/backends) – Filesystem backends and CompositeBackend
+- [Context conceptual overview](/oss/concepts/context) – Context types and lifecycle

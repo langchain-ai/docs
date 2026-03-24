@@ -1,0 +1,167 @@
+---
+title: "Nia Toolkit integration"
+description: "Integrate with the Nia search and index API using LangChain Python."
+---
+
+[Nia](https://trynia.ai) is a search and index API that continuously provides context from docs, research papers, datasets, codebases, and more—so agents never rely on stale data. Scalable, 5x cheaper, and reliable.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/) | Version |
+|:------|:--------|:---:|:---:|:---:|
+| [NiaToolkit](https://github.com/nozomio-labs/nia-langchain) | [langchain-nia](https://pypi.org/project/langchain-nia/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-nia?style=flat-square&label=%20) |
+
+### Tool features
+
+| [Returns artifact](/oss/langchain/tools) | Native async | Toolkit | Number of tools | Pricing |
+| :---: | :---: | :---: | :---: | :---: |
+| ❌ | ✅ | ✅ | 20 | Free tier available |
+
+## Setup
+
+The integration lives in the `langchain-nia` package.
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-nia
+    ```
+    ```python uv
+    uv add langchain-nia
+    ```
+</CodeGroup>
+
+### Credentials
+
+Sign up at [trynia.ai](https://trynia.ai) to get an API key.
+
+```python
+import getpass
+import os
+
+if not os.environ.get("NIA_API_KEY"):
+    os.environ["NIA_API_KEY"] = getpass.getpass("Nia API key:\n")
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
+
+### Using the toolkit
+
+The `NiaToolkit` provides all 20 Nia tools with a shared API wrapper. Use `include_*` flags to control which tool groups are available:
+
+```python
+from langchain_nia import NiaToolkit
+
+toolkit = NiaToolkit(
+    include_search=True,        # NiaSearch, NiaWebSearch, NiaDeepResearch, NiaUniversalSearch, NiaAdvisor
+    include_sources=True,       # NiaIndex, NiaSourceList, NiaSourceSubscribe, NiaSourceSync, NiaRead, NiaGrep, NiaExplore
+    include_github=True,        # NiaGitHubSearch, NiaGitHubRead, NiaGitHubGlob, NiaGitHubTree
+    include_contexts=True,      # NiaContextSave, NiaContextSearch
+    include_dependencies=True,  # NiaDependencySubscribe, NiaDependencyAnalyze
+)
+tools = toolkit.get_tools()
+```
+
+### Using individual tools
+
+You can also use tools directly:
+
+```python
+from langchain_nia import NiaSearch
+
+tool = NiaSearch()
+```
+
+## Invocation
+
+### Search across indexed sources
+
+```python
+from langchain_nia import NiaSearch
+
+tool = NiaSearch()
+tool.invoke({"query": "how to use React hooks"})
+```
+
+### Search the web
+
+```python
+from langchain_nia import NiaWebSearch
+
+tool = NiaWebSearch()
+tool.invoke({"query": "latest Python release", "num_results": 5})
+```
+
+### Read files from indexed sources
+
+```python
+from langchain_nia import NiaRead
+
+tool = NiaRead()
+tool.invoke({"source_id": "your-source-id", "path": "README.md"})
+```
+
+### Within an agent
+
+```python
+from langchain_nia import NiaToolkit
+
+toolkit = NiaToolkit(include_search=True, include_sources=False, include_github=False, include_contexts=False, include_dependencies=False)
+tools = toolkit.get_tools()
+
+# pip install -qU "langchain[anthropic]"
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Search for React hooks best practices"}]}
+)
+```
+
+## Available tools
+
+### Search tools
+- **NiaSearch** - Semantic search across indexed repos, docs, datasets, and more
+- **NiaWebSearch** - Web search with category filtering and date range
+- **NiaDeepResearch** - Multi-step comprehensive research
+- **NiaUniversalSearch** - Search all sources simultaneously
+- **NiaAdvisor** - Analyze code against indexed documentation
+
+### Source management tools
+- **NiaIndex** - Index new sources (repos, docs, papers, datasets)
+- **NiaSourceList** - List indexed sources with filtering
+- **NiaSourceSubscribe** - Subscribe to pre-indexed public sources
+- **NiaSourceSync** - Re-sync sources to pull latest changes
+- **NiaRead** - Read files/pages from indexed sources
+- **NiaGrep** - Regex search within indexed sources
+- **NiaExplore** - Browse file tree of indexed sources
+
+### GitHub tools
+- **NiaGitHubSearch** - Search code in GitHub repositories
+- **NiaGitHubRead** - Read files from GitHub repos
+- **NiaGitHubGlob** - Find files matching glob patterns
+- **NiaGitHubTree** - Browse repo file tree structure
+
+### Context and memory tools
+- **NiaContextSave** - Save context for cross-agent sharing
+- **NiaContextSearch** - Semantic search over saved contexts
+
+### Dependency tools
+- **NiaDependencySubscribe** - Auto-subscribe to docs for project dependencies
+- **NiaDependencyAnalyze** - Preview what would be indexed from a manifest
+
+## API reference
+
+For detailed documentation of all Nia tools and configurations, see the [langchain-nia GitHub repository](https://github.com/nozomio-labs/nia-langchain).

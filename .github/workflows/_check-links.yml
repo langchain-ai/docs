@@ -39,6 +39,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
 
       - name: Configure Python ${{ inputs.python-version }} with uv package manager
         uses: "./.github/actions/uv_setup"
@@ -55,8 +57,37 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Resolve npm global prefix
+        id: npm-paths
+        run: |
+          PREFIX="$(npm prefix -g)"
+          echo "root=${PREFIX}/lib/node_modules" >> "$GITHUB_OUTPUT"
+          echo "bin=${PREFIX}/bin" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Mintlify CLI
+        id: cache-mint
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ steps.npm-paths.outputs.root }}/mint
+            ${{ steps.npm-paths.outputs.bin }}/mint
+          key: mintlify-${{ runner.os }}-node-22-${{ hashFiles('.github/workflows/_check-links.yml') }}
+          restore-keys: |
+            mintlify-${{ runner.os }}-node-22-
+
       - name: Install Mintlify CLI
-        run: npm i -g mint@4.2.126
+        if: steps.cache-mint.outputs.cache-hit != 'true'
+        run: npm i -g mint@latest
+
+      - name: Patch KaTeX __VERSION__ bug
+        if: steps.cache-mint.outputs.cache-hit != 'true'
+        run: |
+          KATEX_DIR="$(npm root -g)/mint/node_modules/katex"
+          KATEX_MJS="$KATEX_DIR/dist/katex.mjs"
+          if [ -f "$KATEX_MJS" ]; then
+            VERSION=$(node -e "console.log(require('$KATEX_DIR/package.json').version)")
+            sed -i "s/__VERSION__/\"$VERSION\"/g" "$KATEX_MJS"
+          fi
 
       - name: Validate documentation links
         run: make broken-links

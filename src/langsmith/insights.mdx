@@ -3,7 +3,7 @@ title: Discover errors and usage patterns with the Insights Agent
 sidebarTitle: Insights
 ---
 
-The Insights Agent automatically analyzes your traces to detect usage patterns, common agent behaviors and failure modes — without requiring you to manually review thousands of traces.
+The Insights Agent automatically analyzes your traces to detect usage patterns, common agent behaviors and failure modes—without requiring you to manually review thousands of traces.
 
 Insights uses hierarchical categorization to make sense of your data and highlight actionable trends.
 
@@ -13,9 +13,9 @@ Insights uses hierarchical categorization to make sense of your data and highlig
 
 ## Prerequisites
 
-- An OpenAI API key (generate one [on the OpenAI platform](https://platform.openai.com/account/api-keys)) or an Anthropic API key (generate one [on the Anthropic console](https://console.anthropic.com/settings/keys))
-- Permissions to create rules in LangSmith (required to generate new Insights Reports)
-- Permissions to view tracing projects LangSmith (required to view existing Insights Reports)
+- A [model configuration](/langsmith/model-configurations) set up for Insights in your workspace.
+- Permissions to create rules in LangSmith (required to generate new Insights Reports).
+- Permissions to view tracing projects LangSmith (required to view existing Insights Reports).
 
 ## Generate your first Insights report
 
@@ -26,10 +26,10 @@ Insights uses hierarchical categorization to make sense of your data and highlig
 1. Navigate to **Tracing Projects** in the left-hand menu and select a tracing project.
 2. Click **+New** in the top right corner then **New Insights Report** to generate new insights over the project.
 3. Enter a name for your job.
-4. Click the <Icon icon="key" /> icon in the top right of the job creation pane to set your OpenAI (or Anthropic) API key as a [workspace secret](/langsmith/administration-overview#workspaces). If your workspace already has an OpenAI API key set, you can skip this step.
+4. If you haven't already, [configure a model](/langsmith/model-configurations) for Insights in your workspace settings.
 5. Answer the guided questions to focus your Insights Report on what you want to learn about your agent, then click **Run job**.
 
-<Tip>Toggle to Manual mode to try [prebuilt configs](#using-a-prebuilt-config) for common use cases or [build your own](#building-a-config-from-scratch).</Tip>
+<Tip>Toggle to Manual mode to [configure the job manually](#configure-a-job).</Tip>
 
 This will kick off a background Insights Report. Reports can take up to 30 minutes to complete.
 
@@ -121,7 +121,7 @@ You can view the traces assigned to each category or subcategory by clicking thr
 
 ## Configure a job
 
-You can create an Insights Report three ways. Start with the auto-generated flow to spin up a baseline, then iterate with saved or manual configs as you refine.
+You can create an Insights Report using the auto-generated flow or by configuring it manually.
 
 ### Autogenerating a config
 
@@ -137,21 +137,20 @@ For best results, write a sentence or two for each prompt that gives the agent t
 
 Explain how your data is organized—are these single runs or multi-turn conversations? Which inputs and outputs contain the key information? This helps the Insights Agent generate summary prompts and attributes that focus on what matters. You can also directly specify variables from the [summary prompt](#summary-prompt) section if needed.
 
-### Choose a model provider
+### Choose models
 
-You can select either OpenAI or Anthropic models to power the agent. You must have the corresponding [workspace secret](/langsmith/administration-overview#workspaces) set for whichever provider you choose (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`).
+Insights uses two models:
 
-Note that using current Anthropic models costs ~3x as much as using OpenAI models.
+- **Thinking model** — performs the clustering step (more capable, higher cost).
+- **Summarization model** — generates the per-trace summaries (faster, lower cost).
 
-### Using a prebuilt config
+Both models are selected from the providers you have configured in your workspace. When specific models have been enabled for Insights in your [model configurations](/langsmith/model-configurations), you can select them individually. If no individual models are configured, you select a provider (OpenAI or Anthropic) and Insights uses default models for that provider.
 
-<Frame caption="Prebuilt configs in Manual mode"><img src="/langsmith/images/insights-manual-config.png" /> </Frame>
+For best results, use models from the same provider for both roles.
 
-Use the **Saved configurations** dropdown to load presets for common jobs like **Usage Patterns** or **Error Analysis**. Run them directly for a fast start, or adjust filters, prompts, and providers before saving your customized version. To learn more about what you can customize, read the section below.
+### Manual configuration
 
-### Building a config from scratch
-
-Building your own config helps when you need more control—for example, predefining categories you want your data to be grouped into or targeting traces that match specific feedback scores and filters.
+Manual configuration gives you more control—for example, predefining categories you want your data grouped into or targeting traces that match specific feedback scores and filters.
 
 #### Select traces
 
@@ -169,9 +168,11 @@ The **Categories** section of the config lets you do this by enumerating the nam
 
 Subcategories are still auto-generated by the algorithm within the predefined top-level categories.
 
+When a job completes, the discovered top-level categories are automatically saved back to the config—but only if the config had no categories defined beforehand. This means subsequent scheduled runs will reuse those categories for consistency.
+
 #### Summary prompt
 
-The first step of the job is to create a brief summary of every trace — it is these summaries that are then categorized.
+The first step of the job is to create a brief summary of every trace—it is these summaries that are then categorized.
 
 Extracting the right information in the summary is essential for getting useful categories.
 
@@ -182,18 +183,27 @@ The two things to think about when editing the prompt are:
 - Summarization instructions: Any information that isn't in the trace summary won't affect the categories that get generated, so make sure to provide clear instructions on what information is important to extract from each trace.
 - Trace content: Use mustache formatting to specify which parts of each trace are passed to the summarizer. Large traces with lots of inputs and outputs can be expensive and noisy. Reducing the prompt to only include the most relevant parts of the trace can improve your results.
 
-The Insights Agent analyzes [threads](https://docs.langchain.com/langsmith/threads) - groups of related traces that represent multi-turn conversations. You must specify what parts of the thread to send to the summarizer using at least one of these template variables:
+You must specify what parts of each trace to send to the summarizer using at least one of these template variables:
 
-| Variable | Best for | Example |
+| Variable | Description | Example |
 | --- | --- | --- |
-| `run.*` | Access data from the most recent root run (i.e. final turn) in a thread | `{{run.inputs}}` `{{run.outputs}}` `{{run.error}}`|
+| `run.inputs` | Inputs of the most recent root run | `{{run.inputs}}` |
+| `run.outputs` | Outputs of the most recent root run | `{{run.outputs}}` |
+| `run.error` | Error string, if the run failed | `{{run.error}}` |
+| `run.feedback` | All feedback scores as a JSON blob | `{{run.feedback}}` |
+| `run.feedback.<key>` | A specific feedback score by key | `{{run.feedback.correctness}}` |
+| `all_thread_messages` | Full message history for the thread (only available for projects with [threads](/langsmith/threads)) | `{{all_thread_messages}}` |
 
-You can also access nested fields using dot notation. For example, the prompt `"Summarize this: {{run.inputs.foo.bar}}"` will include only the "bar" value within the "foo" value of the last run's inputs.
+You can access nested fields using dot notation. For example, `{{run.inputs.foo.bar}}` includes only the `bar` field within `foo` in the last run's inputs.
+
+<Note>
+For projects with [threads](/langsmith/threads), Insights analyzes full conversations. Only the most recent root run from each thread is used for `run.*` variables. Use `all_thread_messages` to access the complete conversation history.
+</Note>
 
 #### Attributes
 
-Along with a summary, you can define additional categorical, numerical, and boolean attributes to be extracted from each trace.
-These attributes will influence the categorization step — traces with similar attribute values will tend to be categorized together.
+Along with a summary, you can define additional string, numerical, and boolean attributes to be extracted from each trace.
+These attributes will influence the categorization step—traces with similar attribute values will tend to be categorized together.
 You can also see aggregations of these attributes per category.
 
 As an example, you might want to extract the attribute `user_satisfied: boolean` from each trace to steer the algorithm towards categories that split up positive and negative user experiences, and to see the average user satisfaction per category.

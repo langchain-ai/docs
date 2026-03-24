@@ -1,35 +1,36 @@
 ---
 title: Custom instrumentation
-sidebarTitle: Custom instrumentation
+sidebarTitle: Customize instrumentation
 ---
 
-<Note>
-If you've decided you no longer want to trace your runs, you can remove the `LANGSMITH_TRACING` environment variable. Note that this does not affect the `RunTree` objects or API users, as these are meant to be low-level and not affected by the tracing toggle.
-</Note>
-
-There are several ways to log traces to LangSmith.
+LangSmith integrations handle tracing automatically. Custom instrumentation lets you define exactly which functions are traced, control what inputs and outputs are logged, and structure your trace hierarchy without rewriting your application logic.
 
 <Check>
-If you are using LangChain (either Python or JS/TS), you can skip this section and go directly to the [LangChain-specific instructions](/langsmith/trace-with-langchain).
+If you are using LangChain (either Python or JS/TS), go directly to the [LangChain-specific instructions](/langsmith/trace-with-langchain).
 </Check>
+
+## Prerequisites
+
+Before tracing, set the following environment variables:
+
+- `LANGSMITH_TRACING=true`: enables tracing. Set this to toggle tracing on and off without changing your code.
+- `LANGSMITH_API_KEY`: your [LangSmith API key](/langsmith/create-account-api-key).
+
+<Note>
+To disable tracing, remove the `LANGSMITH_TRACING` environment variable. This does not affect `RunTree` objects or direct API usage, which are low-level and not controlled by the tracing toggle.
+</Note>
+
+<Tip>
+By default, traces are logged to a project named `default`. To log to a different project, see [Log traces to a specific project](/langsmith/log-traces-to-project).
+</Tip>
 
 ## Use `@traceable` / `traceable`
 
-LangSmith makes it easy to log traces with minimal changes to your existing code with the `@traceable` decorator in Python and `traceable` function in TypeScript.
+The recommended approach is the @[`@traceable`] decorator (Python) or [`traceable`](https://reference.langchain.com/javascript/langsmith/traceable) wrapper (TypeScript). Apply it to any function to make it a traced run, and LangSmith handles context propagation across nested calls automatically.
 
-<Note>
-The `LANGSMITH_TRACING` environment variable must be set to `'true'` in order for traces to be logged to LangSmith, even when using `@traceable` or `traceable`. This allows you to toggle tracing on and off without changing your code.
+The following example traces a simple pipeline: `run_pipeline` calls `format_prompt` to build the messages, `invoke_llm` to call the model, and `parse_output` to extract the result.
 
-Additionally, you will need to set the `LANGSMITH_API_KEY` environment variable to your API key (see [Setup](/) for more information).
-
-By default, the traces will be logged to a project named `default`. To log traces to a different project, see [this section](/langsmith/log-traces-to-project).
-</Note>
-
-
-The `@traceable` decorator is a simple way to log traces from the LangSmith Python SDK. Simply decorate any function with `@traceable`.
-
-Note that when wrapping a sync function with `traceable`, (e.g. `formatPrompt` in the example below), you should use the `await` keyword when calling it to
-  ensure the trace is logged correctly.
+Each function is individually traced, and because they're called from within `run_pipeline` (also traced), LangSmith automatically nests them as child runs. `invoke_llm` uses `run_type="llm"` to mark it as an LLM call so LangSmith can render token counts and latency correctly:
 
 <CodeGroup>
 
@@ -122,18 +123,24 @@ await runPipeline();
 
 </CodeGroup>
 
-![Annotate code trace](/langsmith/images/annotate-code-trace.gif)
+In LangSmith, you'll see a `run_pipeline` trace with `format_prompt`, `invoke_llm`, and `parse_output` as nested child runs.
+
+<Note>
+When you wrap a sync function with `traceable` (e.g., `formatPrompt` in the previous example), use the `await` keyword when calling it to ensure the trace is logged correctly.
+</Note>
 
 ## Use the `trace` context manager (Python only)
 
 In Python, you can use the `trace` context manager to log traces to LangSmith. This is useful in situations where:
 
 1. You want to log traces for a specific block of code.
-2. You want control over the inputs, outputs, and other attributes of the trace.
-3. It is not feasible to use a decorator or wrapper.
-4. Any or all of the above.
+1. You want control over the inputs, outputs, and other attributes of the trace.
+1. It is not feasible to use a decorator or wrapper.
+1. Any or all of the above.
 
 The context manager integrates seamlessly with the `traceable` decorator and `wrap_openai` wrapper, so you can use them together in the same application.
+
+The following example shows all three used together. `wrap_openai` wraps the OpenAI client so its calls are traced automatically. `my_tool` uses `@traceable` with `run_type="tool"` and a custom `name` to appear correctly in the trace. `chat_pipeline` itself is not decorated—instead, `ls.trace` wraps the call, letting you pass the project name and inputs explicitly and set outputs manually via `rt.end()`:
 
 ```python
 import openai
@@ -262,7 +269,7 @@ await pipeline.patchRun();
 
 ## Example usage
 
-You can extend the utilities above to conveniently trace any code. Below are some example extensions:
+You can extend the utilities explained in the previous section to trace any code. The following code shows some example extensions.
 
 Trace any public method in a class:
 
@@ -315,9 +322,9 @@ MyClass(13).combine(29)
 
 ## Ensure all traces are submitted before exiting
 
-LangSmith's tracing is done in a background thread to avoid obstructing your production application. This means that your process may end before all traces are successfully posted to LangSmith. Here are some options for ensuring all traces are submitted before exiting your application.
+LangSmith performs tracing in a background thread to avoid obstructing your production application. This means that your process may end before all traces are successfully posted to LangSmith. Here are some options for ensuring all traces are submitted before exiting your application.
 
-### Using the LangSmith SDK
+### Use the LangSmith SDK
 
 If you are using the LangSmith SDK standalone, you can use the `flush` method before exit:
 
@@ -357,7 +364,7 @@ try {
 
 </CodeGroup>
 
-### Using LangChain
+### Use LangChain
 
 If you are using LangChain, please refer to our [LangChain tracing guide](/langsmith/trace-with-langchain#ensure-all-traces-are-submitted-before-exiting).
 

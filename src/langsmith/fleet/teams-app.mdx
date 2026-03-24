@@ -1,0 +1,197 @@
+---
+title: Integrate Teams with an agent
+description: Connect LangSmith Fleet to Microsoft Teams by bringing your own Azure Bot to let agents communicate with users in Teams.
+sidebarTitle: Teams
+---
+
+With LangSmith Fleet, you can connect your agents to Microsoft Teams by registering your own Azure Bot. Once connected, your agents can:
+
+- Receive messages from Teams users, starting a new run with the message content.
+- Respond directly in Teams conversations using the Bot Framework.
+- Access Teams channels and messages through Microsoft Graph API tools.
+
+<Note>
+In channel conversations, the bot only responds when explicitly mentioned. In direct messages and group chats, the bot responds to all messages.
+</Note>
+
+## Prerequisites
+
+- An existing agent in Fleet (see [Quickstart](/langsmith/fleet/quickstart) to create one)
+- An [Azure account](https://portal.azure.com) with permission to create resources
+- Admin access to a Microsoft Teams workspace, or permission to install apps
+
+## Create an Azure Bot
+
+Before registering in Fleet, you need to create an Azure Bot resource and obtain its credentials.
+
+<Steps>
+  <Step title="Create an Azure Bot resource">
+    1. Go to the [Azure Portal](https://portal.azure.com).
+    1. Search for **Azure Bot** and click **Create**.
+    1. Fill in the required fields:
+       - **Bot handle**: A unique identifier for your bot.
+       - **Subscription**: Select your Azure subscription.
+       - **Resource group**: Create a new one or select an existing one.
+       - **Type of App**: Select **Multi Tenant**.
+       - **Creation type**: Select **Create new Microsoft App ID**.
+    1. Click **Review + create**, then **Create**.
+  </Step>
+
+  <Step title="Get your app credentials">
+    After the resource is created:
+
+    1. Navigate to your bot resource and click **Configuration** in the left sidebar.
+    1. Copy the **Microsoft App ID**. You will need this later.
+    1. Click **Manage Password** next to the App ID.
+    1. Click **New client secret**, add a description, and click **Add**.
+    1. Copy the **Value** of the new secret immediately — it is only shown once.
+
+    <Warning>
+    Copy the client secret value immediately after creation. You cannot retrieve it later. If you lose it, you must create a new one.
+    </Warning>
+  </Step>
+
+  <Step title="Configure the messaging endpoint">
+    You will set the messaging endpoint after registering the bot in Fleet. Skip this field for now—you will return to this step later.
+  </Step>
+</Steps>
+
+## Register the bot in Fleet
+
+<Steps>
+  <Step title="Open the integrations page">
+    1. Navigate to **Fleet** in the [LangSmith UI](https://smith.langchain.com).
+    1. Go to the **Integrations** page.
+    1. Click **Add Teams App**.
+  </Step>
+
+  <Step title="Enter your credentials">
+    Fill in the following fields:
+
+    - **App Name**: A display name for the bot in Fleet.
+    - **Azure App ID**: The Microsoft App ID from the Azure Bot resource.
+    - **Azure App Password**: The client secret value you copied earlier.
+    - **Azure Tenant ID** (optional): Your Azure AD tenant ID. Leave as default for multi-tenant bots.
+
+    Click **Create** to register the bot.
+  </Step>
+
+  <Step title="Copy the webhook URL">
+    After registration, Fleet displays a **webhook URL**. Copy this URL—you need it to complete the Azure Bot configuration.
+  </Step>
+
+  <Step title="Set the messaging endpoint in Azure">
+    1. Return to your Azure Bot resource in the [Azure Portal](https://portal.azure.com).
+    1. Go to **Configuration**.
+    1. Paste the webhook URL from Fleet into the **Messaging endpoint** field.
+    1. Click **Apply**.
+  </Step>
+</Steps>
+
+## Add the bot to Teams
+
+<Steps>
+  <Step title="Open the Teams channel">
+    1. In the Azure Portal, go to your bot resource.
+    1. Click **Channels** in the left sidebar.
+    1. Select **Microsoft Teams** and click **Apply**.
+    1. Agree to the terms of service.
+  </Step>
+
+  <Step title="Install the bot in Teams">
+    1. In Teams, click **Apps** in the left sidebar.
+    1. Click **Manage your apps** then **Upload an app**.
+    1. Upload a [Teams app manifest](https://learn.microsoft.com/en-us/microsoftteams/platform/resources/schema/manifest-schema) that references your Azure App ID, or use the **Open in Teams** link from the Azure Bot Channels page.
+    1. Add the bot to the desired team or chat.
+  </Step>
+</Steps>
+
+## Link the bot to an agent
+
+You can link a Teams bot to an agent from the integrations page or from the agent editor.
+
+### Link from the integrations page
+
+1. Navigate to the **Teams Apps** section on the **Integrations** page in Fleet.
+1. Select the bot you want to link.
+1. From the dropdown menu, choose the agent you want to link to.
+
+### Link from the agent editor
+
+1. Select your agent from **My Agents** in the left-hand navigation.
+1. Click <Icon icon="pencil"/> **Edit Agent**.
+1. Scroll to the **Channels** section.
+1. Click **Teams**.
+1. From the dropdown menu, select the Teams app you want to link.
+
+## Add Teams tools
+
+Tools let your agent take actions in Teams. To respond to messages and interact with Teams, add the relevant tools.
+
+<Tip>
+You can also ask your agent to add these tools itself. In the agent chat, try: "Add the Teams tools so you can respond to messages."
+</Tip>
+
+1. In the agent editor, scroll to the **Tools** section.
+1. Click **+ Add**.
+1. Search for "Teams" and add the tools you need:
+   - **teams_bot_send_proactive_message** — Send messages back to the Teams conversation
+   - **microsoft_teams_list_my_teams** — List teams the authenticated user belongs to
+   - **microsoft_teams_list_channels** — List channels in a team
+   - **microsoft_teams_post_channel_message** — Post a message to a channel
+   - **microsoft_teams_read_channel_messages** — Read recent messages from a channel
+1. If prompted, click **Connect** to authorize the Microsoft Graph tools.
+1. Click **Save changes**.
+
+<Note>
+The `teams_bot_send_proactive_message` tool uses Bot Framework credentials and does not require separate OAuth authorization. The other Teams tools use Microsoft Graph API and may require OAuth consent.
+</Note>
+
+## Configure agent behavior (optional)
+
+Your agent needs to know how to handle incoming Teams messages. Update its instructions by prompting it directly in the agent chat:
+
+```
+Update your instructions to handle the Teams Trigger and Teams Tools
+for bidirectional communication
+```
+
+Adjust the instructions based on your use case—for example, you might want the agent to only respond to certain types of questions, or to pull information from specific sources before replying.
+
+## Troubleshooting
+
+### Agent does not respond
+
+- Check the thread in Fleet for any approvals that need human input.
+- In channel conversations, make sure you **@mention** the bot. Channel messages without a mention are ignored.
+- Check the **Feed** tab for errors.
+- Verify the messaging endpoint in the Azure Bot resource matches the webhook URL from Fleet.
+- Ensure the bot registration is not paused in Fleet.
+
+### Invalid credentials error during registration
+
+- Verify that the **Azure App ID** and **App Password** (client secret) are correct.
+- Make sure the client secret has not expired. Create a new secret in Azure if needed.
+- Check that the bot type is set to **Multi Tenant** in Azure.
+
+### Bot works in direct messages but not in channels
+
+- The bot must be explicitly **@mentioned** in channel conversations.
+- Make sure the bot has been added to the team and has permission to read messages in the channel.
+
+## Next steps
+
+<CardGroup cols={3}>
+
+  <Card title="Add more tools" icon="puzzle" href="/langsmith/fleet/tools">
+    Connect additional services to your agent
+  </Card>
+
+  <Card title="Add more channels" icon="bolt" href="/langsmith/fleet/channels">
+    Set up email, schedule, or webhook channels
+  </Card>
+
+  <Card title="Use templates" icon="layout-grid" href="/langsmith/fleet/templates">
+    Start from a prebuilt agent template
+  </Card>
+</CardGroup>

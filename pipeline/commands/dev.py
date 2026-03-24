@@ -64,11 +64,8 @@ async def dev_command(
 
     Returns:
         Exit code: 0 for success, 1 for failure.
-
-    Raises:
-        KeyboardInterrupt: When the user interrupts the development server.
     """
-    logger.info("Starting development mode...")
+    logger.info("Starting development mode... (press Ctrl+C to stop)")
 
     # Check if we should skip the initial build
     skip_build = getattr(args, "skip_build", False) if args else False
@@ -86,7 +83,7 @@ async def dev_command(
             )
     else:
         # Perform a full build
-        logger.info("Performing initial build...")
+        logger.debug("Performing initial build...")
         build_result = build_command(args)
         if build_result != 0:
             logger.error("Initial build failed")
@@ -96,7 +93,7 @@ async def dev_command(
     watcher = FileWatcher(src_dir, build_dir)
 
     # Start mint dev in background
-    logger.info("Starting mint dev...")
+    logger.debug("Starting mint dev...")
 
     try:
         # Use shell on Windows for .CMD compatibility, keep exec on Unix
@@ -153,7 +150,7 @@ async def dev_command(
                 raise watcher_error
             logger.error("File watcher stopped unexpectedly")
             exit_code = 1
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("\nShutting down...")
     finally:
         if not watcher_task.done():
