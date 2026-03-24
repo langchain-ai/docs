@@ -73,130 +73,20 @@ The harness allows the main agent to create ephemeral "subagents" for isolated m
 
 ## Context management
 
-To handle long-running tasks, deep agents make use of effective context management.
+The harness manages context so deep agents can handle long-running tasks within token limits while retaining the information they need.
 
-Agents have access to several kinds of context.
-Some sources are provided to the agent at startup; others become available during runtime, such as user input.
-
-This section provides an overview of the different kinds of context your deep agent has access to and manages.
-
-### Input context
-
-Input context consists of sources of information provided to your deep agent at startup that are added to the prompt.
-
-#### Prompts
-
-System prompts define the agent's role, behavior, capabilities, and knowledge base.
-If you provide a custom system prompt, this gets prepended to the built-in system prompt which includes detailed guidance for using built-in tools like the planning tool, filesystem tools, and subagents.
-
-Middleware that adds tools (such as the filesystem middleware) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively.
-
-The final deep agent prompt consists of the following parts:
-
-1. Custom system_prompt (if provided)
-1. [Base agent prompt](https://github.com/langchain-ai/deepagents/blob/595f6fe66bd974eaba9d429a76217607cb02f7a8/libs/deepagents/deepagents/graph.py#L36)
-1. To-do list prompt: Instructions for how to plan with to do lists
-1. Memory prompt: AGENTS.md + memory usage guidelines (only when `memory` provided)
-1. Skills prompt: Skills locations + list of skills with frontmatter information + usage (only when skills provided)
-1. Virtual filesystem prompt (filesystem + execute tool docs if applicable)
-1. Subagent prompt: Task tool usage
-1. User-provided middleware prompts (if custom middleware is provided)
-1. Human-in-the-loop prompt (when `interrupt_on` is set)
-1. Local context prompt: Current directory, project info,... (when using CLI locally)
-
-### Runtime context
-
-Context compression reduces the size of information in an agent's working memory while preserving details relevant to the task.
-The following techniques are the built-in features to ensure the context passed to LLMs stays within its context window limit:
-
-- [Offloading large tool inputs and results](#offloading-large-tool-inputs-and-results)
-- [Summarization](#summarization)
-
-You can also configure deep agents to use [long-term memory](#long-term-memory) to allow them to store information across different threads and conversations.
-
-#### Offloading large tool inputs and results
-
-Deep Agents use the [built-in filesystem tools](#virtual-filesystem-access) to automatically offload content and to search and retrieve that offloaded content as needed.
-Content offloading happens in two cases:
-
-1. **Tool call inputs exceed 20,000 tokens** (configurable via `tool_token_limit_before_evict`): File write and edit operations leave behind tool calls containing the complete file content in the agent's conversation history.
-    Since this content is already persisted to the filesystem, it's often redundant.
-    As the session context crosses 85% of the model's available window, Deep Agents will truncate older tool calls, replacing them with a pointer to the file on disk and reducing the size of the active context.
-
-    ![An example of offloading showing a large input which is saved to disk and the truncated version is used for the tool call](/oss/images/deepagents/offloading-inputs.png)
-
-2. **Tool call results exceed 20,000 tokens** (configurable via `tool_token_limit_before_evict`): When this occurs, the deep agent offloads the response to the configured backend and substitutes it with a file path reference and a preview of the first 10 lines. Agents can then re-read or search the content as needed.
-
-    ![An example of offloading showing a large tool response that is replaced with a message about the location of the offloaded results and the first 10 lines of the result](/oss/images/deepagents/offloading-results.png)
-
-#### Summarization
-
-When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history.
-
-This process has two components:
-
-- **In-context summary**: An LLM generates a structured summary of the conversation—including session intent, artifacts created, and next steps—which replaces the full conversation history in the agent's working memory.
-- **Filesystem preservation**: The complete, original conversation messages are written to the filesystem as a canonical record.
-
-This dual approach ensures the agent maintains awareness of its goals and progress (via the summary) while preserving the ability to recover specific details when needed (via filesystem search).
-
-![An example of summarization showing an agent's conversation history, where several steps get compacted](/oss/images/deepagents/summarization.png)
-
-**Configuration:**
-- Triggers at 85% of the model's `max_input_tokens` from its [model profile](/oss/langchain/models#model-profiles)
-- Keeps 10% of tokens as recent context
-- Falls back to 170,000-token trigger / 6 messages kept if model profile is unavailable
-- If any model call raises `ContextOverflowError`, Deep Agents immediately falls back to summarization and retries with summary + recent preserved messages
-- Older messages are summarized by the model
+**How it works:**
+- **Input context** — System prompt, memory, skills, and tool prompts shape what the agent knows at startup
+- **Compression** — Built-in offloading and summarization keep context within window limits as tasks progress
+- **Isolation** — Subagents quarantine heavy work and return only results (see [Task delegation](#task-delegation-subagents))
+- **Long-term memory** — Persistent storage across threads via the virtual filesystem
 
 **Why it's useful:**
-- Enables very long conversations without hitting context limits
-- Preserves recent context while compressing ancient history
-- Transparent to the agent (appears as a special system message)
+- Enables multi-step tasks that exceed a single context window
+- Keeps the most relevant information in scope without manual trimming
+- Reduces token usage through automatic summarization and offloading
 
-:::python
-
-##### Summariation Tool
-
-Deep Agents includes an optional [tool](/oss/langchain/tools) for summarization, enabling agents to trigger summarization at opportune times—such as between tasks—instead of at fixed token intervals.
-
-You can enable this tool by appending it to the middleware list:
-
-```python
-from deepagents import create_deep_agent
-from deepagents.backends import StateBackend
-from deepagents.middleware.summarization import (
-    create_summarization_tool_middleware,
-)
-
-backend = StateBackend  # if using default backend
-
-model = "openai:gpt-5.4"
-agent = create_deep_agent(
-    model=model,
-    middleware=[  # [!code highlight]
-        create_summarization_tool_middleware(model, backend),  # [!code highlight]
-    ],  # [!code highlight]
-)
-```
-
-Enabling this feature does not disable the default summarization action at 85% of the model's context limit.
-
-See [API reference](https://reference.langchain.com/python/deepagents/middleware/summarization/SummarizationToolMiddleware) for details.
-
-:::
-
-#### Long-term memory
-
-When using the default filesystem, your deep agent stores its working memory files in agent state, which only persists within a single thread.
-Long-term memory enables your deep agent to persist information across different threads and conversations.
-To use long-term memory, you must use a `CompositeBackend` that routes specific paths (typically `/memories/`) to a LangGraph Store, which provides durable cross-thread persistence.
-The `CompositeBackend` is a hybrid storage system where some files persist indefinitely while others remain scoped to a single thread.
-
-Files that the agent stores in the long-term memory path (for example, `/memories/preferences.txt`) survive agent restarts and can be accessed from any conversation thread.
-Deep agents can use these files for storing user preferences, accumulated knowledge, research progress, or any information that should persist beyond a single session.
-
-For more information, see [Long-term memory](/oss/deepagents/long-term-memory).
+For configuration details, see [Context engineering](/oss/deepagents/context-engineering).
 
 ## Code execution
 
