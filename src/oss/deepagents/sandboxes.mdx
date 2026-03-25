@@ -845,10 +845,11 @@ Generally, each `thread_id` should use its own unique sandbox.
 
 Store the mapping between sandbox ID and `thread_id` in your application or with the sandbox if the sandbox provider allows attaching metadata to the sandbox.
 
+The following example shows a get-or-create pattern using Daytona.
+For other providers, consult the sandbox provider API for equivalent TTL options:
+
 :::python
 
-The following example shows a get-or-create pattern using Daytona.
-For other providers, consult the sandbox provider API for the equivalent labels, metadata, and TTL options:
 
 ```python
 import uuid
@@ -861,16 +862,19 @@ thread_id = str(uuid.uuid4())
 
 from deepagents import create_deep_agent
 
+# Store sandbox IDs keyed by thread_id (use a database or cache in production)
+sandbox_store: dict[str, str] = {}
+
 # Get or create sandbox by thread_id
-try:
-    sandbox = client.find_one(labels={"thread_id": thread_id})
-except Exception:
+if thread_id in sandbox_store:
+    sandbox = client.get(sandbox_store[thread_id])
+else:
     params = CreateSandboxFromSnapshotParams(
-        labels={"thread_id": thread_id},
         # Add TTL so the sandbox is cleaned up when idle
         auto_delete_interval=3600,
     )
     sandbox = client.create(params)
+    sandbox_store[thread_id] = sandbox.id
 
 backend = DaytonaSandbox(sandbox=sandbox)
 agent = create_deep_agent(
@@ -916,17 +920,20 @@ import { createDeepAgent } from "deepagents";
 const client = new Daytona();
 const threadId = randomUUID();
 
+// Store sandbox IDs keyed by thread_id (use a database or cache in production)
+const sandboxStore = new Map<string, string>();
+
 // Get or create sandbox by thread_id
 let sandbox;
-try {
-    sandbox = await client.findOne({ labels: { thread_id: threadId } });
-} catch {
+if (sandboxStore.has(threadId)) {
+    sandbox = await client.get(sandboxStore.get(threadId)!);
+} else {
     const params: CreateSandboxFromSnapshotParams = {
-        labels: { thread_id: threadId },
         // Add TTL so the sandbox is cleaned up when idle (minutes)
         autoDeleteInterval: 3600,
     };
-sandbox = await client.create(params);
+    sandbox = await client.create(params);
+    sandboxStore.set(threadId, sandbox.id);
 }
 
 const backend = await DaytonaSandbox.fromId(sandbox.id);
