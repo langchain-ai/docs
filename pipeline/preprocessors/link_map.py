@@ -211,6 +211,9 @@ LINK_MAPS: list[LinkMap] = [
             "InMemoryStore": "langchain-core/stores/InMemoryStore",
             # Callbacks
             "on_llm_new_token": "langchain-core/callbacks/base/AsyncCallbackHandler/on_llm_new_token",
+            # Exceptions
+            "ContextOverflowError": "langchain-core/exceptions/ContextOverflowError",
+            "OutputParserException": "langchain-core/exceptions/OutputParserException",
             # Rate limiters
             "InMemoryRateLimiter": "langchain-core/rate_limiters/InMemoryRateLimiter",
             # LangSmith SDK
