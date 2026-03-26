@@ -1,0 +1,315 @@
+---
+title: Contribute a middleware integration
+sidebarTitle: Middleware
+description: Guide for contributing new middleware integrations to LangChain
+---
+
+Middleware lets you customize agent behavior by hooking into model calls, tool calls, and agent lifecycle events. This guide covers how to implement, test, and publish a middleware integration package.
+
+<Info>
+    Read the [custom middleware guide](/oss/langchain/middleware/custom) to understand hooks, state updates, and middleware patterns before building an integration.
+</Info>
+
+## Decide on middleware type
+
+Middleware integrations typically fall into two categories:
+
+| Type | Description | Examples |
+|------|-------------|---------|
+| **Provider-specific** | Leverages a provider's unique capabilities | Prompt caching, native tool execution, content moderation |
+| **Cross-provider** | Works with any model or tool | Rate limiting, PII detection, logging, guardrails |
+
+Provider-specific middleware lives in the provider's integration package (e.g., `langchain-anthropic`). Cross-provider middleware can be published as a standalone package.
+
+## Implement your middleware
+
+:::python
+
+Middleware classes subclass @[`AgentMiddleware`] and implement one or more hooks. Use the class-based approach for integration packages — it supports multiple hooks, configuration, and both sync and async implementations.
+
+<Steps>
+    <Step title="Subclass AgentMiddleware">
+
+```python
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    AgentState,
+    ModelRequest,
+    ModelResponse,
+)
+from langgraph.runtime import Runtime
+from typing import Any, Callable
+
+
+class MyProviderMiddleware(AgentMiddleware):
+    """Middleware that integrates with MyProvider's API."""
+
+    def __init__(self, api_key: str, option_a: bool = True):
+        super().__init__()
+        self.api_key = api_key
+        self.option_a = option_a
+```
+
+</Step>
+    <Step title="Implement hooks">
+
+Choose the hooks your middleware needs:
+
+**Node-style hooks** run at specific execution points:
+
+| Hook | When it runs |
+|------|-------------|
+| `before_agent` | Before agent starts (once per invocation) |
+| `before_model` | Before each model call |
+| `after_model` | After each model response |
+| `after_agent` | After agent completes (once per invocation) |
+
+**Wrap-style hooks** run around each call, giving you control over execution:
+
+| Hook | When it runs |
+|------|-------------|
+| `wrap_model_call` | Around each model call |
+| `wrap_tool_call` | Around each tool call |
+
+```python
+class MyProviderMiddleware(AgentMiddleware):
+    def __init__(self, api_key: str, option_a: bool = True):
+        super().__init__()
+        self.api_key = api_key
+        self.option_a = option_a
+
+    def before_model(
+        self, state: AgentState, runtime: Runtime
+    ) -> dict[str, Any] | None:
+        # Modify state or validate before model call
+        return None
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        # Add logic around the model call
+        response = handler(request)
+        return response
+```
+
+</Step>
+    <Step title="Add async support">
+
+For production use, implement async versions of your hooks:
+
+```python
+class MyProviderMiddleware(AgentMiddleware):
+    def __init__(self, api_key: str, option_a: bool = True):
+        super().__init__()
+        self.api_key = api_key
+        self.option_a = option_a
+
+    async def abefore_model(
+        self, state: AgentState, runtime: Runtime
+    ) -> dict[str, Any] | None:
+        # Async version of before_model
+        return None
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        response = await handler(request)
+        return response
+```
+
+</Step>
+    <Step title="Add custom state (optional)">
+
+If your middleware needs to track state across hooks, define a custom state schema:
+
+```python
+from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
+from langgraph.runtime import Runtime
+from typing import Any
+from typing_extensions import NotRequired
+
+
+class MyMiddlewareState(AgentState):
+    call_count: NotRequired[int]
+
+
+class MyProviderMiddleware(AgentMiddleware):
+    @hook_config(state_schema=MyMiddlewareState)
+    def after_model(
+        self, state: MyMiddlewareState, runtime: Runtime
+    ) -> dict[str, Any] | None:
+        return {"call_count": state.get("call_count", 0) + 1}
+```
+
+</Step>
+</Steps>
+
+:::
+
+:::js
+
+Use the `createMiddleware` function to define middleware:
+
+<Steps>
+    <Step title="Define middleware with createMiddleware">
+
+```typescript
+import { createMiddleware } from "langchain";
+
+const createMyProviderMiddleware = (config: {
+  apiKey: string;
+  optionA?: boolean;
+}) => {
+  return createMiddleware({
+    name: "MyProviderMiddleware",
+    beforeModel: (state) => {
+      // Modify state or validate before model call
+      return;
+    },
+    wrapModelCall: async (request, handler) => {
+      // Add logic around the model call
+      const response = await handler(request);
+      return response;
+    },
+  });
+};
+```
+
+</Step>
+    <Step title="Add custom state (optional)">
+
+```typescript
+import * as z from "zod";
+import { createMiddleware } from "langchain";
+
+const myMiddlewareStateSchema = z.object({
+  callCount: z.number().default(0),
+});
+
+const createMyProviderMiddleware = () => {
+  return createMiddleware({
+    name: "MyProviderMiddleware",
+    stateSchema: myMiddlewareStateSchema,
+    afterModel: (state) => {
+      return { callCount: state.callCount + 1 };
+    },
+  });
+};
+```
+
+</Step>
+</Steps>
+
+:::
+
+## Test your middleware
+
+Write tests that verify your middleware behaves correctly with `create_agent`:
+
+:::python
+
+```python
+import pytest
+from langchain.agents import create_agent
+from langchain.messages import HumanMessage
+from my_provider.middleware import MyProviderMiddleware
+
+
+def test_middleware_basic():
+    agent = create_agent(
+        model="gpt-4.1",
+        tools=[],
+        middleware=[MyProviderMiddleware(api_key="test-key")],
+    )
+    result = agent.invoke({"messages": [HumanMessage("Hello")]})
+    assert "messages" in result
+
+
+@pytest.mark.asyncio
+async def test_middleware_async():
+    agent = create_agent(
+        model="gpt-4.1",
+        tools=[],
+        middleware=[MyProviderMiddleware(api_key="test-key")],
+    )
+    result = await agent.ainvoke({"messages": [HumanMessage("Hello")]})
+    assert "messages" in result
+```
+
+:::
+
+:::js
+
+```typescript
+import { createAgent } from "langchain";
+import { HumanMessage } from "@langchain/core/messages";
+import { createMyProviderMiddleware } from "my-provider";
+
+test("middleware basic", async () => {
+  const agent = createAgent({
+    model: "gpt-4.1",
+    tools: [],
+    middleware: [createMyProviderMiddleware({ apiKey: "test-key" })],
+  });
+  const result = await agent.invoke({
+    messages: [new HumanMessage("Hello")],
+  });
+  expect(result.messages).toBeDefined();
+});
+```
+
+:::
+
+Key areas to test:
+
+- Each hook fires at the correct execution point
+- State updates are applied correctly
+- Error handling and edge cases (e.g., empty messages, missing config)
+- Async implementations match sync behavior
+- Middleware composes correctly with other middleware
+
+## Publish and document
+
+<Steps>
+    <Step title="Publish your package">
+        Follow the [publishing guide](/oss/contributing/publish-langchain) to publish your package.
+    </Step>
+    <Step title="Add documentation">
+        Open a PR to the [docs repo](https://github.com/langchain-ai/docs) with a new middleware integration page.
+
+        Use the [middleware template](https://github.com/langchain-ai/docs/blob/main/src/oss/python/integrations/middleware/TEMPLATE.mdx) as a starting point. Create your file at `src/oss/python/integrations/middleware/<provider>.mdx`.
+
+        For each middleware in your package, include:
+        - A brief description and use cases
+        - An API reference link
+        - A minimal code example
+        - Configuration options (using `<ParamField>` components)
+        - A full working example
+    </Step>
+    <Step title="Update the middleware index">
+        Add your provider to the middleware index table in `src/oss/python/integrations/middleware/index.mdx`.
+    </Step>
+</Steps>
+
+## Reference implementations
+
+Use these existing middleware integrations as reference:
+
+<CardGroup cols={2}>
+    <Card title="OpenAI content moderation" icon="shield" href="/oss/integrations/middleware/openai">
+        Single middleware with configuration options and exit behaviors.
+    </Card>
+    <Card title="Anthropic middleware" icon="robot" href="/oss/integrations/middleware/anthropic">
+        Multiple middleware classes for prompt caching, tools, memory, and file search.
+    </Card>
+    <Card title="AWS prompt caching" icon="cloud" href="/oss/integrations/middleware/aws">
+        Provider-specific prompt caching with model behavior tables.
+    </Card>
+    <Card title="Custom middleware guide" icon="code" href="/oss/langchain/middleware/custom">
+        Full reference for hooks, state updates, and patterns.
+    </Card>
+</CardGroup>
