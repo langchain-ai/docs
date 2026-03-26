@@ -11,7 +11,7 @@ import SandboxLifecycleFactoryAssistantTs from '/snippets/deepagents-sandbox-lif
 import SandboxLifecycleFactoryThreadPy from '/snippets/deepagents-sandbox-lifecycle-factory-thread-py.mdx';
 import SandboxLifecycleFactoryThreadTs from '/snippets/deepagents-sandbox-lifecycle-factory-thread-ts.mdx';
 
-Agents generate code, interact with filesystems, and run shell commands. Because we can't predict what an agent might do, it's important that its environment is isolated so it can't access credentials, files, or the network. Sandboxes provide this isolation by creating a boundary between the agent's execution environment and your host system.
+Agents generate code, interact with filesystems, and run shell commands. Because you cannot predict what an agent might do, it is important that its environment is isolated so it cannot access credentials, files, or the network. Sandboxes provide this isolation by creating a boundary between the agent's execution environment and your host system.
 
 In Deep Agents, **sandboxes are [backends](/oss/deepagents/backends)** that define the environment where the agent operates. Unlike other backends (State, Filesystem, Store) which only expose file operations, sandbox backends also give the agent an `execute` tool for running shell commands. When you configure a sandbox backend, the agent gets:
 
@@ -50,14 +50,18 @@ This isolation is essential when agents run autonomously.
 Sandboxes are especially useful for:
 
 - Coding agents: Agents that run autonomously can use shell, git, clone repositories (many providers offer native git APIs, e.g., [Daytona's git operations](https://www.daytona.io/docs/en/git-operations/)), and run Docker-in-Docker for build and test pipelines
-- Data analysis agents—Load files, install data analysis libraries (pandas, numpy, etc.), run statistical calculations, and create outputs like PowerPoint presentations in a safe, isolated environment
+- Data analysis agents: Load files, install data analysis libraries (pandas, numpy, etc.), run statistical calculations, and create outputs like PowerPoint presentations in a safe, isolated environment
 
 <Tip>
     **Using Deep Agents Code?** Deep Agents Code has built-in sandbox support via the `--sandbox` flag. See [Use remote sandboxes](/oss/deepagents/code/remote-sandboxes) for Deep Agents Code-specific setup, flags (`--sandbox-id`, `--sandbox-setup`), and examples.
 </Tip>
 
 <Note>
-**If you're looking for LangSmith sandboxes:** LangSmith provides first-party managed sandboxes you can use directly from the LangSmith UI or SDK without a third-party account required. For managed sandbox resources, snapshots, service URLs, and the auth proxy, refer to [LangSmith Sandboxes](/langsmith/sandboxes).
+**If you are looking for LangSmith sandboxes:** LangSmith provides first-party managed sandboxes you can use directly from the LangSmith UI or SDK without a third-party account required. For managed sandbox resources, snapshots, service URLs, and the auth proxy, refer to [LangSmith Sandboxes](/langsmith/sandboxes).
+</Note>
+
+<Note>
+**If you are looking for nono sandboxes:** nono provides local, OS-enforced sandboxing for Python Deep Agents with no remote provider account, container, or VM required. Use it when you want the agent to run shell commands on the same machine while restricting filesystem access, network access, and credential exposure. See the [nono provider page](/oss/integrations/providers/nono) for installation and configuration.
 </Note>
 
 ## Basic usage
@@ -121,7 +125,7 @@ Skills require `deepagents>=1.7.0`.
 </div>
 :::
 
-Don't see your provider? You can implement your own sandbox backend. See [Contributing a sandbox integration](/oss/contributing/integrations-langchain).
+Do not see your provider? You can implement your own sandbox backend. See [Contributing a sandbox integration](/oss/contributing/integrations-langchain).
 
 ## Lifecycle and scoping
 
@@ -173,15 +177,202 @@ Assistant-scoped sandboxes accumulate in-sandbox state over time. Configure a TT
     </Tab>
 </Tabs>
 
+### Per-conversation lifecycle
+
+In chat applications, a conversation is typically represented by a `thread_id`.
+Generally, each `thread_id` should use its own unique sandbox.
+
+Store the mapping between sandbox ID and `thread_id` in your application or with the sandbox if the sandbox provider allows attaching metadata to the sandbox.
+
+<Tip>
+**TTL for chat applications.** When users can re-engage after idle time, you often do not know if or when they return. Configure a time-to-live (TTL) on the sandbox, for example, TTL to archive or TTL to delete, so the provider automatically cleans up idle sandboxes. Many sandbox providers support this.
+</Tip>
+
+:::python
+
+<Tabs>
+    <Tab title="Daytona">
+
+        The following example shows a get-or-create pattern using Daytona.
+        For other providers, consult the sandbox provider API for the equivalent labels, metadata, and TTL options:
+
+        ```python
+        from langchain_core.utils.uuid import uuid7
+
+        from daytona import CreateSandboxFromSnapshotParams, Daytona
+        from deepagents import create_deep_agent
+        from langchain_daytona import DaytonaSandbox
+
+        client = Daytona()
+        thread_id = str(uuid7())
+
+        # Get or create sandbox by thread_id
+        try:
+            sandbox = client.find_one(labels={"thread_id": thread_id})
+        except Exception:
+            params = CreateSandboxFromSnapshotParams(
+                labels={"thread_id": thread_id},
+                # Add TTL so the sandbox is cleaned up when idle
+                auto_delete_interval=3600,
+            )
+            sandbox = client.create(params)
+
+        backend = DaytonaSandbox(sandbox=sandbox)
+        agent = create_deep_agent(
+            model="google_genai:gemini-3.1-pro-preview",
+            backend=backend,
+            system_prompt="You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+        )
+
+        try:
+            result = agent.invoke(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Create a hello world Python script and run it",
+                        }
+                    ]
+                },
+                config={
+                    "configurable": {
+                        "thread_id": thread_id,
+                    }
+                },
+            )
+            print(result["messages"][-1].content)
+        except Exception:
+            # Optional: delete the sandbox proactively on an exception
+            client.delete(sandbox)
+            raise
+        ```
+
+    </Tab>
+    <Tab title="nono">
+
+        With nono, each conversation gets its own working directory. There is no remote state to manage, create the backend with a thread-specific path:
+
+        ```python
+        import uuid
+        from pathlib import Path
+
+        from deepagents import create_deep_agent
+        from langchain_anthropic import ChatAnthropic
+        from langchain_nono import NonoSandbox
+
+        thread_id = str(uuid.uuid4())
+
+        # Each thread gets its own isolated working directory.
+        working_dir = Path("/tmp/agent-sandboxes") / thread_id
+        working_dir.mkdir(parents=True, exist_ok=True)
+
+        backend = NonoSandbox(
+            working_dir=str(working_dir),
+            virtual_workspace_root=True,
+        )
+
+        agent = create_deep_agent(
+            backend=backend,
+            model=ChatAnthropic(model_name="claude-sonnet-4-6"),
+            system_prompt="You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+        )
+
+        result = agent.invoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Create a hello world Python script and run it",
+                    }
+                ]
+            },
+            config={
+                "configurable": {
+                    "thread_id": thread_id,
+                }
+            },
+        )
+        print(result["messages"][-1].content)
+        ```
+
+    </Tab>
+</Tabs>
+
+:::
+
+:::js
+
+```typescript
+import "dotenv/config";
+import { randomUUID } from "node:crypto";
+import { Daytona } from "@daytonaio/sdk";
+import type { CreateSandboxFromSnapshotParams } from "@daytonaio/sdk";
+import { DaytonaSandbox } from "@langchain/daytona";
+import { createDeepAgent } from "deepagents";
+
+const client = new Daytona();
+const threadId = randomUUID();
+
+// Get or create sandbox by thread_id
+let sandbox;
+try {
+  sandbox = await client.findOne({ labels: { thread_id: threadId } });
+} catch {
+  const params: CreateSandboxFromSnapshotParams = {
+    labels: { thread_id: threadId },
+    // Add TTL so the sandbox is cleaned up when idle (minutes)
+    autoDeleteInterval: 3600,
+  };
+  sandbox = await client.create(params);
+}
+
+const backend = await DaytonaSandbox.fromId(sandbox.id);
+const agent = createDeepAgent({
+  backend,
+  systemPrompt:
+    "You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+});
+
+try {
+  const result = await agent.invoke(
+    {
+      messages: [
+        {
+          role: "user",
+          content: "Create a hello world Python script and run it",
+        },
+      ],
+    },
+    {
+      configurable: {
+        thread_id: threadId,
+      },
+    },
+  );
+  const lastMessage = result.messages[result.messages.length - 1];
+  console.log(
+    typeof lastMessage.content === "string"
+      ? lastMessage.content
+      : String(lastMessage.content),
+  );
+} catch (err) {
+  // Optional: delete the sandbox proactively on an exception
+  await client.delete(sandbox);
+  throw err;
+}
+```
+
+:::
+
 For manual create, execute, and teardown outside a graph factory, see [Basic usage](#basic-usage) and [sandbox integrations](/oss/integrations/sandboxes) for provider-specific APIs.
 
 ## Integration patterns
 
-There are two architecture patterns for integrating agents with sandboxes, based on where the agent runs.
+There are three architecture patterns for integrating agents with sandboxes, based on where the agent runs.
 
-### Agent in sandbox pattern
+### Run the agent inside a managed sandbox
 
-The agent runs inside the sandbox and you communicate with it over the network. You build a Docker or VM image with your agent framework pre-installed, run it inside the sandbox, and connect from outside to send messages.
+This pattern applies to managed sandbox services that provide remote infrastructure. The agent runs inside the sandbox and you communicate with it over the network. You build a Docker or VM image with your agent framework pre-installed, run it inside the sandbox, and connect from outside to send messages.
 
 Benefits:
 
@@ -194,7 +385,7 @@ Trade-offs:
 - 🔴 Updates require rebuilding images.
 - 🔴 Requires infrastructure for communication (WebSocket or HTTP layer).
 
-To run an agent in a sandbox, build an image and install deepagents on it.
+To run an agent in a managed sandbox, build an image and install deepagents on it.
 
 ```dockerfile
 FROM python:3.11
@@ -204,16 +395,20 @@ RUN pip install deepagents-code
 Then run the agent inside the sandbox.
 To use the agent inside the sandbox you have to add additional infrastructure to handle communication between your application and the agent inside the sandbox.
 
-### Sandbox as tool pattern
+<Note>
+Embedded sandbox providers like nono do not use this pattern. They enforce isolation on the same machine the agent runs on, so there is no separate remote environment to run an agent inside. See [Call the sandbox as a tool](#call-the-sandbox-as-a-tool) instead.
+</Note>
 
-The agent runs on your machine or server. When it needs to execute code, it calls sandbox tools (such as `execute`, `read_file`, or `write_file`) which invoke the provider's APIs to run operations in a remote sandbox.
+### Call the sandbox as a tool
+
+The agent runs on your machine or server. When it needs to execute code, it calls sandbox tools (such as `execute`, `read_file`, or `write_file`) which route over the network to a remote sandbox managed by a service like Daytona, Modal, Runloop, or E2B.
 
 Benefits:
 
 - ✅ Update agent code instantly without rebuilding images.
 - ✅ Cleaner separation between agent state and execution.
     - API keys stay outside the sandbox.
-    - Sandbox failures don't lose agent state.
+    - Sandbox failures do not lose agent state.
     - Option to run tasks in multiple sandboxes in parallel.
 - ✅ Pay only for execution time.
 
@@ -302,9 +497,63 @@ try {
 
 :::
 
-The examples in this doc use the sandbox as a tool pattern.
-Choose the agent in sandbox pattern when your provider's SDK handles the communication layer and you want production to mirror local development.
-Choose the sandbox as tool pattern when you need to iterate quickly on agent logic, keep API keys outside the sandbox, or prefer cleaner separation of concerns.
+### Use embedded sandboxing
+
+Embedded providers like nono run on the same machine as the agent. Each `execute()` call forks a child process with kernel-enforced restrictions using native Linux and MacOS mechanisms. There is no remote infrastructure: the sandbox is linked with the agent's runtime. This works anywhere the agent runs: laptops, cloud VMs, Kubernetes, CI.
+
+Benefits:
+
+- ✅ Zero latency: no network round-trip.
+- ✅ No account, API keys, or external service dependency required.
+- ✅ No cleanup required: processes are ephemeral forks.
+
+Trade-offs:
+
+- 🔴 Bound to the host machine's resources.
+
+:::python
+
+Example:
+
+```python
+from pathlib import Path
+
+from deepagents import create_deep_agent
+from langchain_anthropic import ChatAnthropic
+from langchain_nono import NonoSandbox
+
+working_dir = Path("/tmp/agent-workspace")
+working_dir.mkdir(parents=True, exist_ok=True)
+
+backend = NonoSandbox(
+    working_dir=str(working_dir),
+    virtual_workspace_root=True,
+)
+
+agent = create_deep_agent(
+    backend=backend,
+    model=ChatAnthropic(model_name="claude-sonnet-4-6"),
+    system_prompt="You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Create a hello world Python script and run it",
+            }
+        ]
+    }
+)
+print(result["messages"][-1].content)
+```
+
+:::
+
+The examples in this doc use the sandbox-as-tool and embedded sandboxing patterns.
+Choose the agent-in-sandbox pattern when your managed service handles the communication layer and you want production to mirror local development.
+Choose the sandbox-as-tool pattern when you need to iterate quickly on agent logic, keep API keys outside the sandbox, or prefer cleaner separation of concerns. This pattern works with both managed services and embedded providers like nono.
 
 ## How sandboxes work
 
@@ -313,7 +562,7 @@ Choose the sandbox as tool pattern when you need to iterate quickly on agent log
 All sandbox providers protect your host system from the agent's filesystem and shell operations. The agent cannot read your local files, access environment variables on your machine, or interfere with other processes. However, sandboxes alone do **not** protect against:
 
 - **Context injection**: An attacker who controls part of the agent's input can instruct it to run arbitrary commands inside the sandbox. The sandbox is isolated, but the agent has full control within it.
-- **Network exfiltration**: Unless network access is blocked, a context-injected agent can send data out of the sandbox over HTTP or DNS. Some providers support blocking network access (e.g., `blockNetwork: true` on Modal).
+- **Network exfiltration**: Unless network access is blocked, a context-injected agent can send data out of the sandbox over HTTP or DNS. Some providers support blocking network access (e.g., `blockNetwork: true` on Modal). Embedded providers like nono can block outbound network access by default and, when network access is needed, route requests through a proxy with host allowlisting, L7 endpoint filtering, and SSRF protection.
 
 See [security considerations](#security-considerations) for how to handle secrets and mitigate these risks.
 
@@ -342,7 +591,7 @@ graph TB
 ```
 
 This design means:
-- **Adding a new provider is straightforward.** Implement `execute()`—the base class handles everything else.
+- **Adding a new provider is straightforward.** Implement `execute()`: the base class handles everything else.
 - **The `execute` tool is conditionally available.** On every model call, the harness checks whether the backend implements @[`SandboxBackendProtocol`]. If not, the tool is filtered out and the agent never sees it.
 
 When the agent calls the `execute` tool, it provides a `command` string and gets back the combined stdout/stderr, exit code, and a truncation notice if the output was too large.
@@ -471,6 +720,31 @@ You can also call the backend `execute()` method directly in your application co
             interpreter.stop()
         ```
     </Tab>
+    <Tab title="nono">
+        <CodeGroup>
+            ```bash pip
+            pip install langchain-nono
+            ```
+
+            ```bash uv
+            uv add langchain-nono
+            ```
+        </CodeGroup>
+
+        ```python
+        from pathlib import Path
+
+        from langchain_nono import NonoSandbox
+
+        working_dir = Path("/tmp/agent-workspace")
+        working_dir.mkdir(parents=True, exist_ok=True)
+
+        backend = NonoSandbox(working_dir=str(working_dir))
+
+        result = backend.execute("python --version")
+        print(result.output)
+        ```
+    </Tab>
     <Tab title="LangSmith">
         ```python
         from langsmith.sandbox import SandboxClient
@@ -504,7 +778,7 @@ If a command produces very large output, the result is automatically saved to a 
 
 ### Two planes of file access
 
-There are two distinct ways files move in and out of a sandbox, and it's important to understand when to use each:
+There are two distinct ways files move in and out of a sandbox, and it is important to understand when to use each:
 
 **Agent filesystem tools**: `read_file`, `write_file`, `edit_file`, `ls`, `glob`, `grep`, and `execute` are the tools the LLM calls during its execution. These go through `execute()` inside the sandbox. The agent uses them to read code, write files, and run commands as part of its task.
 
@@ -725,6 +999,35 @@ Use `upload_files()` to populate the sandbox before the agent runs. Paths must b
         )
         ```
     </Tab>
+    <Tab title="nono">
+        <CodeGroup>
+            ```bash pip
+            pip install langchain-nono
+            ```
+
+            ```bash uv
+            uv add langchain-nono
+            ```
+        </CodeGroup>
+
+        ```python
+        from pathlib import Path
+
+        from langchain_nono import NonoSandbox
+
+        working_dir = Path("/tmp/agent-workspace")
+        working_dir.mkdir(parents=True, exist_ok=True)
+
+        backend = NonoSandbox(working_dir=str(working_dir))
+
+        backend.upload_files(
+            [
+                ("/tmp/agent-workspace/src/index.py", b"print('Hello')\n"),
+                ("/tmp/agent-workspace/pyproject.toml", b"[project]\nname = 'my-app'\n"),
+            ]
+        )
+        ```
+    </Tab>
     <Tab title="LangSmith">
 
         ```python
@@ -884,6 +1187,37 @@ Use `download_files()` to retrieve files from the sandbox after the agent finish
         interpreter.stop()
         ```
     </Tab>
+    <Tab title="nono">
+        <CodeGroup>
+            ```bash pip
+            pip install langchain-nono
+            ```
+
+            ```bash uv
+            uv add langchain-nono
+            ```
+        </CodeGroup>
+
+        ```python
+        from pathlib import Path
+
+        from langchain_nono import NonoSandbox
+
+        working_dir = Path("/tmp/agent-workspace")
+        working_dir.mkdir(parents=True, exist_ok=True)
+
+        backend = NonoSandbox(working_dir=str(working_dir))
+
+        results = backend.download_files(
+            ["/tmp/agent-workspace/src/index.py", "/tmp/agent-workspace/pyproject.toml"]
+        )
+        for result in results:
+            if result.content is not None:
+                print(f"{result.path}: {result.content.decode()}")
+            else:
+                print(f"Failed to download {result.path}: {result.error}")
+        ```
+    </Tab>
     <Tab title="LangSmith">
         ```python
         from langsmith.sandbox import SandboxClient
@@ -911,30 +1245,38 @@ Inside the sandbox, the agent uses filesystem tools (`read_file`, `write_file`).
 
 ## Security considerations
 
-Sandboxes isolate code execution from your host system, but they don't protect against **context injection**. An attacker who controls part of the agent's input can instruct it to read files, run commands, or exfiltrate data from within the sandbox. This makes credentials inside the sandbox especially dangerous.
+### Managed sandbox services
+
+Managed sandbox services isolate code execution from your host system, but they do not protect against **context injection**. An attacker who controls part of the agent's input can instruct it to read files, run commands, or exfiltrate data from within the sandbox. This makes credentials inside managed sandboxes especially dangerous.
 
 <Warning>
-**Never put secrets inside a sandbox.** API keys, tokens, database credentials, and other secrets injected into a sandbox (via environment variables, mounted files, or the `secrets` option) can be read and exfiltrated by a context-injected agent. This applies even to short-lived or scoped credentials—if an agent can access them, so can an attacker.
+**Never put secrets inside a managed sandbox.** API keys, tokens, database credentials, and other secrets injected into a managed sandbox (via environment variables, mounted files, or the `secrets` option) can be read and exfiltrated by a context-injected agent. This applies even to short-lived or scoped credentials: if an agent can access them, so can an attacker.
 </Warning>
 
-### Handling secrets safely
+#### Handling secrets safely
 
-If your agent needs to call authenticated APIs or access protected resources, you have two options:
+If your agent needs to call authenticated APIs or access protected resources from a managed sandbox, there are two approaches:
 
-1. **Keep secrets in tools outside the sandbox.** Define tools that run in your host environment (not inside the sandbox) and handle authentication there. The agent calls these tools by name, but never sees the credentials. This is the recommended approach.
+1. **Keep secrets in tools outside the sandbox.** Define tools that run in your host environment (not inside the sandbox) and handle authentication there. The agent calls these tools by name, but never sees the credentials.
 
-2. **Use a network proxy that injects credentials.** Some sandbox providers support proxies that intercept outgoing HTTP requests from the sandbox and attach credentials (e.g., `Authorization` headers) before forwarding them. The agent never sees the secret—it just makes plain requests to a URL. This approach is not yet widely available across providers.
+2. **Use a third-party network proxy.** Some managed sandbox providers support proxies that attach credentials to outgoing requests. The agent makes plain requests to a URL, and the proxy injects the `Authorization` header before forwarding. This approach is not yet widely available across providers.
 
 <Warning>
-If you must inject secrets into a sandbox (not recommended), take these precautions:
+If you must inject secrets directly into a managed sandbox (not recommended), take these precautions:
 
 - Enable [human-in-the-loop](/oss/deepagents/human-in-the-loop) approval for **all** tool calls, not just sensitive ones
 - Block or restrict network access from the sandbox to limit exfiltration paths
 - Use the narrowest possible credential scope and shortest possible lifetime
 - Monitor sandbox network traffic for unexpected outbound requests
 
-Even with these safeguards, this remains an unsafe workaround. A sufficiently creative enough context injection attack can bypass output filtering and HITL review.
+Even with these safeguards, this remains an unsafe workaround. A sufficiently creative context injection attack can bypass output filtering and HITL review.
 </Warning>
+
+### Credential protection with embedded sandboxing
+
+Embedded providers like nono are designed to handle credential protection natively. nono blocks all outbound network access by default and includes a built-in credential-injecting proxy that keeps real secrets outside the sandbox entirely.
+
+The proxy intercepts outgoing HTTP requests from the sandbox and injects credentials (API keys, tokens) before forwarding them to the upstream service. The agent only sees a session-scoped phantom token; real credentials never enter the sandbox. The proxy also provides host allowlisting, L7 endpoint filtering, and SSRF protection (cloud metadata endpoints are hard-denied). See the [nono provider page](/oss/integrations/providers/nono) for configuration details.
 
 ### General best practices
 
