@@ -43,6 +43,7 @@ def test_builder_initialization() -> None:
             ".woff2",
             ".woff",
             ".ttf",
+            ".html",
         }
 
 
