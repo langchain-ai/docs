@@ -116,6 +116,18 @@ All threads under the same assistant share a single sandbox. Useful for
 persistent project environments where you want changes to carry across
 conversations:
 
+:::python
+
+```python
+def sandbox_backend_factory(runtime):
+    assistant_id = runtime.config.get("configurable", {}).get("assistant_id")
+    return get_or_create_sandbox_for_assistant(assistant_id)
+```
+
+:::
+
+:::js
+
 ```ts
 const sandboxBackendFactory = async (runtime: BackendRuntime) => {
   const assistantId = runtime.configurable?.assistant_id;
@@ -123,10 +135,24 @@ const sandboxBackendFactory = async (runtime: BackendRuntime) => {
 };
 ```
 
+:::
+
 ### User-scoped sandbox
 
 Each user gets their own sandbox across all threads. Requires custom
 authentication and user identification:
+
+:::python
+
+```python
+def sandbox_backend_factory(runtime):
+    user_id = runtime.config.get("configurable", {}).get("user_id")
+    return get_or_create_sandbox_for_user(user_id)
+```
+
+:::
+
+:::js
 
 ```ts
 const sandboxBackendFactory = async (runtime: BackendRuntime) => {
@@ -135,16 +161,36 @@ const sandboxBackendFactory = async (runtime: BackendRuntime) => {
 };
 ```
 
+:::
+
 ### Session-scoped sandbox (client-side)
 
 For simpler apps without LangGraph threads, the frontend can generate a
 session ID and pass it directly. This approach doesn't persist across
 browser sessions and is best for demos or prototyping:
 
+:::python
+
+```python
+import uuid
+import urllib.parse
+import urllib.request
+
+session_id = str(uuid.uuid4())
+query = urllib.parse.urlencode({"sessionId": session_id})
+urllib.request.urlopen(f"http://localhost:2024/api/sandbox/tree?{query}")
+```
+
+:::
+
+:::js
+
 ```ts
 const sessionId = crypto.randomUUID();
 fetch(`/api/sandbox/tree?sessionId=${sessionId}`);
 ```
+
+:::
 
 The rest of this guide uses **thread-scoped sandboxes** as the primary example.
 
@@ -152,7 +198,7 @@ The rest of this guide uses **thread-scoped sandboxes** as the primary example.
 
 ### Choose a sandbox provider
 
-Deep Agents supports multiple sandbox providers. Any provider that implements
+Deep Agents supports multiple [sandbox providers](/oss/integrations/sandboxes). Any provider that implements
 the `SandboxBackendProtocol` works:
 
 :::python
@@ -190,7 +236,12 @@ commands. No tool configuration needed.
 ### Use a backend factory for thread-scoped sandboxes
 
 Instead of creating a sandbox at module level (which would be shared across
+:::python
 all threads and may expire), use a **backend factory** that resolves the
+:::
+:::js
+all threads and may expire), use a [**backend factory**](https://reference.langchain.com/javascript/deepagents/index/BackendFactory) that resolves the
+::::
 sandbox per-thread at runtime. The factory receives a `BackendRuntime` object
 with `configurable.thread_id` from the current LangGraph run:
 
@@ -259,6 +310,18 @@ agent = create_deep_agent(
 Before the agent runs, populate the sandbox with your project files using
 `uploadFiles`:
 
+<Info>
+  For **LangSmith** sandboxes, the container image and resource limits come from a
+  [sandbox template](/langsmith/sandbox-templates). Pass `templateName` when creating
+:::python
+  the sandbox (see `get_or_create_sandbox_for_thread` above). `upload_files` seeds or updates
+:::
+:::js
+  the sandbox (see `getOrCreateSandboxForThread` above). `uploadFiles` seeds or updates
+:::
+  project files at runtime on top of that image.
+</Info>
+
 ```ts
 const SEED_FILES: Record<string, string> = {
   "package.json": JSON.stringify({ name: "my-app", version: "1.0.0" }, null, 2),
@@ -298,7 +361,12 @@ and expose it through the `http.app` field in `langgraph.json`.
 
 The sandbox API endpoints use the thread ID as a URL path parameter. This
 ensures the frontend always accesses the correct sandbox for the current
+:::python
+conversation, using the same `get_or_create_sandbox_for_thread` function as the
+:::
+:::js
 conversation, using the same `getOrCreateSandboxForThread` function as the
+:::
 agent's backend factory:
 
 :::js
@@ -398,7 +466,12 @@ async def read_file(
 
 <Note>
   Both the agent's backend factory and the API server call the same
+:::python
+  `get_or_create_sandbox_for_thread` function. This ensures they always resolve
+:::
+:::js
   `getOrCreateSandboxForThread` function. This ensures they always resolve
+:::
   to the same sandbox for a given thread. The sandbox ID in thread metadata
   is the single source of truth — no in-memory caches needed.
 </Note>
