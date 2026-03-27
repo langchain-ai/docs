@@ -344,10 +344,16 @@ def main() -> None:
         sys.exit(1)
 
     # Run the command
-    if asyncio.iscoroutinefunction(args.func):
-        asyncio.run(args.func(args))
-    else:
-        args.func(args)
+    try:
+        if asyncio.iscoroutinefunction(args.func):
+            result = asyncio.run(args.func(args))
+        else:
+            result = args.func(args)
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+    if type(result) is int:
+        sys.exit(result)
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ MIN_DOWNLOADS = 100_000
 
 DOCS_DIR = Path(__file__).parents[2]
 PROVIDERS_PATH = Path() / "src" / "oss" / "python" / "integrations" / "providers"
-PACKAGE_YML = Path() / "reference" / "packages.yml"
+PACKAGE_YML = Path() / "packages.yml"
 
 # Load package registry
 with PACKAGE_YML.open() as f:
@@ -115,17 +115,23 @@ def _enrich_package(p: dict) -> dict | None:
         raise ValueError(msg)
 
     # Handling for package URLs
-    if p["type"] in ("monorepo", "langchain-org"):
+    ref_doc_name = p["name"].replace("-", "_")
+
+    if p.get("has_reference_docs") and p.get("integration") == "false":
+        msg = (
+            f"{p['name']}: has_reference_docs=true and integration=false "
+            "is not a supported combination"
+        )
+        raise ValueError(msg)
+
+    if p["type"] in ("monorepo", "langchain-org") or p.get("has_reference_docs"):
         if p.get("integration") == "false":
-            # I don't think we'll hit this case since we filter them out?
             p["package_url"] = f"https://reference.langchain.com/python/{p['name']}/"
         else:
-            # Integration
             p["package_url"] = (
-                "https://reference.langchain.com/python/integrations"
-                f"/{p['name'].replace('-', '_')}/"
+                f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
             )
-    else:  # Third-party
+    else:
         p["package_url"] = f"https://pypi.org/project/{p['name']}/"
 
     return p
@@ -198,8 +204,11 @@ A **provider** is a third-party service or platform that LangChain integrates wi
 
 <Columns cols={{3}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />
-    <Card title="Embedding models" icon="layer-group" href="/oss/integrations/text_embedding" arrow />
-    <Card title="Tools and toolkits" icon="screwdriver-wrench" href="/oss/integrations/tools" arrow />
+    <Card title="Embedding models" icon="layers-difference" href="/oss/integrations/embeddings" arrow />
+    <Card title="Tools and toolkits" icon="tool" href="/oss/integrations/tools" arrow />
+    <Card title="Middleware" icon="arrows-shuffle" href="/oss/integrations/middleware" arrow />
+    <Card title="Checkpointers" icon="database" href="/oss/integrations/checkpointers" arrow />
+    <Card title="Sandboxes" icon="cube" href="/oss/integrations/sandboxes" arrow />
 </Columns>
 
 To see a full list of integrations by component type, refer to the categories in the sidebar.

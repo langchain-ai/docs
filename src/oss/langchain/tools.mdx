@@ -2,6 +2,13 @@
 title: Tools
 ---
 
+import ToolReturnValuesPy from '/snippets/code-samples/tool-return-values-py.mdx';
+import ToolReturnValuesJs from '/snippets/code-samples/tool-return-values-js.mdx';
+import ToolReturnObjectPy from '/snippets/code-samples/tool-return-object-py.mdx';
+import ToolReturnObjectJs from '/snippets/code-samples/tool-return-object-js.mdx';
+import ToolReturnCommandPy from '/snippets/code-samples/tool-return-command-py.mdx';
+import ToolReturnCommandJs from '/snippets/code-samples/tool-return-command-js.mdx';
+
 Tools extend what [agents](/oss/langchain/agents) can do—letting them fetch real-time data, execute code, query external databases, and take actions in the world.
 
 Under the hood, tools are callable functions with well-defined inputs and outputs that get passed to a [chat model](/oss/langchain/models). The model decides when to invoke a tool based on the conversation context, and what input arguments to provide.
@@ -53,13 +60,19 @@ const searchDatabase = tool(
   }
 );
 ```
+
 :::
 
 <Note>
     **Server-side tool use:** Some chat models feature built-in tools (web search, code interpreters) that are executed server-side. See [Server-side tool use](#server-side-tool-use) for details.
 </Note>
 
+<Warning>
+    Prefer `snake_case` for tool names (e.g., `web_search` instead of `Web Search`). Some model providers have issues with or reject names containing spaces or special characters with errors. Sticking to alphanumeric characters, underscores, and hyphens helps to improve compatibility across providers.
+</Warning>
+
 :::python
+
 ### Customize tool properties
 
 #### Custom tool name
@@ -204,6 +217,16 @@ graph LR
     K --> O
     L --> O
     F --> P
+
+    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+    classDef neutral fill:#F3F4F6,stroke:#9CA3AF,stroke-width:2px,color:#374151
+
+    class A trigger
+    class B,C,D,E,F process
+    class G,H,I,J,K,L neutral
+    class M,N,O,P output
 ```
 
 ### Short-term memory (State)
@@ -324,6 +347,7 @@ result = agent.invoke(
     context=UserContext(user_id="user123")
 )
 ```
+
 :::
 
 :::js
@@ -364,6 +388,7 @@ const result = await agent.invoke(
   }
 );
 ```
+
 :::
 
 ### Long-term memory (Store)
@@ -382,7 +407,7 @@ from typing import Any
 from langgraph.store.memory import InMemoryStore
 from langchain.agents import create_agent
 from langchain.tools import tool, ToolRuntime
-
+from langchain_openai import ChatOpenAI
 
 # Access memory
 @tool
@@ -399,6 +424,8 @@ def save_user_info(user_id: str, user_info: dict[str, Any], runtime: ToolRuntime
     store = runtime.store
     store.put(("users",), user_id, user_info)
     return "Successfully saved user info."
+
+model = ChatOpenAI(model="gpt-4.1")
 
 store = InMemoryStore()
 agent = create_agent(
@@ -421,6 +448,7 @@ agent.invoke({
 # - Age: 25
 # - Email: foo@langchain.dev
 ```
+
 :::
 
 :::js
@@ -498,6 +526,7 @@ console.log(result);
 // - Age: 25
 // - Email: foo@langchain.dev
 ```
+
 :::
 
 ### Stream writer
@@ -555,6 +584,7 @@ const getWeather = tool(
   }
 );
 ```
+
 :::
 
 ## ToolNode
@@ -568,6 +598,7 @@ const getWeather = tool(
 ### Basic usage
 
 :::python
+
 ```python
 from langchain.tools import tool
 from langgraph.prebuilt import ToolNode
@@ -591,9 +622,11 @@ builder = StateGraph(MessagesState)
 builder.add_node("tools", tool_node)
 # ... add other nodes and edges
 ```
+
 :::
 
 :::js
+
 ```typescript
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { tool } from "@langchain/core/tools";
@@ -620,13 +653,97 @@ const calculator = tool(
 // Create the ToolNode with your tools
 const toolNode = new ToolNode([search, calculator]);
 ```
+
 :::
+
+### Tool return values
+
+You can choose different return values for your tools:
+
+- Return a `string` for human-readable results.
+- Return an `object` for structured results the model should parse.
+- Return a `Command` with optional message when you need to write to state.
+
+#### Return a string
+
+Return a string when the tool should provide plain text for the model to read and use in its next response.
+
+:::python
+
+<ToolReturnValuesPy />
+
+:::
+
+:::js
+
+<ToolReturnValuesJs />
+
+:::
+
+Behavior:
+
+- The return value is converted to a `ToolMessage`.
+- The model sees that text and decides what to do next.
+- No agent state fields are changed unless the model or another tool does so later.
+
+Use this when the result is naturally human-readable text.
+
+#### Return an object
+
+Return an object (for example, a `dict`) when your tool produces structured data that the model should inspect.
+
+:::python
+
+<ToolReturnObjectPy />
+
+:::
+
+:::js
+
+<ToolReturnObjectJs />
+
+:::
+
+Behavior:
+
+- The object is serialized and sent back as tool output.
+- The model can read specific fields and reason over them.
+- Like string returns, this does not directly update graph state.
+
+Use this when downstream reasoning benefits from explicit fields instead of free-form text.
+
+#### Return a Command
+
+Return a @[`Command`] when the tool needs to update graph state (for example, setting user preferences or app state).
+You can return a `Command` with or without including a `ToolMessage`.
+If the model needs to see that the tool succeeded (for example, to confirm a preference change), include a `ToolMessage` in the update, using `runtime.tool_call_id` for the `tool_call_id` parameter.
+
+:::python
+
+<ToolReturnCommandPy />
+
+:::
+
+:::js
+
+<ToolReturnCommandJs />
+
+:::
+
+Behavior:
+
+- The command updates state using `update`.
+- Updated state is available to subsequent steps in the same run.
+- Use reducers for fields that may be updated by parallel tool calls.
+
+Use this when the tool is not just returning data, but also mutating agent state.
 
 ### Error handling
 
 Configure how tool errors are handled. See the @[`ToolNode`] API reference for all options.
 
 :::python
+
 ```python
 from langgraph.prebuilt import ToolNode
 
@@ -648,9 +765,11 @@ tool_node = ToolNode(tools, handle_tool_errors=handle_error)
 # Only catch specific exception types
 tool_node = ToolNode(tools, handle_tool_errors=(ValueError, TypeError))
 ```
+
 :::
 
 :::js
+
 ```typescript
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 
@@ -665,6 +784,7 @@ const toolNode = new ToolNode(tools, {
   handleToolErrors: "Something went wrong, please try again."
 });
 ```
+
 :::
 
 ### Route with tools_condition
@@ -672,6 +792,7 @@ const toolNode = new ToolNode(tools, {
 Use @[`tools_condition`] for conditional routing based on whether the LLM made tool calls:
 
 :::python
+
 ```python
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph import StateGraph, MessagesState, START, END
@@ -686,9 +807,11 @@ builder.add_edge("tools", "llm")
 
 graph = builder.compile()
 ```
+
 :::
 
 :::js
+
 ```typescript
 import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
 import { StateGraph, MessagesAnnotation } from "@langchain/langgraph";
@@ -702,6 +825,7 @@ const builder = new StateGraph(MessagesAnnotation)
 
 const graph = builder.compile();
 ```
+
 :::
 
 ### State injection
@@ -709,6 +833,7 @@ const graph = builder.compile();
 Tools can access the current graph state through @[`ToolRuntime`]:
 
 :::python
+
 ```python
 from langchain.tools import tool, ToolRuntime
 from langgraph.prebuilt import ToolNode
@@ -721,6 +846,7 @@ def get_message_count(runtime: ToolRuntime) -> str:
 
 tool_node = ToolNode([get_message_count])
 ```
+
 :::
 
 For more details on accessing state, context, and long-term memory from tools, see [Access context](#access-context).

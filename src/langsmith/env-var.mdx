@@ -10,7 +10,17 @@ Set `BG_JOB_ISOLATED_LOOPS` to `True` to execute background runs in an isolated 
 
 This environment variable should be set to `True` if the implementation of a graph/node contains synchronous code. In this situation, the synchronous code will block the serving API event loop, which may cause the API to be unavailable. A symptom of an unavailable API is continuous application restarts due to failing health checks.
 
+<Warning>
+When `BG_JOB_ISOLATED_LOOPS` is enabled, each background worker runs in its own thread with a **separate Postgres connection pool**. The per-worker pool size is `LANGGRAPH_POSTGRES_POOL_MAX_SIZE // N_JOBS_PER_WORKER`. For example, with `LANGGRAPH_POSTGRES_POOL_MAX_SIZE=20` and `N_JOBS_PER_WORKER=15`, each worker gets a pool of only 1 connection. Small per-worker pools are more susceptible to connection failures because a single stale connection represents a large fraction of the pool. If you enable isolated loops, ensure `LANGGRAPH_POSTGRES_POOL_MAX_SIZE` is large enough to provide at least a few connections per worker.
+</Warning>
+
 Defaults to `False`.
+
+## `BG_JOB_MAX_RETRIES`
+
+Maximum number of times a background run will be retried after a retriable failure (e.g. transient database errors, server shutdown cancellations). When a run fails with a retriable error, it is placed back in the queue and resumed from the last checkpointed step. If the run exceeds the maximum number of retries, it is marked as failed.
+
+Defaults to `3`.
 
 ## `BG_JOB_SHUTDOWN_GRACE_PERIOD_SECS`
 
@@ -22,7 +32,7 @@ The timeout of a background run can be increased. However, the infrastructure fo
 
 A background run can execute for longer than 1 hour, but a client must reconnect to the server (e.g. join stream via `POST /threads/{thread_id}/runs/{run_id}/stream`) to retrieve output from the run if the run is taking longer than 1 hour.
 
-Defaults to `3600`.
+Defaults to `86400`.
 
 ## `CORS_ALLOW_ORIGINS`
 
@@ -51,7 +61,17 @@ Beginning with langgraph-api version `0.2.12`, the maximum size of the Postgres 
 
 For example, if a deployment is scaled up to 10 replicas and `LANGGRAPH_POSTGRES_POOL_MAX_SIZE` is configured to `150`, then up to `1500` connections to Postgres can be established. This is particularly useful for deployments where database resources are limited (or more available) or where you need to tune connection behavior for performance or scaling reasons.
 
+When [`BG_JOB_ISOLATED_LOOPS`](#bg-job-isolated-loops) is enabled, the pool is not shared. Instead, each background worker thread creates its own pool with a maximum size of `LANGGRAPH_POSTGRES_POOL_MAX_SIZE / N_JOBS_PER_WORKER`. Keep this in mind when lowering the pool size. A value that works well for a shared pool may result in very small per-worker pools under isolated loops.
+
 Defaults to `150` connections.
+
+## `LS_DEFAULT_CHECKPOINTER_BACKEND`
+
+Sets the default [checkpointer backend](/langsmith/configure-checkpointer) for agent servers that don't specify one in `langgraph.json`. Accepted values: `"default"` (PostgreSQL), `"mongo"`, `"custom"`.
+
+If the application's `langgraph.json` includes a `checkpointer.backend` value, it takes precedence over this variable.
+
+When set to `"mongo"`, you must also provide the MongoDB connection URI via [`LS_MONGODB_URI`](#ls_mongodb_uri).
 
 ## `LANGSMITH_API_KEY`
 
@@ -87,6 +107,7 @@ Configure [log level](https://docs.python.org/3/library/logging.html#logging-lev
 
 Set `LOG_JSON` to `true` to render all log messages as JSON objects using the configured `JSONRenderer`. This produces structured logs that can be easily parsed or ingested by log management systems. Defaults to `false`.
 
+
 ## `MOUNT_PREFIX`
 
 <Info>
@@ -104,7 +125,7 @@ Number of jobs per worker for the Agent Server task queue. Defaults to `10`.
 
 ## `LS_APM_OTEL_ENABLED`
 
-To configure configure OpenTelemetry APM tracing for your deployment, set `LS_APM_OTEL_ENABLED` to `true` and `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` to the target trace ingestion endpoint. Note that both `LS_APM_OTEL_ENABLED` and one of the other two export endpoints are required to activate OpenTelemetry APM tracing in server versions later than `0.7.17`.
+To configure OpenTelemetry APM tracing for your deployment, set `LS_APM_OTEL_ENABLED` to `true` and `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` to the target trace ingestion endpoint. Note that both `LS_APM_OTEL_ENABLED` and one of the other two export endpoints are required to activate OpenTelemetry APM tracing in server versions later than `0.7.17`.
 
 Specify other [`OTEL_*` environment variables](https://opentelemetry.io/docs/collector/configuration/) to configure tracing, logging, and other instrumentation.
 
@@ -138,6 +159,16 @@ OTEL_EXPORTER_OTLP_HEADERS=api-key=<YOUR_INGEST_LICENSE_KEY>
 <Note>
 OTel APM tracing was added in Agent Server version `0.5.32` and is currently in Alpha.
 </Note>
+
+## `LS_MONGODB_URI`
+
+MongoDB connection URI for the MongoDB checkpointer backend.
+
+The URI must point to a replica set member or `mongos` router and must include the database name in the path.
+
+See [Configure checkpointer backend](/langsmith/configure-checkpointer) for details.
+
+See [Configure checkpointer backend](/langsmith/configure-checkpointer) for details.
 
 ## `POSTGRES_URI_CUSTOM`
 
