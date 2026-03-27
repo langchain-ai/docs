@@ -1,0 +1,102 @@
+---
+title: "Strale integrations"
+description: "Integrate with Strale using LangChain Python."
+---
+
+[Strale](https://strale.dev) provides 250+ quality-scored API capabilities for AI agents — company verification across 27 countries, financial validation (IBAN, VAT, SWIFT/BIC), sanctions and PEP screening, web extraction, and compliance checks. Every capability is independently tested with a published Strale Quality Score (SQS).
+
+## Installation and setup
+
+<CodeGroup>
+```bash pip
+pip install langchain-strale
+```
+```bash uv
+uv add langchain-strale
+```
+</CodeGroup>
+
+Get an API key from [strale.dev/signup](https://strale.dev/signup) (includes free trial credits) and add it to your environment variables:
+```bash
+export STRALE_API_KEY="sk_live_your_key_here"
+```
+
+5 capabilities work without any API key: `iban-validate`, `email-validate`, `dns-lookup`, `json-repair`, `url-to-markdown`.
+
+## Tools and toolkits
+
+`StraleToolkit` exposes all Strale capabilities as LangChain tools with proper `args_schema` generated from each capability's input schema.
+```python
+from langchain_strale import StraleToolkit
+
+toolkit = StraleToolkit(api_key="sk_live_...")
+tools = toolkit.get_tools()  # 250+ tools with typed input schemas
+```
+
+### Use in an agent
+```python
+import os
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_strale import StraleToolkit
+
+toolkit = StraleToolkit(api_key=os.environ["STRALE_API_KEY"])
+tools = toolkit.get_tools()
+
+llm = ChatOpenAI(model="gpt-4o")
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You verify businesses and validate financial data using Strale tools."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools)
+
+result = executor.invoke({
+    "input": "Validate IBAN DE89370400440532013000 and look up Swedish company 556703-7485"
+})
+```
+
+### Call a tool directly (no agent)
+```python
+import os
+from langchain_strale import StraleToolkit
+
+toolkit = StraleToolkit(api_key=os.environ["STRALE_API_KEY"])
+tools = toolkit.get_tools()
+
+# Find and call iban-validate (free tier — no API key needed)
+iban_tool = next(t for t in tools if t.name == "iban-validate")
+result = iban_tool._run(iban="DE89370400440532013000")
+print(result)
+```
+
+### Filter by category
+```python
+# Only load compliance and finance tools
+tools = toolkit.get_tools(categories=["compliance", "finance"])
+```
+
+## Capability categories
+
+| Category | Examples | Count |
+|---|---|---|
+| Company data | Company lookup (27 countries), director search, beneficial ownership | 40+ |
+| Financial validation | IBAN, VAT, SWIFT/BIC, LEI, EORI | 15+ |
+| Compliance | Sanctions screening, PEP check, adverse media, KYB solutions | 25+ |
+| Web intelligence | Domain reputation, SSL check, tech stack detect, web extract | 30+ |
+| Data processing | Invoice extract, PDF extract, translate, JSON repair | 20+ |
+
+Full catalog: [strale.dev/capabilities](https://strale.dev/capabilities)
+
+## Quality scoring
+
+Every Strale capability has a published quality score (SQS) combining code correctness, reliability, and latency across 1,500+ automated test suites. Agents can enforce a quality floor at call time:
+```python
+# Only accept results from capabilities scoring >= 75
+result = toolkit.execute("vat-validate", {"vat_number": "SE556703748501"}, min_sqs=75)
+```
+
+Methodology: [strale.dev/trust/methodology](https://strale.dev/trust/methodology)
