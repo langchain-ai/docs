@@ -1,0 +1,521 @@
+---
+title: Sandbox SDK usage
+sidebarTitle: SDK usage
+description: Create and manage sandboxes programmatically with the Python or TypeScript SDK.
+---
+
+import SandboxPreview from "/snippets/langsmith/sandbox-preview-warning.mdx";
+
+<SandboxPreview />
+
+The [LangSmith SDK](/langsmith/reference) provides a programmatic interface to create and interact with sandboxes.
+
+## Install
+
+<CodeGroup>
+
+```bash Python
+# uv
+uv add "langsmith[sandbox] @ git+https://github.com/langchain-ai/langsmith-sdk#subdirectory=python"
+
+# pip
+pip install "langsmith[sandbox] @ git+https://github.com/langchain-ai/langsmith-sdk#subdirectory=python"
+```
+
+```bash TypeScript
+npm install langsmith
+# or
+yarn add langsmith
+```
+
+</CodeGroup>
+
+The `[sandbox]` extra for Python installs `websockets`, which enables real-time streaming and `timeout=0`. Without it, `run()` falls back to HTTP automatically. For TypeScript, install the optional `ws` package for WebSocket streaming:
+
+```bash
+npm install ws
+```
+
+## Create and run a sandbox
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+# Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
+client = SandboxClient()
+
+# Create a template (defines the container image)
+client.create_template(
+    name="python-sandbox",
+    image="python:3.12-slim",
+)
+
+# Create a sandbox from the template and run code
+with client.sandbox(template_name="python-sandbox") as sb:
+    result = sb.run("python -c 'print(2 + 2)'")
+    print(result.stdout)  # "4\n"
+    print(result.success)  # True
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/experimental/sandbox";
+
+// Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
+const client = new SandboxClient();
+
+// Create a template (defines the container image)
+await client.createTemplate("node-sandbox", {
+  image: "node:20-slim",
+});
+
+// Create a sandbox from the template and run code
+const sandbox = await client.createSandbox("node-sandbox");
+const result = await sandbox.run("node -e 'console.log(2 + 2)'");
+console.log(result.stdout); // "4\n"
+
+// Don't forget to clean up
+await sandbox.delete();
+```
+
+</CodeGroup>
+
+## Run commands
+
+Every `run()` call returns an `ExecutionResult` with `stdout`, `stderr`, `exit_code`, and `success`.
+
+<CodeGroup>
+
+```python Python
+with client.sandbox(template_name="my-sandbox") as sb:
+    result = sb.run("echo 'Hello, World!'")
+
+    print(result.stdout)     # "Hello, World!\n"
+    print(result.stderr)     # ""
+    print(result.exit_code)  # 0
+    print(result.success)    # True
+
+    # Commands that fail return non-zero exit codes
+    result = sb.run("exit 1")
+    print(result.success)    # False
+    print(result.exit_code)  # 1
+```
+
+```ts TypeScript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  const result = await sandbox.run("echo 'Hello, World!'");
+
+  console.log(result.stdout);     // "Hello, World!\n"
+  console.log(result.stderr);     // ""
+  console.log(result.exit_code);  // 0
+
+  // Pass environment variables and working directory
+  const envResult = await sandbox.run("echo $MY_VAR", {
+    env: { MY_VAR: "test-value" },
+    cwd: "/tmp",
+  });
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+## Stream output
+
+For long-running commands, stream output in real time using callbacks or a `CommandHandle`.
+
+### Stream with callbacks
+
+<CodeGroup>
+
+```python Python
+import sys
+
+with client.sandbox(template_name="my-sandbox") as sb:
+    result = sb.run(
+        "make build",
+        timeout=600,
+        on_stdout=lambda s: print(s, end=""),
+        on_stderr=lambda s: print(s, end="", file=sys.stderr),
+    )
+    print(f"\nBuild {'succeeded' if result.success else 'failed'}")
+```
+
+```ts TypeScript
+const result = await sandbox.run("make build", {
+  timeout: 600,
+  onStdout: (data) => process.stdout.write(data),
+  onStderr: (data) => process.stderr.write(data),
+});
+console.log(`Exit code: ${result.exit_code}`);
+```
+
+</CodeGroup>
+
+### Stream with CommandHandle
+
+Set `wait=False` to get a `CommandHandle` for full control over the output stream.
+
+<CodeGroup>
+
+```python Python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("make build", timeout=600, wait=False)
+
+    print(f"Command ID: {handle.command_id}")
+
+    for chunk in handle:
+        prefix = "OUT" if chunk.stream == "stdout" else "ERR"
+        print(f"[{prefix}] {chunk.data}", end="")
+
+    result = handle.result
+    print(f"\nExit code: {result.exit_code}")
+```
+
+```ts TypeScript
+const handle = await sandbox.run("python train.py", {
+  wait: false,
+  timeout: 600,
+});
+
+console.log(`Command ID: ${handle.commandId}`);
+console.log(`PID: ${handle.pid}`);
+
+for await (const chunk of handle) {
+  if (chunk.stream === "stdout") {
+    process.stdout.write(chunk.data);
+  } else {
+    process.stderr.write(chunk.data);
+  }
+}
+
+const result = await handle.result;
+console.log(`Exit code: ${result.exit_code}`);
+```
+
+</CodeGroup>
+
+### Send stdin and kill commands
+
+<CodeGroup>
+
+```python Python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run(
+        "python -c 'name = input(\"Name: \"); print(f\"Hello {name}\")'",
+        timeout=30,
+        wait=False,
+    )
+
+    for chunk in handle:
+        if "Name:" in chunk.data:
+            handle.send_input("World\n")
+        print(chunk.data, end="")
+
+    result = handle.result
+```
+
+```ts TypeScript
+const handle = await sandbox.run("python -i", { wait: false });
+
+// Send input to stdin
+handle.sendInput("print(2 + 2)\n");
+handle.sendInput("exit()\n");
+
+for await (const chunk of handle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+</CodeGroup>
+
+Kill a running command:
+
+<CodeGroup>
+
+```python Python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("python server.py", timeout=0, wait=False)
+
+    for chunk in handle:
+        print(chunk.data, end="")
+        if "Ready" in chunk.data:
+            break
+
+    handle.kill()
+```
+
+```ts TypeScript
+const handle = await sandbox.run("sleep 300", { wait: false });
+handle.kill();
+
+const result = await handle.result;
+console.log(result.exit_code); // non-zero
+```
+
+</CodeGroup>
+
+### Reconnect to a running command
+
+If a client disconnects, reconnect using the command ID:
+
+<CodeGroup>
+
+```python Python
+with client.sandbox(template_name="my-sandbox") as sb:
+    handle = sb.run("make build", timeout=600, wait=False)
+    command_id = handle.command_id
+
+    # Later, possibly in a different process
+    handle = sb.reconnect(command_id)
+    for chunk in handle:
+        print(chunk.data, end="")
+    result = handle.result
+```
+
+```ts TypeScript
+const handle = await sandbox.run("long-task", { wait: false });
+const commandId = handle.commandId;
+
+// Later, or from a different client
+const newHandle = await sandbox.reconnect(commandId);
+for await (const chunk of newHandle) {
+  process.stdout.write(chunk.data);
+}
+```
+
+</CodeGroup>
+
+## File operations
+
+Read and write files in the sandbox:
+
+<CodeGroup>
+
+```python Python
+with client.sandbox(template_name="my-python") as sb:
+    # Write a file
+    sb.write("/app/script.py", "print('Hello from file!')")
+
+    # Run the script
+    result = sb.run("python /app/script.py")
+    print(result.stdout)  # "Hello from file!\n"
+
+    # Read a file (returns bytes)
+    content = sb.read("/app/script.py")
+    print(content.decode())  # "print('Hello from file!')"
+
+    # Write binary files
+    sb.write("/app/data.bin", b"\x00\x01\x02\x03")
+```
+
+```ts TypeScript
+const sandbox = await client.createSandbox("my-python");
+try {
+  // Write a file (string content)
+  await sandbox.write("/app/script.py", "print('Hello from file!')");
+
+  // Run the script
+  const result = await sandbox.run("python /app/script.py");
+  console.log(result.stdout);  // "Hello from file!\n"
+
+  // Read a file (returns Uint8Array)
+  const content = await sandbox.read("/app/script.py");
+  console.log(new TextDecoder().decode(content));
+
+  // Write binary files
+  await sandbox.write("/app/data.bin", new Uint8Array([0x00, 0x01, 0x02, 0x03]));
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+## Command lifecycle and TTL
+
+The sandbox daemon manages command session lifecycles with two timeout mechanisms:
+
+- **Session TTL (finished commands)**: After a command finishes, its session remains in memory for a TTL period. During this window you can reconnect to retrieve output. After the TTL expires, the session is cleaned up.
+- **Idle timeout (running commands)**: Running commands with no connected clients are killed after an idle timeout (default: 5 minutes). The idle timer resets each time a client connects. Set to `-1` for no idle timeout.
+
+### Combine lifecycle options
+
+<CodeGroup>
+
+```python Python
+with client.sandbox(template_name="my-sandbox") as sb:
+    # Long-running task: 30-min idle timeout, 1-hour session TTL
+    handle = sb.run(
+        "python train.py",
+        timeout=0,              # No command timeout
+        idle_timeout=1800,      # Kill after 30min with no clients
+        ttl_seconds=3600,       # Keep session for 1 hour after exit
+        wait=False,
+    )
+
+    # Fire-and-forget: no idle timeout, infinite TTL
+    handle = sb.run(
+        "python background_job.py",
+        timeout=0,
+        idle_timeout=-1,        # Never kill due to idle
+        ttl_seconds=-1,         # Keep session forever
+        wait=False,
+    )
+```
+
+```ts TypeScript
+const sandbox = await client.createSandbox("my-sandbox");
+try {
+  // Long-running task: 30-min idle timeout, 1-hour session TTL
+  const handle = await sandbox.run("python train.py", {
+    timeout: 0,              // No command timeout
+    idleTimeout: 1800,       // Kill after 30min with no clients
+    ttlSeconds: 3600,        // Keep session for 1 hour after exit
+    wait: false,
+  });
+
+  // Fire-and-forget: no idle timeout, infinite TTL
+  const bg = await sandbox.run("python background_job.py", {
+    timeout: 0,
+    idleTimeout: -1,         // Never kill due to idle
+    ttlSeconds: -1,          // Keep session forever
+    wait: false,
+  });
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+Set `kill_on_disconnect=True` (Python) or `killOnDisconnect: true` (TypeScript) to kill the command immediately when the last client disconnects, instead of waiting for the idle timeout.
+
+## TCP tunnels (Python)
+
+Access any TCP service running inside a sandbox as if it were local. The tunnel opens a local TCP port and forwards connections through a WebSocket to the target port inside the sandbox.
+
+```python
+import psycopg2
+
+# Template uses the official postgres:16 image
+sb = client.create_sandbox(template_name="my-postgres")
+pg_handle = sb.run(
+    "POSTGRES_HOST_AUTH_METHOD=trust docker-entrypoint.sh postgres",
+    timeout=0,
+    wait=False,
+)
+import time; time.sleep(6)  # Wait for Postgres to start
+
+try:
+    with sb.tunnel(remote_port=5432, local_port=25432) as t:
+        conn = psycopg2.connect(
+            host="127.0.0.1",
+            port=t.local_port,
+            user="postgres",
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT version()")
+        print(cursor.fetchone())
+        conn.close()
+finally:
+    pg_handle.kill()
+    client.delete_sandbox(sb.name)
+```
+
+Tunnels work with any TCP service (Redis, HTTP servers, etc.) and you can open multiple tunnels simultaneously:
+
+```python
+with sb.tunnel(remote_port=5432, local_port=25432) as t1, \
+     sb.tunnel(remote_port=6379, local_port=26379) as t2:
+    # Use both Postgres and Redis simultaneously
+    pass
+```
+
+## Async support (Python)
+
+The Python SDK provides a full async client:
+
+```python
+from langsmith.sandbox import AsyncSandboxClient
+
+async def main():
+    async with AsyncSandboxClient() as client:
+        await client.create_template(name="async-python", image="python:3.12-slim")
+
+        async with await client.sandbox(template_name="async-python") as sb:
+            result = await sb.run("python -c 'print(1 + 1)'")
+            print(result.stdout)  # "2\n"
+
+            await sb.write("/app/test.txt", "async content")
+            content = await sb.read("/app/test.txt")
+            print(content.decode())
+
+            # Async streaming
+            handle = await sb.run("make build", timeout=600, wait=False)
+            async for chunk in handle:
+                print(chunk.data, end="")
+            result = await handle.result
+```
+
+## Error handling
+
+Both SDKs provide typed exceptions for specific error handling:
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClientError,       # Base exception
+    ResourceCreationError,    # Provisioning failed
+    ResourceNotFoundError,    # Resource doesn't exist
+    ResourceTimeoutError,     # Operation timed out
+    SandboxNotReadyError,     # Sandbox not ready yet
+    SandboxConnectionError,   # Network/WebSocket error
+    CommandTimeoutError,      # Command exceeded timeout
+    QuotaExceededError,       # Quota limit reached
+)
+
+try:
+    with client.sandbox(template_name="my-sandbox") as sb:
+        result = sb.run("sleep 999", timeout=10)
+except CommandTimeoutError as e:
+    print(f"Command timed out: {e}")
+except ResourceNotFoundError as e:
+    print(f"{e.resource_type} not found: {e}")
+except SandboxClientError as e:
+    print(f"Error: {e}")
+```
+
+```ts TypeScript
+import {
+  LangSmithSandboxError,
+  LangSmithResourceNotFoundError,
+  LangSmithResourceTimeoutError,
+  LangSmithSandboxConnectionError,
+  LangSmithCommandTimeoutError,
+  LangSmithQuotaExceededError,
+} from "langsmith/experimental/sandbox";
+
+try {
+  const sandbox = await client.createSandbox("nonexistent");
+  await sandbox.delete();
+} catch (e) {
+  if (e instanceof LangSmithResourceNotFoundError) {
+    console.log(`${e.resourceType} not found: ${e.message}`);
+  } else if (e instanceof LangSmithResourceTimeoutError) {
+    console.log(`Timeout waiting for ${e.resourceType}: ${e.message}`);
+  } else if (e instanceof LangSmithSandboxError) {
+    console.log(`Error: ${e.message}`);
+  }
+}
+```
+
+</CodeGroup>
+
+<Note>
+For more details, see the sandbox SDK reference on GitHub for [Python](https://github.com/langchain-ai/langsmith-sdk/tree/main/python/langsmith/sandbox) or [TypeScript](https://github.com/langchain-ai/langsmith-sdk/tree/main/js/src/experimental/sandbox).
+</Note>

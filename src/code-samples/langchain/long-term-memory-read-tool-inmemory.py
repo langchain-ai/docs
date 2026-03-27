@@ -1,0 +1,65 @@
+# :snippet-start: long-term-memory-read-tool-inmemory-py
+from dataclasses import dataclass
+
+from langchain.agents import create_agent
+from langchain.tools import ToolRuntime, tool
+from langchain_core.runnables import Runnable
+from langgraph.store.memory import InMemoryStore
+
+
+@dataclass
+class Context:
+    user_id: str
+
+
+# InMemoryStore saves data to an in-memory dictionary. Use a DB-backed store in production.
+store = InMemoryStore()
+
+# Write sample data to the store using the put method
+store.put(
+    (
+        "users",
+    ),  # Namespace to group related data together (users namespace for user data)
+    "user_123",  # Key within the namespace (user ID as key)
+    {
+        "name": "John Smith",
+        "language": "English",
+    },  # Data to store for the given user
+)
+
+
+@tool
+def get_user_info(runtime: ToolRuntime[Context]) -> str:
+    """Look up user info."""
+    # Access the store - same as that provided to `create_agent`
+    assert runtime.store is not None
+    user_id = runtime.context.user_id
+    # Retrieve data from store - returns StoreValue object with value and metadata
+    user_info = runtime.store.get(("users",), user_id)
+    return str(user_info.value) if user_info else "Unknown user"
+
+
+agent: Runnable = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[get_user_info],
+    # Pass store to agent - enables agent to access store when running tools
+    store=store,
+    context_schema=Context,
+)
+
+# Run the agent
+agent.invoke(
+    {"messages": [{"role": "user", "content": "look up user information"}]},
+    context=Context(user_id="user_123"),
+)
+# :snippet-end:
+
+# :remove-start:
+if __name__ == "__main__":
+    # Verify the store has the data
+    result = store.get(("users",), "user_123")
+    assert result is not None
+    assert result.value["name"] == "John Smith"
+
+    print("✓ Read tool with InMemoryStore works correctly")
+# :remove-end:
