@@ -24,7 +24,7 @@ Use this when you need:
 - **Audit trail**: Every governance decision recorded in the OpenBox dashboard
 
 <Info>
-    OpenBox requires an account at [dashboard.openbox.ai](https://dashboard.openbox.ai) and an API key (`obx_live_...`). Create an agent in the dashboard matching the `agent_name` you pass here; policies and behavior rules are configured per agent.
+    OpenBox requires an account at [platform.openbox.ai](https://platform.openbox.ai/) and an API key (`obx_live_...`). Create an agent in the dashboard matching the `agent_name` you pass here; policies and behavior rules are configured per agent.
 </Info>
 
 **Package:** `openbox-langgraph-sdk-python`
@@ -101,7 +101,7 @@ asyncio.run(main())
 </ParamField>
 
 <ParamField body="enable_telemetry" type="bool" default="True">
-    Enable OTel hook governance. Intercepts HTTP requests, DB queries, and file I/O made inside tools and fires additional governance events with `hook_trigger: true`.
+    Reserved. OTel hook governance is always active when API credentials are configured. Setting this to `False` has no effect.
 </ParamField>
 
 <ParamField body="sqlalchemy_engine" type="Engine" default="None">
@@ -158,7 +158,7 @@ The SDK uses OpenTelemetry instrumentation to intercept low-level operations mad
 
 **File I/O hooks** intercept `builtins.open()` and `os.fdopen()`. System paths (`/dev/`, `/proc/`, `__pycache__`, `.pyc`) are automatically skipped.
 
-**Custom function tracing** via the `@traced` decorator:
+**Custom function tracing** via the `@traced` decorator. Both `traced` and `create_span` are exported from `openbox_langgraph` — DeepAgents users should import from that package directly:
 
 ```python
 from openbox_langgraph import traced, create_span
@@ -324,22 +324,18 @@ asyncio.run(main())
 
 <Accordion title="Configuration options">
 
-All [LangGraph governance configuration options](#langgraph-governance) are supported. The following are additional or different for DeepAgents.
+The following LangGraph governance options are supported: `on_api_error`, `governance_timeout`, `agent_name`, `session_id`, `task_queue`, `tool_type_map`, `skip_tool_types`, `sqlalchemy_engine`, `send_chain_start_event`, `send_chain_end_event`, `send_llm_start_event`, `send_llm_end_event`, `send_tool_start_event`, `send_tool_end_event`. The following LangGraph options are **not** supported: `hitl`, `skip_chain_types`, `use_native_interrupt`, `root_node_names`, `resolve_subagent_name`, `enable_telemetry`. The following are additional or different for DeepAgents.
 
 <ParamField body="known_subagents" type="list[str]" default='["general-purpose"]'>
     Subagent names from `create_deep_agent(subagents=[...])`. Always include `"general-purpose"` since it's DeepAgents' built-in fallback. The SDK warns on unknown `subagent_type` values at runtime.
 </ParamField>
 
-<ParamField body="guard_interrupt_on_conflict" type="bool" default="True">
-    Raise a `ValueError` at construction time if both OpenBox HITL and DeepAgents' own `interrupt_on` are configured simultaneously. These conflict because OpenBox must own the HITL flow. Set to `False` to suppress the check.
-</ParamField>
-
 <ParamField body="send_tool_start_event" type="bool" default="True">
-    Send `ToolStarted` event before each tool call. Note: the DeepAgent SDK uses `"ToolStarted"` / `"ToolCompleted"` event types, unlike `"ActivityStarted"` / `"ActivityCompleted"` in the LangGraph handler.
+    Send a governance event before each tool call.
 </ParamField>
 
 <ParamField body="send_tool_end_event" type="bool" default="True">
-    Send `ToolCompleted` event after each tool call.
+    Send a governance event after each tool call.
 </ParamField>
 
 <ParamField body="sqlalchemy_engine" type="Engine" default="None">
@@ -370,7 +366,7 @@ import future.keywords.in
 default result = {"decision": "CONTINUE", "reason": null}
 
 result := {"decision": "REQUIRE_APPROVAL", "reason": "Writer tasks require approval."} if {
-    input.event_type == "ToolStarted"
+    input.event_type == "ActivityStarted"
     input.activity_type == "task"
     not input.hook_trigger
     some item in input.activity_input
@@ -378,11 +374,9 @@ result := {"decision": "REQUIRE_APPROVAL", "reason": "Writer tasks require appro
 }
 ```
 
-> Note the event type is `"ToolStarted"` (not `"ActivityStarted"`). This is specific to the DeepAgents middleware.
-
 </Accordion>
 
-<Accordion title="Known limitations">
+### Known limitations
 
 **Subagent internals are invisible to governance.** Subagents execute inside the `task` tool body via `subagent.invoke()`. Their internal tool calls and LLM calls are not surfaced in the outer event stream. The `task` call is a single atomic governance unit.
 
@@ -394,8 +388,6 @@ result := {"decision": "REQUIRE_APPROVAL", "reason": "Writer tasks require appro
 **Behavior Rules count `task` dispatches, not subagent-internal tool calls.** A rule like "block if `search_web` exceeds 10 calls per session" only counts direct `search_web` calls from the outer agent. Subagent-internal HTTP calls are not captured as spans on the `task` `ToolCompleted`.
 
 **Behavior Rules don't span `ainvoke` calls.** Each `ainvoke` is a separate governance session with a new `workflow_id`. Cross-turn pattern detection is not yet supported.
-
-</Accordion>
 
 <Accordion title="Full example">
 
