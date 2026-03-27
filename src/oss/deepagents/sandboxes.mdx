@@ -112,7 +112,7 @@ from deepagents import create_deep_agent
 
 load_dotenv()
 
-# Can also do this with E2B, Runloop, Modal
+# Can also do this with AgentCore, E2B, Runloop, Modal
 sandbox = Daytona().create()
 backend = DaytonaSandbox(sandbox=sandbox)
 
@@ -209,13 +209,16 @@ For provider-specific setup, authentication, and lifecycle details, see the prov
 
 :::python
 <CardGroup cols={2}>
-    <Card title="Modal" icon="/images/providers/modal-icon.svg" href="/oss/integrations/providers/modal">
+    <Card title="AgentCore" icon="/images/providers/agentcore-icon.svg" href="/oss/integrations/sandboxes/aws">
+        AWS MicroVM isolation, Code Interpreter, Python.
+    </Card>
+    <Card title="Modal" icon="/images/providers/modal-icon.svg" href="/oss/integrations/sandboxes/modal">
         ML/AI workloads, GPU access.
     </Card>
-    <Card title="Daytona" icon="/images/providers/daytona-icon.svg" href="/oss/integrations/providers/daytona">
+    <Card title="Daytona" icon="/images/providers/daytona-icon.svg" href="/oss/integrations/sandboxes/daytona">
         TypeScript/Python development, fast cold starts.
     </Card>
-    <Card title="Runloop" href="/oss/integrations/providers/runloop">
+    <Card title="Runloop" href="/oss/integrations/sandboxes/runloop">
         Disposable devboxes for isolated code execution.
     </Card>
 </CardGroup>
@@ -253,7 +256,7 @@ See [security considerations](#security-considerations) for how to handle secret
 
 ### The `execute` method
 
-Sandbox backends have a simple architecture: the only method a provider must implement is `execute()`, which runs a shell command and returns its output. Every other filesystem operation (`read`, `write`, `edit`, `ls`, `glob`, `grep`) is built on top of `execute()` by the `BaseSandbox` base class, which constructs scripts and runs them inside the sandbox via `execute()`.
+Sandbox backends have a simple architecture: the only method a provider must implement is `execute()`, which runs a shell command and returns its output. Every other filesystem operation (`read`, `write`, `edit`, `ls`, `glob`, `grep`) is built on top of `execute()` by the @[`BaseSandbox`] base class, which constructs scripts and runs them inside the sandbox via `execute()`.
 
 ```mermaid
 graph TB
@@ -277,7 +280,7 @@ graph TB
 
 This design means:
 - **Adding a new provider is straightforward.** Implement `execute()`—the base class handles everything else.
-- **The `execute` tool is conditionally available.** On every model call, the harness checks whether the backend implements `SandboxBackendProtocol`. If not, the tool is filtered out and the agent never sees it.
+- **The `execute` tool is conditionally available.** On every model call, the harness checks whether the backend implements @[`SandboxBackendProtocol`]. If not, the tool is filtered out and the agent never sees it.
 
 When the agent calls the `execute` tool, it provides a `command` string and gets back the combined stdout/stderr, exit code, and a truncation notice if the output was too large.
 
@@ -285,6 +288,36 @@ You can also call the backend `execute()` method directly in your application co
 
 :::python
 <Tabs>
+  <Tab title="AgentCore">
+
+    <CodeGroup>
+    ```bash pip
+    pip install langchain-agentcore-codeinterpreter
+    ```
+
+    ```bash uv
+    uv add langchain-agentcore-codeinterpreter
+    ```
+    </CodeGroup>
+
+    ```python
+    from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+
+    from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+
+    interpreter = CodeInterpreter(region="us-west-2")
+    interpreter.start()
+
+    backend = AgentCoreSandbox(interpreter=interpreter)
+
+    try:
+        result = backend.execute("python3 --version")
+        print(result.output)
+    finally:
+        interpreter.stop()
+    ```
+
+  </Tab>
   <Tab title="Modal">
 
 ```python
@@ -466,6 +499,37 @@ The deepagents sandbox backends support file transfer APIs for moving files betw
 Use `upload_files()` to populate the sandbox before the agent runs. Paths must be absolute and contents are `bytes`:
 
 <Tabs>
+  <Tab title="AgentCore">
+
+    <CodeGroup>
+    ```bash pip
+    pip install langchain-agentcore-codeinterpreter
+    ```
+
+    ```bash uv
+    uv add langchain-agentcore-codeinterpreter
+    ```
+    </CodeGroup>
+
+    ```python
+    from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+
+    from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+
+    interpreter = CodeInterpreter(region="us-west-2")
+    interpreter.start()
+
+    backend = AgentCoreSandbox(interpreter=interpreter)
+
+    backend.upload_files(
+        [
+            ("hello.py", b"print('Hello')\n"),
+            ("data.csv", b"name,value\na,1\nb,2\n"),
+        ]
+    )
+    ```
+
+  </Tab>
   <Tab title="Modal">
 
 ```python
@@ -554,6 +618,39 @@ backend.upload_files(
 Use `download_files()` to retrieve files from the sandbox after the agent finishes:
 
 <Tabs>
+  <Tab title="AgentCore">
+
+    <CodeGroup>
+    ```bash pip
+    pip install langchain-agentcore-codeinterpreter
+    ```
+
+    ```bash uv
+    uv add langchain-agentcore-codeinterpreter
+    ```
+    </CodeGroup>
+
+    ```python
+    from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+
+    from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+
+    interpreter = CodeInterpreter(region="us-west-2")
+    interpreter.start()
+
+    backend = AgentCoreSandbox(interpreter=interpreter)
+
+    results = backend.download_files(["hello.py"])
+    for result in results:
+        if result.content is not None:
+            print(f"{result.path}: {result.content.decode()}")
+        else:
+            print(f"Failed to download {result.path}: {result.error}")
+
+    interpreter.stop()
+    ```
+
+  </Tab>
   <Tab title="Modal">
 
 ```python
@@ -670,6 +767,24 @@ await sandbox.close();
 :::python
 
 <Tabs>
+  <Tab title="AgentCore">
+
+```python
+from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+
+from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+
+interpreter = CodeInterpreter(region="us-west-2")
+interpreter.start()
+
+backend = AgentCoreSandbox(interpreter=interpreter)
+
+result = backend.execute("echo hello")
+# ... use sandbox
+interpreter.stop()
+```
+
+  </Tab>
   <Tab title="Modal">
 
 ```python
@@ -730,10 +845,11 @@ Generally, each `thread_id` should use its own unique sandbox.
 
 Store the mapping between sandbox ID and `thread_id` in your application or with the sandbox if the sandbox provider allows attaching metadata to the sandbox.
 
+The following example shows a get-or-create pattern using Daytona.
+For other providers, consult the sandbox provider API for equivalent TTL options:
+
 :::python
 
-The following example shows a get-or-create pattern using Daytona.
-For other providers, consult the sandbox provider API for the equivalent labels, metadata, and TTL options:
 
 ```python
 import uuid
@@ -746,16 +862,19 @@ thread_id = str(uuid.uuid4())
 
 from deepagents import create_deep_agent
 
+# Store sandbox IDs keyed by thread_id (use a database or cache in production)
+sandbox_store: dict[str, str] = {}
+
 # Get or create sandbox by thread_id
-try:
-    sandbox = client.find_one(labels={"thread_id": thread_id})
-except Exception:
+if thread_id in sandbox_store:
+    sandbox = client.get(sandbox_store[thread_id])
+else:
     params = CreateSandboxFromSnapshotParams(
-        labels={"thread_id": thread_id},
         # Add TTL so the sandbox is cleaned up when idle
         auto_delete_interval=3600,
     )
     sandbox = client.create(params)
+    sandbox_store[thread_id] = sandbox.id
 
 backend = DaytonaSandbox(sandbox=sandbox)
 agent = create_deep_agent(
@@ -801,17 +920,20 @@ import { createDeepAgent } from "deepagents";
 const client = new Daytona();
 const threadId = randomUUID();
 
+// Store sandbox IDs keyed by thread_id (use a database or cache in production)
+const sandboxStore = new Map<string, string>();
+
 // Get or create sandbox by thread_id
 let sandbox;
-try {
-    sandbox = await client.findOne({ labels: { thread_id: threadId } });
-} catch {
+if (sandboxStore.has(threadId)) {
+    sandbox = await client.get(sandboxStore.get(threadId)!);
+} else {
     const params: CreateSandboxFromSnapshotParams = {
-        labels: { thread_id: threadId },
         // Add TTL so the sandbox is cleaned up when idle (minutes)
         autoDeleteInterval: 3600,
     };
-sandbox = await client.create(params);
+    sandbox = await client.create(params);
+    sandboxStore.set(threadId, sandbox.id);
 }
 
 const backend = await DaytonaSandbox.fromId(sandbox.id);

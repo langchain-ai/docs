@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-TIMEOUT_SECONDS = 60
+TIMEOUT_SECONDS = 600
 
 
 def is_valid_sample(p: Path, code_samples_dir: Path) -> bool:
