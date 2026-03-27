@@ -1,0 +1,153 @@
+---
+title: "CRW"
+description: "Integrate with the CRW document loader using LangChain Python."
+---
+
+[CRW](https://github.com/us/crw) is an open-source, high-performance web scraper built for AI agents. Written in Rust, it crawls and converts any website into clean markdown with JS rendering support. Self-hosted (free) or managed cloud at [fastcrw.com](https://fastcrw.com).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support |
+| :--- | :--- | :---: | :---: | :---: |
+| CrwLoader | [langchain-crw](https://pypi.org/project/langchain-crw/) | ✅ | ❌ | ❌ |
+
+### Loader features
+
+| Source | Document Lazy Loading | Native Async Support |
+| :---: | :---: | :---: |
+| CrwLoader | ✅ | ❌ |
+
+## Setup
+
+```bash
+pip install langchain-crw
+```
+
+### Self-hosted (no API key needed)
+
+```bash
+# Install and run CRW locally
+curl -fsSL https://raw.githubusercontent.com/us/crw/main/install.sh | bash
+crw
+```
+
+### Cloud
+
+Set environment variables for [fastcrw.com](https://fastcrw.com):
+
+```bash
+export CRW_API_URL=https://fastcrw.com/api
+export CRW_API_KEY=crw_live_...
+```
+
+## Usage
+
+### Scrape a single page
+
+```python
+from langchain_crw import CrwLoader
+
+loader = CrwLoader(url="https://example.com", mode="scrape")
+docs = loader.load()
+
+print(docs[0].page_content[:200])
+print(docs[0].metadata)
+```
+
+### Lazy loading
+
+```python
+pages = []
+for doc in loader.lazy_load():
+    pages.append(doc)
+    if len(pages) >= 10:
+        # do some paged operation, e.g.
+        # index.upsert(pages)
+        pages = []
+```
+
+## Modes
+
+- `scrape`: Scrape a single URL and return clean markdown.
+- `crawl`: Crawl the URL and all accessible subpages, return markdown for each.
+- `map`: Discover all URLs on a website via sitemap and link discovery.
+
+### Crawl
+
+```python
+loader = CrwLoader(
+    url="https://docs.example.com",
+    mode="crawl",
+    params={"max_depth": 3, "max_pages": 50},
+)
+
+docs = loader.load()
+print(f"Crawled {len(docs)} pages")
+```
+
+### Map
+
+```python
+loader = CrwLoader(url="https://example.com", mode="map")
+docs = loader.load()
+
+urls = [doc.page_content for doc in docs]
+print(f"Found {len(urls)} URLs")
+```
+
+## Scrape with options
+
+```python
+loader = CrwLoader(
+    url="https://spa-app.example.com",
+    mode="scrape",
+    params={
+        "render_js": True,
+        "wait_for": 3000,
+        "css_selector": "article.main-content",
+        "only_main_content": True,
+    },
+)
+docs = loader.load()
+```
+
+## RAG pipeline example
+
+```python
+from langchain_crw import CrwLoader
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# Crawl documentation site
+loader = CrwLoader(
+    url="https://docs.example.com",
+    mode="crawl",
+    params={"max_depth": 3, "max_pages": 50},
+)
+docs = loader.load()
+
+# Split and embed
+splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+chunks = splitter.split_documents(docs)
+vectorstore = FAISS.from_documents(chunks, OpenAIEmbeddings())
+
+# Query
+results = vectorstore.similarity_search("how to authenticate")
+```
+
+## Migrating from FireCrawlLoader
+
+CrwLoader supports the same scrape, crawl, and map modes with a similar interface. CrwLoader defaults to `mode="scrape"` while FireCrawlLoader defaults to `mode="crawl"`.
+
+```python
+# Before
+from langchain_community.document_loaders import FireCrawlLoader
+loader = FireCrawlLoader(url="https://example.com", api_key="fc-...", mode="scrape")
+
+# After — self-hosted, no SDK dependency needed
+from langchain_crw import CrwLoader
+loader = CrwLoader(url="https://example.com", mode="scrape")
+```
