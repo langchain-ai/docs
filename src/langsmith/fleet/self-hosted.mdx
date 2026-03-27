@@ -77,6 +77,7 @@ To enable OAuth-based tools (like Gmail, Slack, GitHub), configure the `oauthPro
 | `googleOAuthProvider` | Gmail, Google Calendar, Google Sheets, BigQuery | Gmail | [See below](#google-oauth-provider)
 | `linearOAuthProvider` | Linear | - | [See below](#linear-oauth-provider)
 | `linkedinOAuthProvider` | LinkedIn | - | [See below](#linkedin-oauth-provider)
+| `microsoftOAuthProvider` | Outlook, Calendar, Teams, SharePoint, Word, Excel, PowerPoint | Outlook | [See below](#microsoft-oauth-provider)
 | `slackOAuthProvider` | Slack | Slack | [See below](#slack-oauth-provider)
 
 ### General configuration
@@ -101,6 +102,7 @@ config:
       googleOAuthProvider: "<provider-id>"
       linkedinOAuthProvider: "<provider-id>"
       linearOAuthProvider: "<provider-id>"
+      microsoftOAuthProvider: "<provider-id>"
       githubOAuthProvider: "<provider-id>"
 ```
 
@@ -216,6 +218,87 @@ To enable Google OAuth for Fleet, you need to create an OAuth client in GCP and 
         oauthProviderOrgId: "<your-org-id>"
         oauth:
           googleOAuthProvider: "<provider-id>"
+    ```
+  </Step>
+</Steps>
+
+</Accordion>
+
+<Accordion title="Microsoft OAuth provider" id="microsoft-oauth-provider">
+
+To enable Microsoft OAuth for Fleet, create an Azure app registration, add the required Microsoft Graph delegated permissions, and configure a Microsoft OAuth provider in LangSmith.
+
+<Steps>
+  <Step title="Create an Azure app registration">
+    In the [Microsoft Entra admin center](https://entra.microsoft.com/), go to **Applications > App registrations** and create a new registration.
+  </Step>
+
+  <Step title="Choose supported account types">
+    Select the account type that matches your deployment. If you need users from multiple Microsoft Entra tenants to authenticate, choose a multi-tenant option. If your deployment is limited to one tenant, you can use a single-tenant app registration.
+  </Step>
+
+  <Step title="Add the redirect URI">
+    Add the following web redirect URI, replacing `<hostname>` with your LangSmith hostname and `<provider-id>` with your provider ID:
+
+    ```
+    https://<hostname>/host-oauth-callback/<provider-id>
+    ```
+  </Step>
+
+  <Step title="Create a client secret">
+    In **Certificates & secrets**, create a new client secret. Copy the **Application (client) ID** and the generated client secret value.
+  </Step>
+
+  <Step title="Add Microsoft Graph delegated permissions">
+    In **API permissions**, add the following Microsoft Graph delegated permissions:
+    - `Mail.ReadWrite`
+    - `Mail.Send`
+    - `Calendars.ReadWrite`
+    - `Team.ReadBasic.All`
+    - `Channel.ReadBasic.All`
+    - `Channel.Create`
+    - `ChannelMessage.Send`
+    - `ChannelMessage.Read.All`
+    - `Chat.Create`
+    - `Chat.ReadWrite`
+    - `User.ReadBasic.All`
+    - `Files.ReadWrite.All`
+    - `Sites.ReadWrite.All`
+
+    <Note>
+    LangSmith automatically requests `offline_access` for Microsoft providers so users can receive refresh tokens.
+    </Note>
+  </Step>
+
+  <Step title="Grant tenant consent">
+    Grant admin consent for the tenant if your Microsoft 365 policies require it for these delegated permissions.
+  </Step>
+
+  <Step title="Configure OAuth provider in LangSmith">
+    In LangSmith, go to **Settings > OAuth Providers** and add a new provider:
+    - **Name**: For example, `Microsoft`
+    - **Provider ID**: Unique string, for example: `microsoft-oauth-provider`
+    - **Client ID**: Application (client) ID from Azure
+    - **Client Secret**: Client secret value from Azure
+    - **Authorization URL**: `https://login.microsoftonline.com/common/oauth2/v2.0/authorize`
+    - **Token URL**: `https://login.microsoftonline.com/common/oauth2/v2.0/token`
+    - **Provider Type**: `microsoft`
+    - **Token endpoint auth method**: `client_secret_post`
+
+    <Note>
+    If you created a single-tenant app registration, replace `common` in the authorization and token URLs with your tenant ID.
+    </Note>
+  </Step>
+
+  <Step title="Deploy">
+    Add the following to your `values.yaml` and deploy:
+
+    ```yaml
+    config:
+      agentBuilder:
+        oauthProviderOrgId: "<your-org-id>"
+        oauth:
+          microsoftOAuthProvider: "<provider-id>"
     ```
   </Step>
 </Steps>

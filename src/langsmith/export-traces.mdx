@@ -4,24 +4,17 @@ sidebarTitle: Query traces
 tag: "SDK"
 ---
 
-<Tip>
-**Recommended Reading**
+The recommended way to query [runs](/langsmith/observability-concepts#runs) (the span data in LangSmith traces) is to use the `list_runs` method in the [SDK](https://reference.langchain.com/python/langsmith/) or `/runs/query` endpoint in the [API](https://api.smith.langchain.com/redoc). LangSmith stores traces in a simple format that is specified in the [Run (span) data format](/langsmith/run-data-format).
 
-Before diving into this content, it might be helpful to read the following:
+This page covers:
 
-- [Run (span) data format](/langsmith/run-data-format)
-- <RegionalUrl type="api" suffix="/redoc" text="LangSmith API Reference" />
-- [LangSmith trace query syntax](/langsmith/trace-query-syntax)
-
-</Tip>
+- [Use filter arguments](#use-filter-arguments): keyword-based filtering using SDK parameters.
+- [Use filter query language](#use-filter-query-language): complex queries using LangSmith's filter syntax.
+- [Rate limits](#rate-limits): per-tenant limits and best practices for staying within them.
 
 <Note>
-**If you are looking to export a large volume of traces, we recommend that you use the [Bulk Data Export](/langsmith/data-export) functionality, as it will better handle large data volumes and will support automatic retries and parallelization across partitions.**
+If you are looking to export a large volume of traces, we recommend that you use the [Bulk Data Export](/langsmith/data-export) functionality, as it will better handle large data volumes and will support automatic retries and parallelization across partitions.
 </Note>
-
-The recommended way to query runs (the span data in LangSmith traces) is to use the `list_runs` method in the SDK or `/runs/query` endpoint in the API.
-
-LangSmith stores traces in a simple format that is specified in the [Run (span) data format](/langsmith/run-data-format).
 
 ## Use filter arguments
 
@@ -1035,7 +1028,7 @@ df.head()
 
 The [`POST /runs/query`](https://api.smith.langchain.com/redoc#tag/run/operation/query_runs_api_v1_runs_query_post) endpoint ([`list_runs`](https://reference.langchain.com/python/langsmith/client/Client/list_runs) in Python, [`listRuns`](https://reference.langchain.com/javascript/langsmith/client/Client/listRuns) in JavaScript) has per-tenant rate limits that vary based on query parameters:
 
-| Query type | Limit | Window |
+| **Query type** | **Limit** | **Window** |
 |---|---|---|
 | Short time window (≤ 7 days) | 10 requests | 10 seconds |
 | Large time window (> 7 days) | 3 requests | 10 seconds |
@@ -1044,10 +1037,16 @@ The [`POST /runs/query`](https://api.smith.langchain.com/redoc#tag/run/operation
 | Select `child_run_ids`, short time window (≤ 7 days) | 3 requests | 10 seconds |
 | Select `child_run_ids`, large time window (> 7 days) | 1 request | 10 seconds |
 
-The time window is determined by `end_time - start_time`. If `end_time` is not provided, the current time is used. Queries without a `start_time` are treated as large time window queries.
+The time window is determined by `end_time - start_time`. If `end_time` is not provided, LangSmith will use the current time. Queries without a `start_time` are treated as large time window queries.
 
-To stay within these limits:
-- Use time windows of 7 days or less when possible.
-- Avoid full-text search (`filter='search("...")'`) when other filter types work.
+### Best practices
 
-When you exceed these limits, the API returns a `429 Too Many Requests` response. For general rate limit information, see [Rate limits](/langsmith/administration-overview#rate-limits).
+To avoid hitting rate limits and reduce query time, especially for runs with large inputs/outputs:
+
+- **Set `start_time`**: omitting it triggers the large time window rate limit tier (3 requests per 10 seconds instead of 10). Use a window of 7 days or less when possible.
+- **Use `select`**: by default all fields are returned. Specifying only the fields you need (e.g., `select=["inputs", "outputs"]`) substantially reduces response size and query time, especially for runs with large inputs/outputs.
+- **Set `limit`**: cap the number of results if you don't need to paginate through everything.
+- **Avoid full-text search**: `filter='search("...")'` has the strictest rate limits; use structured filters (e.g., `eq()`, `has()`) when possible.
+- **Avoid selecting `child_run_ids`**: this also triggers a stricter rate limit tier.
+
+When you exceed these limits, the API returns a `429 Too Many Requests` response. For general rate limit information, refer to [Administration overview](/langsmith/administration-overview#rate-limits).
