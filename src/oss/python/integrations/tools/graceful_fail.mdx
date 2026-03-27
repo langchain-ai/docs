@@ -1,0 +1,109 @@
+---
+title: Graceful Fail (SelfHeal)
+description: Self-healing API proxy that gives LangChain agents structured fix instructions when API calls fail.
+sidebar_label: Graceful Fail
+---
+
+# Graceful Fail (SelfHeal)
+
+[Graceful Fail](https://selfheal.dev) is a self-healing API proxy for AI agents. When an external API returns an error (4xx/5xx), instead of passing raw HTTP errors to your agent, Graceful Fail intercepts the response and returns structured fix instructions -- what went wrong, whether to retry, and exactly what to change in the request.
+
+## Installation
+
+```bash
+pip install 'graceful-fail[langchain]'
+```
+
+## Setup
+
+1. Get an API key at [selfheal.dev](https://selfheal.dev).
+2. Set it as an environment variable:
+
+```bash
+export GRACEFUL_FAIL_API_KEY="gf_your_key"
+```
+
+Or pass it directly when initializing the tool.
+
+## Usage with GracefulFailTool
+
+`GracefulFailTool` is a LangChain tool that makes HTTP requests through the Graceful Fail proxy. Use it with any LangChain agent.
+
+```python
+import os
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+from graceful_fail.langchain import GracefulFailTool
+
+llm = ChatOpenAI(model="gpt-4o")
+
+tool = GracefulFailTool(api_key=os.environ["GRACEFUL_FAIL_API_KEY"])
+
+agent = create_react_agent(llm, [tool])
+
+result = agent.invoke({
+    "messages": [
+            {"role": "user", "content": "Fetch the list of users from https://api.example.com/users"}
+                ]
+                })
+                ```
+
+                The tool accepts the following inputs:
+
+                | Parameter | Type | Description |
+                |-----------|------|-------------|
+                | `url` | `str` | The full URL of the API endpoint to call |
+                | `method` | `str` | HTTP method: GET, POST, PUT, PATCH, or DELETE (default: GET) |
+                | `body` | `dict` | JSON request body (for POST, PUT, PATCH) |
+                | `headers` | `dict` | Additional HTTP headers to include |
+
+                When an API call succeeds, the agent receives the response body. When it fails, the agent receives structured output like:
+
+                ```
+                API ERROR (HTTP 422, category: validation_error)
+                Retriable: False
+                Explanation: The "email" field is required but was not provided.
+                Fix: Add the "email" field to the request body.
+                Add fields: {"email": "string"}
+                ```
+
+                This lets the agent self-correct and retry with a fixed request.
+
+                ## Usage with GracefulFailRequests
+
+                `GracefulFailRequests` is a drop-in replacement for LangChain's `TextRequestsWrapper` that routes all HTTP calls through the Graceful Fail proxy.
+
+                ```python
+                import os
+                from graceful_fail.langchain import GracefulFailRequests
+
+                requests = GracefulFailRequests(api_key=os.environ["GRACEFUL_FAIL_API_KEY"])
+
+                # GET request
+                response = requests.get("https://api.example.com/users")
+
+                # POST request
+                response = requests.post(
+                    "https://api.example.com/users",
+                        data={"name": "Alice", "email": "alice@example.com"},
+                        )
+
+                        # PUT, PATCH, DELETE also supported
+                        response = requests.put("https://api.example.com/users/1", data={"name": "Bob"})
+                        response = requests.patch("https://api.example.com/users/1", data={"name": "Bob"})
+                        response = requests.delete("https://api.example.com/users/1")
+                        ```
+
+                        You can also pass custom headers and a custom proxy base URL:
+
+                        ```python
+                        requests = GracefulFailRequests(
+                            api_key=os.environ["GRACEFUL_FAIL_API_KEY"],
+                                headers={"Authorization": "Bearer sk-..."},
+                                    base_url="https://custom-proxy.selfheal.dev",
+                                    )
+                                    ```
+
+                                    ## API Reference
+
+                                    See the full API reference at [selfheal.dev/docs](https://selfheal.dev/docs).
