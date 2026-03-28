@@ -135,6 +135,9 @@ Review PR → 合并到 zh_CN → 自动部署
 
 - **Build Command:** `npm install && npx mintlify build`
 - **Output Directory:** `build`
-- **Root Directory:** `/`（使用 `src/zh/docs.json`）
+- **Environment Variable:** `MINTLIFY_CONFIG=src/zh/docs.json`
 
-注意：需要修改 Mintlify 配置指向中文配置，或使用环境变量 `MINTLIFY_CONFIG=src/zh/docs.json`
+或使用 `mintlify.zh.json` 作为配置文件：
+```bash
+npx mintlify build --config mintlify.zh.json
+```
