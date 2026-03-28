@@ -1,0 +1,70 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # 每天 3 AM UTC
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/langchain-ai/docs.git 2>/dev/null || \
+          git remote set-url upstream https://github.com/langchain-ai/docs.git
+          git fetch upstream --tags
+
+      - name: Sync main to upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git merge upstream/main --ff-only
+
+      - name: Detect changed files
+        id: changed
+        run: |
+          # 找到上一次成功的 sync commit（查找包含 "sync-upstream" 的 commit message）
+          LAST_SYNC=$(git log --all --oneline --grep="Sync upstream" --format="%H" | head -1)
+          if [ -z "$LAST_SYNC" ]; then
+            # 首次运行，检测所有文件
+            CHANGED=$(git diff --name-only upstream/main..HEAD -- src/oss/ 2>/dev/null || echo "")
+          else
+            CHANGED=$(git diff --name-only ${LAST_SYNC}..HEAD -- src/oss/ 2>/dev/null || echo "")
+          fi
+          echo "changed_files=$CHANGED" >> $GITHUB_OUTPUT
+          if [ -n "$CHANGED" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "=== 变更的文件 ==="
+            echo "$CHANGED"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "无新增变更"
+          fi
+
+      - name: Create GitHub Issue
+        if: steps.changed.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const changedFiles = process.env.CHANGED_FILES || '';
+            const fileList = changedFiles.split('\n').filter(f => f.trim()).join('\n');
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📚 上游文档更新 (${new Date().toLocaleDateString('zh-CN')})`,
+              body: `## 上游文档有更新，请检查以下变更文件：\n\n<details>\n<summary>变更文件列表</summary>\n\n${fileList.split('\n').map(f => `- \`${f}\``).join('\n')}\n\n</details>\n\n---\n**下一步：** 点击 "Actions" → "Translate Docs" → "Run workflow" 开始翻译。`,
+              labels: ['documentation', 'upstream-sync']
+            })
+
+      - name: Push changes
+        run: |
+          git push origin main
+          git tag -a sync-upstream-$(date +%Y%m%d%H%M) -m "Sync upstream $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin --tags

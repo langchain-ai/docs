@@ -1,0 +1,74 @@
+name: Translate Docs
+
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: "要翻译的文件列表（逗号分隔，留空则翻译全部未翻译文件）"
+        required: false
+        type: string
+      dry_run:
+        description: "仅显示要翻译的文件，不实际调用 API"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install anthropic pyyaml
+
+      - name: Create translation branch
+        run: |
+          BRANCH="feat/translate-$(date +%Y%m%d%H%M)"
+          git checkout -b $BRANCH
+          echo "BRANCH_NAME=$BRANCH" >> $GITHUB_ENV
+
+      - name: Translate all untranslated files
+        if: inputs.files == ''
+        run: |
+          echo "翻译所有未翻译文件..."
+          python .github/scripts/translate.py --all
+
+      - name: Translate specific files
+        if: inputs.files != ''
+        run: |
+          echo "翻译指定文件: ${{ inputs.files }}"
+          python .github/scripts/translate.py --files "${{ inputs.files }}"
+
+      - name: Dry run
+        if: inputs.dry_run == true
+        run: |
+          echo "=== Dry Run Mode ==="
+          python .github/scripts/translate.py --all --dry-run
+
+      - name: Create PR
+        id: cpr
+        if: inputs.dry_run == false
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: ${{ env.BRANCH_NAME }}
+          title: "docs: translate upstream updates ($(date +%Y-%m-%d))"
+          body: |
+            ## 翻译变更
+
+            自动化翻译 PR，基于最新上游更新。
+
+            **下一步：**
+            - [ ] Review 翻译内容
+            - [ ] 确认无误后合并到 `zh_CN`
+          base: zh_CN
+          delete-branch: true
+          commit-message: "docs: translate upstream updates"
