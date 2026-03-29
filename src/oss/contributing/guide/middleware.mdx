@@ -19,7 +19,7 @@ Middleware integrations typically fall into two categories:
 | **Provider-specific** | Leverages a provider's unique capabilities | Prompt caching, native tool execution, content moderation |
 | **Cross-provider** | Works with any model or tool | Rate limiting, PII detection, logging, guardrails |
 
-Provider-specific middleware lives in the provider's integration package (e.g., `langchain-anthropic`). Cross-provider middleware can be published as a standalone package.
+Provider-specific middleware lives in the provider's integration package (for example `langchain-anthropic`). Cross-provider middleware can be published as a standalone package.
 
 ## Implement your middleware
 
@@ -31,6 +31,9 @@ Middleware classes subclass @[`AgentMiddleware`] and implement one or more hooks
     <Step title="Subclass AgentMiddleware">
 
 ```python
+from collections.abc import Callable
+from typing import Any
+
 from langchain.agents.middleware import (
     AgentMiddleware,
     AgentState,
@@ -38,7 +41,6 @@ from langchain.agents.middleware import (
     ModelResponse,
 )
 from langgraph.runtime import Runtime
-from typing import Any, Callable
 
 
 class MyProviderMiddleware(AgentMiddleware):
@@ -97,9 +99,15 @@ class MyProviderMiddleware(AgentMiddleware):
 </Step>
     <Step title="Add async support">
 
-For production use, implement async versions of your hooks:
+For production use, implement async versions of the hooks you override (`abefore_agent`, `abefore_model`, `aafter_model`, `aafter_agent`, `awrap_model_call`, `awrap_tool_call`).
 
 ```python
+from collections.abc import Awaitable, Callable
+from langchain.agents.middleware import AgentMiddleware, AgentState, ModelRequest, ModelResponse
+from langgraph.runtime import Runtime
+from typing import Any
+
+
 class MyProviderMiddleware(AgentMiddleware):
     def __init__(self, api_key: str, option_a: bool = True):
         super().__init__()
@@ -115,7 +123,7 @@ class MyProviderMiddleware(AgentMiddleware):
     async def awrap_model_call(
         self,
         request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         response = await handler(request)
         return response
@@ -127,7 +135,7 @@ class MyProviderMiddleware(AgentMiddleware):
 If your middleware needs to track state across hooks, define a custom state schema:
 
 ```python
-from langchain.agents.middleware import AgentMiddleware, AgentState, hook_config
+from langchain.agents.middleware import AgentMiddleware, AgentState
 from langgraph.runtime import Runtime
 from typing import Any
 from typing_extensions import NotRequired
@@ -137,8 +145,9 @@ class MyMiddlewareState(AgentState):
     call_count: NotRequired[int]
 
 
-class MyProviderMiddleware(AgentMiddleware):
-    @hook_config(state_schema=MyMiddlewareState)
+class MyProviderMiddleware(AgentMiddleware[MyMiddlewareState]):
+    state_schema = MyMiddlewareState
+
     def after_model(
         self, state: MyMiddlewareState, runtime: Runtime
     ) -> dict[str, Any] | None:
@@ -213,6 +222,7 @@ Write tests that verify your middleware behaves correctly with `create_agent`:
 :::python
 
 ```python
+import asyncio
 import pytest
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage
@@ -281,7 +291,12 @@ Key areas to test:
     <Step title="Add documentation">
         Open a PR to the [docs repo](https://github.com/langchain-ai/docs) with a new middleware integration page.
 
-        Use the [middleware template](https://github.com/langchain-ai/docs/blob/main/src/oss/python/integrations/middleware/TEMPLATE.mdx) as a starting point. Create your file at `src/oss/python/integrations/middleware/<provider>.mdx`.
+        :::python
+        Use the [middleware template](https://github.com/langchain-ai/docs/blob/main/src/oss/python/integrations/middleware/TEMPLATE.mdx) as a starting point. Create your file at `src/oss/python/integrations/middleware/<provider>.mdx`. For TypeScript packages, add a page under `src/oss/javascript/integrations/middleware/` when applicable.
+        :::
+        :::js
+        Use the [middleware template](https://github.com/langchain-ai/docs/blob/main/src/oss/javascript/integrations/middleware/TEMPLATE.mdx) as a starting point. Create your file at `src/oss/javascript/integrations/middleware/<provider>.mdx`.
+        :::
 
         For each middleware in your package, include:
         - A brief description and use cases
@@ -291,7 +306,12 @@ Key areas to test:
         - A full working example
     </Step>
     <Step title="Update the middleware index">
-        Add your provider to the middleware index table in `src/oss/python/integrations/middleware/index.mdx`.
+        :::python
+        Add your provider to the middleware index table in the docs at [`src/oss/python/integrations/middleware/index.mdx`](https://github.com/langchain-ai/docs/blob/main/src/oss/python/integrations/middleware/index.mdx)
+        :::
+        :::js
+        Add your provider to the middleware index table in the docs at [`src/oss/javascript/integrations/middleware/index.mdx`](https://github.com/langchain-ai/docs/blob/main/src/oss/javascript/integrations/middleware/index.mdx)
+        :::
     </Step>
 </Steps>
 
