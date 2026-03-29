@@ -7,7 +7,7 @@ on:
 
 jobs:
   check-redirects:
-    name: Verify redirects for removed pages
+    name: Verify docs.json (redirects + pages exist)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -20,24 +20,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check if docs.json changed
-        id: changed
-        run: |
-          git fetch origin "${{ github.base_ref }}"
-          if git diff --quiet "origin/${{ github.base_ref }}"...HEAD -- src/docs.json 2>/dev/null; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.base_ref }}"
 
       - name: Set up Python
-        if: steps.changed.outputs.changed == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Get base branch docs.json
-        if: steps.changed.outputs.changed == 'true'
         run: |
           BASE_REF="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE_REF" ]; then
@@ -45,8 +36,7 @@ jobs:
           fi
           git show "${BASE_REF}:src/docs.json" > base_docs.json
 
-      - name: Run redirect check
-        if: steps.changed.outputs.changed == 'true'
+      - name: Run docs.json checks
         id: check
         run: |
           set +e
@@ -55,13 +45,13 @@ jobs:
           set -e
           echo "exit_code=${EXIT_CODE}" >> $GITHUB_OUTPUT
           if [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ No pages removed without redirects"
+            echo "✅ All pages exist and removed pages have redirects"
           else
             cat check_output.txt
           fi
 
       - name: Comment on PR on failure
-        if: steps.changed.outputs.changed == 'true' && steps.check.outputs.exit_code == '1'
+        if: steps.check.outputs.exit_code == '1'
         uses: actions/github-script@v8
         with:
           script: |
@@ -77,9 +67,9 @@ jobs:
               output = 'Error reading check output';
             }
 
-            const body = `## ❌ Removed pages require redirects
+            const body = `## ❌ docs.json validation failed
 
-            This PR removes pages from \`docs.json\` without adding corresponding redirects. When pages are removed from the navigation, existing links and bookmarks will break unless redirects are added.
+            This PR has issues with \`docs.json\`: either pages were removed without redirects, or some pages reference non-existent source files.
 
             \`\`\`
             ${output}
@@ -97,7 +87,7 @@ jobs:
 
             const botComment = comments.data.find(comment =>
               comment.user?.type === 'Bot' &&
-              comment.body.includes('Removed pages require redirects')
+              comment.body.includes('docs.json validation failed')
             );
 
             if (botComment) {
@@ -116,8 +106,8 @@ jobs:
               });
             }
 
-      - name: Fail if pages removed without redirects
-        if: steps.changed.outputs.changed == 'true' && steps.check.outputs.exit_code == '1'
+      - name: Fail if docs.json validation failed
+        if: steps.check.outputs.exit_code == '1'
         run: |
-          echo "❌ Please add redirects for the removed pages (see PR comment for details)"
+          echo "❌ Please fix docs.json issues (see PR comment for details)"
           exit 1

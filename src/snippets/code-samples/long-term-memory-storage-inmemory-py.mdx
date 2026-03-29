@@ -7,7 +7,7 @@ from langgraph.store.memory import InMemoryStore
 
 def embed(texts: Sequence[str]) -> list[list[float]]:
     # Replace with an actual embedding function or LangChain embeddings object
-    return [[1.0, 2.0] * len(texts)]
+    return [[1.0, 2.0] for _ in texts]
 
 
 # InMemoryStore saves data to an in-memory dictionary. Use a DB-backed store in production use.
