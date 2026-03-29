@@ -1,0 +1,127 @@
+---
+title: "Sail SQL toolkit integration"
+description: "Integrate with the Sail SQL toolkit using LangChain Python."
+---
+
+This notebook shows how to use agents to interact with `Sail SQL`. Similar to [SQL Database Agent](/oss/integrations/tools/sql_database) and [Spark SQL Agent](/oss/integrations/tools/spark_sql), it is designed to address general inquiries about `Sail SQL` and facilitate error recovery.
+
+[Sail](https://github.com/lakehq/sail) is a drop-in replacement for Apache Spark, written in Rust. It uses the Spark Connect protocol, so existing PySpark code works out of the box.
+
+**NOTE: Note that, as this agent is in active development, all answers might not be correct. Additionally, it is not guaranteed that the agent won't perform DML statements on your Sail cluster given certain questions. Be careful running it on sensitive data!**
+
+## Installation
+
+```bash
+pip install langchain-sail pysail pyspark
+```
+
+## Initialization
+
+```python
+from langchain_sail import SailSQLToolkit, create_sail_sql_agent, SailSQL
+from langchain_anthropic import ChatAnthropic
+```
+
+```python
+from pysail.spark import SparkConnectServer
+from pyspark.sql import SparkSession
+
+# Start a local Sail server
+server = SparkConnectServer()
+server.start()
+_, port = server.listening_address
+
+# Connect to Sail
+spark = SparkSession.builder.remote(f"sc://localhost:{port}").getOrCreate()
+
+# Create some test data
+spark.sql("CREATE TABLE employees (name STRING, department STRING, salary INT)")
+spark.sql(
+    "INSERT INTO employees VALUES "
+    "('Alice', 'Engineering', 120000), "
+    "('Bob', 'Marketing', 95000), "
+    "('Charlie', 'Engineering', 135000), "
+    "('Diana', 'Marketing', 105000), "
+    "('Eve', 'Engineering', 110000)"
+)
+```
+
+```python
+# Note, you can also connect to a remote Sail server:
+# sail_sql = SailSQL.from_uri("sc://your-sail-host:50051")
+sail_sql = SailSQL(spark_session=spark)
+llm = ChatAnthropic(model="claude-sonnet-4-6")
+toolkit = SailSQLToolkit(db=sail_sql, llm=llm)
+agent_executor = create_sail_sql_agent(llm=llm, toolkit=toolkit, verbose=True)
+```
+
+## Example: describing a table
+
+```python
+agent_executor.invoke({"input": "Describe the employees table"})
+```
+
+```text
+> Entering new AgentExecutor chain...
+Action: list_tables_sql_db
+Action Input:
+Observation: employees
+Thought: I found the employees table. Let me get its schema.
+Action: schema_sql_db
+Action Input: employees
+Observation: CREATE TABLE employees (name string, department string, salary int);
+
+/*
+3 rows from employees table:
+name	department	salary
+Alice	Engineering	120000
+Bob	Marketing	95000
+Charlie	Engineering	135000
+*/
+Thought: I now know the schema and sample data.
+Final Answer: The employees table has 3 columns: name (string), department (string), and salary (int). It contains employee records with their department and salary information.
+
+> Finished chain.
+```
+
+## Example: running queries
+
+```python
+agent_executor.invoke({"input": "What is the average salary by department?"})
+```
+
+```text
+> Entering new AgentExecutor chain...
+Action: query_checker_sql_db
+Action Input: SELECT department, AVG(salary) as avg_salary FROM employees GROUP BY department ORDER BY avg_salary DESC
+Observation: The query looks correct.
+Action: query_sql_db
+Action Input: SELECT department, AVG(salary) as avg_salary FROM employees GROUP BY department ORDER BY avg_salary DESC
+Observation: [('Engineering', '121666.66666666667'), ('Marketing', '100000.0')]
+Thought: I now know the final answer.
+Final Answer: The average salary by department is:
+- Engineering: $121,666.67
+- Marketing: $100,000.00
+
+Engineering has the higher average salary.
+
+> Finished chain.
+```
+
+```python
+agent_executor.invoke({"input": "Who is the highest paid employee?"})
+```
+
+```text
+> Entering new AgentExecutor chain...
+Action: query_checker_sql_db
+Action Input: SELECT name, salary FROM employees ORDER BY salary DESC LIMIT 1
+Observation: The query looks correct.
+Action: query_sql_db
+Action Input: SELECT name, salary FROM employees ORDER BY salary DESC LIMIT 1
+Observation: [('Charlie', '135000')]
+Thought: I now know the final answer.
+Final Answer: The highest paid employee is Charlie with a salary of $135,000.
+
+> Finished chain.
+```
