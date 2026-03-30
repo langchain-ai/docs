@@ -1,0 +1,392 @@
+---
+title: Async subagents
+description: Launch background subagents that run concurrently while the supervisor continues interacting with the user
+---
+
+Async subagents let a supervisor agent launch background tasks that return immediately, so the supervisor can continue interacting with the user while subagents work concurrently. The supervisor can check progress, send follow-up instructions, or cancel tasks at any point.
+
+This builds on [subagents](/oss/deepagents/subagents), which run synchronously and block the supervisor until completion. Use async subagents when tasks are long-running, parallelizable, or need mid-flight steering.
+
+<Warning>
+:::python
+Async subagents are a preview feature targeted for `deepagents` 0.5.0. You can try them now by installing a prerelease version. Preview features are under active development and are not recommended for production use.
+
+For Python, install the `0.5.0a1` prerelease with `--pre` or `--allow-prereleases`.
+:::
+
+:::js
+Async subagents are a preview feature targeted for `deepagents` 1.9.0. You can try them now by installing a prerelease version. Preview features are under active development and are not recommended for production use.
+
+For JavaScript, install the prerelease version explicitly, for example `deepagents@1.9.0-alpha.0`.
+:::
+</Warning>
+
+```mermaid
+graph TB
+    User([User]) --> Supervisor[Supervisor Agent]
+
+    Supervisor --> |launch| Researcher[Researcher]
+    Supervisor --> |launch| Coder[Coder]
+
+    Researcher --> |check| Supervisor
+    Coder --> |check| Supervisor
+```
+
+<Note>
+For subagents to work asynchronously, you must deploy the subagents on [LangSmith Deployments](/langsmith/deployment). When deployed to LangSmith Deployments, each subagent runs independently of the main agent. The supervisor controls them through the SDK to launch, check, update, and cancel.
+</Note>
+
+## When to use async subagents
+
+| Dimension            | Sync subagents                                                  | Async subagents                                                   |
+|----------------------|-----------------------------------------------------------------|-------------------------------------------------------------------|
+| **Execution model**  | Supervisor blocks until subagent completes                      | Returns job ID immediately; supervisor continues                  |
+| **Concurrency**      | Parallel but blocking                                           | Parallel and non-blocking                                         |
+| **Mid-task updates** | Not possible                                                    | Send follow-up instructions via `update_async_task`           |
+| **Cancellation**     | Not possible                                                    | Cancel running tasks via `cancel_async_task`                  |
+| **Statefulness**     | Stateless -- no persistent state between invocations            | Stateful -- maintains state on its own thread across interactions |
+| **Best for**         | Tasks where the agent should wait for results before continuing | Long-running, complex tasks managed interactively in a chat       |
+
+## Configure async subagents
+
+Define async subagents as a list of @[`AsyncSubAgent`] specs, each pointing to a graph deployed on a LangSmith Deployment:
+
+:::python
+```python
+from deepagents import AsyncSubAgent, create_deep_agent
+
+async_subagents = [
+    AsyncSubAgent(
+        name="researcher",
+        description="Research agent for information gathering and synthesis",
+        graph_id="researcher",
+        # No url → ASGI transport (co-deployed in the same deployment)
+    ),
+    AsyncSubAgent(
+        name="coder",
+        description="Coding agent for code generation and review",
+        graph_id="coder",
+        # url="https://coder-deployment.langsmith.dev"  # Optional: HTTP transport for remote
+    ),
+]
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    subagents=async_subagents,
+)
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Required. Unique identifier. The supervisor uses this when launching tasks. |
+| `description` | `str` | Required. What this subagent does. The supervisor uses this to decide which agent to delegate to. |
+| `graph_id` | `str` | Required. The graph ID (or assistant ID) registered in `langgraph.json`. |
+| `url` | `str` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote deployment. |
+:::
+
+:::js
+```typescript
+import { createDeepAgent, AsyncSubAgent } from "deepagents";
+
+const asyncSubagents: AsyncSubAgent[] = [
+  {
+    name: "researcher",
+    description: "Research agent for information gathering and synthesis",
+    graphId: "researcher",
+    // No url → ASGI transport (co-deployed in the same deployment)
+  },
+  {
+    name: "coder",
+    description: "Coding agent for code generation and review",
+    graphId: "coder",
+    // url: "https://coder-deployment.langsmith.dev"  // Optional: HTTP transport for remote
+  },
+];
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-6",
+  subagents: [...asyncSubagents],
+});
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `string` | Required. Unique identifier. The supervisor uses this when launching tasks. |
+| `description` | `string` | Required. What this subagent does. The supervisor uses this to decide which agent to delegate to. |
+| `graphId` | `string` | Required. The graph ID (or assistant ID) registered in `langgraph.json`. |
+| `url` | `string` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote deployment. |
+:::
+
+Register all graphs in the same `langgraph.json` for co-deployed setups:
+
+```json
+{
+  "graphs": {
+    "supervisor": "./src/supervisor.py:graph",
+    "researcher": "./src/researcher.py:graph",
+    "coder": "./src/coder.py:graph"
+  }
+}
+```
+
+## Use the async subagent tools
+
+The @[`AsyncSubAgentMiddleware`] gives the supervisor five tools:
+
+| Tool | Purpose | Returns |
+|------|---------|---------|
+| `start_async_task` | Start a new background task | Task ID (immediately) |
+| `check_async_task` | Get current status and result of a task | Status + result (if complete) |
+| `update_async_task` | Send new instructions to a running task | Confirmation + updated status |
+| `cancel_async_task` | Stop a running task | Confirmation |
+| `list_async_tasks` | List all tracked tasks with live statuses | Summary of all tasks |
+
+The supervisor's LLM calls these tools like any other tool. The middleware handles thread creation, run management, and state persistence automatically.
+
+### Understand the lifecycle
+
+A typical interaction follows this sequence:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Supervisor
+    participant Platform as LangSmith Deployment
+
+    User->>Supervisor: "Research topic X"
+    Supervisor->>Platform: launch(researcher, "topic X")
+    Platform-->>Supervisor: task_id: abc123
+
+    Note over Platform: Researcher working...
+
+    Supervisor-->>User: "Started task abc123"
+
+    Note over User,Platform: User continues conversation
+
+    User->>Supervisor: "How's the research going?"
+    Supervisor->>Platform: check(abc123)
+    Platform-->>Supervisor: status: success, result: "findings..."
+    Supervisor-->>User: "Here are the results"
+```
+
+- **Launch** creates a new thread on the deployment, starts a run with the task description as input, and returns the thread ID as the task ID. The supervisor reports this ID to the user and does not poll for completion.
+- **Check** fetches the current run status. If the run succeeded, it retrieves the thread state to extract the subagent's final output. If still running, it reports that to the user.
+- **Update** creates a new run on the same thread with an interrupt multitask strategy. The previous run is interrupted, and the subagent restarts with the full conversation history plus the new instructions. The task ID stays the same.
+- **Cancel** calls `runs.cancel()` on the deployment and marks the task as `"cancelled"`.
+- **List** iterates over all tracked tasks. For non-terminal tasks, it fetches live status from the deployment in parallel. Terminal statuses (`success`, `error`, `cancelled`) are returned from cache.
+
+## Understand state management
+
+:::python
+Task metadata is stored in a dedicated state channel (`async_tasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/customization#summarization) when the context window fills up -- if task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
+
+Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`created_at`, `last_checked_at`, `last_updated_at`).
+:::
+
+:::js
+Task metadata is stored in a dedicated state channel (`asyncTasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/customization#summarization) when the context window fills up -- if task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
+
+Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`createdAt`, `lastCheckedAt`, `lastUpdatedAt`).
+:::
+
+## Choose a transport
+
+### ASGI transport (co-deployed)
+
+When a subagent spec omits the `url` field, the LangGraph SDK uses ASGI transport -- SDK calls are routed through in-process function calls rather than HTTP. This requires both graphs to be registered in the same `langgraph.json`.
+
+ASGI transport eliminates network latency and requires no additional auth configuration. The subagent still runs as a separate thread with its own state. This is the recommended default.
+
+### HTTP transport (remote)
+
+Add a `url` field to switch to HTTP transport, where SDK calls go over the network to a remote LangGraph deployment:
+
+:::python
+```python
+AsyncSubAgent(
+    name="researcher",
+    description="Research agent",
+    graph_id="researcher",
+    url="https://my-research-deployment.langsmith.dev",
+)
+```
+:::
+
+:::js
+```typescript
+{
+  name: "researcher",
+  description: "Research agent",
+  graphId: "researcher",
+  url: "https://my-research-deployment.langsmith.dev",
+}
+```
+:::
+
+Authentication is handled by the LangGraph SDK using `LANGSMITH_API_KEY` (or `LANGGRAPH_API_KEY`) from environment variables.
+
+Use HTTP transport when subagents need independent scaling, different resource profiles, or are maintained by a different team.
+
+## Choose a deployment topology
+
+### Single deployment
+
+All graphs in one `langgraph.json` using ASGI transport. This is the recommended starting point -- one deployment to manage, zero network latency between graphs.
+
+### Split deployment
+
+Supervisor in one deployment, subagents in another via HTTP transport. Use when subagents need different compute profiles or independent scaling.
+
+### Hybrid
+
+Some subagents co-deployed via ASGI, others remote via HTTP:
+
+:::python
+```python
+async_subagents = [
+    AsyncSubAgent(
+        name="researcher",
+        description="Research agent",
+        graph_id="researcher",
+        # No url → ASGI (co-deployed)
+    ),
+    AsyncSubAgent(
+        name="coder",
+        description="Coding agent",
+        graph_id="coder",
+        url="https://coder-deployment.langsmith.dev",
+        # url present → HTTP (remote)
+    ),
+]
+```
+:::
+
+:::js
+```typescript
+const asyncSubagents: AsyncSubAgent[] = [
+  {
+    name: "researcher",
+    description: "Research agent",
+    graphId: "researcher",
+    // No url → ASGI (co-deployed)
+  },
+  {
+    name: "coder",
+    description: "Coding agent",
+    graphId: "coder",
+    url: "https://coder-deployment.langsmith.dev",
+    // url present → HTTP (remote)
+  },
+];
+```
+:::
+
+## Best practices
+
+### Size the worker pool for local development
+
+When running locally with `langgraph dev`, increase the worker pool to accommodate concurrent subagent runs. Each active run occupies a worker slot. A supervisor with 3 concurrent subagent tasks requires 4 slots (1 supervisor + 3 subagents). Under-provisioning causes launches to queue.
+
+```bash
+langgraph dev --n-jobs-per-worker 10
+```
+
+### Write clear subagent descriptions
+
+The supervisor uses descriptions to decide which subagent to launch. Be specific and action-oriented:
+
+:::python
+```python
+# Good
+AsyncSubAgent(
+    name="researcher",
+    description="Conducts in-depth research using web search. Use for questions requiring multiple searches and synthesis.",
+    graph_id="researcher",
+)
+
+# Bad
+AsyncSubAgent(
+    name="helper",
+    description="helps with stuff",
+    graph_id="helper",
+)
+```
+:::
+
+:::js
+```typescript
+// Good
+{
+  name: "researcher",
+  description: "Conducts in-depth research using web search. Use for questions requiring multiple searches and synthesis.",
+  graphId: "researcher",
+}
+
+// Bad
+{
+  name: "helper",
+  description: "helps with stuff",
+  graphId: "helper",
+}
+```
+:::
+
+### Trace with thread IDs
+
+Every async subagent run is a standard LangGraph run, fully visible in LangSmith. The supervisor's trace shows tool calls for `launch`, `check`, `update`, `cancel`, and `list`. Each subagent run appears as a separate trace, linked by thread ID. Use the thread ID (task ID) to correlate supervisor orchestration traces with subagent execution traces.
+
+## Troubleshooting
+
+### Supervisor polls immediately after launch
+
+**Problem**: The supervisor calls `check` in a loop right after launching, turning async execution into blocking.
+
+**Solution**: The middleware injects system prompt rules to prevent this. If polling persists, reinforce the behavior in your supervisor's system prompt:
+
+:::python
+```python
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    system_prompt="""...your instructions...
+
+    After launching an async subagent, ALWAYS return control to the user.
+    Never call check_async_task immediately after launch.""",
+    subagents=async_subagents,
+)
+```
+:::
+
+:::js
+```typescript
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-6",
+  systemPrompt: `...your instructions...
+
+    After launching an async subagent, ALWAYS return control to the user.
+    Never call check_async_task immediately after launch.`,
+  subagents: [...asyncSubagents],
+});
+```
+:::
+
+### Supervisor reports stale status
+
+**Problem**: The supervisor references a task status from earlier in conversation history instead of making a fresh `check` call.
+
+**Solution**: The middleware prompt instructs the model that "task statuses in conversation history are always stale." If this still occurs, add explicit instructions to always call `check` or `list` before reporting status.
+
+### Task ID lookup failures
+
+**Problem**: The supervisor truncates or reformats the task ID, causing `check` or `cancel` to fail.
+
+**Solution**: The middleware prompt instructs the model to always use the full task ID. If truncation persists, this is typically a model-specific issue -- try a different model or add "always show the full task_id, never truncate or abbreviate it" to your system prompt.
+
+### Subagent launches queue instead of running
+
+**Problem**: Launching a subagent hangs or takes a long time to start.
+
+**Solution**: The worker pool is likely exhausted. Increase the pool size with `--n-jobs-per-worker`. See [Size the worker pool](#size-the-worker-pool).
+
+## Reference implementation
+
+The [async-deep-agents](https://github.com/langchain-ai/async-deep-agents) repository contains working examples in both Python and TypeScript that deploy to LangSmith Deployments. It demonstrates a supervisor with researcher and coder subagents running as background tasks.

@@ -8,8 +8,9 @@ When working with LangSmith traces, you may need to prevent sensitive informatio
 - [Completely hide inputs and outputs](#hide-inputs-and-outputs) using environment variables or @[Client] configuration.
 - [Hide metadata](#hide-metadata) to remove or transform run metadata.
 - [Apply rule-based masking](#rule-based-masking-of-inputs-and-outputs) with regex patterns or anonymization libraries to selectively redact sensitive information.
-- [Process inputs and outputs for individual functions](#processing-inputs-&-outputs-for-a-single-function) with function-level customization.
+- [Process inputs and outputs for individual functions](#processing-inputs-and-outputs-for-a-single-function) with function-level customization.
 - [Use third-party anonymizers](#examples) like Microsoft Presidio and Amazon Comprehend for advanced PII detection.
+- [Batch process run operations](#batch-processing-for-high-throughput-masking) to apply expensive masking logic across multiple runs at once, reducing per-run overhead. LangSmith processes runs in a background thread, which does not block your application.
 
 <Note>
 If your compliance or privacy requirements mandate that certain operations should never be traced at all (for example, clients with zero-retention policies), consider using [conditional tracing](/langsmith/conditional-tracing) to disable tracing selectively for specific requests instead of masking data.
@@ -643,7 +644,7 @@ uv add openai
 ```
 </CodeGroup>
 
-You will need to set up credentials in AWS and authenticate using the AWS CLI. Follow the instructions [here](https://docs.aws.amazon.com/comprehend/latest/dg/setting-up.html).
+You will need to set up credentials in AWS and authenticate using the AWS CLI. Follow the [AWS Comprehend setup instructions](https://docs.aws.amazon.com/comprehend/latest/dg/setting-up.html).
 
 ```python
 import openai
@@ -752,3 +753,119 @@ response_without_anonymization = openai_client.chat.completions.create(
 The anonymized run will look like this in LangSmith: ![Anonymized run](/langsmith/images/aws-comprehend-anonymized.png)
 
 The non-anonymized run will look like this in LangSmith: ![Non-anonymized run](/langsmith/images/aws-comprehend-not-anonymized.png)
+
+### Batch processing for high-throughput masking
+
+<Info>
+@[`process_buffered_run_ops`] is available in the [Python SDK only](/langsmith/smith-python-sdk).
+</Info>
+
+The previous approaches on this page process each run individually. If your masking logic involves a rate-limited API or model inference—such as the Presidio or Amazon Comprehend examples—processing runs one at a time can create a bottleneck. @[`process_buffered_run_ops`] lets you intercept a batch of raw run dicts before they are serialized and sent to the API, so you can amortize the cost across multiple runs at once. LangSmith processes these runs in a background thread, which does not block your application.
+
+LangSmith holds runs in an in-memory buffer and flushes them as a batch when either:
+
+- `run_ops_buffer_size` run operations have accumulated, or
+- `run_ops_buffer_timeout_ms` milliseconds have elapsed since the last run was added (default: 5000 ms).
+
+Your function receives the batch as a list of raw run dicts and must return a list of the **same length**, in the **same order**, with **run IDs unchanged**. Breaking either constraint raises a `ValueError`.
+
+<Note>
+`run_ops_buffer_size` counts individual run *operations*, not unique runs. Each traced call typically produces two operations: a create (when the run starts) and an update (when it ends with outputs). Set your buffer size accordingly. For example, `run_ops_buffer_size=1000` will buffer approximately 500 traced calls. Because of this, the same run ID may appear twice in a single batch: once with inputs and once with outputs.
+</Note>
+
+<Warning>
+The buffer only flushes automatically when the size limit is reached or the timeout elapses. Always call `client.flush()` before your program exits to avoid dropping buffered runs.
+</Warning>
+
+Each run dict in the batch is either a create operation (with `inputs`, sent when the run starts) or an update operation (with `outputs`, sent when it ends). Here's what a typical pair looks like for a single traced call:
+
+```json
+# Create op — sent when the run starts
+{
+    "id": "018f1b2c-...",
+    "name": "my_llm_call",
+    "run_type": "llm",
+    "inputs": {"messages": [{"role": "user", "content": "My name is Jane Smith..."}]},
+    "start_time": "2024-01-01T00:00:00.000Z",
+    "trace_id": "018f1b2c-...",
+    "dotted_order": "20240101T000000000000Z018f1b2c-...",
+    "extra": {"metadata": {}, "runtime": {...}},
+    "session_name": "default",
+}
+
+# Update op — sent when the run ends (same id, adds outputs)
+{
+    "id": "018f1b2c-...",
+    "outputs": {"choices": [{"message": {"role": "assistant", "content": "Hello Jane..."}}]},
+    "end_time": "2024-01-01T00:00:01.000Z",
+    "trace_id": "018f1b2c-...",
+    "dotted_order": "20240101T000000000000Z018f1b2c-...",
+}
+```
+
+The following example uses Comprehend's [`batch_detect_pii_entities` endpoint](https://docs.aws.amazon.com/comprehend/latest/APIReference/API_BatchDetectEntities.html), which accepts up to 25 texts per call. With the per-run approach (`hide_inputs`) you would make one API call per run. Here, all message texts across the entire buffer are gathered first, then sent to Comprehend in chunks of 25, which results in significantly fewer API calls at high throughput.
+
+```python
+import boto3
+from langsmith import Client, traceable
+
+comprehend = boto3.client("comprehend", region_name="us-east-1")
+
+def redact_entities(text: str, entities: list) -> str:
+    for entity in sorted(entities, key=lambda e: e["BeginOffset"], reverse=True):
+        placeholder = f"[{entity['Type']}]"
+        text = text[:entity["BeginOffset"]] + placeholder + text[entity["EndOffset"]:]
+    return text
+
+def comprehend_anonymize_batch(runs: list[dict]) -> list[dict]:
+    # Collect all message texts and remember where they came from.
+    # Note: the same run ID may appear twice — once as a create (with inputs)
+    # and once as an update (with outputs).
+    locations = []  # (run_idx, field, msg_idx)
+    texts = []
+    for run_idx, run in enumerate(runs):
+        for field in ("inputs", "outputs"):
+            data = run.get(field)
+            if not isinstance(data, dict):
+                continue
+            for msg_idx, message in enumerate(data.get("messages") or []):
+                content = message.get("content", "")
+                if content.strip():
+                    locations.append((run_idx, field, msg_idx))
+                    texts.append(content)
+
+    # Send all texts to Comprehend in batches of 25 (API limit).
+    # For 1000 ops (~500 runs) with 2 messages each: 40 API calls instead of 1000.
+    redacted_texts = []
+    for i in range(0, len(texts), 25):
+        chunk = texts[i : i + 25]
+        response = comprehend.batch_detect_pii_entities(
+            TextList=chunk, LanguageCode="en"
+        )
+        for text, result in zip(chunk, response["ResultList"]):
+            redacted_texts.append(redact_entities(text, result.get("Entities", [])))
+
+    # Write redacted text back into the run dicts
+    for (run_idx, field, msg_idx), redacted in zip(locations, redacted_texts):
+        runs[run_idx][field]["messages"][msg_idx]["content"] = redacted
+
+    return runs
+
+client = Client(
+    process_buffered_run_ops=comprehend_anonymize_batch,
+    run_ops_buffer_size=1000,        # ~500 traced calls (2 ops each: create + update)
+    run_ops_buffer_timeout_ms=3000,  # or after 3 seconds, whichever comes first
+)
+
+@traceable(client=client)
+def my_llm_call(messages: list) -> dict:
+    # ... your LLM call ...
+    pass
+
+try:
+    my_llm_call([{"role": "user", "content": "My name is Jane Smith, call me at 555-867-5309"}])
+finally:
+    client.flush()  # always flush before exit
+```
+
+@[`process_buffered_run_ops`] and `run_ops_buffer_size` must always be set together—providing one without the other raises a `ValueError`.
