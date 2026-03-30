@@ -1,0 +1,103 @@
+---
+title: "PDFMux integration"
+description: "Integrate with the PDFMux document loader using LangChain Python."
+---
+
+[PDFMux](https://pdfmux.com) is a self-healing PDF extraction orchestrator that routes each page to the best extraction pipeline automatically. Instead of relying on a single parser, PDFMux selects the optimal extractor per page based on content type (text-heavy, scanned, tables, mixed) and retries with alternative extractors when quality is low.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support |
+| :--- | :--- | :---: | :---: | :---: |
+| [PDFMuxLoader](https://github.com/NameetP/langchain-pdfmux) | [langchain-pdfmux](https://pypi.org/project/langchain-pdfmux/) | ✅ | ❌ | ❌ |
+
+### Loader features
+
+| Source | Document Lazy Loading | Native Async Support |
+| :---: | :---: | :---: |
+| PDFMuxLoader | ✅ | ❌ |
+
+## Setup
+
+### Credentials
+
+No credentials are needed to use this loader. PDFMux runs entirely locally.
+
+### Installation
+
+```bash
+pip install -U langchain-pdfmux
+```
+
+## Initialization
+
+```python
+from langchain_pdfmux import PDFMuxLoader
+
+loader = PDFMuxLoader("./example_data/report.pdf")
+```
+
+## Load
+
+```python
+docs = loader.load()
+docs[0]
+```
+
+```text
+Document(metadata={'source': './example_data/report.pdf', 'title': 'Q4 Results', 'page_start': 1, 'page_end': 3, 'tokens': 820, 'confidence': 0.94}, page_content='...')
+```
+
+Each document includes a `confidence` score (0.0--1.0) indicating extraction quality. Use this to filter or re-rank chunks in your RAG pipeline:
+
+```python
+# Only keep high-confidence extractions
+high_quality_docs = [doc for doc in docs if doc.metadata.get("confidence", 0) >= 0.8]
+```
+
+## Quality modes
+
+PDFMux supports three quality presets that control the extraction strategy:
+
+```python
+# Fast -- single-pass extraction, best for clean digital PDFs
+loader = PDFMuxLoader("report.pdf", quality="fast")
+
+# Standard (default) -- smart routing with fallback
+loader = PDFMuxLoader("report.pdf", quality="standard")
+
+# High -- multi-extractor with consensus, best for complex layouts
+loader = PDFMuxLoader("report.pdf", quality="high")
+```
+
+## Load a directory
+
+```python
+# Load all PDFs in a directory
+loader = PDFMuxLoader("./papers/")
+
+# Custom glob pattern
+loader = PDFMuxLoader("./papers/", glob="**/*.pdf")
+```
+
+## Lazy load
+
+```python
+for doc in PDFMuxLoader("large.pdf").lazy_load():
+    print(doc.metadata["confidence"])
+    # Process each chunk individually
+```
+
+## Why PDFMux?
+
+Most PDF loaders use a single extraction method and silently fail on complex layouts. PDFMux solves this with:
+
+- **Smart routing** -- automatically selects the optimal parser per page (text-heavy, scanned, tables, mixed)
+- **Confidence scoring** -- every chunk includes a quality score so your RAG pipeline can filter or re-rank
+- **Self-healing** -- retries with alternative extractors when the primary one returns low-quality output
+
+## API reference
+
+For full documentation and source code, see the [langchain-pdfmux GitHub repository](https://github.com/NameetP/langchain-pdfmux).
