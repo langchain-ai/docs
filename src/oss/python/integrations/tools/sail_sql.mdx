@@ -3,24 +3,49 @@ title: "Sail SQL toolkit integration"
 description: "Integrate with the Sail SQL toolkit using LangChain Python."
 ---
 
-This notebook shows how to use agents to interact with `Sail SQL`. Similar to [SQL Database Agent](/oss/integrations/tools/sql_database) and [Spark SQL Agent](/oss/integrations/tools/spark_sql), it is designed to address general inquiries about `Sail SQL` and facilitate error recovery.
+This guide provides an overview for getting started with the Sail SQL [toolkit](/oss/langchain/tools). For detailed documentation of all Sail SQL features and configurations, head to the [langchain-sail docs](https://github.com/lakehq/langchain-sail).
 
-[Sail](https://github.com/lakehq/sail) is a drop-in replacement for Apache Spark, written in Rust. It uses the Spark Connect protocol, so existing PySpark code works out of the box.
+[Sail](https://github.com/lakehq/sail) is a drop-in replacement for Apache Spark, written in Rust. It uses the Spark Connect protocol, so existing PySpark code works out of the box—just point your `SparkSession` at a Sail server instead of a Spark cluster.
 
-**NOTE: Note that, as this agent is in active development, all answers might not be correct. Additionally, it is not guaranteed that the agent won't perform DML statements on your Sail cluster given certain questions. Be careful running it on sensitive data!**
+## Overview
 
-## Installation
+### Integration details
 
-```bash
-pip install langchain-sail pysail pyspark
+| Class | Package | Serializable | JS support |  Version |
+| :--- | :--- | :---: | :---: | :---: |
+| SailSQLToolkit | [langchain-sail](https://pypi.org/project/langchain-sail/) | ❌ | ❌ |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-sail?style=flat-square&label=%20) |
+
+## Setup
+
+<Warning>
+Note that, as this agent is in active development, all answers might not be correct. Additionally, it is not guaranteed that the agent won't perform DML statements on your Sail cluster given certain questions. Be careful running it on sensitive data!
+</Warning>
+
+### Installation
+
+The Sail SQL toolkit lives in the `langchain-sail` package:
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-sail pysail pyspark
 ```
 
-## Initialization
-
-```python
-from langchain_sail import SailSQLToolkit, create_sail_sql_agent, SailSQL
-from langchain_anthropic import ChatAnthropic
+```bash uv
+uv add langchain-sail pysail pyspark
 ```
+</CodeGroup>
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
 
 ```python
 from pysail.spark import SparkConnectServer
@@ -47,18 +72,60 @@ spark.sql(
 ```
 
 ```python
+from langchain_sail import SailSQLToolkit, SailSQL
+from langchain_anthropic import ChatAnthropic
+
 # Note, you can also connect to a remote Sail server:
 # sail_sql = SailSQL.from_uri("sc://your-sail-host:50051")
 sail_sql = SailSQL(spark_session=spark)
 llm = ChatAnthropic(model="claude-sonnet-4-6")
 toolkit = SailSQLToolkit(db=sail_sql, llm=llm)
-agent_executor = create_sail_sql_agent(llm=llm, toolkit=toolkit, verbose=True)
 ```
 
-## Example: describing a table
+## Invocation
+
+### Invoke directly with args
+
+You can get the tools from the toolkit and invoke them directly:
 
 ```python
-agent_executor.invoke({"input": "Describe the employees table"})
+tools = toolkit.get_tools()
+for tool in tools:
+    print(tool.name)
+```
+
+```python
+# List tables
+list_tool = next(t for t in tools if "list" in t.name.lower())
+list_tool.invoke("")
+```
+
+```text
+'employees'
+```
+
+```python
+# Get table schema
+schema_tool = next(t for t in tools if "schema" in t.name.lower() or "info" in t.name.lower())
+schema_tool.invoke("employees")
+```
+
+```text
+'CREATE TABLE employees (name string, department string, salary int);\n\n/*\n3 rows from employees table:\nname\tdepartment\tsalary\nAlice\tEngineering\t120000\nBob\tMarketing\t95000\nCharlie\tEngineering\t135000\n*/'
+```
+
+### Use within an agent
+
+You can use the toolkit with the `create_sail_sql_agent` helper to create an agent that can interact with Sail SQL:
+
+```python
+from langchain_sail import create_sail_sql_agent
+
+agent = create_sail_sql_agent(llm=llm, toolkit=toolkit, verbose=True)
+```
+
+```python
+agent.invoke({"input": "Describe the employees table"})
 ```
 
 ```text
@@ -84,10 +151,8 @@ Final Answer: The employees table has 3 columns: name (string), department (stri
 > Finished chain.
 ```
 
-## Example: running queries
-
 ```python
-agent_executor.invoke({"input": "What is the average salary by department?"})
+agent.invoke({"input": "What is the average salary by department?"})
 ```
 
 ```text
@@ -108,20 +173,8 @@ Engineering has the higher average salary.
 > Finished chain.
 ```
 
-```python
-agent_executor.invoke({"input": "Who is the highest paid employee?"})
-```
+---
 
-```text
-> Entering new AgentExecutor chain...
-Action: query_checker_sql_db
-Action Input: SELECT name, salary FROM employees ORDER BY salary DESC LIMIT 1
-Observation: The query looks correct.
-Action: query_sql_db
-Action Input: SELECT name, salary FROM employees ORDER BY salary DESC LIMIT 1
-Observation: [('Charlie', '135000')]
-Thought: I now know the final answer.
-Final Answer: The highest paid employee is Charlie with a salary of $135,000.
+## API reference
 
-> Finished chain.
-```
+For detailed documentation of all Sail SQL features and configurations, head to the [langchain-sail repository](https://github.com/lakehq/langchain-sail).
