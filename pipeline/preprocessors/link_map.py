@@ -615,7 +615,12 @@ LINK_MAPS: list[LinkMap] = [
             "ClearToolUsesEdit": "langchain/index/ClearToolUsesEdit",
             "ContextEdit": "langchain/index/ContextEdit",
             "toolRetryMiddleware": "langchain/index/toolRetryMiddleware",
+            "ToolRetryMiddleware": "langchain/index/toolRetryMiddleware",
             "modelRetryMiddleware": "langchain/index/modelRetryMiddleware",
+            "ModelRetryMiddleware": "langchain/index/modelRetryMiddleware",
+            "ModelFallbackMiddleware": "langchain/index/modelFallbackMiddleware",
+            "ModelCallLimitMiddleware": "langchain/index/modelCallLimitMiddleware",
+            "ToolCallLimitMiddleware": "langchain/index/toolCallLimitMiddleware",
             "systemPrompt": "types/langchain.index.CreateAgentParams.html#systemprompt",
             "openAIModerationMiddleware": "langchain/index/openAIModerationMiddleware",
             # LangSmith SDK - Vitest references

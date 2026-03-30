@@ -164,13 +164,108 @@ Use with extreme caution and only in appropriate environments.
 
 <BackendStore />
 
+<Tip>
+    The `namespace` parameter controls data isolation. For multi-user deployments, always set a [namespace factory](/oss/deepagents/backends#namespace-factories) to isolate data per user or tenant.
+</Tip>
+
 **How it works:**
 - @[`StoreBackend`] stores files in a LangGraph @[`BaseStore`] provided by the runtime, enabling cross‑thread durable storage.
 
 **Best for:**
 - When you already run with a configured LangGraph store (for example, Redis, Postgres, or cloud implementations behind @[`BaseStore`]).
-- When you're deploying your agent through LangSmith Deployment (a store is automatically provisioned for your agent).
+- When you're deploying your agent through [LangSmith Deployment](/langsmith/deployment) (a store is automatically provisioned for your agent).
 
+#### Namespace factories
+
+A namespace factory controls where `StoreBackend` reads and writes data. It receives a `BackendContext` and returns a tuple of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
+
+```python
+NamespaceFactory = Callable[[BackendContext], tuple[str, ...]]
+```
+
+The `BackendContext` provides:
+- `ctx.runtime.context` — User-supplied context passed via LangGraph's [context schema](https://langchain-ai.github.io/langgraph/concepts/runtime/) (for example, `user_id`)
+- `ctx.state` — Current agent state
+
+For `assistant_id` and `thread_id`, use `langgraph.config.get_config()` inside the factory — these are available in LangGraph config metadata but not on the context schema.
+
+**Common namespace patterns:**
+
+:::python
+```python
+from langgraph.config import get_config
+from deepagents.backends import StoreBackend
+
+# Per-user: each user gets their own isolated storage
+backend = lambda rt: StoreBackend(
+    rt,
+    namespace=lambda ctx: (ctx.runtime.context.user_id,),
+)
+
+# Per-assistant: all users of the same assistant share storage
+backend = lambda rt: StoreBackend(
+    rt,
+    namespace=lambda ctx: (
+        get_config()["metadata"]["assistant_id"],
+    ),
+)
+
+# Per-thread: storage scoped to a single conversation
+backend = lambda rt: StoreBackend(
+    rt,
+    namespace=lambda ctx: (
+        get_config()["configurable"]["thread_id"],
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+import { getConfig } from "@langchain/langgraph";
+import { StoreBackend } from "deepagents";
+
+// Per-user: each user gets their own isolated storage
+const backend = (rt) => new StoreBackend(rt, {
+  namespace: (ctx) => [ctx.runtime.context.userId],
+});
+
+// Per-assistant: all users of the same assistant share storage
+const backend = (rt) => new StoreBackend(rt, {
+  namespace: (ctx) => {
+    const config = getConfig();
+    return [config.metadata.assistantId];
+  },
+});
+
+// Per-thread: storage scoped to a single conversation
+const backend = (rt) => new StoreBackend(rt, {
+  namespace: (ctx) => {
+    const config = getConfig();
+    return [config.configurable.threadId];
+  },
+});
+```
+:::
+
+You can combine multiple components to create more specific scopes — for example, `(user_id, thread_id)` for per-user per-conversation isolation, or append a suffix like `"filesystem"` to disambiguate when the same scope uses multiple store namespaces.
+
+Namespace components must contain only alphanumeric characters, hyphens, underscores, dots, `@`, `+`, colons, and tildes. Wildcards (`*`, `?`) are rejected to prevent glob injection.
+
+:::python
+<Warning>
+    The `namespace` parameter will be **required** in v0.5.0. Always set it explicitly for new code.
+</Warning>
+:::
+:::js
+<Warning>
+    The `namespace` parameter will be **required** in v1.9.0. Always set it explicitly for new code.
+</Warning>
+:::
+
+<Note>
+    When no namespace factory is provided, the legacy default uses the `assistant_id` from LangGraph config metadata. This means all users of the same [assistant](/langsmith/assistants) share the same storage. For multi-user [going to production](/oss/deepagents/going-to-production), always provide a namespace factory.
+</Note>
 
 ### CompositeBackend (router)
 
