@@ -224,7 +224,7 @@ To see a full list of integrations by component type, refer to the categories in
 Community integrations can be found in [`langchain-community`](https://github.com/langchain-ai/langchain-community).
 
 <Info>
-    Want to build your own integration? See [how to create a custom integration package](/oss/contributing/integrations).
+    Want to build your own integration? See [how to create a custom integration package](/oss/contributing/integrations-langchain).
 </Info>
 
 """  # noqa: E501
