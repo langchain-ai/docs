@@ -188,6 +188,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use `@[ClassName]` link map for API references
 - Use `:::python`/`:::js` fencing on OSS docs
 - Language tags on all code blocks (use actual language, not `output`)
+- Sort imports in all code snippets (stdlib, third-party, local)
 - Test code examples and links before publishing
 
 **Don't:**
@@ -200,6 +201,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use H5 or H6 headings
+- Overuse em dashes — prefer commas, colons, or separate sentences instead
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
