@@ -13,7 +13,7 @@ Before configuring memory, it helps to understand the different kinds of informa
 |---|---|---|
 | [Semantic](/oss/concepts/memory#semantic-memory) | Facts and knowledge | User preferences, project context |
 | [Episodic](/oss/concepts/memory#episodic-memory) | Past experiences | Successful tool-call sequences, few-shot examples |
-| [Procedural](/oss/concepts/memory#procedural-memory) | Instructions and rules | Self-improving system prompts |
+| [Procedural](/oss/concepts/memory#procedural-memory) | Instructions and rules | Self-improving system prompts, [persistent skills](#persistent-skills) |
 
 Semantic memories can be stored as a single continuously updated [profile](/oss/concepts/memory#profile) (higher coherence, harder to maintain) or as a [collection](/oss/concepts/memory#collection) of individual documents (higher recall, easier to extend). See the [concepts guide](/oss/concepts/memory#semantic-memory) for tradeoffs.
 
@@ -130,7 +130,7 @@ The right scope depends on who should see and modify the data. The examples belo
 | **Organization** | `(org_id)` | Read-only policies for all users and assistants | "Never disclose internal pricing" |
 
 <Warning>
-Shared memory (assistant, user, or organization scope) is a vector for prompt injection. If one user can write to memory that another user's conversation reads, a malicious user could inject instructions into that shared state. Enforce read-only access where appropriate. For example, make organization-wide policies writable only through application code, not by the agent itself.
+Shared memory (assistant, user, or organization scope) is a vector for prompt injection. If one user can write to memory that another user's conversation reads, a malicious user could inject instructions into that shared state. See [Access control](#access-control) for how to enforce read-only access on shared paths.
 </Warning>
 
 <Tabs>
@@ -323,6 +323,80 @@ const agent = createDeepAgent({
 
 For the full namespace factory API, see [namespace factories](/oss/deepagents/backends#namespace-factories).
 
+### Access control
+
+Namespace scoping controls **who sees what**, but it doesn't control **who can write**. Any memory the agent can read, it can also write to by default. This is fine for private memory, but shared scopes need stronger controls.
+
+#### The threat: prompt injection via shared memory
+
+If one user can write to memory that another user's conversation reads, a malicious user can inject instructions into that shared state. For example, a user could write "ignore all previous instructions" into assistant-scoped memory, affecting every subsequent conversation.
+
+**Rule of thumb:** The broader the scope, the more restrictive the write access should be.
+
+| Scope | Recommended access | Why |
+|---|---|---|
+| **Private** | Read + write | Only the owning user is affected |
+| **Assistant** | Read + write with caution | All users of that assistant share it — consider populating from app code if untrusted users are involved |
+| **User** | Read + write | Only the owning user, but across all assistants |
+| **Organization** | **Populate from app code only** | One compromised conversation could affect the entire org |
+
+#### Keep shared data out of the agent's write path
+
+The most reliable way to protect shared memory is to **not give the agent a writable route to it**. Instead, populate shared data from your application code using the [Store API](/langsmith/custom-store), and give the agent read access by loading it into the system prompt or seeding it as files before the agent runs.
+
+For example, organization-wide policies should be written by your backend service, not by the agent:
+
+:::python
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="<DEPLOYMENT_URL>")
+
+# Application code writes org policies — not the agent
+await client.store.put_item(
+    (org_id, "policies"),
+    "/compliance.txt",
+    {
+        "content": ["Never disclose internal pricing", "Always include disclaimers on financial advice"],
+        "created_at": "2026-03-01T00:00:00Z",
+        "modified_at": "2026-03-01T00:00:00Z"
+    }
+)
+```
+:::
+
+:::js
+```typescript
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+// Application code writes org policies — not the agent
+await client.store.putItem(
+  [orgId, "policies"],
+  "/compliance.txt",
+  {
+    content: ["Never disclose internal pricing", "Always include disclaimers on financial advice"],
+    created_at: "2026-03-01T00:00:00Z",
+    modified_at: "2026-03-01T00:00:00Z"
+  }
+);
+```
+:::
+
+Then use [middleware](/oss/langchain/middleware/custom) or your system prompt to load this data into the agent's context at the start of each conversation. The agent can read and follow the policies but has no mechanism to alter them.
+
+<Tip>
+This same principle applies to **curated skills**. If you want the agent to use a set of skills but not modify them, seed the skill files from your application code and don't route the skill path to a writable backend. The agent can still create and refine its own skills at `/memories/skills/` (see [Persistent skills](#persistent-skills)).
+</Tip>
+
+#### Platform-level access control
+
+For multi-tenant deployments on [LangSmith](/langsmith/home), use platform-level controls to restrict who can access assistants and their associated memory:
+
+- [RBAC](/langsmith/rbac) (Enterprise) — workspace roles (Admin, Editor, Viewer) control who can create, modify, or view assistants and their threads
+- [ABAC](/langsmith/abac) (Enterprise) — tag-based policies for fine-grained access control (e.g., restrict certain assistants to specific teams)
+
 ### Cross-thread persistence
 
 Files in `/memories/` can be accessed from any thread:
@@ -489,6 +563,69 @@ At the start of each conversation, check /memories/ for relevant
 context before asking the user to repeat themselves.
 ```
 
+### Persistent skills
+
+[Skills](/oss/deepagents/skills) are reusable agent capabilities defined as `SKILL.md` files. When stored in `/memories/`, they become a form of [procedural memory](/oss/concepts/memory#procedural-memory) — the agent can create, refine, and reuse its own workflows across conversations.
+
+```
+/memories/skills/data-viz/SKILL.md        # Learned visualization workflow
+/memories/skills/data-viz/chart.py        # Supporting script
+/memories/skills/code-review/SKILL.md     # Refined review checklist
+```
+
+```
+You have persistent memory at /memories/.
+
+You can create and update skills at /memories/skills/. Each skill
+is a directory with a SKILL.md file describing when and how to use it.
+
+When you discover a workflow that works well (e.g., a multi-step
+data analysis process), save it as a skill so you can reuse it in
+future conversations. Refine existing skills when you find improvements.
+```
+
+Point the agent at these persistent skills by including `/memories/skills/` in the `skills` parameter:
+
+:::python
+```python
+agent = create_deep_agent(
+    skills=["/memories/skills/"],
+    backend=make_backend,  # CompositeBackend with /memories/ route
+    store=store,
+)
+```
+:::
+
+:::js
+```typescript
+const agent = createDeepAgent({
+  skills: ["/memories/skills/"],
+  backend: makeBackend,  // CompositeBackend with /memories/ route
+  store,
+});
+```
+:::
+
+Because skills use [progressive disclosure](/oss/deepagents/skills#how-skills-work), only the frontmatter is read at startup. The full skill content is loaded only when the agent determines it's relevant, keeping token usage low even as the skill library grows.
+
+<Tip>
+Combine persistent skills with static skills by passing multiple sources. Static skills (bundled with your app) provide baseline capabilities, while persistent skills let the agent learn new ones over time:
+
+:::python
+```python
+skills=["/skills/bundled/", "/memories/skills/"]  # bundled + learned
+```
+:::
+
+:::js
+```typescript
+skills: ["/skills/bundled/", "/memories/skills/"]  // bundled + learned
+```
+:::
+
+To make curated skills **read-only**, seed them from your application code and don't route them to a writable backend. See [Access control](#access-control) for details.
+</Tip>
+
 ### Research projects
 
 The agent maintains research state across sessions with a clear file structure.
@@ -624,6 +761,10 @@ Your persistent memory structure:
 - /memories/context/: Long-term context about the user
 - /memories/knowledge/: Facts and information learned over time
 ```
+
+### Use skills for reusable workflows
+
+If the agent discovers a multi-step process that works well, store it as a [persistent skill](#persistent-skills) rather than a plain text file. Skills use progressive disclosure (only loaded when relevant), which scales better than stuffing everything into an instructions file. Reserve `/memories/instructions.txt` for preferences and rules; use `/memories/skills/` for workflows.
 
 ### Choose when to write memories
 
