@@ -380,6 +380,7 @@ Graph state is scoped to a thread by design, so updates are safe under concurren
 
 **Do this:**
 
+::::python
 ```python
 class CustomMiddleware(AgentMiddleware):
     def __init__(self):
@@ -388,9 +389,22 @@ class CustomMiddleware(AgentMiddleware):
     def before_agent(self, state, runtime):
         return {"x": state.get("x", 0) + 1}  # Update graph state instead
 ```
+::::
+
+::::js
+```typescript
+const customMiddleware = createMiddleware({
+  name: "CustomMiddleware",
+  beforeAgent: async (state) => {
+    return { x: (state.x ?? 0) + 1 }; // Update graph state instead
+  },
+});
+```
+::::
 
 Do **not** do this:
 
+::::python
 ```python
 class CustomMiddleware(AgentMiddleware):
     def __init__(self):
@@ -399,8 +413,27 @@ class CustomMiddleware(AgentMiddleware):
     def before_agent(self, state, runtime):
         self.x += 1  # Mutation causes race conditions
 ```
+::::
 
-Mutation in place—such as modifying `self.x` in `before_agent` or other hooks—can lead to subtle bugs and race conditions, because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
+::::js
+```typescript
+let x = 1;
+
+const customMiddleware = createMiddleware({
+  name: "CustomMiddleware",
+  beforeAgent: async () => {
+    x += 1; // Mutation causes race conditions
+  },
+});
+```
+::::
+
+:::python
+Mutation in place, such as modifying `self.x` in `before_agent` or changing other shared values in hooks, can lead to subtle bugs and race conditions because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
+:::
+:::js
+Mutation in place, such as modifying `state.x` in `beforeAgent`, mutating a shared variable in `beforeAgent`, or changing other shared values in hooks, can lead to subtle bugs and race conditions because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
+:::
 
 For full details on extending state with custom properties, see [Custom middleware - Custom state schema](/oss/langchain/middleware/custom#custom-state-schema).
 If you must use mutation in custom middleware, consider what happens when subagents, parallel tools, or concurrent agent invocations run at the same time.
