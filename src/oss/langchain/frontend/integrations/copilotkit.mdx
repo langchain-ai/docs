@@ -1,0 +1,289 @@
+---
+title: CopilotKit
+description: Add a custom CopilotKit endpoint to a LangGraph deployment and render structured generative UI in React
+---
+
+[CopilotKit](https://www.copilotkit.ai/) provides a full React chat runtime and pairs especially well with LangGraph when you want the agent to return **structured UI payloads** instead of only plain text. In this pattern, your LangGraph deployment serves both the graph API and a custom CopilotKit endpoint, while the frontend parses assistant messages into dynamic React components.
+
+This approach is useful when you want:
+
+- a ready-made chat runtime instead of wiring `stream.messages` yourself
+- a custom server endpoint that can add provider-specific behavior next to your deployed graph
+- structured generative UI rendered from a constrained component registry
+
+## How it works
+
+1. **Deploy the graph as usual** using LangGraph.
+2. **Extend the deployment with an HTTP app** that mounts a CopilotKit route next to the graph API.
+3. **Wrap the frontend in `CopilotKit`** and point it at that custom runtime URL.
+4. **Register dynamic UI components** and parse assistant responses into those components at render time.
+
+```mermaid
+%%{
+  init: {
+    "fontFamily": "monospace",
+    "flowchart": {
+      "curve": "curve"
+    }
+  }
+}%%
+graph LR
+  USER["User input"]
+  UI["CopilotKit React app"]
+  ENDPOINT["/api/copilotkit"]
+  GRAPH["LangGraph deployment"]
+  RENDER["Hashbrown UI kit"]
+
+  USER --> UI
+  UI --> ENDPOINT
+  ENDPOINT --> GRAPH
+  GRAPH --> ENDPOINT
+  ENDPOINT --> UI
+  UI --> RENDER
+```
+
+## Installation
+
+For the backend endpoint:
+
+```bash
+bun add @copilotkit/runtime hono
+```
+
+For the frontend app:
+
+```bash
+bun add @copilotkit/react-core @copilotkit/react-ui @hashbrownai/core @hashbrownai/react
+```
+
+## Extend the LangGraph deployment with a custom endpoint
+
+The key idea is that the LangGraph deployment does not only serve graphs. It can also load an HTTP app, which lets you mount extra routes next to the deployment itself.
+
+In `langgraph.json`, point `http.app` at your Hono entrypoint:
+
+```json
+{
+  "graphs": {
+    "copilotkit_shadify": "./src/agents/copilotkit-shadify.ts:agent"
+  },
+  "http": {
+    "app": "./src/api/app.ts:app"
+  }
+}
+```
+
+Then create the Hono app and register the CopilotKit route:
+
+```ts
+import { Hono } from "hono";
+import { registerCopilotKit } from "./copilotkit.js";
+import { registerSandbox } from "./sandbox.js";
+import { registerDownload } from "./download.js";
+
+export const app = new Hono();
+
+registerSandbox(app);
+registerDownload(app);
+registerCopilotKit(app);
+```
+
+This is the important extension point: `registerCopilotKit(app)` mounts a provider-specific runtime without replacing the underlying LangGraph deployment.
+
+Inside that route, create a `CopilotRuntime` and point it back at the deployed graph using `LangGraphAgent`:
+
+```ts
+import { type Hono } from "hono";
+import { createCopilotEndpointSingleRoute, CopilotRuntime } from "@copilotkit/runtime/v2";
+import { LangGraphAgent } from "@copilotkit/runtime/langgraph";
+
+const defaultAgentHost = process.env.LANGGRAPH_DEPLOYMENT_URL || "http://127.0.0.1:2024";
+const agentUrl = defaultAgentHost.startsWith("http")
+  ? defaultAgentHost
+  : `http://${defaultAgentHost}`;
+
+export function registerCopilotKit(app: Hono) {
+  const runtime = new CopilotRuntime({
+    agents: {
+      default: new LangGraphAgent({
+        deploymentUrl: agentUrl,
+        graphId: "copilotkit_shadify",
+      }),
+    },
+  });
+
+  const copilotApp = createCopilotEndpointSingleRoute({
+    runtime,
+    basePath: "/api/copilotkit",
+  });
+
+  app.route("/", copilotApp);
+}
+```
+
+The result is a clean separation of concerns:
+
+- LangGraph still owns graph execution and persistence
+- CopilotKit owns the chat-facing runtime contract
+- your custom endpoint glues them together inside one deployment
+
+## Structure the frontend app
+
+On the frontend, wrap your app in `CopilotKit` and point it at the custom runtime URL:
+
+```tsx
+import { CopilotKit } from "@copilotkit/react-core";
+import { CopilotChat, useAgentContext } from "@copilotkit/react-core/v2";
+import { s } from "@hashbrownai/core";
+
+import { useChatKit } from "@/components/chat/chat-kit";
+import { chatTheme } from "@/lib/chat-theme";
+
+export function App() {
+  return (
+    <CopilotKit runtimeUrl={import.meta.env.VITE_RUNTIME_URL ?? "/api/copilotkit"}>
+      <Page />
+    </CopilotKit>
+  );
+}
+
+function Page() {
+  const chatKit = useChatKit();
+
+  useAgentContext({
+    description: "output_schema",
+    value: s.toJsonSchema(chatKit.schema),
+  });
+
+  return <CopilotChat {...chatTheme} />;
+}
+```
+
+There are two important pieces here:
+
+- `runtimeUrl="/api/copilotkit"` sends the chat to your custom backend route rather than directly to the raw LangGraph API
+- `useAgentContext(...)` sends the UI schema to the agent so the model knows what structured output format it should produce
+
+## Register the dynamic components
+
+The component registry lives in `useChatKit()`. This is where you define the set of components the agent is allowed to emit, such as cards, rows, columns, charts, code blocks, and buttons.
+
+```tsx
+import { s } from "@hashbrownai/core";
+import { exposeComponent, exposeMarkdown, useUiKit } from "@hashbrownai/react";
+
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { CodeBlock } from "@/components/ui/code-block";
+import { Row, Column } from "@/components/ui/layout";
+import { SimpleChart } from "@/components/ui/simple-chart";
+
+export function useChatKit() {
+  return useUiKit({
+    components: [
+      exposeMarkdown(),
+      exposeComponent(Card, {
+        name: "card",
+        description: "Card to wrap generative UI content.",
+        children: "any",
+      }),
+      exposeComponent(Row, {
+        name: "row",
+        props: {
+          gap: s.string("Tailwind gap size") as never,
+        },
+        children: "any",
+      }),
+      exposeComponent(Column, {
+        name: "column",
+        children: "any",
+      }),
+      exposeComponent(SimpleChart, {
+        name: "chart",
+        props: {
+          labels: s.array("Category labels", s.string("A label")),
+          values: s.array("Numeric values", s.number("A value")),
+        },
+        children: false,
+      }),
+      exposeComponent(CodeBlock, {
+        name: "code_block",
+        props: {
+          code: s.streaming.string("The code to display"),
+          language: s.string("Programming language") as never,
+        },
+        children: false,
+      }),
+      exposeComponent(Button, {
+        name: "button",
+        children: "text",
+      }),
+    ],
+  });
+}
+```
+
+This registry becomes the contract between the agent and the UI. The model is not generating arbitrary JSX. It is generating structured data that must validate against the components and props you exposed.
+
+## Render assistant messages as dynamic UI
+
+Once the assistant response arrives, the custom message renderer decides how to display it. In this example:
+
+- assistant messages are parsed as structured JSON against the UI kit schema
+- valid structured output is rendered as real React components
+- user messages are rendered as ordinary chat bubbles
+
+```tsx
+import type { AssistantMessage } from "@ag-ui/core";
+import type { RenderMessageProps } from "@copilotkit/react-ui";
+import { useJsonParser } from "@hashbrownai/react";
+import { memo } from "react";
+
+import { useChatKit } from "@/components/chat/chat-kit";
+import { Squircle } from "@/components/squircle";
+
+const AssistantMessageRenderer = memo(function AssistantMessageRenderer({
+  message,
+}: {
+  message: AssistantMessage;
+}) {
+  const kit = useChatKit();
+  const { value } = useJsonParser(message.content ?? "", kit.schema);
+
+  if (!value) return null;
+
+  return (
+    <div className="group/msg mt-2 flex w-full justify-start">
+      <div className="magic-text-output w-full px-1 py-1">{kit.render(value)}</div>
+    </div>
+  );
+});
+
+export function CustomMessageRenderer({ message }: RenderMessageProps) {
+  if (message.role === "assistant") {
+    return <AssistantMessageRenderer message={message} />;
+  }
+
+  return (
+    <div className="flex w-full justify-end">
+      <Squircle className="w-full max-w-[64ch] px-4 py-3">
+        <pre>{typeof message.content === "string" ? message.content : JSON.stringify(message.content, null, 2)}</pre>
+      </Squircle>
+    </div>
+  );
+}
+```
+
+This renderer pattern is what makes the integration feel native:
+
+- CopilotKit handles chat state and transport
+- the custom renderer decides how assistant payloads become UI
+- Hashbrown turns validated structured data into concrete React elements
+
+## Best practices
+
+- **Keep the custom endpoint thin:** use it to adapt CopilotKit to your graph deployment, not to duplicate business logic already inside the graph
+- **Send the schema explicitly:** `useAgentContext` should describe the UI contract every time the page mounts
+- **Register a constrained component set:** expose only the components and props you actually want the model to use
+- **Treat rendering as a parsing step:** parse assistant content against your schema before rendering it
+- **Keep user messages plain:** only assistant messages need the structured renderer; user messages can stay normal chat bubbles
