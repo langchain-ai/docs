@@ -3,7 +3,19 @@ title: Memory
 description: Configure short-term and long-term memory for Deep Agents
 ---
 
-Deep Agents use their filesystem to store and retrieve information. How long that information is available for depends on which [backend](/oss/deepagents/backends) you configure.
+Deep Agents use their filesystem to store and retrieve information. How long that information persists depends on which [backend](/oss/deepagents/backends) you configure.
+
+## Types of memory
+
+Before configuring memory, it helps to understand the different kinds of information an agent can remember. For a full conceptual overview, see the [memory concepts guide](/oss/concepts/memory).
+
+| Memory type | What is stored | Agent example |
+|---|---|---|
+| [Semantic](/oss/concepts/memory#semantic-memory) | Facts and knowledge | User preferences, project context |
+| [Episodic](/oss/concepts/memory#episodic-memory) | Past experiences | Successful tool-call sequences, few-shot examples |
+| [Procedural](/oss/concepts/memory#procedural-memory) | Instructions and rules | Self-improving system prompts |
+
+Semantic memories can be stored as a single continuously updated [profile](/oss/concepts/memory#profile) (higher coherence, harder to maintain) or as a [collection](/oss/concepts/memory#collection) of individual documents (higher recall, easier to extend). See the [concepts guide](/oss/concepts/memory#semantic-memory) for tradeoffs.
 
 ## Short-term memory
 
@@ -31,10 +43,7 @@ const agent = createDeepAgent({});
 
 ## Long-term memory
 
-To persist information across conversations — user preferences, learned instructions, project context — use a `CompositeBackend` that routes `/memories/` to a `StoreBackend`. The agent's scratch files stay ephemeral while anything written to `/memories/` persists in a LangGraph [Store](/langsmith/custom-store).
-
-### Setup
-You can extend Deep Agents with **long-term memory** by using a @[`CompositeBackend`] that routes specific paths to persistent storage. This enables hybrid storage where some files persist across threads while others remain ephemeral.
+To persist information across conversations, use a @[`CompositeBackend`] that routes `/memories/` to a @[`StoreBackend`]. The agent's scratch files stay ephemeral while anything written to `/memories/` persists in a LangGraph [Store](/langsmith/custom-store).
 
 ```mermaid
 graph LR
@@ -57,9 +66,9 @@ graph LR
     class Persist,Ephemeral output
 ```
 
-## Setup
+### Setup
 
-Configure long-term memory by using a `CompositeBackend` that routes the `/memories/` path to a @[`StoreBackend`]:
+Configure long-term memory by using a `CompositeBackend` that routes the `/memories/` path to a `StoreBackend`:
 
 :::python
 ```python
@@ -109,14 +118,210 @@ const agent = createDeepAgent({
 
 ### Namespace scoping
 
-The `namespace` parameter on `StoreBackend` controls who can see what data. See [namespace factories](/oss/deepagents/backends#namespace-factories) for the full API.
+The `namespace` parameter on `StoreBackend` controls who can see what data. **Always set a namespace factory in production** to isolate data appropriately.
 
-| Scope | Who shares data | Use case |
-|---|---|---|
-| **Per-user** (most common) | Only that user, across all conversations | Personal preferences, instructions |
-| **Per-assistant** | All users of the same assistant | Shared team knowledge |
+The right scope depends on who should see and modify the data. The examples below are based on an organization running two assistants (an email writing assistant and a social media drafting assistant), serving multiple users.
 
-For [deployed](/oss/deepagents/going-to-production) agents, always set a namespace factory to isolate data.
+| Scope | Namespace | Use case | Example |
+|---|---|---|---|
+| **Private** (recommended default) | `(assistant_id, user_id)` | Per-user preferences within one assistant | "Sign my emails 'Best, Alex'" for the email assistant only |
+| **Assistant** | `(assistant_id)` | Shared instructions for one assistant | "Cap posts at 280 characters" for the social media assistant |
+| **User** | `(user_id)` | Global user profile across all assistants | User's preferred language is Spanish |
+| **Organization** | `(org_id)` | Read-only policies for all users and assistants | "Never disclose internal pricing" |
+
+<Warning>
+Shared memory (assistant, user, or organization scope) is a vector for prompt injection. If one user can write to memory that another user's conversation reads, a malicious user could inject instructions into that shared state. Enforce read-only access where appropriate. For example, make organization-wide policies writable only through application code, not by the agent itself.
+</Warning>
+
+<Tabs>
+  <Tab title="Private (recommended)">
+    Namespace by `(assistant_id, user_id)`. Each user gets private memory within a given assistant.
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from langgraph.config import get_config
+
+agent = create_deep_agent(
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={
+            "/memories/": StoreBackend(
+                rt,
+                namespace=lambda ctx: (
+                    get_config()["metadata"]["assistant_id"],
+                    ctx.runtime.context.user_id,
+                ),
+            ),
+        },
+    ),
+    system_prompt="""You have persistent memory at /memories/.
+
+    Read /memories/instructions.txt at the start of each conversation for
+    accumulated knowledge and preferences. When you learn something that
+    should persist, update that file.""",
+)
+```
+:::
+
+:::js
+```typescript
+import { getConfig } from "@langchain/langgraph";
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  backend: (rt) => new CompositeBackend(
+    new StateBackend(rt),
+    {
+      "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => {
+          const config = getConfig();
+          return [config.metadata.assistantId, ctx.runtime.context.userId];
+        },
+      }),
+    },
+  ),
+  systemPrompt: `You have persistent memory at /memories/.
+
+  Read /memories/instructions.txt at the start of each conversation for
+  accumulated knowledge and preferences. When you learn something that
+  should persist, update that file.`,
+});
+```
+:::
+
+  </Tab>
+  <Tab title="Assistant">
+    Namespace by `assistant_id`. Memory is shared across all users of the same assistant, so any user can read or update it. Use this for shared instructions or knowledge that applies to everyone using a given assistant (e.g., "always reply in formal tone").
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from langgraph.config import get_config
+
+agent = create_deep_agent(
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={
+            "/memories/": StoreBackend(
+                rt,
+                namespace=lambda ctx: (
+                    get_config()["metadata"]["assistant_id"],
+                ),
+            ),
+        },
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+import { getConfig } from "@langchain/langgraph";
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  backend: (rt) => new CompositeBackend(
+    new StateBackend(rt),
+    {
+      "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => {
+          const config = getConfig();
+          return [config.metadata.assistantId];
+        },
+      }),
+    },
+  ),
+});
+```
+:::
+
+  </Tab>
+  <Tab title="User">
+    Namespace by `user_id` alone. Memory follows the user across all assistants. Use this for a global user profile (name, timezone, communication preferences) that should apply regardless of which assistant the user is talking to.
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+
+agent = create_deep_agent(
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={
+            "/memories/": StoreBackend(
+                rt,
+                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+            ),
+        },
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  backend: (rt) => new CompositeBackend(
+    new StateBackend(rt),
+    {
+      "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => [ctx.runtime.context.userId],
+      }),
+    },
+  ),
+});
+```
+:::
+
+  </Tab>
+  <Tab title="Organization">
+    Namespace by `org_id`. Memory is shared across all users and all assistants. Typically used for organization-wide policies (compliance rules, brand guidelines) that should be read-only for the agent. Write access should be restricted to application code to prevent prompt injection.
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+
+agent = create_deep_agent(
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={
+            "/memories/": StoreBackend(
+                rt,
+                namespace=lambda ctx: (ctx.runtime.context.org_id,),
+            ),
+        },
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  backend: (rt) => new CompositeBackend(
+    new StateBackend(rt),
+    {
+      "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => [ctx.runtime.context.orgId],
+      }),
+    },
+  ),
+});
+```
+:::
+
+  </Tab>
+</Tabs>
+
+For the full namespace factory API, see [namespace factories](/oss/deepagents/backends#namespace-factories).
 
 ### Cross-thread persistence
 
@@ -167,36 +372,8 @@ The `CompositeBackend` routes file operations based on path prefixes:
 - Files without this prefix remain in transient state
 - All filesystem tools (`ls`, `read_file`, `write_file`, `edit_file`) work with both
 
-:::python
-```python
-# Short-term file (removed after conversation ends)
-agent.invoke({
-    "messages": [{"role": "user", "content": "Write draft to /draft.txt"}]
-})
-
-# Long-term file (retained across conversations)
-agent.invoke({
-    "messages": [{"role": "user", "content": "Save final report to /memories/report.txt"}]
-})
-```
-:::
-
-:::js
-```typescript
-// Short-term file (lost after conversation ends)
-await agent.invoke({
-  messages: [{ role: "user", content: "Write draft to /draft.txt" }],
-});
-
-// Long-term file (survives across conversations)
-await agent.invoke({
-  messages: [{ role: "user", content: "Save final report to /memories/report.txt" }],
-});
-```
-:::
-
 <Note>
-    `CompositeBackend` strips the route prefix before storing. For example, `/memories/preferences.txt` is stored as `/preferences.txt` in the `StoreBackend`. The agent always uses the full path. See [CompositeBackend](/oss/deepagents/backends#compositebackend-router) for details.
+`CompositeBackend` strips the route prefix before storing. For example, `/memories/preferences.txt` is stored as `/preferences.txt` in the `StoreBackend`. The agent always uses the full path. See [CompositeBackend](/oss/deepagents/backends#compositebackend-router) for details.
 </Note>
 
 ## Accessing memories from external code
@@ -262,171 +439,80 @@ const items = await client.store.searchItems([assistantId, "filesystem"]);
 :::
 
 <Note>
-    When using `CompositeBackend`, the key does not include the `/memories/` prefix because the route prefix is stripped before storing. See [Path routing](#path-routing) for details.
+When using `CompositeBackend`, the key does not include the `/memories/` prefix because the route prefix is stripped before storing. See [Path routing](#path-routing) for details.
 </Note>
 
 For more information, see the [Store API reference](/langsmith/custom-store).
 
-## Use cases
+## Common patterns
 
-<Note>
-    The examples below omit the `namespace` parameter for brevity. In production, always set a [namespace factory](/oss/deepagents/backends#namespace-factories) on `StoreBackend` to isolate data per user or tenant.
-</Note>
-
-### User preferences
-
-Store user preferences that persist across sessions:
-
-:::python
-```python
-agent = create_deep_agent(
-    store=InMemoryStore(),
-    backend=lambda rt: CompositeBackend(
-        default=StateBackend(rt),
-        routes={"/memories/": StoreBackend(rt)}
-    ),
-    system_prompt="""When users tell you their preferences, save them to
-    /memories/user_preferences.txt so you remember them in future conversations."""
-)
-```
-:::
-
-:::js
-```typescript
-const agent = createDeepAgent({
-  store: new InMemoryStore(),
-  backend: (config) => new CompositeBackend(
-    new StateBackend(config),
-    { "/memories/": new StoreBackend(config) }
-  ),
-  systemPrompt: `When users tell you their preferences, save them to /memories/user_preferences.txt so you remember them in future conversations.`,
-});
-```
-:::
+The examples below assume you have already configured a `CompositeBackend` with a `/memories/` route as shown in [Setup](#setup). They focus on the system prompt and file structure for each pattern.
 
 ### Self-improving instructions
 
-An agent can update its own instructions based on feedback:
+The agent reads and updates an instructions file based on user feedback. This is the most common pattern, combining user preferences and procedural memory into a single file.
 
-:::python
-```python
-agent = create_deep_agent(
-    store=InMemoryStore(),
-    backend=lambda rt: CompositeBackend(
-        default=StateBackend(rt),
-        routes={"/memories/": StoreBackend(rt)}
-    ),
-    system_prompt="""You have a file at /memories/instructions.txt with additional
-    instructions and preferences.
-
-    Read this file at the start of conversations to understand user preferences.
-
-    When users provide feedback like "please always do X" or "I prefer Y",
-    update /memories/instructions.txt using the edit_file tool."""
-)
 ```
-:::
-
-:::js
-```typescript
-const agent = createDeepAgent({
-  store: new InMemoryStore(),
-  backend: (config) => new CompositeBackend(
-    new StateBackend(config),
-    { "/memories/": new StoreBackend(config) }
-  ),
-  systemPrompt: `You have a file at /memories/instructions.txt with additional instructions and preferences.
-
-  Read this file at the start of conversations to understand user preferences.
-
-  When users provide feedback like "please always do X" or "I prefer Y", update /memories/instructions.txt using the edit_file tool.`,
-});
+/memories/instructions.txt    # Accumulated preferences and rules
 ```
-:::
 
-Over time, the instructions file accumulates user preferences, helping the agent improve.
+```
+You have persistent memory at /memories/.
+
+Read /memories/instructions.txt at the start of each conversation for
+accumulated knowledge and preferences.
+
+When users provide feedback like "please always do X" or "I prefer Y",
+update /memories/instructions.txt using the edit_file tool.
+```
+
+Over time, the instructions file accumulates user preferences, helping the agent improve without any external orchestration.
 
 ### Knowledge base
 
-Build up knowledge over multiple conversations:
+The agent builds up structured knowledge across conversations, organized by topic.
 
-:::python
-```python
-# Conversation 1: Learn about a project
-agent.invoke({
-    "messages": [{"role": "user", "content": "We're building a web app with React. Save project notes."}]
-})
-
-# Conversation 2: Use that knowledge
-agent.invoke({
-    "messages": [{"role": "user", "content": "What framework are we using?"}]
-})
-# Agent reads /memories/project_notes.txt from previous conversation
 ```
-:::
-
-:::js
-```typescript
-// Conversation 1: Learn about a project
-await agent.invoke({
-  messages: [{ role: "user", content: "We're building a web app with React. Save project notes." }],
-});
-
-// Conversation 2: Use that knowledge
-await agent.invoke({
-  messages: [{ role: "user", content: "What framework are we using?" }],
-});
-// Agent reads /memories/project_notes.txt from previous conversation
+/memories/projects/webapp/stack.txt       # Technology choices
+/memories/projects/webapp/decisions.txt   # Architecture decisions
+/memories/contacts/team.txt               # Team members and roles
 ```
-:::
+
+```
+You have persistent memory at /memories/.
+
+When you learn facts about the user's projects, team, or domain,
+save them to organized files under /memories/. Use subdirectories
+to group related information.
+
+At the start of each conversation, check /memories/ for relevant
+context before asking the user to repeat themselves.
+```
 
 ### Research projects
 
-Maintain research state across sessions:
+The agent maintains research state across sessions with a clear file structure.
 
-:::python
-```python
-research_agent = create_deep_agent(
-    store=InMemoryStore(),
-    backend=lambda rt: CompositeBackend(
-        default=StateBackend(rt),
-        routes={"/memories/": StoreBackend(rt)}
-    ),
-    system_prompt="""You are a research assistant.
-
-    Save your research progress to /memories/research/:
-    - /memories/research/sources.txt - List of sources found
-    - /memories/research/notes.txt - Key findings and notes
-    - /memories/research/report.md - Final report draft
-
-    This allows research to continue across multiple sessions."""
-)
 ```
-:::
-
-:::js
-```typescript
-const researchAgent = createDeepAgent({
-  store: new InMemoryStore(),
-  backend: (config) => new CompositeBackend(
-    new StateBackend(config),
-    { "/memories/": new StoreBackend(config) }
-  ),
-  systemPrompt: `You are a research assistant.
-
-  Save your research progress to /memories/research/:
-  - /memories/research/sources.txt - List of sources found
-  - /memories/research/notes.txt - Key findings and notes
-  - /memories/research/report.md - Final report draft
-
-  This allows research to continue across multiple sessions.`,
-});
+/memories/research/sources.txt    # List of sources found
+/memories/research/notes.txt      # Key findings and notes
+/memories/research/report.md      # Final report draft
 ```
-:::
+
+```
+You are a research assistant.
+
+Save your research progress to /memories/research/:
+- /memories/research/sources.txt — list of sources found
+- /memories/research/notes.txt — key findings and notes
+- /memories/research/report.md — final report draft
+
+This allows research to continue across multiple sessions.
+```
 
 ## Store implementations
 
-Any LangGraph `BaseStore` implementation works. When deploying to [LangSmith Deployment](/langsmith/deployment), the platform provisions a store automatically — you don't need to configure one yourself.
+Any LangGraph `BaseStore` implementation works. When deploying to [LangSmith Deployment](/langsmith/deployment), the platform provisions a store automatically.
 
 ### InMemoryStore (development)
 
@@ -437,29 +523,14 @@ Good for testing and development, but data is lost on restart:
 from langgraph.store.memory import InMemoryStore
 
 store = InMemoryStore()
-agent = create_deep_agent(
-    store=store,
-    backend=lambda rt: CompositeBackend(
-        default=StateBackend(rt),
-        routes={"/memories/": StoreBackend(rt)}
-    )
-)
 ```
 :::
 
 :::js
 ```typescript
 import { InMemoryStore } from "@langchain/langgraph-checkpoint";
-import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
 
 const store = new InMemoryStore();
-const agent = createDeepAgent({
-  store,
-  backend: (config) => new CompositeBackend(
-    new StateBackend(config),
-    { "/memories/": new StoreBackend(config) }
-  ),
-});
 ```
 :::
 
@@ -472,38 +543,23 @@ For production, use a persistent store:
 from langgraph.store.postgres import PostgresStore
 import os
 
-# Use PostgresStore.from_conn_string as a context manager
 store_ctx = PostgresStore.from_conn_string(os.environ["DATABASE_URL"])
 store = store_ctx.__enter__()
 store.setup()
-
-agent = create_deep_agent(
-    store=store,
-    backend=lambda rt: CompositeBackend(
-        default=StateBackend(rt),
-        routes={"/memories/": StoreBackend(rt)}
-    )
-)
 ```
 :::
 
 :::js
 ```typescript
 import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres";
-import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
 
 const store = new PostgresStore({
   connectionString: process.env.DATABASE_URL,
 });
-const agent = createDeepAgent({
-  store,
-  backend: (config) => new CompositeBackend(
-    new StateBackend(config),
-    { "/memories/": new StoreBackend(config) }
-  ),
-});
 ```
 :::
+
+Pass the store to `create_deep_agent` along with your backend configuration from [Setup](#setup).
 
 <Accordion title="FileData schema">
 
@@ -543,34 +599,42 @@ For more details on backend protocols, see [Backends](/oss/deepagents/backends#p
 
 ## Best practices
 
+### Always set a namespace in production
+
+Without a namespace factory, all users share the same memory space. Use [namespace scoping](#namespace-scoping) to isolate data. Start with the **private** scope `(assistant_id, user_id)` unless you have a specific reason to share.
+
 ### Use descriptive paths
 
-Organize persistent files with clear paths:
+Organize persistent files with clear, hierarchical paths:
 
 ```
-/memories/user_preferences.txt
+/memories/instructions.txt
 /memories/research/topic_a/sources.txt
 /memories/research/topic_a/notes.txt
 /memories/project/requirements.md
 ```
 
-### Document the memory structure
+### Document the memory structure in your system prompt
 
-Tell the agent what's stored where in your system prompt:
+Tell the agent what's stored where so it knows how to use its memory:
 
 ```
 Your persistent memory structure:
-- /memories/preferences.txt: User preferences and settings
+- /memories/instructions.txt: Your accumulated preferences and rules
 - /memories/context/: Long-term context about the user
 - /memories/knowledge/: Facts and information learned over time
 ```
 
+### Choose when to write memories
+
+Memories can be updated [in the hot path](/oss/concepts/memory#in-the-hot-path) (during the conversation, with immediate availability but added latency) or [in the background](/oss/concepts/memory#in-the-background) (asynchronously, with no latency impact but delayed availability). For most Deep Agents, hot-path writing via the filesystem tools is the simplest approach.
+
 ### Prune old data
 
-Implement periodic cleanup of outdated persistent files to keep storage manageable.
+Implement periodic cleanup of outdated persistent files to keep storage manageable. Consider adding instructions to your system prompt for the agent to consolidate or archive old files.
 
-### Choose the right storage
+### Choose the right store
 
 - **Development**: Use `InMemoryStore` for quick iteration
 - **Production**: Use `PostgresStore` or other persistent stores
-- **Multi-tenant**: Set a [namespace factory](/oss/deepagents/backends#namespace-factories) on `StoreBackend` to isolate data per user (for example, `namespace=lambda ctx: (ctx.runtime.context.user_id,)`)
+- **LangSmith Deployment**: The platform provisions a store automatically
