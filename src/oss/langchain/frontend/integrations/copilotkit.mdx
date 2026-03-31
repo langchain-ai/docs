@@ -11,6 +11,10 @@ This approach is useful when you want:
 - a custom server endpoint that can add provider-specific behavior next to your deployed graph
 - structured generative UI rendered from a constrained component registry
 
+import { ExampleEmbed } from "/snippets/example-embed.jsx"
+
+<ExampleEmbed example="copilotkit" minHeight={700} />
+
 ## How it works
 
 1. **Deploy the graph as usual** using LangGraph.
@@ -75,16 +79,12 @@ In `langgraph.json`, point `http.app` at your Hono entrypoint:
 
 Then create the Hono app and register the CopilotKit route:
 
-```ts
+```ts app.ts
 import { Hono } from "hono";
 import { registerCopilotKit } from "./copilotkit.js";
-import { registerSandbox } from "./sandbox.js";
-import { registerDownload } from "./download.js";
 
 export const app = new Hono();
 
-registerSandbox(app);
-registerDownload(app);
 registerCopilotKit(app);
 ```
 
@@ -92,8 +92,9 @@ This is the important extension point: `registerCopilotKit(app)` mounts a provid
 
 Inside that route, create a `CopilotRuntime` and point it back at the deployed graph using `LangGraphAgent`:
 
-```ts
+```ts expandable copilotkit.ts
 import { type Hono } from "hono";
+
 import { createCopilotEndpointSingleRoute, CopilotRuntime } from "@copilotkit/runtime/v2";
 import { LangGraphAgent } from "@copilotkit/runtime/langgraph";
 
@@ -102,10 +103,39 @@ const agentUrl = defaultAgentHost.startsWith("http")
   ? defaultAgentHost
   : `http://${defaultAgentHost}`;
 
+class BridgedLangGraphAgent extends LangGraphAgent {
+  override prepareRunAgentInput(
+    input: Parameters<LangGraphAgent["prepareRunAgentInput"]>[0],
+  ): ReturnType<LangGraphAgent["prepareRunAgentInput"]> {
+    const prepared = super.prepareRunAgentInput(input);
+
+    return {
+      ...prepared,
+      context: normalizeCopilotContext(prepared.context) as ReturnType<
+        LangGraphAgent["prepareRunAgentInput"]
+      >["context"],
+    };
+  }
+
+  override async getAssistant(): Promise<Awaited<ReturnType<LangGraphAgent["getAssistant"]>>> {
+    const assistants = await this.client.assistants.search({
+      graphId: this.graphId,
+      limit: 100,
+    });
+
+    const assistant = assistants.find((candidate) => candidate.graph_id === this.graphId);
+    if (assistant) {
+      return assistant;
+    }
+
+    return super.getAssistant();
+  }
+}
+
 export function registerCopilotKit(app: Hono) {
   const runtime = new CopilotRuntime({
     agents: {
-      default: new LangGraphAgent({
+      default: new BridgedLangGraphAgent({
         deploymentUrl: agentUrl,
         graphId: "copilotkit_shadify",
       }),
@@ -118,6 +148,23 @@ export function registerCopilotKit(app: Hono) {
   });
 
   app.route("/", copilotApp);
+}
+
+function normalizeCopilotContext(context: unknown): unknown {
+  if (!Array.isArray(context)) {
+    return context;
+  }
+
+  const normalizedEntries = context.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+
+    const entry = item as { description?: unknown; value?: unknown };
+    return typeof entry.description === "string" ? [[entry.description, entry.value] as const] : [];
+  });
+
+  return Object.fromEntries(normalizedEntries);
 }
 ```
 
