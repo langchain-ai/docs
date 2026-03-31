@@ -27,7 +27,7 @@ Different types of information call for different memory patterns. These categor
 | [Episodic](/oss/concepts/memory#episodic-memory) | Past experiences | [Episodic log](#episodic-log) |
 | [Procedural](/oss/concepts/memory#procedural-memory) | Instructions and rules | [agents.md](#the-agentsmd-pattern), [persistent skills](#persistent-skills) |
 
-Semantic memories can be stored as a single continuously updated [profile](/oss/concepts/memory#profile) or as a [collection](/oss/concepts/memory#collection) of individual documents, each with different tradeoffs. For a deeper conceptual overview, see the [memory concepts guide](/oss/concepts/memory).
+For a deeper conceptual overview of memory types, see the [memory concepts guide](/oss/concepts/memory).
 
 ## Short-term memory
 
@@ -315,6 +315,10 @@ At the start of each conversation, check /memories/ for relevant
 context before asking the user to repeat themselves.
 ```
 
+<Tip>
+For simpler use cases, a single profile file may be enough. As the number of facts grows, a directory of individual documents offers higher recall at the cost of more complex updates. See the [profile vs collection](/oss/concepts/memory#semantic-memory) tradeoffs in the memory concepts guide.
+</Tip>
+
 #### Episodic log
 
 Episodic memory records past experiences so the agent can learn from what worked and what didn't. Unlike semantic memory (facts) or procedural memory (instructions), episodic memory captures specific interactions the agent can reference as examples or use to avoid repeating mistakes.
@@ -393,6 +397,59 @@ const agent = createDeepAgent({
 :::
 
 Because skills use [progressive disclosure](/oss/deepagents/skills#how-skills-work), only the frontmatter is read at startup. The full skill content is loaded only when the agent determines it's relevant, keeping token usage low even as the skill library grows.
+
+### Read-only vs read-write memory
+
+Not all memory should be writable by the agent. The filesystem model makes this distinction natural: route different paths to different backends with different permissions.
+
+| Mode | Who writes | Use case | Example |
+|---|---|---|---|
+| **Read-only** | Developer or application code | Org policies, curated skills, compliance rules, reference data | "Never disclose internal pricing" |
+| **Read-write** | The agent | Preferences, agents.md, episodic logs, learned skills | "User prefers concise responses" |
+
+To implement this, use a `CompositeBackend` with separate routes. Paths the agent can update are routed to a `StoreBackend`. For read-only data, populate it via the [Store API](/langsmith/custom-store) from your application code and don't route it to a writable backend.
+
+{/* TODO: Add ReadOnlyBackend support and update code example to show read-only route alongside read-write route */}
+
+Populate read-only memory from your application code at deploy time or via a background job:
+
+:::python
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="<DEPLOYMENT_URL>")
+
+await client.store.put_item(
+    (org_id, "policies"),
+    "/compliance.txt",
+    {
+        "content": ["Never disclose internal pricing", "Always include disclaimers on financial advice"],
+        "created_at": "2026-03-01T00:00:00Z",
+        "modified_at": "2026-03-01T00:00:00Z"
+    }
+)
+```
+:::
+
+:::js
+```typescript
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+await client.store.putItem(
+  [orgId, "policies"],
+  "/compliance.txt",
+  {
+    content: ["Never disclose internal pricing", "Always include disclaimers on financial advice"],
+    created_at: "2026-03-01T00:00:00Z",
+    modified_at: "2026-03-01T00:00:00Z"
+  }
+);
+```
+:::
+
+This separation gives you the best of both worlds: the agent can learn and adapt through read-write memory, while critical guardrails remain under your control through read-only memory.
 
 ### Namespace scoping
 
@@ -602,49 +659,9 @@ The core concern is **prompt injection via shared memory**: if one user can writ
 General guidance:
 
 - **Audit what the agent writes.** Use [LangSmith tracing](/langsmith/tracing) to monitor what your agent stores in memory and detect unexpected writes.
-- **Separate read-only and read-write paths.** For data that the agent should use but not modify (org policies, curated skills), populate it from your application code using the [Store API](/langsmith/custom-store) and load it into the system prompt or seed it as files. Don't route it to a writable backend.
+- **Separate read-only and read-write paths.** Use [read-only memory](#read-only-vs-read-write-memory) for data the agent should use but not modify (org policies, curated skills).
 - **Scope as narrowly as possible.** The broader the scope, the larger the blast radius if memory is compromised. Default to private scope unless you have a specific reason to share.
 - **Use platform-level controls for multi-tenant deployments.** On [LangSmith](/langsmith/home), use [RBAC](/langsmith/rbac) and [ABAC](/langsmith/abac) (Enterprise) to restrict who can access assistants and their associated memory.
-
-For example, organization-wide policies should be written by your backend service, not by the agent:
-
-:::python
-```python
-from langgraph_sdk import get_client
-
-client = get_client(url="<DEPLOYMENT_URL>")
-
-# Application code writes org policies — not the agent
-await client.store.put_item(
-    (org_id, "policies"),
-    "/compliance.txt",
-    {
-        "content": ["Never disclose internal pricing", "Always include disclaimers on financial advice"],
-        "created_at": "2026-03-01T00:00:00Z",
-        "modified_at": "2026-03-01T00:00:00Z"
-    }
-)
-```
-:::
-
-:::js
-```typescript
-import { Client } from "@langchain/langgraph-sdk";
-
-const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
-
-// Application code writes org policies — not the agent
-await client.store.putItem(
-  [orgId, "policies"],
-  "/compliance.txt",
-  {
-    content: ["Never disclose internal pricing", "Always include disclaimers on financial advice"],
-    created_at: "2026-03-01T00:00:00Z",
-    modified_at: "2026-03-01T00:00:00Z"
-  }
-);
-```
-:::
 
 ### Access memories from external code
 
