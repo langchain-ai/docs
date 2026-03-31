@@ -1,0 +1,267 @@
+---
+title: Set up the LLM auth proxy
+sidebarTitle: LLM auth proxy
+description: Deploy an Envoy-based proxy that authenticates and routes LLM requests from LangSmith to your upstream provider or gateway.
+---
+
+The LLM auth proxy is an Envoy-based reverse proxy that sits between LangSmith and your upstream LLM provider or gateway. It validates LangSmith-signed JWTs on every request and optionally injects authentication headers or transforms request and response bodies before forwarding upstream.
+
+Use the LLM auth proxy when you need to:
+
+- Authenticate LLM requests from the LangSmith Playground or LLM-as-judge evaluations against your own provider gateway.
+- Inject provider-specific API keys or auth headers without exposing them to end users.
+- Transform request or response bodies (for example, converting between OpenAI format and a custom gateway format).
+
+<Info>
+The LLM auth proxy is deployed as a separate Helm chart (`langsmith-auth-proxy`) alongside your main LangSmith installation. It is only available for Kubernetes deployments.
+</Info>
+
+## Prerequisites
+
+- A running [self-hosted LangSmith instance on Kubernetes](/langsmith/kubernetes).
+- An upstream LLM provider or gateway URL (for example, `https://gateway.example.com`).
+- Helm 3 installed.
+
+## Request flow
+
+The proxy processes each request through the following pipeline:
+
+```
+Client → Envoy (:10000)
+  → Health check filter (/healthz bypasses auth)
+  → JWT validation (RS256, configurable issuer + audiences)
+  → [optional] ext_authz HTTP filter (inject provider API key)
+  → [optional] ext_proc gRPC filter (transform request/response bodies)
+  → Upstream LLM provider or gateway
+```
+
+## Install the Helm chart
+
+Add the LangChain Helm repository and install the auth proxy chart:
+
+```bash
+helm repo add langchain https://langchain-ai.github.io/helm/
+helm repo update
+helm install langsmith-auth-proxy langchain/langsmith-auth-proxy \
+  --namespace <your-namespace> \
+  -f values.yaml
+```
+
+## Configure the proxy
+
+Create a `values.yaml` file with the required settings. At minimum, configure the upstream URL and JWT validation.
+
+### Basic configuration
+
+```yaml
+authProxy:
+  upstream: "https://gateway.example.com"
+  jwtIssuer: "langsmith"
+  jwtAudiences:
+    - "my-audience"
+  jwksUri: "https://langsmith.example.com/.well-known/jwks.json"
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `upstream` | URL of your LLM provider or gateway. If a path is included, all requests are prefixed with it (for example, `/chat/completions` becomes `/api/v1/chat/completions`). |
+| `jwtIssuer` | Expected `iss` claim in the JWT. Defaults to `langsmith`. |
+| `jwtAudiences` | List of expected `aud` claims. Must match the audiences in the signed JWT. |
+| `jwksUri` | Remote JWKS endpoint for fetching public keys. For self-hosted LangSmith, use `https://<your-langsmith-host>/.well-known/jwks.json`. For SaaS, use `https://api.smith.langchain.com/.well-known/jwks.json`. |
+
+<Tip>
+You can provide JWKS keys inline with `jwksJson` instead of `jwksUri`. If both are set, `jwksUri` takes precedence.
+</Tip>
+
+### Disable JWT validation
+
+To disable JWT validation (for testing or when validation is handled elsewhere):
+
+```yaml
+authProxy:
+  jwtValidation:
+    enabled: false
+```
+
+### Configure streaming timeout
+
+For streaming responses (such as SSE from LLM providers), adjust the idle timeout:
+
+```yaml
+authProxy:
+  streamIdleTimeout: "300s"
+```
+
+## Set up external authorization (ext_authz)
+
+Use the ext_authz integration to inject authentication headers (such as API keys) before requests are forwarded upstream. This uses Envoy's [HTTP ext_authz filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_authz_filter).
+
+When enabled, Envoy calls your ext_authz service at `/check` before forwarding each request. The service receives the `x-langsmith-llm-auth` header containing the validated JWT and can inject or override headers like `Authorization`.
+
+```yaml
+authProxy:
+  extAuthz:
+    enabled: true
+    serviceUrl: "http://my-auth-service:8080"
+    timeout: "10s"
+```
+
+### ext_authz interface
+
+**Request** — Envoy sends an HTTP request to `{serviceUrl}/check{original_path}` with:
+
+- The same HTTP method as the original request.
+- Headers matching `allowedHeadersRegex` patterns (defaults to all headers).
+- The request body only if `sendBody: true`.
+
+**Response** — Your service returns a plain HTTP response:
+
+- **`2xx`**: Allow the request. Headers matching `allowedUpstreamHeaders` patterns (such as `authorization` and `x-*` prefixed headers) are forwarded upstream.
+- **Non-`2xx`**: Deny the request. The status code and headers matching `allowedClientHeaders` are sent back to the client.
+
+### ext_authz parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `serviceUrl` | `""` | HTTP URL of your ext_authz service. |
+| `timeout` | `"10s"` | Timeout for ext_authz requests. |
+| `allowedHeadersRegex` | `".*"` | RE2 regex controlling which client request headers are forwarded to the ext_authz service. |
+| `disallowedHeadersRegex` | `""` | RE2 regex for headers to exclude (takes precedence over `allowedHeadersRegex`). |
+| `sendBody` | `false` | Whether to send the request body to ext_authz. |
+| `maxRequestBytes` | `8192` | Maximum request body bytes to buffer for ext_authz. |
+| `headersToAdd` | `[]` | Static headers to add to every check request. Example: `[{key: "x-auth-context", value: "langsmith"}]` |
+
+## Set up request/response transformation (ext_proc)
+
+For use cases that require request or response body transformation (not just header injection), enable the transformer integration. This uses Envoy's [ext_proc filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_proc_filter).
+
+Your transformer service must implement the `envoy.service.ext_proc.v3.ExternalProcessor` gRPC service.
+
+```yaml
+authProxy:
+  transformer:
+    enabled: true
+    serviceUrl: "grpc://my-transformer:50051"
+    timeout: "10s"
+    processingMode:
+      requestHeaderMode: "SEND"
+      requestBodyMode: "BUFFERED"
+      responseHeaderMode: "SKIP"
+      responseBodyMode: "NONE"
+```
+
+### When to use ext_authz vs ext_proc
+
+| Capability | ext_authz | ext_proc (transformer) |
+|-----------|-----------|------------------------|
+| Modify request headers | Yes | Yes |
+| Modify response headers | No | Yes |
+| Modify request body | No | Yes |
+| Modify response body | No | Yes |
+| Protocol | HTTP | gRPC |
+
+Use **ext_authz** if you only need to inject auth headers (such as API keys). Use **ext_proc** if you need to rewrite request or response bodies. Both can be enabled simultaneously.
+
+### Processing modes
+
+Control which phases are sent to the transformer:
+
+| Mode | Options | Description |
+|------|---------|-------------|
+| `requestHeaderMode` | `SEND`, `SKIP`, `DEFAULT` | Whether to forward request headers. |
+| `responseHeaderMode` | `SEND`, `SKIP`, `DEFAULT` | Whether to forward response headers. |
+| `requestBodyMode` | `NONE`, `BUFFERED`, `STREAMED`, `BUFFERED_PARTIAL` | How to send the request body. |
+| `responseBodyMode` | `NONE`, `BUFFERED`, `STREAMED`, `BUFFERED_PARTIAL` | How to send the response body. |
+| `requestTrailerMode` | `SEND`, `SKIP` | Whether to forward request trailers. |
+| `responseTrailerMode` | `SEND`, `SKIP` | Whether to forward response trailers. |
+
+`BUFFERED` buffers the entire body before sending, which is simplest for transformations. `STREAMED` sends chunks incrementally (lower latency but more complex to implement). Use `NONE` to skip body processing.
+
+<Warning>
+When mutating the body, your ext_proc service must also set the `content-length` header to match the new body size via `HeaderMutation` in the body response. Envoy rejects responses where `content-length` does not match the mutated body.
+</Warning>
+
+## Configure HTTP proxy
+
+Envoy does not respect `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables. To route upstream traffic through an HTTP proxy, configure it explicitly:
+
+```yaml
+authProxy:
+  httpProxy:
+    enabled: true
+    host: "proxy.example.com"
+    port: 3128
+    noProxy:
+      - "internal.corp"
+      - ".internal.corp"
+```
+
+## Configure ingress
+
+The auth proxy uses a separate ingress from the main LangSmith application, optimized for streaming. Configure it with your preferred ingress method:
+
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: llm-proxy.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: llm-proxy-tls
+      hosts:
+        - llm-proxy.example.com
+```
+
+Alternatively, use the Gateway API:
+
+```yaml
+gateway:
+  enabled: true
+  name: "my-gateway"
+  namespace: "gateway-system"
+  hostnames:
+    - "llm-proxy.example.com"
+```
+
+## Full configuration example
+
+The following example configures the proxy with JWT validation, ext_authz for API key injection, and ingress:
+
+```yaml
+authProxy:
+  upstream: "https://gateway.example.com"
+  jwtIssuer: "langsmith"
+  jwtAudiences:
+    - "my-llm-gateway"
+  jwksUri: "https://langsmith.example.com/.well-known/jwks.json"
+  streamIdleTimeout: "300s"
+
+  extAuthz:
+    enabled: true
+    serviceUrl: "http://my-auth-service:8080"
+    timeout: "10s"
+
+ingress:
+  enabled: true
+  ingressClassName: "nginx"
+  hosts:
+    - host: llm-proxy.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: llm-proxy-tls
+      hosts:
+        - llm-proxy.example.com
+```
+
+## Helm chart reference
+
+For the full list of configurable values, see the [Helm chart README](https://github.com/langchain-ai/helm/tree/main/charts/langsmith-auth-proxy).
