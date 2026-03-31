@@ -132,32 +132,9 @@ const authResult = await authClient.authenticate({
 ```
 :::
 
-**Credential injection for sandboxes.** If your agent runs code inside a [sandbox](#sandboxes) that calls external APIs, use the [sandbox auth proxy](/langsmith/sandbox-auth-proxy) to inject credentials into outbound requests automatically. The proxy intercepts requests to configured hosts and adds authentication headers using secrets stored in your LangSmith workspace, so sandbox code never sees raw API keys.
+**Credential injection for sandboxes.** If your agent runs code inside a [sandbox](#sandboxes) that calls external APIs, the [sandbox auth proxy](/langsmith/sandbox-auth-proxy) can inject credentials into outbound requests automatically, so sandbox code never sees raw API keys. See [Managing secrets](#managing-secrets) for setup details.
 
-```json
-{
-  "proxy_config": {
-    "rules": [
-      {
-        "name": "openai-api",
-        "match_hosts": ["api.openai.com"],
-        "inject_headers": {
-          "Authorization": "Bearer ${OPENAI_API_KEY}"
-        }
-      },
-      {
-        "name": "anthropic-api",
-        "match_hosts": ["api.anthropic.com"],
-        "inject_headers": {
-          "x-api-key": "${ANTHROPIC_API_KEY}"
-        }
-      }
-    ]
-  }
-}
-```
-
-**Workspace secrets.** For API keys shared across all users (your organization's LLM provider keys, search API keys), store them as [workspace secrets](/langsmith/setup) in LangSmith. These are available to all agents in the workspace at runtime via environment variables.
+**Workspace secrets.** For API keys shared across all users (your organization's LLM provider keys, search API keys), store them as [workspace secrets](/langsmith/setup) in LangSmith. See [Managing secrets](#managing-secrets) for details.
 
 ### Async
 
@@ -868,6 +845,43 @@ export { agent };
 :::
 
 </Accordion>
+
+#### Managing secrets
+
+Sandboxes are isolated containers, so environment variables from your host aren't available inside them. There are two ways to provide API keys and other secrets to sandbox code:
+
+**Auth proxy (recommended).** The [sandbox auth proxy](/langsmith/sandbox-auth-proxy) intercepts outbound requests from the sandbox and injects authentication headers automatically. Sandbox code calls external APIs normally, and the proxy adds the correct credentials based on the destination host. This means API keys never appear in sandbox code, environment variables, or logs.
+
+```json
+{
+  "proxy_config": {
+    "rules": [
+      {
+        "name": "openai-api",
+        "match_hosts": ["api.openai.com"],
+        "inject_headers": {
+          "Authorization": "Bearer ${OPENAI_API_KEY}"
+        }
+      },
+      {
+        "name": "anthropic-api",
+        "match_hosts": ["api.anthropic.com"],
+        "inject_headers": {
+          "x-api-key": "${ANTHROPIC_API_KEY}"
+        }
+      }
+    ]
+  }
+}
+```
+
+The `${SECRET_KEY}` references resolve against secrets stored in your LangSmith [workspace settings](/langsmith/setup). Configure secrets there before creating a template that references them.
+
+**Workspace secrets.** For API keys that don't need proxy-based injection (e.g., keys used by the agent server itself, not sandbox code), store them as [workspace secrets](/langsmith/setup) in LangSmith. These are available as environment variables at runtime for all agents in the workspace.
+
+<Warning>
+Avoid passing secrets into sandboxes via environment variables or file uploads. Agents can read any accessible file or environment variable inside the sandbox, including credentials. The auth proxy keeps secrets out of the sandbox entirely.
+</Warning>
 
 ## Guardrails
 
