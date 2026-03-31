@@ -28,7 +28,6 @@ For cloud-specific IAM/Workload Identity authentication, refer to the [IAM authe
 
 * Note: We only officially support Redis versions >= 5 and Valkey version 8.
 * We support both Standalone and Redis Cluster. See the appropriate sections for deployment instructions.
-* **Azure Cache for Redis:** LangSmith does not support the Enterprise clustering policy. Use the OSS clustering policy instead. See [Azure clustering policy documentation](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-best-practices-enterprise-tiers#clustering-policy) for details.
 * We support no authentication, password, and [IAM/Workload Identity](#iam-authentication) authentication.
 * By default, we recommend an instance with at least 2 vCPUs and 8GB of memory. However, the actual requirements will depend on your tracing workload. We recommend monitoring your Redis instance and scaling up as needed.
 
@@ -206,6 +205,42 @@ stringData:
 ```
 
 </CodeGroup>
+
+## Azure managed Redis
+
+[Azure Managed Redis](https://azure.microsoft.com/en-us/products/managed-redis) supports two clustering policies that affect how LangSmith connects to it. Choose the configuration below based on the clustering policy of your instance.
+
+### OSS Cluster
+
+LangSmith connects to OSS clustering policy instances using Redis Cluster mode.
+
+As of LangSmith helm chart version **0.13.33**, `ssl_check_hostname=false` is supported as a node URI parameter. In our testing, the OSS clustering policy requires disabling SSL hostname verification. Azure's proxy resolves connections to internal node IPs that are not present in the certificate's SAN, causing hostname verification to fail.
+
+```yaml
+redis:
+  external:
+    enabled: true
+    cluster:
+      enabled: true
+      nodeUris:
+        - "redis://<node_url>:10000?ssl_check_hostname=false"
+      tlsEnabled: true
+```
+
+### EnterpriseCluster
+
+As of LangSmith helm chart version **0.13.33**, LangSmith supports Azure Managed Redis with the EnterpriseCluster policy. This policy exposes a single endpoint that handles sharding internally. LangSmith must connect to it as a standalone (single-instance) client, but it does not support cluster unsafe operations such as MULTI/EXEC. Set `redis.external.clusterSafeMode: true` to disable unsafe cluster operations.
+
+```yaml
+redis:
+  external:
+    enabled: true
+    connectionUrl: "rediss://<azure-redis-host>:6380"
+    # Required for EnterpriseCluster: use a single-instance client and disable unsafe cluster operations
+    clusterSafeMode: true
+```
+
+For Microsoft Entra (IAM) authentication with EnterpriseCluster, see the [Azure tab in IAM authentication](#azure-cache-for-redis) and include `clusterSafeMode: true` in your Helm values.
 
 ## TLS with Redis
 
@@ -543,6 +578,8 @@ redis:
     enabled: true
     existingSecretName: "redis-secret"
     iamAuthProvider: "azure"
+    # Include if using EnterpriseCluster policy. See the Azure managed Redis section for details.
+    # clusterSafeMode: true
 ```
 
 ```yaml
