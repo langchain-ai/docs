@@ -16,7 +16,7 @@ In production, there are a few primitives that determine how information is shar
 
 This page covers:
 - **[LangSmith Deployments](#langsmith-deployments)**: managed infrastructure with auth, webhooks, and cron
-- **[Production considerations](#production-considerations)**: multi-tenancy, async, and durability
+- **[Production considerations](#production-considerations)**: multi-tenancy, authentication, credentials, async, and durability
 - **[Memory](#memory)**: persist information across conversations
 - **[Execution environment](#execution-environment)**: file storage and code execution
 - **[Guardrails](#guardrails)**: rate limiting, error handling, and data privacy
@@ -68,9 +68,73 @@ For the full set of configuration options (custom Docker steps, store indexing, 
 
 ### Multi-tenancy
 
-When your agent serves multiple users, you need to verify who each user is and control what they can access. [LangSmith Deployments](/langsmith/deployment) supports [custom authentication](/langsmith/custom-auth) to establish user identity and [auth handlers](/langsmith/auth) to control access to threads and assistants. See [Agent Auth](/langsmith/agent-auth) to pass end-user credentials through to the agent for authenticated calls on the user's behalf.
+When your agent serves multiple users, you need to handle three concerns: verifying who each user is, controlling what they can access, and managing the credentials the agent uses to act on their behalf.
 
-How you scope [memory](#scoping) and [execution environments](#execution-environment) determines what information is shared between users. See the sections below for details.
+#### User identity and access control
+
+[LangSmith Deployments](/langsmith/deployment) supports [custom authentication](/langsmith/custom-auth) to establish user identity and [authorization handlers](/langsmith/auth) to control access to resources like threads, assistants, and store namespaces. Authorization handlers run after authentication succeeds and can:
+
+- Tag resources with ownership metadata (e.g., `owner: user_id`)
+- Return filters so users only see their own resources
+- Deny access with HTTP 403 for unauthorized operations
+
+For a step-by-step tutorial, see [Make conversations private](/langsmith/resource-auth).
+
+How you [scope memory](#scoping) and [execution environments](#execution-environment) determines what data is shared between users. See the sections below for details.
+
+#### Team access control (RBAC)
+
+LangSmith's [role-based access control](/langsmith/rbac) governs who on your team can deploy, configure, and monitor agents. This is separate from end-user authorization above.
+
+| Role | Access |
+| --- | --- |
+| Workspace Admin | Full permissions including settings and member management |
+| Workspace Editor | Create and modify resources, but cannot delete runs or manage members |
+| Workspace Viewer | Read-only access |
+
+Custom roles with granular permissions are available on Enterprise plans. See the [RBAC reference](/langsmith/rbac) for the full permission model.
+
+#### End-user credentials
+
+When your agent needs to call external APIs on behalf of a user (e.g., reading their GitHub repos, sending Slack messages, querying their data warehouse), you need a way to pass the user's credentials through to the agent without hardcoding them.
+
+**OAuth via Agent Auth.** [Agent Auth](/langsmith/agent-auth) provides a managed OAuth 2.0 flow. Configure an OAuth provider, and the agent can request tokens scoped to each user. On first use, the agent [interrupts](/oss/langgraph/interrupts) execution and presents an OAuth consent URL. After the user authenticates, the agent resumes with a valid token. Tokens are stored and refreshed automatically.
+
+:::python
+```python
+from langchain_auth import Client
+
+auth_client = Client()
+
+# Inside your agent's tool:
+auth_result = await auth_client.authenticate(
+    provider="github",
+    scopes=["repo", "read:org"],
+    user_id=config["configurable"]["langgraph_auth_user_id"],
+)
+# Use auth_result.token for GitHub API calls on the user's behalf
+```
+:::
+
+:::js
+```typescript
+import { Client } from "@langchain/auth";
+
+const authClient = new Client();
+
+// Inside your agent's tool:
+const authResult = await authClient.authenticate({
+  provider: "github",
+  scopes: ["repo", "read:org"],
+  userId: config.configurable.langgraph_auth_user_id,
+});
+// Use authResult.token for GitHub API calls on the user's behalf
+```
+:::
+
+**Credential injection for sandboxes.** If your agent runs code inside a [sandbox](#sandboxes) that calls external APIs, the [sandbox auth proxy](/langsmith/sandbox-auth-proxy) can inject credentials into outbound requests automatically, so sandbox code never receives raw API keys. See [Managing secrets](#managing-secrets) for setup details.
+
+**Workspace secrets.** For API keys shared across all users (for example your organization's LLM provider keys, search API keys), store them as [workspace secrets](/langsmith/setup) in LangSmith. See [Managing secrets](#managing-secrets) for details.
 
 ### Async
 
@@ -781,6 +845,43 @@ export { agent };
 :::
 
 </Accordion>
+
+#### Managing secrets
+
+Sandboxes are isolated containers, so environment variables from your host aren't available inside them. There are two ways to provide API keys and other secrets to sandbox code:
+
+**Auth proxy (recommended).** The [sandbox auth proxy](/langsmith/sandbox-auth-proxy) intercepts outbound requests from the sandbox and injects authentication headers automatically. Sandbox code calls external APIs normally, and the proxy adds the correct credentials based on the destination host. This means API keys never appear in sandbox code, environment variables, or logs.
+
+```json
+{
+  "proxy_config": {
+    "rules": [
+      {
+        "name": "openai-api",
+        "match_hosts": ["api.openai.com"],
+        "inject_headers": {
+          "Authorization": "Bearer ${OPENAI_API_KEY}"
+        }
+      },
+      {
+        "name": "anthropic-api",
+        "match_hosts": ["api.anthropic.com"],
+        "inject_headers": {
+          "x-api-key": "${ANTHROPIC_API_KEY}"
+        }
+      }
+    ]
+  }
+}
+```
+
+The `${SECRET_KEY}` references resolve against secrets stored in your LangSmith [workspace settings](/langsmith/setup). Configure secrets there before creating a template that references them.
+
+**Workspace secrets.** For API keys that don't need proxy-based injection (e.g., keys used by the agent server itself, not sandbox code), store them as [workspace secrets](/langsmith/setup) in LangSmith. These are available as environment variables at runtime for all agents in the workspace.
+
+<Warning>
+Avoid passing secrets into sandboxes via environment variables or file uploads. Agents can read any accessible file or environment variable inside the sandbox, including credentials. The auth proxy keeps secrets out of the sandbox entirely.
+</Warning>
 
 ## Guardrails
 

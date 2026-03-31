@@ -1,0 +1,141 @@
+---
+title: Audit logs
+sidebarTitle: Audit logs
+description: Track and review administrative actions across your LangSmith organization for security, compliance, and operational visibility.
+---
+
+<Note>
+Audit logs are available on [**Enterprise** plans](/langsmith/pricing-plans). If you're interested in upgrading to Enterprise, [contact our sales team](https://www.langchain.com/contact-sales).
+</Note>
+
+LangSmith audit logs provide a tamper-resistant record of administrative and configuration actions taken within your organization. They help you answer questions like:
+
+- **Who** deleted an API key, a dataset, or a deployment?
+- **When** was a new member invited, a role modified, or examples updated?
+- **What** billing, SSO, or data retention configuration was changed?
+- **Which** datasets, tracing projects, or prompt webhooks were modified?
+
+Audit logs are useful for security reviews, compliance requirements, and general operational visibility.
+
+## Prerequisites
+
+- Your organization must be on an [**Enterprise** plan](/langsmith/pricing-plans).
+- You must have the **Organization Admin** or **Organization Operator** role ([`organization:manage` permission](/langsmith/rbac#organization-admin)) to view audit logs.
+
+## What gets logged
+
+Audit logs record changes to organization settings, membership, credentials, workspaces, and other resources. Each event includes the timestamp, the actor, the operation name, the affected resources, and whether it succeeded. For the complete list of operation names, see the [tracked operations reference](#tracked-operations-reference).
+
+## Retention
+
+Audit logs are retained for up to **400 days**. Events older than 400 days may be removed automatically.
+
+## Enable audit logs for self-hosted deployments
+
+Audit logs are available for [self-hosted](/langsmith/self-hosted) LangSmith instances running Helm chart **0.12.33** or later (application version **0.12.33**). Once you've upgraded, use one of the following options to enable audit logs:
+
+- **Enable for a specific organization:** Run the following against your LangSmith PostgreSQL database, replacing `<organization_id>` with the ID copied from the organization settings page in the UI:
+
+    ```sql
+    UPDATE organizations SET config = config || '{"can_use_audit_logs": true}' WHERE id = '<organization_id>' AND NOT is_personal;
+    ```
+
+- **Enable for all organizations:** Add the following environment variable to `commonEnv` in your `values.yaml`:
+
+    ```yaml
+    DEFAULT_ORG_FEATURE_CAN_USE_AUDIT_LOGS: "true"
+    ```
+
+    <Note>
+    This environment variable has no effect on personal organizations.
+    </Note>
+
+For more details on self-hosted releases, see the [self-hosted changelog](/langsmith/self-hosted-changelog).
+
+## Query audit logs via API
+
+Use the `GET /api/v1/audit-logs` endpoint ([API reference](https://api.smith.langchain.com/redoc#tag/audit-logs)) to retrieve audit log events. Results follow the [OCSF API Activity](https://schema.ocsf.io/1.7.0/classes/api_activity) schema.
+
+### Example request
+
+```bash
+curl -G \
+  'https://api.smith.langchain.com/api/v1/audit-logs' \
+  -H 'accept: application/json' \
+  -H 'X-API-Key: lsv2_sk_...' \
+  -H 'X-Organization-Id: abc123...' \
+  -d 'limit=2' \
+  --data-urlencode 'start_time=2026-01-01T18:35:16.232Z' \
+  --data-urlencode 'end_time=2026-01-13T18:35:16.232Z'
+```
+
+## Response format
+
+Audit log events are returned in [OCSF v1.7.0 API Activity (Class UID 6003)](https://schema.ocsf.io/1.7.0/classes/api_activity) format. Key fields:
+
+| Field | Description |
+|-----------|-------------|
+| `actor.user.uid` | UUID of the user who performed the action. |
+| `actor.user.credential_uid` | UUID of the API key, PAT, or service key used to authenticate the request. `null` if the user authenticated via session (e.g., the UI). |
+| `api.operation` | The LangSmith operation name (e.g., `create_api_key`, `delete_workspace`). See [tracked operations reference](#tracked-operations-reference) for all values. |
+| `status` | `Success`, `Failure`, or `Unknown`. |
+| `resources` | List of UUIDs for the resources affected by the operation (e.g., the role that was updated, the workspace that was created). |
+| `metadata.uid` | Unique identifier for this audit log event. |
+| `unmapped.original_audit_log` | The full LangSmith-native audit log record, including `organization_id` and `workspace_id`. |
+
+## Forwarding to external systems
+
+To forward audit log events to an external SIEM or logging platform, you can run a scheduled function that pulls the previous hour of events every hour. For example, with [AWS Lambda + EventBridge Scheduler](https://docs.aws.amazon.com/lambda/latest/dg/with-eventbridge-scheduler.html), failures land in a dead-letter queue so you know which windows to retry.
+
+## Tracked operations reference
+
+| Category | Operations (`api.operation`) |
+|----------|-----------|
+| **API keys & credentials** | `create_api_key`, `delete_api_key`, `create_personal_access_token`, `delete_personal_access_token`, `create_service_key`, `delete_service_key` |
+| **Roles** | `create_role`, `update_role`, `delete_role` |
+| **Organization members** | `invite_user_to_org`, `invite_users_to_org_batch`, `update_org_member`, `delete_org_member`, `delete_org_pending_member`, `add_basic_auth_users_to_org`, `update_basic_auth_user` |
+| **SSO & authentication** | `create_sso_settings`, `update_sso_settings`, `delete_sso_settings`, `update_login_methods`, `update_default_sso_provision_organization` |
+| **Billing & business info** | `update_organization_info`, `update_business_info`, `update_payment_plan`, `update_payment_method`, `create_payment_setup_intent`, `create_payment_checkout_session`, `confirm_payment_checkout_session`, `create_payment_account_link` |
+| **Workspaces** | `create_workspace`, `update_workspace`, `delete_workspace`, `add_member_to_workspace`, `add_members_to_workspace_batch`, `delete_workspace_member`, `update_workspace_member`, `delete_workspace_pending_member`, `update_workspace_secrets`, `unshare_entities`, `set_tenant_handle` |
+| **Data retention** | `update_ttl_settings`, `update_usage_limit`, `delete_usage_limit` |
+| **Tracing projects** | `update_tracer_session`, `delete_tracer_session`, `delete_tracer_sessions` |
+| **Datasets** | `create_dataset`, `create_csv_dataset`, `update_dataset`, `delete_dataset`, `delete_datasets`, `update_dataset_version`, `update_dataset_splits`, `share_dataset`, `unshare_dataset`, `clone_dataset`, `create_experiment_via_upload`, `create_playground_experiment`, `create_comparative_experiment`, `delete_comparative_experiment` |
+| **Examples** | `create_example`, `create_examples`, `update_example`, `update_examples`, `delete_example`, `delete_examples` |
+| **Deployments** | `create_deployment`, `update_deployment`, `delete_deployment` |
+| **Prompt webhooks** | `create_prompt_webhook`, `update_prompt_webhook`, `delete_prompt_webhook`, `test_prompt_webhook` |
+| **Bulk exports** | `create_bulk_export`, `cancel_bulk_export`, `read_bulk_export_destination`, `create_bulk_export_destination`, `update_bulk_export_destination` |
+| **Resource tags** | `create_tag_key`, `update_tag_key`, `delete_tag_key`, `create_tag_value`, `update_tag_value`, `delete_tag_value`, `create_tagging`, `delete_tagging` |
+| **Custom charts** | `create_chart`, `update_chart`, `delete_chart`, `create_chart_section`, `update_chart_section`, `delete_chart_section`, `clone_chart_section`, `create_org_chart`, `update_org_chart`, `delete_org_chart`, `create_org_chart_section`, `update_org_chart_section`, `delete_org_chart_section` |
+| **Model pricing** | `create_model_price_map`, `update_model_price_map`, `delete_model_price_map` |
+
+## FAQ
+
+<AccordionGroup>
+<Accordion title="Who can view audit logs?">
+Users with the [**Organization Admin**](/langsmith/rbac#organization-admin) or [**Organization Operator**](/langsmith/rbac#organization-operator) role (which grant the `organization:manage` permission) can access audit logs. Workspace-level roles do not provide audit log access.
+</Accordion>
+
+<Accordion title="Are audit logs available on the Plus or Developer plan?">
+No. Audit logs are an Enterprise feature. See [pricing](https://www.langchain.com/pricing-langsmith) for plan details.
+</Accordion>
+
+<Accordion title="Is there a UI for viewing audit logs?">
+Not currently. Audit logs are available via the [API](#query-audit-logs-via-api).
+</Accordion>
+
+<Accordion title="Are read operations logged?">
+Audit logs currently primarily focused on write operations. Support for more read operations may be added in the future.
+</Accordion>
+
+<Accordion title="Will more operations be tracked in the future?">
+Yes. We intend to expand the set of tracked operations over time. The [tracked operations reference](#tracked-operations-reference) always reflects the current set of supported operations.
+</Accordion>
+
+<Accordion title="Can I get audit logs in a format other than OCSF?">
+The API returns events exclusively in OCSF format. The `unmapped.original_audit_log` field within each event contains the raw LangSmith audit log record if you need the data in a different shape.
+</Accordion>
+
+<Accordion title="What is OCSF?">
+The [Open Cybersecurity Schema Framework (OCSF)](https://schema.ocsf.io/) is an open standard for security event data. LangSmith returns audit log events as OCSF v1.7.0 API Activity (Class 6003) objects.
+</Accordion>
+</AccordionGroup>
