@@ -33,7 +33,7 @@ graph TB
 ```
 
 <Note>
-For subagents to work asynchronously, you must deploy the subagents on [LangSmith Deployments](/langsmith/deployment). When deployed to LangSmith Deployments, each subagent runs independently of the main agent. The supervisor controls them through the SDK to launch, check, update, and cancel.
+Async subagents communicate with any server that implements the [Agent Protocol](https://github.com/langchain-ai/agent-protocol). You can use [LangSmith Deployments](/langsmith/deployment), or self-host any Agent Protocol-compatible server. Each subagent runs independently of the supervisor, which controls them through the SDK to launch, check, update, and cancel.
 </Note>
 
 ## When to use async subagents
@@ -49,7 +49,7 @@ For subagents to work asynchronously, you must deploy the subagents on [LangSmit
 
 ## Configure async subagents
 
-Define async subagents as a list of @[`AsyncSubAgent`] specs, each pointing to a graph deployed on a LangSmith Deployment:
+Define async subagents as a list of @[`AsyncSubAgent`] specs, each pointing to an Agent Protocol server:
 
 :::python
 ```python
@@ -80,8 +80,8 @@ agent = create_deep_agent(
 |-------|------|-------------|
 | `name` | `str` | Required. Unique identifier. The supervisor uses this when launching tasks. |
 | `description` | `str` | Required. What this subagent does. The supervisor uses this to decide which agent to delegate to. |
-| `graph_id` | `str` | Required. The graph ID (or assistant ID) registered in `langgraph.json`. |
-| `url` | `str` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote deployment. |
+| `graph_id` | `str` | Required. The graph or agent ID. For LangGraph-based deployments, this must match a graph registered in `langgraph.json`. |
+| `url` | `str` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote Agent Protocol server. |
 :::
 
 :::js
@@ -113,8 +113,8 @@ const agent = createDeepAgent({
 |-------|------|-------------|
 | `name` | `string` | Required. Unique identifier. The supervisor uses this when launching tasks. |
 | `description` | `string` | Required. What this subagent does. The supervisor uses this to decide which agent to delegate to. |
-| `graphId` | `string` | Required. The graph ID (or assistant ID) registered in `langgraph.json`. |
-| `url` | `string` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote deployment. |
+| `graphId` | `string` | Required. The graph or agent ID. For LangGraph-based deployments, this must match a graph registered in `langgraph.json`. |
+| `url` | `string` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote Agent Protocol server. |
 :::
 
 Register all graphs in the same `langgraph.json` for co-deployed setups:
@@ -151,7 +151,7 @@ A typical interaction follows this sequence:
 sequenceDiagram
     participant User
     participant Supervisor
-    participant Platform as LangSmith Deployment
+    participant Platform as Agent Protocol Server
 
     User->>Supervisor: "Research topic X"
     Supervisor->>Platform: launch(researcher, "topic X")
@@ -199,7 +199,7 @@ ASGI transport eliminates network latency and requires no additional auth config
 
 ### HTTP transport (remote)
 
-Add a `url` field to switch to HTTP transport, where SDK calls go over the network to a remote LangGraph deployment:
+Add a `url` field to switch to HTTP transport, where SDK calls go over the network to a remote Agent Protocol server:
 
 :::python
 ```python
@@ -223,7 +223,7 @@ AsyncSubAgent(
 ```
 :::
 
-Authentication is handled by the LangGraph SDK using `LANGSMITH_API_KEY` (or `LANGGRAPH_API_KEY`) from environment variables.
+For LangGraph deployments, authentication is handled by the LangGraph SDK using `LANGSMITH_API_KEY` (or `LANGGRAPH_API_KEY`) from environment variables. Self-hosted Agent Protocol servers may use a different authentication mechanism.
 
 Use HTTP transport when subagents need independent scaling, different resource profiles, or are maintained by a different team.
 
