@@ -80,8 +80,9 @@ agent = create_deep_agent(
 |-------|------|-------------|
 | `name` | `str` | Required. Unique identifier. The supervisor uses this when launching tasks. |
 | `description` | `str` | Required. What this subagent does. The supervisor uses this to decide which agent to delegate to. |
-| `graph_id` | `str` | Required. The graph or agent ID. For LangGraph-based deployments, this must match a graph registered in `langgraph.json`. |
+| `graph_id` | `str` | Required. The graph ID (or assistant ID) on the Agent Protocol server. For LangGraph-based deployments, this must match a graph registered in `langgraph.json`. |
 | `url` | `str` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote Agent Protocol server. |
+| `headers` | `dict[str, str]` | Optional. Additional headers for requests to the remote server. Use for custom authentication with self-hosted Agent Protocol servers. |
 :::
 
 :::js
@@ -113,11 +114,12 @@ const agent = createDeepAgent({
 |-------|------|-------------|
 | `name` | `string` | Required. Unique identifier. The supervisor uses this when launching tasks. |
 | `description` | `string` | Required. What this subagent does. The supervisor uses this to decide which agent to delegate to. |
-| `graphId` | `string` | Required. The graph or agent ID. For LangGraph-based deployments, this must match a graph registered in `langgraph.json`. |
+| `graphId` | `string` | Required. The graph ID (or assistant ID) on the Agent Protocol server. For LangGraph-based deployments, this must match a graph registered in `langgraph.json`. |
 | `url` | `string` | Optional. When omitted, uses ASGI transport (in-process). When set, uses HTTP transport to a remote Agent Protocol server. |
+| `headers` | `Record<string, string>` | Optional. Additional headers for requests to the remote server. Use for custom authentication with self-hosted Agent Protocol servers. |
 :::
 
-Register all graphs in the same `langgraph.json` for co-deployed setups:
+For LangGraph-based deployments, register all graphs in the same `langgraph.json` for co-deployed setups:
 
 ```json
 {
@@ -169,11 +171,11 @@ sequenceDiagram
     Supervisor-->>User: "Here are the results"
 ```
 
-- **Launch** creates a new thread on the deployment, starts a run with the task description as input, and returns the thread ID as the task ID. The supervisor reports this ID to the user and does not poll for completion.
+- **Launch** creates a new thread on the server, starts a run with the task description as input, and returns the thread ID as the task ID. The supervisor reports this ID to the user and does not poll for completion.
 - **Check** fetches the current run status. If the run succeeded, it retrieves the thread state to extract the subagent's final output. If still running, it reports that to the user.
 - **Update** creates a new run on the same thread with an interrupt multitask strategy. The previous run is interrupted, and the subagent restarts with the full conversation history plus the new instructions. The task ID stays the same.
-- **Cancel** calls `runs.cancel()` on the deployment and marks the task as `"cancelled"`.
-- **List** iterates over all tracked tasks. For non-terminal tasks, it fetches live status from the deployment in parallel. Terminal statuses (`success`, `error`, `cancelled`) are returned from cache.
+- **Cancel** calls `runs.cancel()` on the server and marks the task as `"cancelled"`.
+- **List** iterates over all tracked tasks. For non-terminal tasks, it fetches live status from the server in parallel. Terminal statuses (`success`, `error`, `cancelled`) are returned from cache.
 
 ## Understand state management
 
@@ -186,14 +188,14 @@ Each tracked task records the task ID, agent name, thread ID, run ID, status, an
 :::js
 Task metadata is stored in a dedicated state channel (`asyncTasks`) on the supervisor's graph, separate from the message history. This is critical because deep agents [compact their message history](/oss/deepagents/customization#summarization) when the context window fills up -- if task IDs were only in tool messages, they would be lost during compaction. The dedicated channel ensures the supervisor can always recall its tasks through `list_async_tasks`, even after multiple rounds of summarization.
 
-Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`createdAt`, `lastCheckedAt`, `lastUpdatedAt`).
+Each tracked task records the task ID, agent name, thread ID, run ID, status, and timestamps (`createdAt`, `checkedAt`, `updatedAt`).
 :::
 
 ## Choose a transport
 
 ### ASGI transport (co-deployed)
 
-When a subagent spec omits the `url` field, the LangGraph SDK uses ASGI transport -- SDK calls are routed through in-process function calls rather than HTTP. This requires both graphs to be registered in the same `langgraph.json`.
+When a subagent spec omits the `url` field, the LangGraph SDK uses ASGI transport -- SDK calls are routed through in-process function calls rather than HTTP. For LangGraph-based deployments, this requires both graphs to be registered in the same `langgraph.json`.
 
 ASGI transport eliminates network latency and requires no additional auth configuration. The subagent still runs as a separate thread with its own state. This is the recommended default.
 
@@ -231,11 +233,11 @@ Use HTTP transport when subagents need independent scaling, different resource p
 
 ### Single deployment
 
-All graphs in one `langgraph.json` using ASGI transport. This is the recommended starting point -- one deployment to manage, zero network latency between graphs.
+All agents co-deployed on the same server using ASGI transport. For LangGraph-based deployments, register all graphs in one `langgraph.json`. This is the recommended starting point -- one server to manage, zero network latency between agents.
 
 ### Split deployment
 
-Supervisor in one deployment, subagents in another via HTTP transport. Use when subagents need different compute profiles or independent scaling.
+Supervisor on one server, subagents on another via HTTP transport. Use when subagents need different compute profiles or independent scaling.
 
 ### Hybrid
 
@@ -333,7 +335,7 @@ AsyncSubAgent(
 
 ### Trace with thread IDs
 
-Every async subagent run is a standard LangGraph run, fully visible in LangSmith. The supervisor's trace shows tool calls for `launch`, `check`, `update`, `cancel`, and `list`. Each subagent run appears as a separate trace, linked by thread ID. Use the thread ID (task ID) to correlate supervisor orchestration traces with subagent execution traces.
+When using LangGraph-based deployments, every async subagent run is a standard LangGraph run, fully visible in LangSmith. The supervisor's trace shows tool calls for `launch`, `check`, `update`, `cancel`, and `list`. Each subagent run appears as a separate trace, linked by thread ID. Use the thread ID (task ID) to correlate supervisor orchestration traces with subagent execution traces.
 
 ## Troubleshooting
 
