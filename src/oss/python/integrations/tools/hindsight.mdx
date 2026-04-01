@@ -1,0 +1,254 @@
+---
+title: "Hindsight integration"
+description: "Integrate with the Hindsight memory tools using LangChain Python."
+---
+
+This guide covers how to use Hindsight's long-term memory [tools](/oss/langchain/tools) with LangChain and LangGraph agents. [Hindsight](https://github.com/vectorize-io/hindsight) is an open-source (MIT) memory engine that gives your agents the ability to store, recall, and synthesize memories across conversations.
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `create_hindsight_tools` | [hindsight-langgraph](https://pypi.org/project/hindsight-langgraph/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/hindsight-langgraph?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/hindsight-langgraph?style=flat-square&label=%20) |
+
+### Tools provided
+
+| Tool | Description |
+| :--- | :--- |
+| `hindsight_retain` | Store a memory in the agent's long-term memory bank |
+| `hindsight_recall` | Retrieve relevant memories using multi-strategy search (semantic, BM25, graph, temporal) |
+| `hindsight_reflect` | Synthesize an answer from stored memories using an LLM |
+
+---
+
+## Setup
+
+To use Hindsight tools, you need a running Hindsight instance and a memory bank.
+
+### Run Hindsight locally
+
+```bash
+docker run --rm -it --pull always -p 8888:8888 \
+  -e HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY \
+  -v $HOME/.hindsight-docker:/home/hindsight/.pg0 \
+  ghcr.io/vectorize-io/hindsight:latest
+```
+
+Or install directly:
+
+```bash
+pip install hindsight-api
+HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY hindsight-api
+```
+
+See the [Hindsight installation guide](https://github.com/vectorize-io/hindsight#quick-start) for more deployment options (Kubernetes, embedded, bare metal).
+
+### Credentials
+
+```python
+from hindsight_client import Hindsight
+
+# Point to your self-hosted instance
+client = Hindsight(base_url="http://localhost:8888")
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -U hindsight-langgraph
+```
+
+```bash uv
+uv add hindsight-langgraph
+```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Create the tools with `create_hindsight_tools`, pointing at a specific memory bank:
+
+```python
+from hindsight_client import Hindsight
+from hindsight_langgraph import create_hindsight_tools
+
+client = Hindsight(base_url="http://localhost:8888")
+
+tools = create_hindsight_tools(
+    client=client,
+    bank_id="my-memory-bank",
+)
+```
+
+You can control which tools are created and customize their behavior:
+
+```python
+tools = create_hindsight_tools(
+    client=client,
+    bank_id="my-memory-bank",
+    budget="high",          # low, mid, or high — controls recall depth
+    max_tokens=4096,        # max tokens in recall/reflect responses
+    tags=["conversation"],  # tag memories on retain
+    recall_tags=["conversation"],  # filter memories on recall
+    include_retain=True,
+    include_recall=True,
+    include_reflect=True,
+)
+```
+
+---
+
+## Invocation
+
+### Directly
+
+```python
+retain_tool, recall_tool, reflect_tool = tools
+
+# Store a memory
+result = await retain_tool.ainvoke("The user prefers dark mode and uses Python 3.12")
+print(result)
+```
+
+```text
+Memory stored successfully.
+```
+
+```python
+# Recall relevant memories
+result = await recall_tool.ainvoke("What are the user's preferences?")
+print(result)
+```
+
+```text
+1. The user prefers dark mode and uses Python 3.12
+```
+
+```python
+# Synthesize an answer from memories
+result = await reflect_tool.ainvoke("Summarize what you know about this user")
+print(result)
+```
+
+```text
+Based on stored memories, the user prefers dark mode for their interface and works with Python 3.12.
+```
+
+### Within a LangGraph agent
+
+The most common use case is binding tools to a chat model in a LangGraph agent:
+
+```python
+from hindsight_client import Hindsight
+from hindsight_langgraph import create_hindsight_tools
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+client = Hindsight(base_url="http://localhost:8888")
+tools = create_hindsight_tools(client=client, bank_id="my-memory-bank")
+
+model = ChatOpenAI(model="gpt-4o")
+agent = create_react_agent(model, tools)
+
+# The agent will use retain/recall/reflect as needed
+response = await agent.ainvoke(
+    {"messages": [{"role": "user", "content": "Remember that my favorite color is blue"}]}
+)
+```
+
+### With plain LangChain (no LangGraph)
+
+The tools are standard LangChain `@tool` functions, so they work without LangGraph:
+
+```python
+from langchain_openai import ChatOpenAI
+
+model = ChatOpenAI(model="gpt-4o").bind_tools(tools)
+
+# Run the tool loop yourself
+response = await model.ainvoke("What do you know about me?")
+```
+
+### With per-user memory banks
+
+For multi-user applications, create tools scoped to each user's bank:
+
+```python
+from hindsight_langgraph import create_hindsight_tools
+
+# Each user gets their own isolated memory bank
+tools = create_hindsight_tools(
+    client=client,
+    bank_id="user-456",
+)
+```
+
+For dynamic per-user routing in LangGraph, use the **nodes** pattern instead — the recall and retain nodes support `bank_id_from_config` to resolve bank IDs from `RunnableConfig` at runtime. See the [LangGraph nodes](#langgraph-nodes) section below.
+
+---
+
+## LangGraph nodes
+
+For automatic memory injection without agent tool-calling, use the pre-built nodes:
+
+```bash
+pip install -U "hindsight-langgraph[langgraph]"
+```
+
+```python
+from hindsight_client import Hindsight
+from hindsight_langgraph import create_recall_node, create_retain_node
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langchain_openai import ChatOpenAI
+
+client = Hindsight(base_url="http://localhost:8888")
+
+# bank_id_from_config resolves bank ID from RunnableConfig at runtime
+recall = create_recall_node(client=client, bank_id_from_config="user_id")
+retain = create_retain_node(client=client, bank_id_from_config="user_id")
+
+model = ChatOpenAI(model="gpt-4o")
+
+async def chat(state: MessagesState):
+    response = await model.ainvoke(state["messages"])
+    return {"messages": [response]}
+
+graph = StateGraph(MessagesState)
+graph.add_node("recall", recall)
+graph.add_node("chat", chat)
+graph.add_node("retain", retain)
+graph.add_edge(START, "recall")
+graph.add_edge("recall", "chat")
+graph.add_edge("chat", "retain")
+graph.add_edge("retain", END)
+
+app = graph.compile()
+
+# Each user gets their own isolated memory bank
+await app.ainvoke(
+    {"messages": [{"role": "user", "content": "Hello!"}]},
+    config={"configurable": {"user_id": "user-456"}},
+)
+```
+
+The recall node searches for relevant memories and injects them as a `SystemMessage` before the LLM sees the conversation. The retain node stores the conversation after the LLM responds. Both resolve per-user bank IDs from `config["configurable"]` at runtime.
+
+---
+
+## API reference
+
+For the full API and all configuration options, see the [Hindsight LangGraph documentation](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/langgraph).

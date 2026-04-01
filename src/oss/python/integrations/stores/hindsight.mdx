@@ -1,0 +1,161 @@
+---
+title: "Hindsight integration"
+description: "Integrate with the HindsightStore using LangChain Python."
+---
+
+This will help you get started with the Hindsight [BaseStore](/oss/integrations/stores) for LangGraph. For detailed documentation of all `HindsightStore` features and configurations, head to the [Hindsight docs](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/langgraph).
+
+## Overview
+
+`HindsightStore` is an implementation of LangGraph's `BaseStore` backed by [Hindsight](https://github.com/vectorize-io/hindsight), an open-source (MIT) long-term memory engine. It replaces `InMemoryStore` with persistent, semantic memory that survives across restarts and scales across users.
+
+Unlike `InMemoryStore` or `PostgresStore` which provide basic key-value or vector similarity lookups, `HindsightStore` uses four parallel retrieval strategies (semantic embeddings, BM25 keyword search, entity graph traversal, temporal recency) and automatically extracts structured facts from raw conversations.
+
+### Integration details
+
+| Class | Package | Local | [JS support](https://js.langchain.com) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `HindsightStore` | [hindsight-langgraph](https://pypi.org/project/hindsight-langgraph/) | ✅ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/hindsight-langgraph?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/hindsight-langgraph?style=flat-square&label=%20) |
+
+---
+
+## Setup
+
+You need a running Hindsight instance.
+
+### Run Hindsight locally
+
+```bash
+docker run --rm -it --pull always -p 8888:8888 \
+  -e HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY \
+  -v $HOME/.hindsight-docker:/home/hindsight/.pg0 \
+  ghcr.io/vectorize-io/hindsight:latest
+```
+
+Or install directly:
+
+```bash
+pip install hindsight-api
+HINDSIGHT_API_LLM_API_KEY=$OPENAI_API_KEY hindsight-api
+```
+
+See the [Hindsight installation guide](https://github.com/vectorize-io/hindsight#quick-start) for more options (Kubernetes, embedded, bare metal).
+
+### Credentials
+
+```python
+from hindsight_client import Hindsight
+
+# Point to your self-hosted instance
+client = Hindsight(base_url="http://localhost:8888")
+```
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -U "hindsight-langgraph[langgraph]"
+```
+
+```bash uv
+uv add "hindsight-langgraph[langgraph]"
+```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+```python
+from hindsight_client import Hindsight
+from hindsight_langgraph import HindsightStore
+
+client = Hindsight(base_url="http://localhost:8888")
+store = HindsightStore(client=client)
+```
+
+You can also tag all stored memories:
+
+```python
+store = HindsightStore(
+    client=client,
+    tags=["conversation"],  # optional: tag all stored memories
+)
+```
+
+---
+
+## Usage
+
+### Store and retrieve memories
+
+```python
+# Store a memory — namespace maps to a Hindsight bank
+await store.aput(
+    namespace=("user", "alice"),
+    key="preference-1",
+    value={"text": "Alice prefers dark mode and concise responses"},
+)
+
+# Search memories semantically
+results = await store.asearch(
+    namespace_prefix=("user", "alice"),
+    query="What does Alice prefer?",
+    limit=5,
+)
+
+for item in results:
+    print(f"{item.key}: {item.value}")
+```
+
+```text
+preference-1: {'text': 'Alice prefers dark mode and concise responses'}
+```
+
+### Use with LangGraph's `store=` parameter
+
+The primary use case is as a drop-in replacement for `InMemoryStore` in LangGraph:
+
+```python
+from hindsight_client import Hindsight
+from hindsight_langgraph import HindsightStore
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+client = Hindsight(base_url="http://localhost:8888")
+store = HindsightStore(client=client)
+
+model = ChatOpenAI(model="gpt-4o")
+agent = create_react_agent(model, tools=[], store=store)
+
+# Memories persist across invocations and restarts
+response = await agent.ainvoke(
+    {"messages": [{"role": "user", "content": "Remember that I like Python"}]},
+    config={"configurable": {"user_id": "alice"}},
+)
+```
+
+### Namespace mapping
+
+Namespace tuples are joined with `.` to form Hindsight bank IDs:
+
+| Namespace | Bank ID |
+| :--- | :--- |
+| `("user", "alice")` | `user.alice` |
+| `("project", "beta")` | `project.beta` |
+| `()` (empty) | `default` |
+
+---
+
+## Limitations
+
+- **Async-only**: Sync methods (`get`, `put`, `search`) raise `NotImplementedError`. Use the async variants (`aget`, `aput`, `asearch`).
+- **Delete is a no-op**: Hindsight is append-oriented; `adelete` logs a debug message but does not remove data.
+- **`alist_namespaces` is session-scoped**: Only tracks namespaces written via `aput` in the current process.
+- **`aget` uses semantic recall**: There is no direct key-value lookup; it uses recall with `document_id` matching.
+
+---
+
+## API reference
+
+For detailed documentation of all `HindsightStore` features and configurations, head to the [Hindsight GitHub repo](https://github.com/vectorize-io/hindsight/tree/main/hindsight-integrations/langgraph).
