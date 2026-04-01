@@ -50,9 +50,17 @@ graph LR
 
 For the backend endpoint:
 
+::::js
 ```bash
 bun add @copilotkit/runtime hono
 ```
+::::
+
+::::python
+```bash
+uv add copilotkit ag-ui-langgraph fastapi uvicorn
+```
+::::
 
 For the frontend app:
 
@@ -64,8 +72,9 @@ bun add @copilotkit/react-core @copilotkit/react-ui @hashbrownai/core @hashbrown
 
 The key idea is that the LangGraph deployment does not only serve graphs. It can also load an HTTP app, which lets you mount extra routes next to the deployment itself.
 
-In `langgraph.json`, point `http.app` at your Hono entrypoint:
+In `langgraph.json`, point `http.app` at your custom app entrypoint:
 
+::::js
 ```json
 {
   "graphs": {
@@ -76,7 +85,23 @@ In `langgraph.json`, point `http.app` at your Hono entrypoint:
   }
 }
 ```
+::::
 
+::::python
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "copilotkit_shadify": "./main.py:agent"
+  },
+  "http": {
+    "app": "./main.py:app"
+  }
+}
+```
+::::
+
+::::js
 Then create the Hono app and register the CopilotKit route:
 
 ```ts app.ts
@@ -87,9 +112,62 @@ export const app = new Hono();
 
 registerCopilotKit(app);
 ```
+::::
 
-This is the important extension point: `registerCopilotKit(app)` mounts a provider-specific runtime without replacing the underlying LangGraph deployment.
+::::python
+In Python, create a `FastAPI` app and expose the LangGraph agent through CopilotKit's AG-UI bridge:
 
+```python main.py
+from typing import Any, TypedDict
+
+from ag_ui_langgraph import add_langgraph_fastapi_endpoint
+from copilotkit import CopilotKitMiddleware, CopilotKitState, LangGraphAGUIAgent
+from fastapi import FastAPI
+from langchain.agents import create_agent
+
+from src.middleware import apply_structured_output_schema, normalize_context
+
+
+class AgentState(CopilotKitState):
+    pass
+
+
+class AgentContext(TypedDict, total=False):
+    output_schema: dict[str, Any]
+
+
+agent = create_agent(
+    model="openai:gpt-5.2",
+    middleware=[
+        normalize_context,
+        CopilotKitMiddleware(),
+        apply_structured_output_schema,
+    ],
+    context_schema=AgentContext,
+    state_schema=AgentState,
+    system_prompt=(
+        "You are a helpful UI assistant. Build visual responses using the "
+        "available components."
+    ),
+)
+
+app = FastAPI()
+
+add_langgraph_fastapi_endpoint(
+    app=app,
+    agent=LangGraphAGUIAgent(
+        name="copilotkit_shadify",
+        description="A UI assistant that returns structured component payloads.",
+        graph=agent,
+    ),
+    path="/",
+)
+```
+::::
+
+This custom app is the important extension point: it mounts a CopilotKit-aware runtime without replacing the underlying LangGraph deployment.
+
+::::js
 Inside that route, create a `CopilotRuntime` and point it back at the deployed graph using `LangGraphAgent`:
 
 ```ts expandable copilotkit.ts
@@ -167,6 +245,65 @@ function normalizeCopilotContext(context: unknown): unknown {
   return Object.fromEntries(normalizedEntries);
 }
 ```
+::::
+
+::::python
+In Python, the equivalent work happens in middleware: normalize the CopilotKit context and forward the `output_schema` from `useAgentContext(...)` into the model's structured output configuration.
+
+```python expandable src/middleware.py
+import json
+from collections.abc import Mapping
+
+from langchain.agents.middleware import before_agent, wrap_model_call
+from langchain.agents.structured_output import ProviderStrategy
+
+
+@wrap_model_call
+async def apply_structured_output_schema(request, handler):
+    schema = None
+    runtime = getattr(request, "runtime", None)
+    runtime_context = getattr(runtime, "context", None)
+
+    if isinstance(runtime_context, Mapping):
+        schema = runtime_context.get("output_schema")
+
+    if schema is None and isinstance(getattr(request, "state", None), dict):
+        copilot_context = request.state.get("copilotkit", {}).get("context")
+        if isinstance(copilot_context, list):
+            for item in copilot_context:
+                if isinstance(item, dict) and item.get("description") == "output_schema":
+                    schema = item.get("value")
+                    break
+
+    if isinstance(schema, str):
+        try:
+            schema = json.loads(schema)
+        except json.JSONDecodeError:
+            schema = None
+
+    if isinstance(schema, dict):
+        request = request.override(
+            response_format=ProviderStrategy(schema=schema, strict=True),
+        )
+
+    return await handler(request)
+
+
+@before_agent
+def normalize_context(state, runtime):
+    copilotkit_state = state.get("copilotkit", {})
+    context = copilotkit_state.get("context")
+
+    if isinstance(context, list):
+        normalized = [
+            item.model_dump() if hasattr(item, "model_dump") else item
+            for item in context
+        ]
+        return {"copilotkit": {**copilotkit_state, "context": normalized}}
+
+    return None
+```
+::::
 
 The result is a clean separation of concerns:
 
