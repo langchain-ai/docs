@@ -1,7 +1,8 @@
 # :snippet-start: middleware-dynamic-prompt-decorator-py
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from collections.abc import Callable
+
+from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain.messages import SystemMessage
-from typing import Callable
 
 
 @wrap_model_call
@@ -19,9 +20,9 @@ def add_context(
 # :snippet-end:
 
 # :snippet-start: middleware-dynamic-prompt-class-py
+from collections.abc import Callable
+
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain.messages import SystemMessage
-from typing import Callable
 
 
 class ContextMiddleware(AgentMiddleware):
@@ -42,8 +43,8 @@ class ContextMiddleware(AgentMiddleware):
 # :remove-start:
 if __name__ == "__main__":
     from langchain.agents import create_agent
-    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain.messages import AIMessage
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
     captured_messages: list = []
 

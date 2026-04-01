@@ -1,9 +1,10 @@
 # :snippet-start: middleware-tool-call-monitoring-decorator-py
+from collections.abc import Callable
+
 from langchain.agents.middleware import wrap_tool_call
-from langchain.tools.tool_node import ToolCallRequest
 from langchain.messages import ToolMessage
+from langchain.tools.tool_node import ToolCallRequest
 from langgraph.types import Command
-from typing import Callable
 
 
 @wrap_tool_call
@@ -15,7 +16,7 @@ def monitor_tool(
     print(f"Arguments: {request.tool_call['args']}")
     try:
         result = handler(request)
-        print(f"Tool completed successfully")
+        print("Tool completed successfully")
         return result
     except Exception as e:
         print(f"Tool failed: {e}")
@@ -25,11 +26,13 @@ def monitor_tool(
 # :snippet-end:
 
 # :snippet-start: middleware-tool-call-monitoring-class-py
-from langchain.tools.tool_node import ToolCallRequest
+from collections.abc import Callable
+
 from langchain.agents.middleware import AgentMiddleware
 from langchain.messages import ToolMessage
+from langchain.tools.tool_node import ToolCallRequest
 from langgraph.types import Command
-from typing import Callable
+
 
 class ToolMonitoringMiddleware(AgentMiddleware):
     def wrap_tool_call(
@@ -41,7 +44,7 @@ class ToolMonitoringMiddleware(AgentMiddleware):
         print(f"Arguments: {request.tool_call['args']}")
         try:
             result = handler(request)
-            print(f"Tool completed successfully")
+            print("Tool completed successfully")
             return result
         except Exception as e:
             print(f"Tool failed: {e}")

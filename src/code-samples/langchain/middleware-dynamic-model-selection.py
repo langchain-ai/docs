@@ -1,14 +1,18 @@
 # :remove-start:
-from unittest.mock import MagicMock, patch as _patch
+from unittest.mock import MagicMock
+from unittest.mock import patch as _patch
+
 _mock_model = MagicMock()
-_patcher = _patch("langchain.chat_models.base._init_chat_model_helper", return_value=_mock_model)
+_patcher = _patch(
+    "langchain.chat_models.base._init_chat_model_helper", return_value=_mock_model
+)
 _patcher.start()
 # :remove-end:
 # :snippet-start: middleware-dynamic-model-selection-decorator-py
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from langchain.chat_models import init_chat_model
-from typing import Callable
+from collections.abc import Callable
 
+from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
+from langchain.chat_models import init_chat_model
 
 complex_model = init_chat_model("gpt-4.1")
 simple_model = init_chat_model("gpt-4.1-mini")
@@ -16,6 +20,7 @@ simple_model = init_chat_model("gpt-4.1-mini")
 complex_model = init_chat_model("claude-sonnet-4-6")
 simple_model = init_chat_model("claude-haiku-4-5-20251001")
 # :remove-end:
+
 
 @wrap_model_call
 def dynamic_model(
@@ -32,9 +37,10 @@ def dynamic_model(
 # :snippet-end:
 
 # :snippet-start: middleware-dynamic-model-selection-class-py
+from collections.abc import Callable
+
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain.chat_models import init_chat_model
-from typing import Callable
 
 complex_model = init_chat_model("gpt-4.1")
 simple_model = init_chat_model("gpt-4.1-mini")
@@ -42,6 +48,7 @@ simple_model = init_chat_model("gpt-4.1-mini")
 complex_model = init_chat_model("claude-sonnet-4-6")
 simple_model = init_chat_model("claude-haiku-4-5-20251001")
 # :remove-end:
+
 
 class DynamicModelMiddleware(AgentMiddleware):
     def wrap_model_call(
@@ -68,7 +75,9 @@ from langchain.messages import AIMessage
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 assert dynamic_model is not None, "Decorator middleware should be defined"
-assert issubclass(DynamicModelMiddleware, AgentMiddleware), "Class middleware should subclass AgentMiddleware"
+assert issubclass(DynamicModelMiddleware, AgentMiddleware), (
+    "Class middleware should subclass AgentMiddleware"
+)
 
 _simple_calls: list = []
 _complex_calls: list = []
@@ -77,17 +86,13 @@ _complex_calls: list = []
 class _SimpleRouteFake(GenericFakeChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         _simple_calls.append(messages)
-        return super()._generate(
-            messages, stop=stop, run_manager=run_manager, **kwargs
-        )
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
 class _ComplexRouteFake(GenericFakeChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         _complex_calls.append(messages)
-        return super()._generate(
-            messages, stop=stop, run_manager=run_manager, **kwargs
-        )
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
 def _assert_model_routing(middleware) -> None:
