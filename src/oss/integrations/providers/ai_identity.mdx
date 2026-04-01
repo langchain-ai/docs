@@ -1,0 +1,143 @@
+# AI Identity
+
+>[AI Identity](https://ai-identity.co) is an identity and access management platform for AI agents.
+>It gives each agent its own cryptographic API key, scoped permissions, and a tamper-proof audit trail —
+>a proxy gateway that sits between your agents and external APIs and enforces least-privilege access at runtime.
+>Think of it as "Okta for AI agents": deploy in 15 minutes, not 15 weeks.
+
+## Installation
+
+```bash
+pip install langchain-ai-identity
+```
+
+Get your API key and agent ID at [ai-identity.co](https://ai-identity.co).
+
+## Configuration
+
+```python
+import os
+
+os.environ["AI_IDENTITY_API_KEY"] = "aid_sk_..."  # your agent's scoped key
+os.environ["AI_IDENTITY_AGENT_ID"] = "your-agent-id"
+os.environ["OPENAI_API_KEY"] = "sk-..."
+```
+
+## Quick Start
+
+The fastest path is `create_ai_identity_agent()` — a one-call factory that wires
+an `AgentExecutor` with per-agent identity, gateway enforcement, and audit logging:
+
+```python
+from langchain_ai_identity import create_ai_identity_agent
+from langchain_community.tools import DuckDuckGoSearchRun
+
+agent = create_ai_identity_agent(
+    tools=[DuckDuckGoSearchRun()],
+    agent_id="your-agent-id",
+    ai_identity_api_key="aid_sk_...",
+    openai_api_key="sk-...",
+)
+
+result = agent.invoke({"input": "What is the latest news about AI agent security?"})
+print(result["output"])
+```
+
+Every tool call and LLM invocation is now:
+- Authenticated against the AI Identity gateway before execution
+- Checked against the agent's scoped policy (allow/deny per endpoint)
+- Logged to a tamper-proof, HMAC-chained audit trail
+
+## Components
+
+### `AIIdentityChatOpenAI`
+
+A drop-in replacement for `ChatOpenAI` that routes every LLM call through the
+AI Identity gateway before it reaches OpenAI. If the agent's policy denies the
+call, a `ValueError` is raised (configurable via `fail_closed`).
+
+```python
+from langchain_ai_identity import AIIdentityChatOpenAI
+
+llm = AIIdentityChatOpenAI(
+    agent_id="your-agent-id",
+    ai_identity_api_key="aid_sk_...",
+    model="gpt-4o",
+    fail_closed=True,  # deny if gateway is unreachable
+)
+```
+
+### `AIIdentityToolkit`
+
+Wraps any list of LangChain tools with gateway pre-checks. Each tool call is
+verified against the agent's policy before execution; denied calls raise a
+`ToolException`.
+
+```python
+from langchain_community.tools import WikipediaQueryRun
+from langchain_ai_identity import AIIdentityToolkit
+
+toolkit = AIIdentityToolkit(
+    tools=[WikipediaQueryRun()],
+    agent_id="your-agent-id",
+    api_key="aid_sk_...",
+)
+
+secured_tools = toolkit.get_tools()
+```
+
+### `AIIdentityCallbackHandler`
+
+A `BaseCallbackHandler` that logs every LLM start/end, tool start/end, and
+chain error event to the AI Identity audit trail. Attach it to any existing
+LangChain chain without modifying your agent code.
+
+```python
+from langchain_ai_identity import AIIdentityCallbackHandler
+from langchain_openai import ChatOpenAI
+
+handler = AIIdentityCallbackHandler(
+    agent_id="your-agent-id",
+    api_key="aid_sk_...",
+)
+
+llm = ChatOpenAI(callbacks=[handler])
+```
+
+An async variant (`AIIdentityAsyncCallbackHandler`) is also available for
+async chains.
+
+## Why AI Identity
+
+| Without AI Identity | With AI Identity |
+|---|---|
+| All agents share one `OPENAI_API_KEY` | Each agent has a scoped `aid_sk_` key |
+| No visibility into which agent called what | Every call attributed to a specific agent |
+| Key rotation takes down all agents at once | 24-hour grace period — zero downtime rotation |
+| Audit logs show "the app" made a call | Per-agent, per-endpoint tamper-proof audit chain |
+| Prompt injection can exfiltrate your keys | Agents never hold upstream keys — gateway injects them |
+
+## Security model
+
+AI Identity's gateway uses a **fail-closed** policy engine: if the gateway is
+unreachable, times out, or has no active policy for the agent, the call is
+**denied by default**. This means a misconfigured or compromised agent cannot
+silently fall back to unrestricted access.
+
+The audit log is HMAC-SHA256 chained — each entry references the hash of the
+previous entry. Chain integrity can be verified at any time:
+
+```python
+from ai_identity import SyncAIIdentityClient
+
+client = SyncAIIdentityClient(api_key="your-admin-key")
+result = client.audit.verify_chain("your-agent-id")
+print(f"Chain valid: {result.valid} ({result.entries_verified} entries verified)")
+```
+
+## Resources
+
+- **Documentation**: [ai-identity-api.onrender.com/docs](https://ai-identity-api.onrender.com/docs)
+- **GitHub**: [github.com/Levaj2000/AI-Identity](https://github.com/Levaj2000/AI-Identity)
+- **Dashboard**: [ai-identity.co](https://ai-identity.co)
+- **Support**: jeff@ai-identity.co
