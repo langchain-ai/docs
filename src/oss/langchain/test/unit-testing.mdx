@@ -30,6 +30,104 @@ model.invoke("hello, again!")
 # AIMessage(content='bar', ...)
 ```
 
+## Simpler responses with `FakeListChatModel`
+
+For tests that only need plain text responses, @[`FakeListChatModel`] is simpler--pass a list of strings instead of constructing `AIMessage` objects manually:
+
+```python
+from langchain_core.language_models import FakeListChatModel
+
+model = FakeListChatModel(responses=["Paris", "The Eiffel Tower"])
+
+model.invoke("What is the capital of France?")
+# AIMessage(content='Paris')
+
+model.invoke("What is a famous landmark there?")
+# AIMessage(content='The Eiffel Tower')
+```
+
+Unlike `GenericFakeChatModel`, `FakeListChatModel` **cycles** through its response list--if invoked more times than the list length, it wraps back to the beginning. Use `GenericFakeChatModel` when you need exact per-turn control (tool calls, errors); use `FakeListChatModel` when simple string responses are enough.
+
+## Testing the full tool call loop
+
+The most common agent pattern is: receive a message → call a tool → use the result to answer. Script this full loop with `GenericFakeChatModel` by providing two responses in sequence:
+
+```python
+import pytest
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, HumanMessage, ToolCall
+from langchain import create_agent, tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get the weather for a city."""
+    return f"72°F and sunny in {city}"
+
+def test_agent_calls_tool_then_answers():
+    model = GenericFakeChatModel(messages=iter([
+        # Turn 1: model decides to call the tool
+        AIMessage(
+            content="",
+            tool_calls=[ToolCall(name="get_weather", args={"city": "Tokyo"}, id="call_1")]
+        ),
+        # Turn 2: model uses the tool result to answer
+        AIMessage(content="It is 72°F and sunny in Tokyo."),
+    ]))
+
+    agent = create_agent(model, tools=[get_weather])
+    result = agent.invoke({"messages": [HumanMessage(content="Weather in Tokyo?")]})
+
+    final = result["messages"][-1]
+    assert isinstance(final, AIMessage)
+    assert "Tokyo" in final.content
+
+    # Verify the tool was actually called
+    tool_msgs = [m for m in result["messages"] if hasattr(m, "tool_calls") and m.tool_calls]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0].tool_calls[0]["name"] == "get_weather"
+```
+
+## Reuse fake models with pytest fixtures
+
+Avoid constructing a new fake model in every test function. Use a `pytest` fixture to share setup:
+
+```python
+import pytest
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, HumanMessage, ToolCall
+from langchain import create_agent, tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get the weather for a city."""
+    return f"72°F and sunny in {city}"
+
+@pytest.fixture
+def weather_model():
+    return GenericFakeChatModel(messages=iter([
+        AIMessage(
+            content="",
+            tool_calls=[ToolCall(name="get_weather", args={"city": "Tokyo"}, id="call_1")]
+        ),
+        AIMessage(content="It is 72°F and sunny in Tokyo."),
+    ]))
+
+def test_tool_is_called(weather_model):
+    agent = create_agent(weather_model, tools=[get_weather])
+    result = agent.invoke({"messages": [HumanMessage(content="Weather in Tokyo?")]})
+    tool_msgs = [m for m in result["messages"] if hasattr(m, "tool_calls") and m.tool_calls]
+    assert tool_msgs[0].tool_calls[0]["name"] == "get_weather"
+
+def test_final_response(weather_model):
+    agent = create_agent(weather_model, tools=[get_weather])
+    result = agent.invoke({"messages": [HumanMessage(content="Weather in Tokyo?")]})
+    assert "Tokyo" in result["messages"][-1].content
+```
+
+<Note>
+`GenericFakeChatModel` uses a Python iterator--once exhausted, it cannot be reused across tests. The default pytest fixture scope is `function`, which creates a fresh instance per test. Do not change the scope to `session` or `module` unless you intend the same iterator to be shared and consumed across tests.
+</Note>
+
 ## InMemorySaver checkpointer
 
 To enable persistence during testing, you can use the @[`InMemorySaver`] checkpointer. This allows you to simulate multiple turns to test state-dependent behavior:
@@ -55,6 +153,7 @@ agent.invoke(
     config={"configurable": {"thread_id": "session-1"}}
 )
 ```
+
 :::
 
 :::js
