@@ -55,6 +55,6 @@ assert "internal_notes" not in streamed_nodes, (
 )
 
 if __name__ == "__main__":
-    print("\n✓ nostream tag example works as expected")  # noqa: T201
+    print("\n✓ nostream tag example works as expected")
 # :remove-end:
 # :snippet-end:
