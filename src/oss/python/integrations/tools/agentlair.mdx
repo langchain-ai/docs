@@ -1,0 +1,194 @@
+---
+title: "AgentLair tools integration"
+description: "Integrate with AgentLair identity, email, vault, and audit trail tools using LangChain Python."
+---
+
+AgentLair gives any LangChain agent a **persistent identity** — a real `@agentlair.dev` email address, an encrypted cross-session vault, and an immutable audit trail — in three lines of code.
+
+This guide shows how to use the five AgentLair tools with LangChain agents. For full details, see the [AgentLair documentation](https://agentlair.dev).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [agentlair_tools](https://github.com/piiiico/agentlair-langchain-integration) | [langchain-agentlair](https://pypi.org/project/langchain-agentlair/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-agentlair?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-agentlair?style=flat-square&label=%20) |
+
+### Features
+
+- 📧 **Send and receive real email** from a persistent `@agentlair.dev` address
+- 🔐 **Encrypted cross-session vault** — store secrets and state that survive container restarts
+- 📋 **Immutable audit trail** — every tool call logged with timestamp and agent identifier
+- 🆔 **Agent identity in metadata** — all tools carry `metadata["agent_email"]` for downstream tracing
+
+---
+
+## Setup
+
+### Credentials
+
+Get an API key and claim your agent's email address at [agentlair.dev](https://agentlair.dev).
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "AGENTLAIR_API_KEY" not in os.environ:
+    os.environ["AGENTLAIR_API_KEY"] = getpass.getpass("Enter your AgentLair API key: ")
+
+# Set the agent's persistent email address
+os.environ["AGENTLAIR_EMAIL"] = "mybot@agentlair.dev"
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability of your tool calls:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-agentlair
+    ```
+    ```python uv
+    uv add langchain-agentlair
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Create an `AgentLairClient` and get the tools:
+
+```python Initialize tools icon="robot"
+from langchain_agentlair import AgentLairClient, agentlair_tools
+
+client = AgentLairClient()  # reads AGENTLAIR_API_KEY from environment
+tools = agentlair_tools(client, agent_email="mybot@agentlair.dev")
+
+# tools is a list of five BaseTool objects:
+# - send_email
+# - check_inbox
+# - vault_store
+# - vault_get
+# - log_observation
+
+print([t.name for t in tools])
+# ['send_email', 'check_inbox', 'vault_store', 'vault_get', 'log_observation']
+```
+
+---
+
+## Invocation
+
+### Directly
+
+```python Call send_email directly icon="rocket"
+send_tool = next(t for t in tools if t.name == "send_email")
+
+result = send_tool.invoke({
+    "to": "colleague@example.com",
+    "subject": "Hello from my agent",
+    "body": "This email was sent by a LangChain agent with a persistent identity."
+})
+print(result)
+```
+
+```python Call vault_store and vault_get icon="rocket"
+vault_store = next(t for t in tools if t.name == "vault_store")
+vault_get = next(t for t in tools if t.name == "vault_get")
+
+vault_store.invoke({"key": "api-token", "value": "secret123"})
+result = vault_get.invoke({"key": "api-token"})
+print(result)  # {"key": "api-token", "value": "secret123"}
+```
+
+### Within an agent
+
+Use the tools with a LangGraph React agent:
+
+```python Use in LangGraph agent icon="briefcase"
+import getpass
+import os
+
+if "OPENAI_API_KEY" not in os.environ:
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter your OpenAI API key: ")
+```
+
+```python
+pip install -qU langgraph langchain-openai
+```
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain_agentlair import AgentLairClient, agentlair_tools
+from langgraph.prebuilt import create_react_agent
+
+client = AgentLairClient()
+tools = agentlair_tools(client, agent_email="mybot@agentlair.dev")
+
+model = init_chat_model(model="gpt-4o", model_provider="openai")
+agent = create_react_agent(model, tools)
+
+result = agent.invoke({
+    "messages": [{
+        "role": "user",
+        "content": "Store the value 'active' under key 'status' in my vault, then check my inbox."
+    }]
+})
+
+print(result["messages"][-1].content)
+```
+
+---
+
+## Adding an audit trail to an existing agent
+
+Use `AgentLairCallbackHandler` to add an immutable audit trail to any existing LangChain agent without changing its tools:
+
+```python Audit trail via callbacks icon="flask"
+from langchain.chat_models import init_chat_model
+from langchain_agentlair import AgentLairClient, AgentLairCallbackHandler
+from langchain.agents import AgentExecutor
+
+client = AgentLairClient()
+handler = AgentLairCallbackHandler(client=client, agent_email="mybot@agentlair.dev")
+
+# Attach to any LangChain component
+model = init_chat_model(model="gpt-4o", callbacks=[handler])
+
+# Every tool call now logs:
+# - tool.start  — before tool runs (records input)
+# - tool.end    — after tool succeeds (records output + elapsed ms)
+# - tool.error  — if tool raises
+# - agent.finish — when agent returns final answer
+```
+
+---
+
+## Agent identity in tool metadata
+
+All tools carry the agent's email in `.metadata` for downstream tracing and governance:
+
+```python
+for tool in tools:
+    print(tool.name, tool.metadata)
+# send_email    {'agent_email': 'mybot@agentlair.dev', 'provider': 'agentlair'}
+# check_inbox   {'agent_email': 'mybot@agentlair.dev', 'provider': 'agentlair'}
+# vault_store   {'agent_email': 'mybot@agentlair.dev', 'provider': 'agentlair'}
+# vault_get     {'agent_email': 'mybot@agentlair.dev', 'provider': 'agentlair'}
+# log_observation {'agent_email': 'mybot@agentlair.dev', 'provider': 'agentlair'}
+```
+
+---
+
+## API Reference
+
+- [langchain-agentlair on PyPI](https://pypi.org/project/langchain-agentlair/)
+- [Source on GitHub](https://github.com/piiiico/agentlair-langchain-integration)
+- [AgentLair documentation](https://agentlair.dev)
