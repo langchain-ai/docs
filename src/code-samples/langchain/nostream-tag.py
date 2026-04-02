@@ -4,70 +4,54 @@
 from typing import Any, TypedDict
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import BaseMessage
 from langgraph.graph import START, StateGraph
 
-# Create two models: one that streams, one that doesn't
-streaming_model = ChatAnthropic(
-    model_name="claude-3-haiku-20240307", timeout=None, stop=None
+stream_model = ChatAnthropic(model_name="claude-3-haiku-20240307")
+internal_model = ChatAnthropic(model_name="claude-3-haiku-20240307").with_config(
+    {"tags": ["nostream"]}
 )
-internal_model = ChatAnthropic(
-    model_name="claude-3-haiku-20240307", timeout=None, stop=None
-).with_config({"tags": ["nostream"]})
 
 
 class State(TypedDict):
-    """State for the graph."""
-
     topic: str
-    public_response: str
-    internal_analysis: str
+    answer: str
+    notes: str
 
 
-def generate_response(state: State) -> dict[str, Any]:
-    """Generate a public response that will be streamed."""
-    topic = state["topic"]
-    response = streaming_model.invoke(
-        [{"role": "user", "content": f"Write a short response about {topic}"}]
+def answer(state: State) -> dict[str, Any]:
+    r = stream_model.invoke(
+        [{"role": "user", "content": f"Reply briefly about {state['topic']}"}]
     )
-    return {"public_response": response.content}
+    return {"answer": r.content}
 
 
-def analyze_internally(state: State) -> dict[str, Any]:
-    """Analyze internally without streaming tokens."""
-    topic = state["topic"]
-    # This model has the "nostream" tag, so its tokens won't appear in the stream
-    analysis = internal_model.invoke(
-        [{"role": "user", "content": f"Analyze the topic: {topic}"}]
+def internal_notes(state: State) -> dict[str, Any]:
+    # Tokens from this model are omitted from stream_mode="messages" because of nostream
+    r = internal_model.invoke(
+        [{"role": "user", "content": f"Private notes on {state['topic']}"}]
     )
-    return {"internal_analysis": analysis.content}
+    return {"notes": r.content}
 
 
 graph = (
     StateGraph(State)
-    .add_node("generate_response", generate_response)
-    .add_node("analyze_internally", analyze_internally)
-    .add_edge(START, "generate_response")
-    .add_edge(START, "analyze_internally")
+    .add_node("write_answer", answer)
+    .add_node("internal_notes", internal_notes)
+    .add_edge(START, "write_answer")
+    .add_edge("write_answer", "internal_notes")
     .compile()
 )
 
-initial_state: State = {
-    "topic": "AI",
-    "public_response": "",
-    "internal_analysis": "",
-}
+initial_state: State = {"topic": "AI", "answer": "", "notes": ""}
 stream = graph.stream(initial_state, stream_mode="messages")  # type: ignore[arg-type]
 
 # :remove-start:
-# Stream with "messages" mode - only tokens from streaming_model will appear
 streamed_nodes: list[str] = []
 for msg, metadata in stream:
-    if isinstance(msg, BaseMessage) and msg.content and isinstance(metadata, dict):
+    if getattr(msg, "content", None) and isinstance(metadata, dict):
         streamed_nodes.append(metadata["langgraph_node"])
-        # print(msg.content, end="|", flush=True)
-assert "analyze_internally" not in streamed_nodes, (
-    "No tokens from the non-streaming model should appear in the stream"
+assert "internal_notes" not in streamed_nodes, (
+    "No tokens from the nostream model should appear in the stream"
 )
 
 if __name__ == "__main__":

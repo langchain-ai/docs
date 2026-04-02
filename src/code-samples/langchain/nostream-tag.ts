@@ -7,8 +7,7 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { StateGraph, StateSchema, START } from "@langchain/langgraph";
 import * as z from "zod";
 
-// Create two models: one that streams, one that doesn't
-const streamingModel = new ChatAnthropic({ model: "claude-3-haiku-20240307" });
+const streamModel = new ChatAnthropic({ model: "claude-3-haiku-20240307" });
 const internalModel = new ChatAnthropic({
   model: "claude-3-haiku-20240307",
 }).withConfig({
@@ -17,40 +16,36 @@ const internalModel = new ChatAnthropic({
 
 const State = new StateSchema({
   topic: z.string(),
-  publicResponse: z.string().optional(),
-  internalAnalysis: z.string().optional(),
+  answer: z.string().optional(),
+  notes: z.string().optional(),
 });
 
-const generateResponse = async (state: typeof State.State) => {
-  const topic = state.topic;
-  // This response will be streamed
-  const response = await streamingModel.invoke([
-    { role: "user", content: `Write a short response about ${topic}` },
+const writeAnswer = async (state: typeof State.State) => {
+  const r = await streamModel.invoke([
+    { role: "user", content: `Reply briefly about ${state.topic}` },
   ]);
-  return { publicResponse: response.content };
+  return { answer: r.content };
 };
 
-const analyzeInternally = async (state: typeof State.State) => {
-  const topic = state.topic;
-  // This model has the "nostream" tag, so its tokens won't appear in the stream
-  const analysis = await internalModel.invoke([
-    { role: "user", content: `Analyze the topic: ${topic}` },
+const internalNotes = async (state: typeof State.State) => {
+  // Tokens from this model are omitted from streamMode: "messages" because of nostream
+  const r = await internalModel.invoke([
+    { role: "user", content: `Private notes on ${state.topic}` },
   ]);
-  return { internalAnalysis: analysis.content };
+  return { notes: r.content };
 };
 
 const graph = new StateGraph(State)
-  .addNode("generateResponse", generateResponse)
-  .addNode("analyzeInternally", analyzeInternally)
-  .addEdge(START, "generateResponse")
-  .addEdge(START, "analyzeInternally")
+  .addNode("writeAnswer", writeAnswer)
+  .addNode("internal_notes", internalNotes)
+  .addEdge(START, "writeAnswer")
+  .addEdge("writeAnswer", "internal_notes")
   .compile();
 
 const stream = await graph.stream({ topic: "AI" }, { streamMode: "messages" });
 // :snippet-end:
 
 // :remove-start:
-// Stream with "messages" mode - only tokens from streamingModel will appear
 const streamedNodes: string[] = [];
 for await (const [msg, metadata] of stream) {
   if (msg.content) {
@@ -58,9 +53,9 @@ for await (const [msg, metadata] of stream) {
   }
 }
 
-if (streamedNodes.includes("analyzeInternally")) {
+if (streamedNodes.includes("internal_notes")) {
   throw new Error(
-    "No tokens from the non-streaming model should appear in the stream",
+    "No tokens from the nostream model should appear in the stream",
   );
 }
 
