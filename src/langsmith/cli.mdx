@@ -40,6 +40,7 @@ sidebarTitle: LangGraph CLI
 | --- | --- |
 | [`langgraph dev`](#dev) | Starts a lightweight local dev server (no Docker required), ideal for rapid testing. |
 | [`langgraph build`](#build) | Builds a Docker image of your LangGraph API server for deployment. |
+| [`langgraph deploy`](#deploy) | Builds and deploys a LangGraph image directly to LangSmith Deployments in a single step. |
 | [`langgraph dockerfile`](#dockerfile) | Emits a Dockerfile derived from your config for custom builds. |
 | [`langgraph up`](#up) | Starts the LangGraph API server locally in Docker. Requires Docker running; LangSmith API key for local dev; license for production. |
 
@@ -69,7 +70,7 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | <span style={{ whiteSpace: "nowrap" }}>`pip_installer`</span> | _(Added in v0.3)_ Optional. Python package installer selector. It can be set to `"auto"`, `"pip"`, or `"uv"`. From version 0.3 onward the default strategy is to run `uv pip`, which typically delivers faster builds while remaining a drop-in replacement. In the uncommon situation where `uv` cannot handle your dependency graph or the structure of your `pyproject.toml`, specify `"pip"` here to revert to the earlier behaviour. |
     | <span style={{ whiteSpace: "nowrap" }}>`keep_pkg_tools`</span> | _(Added in v0.3.4)_ Optional. Control whether to retain Python packaging tools (`pip`, `setuptools`, `wheel`) in the final image. Accepted values: <ul><li><code>true</code> : Keep all three tools (skip uninstall).</li><li><code>false</code> / omitted : Uninstall all three tools (default behaviour).</li><li><code>list[str]</code> : Names of tools <strong>to retain</strong>. Each value must be one of "pip", "setuptools", "wheel".</li></ul>. By default, all three tools are uninstalled. |
     | <span style={{ whiteSpace: "nowrap" }}>`dockerfile_lines`</span> | Array of additional lines to add to Dockerfile following the import from parent image.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-    | <span style={{ whiteSpace: "nowrap" }}>`checkpointer`</span>   | Configuration for the checkpointer. Supports: <ul><li>`ttl` (optional): Object with `strategy`, `sweep_interval_minutes`, `default_ttl` controlling checkpoint expiry.</li><li>`serde` (optional, 0.5+): Object with `allowed_json_modules` and `pickle_fallback` to tune deserialization behavior.</li></ul> |
+    | <span style={{ whiteSpace: "nowrap" }}>`checkpointer`</span>   | Configuration for the checkpointer. Supports: <ul><li>`backend` (optional): `"default"`, `"mongo"`, or `"custom"`. Defaults to `"default"` (PostgreSQL). See [Configure checkpointer backend](/langsmith/configure-checkpointer).</li><li>`path` (optional): Path to a custom checkpointer factory (when `backend` is `"custom"`). See [Custom checkpointer](/langsmith/custom-checkpointer).</li><li>`ttl` (optional): Object with `strategy`, `sweep_interval_minutes`, `default_ttl` controlling checkpoint expiry.</li><li>`serde` (optional, 0.5+): Object with `allowed_json_modules` and `pickle_fallback` to tune deserialization behavior.</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`http`</span>            | HTTP server configuration with the following fields: <ul><li>`app`: Path to custom Starlette/FastAPI app (e.g., `"./src/agent/webapp.py:app"`). See [custom routes guide](/langsmith/custom-routes).</li><li>`cors`: CORS configuration with fields such as `allow_origins`, `allow_methods`, `allow_headers`, `allow_credentials`, `allow_origin_regex`, `expose_headers`, and `max_age`.</li><li>`configurable_headers`: Define which request headers to expose as configurable values via `includes` / `excludes` patterns.</li><li>`logging_headers`: Mirror of `configurable_headers` for excluding sensitive headers from logs.</li><li>`middleware_order`: Choose how custom middleware and auth interact. `auth_first` runs authentication hooks before custom middleware, while `middleware_first` (default) runs your middleware first.</li><li>`enable_custom_route_auth`: Apply auth checks to routes added through `app`.</li><li>`disable_assistants`, `disable_mcp`, `disable_a2a`, `disable_meta`, `disable_runs`, `disable_store`, `disable_threads`, `disable_ui`, `disable_webhooks`: Disable built-in routes or hooks.</li><li>`mount_prefix`: Prefix for mounted routes (e.g., "/my-deployment/api").</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`webhooks`</span>        | _(Added in v0.5.36)_ Configuration for outbound webhook delivery. Contains: <ul><li>`env_prefix`: Required prefix for environment variables referenced in header templates (defaults to `LG_WEBHOOK_`).</li><li>`headers`: Static headers to include with webhook requests. Values may contain templates like `${{ env.VAR }}`.</li><li>`url`: URL validation policy with `allowed_domains`, `allowed_ports`, `require_https`, `disable_loopback`, and `max_url_length`.</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`api_version`</span>     | _(Added in v0.3.7)_ Which semantic version of the LangGraph API server to use (e.g., `"0.3"`). Defaults to latest. Check the server [changelog](/langsmith/agent-server-changelog) for details on each release. |
@@ -82,7 +83,7 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | <span style={{ whiteSpace: "nowrap" }}>`store`</span>            | Configuration for adding semantic search and/or time-to-live (TTL) to the BaseStore. Contains the following fields: <ul><li>`index` (optional): Configuration for semantic search indexing with fields `embed`, `dims`, and optional `fields`.</li><li>`ttl` (optional): Configuration for item expiration. An object with optional fields: `refresh_on_read` (boolean, defaults to `true`), `default_ttl` (float, lifespan in **minutes**; applied to newly created items only; existing items are unchanged; defaults to no expiration), and `sweep_interval_minutes` (integer, how often to check for expired items, defaults to no sweeping).</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`node_version`</span>     | Specify `node_version: 20` to use LangGraph.js.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
     | <span style={{ whiteSpace: "nowrap" }}>`dockerfile_lines`</span> | Array of additional lines to add to Dockerfile following the import from parent image.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-    | <span style={{ whiteSpace: "nowrap" }}>`checkpointer`</span>   | Configuration for the checkpointer. Supports: <ul><li>`ttl` (optional): Object with `strategy`, `sweep_interval_minutes`, `default_ttl` controlling checkpoint expiry.</li><li>`serde` (optional, 0.5+): Object with `allowed_json_modules` and `pickle_fallback` to tune deserialization behavior.</li></ul> |
+    | <span style={{ whiteSpace: "nowrap" }}>`checkpointer`</span>   | Configuration for the checkpointer. Supports: <ul><li>`backend` (optional): `"default"`, `"mongo"`, or `"custom"`. Defaults to `"default"` (PostgreSQL). See [Configure checkpointer backend](/langsmith/configure-checkpointer).</li><li>`path` (optional): Path to a custom checkpointer factory (when `backend` is `"custom"`). See [Custom checkpointer](/langsmith/custom-checkpointer).</li><li>`ttl` (optional): Object with `strategy`, `sweep_interval_minutes`, `default_ttl` controlling checkpoint expiry.</li><li>`serde` (optional, 0.5+): Object with `allowed_json_modules` and `pickle_fallback` to tune deserialization behavior.</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`http`</span>            | HTTP server configuration mirroring the Python options: <ul><li>`cors` with `allow_origins`, `allow_methods`, `allow_headers`, `allow_credentials`, `allow_origin_regex`, `expose_headers`, `max_age`.</li><li>`configurable_headers` and `logging_headers` pattern lists.</li><li>`middleware_order` (`auth_first` or `middleware_first`).</li><li>`enable_custom_route_auth` plus the same boolean route toggles as above.</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`webhooks`</span>        | _(Added in v0.5.36)_ Configuration for outbound webhook delivery. Contains: <ul><li>`env_prefix`: Required prefix for environment variables referenced in header templates (defaults to `LG_WEBHOOK_`).</li><li>`headers`: Static headers to include with webhook requests. Values may contain templates like `${{ env.VAR }}`.</li><li>`url`: URL validation policy with `allowed_domains`, `allowed_ports`, `require_https`, `disable_loopback`, and `max_url_length`.</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`api_version`</span>     | _(Added in v0.3.7)_ Which semantic version of the LangGraph API server to use (e.g., `"0.3"`). Defaults to latest. Check the server [changelog](/langsmith/agent-server-changelog) for details on each release. |
@@ -542,6 +543,169 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | `--no-pull`          |                  | Use locally built images. Defaults to `false` to build with latest remote Docker image.                                      |
     | `-c, --config FILE`  | `langgraph.json` | Path to configuration file declaring dependencies, graphs and environment variables.                                         |
     | `--help`             |                  | Display command documentation.                                                                                               |
+    </Tab>
+</Tabs>
+
+### `deploy`
+
+<Tabs>
+    <Tab title="Python">
+    <Note>This command is in beta and under active development. Expect frequent updates and improvements.</Note>
+
+    Build and deploy a LangGraph image directly to [LangSmith Deployments](/langsmith/deployment). This command builds a Docker image locally, pushes it to a managed registry, and creates or updates a deployment—all in a single step.
+
+    **Prerequisites**
+
+    - **Docker** must be installed and the Docker daemon must be running. [Install Docker Desktop](https://docs.docker.com/get-docker/).
+    - **Docker Buildx** is required on non-x86_64 machines (e.g., Apple Silicon) to cross-compile for linux/amd64. [Learn more about Buildx](https://docs.docker.com/build/install-buildx/).
+    - A [**LangSmith API key**](/langsmith/create-account-api-key) with access to Deployments.
+
+    <Note>Remote builds (no Docker required) are coming in a future update.</Note>
+
+    **Usage**
+
+    ```
+    langgraph deploy [OPTIONS] [DOCKER_BUILD_ARGS]
+    ```
+
+    This command also accepts all [`langgraph build`](#build) flags (`--platform`, `-t`, `--pull`, `--no-pull`, `-c`). For details, refer to `langgraph build --help`.
+
+    **Options**
+
+    | Option                   | Default              | Description                                                                                                                                                      |
+    | ------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `--api-key TEXT`         |                      | API key for LangSmith Deployments. Can also be set via `LANGGRAPH_HOST_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variable or `.env` file. |
+    | `--name TEXT`            | Current directory name | Deployment name. Can also be set via `LANGSMITH_DEPLOYMENT_NAME` environment variable or `.env` file.                                                           |
+    | `--deployment-id TEXT`   |                      | ID of an existing deployment to update. If omitted, `--name` is used to find or create the deployment.                                                           |
+    | `--deployment-type TEXT` | `dev`                | Deployment type (`dev` or `prod`). Used when creating a new deployment.                                                                                          |
+    | `--no-wait`              | `False`              | Skip waiting for deployment status after pushing.                                                                                                                |
+    | `--verbose`              | `False`              | Show detailed output including Docker build and push logs.                                                                                                       |
+    | `--help`                 |                      | Display command documentation.                                                                                                                                   |
+
+    **Example**
+
+    ```bash
+    # Deploy with API key from .env file
+    langgraph deploy
+
+    # Deploy with inline API key
+    LANGSMITH_API_KEY=lsv2_... langgraph deploy
+
+    # Update an existing deployment
+    langgraph deploy --deployment-id abc123
+
+    # Deploy with inline deployment name
+    LANGSMITH_DEPLOYMENT_NAME=my-agent langgraph deploy
+    ```
+
+    <Note>The `langgraph deploy` command can only update deployments that were originally created by `langgraph deploy`. Deployments created through other methods (e.g., the LangSmith UI or GitHub integration) cannot be updated with this command.</Note>
+
+    #### `deploy list`
+
+    List LangSmith Deployments.
+
+    **Usage**
+
+    ```bash
+    langgraph deploy list [OPTIONS]
+    ```
+
+    **Options**
+
+    | Option | Default | Description |
+    | --- | --- | --- |
+    | `--name-contains TEXT` |  | Only show deployments whose names contain this value. |
+    | `--api-key TEXT` |  | API key. Can also be set via `LANGGRAPH_HOST_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variable or `.env` file. |
+    | `--help` |  | Show this message and exit. |
+
+    #### `deploy revisions`
+
+    [Beta] Manage deployment revisions.
+
+    **Usage**
+
+    ```bash
+    langgraph deploy revisions [OPTIONS] COMMAND [ARGS]...
+    ```
+
+    **Options**
+
+    | Option | Default | Description |
+    | --- | --- | --- |
+    | `--help` |  | Show this message and exit. |
+
+    **Commands**
+
+    | Command | Description |
+    | --- | --- |
+    | `list` | [Beta] List revisions for a LangSmith Deployment. |
+
+    #### `deploy revisions list`
+
+    [Beta] List revisions for a LangSmith Deployment.
+
+    Use [`deploy list`](#deploy-list) to list deployment IDs.
+
+    **Usage**
+
+    ```bash
+    langgraph deploy revisions list [OPTIONS] DEPLOYMENT_ID
+    ```
+
+    **Options**
+
+    | Option | Default | Description |
+    | --- | --- | --- |
+    | `--limit INTEGER` | `10` | Maximum number of revisions to return. |
+    | `--api-key TEXT` |  | API key. Can also be set via `LANGGRAPH_HOST_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variable or `.env` file. |
+    | `--help` |  | Show this message and exit. |
+
+    #### `deploy delete`
+
+    Delete a LangSmith Deployment.
+
+    Use [`deploy list`](#deploy-list) to find the deployment ID to delete.
+
+    **Usage**
+
+    ```bash
+    langgraph deploy delete [OPTIONS] DEPLOYMENT_ID
+    ```
+
+    **Options**
+
+    | Option | Default | Description |
+    | --- | --- | --- |
+    | `--force` |  | Delete without prompting for confirmation. |
+    | `--api-key TEXT` |  | API key. Can also be set via `LANGGRAPH_HOST_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variable or `.env` file. |
+    | `--help` |  | Show this message and exit. |
+
+    #### `deploy logs`
+
+    Fetch LangSmith Deployment logs. Use `deploy` for agent runtime logs, or `build` for remote build logs.
+
+    **Usage**
+
+    ```bash
+    langgraph deploy logs [OPTIONS]
+    ```
+
+    **Options**
+
+    | Option | Default | Description |
+    | --- | --- | --- |
+    | `-f, --follow` | `False` | Continuously poll for new logs. |
+    | `--end-time TEXT` |  | ISO8601 end time. Example: `2026-03-08T00:00:00Z`. |
+    | `--start-time TEXT` |  | ISO8601 start time. Example: `2026-03-08T00:00:00Z`. |
+    | `-q, --query TEXT` |  | Search string filter. |
+    | `--limit INTEGER` | `100` | Max log entries to fetch. |
+    | `--level [DEBUG\|INFO\|WARNING\|ERROR\|CRITICAL]` |  | Filter by log level. |
+    | `--revision-id TEXT` |  | Specific revision ID. For build logs, defaults to the latest revision. |
+    | `--type [deploy\|build]` | `deploy` | Log stream to fetch. `deploy` shows agent server runtime logs. `build` shows remote build logs. |
+    | `--deployment-id TEXT` |  | Deployment ID. If omitted, `--name` is used to find the deployment. |
+    | `--name TEXT` | Current directory name | Deployment name. Can also be set via `LANGSMITH_DEPLOYMENT_NAME` environment variable or `.env` file. Used when `--deployment-id` is not provided. |
+    | `--api-key TEXT` |  | API key. Can also be set via `LANGGRAPH_HOST_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variable or `.env` file. |
+    | `--help` |  | Show this message and exit. |
     </Tab>
 </Tabs>
 

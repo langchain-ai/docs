@@ -26,7 +26,7 @@ In other words, the data plane "listener" reads the latest state of the control 
 
 ## PostgreSQL
 
-PostgreSQL is the persistence layer for all user, run, and long-term memory data in a Agent Server. This stores both checkpoints (see more info [here](/oss/langgraph/persistence)), server resources (threads, runs, assistants and crons), as well as items saved in the long-term memory store (see more info [here](/oss/langgraph/persistence#memory-store)).
+PostgreSQL stores server resources (threads, runs, assistants, crons) and items saved in the [long-term memory store](/oss/langgraph/persistence#memory-store). It is also the default backend for [checkpoints](/oss/langgraph/persistence) (graph execution state). You can optionally store checkpoints in MongoDB instead—see [Configure checkpointer backend](/langsmith/configure-checkpointer). PostgreSQL is always required regardless of the checkpointer backend.
 
 ## Redis
 
@@ -73,7 +73,7 @@ For number of pending runs, the autoscaler targets 10 pending runs. For example,
 
 Each metric is computed independently and the autoscaler will determine the scaling action based on the metric that results in the largest number of containers.
 
-These metrics don't all apply to every container type. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count — when the backlog grows, more workers spin up to drain it. [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, responding to client request volume. This means a spike in run submissions won't slow down read operations like fetching thread state. For self-hosted configuration details, see [Configure Agent Server for scale](/langsmith/agent-server-scale).
+These metrics don't all apply to every container type. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count—when the backlog grows, more workers spin up to drain it. [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, responding to client request volume. This means a spike in run submissions won't slow down read operations like fetching thread state. For self-hosted configuration details, see [Configure Agent Server for scale](/langsmith/agent-server-scale).
 
 Scale down actions are delayed for 30 minutes before any action is taken. In other words, if the autoscaler decides to scale down a deployment, it will first wait for 30 minutes before scaling down. After 30 minutes, the metrics are recomputed and the deployment will scale down if the recomputed metrics result in a lower number of containers than the current number. Otherwise, the deployment remains scaled up. This "cool down" period ensures that deployments do not scale up and down too frequently.
 
@@ -91,7 +91,7 @@ All traffic from deployments created after January 6th 2025 will come through a 
 **Only for Cloud**
 Payload size restrictions are only applicable to [Cloud](/langsmith/cloud) deployments.
 </Info>
-The maximum payload size for all requests sent to [Cloud](/langsmith/cloud) deployments is 25 MB. Attempting to send a request with a payload larger than 25 MB will result in a `413 Payload Too Large` error.
+The maximum payload size for all requests sent to [Cloud](/langsmith/cloud) deployments is 25 MB. Attempting to send a request with a payload larger than 25 MB will result in a `413 Payload Too Large` error.
 
 ### Custom PostgreSQL
 
@@ -99,7 +99,7 @@ The maximum payload size for all requests sent to [Cloud](/langsmith/cloud) depl
 Custom PostgreSQL instances are only available for [hybrid](/langsmith/hybrid) and [self-hosted](/langsmith/self-hosted) deployments.
 </Info>
 
-A custom PostgreSQL instance can be used instead of the [one automatically created by the control plane](/langsmith/control-plane#database-provisioning). Specify the [`POSTGRES_URI_CUSTOM`](/langsmith/env-var#postgres-uri-custom) environment variable to use a custom PostgreSQL instance.
+A custom PostgreSQL instance can be used instead of the [one automatically created by the control plane](/langsmith/control-plane#database-provisioning). Specify the [`POSTGRES_URI_CUSTOM`](/langsmith/env-var#postgres_uri_custom) environment variable to use a custom PostgreSQL instance.
 
 Multiple deployments can share the same PostgreSQL instance. For example, for `Deployment A`, `POSTGRES_URI_CUSTOM` can be set to `postgres://<user>:<password>@/<database_name_1>?host=<hostname_1>` and for `Deployment B`, `POSTGRES_URI_CUSTOM` can be set to `postgres://<user>:<password>@/<database_name_2>?host=<hostname_1>`. `<database_name_1>` and `database_name_2` are different databases within the same instance, but `<hostname_1>` is shared. **The same database cannot be used for separate deployments**.
 
@@ -109,9 +109,19 @@ Multiple deployments can share the same PostgreSQL instance. For example, for `D
 Custom Redis instances are only available for [Hybrid](/langsmith/hybrid) and [Self-Hosted](/langsmith/self-hosted) deployments.
 </Info>
 
-A custom Redis instance can be used instead of the one automatically created by the control plane. Specify the [REDIS_URI_CUSTOM](/langsmith/env-var#redis-uri-custom) environment variable to use a custom Redis instance.
+A custom Redis instance can be used instead of the one automatically created by the control plane. Specify the [REDIS_URI_CUSTOM](/langsmith/env-var#redis_uri_custom) environment variable to use a custom Redis instance.
 
 Multiple deployments can share the same Redis instance. For example, for `Deployment A`, `REDIS_URI_CUSTOM` can be set to `redis://<hostname_1>:<port>/1` and for `Deployment B`, `REDIS_URI_CUSTOM` can be set to `redis://<hostname_1>:<port>/2`. `1` and `2` are different database numbers within the same instance, but `<hostname_1>` is shared. **The same database number cannot be used for separate deployments**.
+
+### MongoDB checkpointing
+
+<Info>
+Available for [Cloud](/langsmith/cloud) (with an externally managed MongoDB instance) and [Standalone](/langsmith/deploy-standalone-server) deployments.
+</Info>
+
+You can use MongoDB as an alternative backend for checkpoint storage. When configured, MongoDB handles only checkpoint data—PostgreSQL remains required for all other server resources.
+
+See [Configure checkpointer backend](/langsmith/configure-checkpointer) for setup instructions.
 
 ### LangSmith tracing
 

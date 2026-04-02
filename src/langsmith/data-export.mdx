@@ -1,6 +1,7 @@
 ---
-title: Bulk exporting trace data
-sidebarTitle: Bulk export trace data
+title: Bulk export trace data
+sidebarTitle: Set up bulk export
+description: Export LangSmith trace data to an S3-compatible bucket in Parquet format.
 ---
 
 <Info>
@@ -9,115 +10,24 @@ sidebarTitle: Bulk export trace data
 Please note that the Data Export functionality is only supported for [LangSmith Plus or Enterprise tiers](https://www.langchain.com/pricing-langsmith).
 </Info>
 
-LangSmith's bulk data export functionality allows you to export your traces into an external destination. This can be useful if you want to analyze the data offline in a tool such as BigQuery, Snowflake, RedShift, Jupyter Notebooks, etc.
+LangSmith's bulk data export lets you export trace data from a specific project and date range to an S3-compatible bucket in [Parquet](https://parquet.apache.org/docs/overview/) format, matching the fields in the [Run data format](/langsmith/run-data-format). This is useful for offline analysis in tools like BigQuery, Snowflake, Redshift, or Jupyter Notebooks.
 
-An export can be launched to target a specific LangSmith project and date range. Once a batch export is launched, the system will handle the orchestration and [resilience of the export process](#failure-modes-and-retry-policy).
+This page covers how to:
 
-Exporting your data may take some time depending on the size of your data. LangSmith also has a limit on how many of your exports can run at the same time. Bulk exports have a runtime timeout of 72 hours, refer to [Automatic retry behavior](#automatic-retry-behavior) for more details.
+- Create an export destination
+- Create and configure an export job, including scheduled exports and field filtering
+- Monitor export progress
 
-## Destinations
+**Before you start:** exports may take some time depending on data volume, and LangSmith limits how many exports can run concurrently. Bulk exports have a 72-hour runtime timeout—refer to [Automatic retry behavior](/langsmith/data-export-monitor#automatic-retry-behavior) for details. Once launched, LangSmith handles orchestration and [resilience of the export process](/langsmith/data-export-monitor#failure-modes-and-retry-policy) automatically.
 
-Currently we support exporting to an S3 bucket or S3 API compatible bucket that you provide. The data will be exported in
-[Parquet](https://parquet.apache.org/docs/overview/) columnar format. This format will allow you to easily import the data into
-other systems. The data export will contain equivalent data fields as the [Run data format](/langsmith/run-data-format).
+## 1. Create a destination
 
-## Exporting data
+The destination tells LangSmith where to write your exported data. Before making this request, you will need:
 
-### Destinations - providing a S3 bucket
-
-To export LangSmith data, you will need to provide an S3 bucket where the data will be exported to.
-
-The following information is needed for the export:
-
-- **Bucket Name**: The name of the S3 bucket where the data will be exported to.
-- **Prefix**: The root prefix within the bucket where the data will be exported to.
-- **S3 Region**: The region of the bucket - this is needed for AWS S3 buckets.
-- **Endpoint URL**: The endpoint URL for the S3 bucket - this is needed for S3 API compatible buckets.
-- **Access Key**: The access key for the S3 bucket.
-- **Secret Key**: The secret key for the S3 bucket.
-- **Include Bucket in Prefix** (optional): Whether to include the bucket name as part of the path prefix. Defaults to `true`. Set to `false` when using virtual-hosted style endpoints where the bucket name is already in the endpoint URL.
-
-We support any S3 compatible bucket, for non AWS buckets such as GCS or MinIO, you will need to provide the endpoint URL.
-
-### Preparing the destination
-
-<Note>
-**For self-hosted and EU region deployments**
-
-Update the LangSmith URL appropriately for self-hosted installations or organizations in the EU region in the requests below.
-For the EU region, use `eu.api.smith.langchain.com`.
-</Note>
-
-#### Permissions required
-
-Both the `backend` and `queue` services require write access to the destination bucket:
-
-- The `backend` service attempts to write a test file to the destination bucket when the export destination is created. It will delete the test file if it has permission to do so (delete access is optional).
-- The `queue` service is responsible for bulk export execution and uploading the files to the bucket.
-
-**AWS S3 permissions**
-
-The minimal AWS S3 permission policy relies on the following permissions:
-
-- `s3:PutObject` (required): Allows writing Parquet files to the bucket.
-- `s3:DeleteObject` (optional): Cleans up test files during destination creation. If this permission isn't present, the file is left under the `/tmp` directory after destination creation.
-- `s3:GetObject` (optional but recommended): Verifies file size after writing.
-- `s3:AbortMultipartUpload` (optional but recommended): Avoids dangling multipart uploads.
-
-Minimal IAM policy example:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:PutObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::YOUR_BUCKET_NAME/*"
-      ]
-    }
-  ]
-}
-```
-
-Recommended IAM policy example with additional permissions:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:GetObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::YOUR_BUCKET_NAME/*"
-      ]
-    }
-  ]
-}
-```
-
-**Google Cloud Storage (GCS) permissions**
-
-When using GCS with the S3-compatible XML API, the following IAM permissions are required:
-
-- `storage.objects.create` (required): Allows writing files to the bucket.
-- `storage.objects.delete` (optional): Cleans up test files during destination creation. If this permission isn't present, the file is left under the `/tmp` directory after destination creation.
-- `storage.objects.get` (optional but recommended): Verifies file size after writing.
-
-These permissions can be granted through the "Storage Object Admin" predefined role or a custom role.
-
-#### Create a destination
-
-The following example demonstrates how to create a destination using cURL. Replace the placeholder values with your actual configuration details.
-Note that credentials will be stored securely in an encrypted form in our system.
+- Your [LangSmith API key](/langsmith/create-account-api-key) and [workspace ID](/langsmith/set-up-hierarchy#set-up-a-workspace).
+- An S3 or S3-compatible bucket with **write access** granted to LangSmith (refer to [Permissions required](/langsmith/data-export-destinations#permissions-required)).
+- The bucket name, prefix, and either the AWS region (for AWS S3) or the endpoint URL (for GCS, MinIO, or other S3-compatible providers).
+- An access key and secret key for the bucket.
 
 ```bash
 curl --request POST \
@@ -132,8 +42,7 @@ curl --request POST \
       "bucket_name": "your-s3-bucket-name",
       "prefix": "root_folder_prefix",
       "region": "your aws s3 region",
-      "endpoint_url": "your endpoint url for s3 compatible buckets",
-      "include_bucket_in_prefix": true // defaults to true, can be omitted
+      "endpoint_url": "your endpoint url for s3 compatible buckets"
     },
     "credentials": {
       "access_key_id": "YOUR_S3_ACCESS_KEY_ID",
@@ -142,108 +51,19 @@ curl --request POST \
   }'
 ```
 
-Use the returned `id` to reference this destination in subsequent bulk export operations.
+Credentials are stored securely in encrypted form. The API will validate that the destination and credentials are valid before saving. If the request fails, refer to [Debug destination errors](/langsmith/data-export-destinations#debug-destination-errors).
 
-**If you receive an error while creating a destination, see [debug destination errors](#debugging-destination-errors) for details on how to debug this.**
+Save the `id` from the response; you will need it when creating an export job.
 
-#### Credentials configuration
+Refer to [Manage bulk export destinations](/langsmith/data-export-destinations) for permissions setup, provider-specific configuration (AWS S3, GCS, MinIO), and credential options.
 
-<Note>**Requires LangSmith Helm version >= `0.10.34` (application version >= `0.10.91`)**</Note>
+## 2. Create an export job
 
-We support the following additional credentials formats besides static `access_key_id` and `secret_access_key`:
+An export job targets a specific project and date range. You will need:
 
-- To use [temporary credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html) that include an AWS session token,
-  additionally provide the `credentials.session_token` key when creating the bulk export destination.
-- (Self-hosted only): To use environment-based credentials such as with [AWS IAM Roles for Service Accounts](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) (IRSA),
-  omit the `credentials` key from the request when creating the bulk export destination.
-  In this case, the [standard Boto3 credentials locations](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html#credentials) will be checked in the order defined by the library.
-
-#### AWS S3 bucket
-
-For AWS S3, you can leave off the `endpoint_url` and supply the region that matches the region of your bucket.
-
-```bash
-curl --request POST \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
-  --data '{
-    "destination_type": "s3",
-    "display_name": "My AWS S3 Destination",
-    "config": {
-      "bucket_name": "my_bucket",
-      "prefix": "data_exports",
-      "region": "us-east-1"
-    },
-    "credentials": {
-      "access_key_id": "YOUR_S3_ACCESS_KEY_ID",
-      "secret_access_key": "YOUR_S3_SECRET_ACCESS_KEY"
-    }
-  }'
-```
-
-#### Google GCS XML S3 compatible bucket
-
-When using Google's GCS bucket, you need to use the XML S3 compatible API, and supply the `endpoint_url`
-which is typically `https://storage.googleapis.com`.
-Here is an example of the API request when using the GCS XML API which is compatible with S3:
-
-```bash
-curl --request POST \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
-  --data '{
-    "destination_type": "s3",
-    "display_name": "My GCS Destination",
-    "config": {
-      "bucket_name": "my_bucket",
-      "prefix": "data_exports",
-      "endpoint_url": "https://storage.googleapis.com"
-      "include_bucket_in_prefix": true // defaults to true, can be omitted
-    },
-    "credentials": {
-      "access_key_id": "YOUR_S3_ACCESS_KEY_ID",
-      "secret_access_key": "YOUR_S3_SECRET_ACCESS_KEY"
-    }
-  }'
-```
-
-See [Google documentation](https://cloud.google.com/storage/docs/interoperability#xml_api) for more info
-
-#### S3-compatible bucket with virtual-hosted style endpoint
-
-If your endpoint URL already includes the bucket name (virtual-hosted style), set `include_bucket_in_prefix` to `false` to avoid duplicating the bucket name in the path:
-
-```bash
-curl --request POST \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
-  --data '{
-    "destination_type": "s3",
-    "display_name": "My Virtual-Hosted Destination",
-    "config": {
-      "bucket_name": "my_bucket",
-      "prefix": "data_exports",
-      "endpoint_url": "https://my_bucket.s3.us-east-1.amazonaws.com",
-      "include_bucket_in_prefix": false
-    },
-    "credentials": {
-      "access_key_id": "YOUR_S3_ACCESS_KEY_ID",
-      "secret_access_key": "YOUR_S3_SECRET_ACCESS_KEY"
-    }
-  }'
-```
-
-### Create an export job
-
-To export data, you will need to create an export job. This job will specify the destination, the project, the [date range](#time-filter-behavior), and filter expression of the data to export. The filter expression is used to narrow down the set of runs exported and is optional. Not setting the filter field will export all runs. Refer to our [filter query language](/langsmith/trace-query-syntax#filter-query-language) and [examples](/langsmith/export-traces#use-filter-query-language) to determine the correct filter expression for your export.
-
-You can use the following cURL command to create the job:
+- The destination `id` from the [previous step](#1-create-a-destination).
+- The project ID (`session_id`)—copy this from the individual project view in the [**Tracing Projects** list](https://smith.langchain.com).
+- A `start_time` and `end_time` in UTC ISO 8601 format.
 
 ```bash
 curl --request POST \
@@ -256,31 +76,88 @@ curl --request POST \
     "session_id": "project_uuid",
     "start_time": "2024-01-01T00:00:00Z",
     "end_time": "2024-01-03T00:00:00Z",
-    "filter": "and(eq(run_type, \"llm\"), eq(name, \"ChatOpenAI\"), eq(input_key, \"messages.content\"), like(input_value, \"%messages.content%\"))",
     "format_version": "v2_beta"
   }'
 ```
 
+The `start_time` is inclusive and `end_time` is exclusive. The export will include all runs where `run.start_time >= start_time` and `run.start_time < end_time`.
+
+Save the `id` from the response to monitor the export's progress.
+
+You can optionally add a `filter` expression to narrow the set of runs exported. Refer to our [filter query language](/langsmith/trace-query-syntax#filter-query-language) and [examples](/langsmith/export-traces#use-filter-query-language) for syntax. Not setting the `filter` field will export all runs.
+
+### Schedule recurring exports
+
 <Note>
-The `session_id` is also known as the Tracing Project ID, which can be copied from the individual project view by clicking into the project in the Tracing Projects list.
+Requires LangSmith Helm version >= `0.10.42` (application version >= `0.10.109`)
 </Note>
 
-Use the returned `id` to reference this export in subsequent bulk export operations.
+Scheduled exports collect runs periodically and export to the configured destination.
+To create a scheduled export, include `interval_hours` and omit `end_time`:
 
-#### Time filter behavior
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "bulk_export_destination_id": "your_destination_id",
+    "session_id": "project_uuid",
+    "start_time": "2024-01-01T00:00:00Z",
+    "interval_hours": 1,
+    "format_version": "v2_beta"
+  }'
+```
 
-Export time filters are based on `run.start_time`:
-- The export `start_time` is **inclusive** — runs with `start_time` equal to the export start time are included.
-- The export `end_time` is **exclusive** — runs with `start_time` equal to or after the export end time are excluded.
-- This inclusive/exclusive behavior also applies to each partition's start and end times.
+- `interval_hours` must be between 1 and 168 (1 week) inclusive.
+- `end_time` must be omitted for scheduled exports; it is still required for one-time exports.
+- Each spawned export covers `start_time` to `start_time + interval_hours`, then advances by `interval_hours` for each subsequent run. Since `end_time` is exclusive, consecutive exports do not overlap.
+- Spawned exports run at `end_time + 10 minutes` to account for runs submitted with `end_time` in the recent past.
+- Spawned exports have the `source_bulk_export_id` attribute filled. If desired, they must be cancelled separately—cancelling the source export **does not** cancel already-spawned exports.
+- To stop a scheduled export, [cancel it](/langsmith/data-export-monitor#stop-an-export).
 
-For example, an export with `start_time="2024-01-01T00:00:00Z"` and `end_time="2024-01-02T00:00:00Z"` will include all runs where `run.start_time >= 2024-01-01T00:00:00Z` and `run.start_time < 2024-01-02T00:00:00Z`.
+**Example**
 
-#### Exportable fields
+If a scheduled bulk export is created with `start_time=2025-07-16T00:00:00Z` and `interval_hours=6`:
 
-By default, bulk exports include the following fields for each run. You can optionally specify a subset of these fields when creating an export to reduce file size and export time. For more details, refer to [Limiting exported fields](#limiting-exported-fields).
+| Export | Start Time           | End Time             | Runs At              |
+| ------ | -------------------- | -------------------- | -------------------- |
+| 1      | 2025-07-16T00:00:00Z | 2025-07-16T06:00:00Z | 2025-07-16T06:10:00Z |
+| 2      | 2025-07-16T06:00:00Z | 2025-07-16T12:00:00Z | 2025-07-16T12:10:00Z |
+| 3      | 2025-07-16T12:00:00Z | 2025-07-16T18:00:00Z | 2025-07-16T18:10:00Z |
 
-The following fields are available for export:
+### Limit exported fields
+
+<Note>
+Requires LangSmith Helm version >= `0.12.11` (application version >= `0.12.42`). Supported in both one-time and scheduled exports.
+</Note>
+
+You can improve export speed and reduce file size by limiting which fields are included using the `export_fields` parameter. When omitted, all fields are included.
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "bulk_export_destination_id": "your_destination_id",
+    "session_id": "project_uuid",
+    "start_time": "2024-01-01T00:00:00Z",
+    "end_time": "2024-01-03T00:00:00Z",
+    "export_fields": ["id", "name", "run_type", "start_time", "end_time", "status", "total_tokens", "total_cost"],
+    "format_version": "v2_beta"
+  }'
+```
+
+<Tip>
+Excluding `inputs` and `outputs` can significantly improve export performance and reduce file sizes, especially for large runs. Only include these fields if you need them for your analysis.
+</Tip>
+
+### Exportable fields
+
+By default, bulk exports include the following fields for each run:
 
 **Identifiers & hierarchy:**
 
@@ -336,363 +213,26 @@ The following fields are available for export:
 | `completion_cost` | Completion cost |
 | `first_token_time` | Time to first token |
 
-#### Limiting exported fields
+### Partitioning scheme
 
-<Note>
-Requires LangSmith Helm version >= `0.12.11` (application version >= `0.12.42`). This feature **is supported** in [scheduled bulk exports](#scheduled-exports) and [standard bulk exports](#create-an-export-job).
-</Note>
-
-You can improve bulk export speed and reduce row size by limiting which fields are included in the exported Parquet files using the `export_fields` parameter. When `export_fields` is provided, only the specified fields are exported as columns in the Parquet files. When `export_fields` is not provided, all exportable fields are included.
-
-This is particularly useful when you want to exclude larger fields like `inputs` and `outputs`.
-
-The following example creates an export job that only includes specific fields:
-
-```bash
-curl --request POST \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
-  --data '{
-    "bulk_export_destination_id": "your_destination_id",
-    "session_id": "project_uuid",
-    "start_time": "2024-01-01T00:00:00Z",
-    "end_time": "2024-01-03T00:00:00Z",
-    "export_fields": ["id", "name", "run_type", "start_time", "end_time", "status", "total_tokens", "total_cost"],
-    "format_version": "v2_beta"
-  }'
-```
-
-The `export_fields` parameter accepts an array of field names. Available fields include the [Run data format](/langsmith/run-data-format) fields as well as additional export-only fields:
-
-- `tenant_id`
-- `is_root`
-
-<Tip>
-**Performance tip**: Excluding `inputs` and `outputs` from your export can significantly improve export performance and reduce file sizes, especially for large runs. Only include these fields if you need them for your analysis.
-</Tip>
-
-### Scheduled exports
-
-<Note>
-Requires LangSmith Helm version >= `0.10.42` (application version >= `0.10.109`)
-</Note>
-
-Scheduled exports collect runs periodically and export to the configured destination.
-To create a scheduled export, include `interval_hours` and remove `end_time`:
-
-```bash
-curl --request POST \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
-  --data '{
-    "bulk_export_destination_id": "your_destination_id",
-    "session_id": "project_uuid",
-    "start_time": "2024-01-01T00:00:00Z",
-    "filter": "and(eq(run_type, \"llm\"), eq(name, \"ChatOpenAI\"), eq(input_key, \"messages.content\"), like(input_value, \"%messages.content%\"))",
-    "interval_hours": 1,
-    "format_version": "v2_beta"
-  }'
-```
-
-You can also use `export_fields` with scheduled exports to limit which fields are exported:
-
-```bash
-curl --request POST \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
-  --data '{
-    "bulk_export_destination_id": "your_destination_id",
-    "session_id": "project_uuid",
-    "start_time": "2024-01-01T00:00:00Z",
-    "interval_hours": 1,
-    "export_fields": ["id", "name", "run_type", "start_time", "end_time", "status", "total_tokens", "total_cost"],
-    "format_version": "v2_beta"
-  }'
-```
-
-**Details**
-
-- `interval_hours` must be between 1 hour and 168 hours (1 week) inclusive.
-- For spawned exports, the first time range exported is `start_time=(scheduled_export_start_time), end_time=(start_time + interval_hours)`.
-    Then `start_time=(previous_export_end_time), end_time=(this_export_start_time + interval_hours)`, and so on.
-    Since the end time is exclusive, consecutive exports do not overlap (see [Time filter behavior](#time-filter-behavior)).
-- `end_time` must be omitted for scheduled exports. `end_time` is still required for non-scheduled exports.
-- Scheduled exports can be stopped by [cancelling the export](#stop-an-export).
-  - Exports that have been spawned by a scheduled export have the `source_bulk_export_id` attribute filled.
-  - If desired, these spawned bulk exports must be canceled separately from the source scheduled bulk export -
-    canceling the source bulk export **does not** cancel the spawned bulk exports.
-- Spawned exports run at `end_time + 10 minutes` to account for any runs that are submitted with `end_time` in the recent past.
-- `format_version` (optional): The format version to use for the parquet files. `"v2_beta"` has (1) enhanced datatypes for the columns and (2) a Hive-compliant folder structure.
-
-
-**Example**
-
-If a scheduled bulk export is created with `start_time=2025-07-16T00:00:00Z` and `interval_hours=6`:
-
-| Export | Start Time           | End Time             | Runs At              |
-| ------ | -------------------- | -------------------- | -------------------- |
-| 1      | 2025-07-16T00:00:00Z | 2025-07-16T06:00:00Z | 2025-07-16T06:10:00Z |
-| 2      | 2025-07-16T06:00:00Z | 2025-07-16T12:00:00Z | 2025-07-16T12:10:00Z |
-| 3      | 2025-07-16T12:00:00Z | 2025-07-16T18:00:00Z | 2025-07-16T18:10:00Z |
-
-## Monitoring the export job
-
-### Monitor export status
-
-To monitor the status of an export job, use the following cURL command:
-
-```bash
-curl --request GET \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/{export_id}' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID'
-```
-
-Replace `{export_id}` with the ID of the export you want to monitor. This command retrieves the current status of the specified export job.
-
-### List runs for an export
-
-An export is typically broken up into multiple runs which correspond to a specific date partition to export.
-To list all runs associated with a specific export, use the following cURL command:
-
-```bash
-curl --request GET \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/{export_id}/runs' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID'
-```
-
-This command fetches all runs related to the specified export, providing details such as run ID, status, creation time, rows exported, etc.
-
-### List all exports
-
-To retrieve a list of all export jobs, use the following cURL command:
-
-```bash
-curl --request GET \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID'
-```
-
-This command returns a list of all export jobs along with their current statuses and creation timestamps.
-
-### Stop an export
-
-To stop an existing export, use the following cURL command:
-
-```bash
-curl --request PATCH \
-  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/{export_id}' \
-  --header 'Content-Type: application/json' \
-  --header 'X-API-Key: YOUR_API_KEY' \
-  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
-  --data '{
-    "status": "Cancelled"
-}'
-```
-
-Replace `{export_id}` with the ID of the export you wish to cancel. Note that a job cannot be restarted once it has been cancelled,
-you will need to create a new export job instead.
-
-## Partitioning scheme
-
-Data will be exported into your bucket into the follow Hive partitioned format:
+Data is exported into your bucket using the following Hive partitioned structure:
 
 ```
 <bucket>/<prefix>/export_id=<export_id>/tenant_id=<tenant_id>/session_id=<session_id>/runs/year=<year>/month=<month>/day=<day>
 ```
 
-## Importing data into other systems
+## 3. Monitor your export
 
-Importing data from S3 and Parquet format is commonly supported by the majority of analytical systems. See below for documentation links:
-
-### BigQuery
-
-To import your data into BigQuery, see [Loading Data from Parquet](https://cloud.google.com/bigquery/docs/loading-data-cloud-storage-parquet) and also
-[Hive Partitioned loads](https://cloud.google.com/bigquery/docs/hive-partitioned-loads-gcs).
-
-### Snowflake
-
-You can load data into Snowflake from S3 by following the [Load from Cloud Document](https://docs.snowflake.com/en/user-guide/tutorials/load-from-cloud-tutorial).
-
-### RedShift
-
-You can COPY data from S3 or Parquet into Amazon Redshift by following the [AWS COPY command documentation](https://docs.aws.amazon.com/redshift/latest/dg/r_COPY.html).
-
-### Clickhouse
-
-You can directly query data in S3 / Parquet format in Clickhouse. As an example, if using GCS, you can query the data as follows:
-
-```sql
-SELECT count(distinct id) FROM s3('https://storage.googleapis.com/<bucket>/<prefix>/export_id=<export_id>/**',
- 'access_key_id', 'access_secret', 'Parquet')
-```
-
-See [Clickhouse S3 Integration Documentation](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3) for more information.
-
-### DuckDB
-
-You can query the data from S3 in-memory with SQL using DuckDB. See [S3 import Documentation](https://duckdb.org/docs/guides/network_cloud_storage/s3_import.html).
-
-## Error handling
-
-### Debugging destination errors
-
-The destinations API endpoint will validate that the destination and credentials are valid and that write access is
-is present for the bucket.
-
-If you receive an error, and would like to debug this error, you can use the [AWS CLI](https://aws.amazon.com/cli/)
-to test the connectivity to the bucket. You should be able to write a file with the CLI using the same
-data that you supplied to the destinations API above.
-
-**AWS S3:**
+Poll the export status using the `id` from the [previous step](#2-create-an-export):
 
 ```bash
-aws configure
-
-# set the same access key credentials and region as you used for the destination
-> AWS Access Key ID: <access_key_id>
-> AWS Secret Access Key: <secret_access_key>
-> Default region name [us-east-1]: <region>
-
-# List buckets
-aws s3 ls /
-
-# test write permissions
-touch ./test.txt
-aws s3 cp ./test.txt s3://<bucket-name>/tmp/test.txt
+curl --request GET \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/{export_id}' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID'
 ```
 
-**GCS Compatible Buckets:**
+The `status` field in the response will be one of `CREATED`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, or `TIMEDOUT`. Exports may take some time depending on the volume of data. Once the status is `COMPLETED`, the Parquet files are available in your bucket.
 
-You will need to supply the endpoint_url with `--endpoint-url` option.
-For GCS, the `endpoint_url` is typically `https://storage.googleapis.com`:
-
-```bash
-aws configure
-
-# set the same access key credentials and region as you used for the destination
-> AWS Access Key ID: <access_key_id>
-> AWS Secret Access Key: <secret_access_key>
-> Default region name [us-east-1]: <region>
-
-# List buckets
-aws s3 --endpoint-url=<endpoint_url> ls /
-
-# test write permissions
-touch ./test.txt
-aws s3 --endpoint-url=<endpoint_url> cp ./test.txt s3://<bucket-name>/tmp/test.txt
-```
-
-### Monitoring runs
-
-You can monitor your runs using the [List Runs API](#list-runs-for-an-export). If this is a known error, this will be added to the `errors` field of the run.
-
-### Common errors
-
-Here are some common errors:
-
-| Error                              | Description                                                                                                                                                                                                                                                                                            |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Access denied                      | The blob store credentials or bucket are not valid. This error occurs when the provided access key and secret key combination doesn't have the necessary permissions to access the specified bucket or perform the required operations.                                                                |
-| Bucket is not valid                | The specified blob store bucket is not valid. This error is thrown when the bucket doesn't exist or there is not enough access to perform writes on the bucket.                                                                                                                                        |
-| Key ID you provided does not exist | The blob store credentials provided are not valid. This error occurs when the access key ID used for authentication is not a valid key.                                                                                                                                                                |
-| Invalid endpoint                   | The endpoint_url provided is invalid. This error is raised when the specified endpoint is an invalid endpoint. Only S3 compatible endpoints are supported, for example `https://storage.googleapis.com` for GCS, `https://play.min.io` for minio, etc. If using AWS, you should omit the endpoint_url. |
-
-## Failure modes and retry policy
-
-LangSmith bulk exports handle transient failures and infrastructure issues automatically to ensure resilience.
-
-Each bulk export is divided into multiple _runs_, where each run processes data for a [specific date partition](#partitioning-scheme) (typically organized by day). Runs are processed independently, which enables:
-
-- Parallel processing of different time periods.
-- Independent retry logic for each run.
-- Resumption from specific checkpoints if interrupted.
-
-Each run (date range) in your export has its own [failure handling](#failure-scenarios) and [retry budget](#automation-retry-behavior). If a run fails after exhausting all retries, the entire export is marked as `FAILED`.
-
-### Automatic retry behavior
-
-Export jobs automatically retry transient failures with the following behavior:
-
-- **Maximum retry attempts**: 20 retries per run (subject to change).
-- **Retry delay**: 30 seconds between attempts (fixed, no exponential backoff).
-- **Run timeout**: 4 hours maximum per run.
-- **Overall workflow timeout**: 72 hours for the entire export.
-
-### Failure scenarios
-
-| Failure type | Cause | Automatic retry? | Action required |
-|--------------|-------|------------------|-----------------|
-| **Infrastructure interruption** | [Deployments](/langsmith/deployments), server restarts, worker crashes | Yes, automatically requeued with remaining retries. | None, jobs resume automatically. |
-| **Run timeout** | Single run exceeds 4-hour limit | Yes, retried up to 20 times (subject to change). | If persistent, narrow date range, add filters, or [limit the exported fields](#limiting-exported-fields). |
-| **Workflow timeout** | Entire export exceeds 72 hours | No | Reduce export scope (date range, filters) or break into smaller exports. |
-| **Storage/destination errors** | [Invalid credentials](#credentials-configuration), [missing bucket](#destinations-providing-an-s3-bucket), [permission issues](#permissions-required) | No | Fix destination configuration and create new export. |
-| **Destination deleted** | Bucket removed during export | No | Recreate destination and restart export. |
-| **Terminal processing errors** | Data serialization issues, resource exhaustion | Yes, retried up to 20 times (subject to change). | Check run error details; may require investigation. |
-
-<Note>
-Any single run failure (after all retries are exhausted) causes the entire export to fail.
-</Note>
-
-### Export status lifecycle
-
-Exports can have the following statuses:
-
-| Status | Description |
-|--------|-------------|
-| `CREATED` | Export has been created but not yet started processing. |
-| `RUNNING` | Export is actively processing runs. |
-| `COMPLETED` | All runs successfully exported. |
-| `FAILED` | One or more runs failed after exhausting retries. |
-| `CANCELLED` | Export was manually cancelled by user. |
-| `TIMEDOUT` | Export exceeded the 48-hour workflow timeout. |
-
-Individual runs can have the same possible statuses: `CREATED`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, or `TIMEDOUT`.
-
-### Concurrency and rate limits
-
-To ensure system stability, exports are subject to the following limits:
-
-- **Maximum concurrent runs per export**: 45
-- **Maximum concurrent exports per workspace**: 15
-
-If you have multiple exports running, new run jobs will queue until capacity becomes available.
-
-### Progress tracking and resumability
-
-The export system maintains detailed progress metadata for each run:
-- Latest cursor position in the data stream.
-- Number of rows exported.
-- List of Parquet files written.
-
-This progress tracking enables:
-- **Graceful resumption**: If a run is interrupted (e.g., by a deployment), it resumes from the last checkpoint rather than starting over.
-- **Progress monitoring**: Track how much data has been exported through the API.
-- **Efficient retries**: Failed runs don't re-export data that was already successfully written.
-
-### Troubleshooting failed exports
-
-If your export fails, follow these steps:
-
-1. **Check the export status**: Use the [`GET /api/v1/bulk-exports/{export_id}` endpoint](https://api.smith.langchain.com/redoc#tag/bulk-exports) to retrieve the export details and status.
-2. **Review run errors**: Each run includes an [`errors` field](#error-handling) with detailed error messages keyed by retry attempt (e.g., `retry_0`, `retry_1`).
-3. **Verify destination access**: Ensure your [destination bucket](#preparing-the-destination) still exists and [credentials](#credentials-configuration) are valid.
-4. **Check run size**: If you see timeout errors, your date partitions may contain too much data. It may be helpful to [limit the exported fields](#limiting-exported-fields).
-5. **Review system limits**: Ensure you're not hitting [concurrency limits](#concurrency-and-rate-limits) (5 runs per export, 3 exports per workspace).
-
-To monitor your export job, refer to [Monitoring the export job](#monitoring-the-export-job).
-
-For storage-related errors, you can test your destination configuration using the AWS CLI or gsutil before retrying the export.
-
-
+Refer to [Monitor and troubleshoot bulk exports](/langsmith/data-export-monitor) for how to list runs, stop an export, and diagnose failures.

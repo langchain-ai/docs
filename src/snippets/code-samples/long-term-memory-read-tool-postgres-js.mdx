@@ -1,0 +1,44 @@
+```ts
+import * as z from "zod";
+import { createAgent, tool, type ToolRuntime } from "langchain";
+import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
+
+const DB_URI =
+  process.env.POSTGRES_URI ??
+  "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+const store = PostgresStore.fromConnString(DB_URI);
+await store.setup();
+
+const contextSchema = z.object({ userId: z.string() });
+
+await store.put(["users"], "user_123", {
+  name: "John Smith",
+  language: "English",
+});
+
+const getUserInfo = tool(
+  async (_, runtime: ToolRuntime<unknown, z.infer<typeof contextSchema>>) => {
+    const userId = runtime.context.userId;
+    if (!userId) throw new Error("userId is required");
+    const userInfo = await runtime.store.get(["users"], userId);
+    return userInfo?.value ? JSON.stringify(userInfo.value) : "Unknown user";
+  },
+  {
+    name: "getUserInfo",
+    description: "Look up user info by userId from the store.",
+    schema: z.object({}),
+  },
+);
+
+const agent = createAgent({
+  model: "claude-sonnet-4-6",
+  tools: [getUserInfo],
+  contextSchema,
+  store,
+});
+
+await agent.invoke(
+  { messages: [{ role: "user", content: "look up user information" }] },
+  { context: { userId: "user_123" } },
+);
+```
