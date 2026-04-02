@@ -1,9 +1,16 @@
 ---
-title: Long-term memory
-description: Add long-term memory to agents built with Deep Agents so they learn and improve across conversations
+title: Memory
+description: Add persistent memory to agents built with Deep Agents so they learn and improve across conversations
 ---
 
-Long-term memory lets your agent learn and improve across conversations. Deep Agents makes long-term memory first class with a filesystem-based memory system: the agent reads and writes memory as files, and you control where those files are stored using [backends](/oss/deepagents/backends).
+Memory lets your agent learn and improve across conversations. Deep Agents makes memory first class with a filesystem-based system: the agent reads and writes memory as files, and you control where those files are stored using [backends](/oss/deepagents/backends).
+
+How you structure memory depends on the type of agent you're building. Two common patterns:
+
+- **Autonomous agents** act as their own identity. They maintain an `AGENTS.md` file (and optionally other files like skills) that the agent itself updates over time. Memory is shared across all user conversations. Think of a coding agent that learns project conventions, or a support agent that refines its own response style.
+- **Assistants** act on behalf of individual users. They have fixed core instructions (not editable by the agent) and per-user memory files like `preferences.md` that store each user's context. Memory is scoped per user so each person gets a personalized experience.
+
+These aren't mutually exclusive. Many production agents combine both: agent-scoped memory for shared knowledge and user-scoped memory for personalization.
 
 <Note>
 This page covers **long-term memory**: memory that persists across conversations. For short-term memory (conversation history and scratch files within a single session), see the [context engineering](/oss/deepagents/context-engineering) guide. Short-term memory is managed automatically as part of the agent's [state](/oss/langgraph/graph-api#state).
@@ -75,7 +82,7 @@ await agent.invoke({
 
 ## How memories are scoped
 
-To persist memory across conversations, route `/memories/` to a @[`StoreBackend`] using a @[`CompositeBackend`]. The `namespace` on `StoreBackend` controls who can see the memory: [agent-scoped](#agent-scoped-memory) (shared across all users) or [user-scoped](#user-scoped-memory) (isolated per user).
+To persist memory across conversations, route `/memories/` to a persistent backend using a @[`CompositeBackend`]. How you scope the backend controls who can see the memory: [agent-scoped](#agent-scoped-memory) (shared across all users) or [user-scoped](#user-scoped-memory) (isolated per user).
 
 ```mermaid
 graph LR
@@ -100,7 +107,12 @@ graph LR
 
 ## Agent-scoped memory
 
-Agent-scoped memory is shared across all users. The agent has a single `AGENTS.md` file that it reads at the start of every conversation and updates when it learns something new. If you've used `CLAUDE.md` or `.cursorrules`, this is the same idea.
+Agent-scoped memory is shared across all users and is the natural fit for **autonomous agents**. The agent has a single `AGENTS.md` file that it reads at the start of every conversation and updates when it learns something new. If you've used `CLAUDE.md` or `.cursorrules`, this is the same idea.
+
+In this pattern:
+- `AGENTS.md` and [skills](/oss/deepagents/skills) live in the filesystem and are editable by the agent
+- [Episodic memory](#episodic-memory) spans all user conversations since the agent is the primary identity
+- The agent improves its own behavior over time without developer intervention
 
 :::python
 ```python
@@ -183,7 +195,13 @@ This pattern works because it's simple (one file, no schema), transparent (reada
 
 ## User-scoped memory
 
-User-scoped memory is isolated per user. Each user gets their own memory file for preferences and context. Scope by `user_id` in the namespace:
+User-scoped memory is isolated per user and is the natural fit for **assistants**. Each user gets their own memory file for preferences and context.
+
+In this pattern:
+- Core agent instructions are fixed and not stored in the filesystem (they come from the system prompt or deployment config)
+- [Skills](/oss/deepagents/skills) are not editable by the agent
+- Per-user files like `preferences.md` are in the filesystem and editable
+- [Episodic memory](#episodic-memory) is scoped to that user's conversations only
 
 :::python
 ```python
@@ -224,9 +242,17 @@ const agent = createDeepAgent({
 
 ## Store implementations
 
-`StoreBackend` works with any LangGraph `BaseStore` implementation. When deploying to [LangSmith Deployment](/langsmith/deployment), the platform provisions a store automatically. You can also persist memories to a vector database, a custom API, or cloud storage by implementing the [backend protocol](/oss/deepagents/backends#protocol-reference).
+`StoreBackend` works with any LangGraph @[`BaseStore`] implementation. The store is LangGraph's cross-thread persistence layer: it lets you save and retrieve data scoped to any custom namespace, not just a single thread. When deploying to [LangSmith Deployment](/langsmith/deployment), the platform provisions a store automatically.
 
-For local development, `InMemoryStore` is sufficient. For production, use a persistent store:
+For local development, @[`InMemoryStore`] is sufficient. It stores data in an in-memory dictionary and supports basic operations (`put`, `search`, `get`) as well as [semantic search](/oss/langgraph/persistence#semantic-search) with embeddings.
+
+For production, use a persistent store:
+
+| Store | Use case |
+|---|---|
+| @[`PostgresStore`] | Recommended for most production deployments. Supports async via `AsyncPostgresStore`. |
+| @[`RedisStore`] | Low-latency access patterns. Supports async via `AsyncRedisStore`. |
+| Custom | Implement the @[`BaseStore`] interface to back memory with a vector database, custom API, or cloud storage. See the [backend protocol](/oss/deepagents/backends#protocol-reference). |
 
 :::python
 ```python
@@ -248,6 +274,10 @@ const store = new PostgresStore({
 });
 ```
 :::
+
+Each memory is stored as an `Item` with a `value` (the data), `key` (unique identifier), `namespace` (scoping tuple), and timestamps (`created_at`, `updated_at`). You interact with the store using `store.put(namespace, key, value)` to write, `store.search(namespace)` to list, and `store.get(namespace, key)` to retrieve a specific item.
+
+For more on store operations, semantic search, and using stores inside LangGraph nodes, see the [persistence guide](/oss/langgraph/persistence#memory-store).
 
 <Accordion title="FileData schema">
 
@@ -295,7 +325,8 @@ The sections above cover the basics: configure memory paths, choose a scope, and
 | **Information type** | What kind of information is it? | [Episodic](/oss/concepts/memory#episodic-memory) (experiences), [procedural](/oss/concepts/memory#procedural-memory) (instructions and [skills](/oss/deepagents/skills)), or [semantic](/oss/concepts/memory#semantic-memory) (facts) |
 | **Scope** | Who can see and modify it? | [User](#user-scoped-memory), [agent](#agent-scoped-memory), or [organization](#organization-level-memory) |
 | **Update strategy** | When are memories written? | During conversation (default) or [between conversations](#background-consolidation) |
-| **Retrieval** | How are memories read? | Loaded into prompt (default) or on demand (e.g., [episodic memory](#episodic-memory), [skills](/oss/deepagents/skills)) |
+| **Retrieval** | How are memories read? | Loaded into prompt (default), on demand (e.g., [episodic memory](#episodic-memory), [skills](/oss/deepagents/skills)), or via [custom middleware](#custom-memory-loading) |
+| **Agent permissions** | Can the agent write to memory? | [Read-write](#read-only-vs-writable-memory) (default) or [read-only](#read-only-vs-writable-memory) (for shared policies) |
 
 ### Episodic memory
 
@@ -358,7 +389,7 @@ This is useful for agents that perform complex, multi-step tasks. For example, a
 
 ### Organization-level memory
 
-For policies or knowledge that should apply across all users and agents, scope memory by `org_id`. This is typically **read-only** to prevent prompt injection via shared state.
+For policies or knowledge that should apply across all users and agents, scope memory by `org_id`. This is typically **read-only** to prevent prompt injection via shared state. See [read-only vs writable memory](#read-only-vs-writable-memory) for details.
 
 Populate organization memory from your application code:
 
@@ -408,7 +439,7 @@ Load organization memory into the prompt alongside user memory by adding it to t
 
 ### Background consolidation
 
-By default, the agent writes memories during the conversation (hot path). An alternative is to process memories **between conversations** as a background task. After a conversation ends, a separate process reviews the transcript, extracts key facts, and merges them with existing memories.
+By default, the agent writes memories during the conversation (hot path). An alternative is to process memories **between conversations** as a background task, sometimes called **sleep time compute**. After a conversation ends, a separate process reviews the transcript, extracts key facts, and merges them with existing memories.
 
 | Approach | Pros | Cons |
 |---|---|---|
@@ -432,7 +463,7 @@ graph LR
     class Store output
 ```
 
-Use a webhook or background task to run consolidation after each conversation:
+Use a webhook, cron job, or background task runner to trigger consolidation after each conversation:
 
 :::python
 ```python
@@ -524,9 +555,189 @@ async function consolidateMemories(userId: string, threadId: string) {
 
 This avoids adding latency to the conversation and produces better-quality memories since consolidation can consider the full conversation at once. The tradeoff is that new memories aren't available until the next conversation.
 
-### Multiple agents in the same deployment
+### Read-only vs writable memory
 
-If you deploy multiple agents and need to isolate memory per agent, add the agent ID to the namespace. This prevents agents from reading or overwriting each other's memory.
+By default, the agent can both read and write memory files. For shared state like organization policies or compliance rules, you may want to make memory **read-only** so the agent can reference it but not modify it. This prevents prompt injection via shared memory and ensures that only your application code controls what's in the file.
+
+| Permission | Use case | How it works |
+|---|---|---|
+| **Read-write** (default) | User preferences, agent self-improvement, learned patterns | Agent updates files via `edit_file` tool |
+| **Read-only** | Organization policies, compliance rules, shared knowledge bases | Populate via application code or the [Store API](/langsmith/custom-store). Use [policy hooks](/oss/deepagents/backends#add-policy-hooks) to block agent writes. |
+
+To enforce read-only memory, use [policy hooks](/oss/deepagents/backends#add-policy-hooks) on the backend that reject write operations to specific paths:
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+
+agent = create_deep_agent(
+    memory=[
+        "/memories/preferences.md",   # Read-write: agent can update
+        "/policies/compliance.md",     # Read-only: agent can only read
+    ],
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/memories/": StoreBackend(
+                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+            ),
+            "/policies/": StoreBackend(
+                namespace=lambda ctx: (ctx.runtime.context.org_id, "policies"),
+                read_only=True,
+            ),
+        },
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  memory: [
+    "/memories/preferences.md",   // Read-write: agent can update
+    "/policies/compliance.md",    // Read-only: agent can only read
+  ],
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      "/memories/": new StoreBackend({
+        namespace: (ctx) => [ctx.runtime.context.userId],
+      }),
+      "/policies/": new StoreBackend({
+        namespace: (ctx) => [ctx.runtime.context.orgId, "policies"],
+        readOnly: true,
+      }),
+    },
+  ),
+});
+```
+:::
+
+### Custom memory loading
+
+By default, `MemoryMiddleware` loads memory files into the system prompt at the start of each conversation. For more control over how memories are injected, use [custom middleware](/oss/langchain/middleware/custom) to load memories yourself.
+
+This is useful when you want to load memories from a different source, apply custom formatting, or combine memory with other context before injecting it into the prompt.
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from langchain.messages import SystemMessage
+from typing import Callable
+
+
+@wrap_model_call
+def load_memories(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    """Load memories into the system prompt on the first model call."""
+    runtime = request.runtime
+    store = runtime.store
+    namespace = (runtime.context.user_id,)
+
+    # Read the preferences file from the store
+    item = store.get(namespace, "/preferences.md")
+    if item and item.value:
+        memories = "\n".join(item.value.get("content", []))
+        new_content = list(request.system_message.content_blocks) + [
+            {
+                "type": "text",
+                "text": f"""Memory file: /memories/preferences.md
+<user_memories>
+{memories}
+</user_memories>""",
+            }
+        ]
+        return handler(request.override(
+            system_message=SystemMessage(content=new_content)
+        ))
+
+    return handler(request)
+
+
+agent = create_deep_agent(
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/memories/": StoreBackend(
+                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+            ),
+        },
+    ),
+    middleware=[load_memories],
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+import { wrapModelCall } from "@langchain/core/middleware";
+
+const loadMemories = wrapModelCall(async (request, handler) => {
+  const { runtime } = request;
+  const store = runtime.store;
+  const namespace = [runtime.context.userId];
+
+  const item = await store.get(namespace, "/preferences.md");
+  if (item?.value) {
+    const memories = item.value.content.join("\n");
+    const newContent = [
+      ...request.systemMessage.contentBlocks,
+      {
+        type: "text",
+        text: `Memory file: /memories/preferences.md\n<user_memories>\n${memories}\n</user_memories>`,
+      },
+    ];
+    return handler(request.override({
+      systemMessage: { content: newContent },
+    }));
+  }
+
+  return handler(request);
+});
+
+const agent = createDeepAgent({
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      "/memories/": new StoreBackend({
+        namespace: (ctx) => [ctx.runtime.context.userId],
+      }),
+    },
+  ),
+  middleware: [loadMemories],
+});
+```
+:::
+
+### Environment seeding
+
+When an agent runs inside a [sandbox](/oss/deepagents/sandboxes), it operates in an isolated container that can't directly access the memory store. To bridge this gap, seed memories into the sandbox before the agent runs and sync updated memories back after it finishes. Use [custom middleware](/oss/langchain/middleware/custom) with `before_agent` and `after_agent` hooks.
+
+For implementation details and a full code example, see the [file transfers](/oss/deepagents/going-to-production#file-transfers) guide.
+
+### Skills as memory
+
+[Skills](/oss/deepagents/skills) are reusable agent capabilities defined as `SKILL.md` files. They function as a form of long-term memory: persistent instructions that shape agent behavior across conversations. The agent can also create and refine its own skills at a writable path like `/memories/skills/`.
+
+For details on configuring skills, see the [skills guide](/oss/deepagents/skills).
+
+## FAQ
+
+<Accordion title="Can multiple threads write to memory in parallel?">
+Yes, but concurrent writes to the **same file** can cause last-write-wins conflicts. For user-scoped memory this is rare since users typically have one active conversation at a time. For agent-scoped or organization-scoped memory, consider using [background consolidation](#background-consolidation) to serialize writes, or structure memory as separate files per topic to reduce contention.
+</Accordion>
+
+<Accordion title="How do I isolate memory across multiple agents in the same deployment?">
+If you deploy multiple agents in the same LangGraph deployment and need each agent to have its own memory, add the agent's `assistant_id` to the namespace. This prevents agents from reading or overwriting each other's memory files.
 
 :::python
 ```python
@@ -573,22 +784,7 @@ const agent = createDeepAgent({
 ```
 :::
 
-### Environment seeding
-
-When an agent runs inside a [sandbox](/oss/deepagents/sandboxes), it operates in an isolated container that can't directly access the memory store. To bridge this gap, seed memories into the sandbox before the agent runs and sync updated memories back after it finishes. Use [custom middleware](/oss/langchain/middleware/custom) with `before_agent` and `after_agent` hooks.
-
-For implementation details and a full code example, see the [file transfers](/oss/deepagents/going-to-production#file-transfers) guide.
-
-### Skills as memory
-
-[Skills](/oss/deepagents/skills) are reusable agent capabilities defined as `SKILL.md` files. They function as a form of long-term memory: persistent instructions that shape agent behavior across conversations. The agent can also create and refine its own skills at a writable path like `/memories/skills/`.
-
-For details on configuring skills, see the [skills guide](/oss/deepagents/skills).
-
-## FAQ
-
-<Accordion title="Can multiple threads write to memory in parallel?">
-Yes, but concurrent writes to the **same file** can cause last-write-wins conflicts. For user-scoped memory this is rare since users typically have one active conversation at a time. For agent-scoped or organization-scoped memory, consider using [background consolidation](#background-consolidation) to serialize writes, or structure memory as separate files per topic to reduce contention.
+The namespace `(assistant_id, user_id)` scopes memory to both the specific agent and the specific user. If you only need per-agent isolation without per-user scoping, use `(assistant_id,)` alone.
 </Accordion>
 
 <Accordion title="How do I audit what the agent stores?">
@@ -599,7 +795,7 @@ Use [LangSmith tracing](/langsmith/tracing) to monitor what your agent writes to
 If one user can write to memory that another user reads, a malicious user could inject instructions into shared state. To mitigate this:
 
 - **Default to user scope** `(user_id)` unless you have a specific reason to share
-- Use **read-only memory** for shared policies (populate via application code, not the agent)
+- Use **[read-only memory](#read-only-vs-writable-memory)** for shared policies (populate via application code, not the agent)
 - Use [policy hooks](/oss/deepagents/backends#add-policy-hooks) to block unauthorized writes
 - On [LangSmith](/langsmith/home), use [RBAC](/langsmith/rbac) and [ABAC](/langsmith/abac) to restrict access
 </Accordion>
