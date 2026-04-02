@@ -1,0 +1,80 @@
+---
+title: "Leap0Sandbox integration"
+description: "Integrate with the Leap0Sandbox sandbox backend using LangChain Python."
+---
+
+[Leap0](https://leap0.dev) provides cloud sandboxes for AI agents: isolated compute, filesystem, and network boundaries, with sandboxes that start in about 200ms. See the [Leap0 docs](https://leap0.dev/docs) for signup, API keys, and platform details.
+
+Set `LEAP0_API_KEY` in your environment before running the examples below.
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install langchain-leap0
+```
+
+```bash uv
+uv add langchain-leap0
+```
+</CodeGroup>
+
+## Create a sandbox backend
+
+In Python, you create the sandbox using the provider SDK, then wrap it with the [deepagents backend](/oss/deepagents/backends).
+
+```python
+from leap0 import Leap0Client
+
+from langchain_leap0 import Leap0Sandbox
+
+client = Leap0Client()
+sandbox = client.sandboxes.create()
+backend = Leap0Sandbox(client=client, sandbox=sandbox)
+
+try:
+    result = backend.execute("echo hello")
+    print(result.output)
+finally:
+    client.sandboxes.delete(sandbox)
+    client.close()
+```
+
+## Use with Deep Agents
+
+```python
+from leap0 import Leap0Client
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_leap0 import Leap0Sandbox
+
+client = Leap0Client()
+sandbox = client.sandboxes.create()
+backend = Leap0Sandbox(client=client, sandbox=sandbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+try:
+    result = agent.invoke(
+        {
+            "messages": [
+                {"role": "user", "content": "Create a hello world Python script and run it"}
+            ]
+        }
+    )
+finally:
+    client.sandboxes.delete(sandbox)
+    client.close()
+```
+
+## Cleanup
+
+You are responsible for managing the sandbox lifecycle via the Leap0 SDK.
+When you are done, delete the sandbox and close the client.
+
+See also: [Sandboxes](/oss/deepagents/sandboxes).
