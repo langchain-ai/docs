@@ -1,0 +1,158 @@
+---
+title: "Capsule code execution tools"
+description: "Integrate with the Capsule code execution tools using LangChain Python."
+---
+
+[Capsule](https://github.com/mavdol/capsule) runs untrusted Python and JavaScript code in isolated
+WebAssembly sandboxes. The sandbox binaries are bundled inside the package — no server, API key,
+or network request required.
+
+`langchain-capsule` provides four tools across two execution modes:
+
+| Tool | Language | Mode |
+|------|----------|------|
+| `CapsulePythonTool` | Python | Stateless |
+| `CapsuleJSTool` | JavaScript | Stateless |
+| `CapsulePythonREPLTool` | Python | Session-based |
+| `CapsuleJSREPLTool` | JavaScript | Session-based |
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install langchain-capsule
+```
+
+```bash uv
+uv add langchain-capsule
+```
+</CodeGroup>
+
+## Stateless execution
+
+Each call runs in a fresh sandbox. No state is preserved between calls. Use these tools when
+your agent only needs to evaluate isolated expressions or run self-contained scripts.
+
+```python
+from langchain_capsule import CapsuleJSTool, CapsulePythonTool
+
+python_tool = CapsulePythonTool()
+print(python_tool.run("1 + 1"))  # "2"
+
+js_tool = CapsuleJSTool()
+print(js_tool.run("1 + 2"))  # "3"
+```
+
+### Use with an agent
+
+```python
+from langchain_capsule import CapsulePythonTool
+from langchain_openai import ChatOpenAI
+
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+tools = [CapsulePythonTool()]
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You are a helpful assistant. Use the Python tool to run code when needed."),
+        ("human", "{input}"),
+        ("placeholder", "{agent_scratchpad}"),
+    ]
+)
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+result = agent_executor.invoke({"input": "What is the square root of 144?"})
+print(result["output"])
+```
+
+## Session-based execution
+
+The REPL tools preserve variables, imports, and function definitions across calls — useful for
+multi-step computations or when the agent needs to build up state incrementally.
+
+```python
+import asyncio
+
+from langchain_capsule import CapsuleJSREPLTool, CapsulePythonREPLTool
+
+
+async def main():
+    # Python session
+    py = CapsulePythonREPLTool()
+    await py._arun("total = 0")
+    await py._arun("total += 10")
+    await py._arun("total += 32")
+    print(await py._arun("total"))  # "42"
+
+    # Inspect variables currently in scope
+    print(await py.get_state())  # {"total": "int"}
+
+    # Clear state without destroying the session
+    await py.reset()
+
+    # Destroy the session and release resources
+    await py.close()
+
+    # JavaScript session
+    js = CapsuleJSREPLTool()
+    await js._arun("let total = 0")
+    await js._arun("total += 10")
+    await js._arun("total += 32")
+    print(await js._arun("total"))  # "42"
+    await js.close()
+
+
+asyncio.run(main())
+```
+
+## File operations
+
+The REPL tools can exchange files with the sandbox workspace. This is useful when the agent
+needs to process existing data or retrieve output files.
+
+```python
+import asyncio
+
+from langchain_capsule import CapsulePythonREPLTool
+
+
+async def main():
+    py = CapsulePythonREPLTool()
+
+    # Copy a local file into the sandbox
+    await py.import_file("./data.csv", "data.csv")
+
+    # Process the file inside the sandbox
+    await py._arun("content = open('workspace/data.csv').read()")
+    await py._arun("open('workspace/result.txt', 'w').write(content.upper())")
+
+    # Retrieve the output
+    await py.export_file("result.txt", "./result.txt")
+
+    # Remove a file from the workspace
+    await py.delete_file("data.csv")
+
+    await py.close()
+
+
+asyncio.run(main())
+```
+
+## Cleanup
+
+Always call `close()` on REPL tool instances when you are done to release sandbox resources.
+
+```python
+await py.close()
+await js.close()
+```
+
+<Info>
+    For more information, see the [langchain-capsule GitHub repository](https://github.com/mavdol/langchain-capsule)
+    and the [Capsule sandbox repository](https://github.com/mavdol/capsule).
+</Info>
