@@ -81,7 +81,7 @@ For some use cases you may want a dynamic prompt: for example, to tell the model
 If your prompt depends on context or `runtime.store`, use `@dynamic_prompt` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`.
 See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
-You do **not** need middleware when tools alone use context or `runtime.store`; tools receive `config.context` and `runtime.store` directly. Add middleware only when tools should be packaged with an update to the system prompt.
+You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the @[ToolRuntime] object (including `runtime.context` and `runtime.store`) directly. Add middleware only when tools should be packaged with an update to the system prompt.
 :::
 
 :::js
@@ -91,7 +91,7 @@ If your prompt depends on context or `runtime.store`, use `dynamicSystemPromptMi
 Your middleware can read `request.runtime.context` and `request.runtime.store`.
 See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
-You do **not** need middleware when tools alone use context or `runtime.store`; tools receive `config.context` and `runtime.store` directly. Add middleware only when the system prompt itself must vary per request.
+You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the `runtime` object (including `runtime.context` and `runtime.store`) directly. Add middleware only when the system prompt itself must vary per request.
 :::
 
 ### Memory
@@ -218,39 +218,62 @@ The deep agent's system message—the assembled system prompt the model receives
 
 ## Runtime context
 
-Runtime context is per-run configuration you pass when you invoke the agent. It is not automatically included in the model prompt; the model only sees it if a tool, middleware, or other logic reads it and adds it to messages or the system prompt. Use runtime context for user metadata (IDs, preferences, roles), API keys, database connections, feature flags, or other values your tools and harness need. Tools and subagents receive this context from the `config` argument:
+Runtime context is per-run configuration you pass when you invoke the agent. It is not automatically included in the model prompt; the model only sees it if a tool, middleware, or other logic reads it and adds it to messages or the system prompt. Use runtime context for user metadata (IDs, preferences, roles), API keys, database connections, feature flags, or other values your tools and harness need.
 
 :::python
+Define the shape of that data with `context_schema`: use a `dataclasses.dataclass` or `typing.TypedDict` class. Pass values with the **`context`** argument to `invoke` / `ainvoke`. See [Runtime](/oss/langchain/runtime) and [LangGraph runtime context](/oss/langgraph/graph-api#runtime-context) for full detail.
+
+Inside tools, read context from the injected @[ToolRuntime]:
+
 ```python
-from langchain.agents import tool
+from dataclasses import dataclass
+
+from deepagents import create_deep_agent
+from langchain.tools import tool, ToolRuntime
+
+@dataclass
+class Context:
+    user_id: str
+    api_key: str
 
 @tool
-def fetch_user_data(query: str, config) -> str:
+def fetch_user_data(query: str, runtime: ToolRuntime[Context]) -> str:
     """Fetch data for the current user."""
-    user_id = config.get("context", {}).get("user_id")
+    user_id = runtime.context.user_id
     return f"Data for user {user_id}: {query}"
 
 agent = create_deep_agent(
     model="claude-sonnet-4-6",
     tools=[fetch_user_data],
-    context_schema={"user_id": str, "api_key": str},
+    context_schema=Context,
 )
 
 result = agent.invoke(
     {"messages": [{"role": "user", "content": "Get my recent activity"}]},
-    config={"context": {"user_id": "user-123", "api_key": "sk-..."}},
+    context=Context(user_id="user-123", api_key="sk-..."),
 )
 ```
 :::
 
 :::js
+Define the shape of that data with `contextSchema`, typically a Zod object schema (for example `z.object({ ... })`). Pass runtime values in the **`context`** field of the options object you pass to `invoke` / `ainvoke`. See [Runtime](/oss/langchain/runtime) and [LangGraph runtime context](/oss/langgraph/graph-api#runtime-context) for full detail.
+
+Inside tools, read `runtime.context` from the `ToolRuntime` instance supplied as the tool handler's `runtime` argument:
+
 ```typescript
+import { createDeepAgent } from "deepagents";
 import { tool } from "langchain";
+import type { ToolRuntime } from "@langchain/core/tools";
 import { z } from "zod";
 
+const contextSchema = z.object({
+  userId: z.string(),
+  apiKey: z.string(),
+});
+
 const fetchUserData = tool(
-  (input, config) => {
-    const userId = config.context?.userId;
+  async (input, runtime: ToolRuntime<unknown, typeof contextSchema>) => {
+    const userId = runtime.context?.userId;
     return `Data for user ${userId}: ${input.query}`;
   },
   {
@@ -259,11 +282,6 @@ const fetchUserData = tool(
     schema: z.object({ query: z.string() }),
   }
 );
-
-const contextSchema = z.object({
-  userId: z.string(),
-  apiKey: z.string(),
-});
 
 const agent = await createDeepAgent({
   model: "claude-sonnet-4-6",
@@ -278,7 +296,7 @@ const result = await agent.invoke(
 ```
 :::
 
-Runtime context **propagates to all subagents**. When a subagent runs, it receives the same `config` (including `context`) as the parent. See [Subagents](/oss/deepagents/subagents#context-management) for per-subagent context (namespaced keys).
+Runtime context **propagates to all subagents**. When a subagent runs, it receives the same runtime context as the parent. See [Subagents](/oss/deepagents/subagents#context-management) for per-subagent context (namespaced keys).
 
 ## Context compression
 

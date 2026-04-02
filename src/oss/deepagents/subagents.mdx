@@ -623,20 +623,27 @@ Each subagent works with clean context focused only on its task.
 
 ## Context management
 
-When you invoke a parent agent with [runtime context](/oss/langchain/runtime), that context automatically propagates to all subagents. The parent's full `config` (including `context`) is passed through to each subagent invocation internally.
+When you invoke a parent agent with [runtime context](/oss/langchain/runtime), that context automatically propagates to all subagents. Each subagent run receives the same runtime context you passed on the parent `invoke` / `ainvoke` call.
 
 This means tools running inside any subagent can access the same context values you provided to the parent:
 
 :::python
 ```python
+from dataclasses import dataclass
+
 from deepagents import create_deep_agent
-from langchain.agents import tool
-from pydantic import BaseModel
+from langchain.messages import HumanMessage
+from langchain.tools import tool, ToolRuntime
+
+@dataclass
+class Context:
+    user_id: str
+    session_id: str
 
 @tool
-def get_user_data(query: str, config) -> str:
+def get_user_data(query: str, runtime: ToolRuntime[Context]) -> str:
     """Fetch data for the current user."""
-    user_id = config.get("context", {}).get("user_id")
+    user_id = runtime.context.user_id
     return f"Data for user {user_id}: {query}"
 
 research_subagent = {
@@ -649,13 +656,13 @@ research_subagent = {
 agent = create_deep_agent(
     model="claude-sonnet-4-6",
     subagents=[research_subagent],
-    context_schema={"user_id": str, "session_id": str},
+    context_schema=Context,
 )
 
 # Context flows to the researcher subagent and its tools automatically
 result = await agent.invoke(
     {"messages": [HumanMessage("Look up my recent activity")]},
-    {"context": {"user_id": "user-123", "session_id": "abc"}},
+    context=Context(user_id="user-123", session_id="abc"),
 )
 ```
 :::
@@ -664,11 +671,17 @@ result = await agent.invoke(
 ```typescript
 import { createDeepAgent } from "deepagents";
 import { tool } from "langchain";
+import type { ToolRuntime } from "@langchain/core/tools";
 import { z } from "zod";
 
+const contextSchema = z.object({
+  userId: z.string(),
+  sessionId: z.string(),
+});
+
 const getUserData = tool(
-  (input, config) => {
-    const userId = config.context?.userId;
+  async (input, runtime: ToolRuntime<unknown, typeof contextSchema>) => {
+    const userId = runtime.context?.userId;
     return `Data for user ${userId}: ${input.query}`;
   },
   {
@@ -684,11 +697,6 @@ const researchSubagent = {
   systemPrompt: "You are a research assistant.",
   tools: [getUserData],
 };
-
-const contextSchema = z.object({
-  userId: z.string(),
-  sessionId: z.string(),
-});
 
 const agent = createDeepAgent({
   model: "claude-sonnet-4-6",
@@ -706,25 +714,52 @@ const result = await agent.invoke(
 
 ### Per-subagent context
 
-All subagents receive the same parent context. To pass configuration that is specific to a particular subagent, use **namespaced keys**: prefix context keys with the subagent's name:
+All subagents receive the same parent context. To pass configuration that is specific to a particular subagent, use **namespaced keys** (prefix keys with the subagent name, for example `researcher:max_depth`) in a flat `context` mapping, **or** model those settings as separate fields on your context type:
 
 :::python
 ```python
+from dataclasses import dataclass
+
+from langchain.messages import HumanMessage
+from langchain.tools import tool, ToolRuntime
+
+@dataclass
+class Context:
+    user_id: str
+    researcher_max_depth: int | None = None
+    fact_checker_strict_mode: bool | None = None
+
 result = await agent.invoke(
     {"messages": [HumanMessage("Research this and verify the claims")]},
-    {
-        "context": {
-            "user_id": "user-123",                        # shared by all agents
-            "researcher:max_depth": 3,                    # only for researcher
-            "fact-checker:strict_mode": True,             # only for fact-checker
-        }
-    },
+    context=Context(
+        user_id="user-123",
+        researcher_max_depth=3,
+        fact_checker_strict_mode=True,
+    ),
 )
+
+@tool
+def verify_claim(claim: str, runtime: ToolRuntime[Context]) -> str:
+    """Verify a factual claim."""
+    strict_mode = runtime.context.fact_checker_strict_mode or False
+    if strict_mode:
+        return strict_verification(claim)
+    return basic_verification(claim)
 ```
 :::
 
 :::js
 ```typescript
+import { tool } from "langchain";
+import type { ToolRuntime } from "@langchain/core/tools";
+import { z } from "zod";
+
+const contextSchema = z.object({
+  userId: z.string(),
+  researcherMaxDepth: z.number().optional(),
+  factCheckerStrictMode: z.boolean().optional(),
+});
+
 const result = await agent.invoke(
   { messages: [new HumanMessage("Research this and verify the claims")] },
   {
@@ -735,28 +770,10 @@ const result = await agent.invoke(
     },
   },
 );
-```
-:::
 
-Then read the relevant keys inside tools:
-
-:::python
-```python
-@tool
-def verify_claim(claim: str, config) -> str:
-    """Verify a factual claim."""
-    strict_mode = config.get("context", {}).get("fact-checker:strict_mode", False)
-    if strict_mode:
-        return strict_verification(claim)
-    return basic_verification(claim)
-```
-:::
-
-:::js
-```typescript
 const verifyClaim = tool(
-  (input, config) => {
-    const strictMode = config.context?.["fact-checker:strictMode"] ?? false;
+  async (input, runtime: ToolRuntime<unknown, typeof contextSchema>) => {
+    const strictMode = runtime.context?.factCheckerStrictMode ?? false;
     if (strictMode) {
       return strictVerification(input.claim);
     }
@@ -777,10 +794,12 @@ When the same tool is shared between the parent and multiple subagents, you can 
 
 :::python
 ```python
+from langchain.tools import tool, ToolRuntime
+
 @tool
-def shared_lookup(query: str, config) -> str:
+def shared_lookup(query: str, runtime: ToolRuntime) -> str:
     """Look up information."""
-    agent_name = config.get("metadata", {}).get("lc_agent_name")
+    agent_name = runtime.config.get("metadata", {}).get("lc_agent_name")
     if agent_name == "fact-checker":
         return strict_lookup(query)
     return general_lookup(query)
@@ -789,9 +808,12 @@ def shared_lookup(query: str, config) -> str:
 
 :::js
 ```typescript
+import { tool } from "langchain";
+import type { ToolRuntime } from "@langchain/core/tools";
+
 const sharedLookup = tool(
-  (input, config) => {
-    const agentName = config.metadata?.lc_agent_name;
+  async (input, runtime: ToolRuntime) => {
+    const agentName = runtime.config?.metadata?.lc_agent_name;
     if (agentName === "fact-checker") {
       return strictLookup(input.query);
     }
@@ -806,18 +828,22 @@ const sharedLookup = tool(
 ```
 :::
 
-You can combine both patterns—use namespaced context for agent-specific configuration and `lc_agent_name` metadata for branching tool behavior:
+You can combine both patterns—read agent-specific settings from `runtime.context` and read `lc_agent_name` from `runtime.config` metadata when branching tool behavior.
 
 :::python
 ```python
-@tool
-def flexible_search(query: str, config) -> str:
-    """Search with agent-specific settings."""
-    agent_name = config.get("metadata", {}).get("lc_agent_name", "unknown")
-    ctx = config.get("context", {})
+from langchain.tools import tool, ToolRuntime
 
-    max_results = ctx.get(f"{agent_name}:max_results", 5)
-    include_raw = ctx.get(f"{agent_name}:include_raw", False)
+@tool
+def flexible_search(query: str, runtime: ToolRuntime[Context]) -> str:
+    """Search with agent-specific settings."""
+    agent_name = runtime.config.get("metadata", {}).get("lc_agent_name", "unknown")
+    ctx = runtime.context
+    if agent_name == "researcher":
+        max_results = ctx.researcher_max_depth or 5
+    else:
+        max_results = 5
+    include_raw = False
 
     return perform_search(query, max_results=max_results, include_raw=include_raw)
 ```
@@ -826,12 +852,12 @@ def flexible_search(query: str, config) -> str:
 :::js
 ```typescript
 const flexibleSearch = tool(
-  (input, config) => {
-    const agentName = config.metadata?.lc_agent_name ?? "unknown";
-    const ctx = config.context ?? {};
-
-    const maxResults = ctx[`${agentName}:maxResults`] ?? 5;
-    const includeRaw = ctx[`${agentName}:includeRaw`] ?? false;
+  async (input, runtime: ToolRuntime<unknown, typeof contextSchema>) => {
+    const agentName = runtime.config?.metadata?.lc_agent_name ?? "unknown";
+    const ctx = runtime.context;
+    const maxResults =
+      agentName === "researcher" ? ctx?.researcherMaxDepth ?? 5 : 5;
+    const includeRaw = false;
 
     return performSearch(input.query, { maxResults, includeRaw });
   },
