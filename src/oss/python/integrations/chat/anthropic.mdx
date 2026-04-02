@@ -86,6 +86,12 @@ model = ChatAnthropic(
 
 See the @[`ChatAnthropic`] API reference for details on all available instantiation parameters.
 
+<Note>
+    **Inference geography**
+
+    To control where model inference runs for [data residency](https://platform.claude.com/docs/en/build-with-claude/data-residency), pass `inference_geo` when you create @[`ChatAnthropic`]. See Anthropic documentation for supported values.
+</Note>
+
 {/* TODO: show use with a proxy or different base_url */}
 
 ## Invocation
@@ -105,7 +111,7 @@ See the @[`ChatAnthropic`] API reference for details on all available instantiat
                 "I love programming.",
             ),
         ]
-        model.invoke(messages)
+        ai_msg = model.invoke(messages)
         ```
 
 
@@ -154,10 +160,11 @@ See the @[`ChatAnthropic`] API reference for details on all available instantiat
         title="Async"
     >
         ```python
-        await model.ainvoke(messages)
+        ai_msg = await model.ainvoke(messages)
 
         # stream
-        async for chunk in (await model.astream(messages))
+        async for chunk in model.astream(messages):
+            print(chunk.text, end="")
 
         # batch
         await model.abatch([messages])
@@ -803,10 +810,9 @@ For Claude Sonnet and earlier models, you will need to specify a token budget. F
 Certain Claude models support an [effort](https://platform.claude.com/docs/en/build-with-claude/effort) feature, which controls how many tokens Claude uses when responding. This is useful for balancing response quality against latency and cost.
 
 <Info>
-    **Model Support**
+    **Model support**
 
-    - Generally available: Claude Opus 4.6, Claude Sonnet 4.6, and Claude Opus 4.5
-    - The `max` effort level is only supported by Claude Opus 4.6
+    Effort is generally available on Claude Opus 4.6 and Claude Opus 4.5. The `max` effort level is only supported on Claude Opus 4.6. Anthropic may add or adjust model support over time—use the [Claude effort documentation](https://platform.claude.com/docs/en/build-with-claude/effort) as the source of truth.
 </Info>
 
 ```python
@@ -1262,12 +1268,18 @@ Second:
 #### Caching tools
 
 ```python expandable
+import requests
+
 from langchain_anthropic import ChatAnthropic
 from langchain.tools import tool
 
 
 # For demonstration purposes, we artificially expand the
-# tool description.
+# tool description using the LangChain README text.
+get_response = requests.get(
+    "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
+)
+readme = get_response.text
 description = (
     "Get the weather at a location. "
     f"By the way, check out this readme: {readme}"
@@ -2085,7 +2097,7 @@ Claude supports client-side [computer use](https://platform.claude.com/docs/en/a
         while response.tool_calls:
             tool_messages = []
             for tool_call in response.tool_calls:
-                result = computer.invoke(tool_call["args"])
+                result = computer.invoke(tool_call)
                 tool_messages.append(
                     ToolMessage(content=str(result), tool_call_id=tool_call["id"])
                 )
@@ -2367,7 +2379,7 @@ Claude supports a client-side text editor tool can be used to view and modify te
         while response.tool_calls:
             tool_messages = []
             for tool_call in response.tool_calls:
-                result = str_replace_based_edit_tool.invoke(tool_call["args"])
+                result = str_replace_based_edit_tool.invoke(tool_call)
                 tool_messages.append(
                     ToolMessage(content=result, tool_call_id=tool_call["id"])
                 )
@@ -2685,7 +2697,7 @@ Claude supports a memory tool for client-side storage and retrieval of context a
         while response.tool_calls:
             tool_messages = []
             for tool_call in response.tool_calls:
-                result = memory.invoke(tool_call["args"])
+                result = memory.invoke(tool_call)
                 tool_messages.append(ToolMessage(content=result, tool_call_id=tool_call["id"]))
 
             messages = [*messages, response, *tool_messages]
