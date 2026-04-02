@@ -245,6 +245,105 @@ function normalizeCopilotContext(context: unknown): unknown {
   return Object.fromEntries(normalizedEntries);
 }
 ```
+
+The route adapter is only half of the TypeScript setup. Your LangChain agent also needs middleware that reads the forwarded `output_schema` and turns it into a structured `responseFormat` for the model:
+
+```ts expandable agent.ts
+import { createAgent, createMiddleware, toolStrategy } from "langchain";
+import { z } from "zod";
+
+import { deepSearchTool, searchWebTool } from "../tools/index.js";
+
+const contextSchema = z.object({
+  output_schema: z.unknown().optional(),
+});
+
+const structuredOutputMiddleware = createMiddleware({
+  name: "CopilotKitStructuredOutput",
+  contextSchema,
+  wrapModelCall: async (request, handler) => {
+    const rawOutputSchema = getRuntimeOutputSchema(request.runtime);
+    const schema = normalizeOutputSchema(rawOutputSchema);
+    if (!schema) {
+      return handler(request);
+    }
+
+    const responseFormat = toolStrategy(
+      schema as unknown as Parameters<typeof toolStrategy>[0],
+      {
+        toolMessageContent: "Structured UI response generated.",
+      },
+    );
+
+    return handler({
+      ...request,
+      responseFormat,
+    });
+  },
+});
+
+export const agent = createAgent({
+  model: process.env.COPILOTKIT_MODEL ?? "anthropic:claude-haiku-4-5",
+  contextSchema,
+  middleware: [structuredOutputMiddleware],
+  tools: [searchWebTool, deepSearchTool],
+  systemPrompt: `You are a helpful UI assistant inspired by the CopilotKit Shadify example.
+
+Build rich visual responses with the available UI components when they add value.
+Only wrap actual UI layouts inside cards. Plain Markdown answers should stay as Markdown.
+Use rows for side-by-side layouts with at most two columns.
+Prefer simple, polished outputs over dense dashboards.
+When using charts, make labels and values concise and easy to read.
+When showing code, prefer the code_block component.
+When researching topics, use the available search tools first and then present the result cleanly.`,
+});
+
+function normalizeOutputSchema(value: unknown): Record<string, unknown> | null {
+  let schema = value;
+
+  if (typeof schema === "string") {
+    try {
+      schema = JSON.parse(schema);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+    return null;
+  }
+
+  const normalized = { ...(schema as Record<string, unknown>) };
+
+  if (!normalized.title) {
+    normalized.title = "CopilotKitStructuredOutput";
+  }
+
+  if (!normalized.description) {
+    normalized.description = "Structured response schema for the CopilotKit preview.";
+  }
+
+  return normalized;
+}
+
+function getRuntimeOutputSchema(runtime: {
+  context?: { output_schema?: unknown };
+  configurable?: Record<string, unknown>;
+}): unknown {
+  if (runtime.context?.output_schema !== undefined) {
+    return runtime.context.output_schema;
+  }
+
+  const configurable = runtime.configurable;
+  if (!configurable || typeof configurable !== "object" || Array.isArray(configurable)) {
+    return undefined;
+  }
+
+  return configurable.output_schema;
+}
+```
+
+This middleware is what makes `useAgentContext({ description: "output_schema", ... })` useful on the frontend. The CopilotKit runtime forwards the schema, and the agent turns it into the structured output contract the model must follow.
 ::::
 
 ::::python
