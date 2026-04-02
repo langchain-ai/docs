@@ -67,7 +67,7 @@ Wrap the code that should appear in the docs with snippet tags:
 
 **Python:**
 ```python
-# :snippet-start: snippet-name
+# :snippet-start: snippet-name-py
 from langchain.tools import tool
 
 @tool
@@ -80,13 +80,13 @@ def get_weather(city: str) -> str:
 
 **TypeScript/JavaScript:**
 ```ts
-// :snippet-start: snippet-name
+// :snippet-start: snippet-name-js
 import { tool } from "langchain";
 // ... tool definition ...
 // :snippet-end:
 ```
 
-Choose a unique `snippet-name` (kebab-case, e.g. `tool-return-values`). This becomes the output filename.
+Choose a unique `snippet-name` in kebab-case. **All snippet names must include a language suffix:** `-py` for Python files and `-js` for TypeScript/JavaScript files (e.g. `tool-return-values-py`, `tool-return-values-js`). This becomes the base of the output filename.
 
 ### 3. Add runnable test code in remove blocks
 
@@ -188,9 +188,9 @@ Replace the inline code blocks with the snippet components:
 | Element | Convention | Example |
 |--------|-------------|---------|
 | Code file | Descriptive, kebab-case | `return-a-string.py`, `return-a-string.ts` |
-| Snippet name | Kebab-case, matches concept | `tool-return-values` |
-| MDX snippet (Python) | `{snippet-name}-py.mdx` | `tool-return-values-py.mdx` |
-| MDX snippet (JS) | `{snippet-name}-js.mdx` | `tool-return-values-js.mdx` |
+| Snippet name | Kebab-case with language suffix: `-py` for Python, `-js` for JS/TS | `tool-return-values-py`, `tool-return-values-js` |
+| MDX snippet (Python) | `{snippet-name}.mdx` (snippet name ends in `-py`) | `tool-return-values-py.mdx` |
+| MDX snippet (JS) | `{snippet-name}.mdx` (snippet name ends in `-js`) | `tool-return-values-js.mdx` |
 | Component name | PascalCase | `ToolReturnValuesPy`, `ToolReturnValuesJs` |
 
 ## Script behavior
@@ -212,3 +212,4 @@ To support additional languages, add config entries in that script.
 - `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets`.
 - Reference `CLAUDE.md` and `AGENTS.md` for docs style and rules.
 - Use `:::python` and `:::js` fences for language-specific content; the build produces separate Python and JavaScript doc versions.
+- For python tests, try to correct the type rather than adding `# type: ignore[arg-type]`
