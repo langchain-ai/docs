@@ -129,8 +129,8 @@ Contact [LangChain support](mailto:support@langchain.dev) to enable LLM Auth Pro
 
 In the LangSmith UI, navigate to **Settings** > **General**, configure the following:
 
-1. **Enable LLM auth proxy:** toggle on for your organization.
-2. **JWT audience:** the `aud` claim value the proxy will validate (for example, `my-audience`). This must match `jwtAudiences` in the auth proxy chart in [Step 4](#4-install-the-auth-proxy-helm-chart).
+1. **JWT audience:** the `aud` claim value the proxy will validate (for example, `my-audience`). This must match `jwtAudiences` in the auth proxy chart in [Step 4](#4-install-the-auth-proxy-helm-chart).
+2. **Enable LLM auth proxy:** toggle on for your organization.
 
 <img
   src="/langsmith/images/llm-auth-proxy-settings-dark.png"
@@ -149,7 +149,7 @@ helm repo update
 Create a `values.yaml` with the upstream URL and JWT validation settings. There are two options for JWKS configuration:
 
 - **`jwksUri` (recommended):** Point to your LangSmith instance's `/.well-known/jwks.json` endpoint. Envoy fetches and caches the public keys automatically, supporting seamless key rotation.
-- **`jwksJson` (inline):** Paste the JWKS JSON directly into `values.yaml`. Simpler for testing or air-gapped environments, but requires a chart update to rotate keys.
+- **`jwksJson` (inline):** Paste the JWKS JSON directly into `values.yaml`. Use this for testing or air-gapped environments where the auth proxy has no outbound network access to LangSmith. Requires a chart update to rotate keys. Include only the public key components; omit the `d` field (the private key).
 
 If both are set, `jwksUri` takes precedence.
 
@@ -167,7 +167,8 @@ authProxy:
   jwksCacheDurationSeconds: 300
 
   # Option B: inline JWKS (testing or air-gapped environments only)
-  # jwksJson: '{"keys": [...]}'
+  # Omit the "d" field (private key); include public key components only.
+  # jwksJson: '{"keys": [{"kty": "OKP", "crv": "Ed25519", "x": "<base64url-public-key>", "use": "sig", "alg": "EdDSA"}]}'
 ```
 
 Install the chart:
@@ -205,8 +206,8 @@ Your service returns a plain HTTP response:
 
 Your `ext_authz` service can run in two ways:
 
-- **Sidecar:** run the service in the same pod as the proxy. Add the container under `authProxy.deployment.sidecars` and any required volumes under `authProxy.deployment.volumes` in `values.yaml`.
-- **Separate deployment:** deploy the service independently and point `extAuthz.serviceUrl` at it.
+- **Sidecar:** run the service in the same pod as the proxy. Add the container under `authProxy.deployment.sidecars` and any required volumes under `authProxy.deployment.volumes` in `values.yaml`. Use a `localhost` URL, for example `http://localhost:10002`.
+- **Separate deployment:** deploy the service independently and point `extAuthz.serviceUrl` at it. Use the in-cluster DNS name, for example `http://my-auth-service.my-namespace.svc.cluster.local:8080`, or an external HTTPS URL if the service has its own ingress.
 
 For the full list of `extAuthz` parameters, see the [Helm chart README](https://github.com/langchain-ai/helm/tree/main/charts/langsmith-auth-proxy#readme).
 
@@ -358,7 +359,7 @@ data:
         }
 
         if jwtValue != "" {
-            // TODO: Replace with your auth logic — e.g. exchange JWT for a
+            // TODO: Replace with your auth logic, e.g. exchange JWT for a
             // provider-specific token, call a secrets manager, etc.
             providerKey := "Bearer your-provider-key"
 
@@ -541,7 +542,13 @@ authProxy:
       - ".internal.corp"
 ```
 
+### Other options
+
 For ingress, autoscaling, resource limits, and other configuration options, see the [Helm chart README](https://github.com/langchain-ai/helm/tree/main/charts/langsmith-auth-proxy#readme).
+
+<Tip>
+For production reliability, set `authProxy.autoscaling.hpa.minReplicas` to at least `3`.
+</Tip>
 
 ## Full configuration example
 
