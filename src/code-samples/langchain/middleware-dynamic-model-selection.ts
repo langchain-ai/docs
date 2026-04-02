@@ -1,16 +1,10 @@
 // :snippet-start: middleware-dynamic-model-selection-js
 import { createMiddleware, initChatModel } from "langchain";
 
-let models = {
-  complex: await initChatModel("gpt-4.1"),
-  simple: await initChatModel("gpt-4.1-mini"),
-};
-// :remove-start:
-models = {
+const models = {
   complex: await initChatModel("claude-sonnet-4-6"),
   simple: await initChatModel("claude-haiku-4-5-20251001"),
 };
-// :remove-end:
 
 const dynamicModelMiddleware = createMiddleware({
   name: "DynamicModelMiddleware",
