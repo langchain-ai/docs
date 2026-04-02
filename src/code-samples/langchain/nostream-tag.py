@@ -43,7 +43,7 @@ graph = (
 )
 
 initial_state: State = {"topic": "AI", "answer": "", "notes": ""}
-stream = graph.stream(initial_state, stream_mode="messages")  # type: ignore[arg-type]
+stream = graph.stream(initial_state, stream_mode="messages")
 
 # :remove-start:
 streamed_nodes: list[str] = []

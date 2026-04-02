@@ -212,3 +212,4 @@ To support additional languages, add config entries in that script.
 - `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets`.
 - Reference `CLAUDE.md` and `AGENTS.md` for docs style and rules.
 - Use `:::python` and `:::js` fences for language-specific content; the build produces separate Python and JavaScript doc versions.
+- For python tests, try to correct the type rather than adding `# type: ignore[arg-type]`
