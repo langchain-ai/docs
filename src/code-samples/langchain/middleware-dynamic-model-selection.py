@@ -1,13 +1,3 @@
-# :remove-start:
-from unittest.mock import MagicMock
-from unittest.mock import patch as _patch
-
-_mock_model = MagicMock()
-_patcher = _patch(
-    "langchain.chat_models.base._init_chat_model_helper", return_value=_mock_model
-)
-_patcher.start()
-# :remove-end:
 # :snippet-start: middleware-dynamic-model-selection-decorator-py
 from collections.abc import Callable
 
@@ -66,8 +56,6 @@ class DynamicModelMiddleware(AgentMiddleware):
 # :snippet-end:
 
 # :remove-start:
-_patcher.stop()
-
 from itertools import cycle
 
 from langchain.agents import create_agent
