@@ -371,7 +371,6 @@ All three approaches deploy a **consolidation agent** alongside your main agent:
 | Trigger | When it runs | Best for |
 |---|---|---|
 | **[Cron](#cron)** | Fixed schedule (e.g., every 6 hours) | Batching across many conversations, synthesizing trends |
-| **[Webhook](#webhook)** | Automatically on run completion | Event-driven consolidation with no client-side code, most production setups |
 | **[Scheduled run](#scheduled-run)** | After a delay on the same thread | Simple setups where the client controls when consolidation fires |
 
 All three approaches use the same consolidation agent and deployment configuration. Define these once, then choose a trigger.
@@ -549,112 +548,6 @@ const cronJob = await client.crons.create(
 <Note>
 All cron schedules are interpreted in **UTC**. See [cron jobs](/langsmith/cron-jobs) for details on managing and deleting cron jobs.
 </Note>
-
-#### Webhook
-
-A [webhook](/langsmith/use-webhooks) fires consolidation automatically when a run on your main agent completes. No client-side scheduling code is needed: you pass the `webhook` parameter when creating the main agent's run, and the platform sends a POST request to your endpoint on completion.
-
-```mermaid
-graph LR
-    Store[(Memory store)] -.->|reads| Conv[Conversation]
-    Conv -->|run completes| Webhook[Webhook endpoint]
-    Webhook -->|triggers| Agent[Consolidation agent]
-    Agent -->|writes| Store
-
-    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
-    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
-    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
-    classDef schedule fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E
-
-    class Conv trigger
-    class Agent process
-    class Store output
-    class Webhook schedule
-```
-
-Your webhook endpoint receives the completed run payload and triggers the consolidation agent. The `thread_id` from the payload gives the consolidation agent access to the conversation context:
-
-:::python
-```python webhook_server.py
-from fastapi import FastAPI, Request
-from langgraph_sdk import get_client
-
-app = FastAPI()
-client = get_client(url="<DEPLOYMENT_URL>")
-
-
-@app.post("/consolidate")
-async def handle_webhook(request: Request):
-    payload = await request.json()
-    thread_id = payload["thread_id"]
-
-    await client.runs.create(
-        thread_id=thread_id,
-        assistant_id="consolidation_agent",
-        input={"messages": [{"role": "user", "content": "Consolidate recent memories."}]},
-    )
-    return {"status": "ok"}
-```
-:::
-
-:::js
-```typescript src/webhook-server.ts
-import express from "express";
-import { Client } from "@langchain/langgraph-sdk";
-
-const app = express();
-app.use(express.json());
-
-const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
-
-app.post("/consolidate", async (req, res) => {
-  const { thread_id: threadId } = req.body;
-
-  await client.runs.create(
-    threadId,
-    "consolidation_agent",
-    {
-      input: { messages: [{ role: "user", content: "Consolidate recent memories." }] },
-    },
-  );
-  res.json({ status: "ok" });
-});
-```
-:::
-
-Then pass the webhook URL when creating runs on your main agent:
-
-:::python
-```python
-async for chunk in client.runs.stream(
-    thread_id=thread["thread_id"],
-    assistant_id="agent",
-    input={"messages": [{"role": "user", "content": user_message}]},
-    webhook="https://my-server.app/consolidate",
-):
-    # Handle stream output
-    pass
-```
-:::
-
-:::js
-```typescript
-const stream = client.runs.stream(
-  thread.thread_id,
-  "agent",
-  {
-    input: { messages: [{ role: "user", content: userMessage }] },
-    webhook: "https://my-server.app/consolidate",
-  },
-);
-
-for await (const chunk of stream) {
-  // Handle stream output
-}
-```
-:::
-
-See [Use webhooks](/langsmith/use-webhooks) for details on webhook payloads, security, and configuration.
 
 #### Scheduled run
 
