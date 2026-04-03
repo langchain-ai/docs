@@ -366,194 +366,24 @@ By default, the agent writes memories during the conversation (hot path). An alt
 
 For most applications, the hot path is sufficient. Add background consolidation when you need to reduce latency or improve memory quality across many conversations.
 
-Both approaches deploy a **consolidation agent** alongside your main agent: a deep agent that reads conversation history, extracts key facts, and merges them into the memory store. There are two ways to trigger it:
+All three approaches deploy a **consolidation agent** alongside your main agent: a deep agent that reads conversation history, extracts key facts, and merges them into the memory store.
 
-- **[Cron](#cron-recommended)** (recommended): Runs on a fixed schedule, can synthesize across many conversations at once.
-- **[Scheduled run](#scheduled-run)**: Fires after a conversation ends, only runs when users are active.
+| Trigger | When it runs | Best for |
+|---|---|---|
+| **[Cron](#cron)** | Fixed schedule (e.g., every 6 hours) | Batching across many conversations, synthesizing trends |
+| **[Webhook](#webhook)** | Automatically on run completion | Event-driven consolidation with no client-side code, most production setups |
+| **[Scheduled run](#scheduled-run)** | After a delay on the same thread | Simple setups where the client controls when consolidation fires |
 
-#### Cron (recommended)
+All three approaches use the same consolidation agent and deployment configuration. Define these once, then choose a trigger.
 
-A [cron job](/langsmith/cron-jobs) runs the consolidation agent on a fixed schedule. The agent searches all recent conversations and synthesizes them into memory.
+#### Consolidation agent
 
-```mermaid
-graph LR
-    Store[(Memory store)] -.->|reads| Conv1[Conversation 1]
-    Store -.->|reads| Conv2[Conversation 2]
-    Cron[Cron schedule] -->|periodic| Agent[Consolidation agent]
-    Agent -->|writes| Store
-
-    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
-    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
-    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
-    classDef schedule fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E
-
-    class Conv1,Conv2 trigger
-    class Agent process
-    class Store output
-    class Cron schedule
-```
+The consolidation agent reads recent conversation history and merges key facts into the memory store. Register it alongside your main agent in `langgraph.json`:
 
 :::python
 ```python consolidation_agent.py
-from deepagents import create_deep_agent
-from langchain.tools import tool
-from langgraph_sdk import get_client
+from datetime import datetime, timedelta, timezone
 
-sdk_client = get_client(url="<DEPLOYMENT_URL>")
-
-
-@tool
-async def search_recent_conversations(query: str) -> str:
-    """Search all conversations updated in the last 6 hours."""
-    from datetime import datetime, timedelta, timezone
-
-    since = datetime.now(timezone.utc) - timedelta(hours=6)
-    threads = await sdk_client.threads.search(
-        updated_after=since.isoformat(),
-        limit=20,
-    )
-    conversations = []
-    for thread in threads:
-        history = await sdk_client.threads.get_history(
-            thread_id=thread["thread_id"]
-        )
-        conversations.append(history["values"]["messages"])
-    return str(conversations)
-
-
-agent = create_deep_agent(
-    model="claude-sonnet-4-6",
-    system_prompt="""Review recent conversations and update the memory file.
-Merge new facts, remove outdated information, and keep it concise.""",
-    tools=[search_recent_conversations],
-)
-```
-:::
-
-:::js
-```typescript src/consolidation-agent.ts
-import { createDeepAgent } from "deepagents";
-import { Client } from "@langchain/langgraph-sdk";
-import { tool } from "@langchain/core/tools";
-
-const sdkClient = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
-
-const searchRecentConversations = tool(
-  async ({ query }: { query: string }) => {
-    const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-    const threads = await sdkClient.threads.search({
-      updatedAfter: since,
-      limit: 20,
-    });
-    const conversations = [];
-    for (const thread of threads) {
-      const history = await sdkClient.threads.getHistory(thread.threadId);
-      conversations.push(history.values.messages);
-    }
-    return JSON.stringify(conversations);
-  },
-  {
-    name: "search_recent_conversations",
-    description: "Search all conversations updated in the last 6 hours.",
-  }
-);
-
-const agent = createDeepAgent({
-  model: "claude-sonnet-4-6",
-  systemPrompt: `Review recent conversations and update the memory file.
-Merge new facts, remove outdated information, and keep it concise.`,
-  tools: [searchRecentConversations],
-});
-
-export { agent };
-```
-:::
-
-Register the consolidation agent alongside your main agent and schedule it with a cron job:
-
-:::python
-```json langgraph.json
-{
-  "dependencies": ["."],
-  "graphs": {
-    "agent": "./agent.py:agent",
-    "consolidation_agent": "./consolidation_agent.py:agent"
-  },
-  "env": ".env"
-}
-```
-:::
-
-:::js
-```json langgraph.json
-{
-  "dependencies": ["."],
-  "graphs": {
-    "agent": "./src/agent.ts:agent",
-    "consolidation_agent": "./src/consolidation-agent.ts:agent"
-  },
-  "env": ".env"
-}
-```
-:::
-
-:::python
-```python
-from langgraph_sdk import get_client
-
-client = get_client(url="<DEPLOYMENT_URL>")
-
-cron_job = await client.crons.create(
-    assistant_id="consolidation_agent",
-    schedule="0 */6 * * *",
-    input={"messages": [{"role": "user", "content": "Consolidate recent memories."}]},
-)
-```
-:::
-
-:::js
-```typescript
-import { Client } from "@langchain/langgraph-sdk";
-
-const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
-
-const cronJob = await client.crons.create(
-  "consolidation_agent",
-  {
-    schedule: "0 */6 * * *",
-    input: { messages: [{ role: "user", content: "Consolidate recent memories." }] },
-  },
-);
-```
-:::
-
-<Note>
-All cron schedules are interpreted in **UTC**. See [cron jobs](/langsmith/cron-jobs) for details on managing and deleting cron jobs.
-</Note>
-
-#### Scheduled run
-
-Schedule a run after each conversation using the `after_seconds` parameter. This is activity-driven: consolidation only fires when a user has been active. Pass the same `thread_id` so the consolidation agent has access to the conversation context.
-
-```mermaid
-graph LR
-    Store[(Memory store)] -.->|reads| Conv[Conversation]
-    Conv -->|after_seconds| Agent[Consolidation agent]
-    Agent -->|writes| Store
-
-    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
-    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
-    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
-
-    class Conv trigger
-    class Agent process
-    class Store output
-```
-
-The consolidation agent is similar to the cron version, but scoped per user and searching only that user's conversations:
-
-:::python
-```python consolidation_agent.py
 from deepagents import create_deep_agent
 from langchain.tools import tool
 from langgraph.config import get_config
@@ -567,8 +397,6 @@ async def search_recent_conversations(query: str) -> str:
     """Search this user's conversations updated in the last 6 hours."""
     config = get_config()
     user_id = config["configurable"]["langgraph_auth_user_id"]
-
-    from datetime import datetime, timedelta, timezone
 
     since = datetime.now(timezone.utc) - timedelta(hours=6)
     threads = await sdk_client.threads.search(
@@ -638,7 +466,55 @@ export { agent };
 ```
 :::
 
-Schedule the run after a conversation completes. The delay gives the conversation time to finish (the user may send follow-up messages) so the consolidation agent sees the full exchange:
+:::python
+```json langgraph.json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent.py:agent",
+    "consolidation_agent": "./consolidation_agent.py:agent"
+  },
+  "env": ".env"
+}
+```
+:::
+
+:::js
+```json langgraph.json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./src/agent.ts:agent",
+    "consolidation_agent": "./src/consolidation-agent.ts:agent"
+  },
+  "env": ".env"
+}
+```
+:::
+
+#### Cron
+
+A [cron job](/langsmith/cron-jobs) runs the consolidation agent on a fixed schedule. The agent searches all recent conversations and synthesizes them into memory.
+
+```mermaid
+graph LR
+    Store[(Memory store)] -.->|reads| Conv1[Conversation 1]
+    Store -.->|reads| Conv2[Conversation 2]
+    Cron[Cron schedule] -->|periodic| Agent[Consolidation agent]
+    Agent -->|writes| Store
+
+    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+    classDef schedule fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E
+
+    class Conv1,Conv2 trigger
+    class Agent process
+    class Store output
+    class Cron schedule
+```
+
+Schedule the consolidation agent with a cron job:
 
 :::python
 ```python
@@ -646,12 +522,10 @@ from langgraph_sdk import get_client
 
 client = get_client(url="<DEPLOYMENT_URL>")
 
-# After a conversation completes, schedule consolidation in 30 minutes
-await client.runs.create(
-    thread_id=thread["thread_id"],
+cron_job = await client.crons.create(
     assistant_id="consolidation_agent",
+    schedule="0 */6 * * *",
     input={"messages": [{"role": "user", "content": "Consolidate recent memories."}]},
-    after_seconds=1800,
 )
 ```
 :::
@@ -662,7 +536,181 @@ import { Client } from "@langchain/langgraph-sdk";
 
 const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
 
-// After a conversation completes, schedule consolidation in 30 minutes
+const cronJob = await client.crons.create(
+  "consolidation_agent",
+  {
+    schedule: "0 */6 * * *",
+    input: { messages: [{ role: "user", content: "Consolidate recent memories." }] },
+  },
+);
+```
+:::
+
+<Note>
+All cron schedules are interpreted in **UTC**. See [cron jobs](/langsmith/cron-jobs) for details on managing and deleting cron jobs.
+</Note>
+
+#### Webhook
+
+A [webhook](/langsmith/use-webhooks) fires consolidation automatically when a run on your main agent completes. No client-side scheduling code is needed: you pass the `webhook` parameter when creating the main agent's run, and the platform sends a POST request to your endpoint on completion.
+
+```mermaid
+graph LR
+    Store[(Memory store)] -.->|reads| Conv[Conversation]
+    Conv -->|run completes| Webhook[Webhook endpoint]
+    Webhook -->|triggers| Agent[Consolidation agent]
+    Agent -->|writes| Store
+
+    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+    classDef schedule fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E
+
+    class Conv trigger
+    class Agent process
+    class Store output
+    class Webhook schedule
+```
+
+Your webhook endpoint receives the completed run payload and triggers the consolidation agent. The `thread_id` from the payload gives the consolidation agent access to the conversation context:
+
+:::python
+```python webhook_server.py
+from fastapi import FastAPI, Request
+from langgraph_sdk import get_client
+
+app = FastAPI()
+client = get_client(url="<DEPLOYMENT_URL>")
+
+
+@app.post("/consolidate")
+async def handle_webhook(request: Request):
+    payload = await request.json()
+    thread_id = payload["thread_id"]
+
+    await client.runs.create(
+        thread_id=thread_id,
+        assistant_id="consolidation_agent",
+        input={"messages": [{"role": "user", "content": "Consolidate recent memories."}]},
+    )
+    return {"status": "ok"}
+```
+:::
+
+:::js
+```typescript src/webhook-server.ts
+import express from "express";
+import { Client } from "@langchain/langgraph-sdk";
+
+const app = express();
+app.use(express.json());
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+app.post("/consolidate", async (req, res) => {
+  const { thread_id: threadId } = req.body;
+
+  await client.runs.create(
+    threadId,
+    "consolidation_agent",
+    {
+      input: { messages: [{ role: "user", content: "Consolidate recent memories." }] },
+    },
+  );
+  res.json({ status: "ok" });
+});
+```
+:::
+
+Then pass the webhook URL when creating runs on your main agent:
+
+:::python
+```python
+async for chunk in client.runs.stream(
+    thread_id=thread["thread_id"],
+    assistant_id="agent",
+    input={"messages": [{"role": "user", "content": user_message}]},
+    webhook="https://my-server.app/consolidate",
+):
+    # Handle stream output
+    pass
+```
+:::
+
+:::js
+```typescript
+const stream = client.runs.stream(
+  thread.thread_id,
+  "agent",
+  {
+    input: { messages: [{ role: "user", content: userMessage }] },
+    webhook: "https://my-server.app/consolidate",
+  },
+);
+
+for await (const chunk of stream) {
+  // Handle stream output
+}
+```
+:::
+
+See [Use webhooks](/langsmith/use-webhooks) for details on webhook payloads, security, and configuration.
+
+#### Scheduled run
+
+Schedule a run after each conversation using the `after_seconds` parameter. This is activity-driven: consolidation only fires when a user has been active. Pass the same `thread_id` so the consolidation agent has access to the conversation context.
+
+```mermaid
+graph LR
+    Store[(Memory store)] -.->|reads| Conv[Conversation]
+    Conv -->|after_seconds| Agent[Consolidation agent]
+    Agent -->|writes| Store
+
+    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+
+    class Conv trigger
+    class Agent process
+    class Store output
+```
+
+The delay gives the conversation time to finish (the user may send follow-up messages) so the consolidation agent sees the full exchange.
+
+If the user sends another message during the delay, the new run's `multitask_strategy` controls what happens to the pending consolidation run. Use `rollback` on the new run to delete the stale consolidation run, then schedule a fresh one after the next response:
+
+:::python
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="<DEPLOYMENT_URL>")
+
+# Schedule consolidation 30 minutes after the conversation
+await client.runs.create(
+    thread_id=thread["thread_id"],
+    assistant_id="consolidation_agent",
+    input={"messages": [{"role": "user", "content": "Consolidate recent memories."}]},
+    after_seconds=1800,
+)
+
+# If the user sends another message, use rollback on the new run
+# to delete the pending consolidation run before starting
+await client.runs.stream(
+    thread_id=thread["thread_id"],
+    assistant_id="agent",
+    input={"messages": [{"role": "user", "content": new_message}]},
+    multitask_strategy="rollback",
+)
+```
+:::
+
+:::js
+```typescript
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+// Schedule consolidation 30 minutes after the conversation
 await client.runs.create(
   thread.thread_id,
   "consolidation_agent",
@@ -671,12 +719,21 @@ await client.runs.create(
     afterSeconds: 1800,
   },
 );
+
+// If the user sends another message, use rollback on the new run
+// to delete the pending consolidation run before starting
+const stream = client.runs.stream(
+  thread.thread_id,
+  "agent",
+  {
+    input: { messages: [{ role: "user", content: newMessage }] },
+    multitaskStrategy: "rollback",
+  },
+);
 ```
 :::
 
-<Tip>
-You can trigger the scheduled run from a [webhook](/langsmith/use-webhooks) on the main agent's run, so consolidation is automatically queued after every conversation.
-</Tip>
+See [double texting](/langsmith/double-texting) for details on how `multitask_strategy` controls the behavior of concurrent runs on the same thread.
 
 For more on deploying agents with background processes, see [going to production](/oss/deepagents/going-to-production).
 
