@@ -11,7 +11,7 @@ This page covers **long-term memory**: memory that persists across conversations
 
 ## Quick start
 
-1. **Write the initial memory file.** Give the agent something to start with by writing the memory file to the store.
+1. **Upload initial memories to the backend.** Give the agent something to start with by writing memory files to the store.
 2. **Create the agent with memory paths.** Pass file paths to `memory=` and set up a persistent backend.
 3. **Memory is loaded into the prompt.** At the start of each conversation, the memory files are read and injected into the system prompt.
 4. **The agent updates memory as it learns.** During the conversation, the agent uses its built-in `edit_file` tool to update memory files. Changes are persisted by the [backend](/oss/deepagents/backends).
@@ -25,7 +25,7 @@ from langgraph.store.memory import InMemoryStore
 
 store = InMemoryStore()  # Omit when deploying to LangSmith
 
-# 1. Write the initial memory file
+# 1. Upload initial memories to the backend
 store.put(
     ("agent",),
     "/memories/AGENTS.md",
@@ -145,7 +145,6 @@ Agent-scoped memory is shared across all users. The agent has a memory file that
 In this pattern:
 - The memory file lives in the filesystem and is editable by the agent
 - The agent improves its own behavior over time without developer intervention
-- [Skills](/oss/deepagents/skills) can be passed via `skills=` for reusable capabilities loaded on demand
 
 :::python
 ```python
@@ -155,7 +154,6 @@ from langgraph.config import get_config
 
 agent = create_deep_agent(
     memory=["/memories/AGENTS.md"],
-    skills=["/skills/"],
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
@@ -177,7 +175,6 @@ import { getConfig } from "@langchain/langgraph";
 
 const agent = createDeepAgent({
   memory: ["/memories/AGENTS.md"],
-  skills: ["/skills/"],
   backend: new CompositeBackend(
     new StateBackend(),
     {
@@ -245,10 +242,10 @@ The sections above cover the basics: configure memory paths, choose a scope, and
 | Dimension | Question it answers | Options |
 |---|---|---|
 | **Duration** | How long does it last? | [Short-term](/oss/deepagents/context-engineering) (single conversation) or [long-term](#quick-start) (across conversations) |
-| **Information type** | What kind of information is it? | [Episodic](#episodic-memory) (past experiences), [procedural](/oss/concepts/memory#procedural-memory) (instructions and [skills](/oss/deepagents/skills)), or [semantic](/oss/concepts/memory#semantic-memory) (facts) |
+| **Information type** | What kind of information is it? | [Episodic](#episodic-memory) (past experiences), [procedural](#skills-as-procedural-memory) (instructions and skills), or [semantic](/oss/concepts/memory#semantic-memory) (facts) |
 | **Scope** | Who can see and modify it? | [User](#user-scoped-memory), [agent](#agent-scoped-memory), or [organization](#organization-level-memory) |
 | **Update strategy** | When are memories written? | During conversation (default) or [between conversations](#background-consolidation) |
-| **Retrieval** | How are memories read? | Loaded into prompt (default) or on demand (e.g., [skills](/oss/deepagents/skills)) |
+| **Retrieval** | How are memories read? | Loaded into prompt (default) or on demand (e.g., [skills](#skills-as-procedural-memory)) |
 | **Agent permissions** | Can the agent write to memory? | [Read-write](#read-only-vs-writable-memory) (default) or [read-only](#read-only-vs-writable-memory) (for shared policies) |
 
 ### Episodic memory
@@ -349,6 +346,42 @@ const orgThreads = await client.threads.search({
 :::
 
 This is useful for agents that perform complex, multi-step tasks. For example, a coding agent can look back at a past debugging session and skip straight to the likely root cause.
+
+### Skills as procedural memory
+
+[Skills](/oss/deepagents/skills) are a form of [procedural memory](/oss/concepts/memory#procedural-memory): reusable instructions that tell the agent *how* to perform a task. Unlike semantic memory (facts) or episodic memory (experiences), procedural memory encodes step-by-step capabilities the agent can apply on demand.
+
+Skills are typically:
+- **Agent-scoped**: shared across all users of the agent, not tied to a specific user
+- **Read-only**: defined by the developer, not modified by the agent at runtime
+
+In Deep Agents, pass skills via the `skills=` parameter. Skills are loaded on demand rather than injected into every prompt, keeping context lean until a capability is needed:
+
+:::python
+```python
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(
+    memory=["/memories/AGENTS.md"],
+    skills=["/skills/"],
+    # ...backend configuration
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+
+const agent = createDeepAgent({
+  memory: ["/memories/AGENTS.md"],
+  skills: ["/skills/"],
+  // ...backend configuration
+});
+```
+:::
+
+For a complete guide on defining, organizing, and using skills, see the [Skills](/oss/deepagents/skills) documentation.
 
 ### Organization-level memory
 
