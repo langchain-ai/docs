@@ -478,31 +478,217 @@ Use [policy hooks](/oss/deepagents/backends#add-policy-hooks) to enforce that or
 
 ### Background consolidation
 
-By default, the agent writes memories during the conversation (hot path). An alternative is to process memories **between conversations** as a background task, sometimes called **sleep time compute**. After a conversation ends, a separate process reviews the transcript, extracts key facts, and merges them with existing memories.
+By default, the agent writes memories during the conversation (hot path). An alternative is to process memories **between conversations** as a background task, sometimes called **sleep time compute**. A separate graph reviews recent conversations, extracts key facts, and merges them with existing memories.
 
 | Approach | Pros | Cons |
 |---|---|---|
 | **Hot path** (during conversation) | Memories available immediately, transparent to user | Adds latency, agent must multitask |
-| **Background** (between conversations) | No user-facing latency, better consolidation quality | Memories not available until next conversation, requires additional infrastructure |
+| **Background** (between conversations) | No user-facing latency, can synthesize across multiple conversations | Memories not available until next conversation, requires a second graph |
 
 For most applications, the hot path is sufficient. Add background consolidation when you need to reduce latency or improve memory quality across many conversations.
 
+Both approaches deploy a **memory graph** alongside your agent: a separate graph that reads conversation history, extracts key facts with an LLM, and merges them into the memory store. The difference is how the graph gets triggered and what conversations it processes:
+
+- **[Cron](#cron-recommended):** Runs on a schedule, synthesizes across all recent conversations. Best for most use cases.
+- **[Webhook](#webhook):** Fires after a single conversation ends, processes just that thread. Use when you need per-conversation consolidation.
+
+#### Cron (recommended)
+
+A [cron job](/langsmith/cron-jobs) runs the memory graph on a schedule. Each run searches for threads updated since the last run, so it can synthesize across multiple conversations at once. This produces higher-quality memories than processing one conversation at a time.
+
 ```mermaid
 graph LR
-    Conv1[Conversation 1] --> Post[Post-conversation job]
-    Post --> Store[(Memory store)]
-    Store --> Conv2[Conversation 2]
+    Conv1[Conversation 1] --> Cron[Cron: memory graph]
+    Conv2[Conversation 2] --> Cron
+    Conv3[Conversation 3] --> Cron
+    Cron --> Store[(Memory store)]
+    Store --> Conv4[Conversation 4]
+    Store --> Conv5[Conversation 5]
+    Store --> Conv6[Conversation 6]
 
     classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
     classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
     classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
 
-    class Conv1,Conv2 trigger
-    class Post process
+    class Conv1,Conv2,Conv3,Conv4,Conv5,Conv6 trigger
+    class Cron process
     class Store output
 ```
 
-On [LangSmith deployments](/langsmith/agent-deployment), use a [webhook](/langsmith/use-webhooks) to trigger consolidation after each conversation. Pass the `webhook` parameter when creating a run, and the platform calls your endpoint when the run completes:
+Define the memory graph. It searches for recently updated threads, gathers their histories, and consolidates them into a single memory file. The time window should match your cron schedule so each run only processes new conversations:
+
+:::python
+```python memory_graph.py
+from datetime import datetime, timedelta, timezone
+
+from langgraph_sdk import get_client
+from deepagents.backends.utils import create_file_data
+from langchain.chat_models import init_chat_model
+from langgraph.config import get_config
+from langgraph.graph import StateGraph
+
+client = get_client(url="<DEPLOYMENT_URL>")
+
+
+async def consolidate_memories(state: dict) -> dict:
+    """Search recent conversations and merge new facts into memory."""
+    config = get_config()
+    user_id = config["configurable"]["langgraph_auth_user_id"]
+
+    # 1. Search conversation threads updated since the last consolidation window
+    since = datetime.now(timezone.utc) - timedelta(hours=6)
+    threads = await client.threads.search(
+        metadata={"user_id": user_id},
+        updated_after=since.isoformat(),
+        limit=20,
+    )
+
+    # 2. Gather conversation histories
+    conversations = []
+    for thread in threads:
+        history = await client.threads.get_history(thread_id=thread["thread_id"])
+        conversations.append(history["values"]["messages"])
+
+    if not conversations:
+        return {"status": "no_new_conversations"}
+
+    # 3. Read existing memories
+    namespace = (user_id,)
+    existing = await client.store.get_item(namespace, "/memories/preferences.md")
+    existing_content = ""
+    if existing:
+        existing_content = "\n".join(existing.value.get("content", []))
+
+    # 4. Use an LLM to extract and merge new facts
+    llm = init_chat_model("claude-sonnet-4-6")
+    result = await llm.ainvoke(
+        f"""Review these conversations and update the user's memory file.
+
+        Current memories:
+        {existing_content}
+
+        Recent conversations:
+        {conversations}
+
+        Return the updated memory file contents. Merge new facts,
+        remove outdated information, and keep it concise."""
+    )
+
+    # 5. Write consolidated memories back to the store
+    await client.store.put_item(
+        namespace,
+        "/memories/preferences.md",
+        create_file_data(result.content),
+    )
+    return {"status": "done"}
+
+
+graph = (
+    StateGraph(dict)
+    .add_node("consolidate", consolidate_memories)
+    .set_entry_point("consolidate")
+    .compile()
+)
+```
+:::
+
+:::js
+```typescript src/memory-graph.ts
+import { Client } from "@langchain/langgraph-sdk";
+import { createFileData } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { getConfig, StateGraph } from "@langchain/langgraph";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+async function consolidateMemories(state: Record<string, unknown>) {
+  const config = getConfig();
+  const userId = config.configurable.langgraph_auth_user_id;
+
+  // 1. Search conversation threads updated since the last consolidation window
+  const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  const threads = await client.threads.search({
+    metadata: { userId },
+    updatedAfter: since,
+    limit: 20,
+  });
+
+  // 2. Gather conversation histories
+  const conversations = [];
+  for (const thread of threads) {
+    const history = await client.threads.getHistory(thread.threadId);
+    conversations.push(history.values.messages);
+  }
+
+  if (conversations.length === 0) {
+    return { status: "no_new_conversations" };
+  }
+
+  // 3. Read existing memories
+  const namespace = [userId];
+  const existing = await client.store.getItem(namespace, "/memories/preferences.md");
+  const existingContent = existing?.value?.content?.join("\n") ?? "";
+
+  // 4. Use an LLM to extract and merge new facts
+  const llm = new ChatAnthropic({ model: "claude-sonnet-4-6" });
+  const result = await llm.invoke(
+    `Review these conversations and update the user's memory file.
+
+    Current memories:
+    ${existingContent}
+
+    Recent conversations:
+    ${JSON.stringify(conversations)}
+
+    Return the updated memory file contents. Merge new facts,
+    remove outdated information, and keep it concise.`
+  );
+
+  // 5. Write consolidated memories back to the store
+  await client.store.putItem(
+    namespace,
+    "/memories/preferences.md",
+    createFileData(result.content as string),
+  );
+  return { status: "done" };
+}
+
+const graph = new StateGraph({ channels: { status: null } })
+  .addNode("consolidate", consolidateMemories)
+  .setEntryPoint("consolidate")
+  .compile();
+
+export { graph };
+```
+:::
+
+Register the memory graph alongside your agent and schedule it with a cron job:
+
+:::python
+```json langgraph.json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent.py:agent",
+    "memory_graph": "./memory_graph.py:graph"
+  },
+  "env": ".env"
+}
+```
+:::
+
+:::js
+```json langgraph.json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./src/agent.ts:agent",
+    "memory_graph": "./src/memory-graph.ts:graph"
+  },
+  "env": ".env"
+}
+```
+:::
 
 :::python
 ```python
@@ -510,13 +696,11 @@ from langgraph_sdk import get_client
 
 client = get_client(url="<DEPLOYMENT_URL>")
 
-# 1. Create a run with a webhook that fires on completion
-thread = await client.threads.create()
-await client.runs.create(
-    thread_id=thread["thread_id"],
-    assistant_id=assistant_id,
-    input={"messages": [{"role": "user", "content": "Help me debug this issue."}]},
-    webhook="https://my-app.com/consolidate-memories",
+# Run consolidation every 6 hours
+cron_job = await client.crons.create(
+    assistant_id="memory_graph",
+    schedule="0 */6 * * *",
+    input={},
 )
 ```
 :::
@@ -527,37 +711,63 @@ import { Client } from "@langchain/langgraph-sdk";
 
 const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
 
-// 1. Create a run with a webhook that fires on completion
-const thread = await client.threads.create();
-await client.runs.create(
-  thread.thread_id,
-  assistantId,
+// Run consolidation every 6 hours
+const cronJob = await client.crons.create(
+  "memory_graph",
   {
-    input: { messages: [{ role: "user", content: "Help me debug this issue." }] },
-    webhook: "https://my-app.com/consolidate-memories",
+    schedule: "0 */6 * * *",
+    input: {},
   },
 );
 ```
 :::
 
-In your webhook handler, read the conversation history, extract key facts with an LLM, and merge them into the memory store:
+<Note>
+All cron schedules are interpreted in **UTC**. See [cron jobs](/langsmith/cron-jobs) for details on managing and deleting cron jobs.
+</Note>
+
+#### Webhook
+
+Alternatively, use a [webhook](/langsmith/use-webhooks) to trigger a memory graph after a specific conversation ends. Unlike the cron approach, the webhook graph processes a single conversation: it receives the `thread_id` from the webhook payload and consolidates just that thread's history.
+
+Add a delay (for example, 30 minutes) when creating the run. Without a delay, the webhook fires as soon as the run completes, but the user may still be in the middle of a multi-turn conversation. The delay gives the conversation time to finish so the memory graph sees the full exchange.
+
+```mermaid
+graph LR
+    Conv1[Conversation 1] --> Webhook[Webhook: memory graph]
+    Webhook --> Store[(Memory store)]
+    Store --> Conv2[Conversation 2]
+
+    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
+
+    class Conv1,Conv2 trigger
+    class Webhook process
+    class Store output
+```
+
+Define the memory graph. It reads the thread ID from the webhook payload in state, fetches that thread's history, and merges new facts into the memory store:
 
 :::python
-```python
+```python memory_graph.py
 from langgraph_sdk import get_client
 from deepagents.backends.utils import create_file_data
 from langchain.chat_models import init_chat_model
+from langgraph.config import get_config
+from langgraph.graph import StateGraph
 
 client = get_client(url="<DEPLOYMENT_URL>")
 
 
-async def handle_consolidation_webhook(payload: dict):
-    """Webhook handler called by LangGraph Platform after a run completes."""
-    thread_id = payload["thread_id"]
-    user_id = payload["kwargs"]["config"]["metadata"]["user_id"]
+async def consolidate_memories(state: dict) -> dict:
+    """Review a single conversation and merge new facts into memory."""
+    config = get_config()
+    user_id = config["configurable"]["langgraph_auth_user_id"]
+    thread_id = state["thread_id"]
 
-    # 1. Get the conversation history
-    history = await client.threads.get_history(thread_id)
+    # 1. Get the conversation history for this thread
+    history = await client.threads.get_history(thread_id=thread_id)
     messages = history["values"]["messages"]
 
     # 2. Read existing memories
@@ -588,25 +798,33 @@ async def handle_consolidation_webhook(payload: dict):
         "/memories/preferences.md",
         create_file_data(result.content),
     )
+    return {"status": "done"}
+
+
+graph = (
+    StateGraph(dict)
+    .add_node("consolidate", consolidate_memories)
+    .set_entry_point("consolidate")
+    .compile()
+)
 ```
 :::
 
 :::js
-```typescript
+```typescript src/memory-graph.ts
 import { Client } from "@langchain/langgraph-sdk";
 import { createFileData } from "deepagents";
 import { ChatAnthropic } from "@langchain/anthropic";
+import { getConfig, StateGraph } from "@langchain/langgraph";
 
 const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
 
-async function handleConsolidationWebhook(payload: {
-  thread_id: string;
-  kwargs: { config: { metadata: { userId: string } } };
-}) {
-  const { thread_id: threadId } = payload;
-  const userId = payload.kwargs.config.metadata.userId;
+async function consolidateMemories(state: { threadId: string }) {
+  const config = getConfig();
+  const userId = config.configurable.langgraph_auth_user_id;
+  const { threadId } = state;
 
-  // 1. Get the conversation history
+  // 1. Get the conversation history for this thread
   const history = await client.threads.getHistory(threadId);
   const messages = history.values.messages;
 
@@ -636,9 +854,85 @@ async function handleConsolidationWebhook(payload: {
     "/memories/preferences.md",
     createFileData(result.content as string),
   );
+  return { status: "done" };
+}
+
+const graph = new StateGraph({ channels: { threadId: null, status: null } })
+  .addNode("consolidate", consolidateMemories)
+  .setEntryPoint("consolidate")
+  .compile();
+
+export { graph };
+```
+:::
+
+Register the memory graph and pass a webhook when creating runs:
+
+:::python
+```json langgraph.json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./agent.py:agent",
+    "memory_graph": "./memory_graph.py:graph"
+  },
+  "env": ".env"
 }
 ```
 :::
+
+:::js
+```json langgraph.json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./src/agent.ts:agent",
+    "memory_graph": "./src/memory-graph.ts:graph"
+  },
+  "env": ".env"
+}
+```
+:::
+
+:::python
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="<DEPLOYMENT_URL>")
+
+# Create a run with a webhook that fires after a 30-minute delay
+thread = await client.threads.create()
+await client.runs.create(
+    thread_id=thread["thread_id"],
+    assistant_id="agent",
+    input={"messages": [{"role": "user", "content": "Help me debug this issue."}]},
+    webhook="<DEPLOYMENT_URL>/memory_graph",
+    webhook_delay_seconds=1800,  # Wait for conversation to finish
+)
+```
+:::
+
+:::js
+```typescript
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
+
+// Create a run with a webhook that fires after a 30-minute delay
+const thread = await client.threads.create();
+await client.runs.create(
+  thread.thread_id,
+  "agent",
+  {
+    input: { messages: [{ role: "user", content: "Help me debug this issue." }] },
+    webhook: "<DEPLOYMENT_URL>/memory_graph",
+    webhookDelaySeconds: 1800, // Wait for conversation to finish
+  },
+);
+```
+:::
+
+For more on deploying agents with background processes, see [going to production](/oss/deepagents/going-to-production).
 
 ### Read-only vs writable memory
 
