@@ -5,15 +5,9 @@ sidebarTitle: Claude Code
 
 This guide shows you how to automatically send conversations from the [Claude Code CLI](https://code.claude.com/docs/en/overview) to LangSmith.
 
-Once configured, each Claude Code project can opt in to sending traces to LangSmith. Each trace includes user messages, tool calls, and assistant responses. System prompts are not included, because Claude Code does not return them in conversation transcripts.
+![](/langsmith/images/example-claude-code-plugin-trace.png)
 
-## How it works
-
-1. A global "Stop" [hook](https://code.claude.com/docs/en/hooks-guide#get-started-with-claude-code-hooks) is configured to run each time Claude Code responds.
-2. The hook reads Claude Code’s generated conversation transcripts.
-3. Messages in the transcript are converted into LangSmith runs and sent to your LangSmith project.
-
-<Note> Tracing is opt-in and is enabled per Claude Code project using environment variables. </Note>
+Once configured, each Claude Code project can opt in to sending traces to LangSmith. Each trace includes user messages, tool calls, compaction, subagent runs, and assistant responses. System prompts are not included, because Claude Code does not return them in conversation transcripts.
 
 ## Prerequisites
 
@@ -21,85 +15,140 @@ Before setting up tracing, ensure you have:
 
 - [**Claude Code CLI**](https://code.claude.com/docs/en/overview) installed.
 - A [**LangSmith API key**](https://smith.langchain.com/settings/apikeys).
-- [**`jq`**](https://jqlang.github.io/jq/download/) (command-line JSON processor) installed.
-
-<Info>
-This guide currently only supports macOS.
-</Info>
+- [**Node.js**](https://nodejs.org/) installed.
 
 
-## 1. Create the hook script
+## Getting started
 
-`stop_hook.sh` processes Claude Code's generated conversation transcripts and sends traces to LangSmith. Create the file `~/.claude/hooks/stop_hook.sh` with the following script: [stop_hook.sh](https://github.com/langchain-ai/tracing-claude-code/blob/main/stop_hook.sh)
-
-Make it executable:
+From within Claude Code, run:
 
 ```bash
-chmod +x ~/.claude/hooks/stop_hook.sh
+/plugin marketplace add langchain-ai/langsmith-claude-code-plugins
+/plugin install langsmith-tracing@langsmith-claude-code-plugins
+/reload-plugins
 ```
 
-
-## 2. Configure the global hook
-
-Set up a global hook in `~/.claude/settings.json` that runs the `stop_hook.sh` script. The global setting enables you to easily trace any Claude Code CLI project.
-
-In `~/.claude/settings.json`, add the `Stop` hook.
-
-```json
-{
-"hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/stop_hook.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-The hook will write logs to a folder called `~/.claude/state`. Make sure it exists:
+To update the plugin, run:
 
 ```bash
-mkdir -p ~/.claude/state
+/plugin marketplace update langsmith-claude-code-plugins
+/reload-plugins
 ```
 
-## 3. Enable tracing
+<Note> If you are migrating from the previously recommended version of tracing Claude Code with manually created stop hooks, see [Migrating from the manual stop hook](#migrating-from-the-manual-stop-hook). </Note>
 
-For each Claude Code project (a Claude Code project is a directory with Claude Code initialized) where you want tracing enabled, create or edit [Claude Code's project settings file](https://code.claude.com/docs/en/settings#:~:text=Project%20settings%20are%20saved%20in%20your%20project%20directory%3A) `.claude/settings.local.json` to include the following environment variables:
+### Setting environment variables
+
+**Option 1: Project-level configuration (recommended)**
+
+The plugin requires the following environment variables:
 
 - `TRACE_TO_LANGSMITH: "true"` - Enables tracing for this project. Remove or set to `false` to disable tracing.
 - `CC_LANGSMITH_API_KEY` - Your LangSmith API key
 - `CC_LANGSMITH_PROJECT` - The LangSmith project name where traces are sent
-- (optional) `CC_LANGSMITH_DEBUG: "true"` - Enables detailed debug logging. Remove or set to `false` to disable tracing.
+- (optional) `CC_LANGSMITH_DEBUG: "true"` - Enables detailed debug logging. Remove or set to `false` to disable debug logging.
+
+The easiest way to get set up is to create or edit [Claude Code's project settings file](https://code.claude.com/docs/en/settings#:~:text=Project%20settings%20are%20saved%20in%20your%20project%20directory%3A). Create a `.claude/settings.local.json` in your project directory and populate it as follows:
 
 ```json
 {
   "env": {
     "TRACE_TO_LANGSMITH": "true",
-    "CC_LANGSMITH_API_KEY": "lsv2_pt_...",
-    "CC_LANGSMITH_PROJECT": "project-name",
-    "CC_LANGSMITH_DEBUG": "true"
-
+    "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
+    "CC_LANGSMITH_PROJECT": "my-project"
   }
 }
 ```
 
 <Note> Alternatively, to enable tracing to LangSmith for all Claude Code sessions, you can add the above JSON to your [global Claude Code settings.json](https://code.claude.com/docs/en/settings#:~:text=User%20settings%20are%20defined%20in%20~/.claude/settings.json%20and%20apply%20to%20all%20projects.) file. </Note>
 
-## 4. Verify setup
+**Option 2: Shell environment variables**
 
-Start a Claude Code session in your configured project. Traces will appear in LangSmith after Claude Code responds.
+Run the following commands in your shell or add them to your shell configuration file (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
+
+```bash
+export TRACE_TO_LANGSMITH="true"
+export CC_LANGSMITH_API_KEY="<LangSmith API key>"
+export CC_LANGSMITH_PROJECT="my-project"
+```
+
+## Verify setup
+
+Traces will appear complete in LangSmith after Claude Code responds. Note that if you interrupt a run while it is in progress, the plugin will only flush that run when you send the next message or end the session.
 
 In LangSmith, you'll see:
 
 - Each message to Claude Code appears as a trace.
 - All turns from the same Claude Code session are grouped using a shared `thread_id` and can be viewed in the **Threads** tab of a project.
 
+## Nesting traces under an existing run
+
+You can also set an environment variable named `CC_LANGSMITH_PARENT_DOTTED_ORDER` to nest all Claude Code traces as children of an existing LangSmith run. This is useful when Claude Code is invoked programmatically as part of a larger traced workflow.
+
+**Python**
+
+```python
+import subprocess
+from langsmith import traceable, get_current_run_tree
+
+
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = "<LangSmith API key>"
+os.environ["LANGSMITH_PROJECT"] = "claude-code"
+
+@traceable
+def run_claude(prompt: str):
+    run_tree = get_current_run_tree()
+    subprocess.run(
+        ["claude", "-p", prompt],
+        env={
+            **os.environ,
+            "TRACE_TO_LANGSMITH": "true",
+            "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
+            "CC_LANGSMITH_PROJECT": "claude-code",
+            "CC_LANGSMITH_PARENT_DOTTED_ORDER": run_tree.dotted_order,
+        },
+    )
+```
+
+**TypeScript**
+
+```ts
+import { traceable, getCurrentRunTree } from "langsmith/traceable";
+import { execSync } from "node:child_process";
+
+process.env.LANGSMITH_TRACING = "true";
+process.env.LANGSMITH_API_KEY = "<LangSmith API key>";
+process.env.LANGSMITH_PROJECT = "claude-code";
+
+const runClaude = traceable(
+  async (prompt: string) => {
+    const runTree = getCurrentRunTree();
+    const pluginDir = new URL(".", import.meta.url).pathname;
+    const res = execSync(`claude -p "${prompt}" --plugin-dir '${pluginDir}'`, {
+      env: {
+        ...process.env,
+        TRACE_TO_LANGSMITH: "true",
+        CC_LANGSMITH_API_KEY: "<LangSmith API key>",
+        CC_LANGSMITH_PROJECT: "claude-code",
+        CC_LANGSMITH_PARENT_DOTTED_ORDER: runTree.dotted_order,
+      },
+    });
+    return res.toString();
+  },
+  { name: "run_claude" },
+);
+```
+
+The resulting trace hierarchy looks like:
+
+```
+Your outer run (chain)
+└── Claude Code Turn (chain)
+    ├── Claude (llm)
+    ├── Read (tool)
+    └── Claude (llm)
+```
 
 ## Troubleshooting
 
@@ -126,25 +175,9 @@ In LangSmith, you'll see:
    ```
    Then check logs for API calls and HTTP status codes.
 
-### Permission errors
-
-Make sure the hook script is executable:
-
-```bash
-chmod +x ~/.claude/hooks/stop_hook.sh
-```
-
-### Required commands not found
-
-Verify all required commands are installed:
-
-```bash
-which jq curl uuidgen
-```
-
-If `jq` is missing:
-- **macOS**: `brew install jq`
-- **Ubuntu/Debian**: `sudo apt-get install jq`
+### Subagent runs do not appear after user interruption
+Currently, subagents are only traced upon completion. This means if you interrupt a conversation turn in the middle of a subagent run,
+the subagent's child runs will not be traced.
 
 ### Managing log file size
 
@@ -157,3 +190,11 @@ ls -lh ~/.claude/state/hook.log
 # Clear logs if needed
 > ~/.claude/state/hook.log
 ```
+
+## Migrating from the manual stop hook
+
+If you were using the previous version of tracing Claude Code with LangSmith, you will need to remove `~/.claude/hooks/stop_hook.sh` and remove the reference to the hook from any previous `settings.local.json` or `settings.json` files you added it to previously, then following the [plugin installation instructions](#getting-started) above.
+
+## Source code
+
+The plugin is open-source under the MIT license and is available in [this GitHub repo](https://github.com/langchain-ai/langsmith-claude-code-plugins).
