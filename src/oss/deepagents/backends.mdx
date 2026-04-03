@@ -214,28 +214,27 @@ NamespaceFactory = Callable[[BackendContext], tuple[str, ...]]
 
 The `BackendContext` provides:
 - `ctx.runtime.context` — User-supplied context passed via LangGraph's [context schema](https://langchain-ai.github.io/langgraph/concepts/runtime/) (for example, `user_id`)
+- `ctx.runtime.server_info` — Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
+- `ctx.runtime.execution_info` — Execution identity information (thread ID, run ID, checkpoint ID)
 - `ctx.state` — Current agent state
-
-For `assistant_id` and `thread_id`, use `langgraph.config.get_config()` inside the factory — these are available in LangGraph config metadata but not on the context schema.
 
 **Common namespace patterns:**
 
 :::python
 ```python
-from langgraph.config import get_config
 from deepagents.backends import StoreBackend
 
 # Per-user: each user gets their own isolated storage
 backend = lambda rt: StoreBackend(
     rt,
-    namespace=lambda ctx: (ctx.runtime.context.user_id,),
+    namespace=lambda ctx: (ctx.runtime.server_info.user.identity,),  # [!code highlight]
 )
 
 # Per-assistant: all users of the same assistant share storage
 backend = lambda rt: StoreBackend(
     rt,
     namespace=lambda ctx: (
-        get_config()["metadata"]["assistant_id"],
+        ctx.runtime.server_info.assistant_id,  # [!code highlight]
     ),
 )
 
@@ -243,7 +242,7 @@ backend = lambda rt: StoreBackend(
 backend = lambda rt: StoreBackend(
     rt,
     namespace=lambda ctx: (
-        get_config()["configurable"]["thread_id"],
+        ctx.runtime.execution_info.thread_id,  # [!code highlight]
     ),
 )
 ```
@@ -251,28 +250,21 @@ backend = lambda rt: StoreBackend(
 
 :::js
 ```typescript
-import { getConfig } from "@langchain/langgraph";
 import { StoreBackend } from "deepagents";
 
 // Per-user: each user gets their own isolated storage
 const backend = (rt) => new StoreBackend(rt, {
-  namespace: (ctx) => [ctx.runtime.context.userId],
+  namespace: (ctx) => [ctx.runtime.serverInfo.user.identity],  // [!code highlight]
 });
 
 // Per-assistant: all users of the same assistant share storage
 const backend = (rt) => new StoreBackend(rt, {
-  namespace: (ctx) => {
-    const config = getConfig();
-    return [config.metadata.assistantId];
-  },
+  namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
 });
 
 // Per-thread: storage scoped to a single conversation
 const backend = (rt) => new StoreBackend(rt, {
-  namespace: (ctx) => {
-    const config = getConfig();
-    return [config.configurable.threadId];
-  },
+  namespace: (ctx) => [ctx.runtime.executionInfo.threadId],  // [!code highlight]
 });
 ```
 :::

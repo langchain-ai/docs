@@ -3383,16 +3383,18 @@ A common use case is updating graph state from inside a tool. For example, in a 
 
 :::python
 ```python
+from langchain.tools import ToolRuntime
+
 @tool
-def lookup_user_info(tool_call_id: Annotated[str, InjectedToolCallId], config: RunnableConfig):
+def lookup_user_info(runtime: ToolRuntime):
     """Use this to look up user information to better assist them with their questions."""
-    user_info = get_user_info(config.get("configurable", {}).get("user_id"))
+    user_info = get_user_info(runtime.server_info.user.identity)  # [!code highlight]
     return Command(
         update={
             # update the state keys
             "user_info": user_info,
             # update the message history
-            "messages": [ToolMessage("Successfully looked up user information", tool_call_id=tool_call_id)]
+            "messages": [ToolMessage("Successfully looked up user information", tool_call_id=runtime.tool_call_id)]
         }
     )
 ```
@@ -3405,8 +3407,8 @@ import { Command } from "@langchain/langgraph";
 import * as z from "zod";
 
 const lookupUserInfo = tool(
-  async (input, config) => {
-    const userId = config.configurable?.userId;
+  async (input, runtime) => {
+    const userId = runtime.serverInfo?.user?.identity;  // [!code highlight]
     const userInfo = getUserInfo(userId);
     return new Command({
       update: {
@@ -3416,7 +3418,7 @@ const lookupUserInfo = tool(
         messages: [{
           role: "tool",
           content: "Successfully looked up user information",
-          tool_call_id: config.toolCall.id
+          tool_call_id: runtime.toolCall.id
         }]
       }
     });
