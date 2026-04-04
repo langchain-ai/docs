@@ -1,0 +1,285 @@
+---
+title: "Modexia AgentPay"
+description: "Integrate Modexia AgentPay to empower your agents with autonomous crypto infrastructure."
+---
+
+[Modexia](https://modexia.software) allows AI Agents to autonomously hold USDC, execute cross-chain payments, route through high-frequency zero-gas micro-transaction vaults, and automatically negotiate HTTP `402 Payment Required` paywalls without handling private keys directly.
+
+## Overview
+
+Modexia provides a core Toolkit that bundles 8 individual cryptocurrency tools. Agents can use the Toolkit directly or instantiate individual tools:
+
+- **`RetrieveBalanceTool`** checks the agent's current usable USDC balance.
+- **`TransferTool`** executes standard, on-chain EVM-based USDC transfers.
+- **`GetHistoryTool`** returns a ledger dataframe of recent transaction activity.
+- **`CrossChainTransferTool`** uses Squid Router abstraction to burn/attest/transfer USDC across any supported blockchain instantly.
+- **`SmartFetchTool`** is a secure HTTP client that detects `L402` paywall invoices and automatically settles them to retrieve gated JSON content.
+- **`OpenChannelTool`** establishes a high-frequency, zero-gas micro-transaction vault.
+- **`ConsumeChannelTool`** instantly executes cryptographically signed micro-payments off-chain.
+- **`SettleChannelTool`** closes the cryptographically signed vault and commits final balances to the block.
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://modelcontextprotocol.io/) | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| `ModexiaToolkit` | langchain-modexia | ❌ | ✅ (Via MCP) |  0.1.1 |
+
+### Tool features
+
+| Tool | State Read | On-Chain Move | Off-Chain Micro-Tx | L402 Web Fetch |
+| :--- | :---: | :---: | :---: | :---: |
+| `RetrieveBalanceTool` / `GetHistoryTool` | ✅ | ❌ | ❌ | ❌ |
+| `TransferTool` / `CrossChainTransferTool` | ❌ | ✅ | ❌ | ❌ |
+| `Open/Consume/SettleChannelTool` | ❌ | ❌ | ✅ | ❌ |
+| `SmartFetchTool` | ❌ | ❌ | ❌ | ✅ |
+
+## Setup
+
+```python
+pip install --quiet -U langchain-modexia
+```
+
+To run asynchronous models efficiently, ensure you have your Event Loop and LangGraph configured. (Jupyter notebooks have their own event loop, so `nest_asyncio` may be required).
+
+### Credentials
+
+To use the Modexia tools, you will need to retrieve your private API key from your [Modexia Developer Dashboard](https://modexia.software) and set the `MODEXIA_API_KEY` environment variable.
+
+```python
+import os
+
+os.environ["MODEXIA_API_KEY"] = "mx_live_YOUR_API_KEY"
+```
+
+## Instantiation
+
+### `ModexiaToolkit`
+
+The easiest way to use Modexia is by initializing the **ModexiaToolkit** which automatically registers and validates all 8 tools simultaneously.
+
+You can instantiate `ModexiaToolkit` with the following parameters:
+
+- `api_key`: Your Modexia API key (Must be either `mx_test_` or `mx_live_`). **Required.**
+- `async_mode`: Whether the internal HTTPx client should use asynchronous event loops for non-blocking LangGraph execution. **Defaults to `False`.**
+- `timeout`: The global timeout in seconds for Modexia REST API requests. **Defaults to `10.0`.**
+
+```python
+from langchain_modexia import ModexiaToolkit
+
+toolkit = ModexiaToolkit.from_api_key(
+    api_key=os.environ["MODEXIA_API_KEY"],
+    async_mode=True,
+    timeout=15.0
+)
+tools = toolkit.get_tools()
+```
+
+### Individual Tools
+If you only want your Agent to have "Read-Only" capabilities (no fund transferring), you can manually inject specific tools by passing them your authenticated `ModexiaClient` or `AsyncModexiaClient`.
+
+```python
+from modexia import ModexiaClient
+from langchain_modexia.tools import RetrieveBalanceTool, GetHistoryTool
+
+client = ModexiaClient(api_key=os.environ["MODEXIA_API_KEY"])
+
+balance_tool = RetrieveBalanceTool(client=client)
+history_tool = GetHistoryTool(client=client)
+
+read_only_tools = [balance_tool, history_tool]
+```
+
+## Invocation
+
+### Extracting Balance
+You can directly invoke any Modexia tool. Since `RetrieveBalanceTool` takes no Pydantic arguments, we pass an empty dict.
+
+```python
+balance = balance_tool.invoke({})
+print(balance)
+```
+
+```text
+{'balance': 1500.25, 'currency': 'USDC'}
+```
+
+### Executing SmartFetch (L402 Paywalls)
+
+`SmartFetchTool` detects HTTP `402 Payment Required` headers and automatically negotiates the LSAT/L402 invoice, deducting from your Modexia balance quietly and routing the un-gated payload back to the Agent.
+
+- `url`: The paywalled API endpoint.
+- `method`: HTTP Method (GET/POST).
+- `payload`: Optional JSON payload for POST.
+
+```python
+from langchain_modexia.tools import SmartFetchTool
+
+smart_fetch = SmartFetchTool(client=client)
+response = smart_fetch.invoke({
+    "url": "https://api.premium-weather.com/v1/forecast",
+    "method": "GET"
+})
+```
+
+```text
+{
+  "modexia_cost": 0.05,
+  "invoice_settled": true,
+  "payload": {
+    "temperature": 72,
+    "conditions": "Sunny"
+  }
+}
+```
+
+## Chaining
+
+You can use Modexia tools in a chain by binding the toolkit to a tool-calling LLM.
+
+### Instantiate LLM
+
+```python
+import os
+
+os.environ["ANTHROPIC_API_KEY"] = "your-api-key"
+```
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+llm = ChatAnthropic(model="claude-3-5-sonnet-20240620")
+llm_with_tools = llm.bind_tools(read_only_tools)
+```
+
+### Execute tool chain
+
+```python
+from langchain_core.messages import HumanMessage
+
+ai_msg = llm_with_tools.invoke([
+    HumanMessage(content="Can you tell me how much Crypto I have left in my wallet?")
+])
+
+print(ai_msg.tool_calls)
+```
+
+```text
+[{'name': 'modexia_get_balance', 'args': {}, 'id': 'call_J3u2Dk_bHw'}]
+```
+
+## Use within an agent
+
+The true power of Modexia shines when you give the full Toolkit to a ReAct Agent.
+Agents can autonomously decide to parse data, cross-chain transfer funds, or open micropayment channels without any human intervention.
+
+### Use with a LangGraph ReAct Agent
+
+```python
+pip install --quiet -U langgraph
+```
+
+```python
+from langgraph.prebuilt import create_react_agent
+
+# Pass tools generated by `toolkit.get_tools()`
+agent_executor = create_react_agent(llm, toolkit.get_tools())
+```
+
+```python
+prompt = """
+1. Check my current balance.
+2. If I have more than 5 USDC, send exactly 2.5 USDC to 0x123abc456def7890123abc456def7890123abc45 on the Base network.
+3. Check my history to verify the last transaction went through.
+4. Give me a pleasant summary of the result.
+"""
+
+events = agent_executor.astream(
+    {"messages": [("user", prompt)]},
+    stream_mode="values",
+)
+for event in events:
+    event["messages"][-1].pretty_print()
+```
+
+```text
+================================ Human Message =================================
+
+1. Check my current balance.
+2. If I have more than 5 USDC, send exactly 2.5 USDC to 0x123abc456def7890123abc456def7890123abc45 on the Base network.
+3. Check my history to verify the last transaction went through.
+4. Give me a pleasant summary of the result.
+
+================================== Ai Message ==================================
+Tool Calls:
+  modexia_get_balance (call_a3vX9pL2oQrt_M)
+ Call ID: call_a3vX9pL2oQrt_M
+  Args: {}
+
+================================= Tool Message =================================
+Name: modexia_get_balance
+
+{"balance": 18.50, "currency": "USDC"}
+
+================================== Ai Message ==================================
+Tool Calls:
+  modexia_cross_chain_transfer (call_j7kP4nT1sVxz_W)
+ Call ID: call_j7kP4nT1sVxz_W
+  Args:
+    amount: 2.5
+    destination_address: 0x123abc456def7890123abc456def7890123abc45
+    destination_chain: Base
+
+================================= Tool Message =================================
+Name: modexia_cross_chain_transfer
+
+{"tx_hash": "0x4b7f8e...9a2e", "status": "CONFIRMED", "estimated_gas_abstracted": 0.001}
+
+================================== Ai Message ==================================
+Tool Calls:
+  modexia_get_history (call_l9mN2qR3tYux_B)
+ Call ID: call_l9mN2qR3tYux_B
+  Args:
+    limit: 1
+
+================================= Tool Message =================================
+Name: modexia_get_history
+
+[{"id": "cctp_base_001", "type": "CROSS_CHAIN_TRANSFER", "amount": -2.5, "timestamp": "2026-04-05T00:35:00Z"}]
+
+================================== Ai Message ==================================
+
+Here is the pleasant summary of your transaction:
+
+I successfully verified that your wallet had an initial balance of **18.50 USDC**, which was more than enough to proceed!
+
+I immediately executed a cross-chain transfer of **2.5 USDC** directly to `0x123...abc45` on the Base network for you. Your transaction hash is `0x4b7f8e...9a2e` and gas was fully abstracted.
+
+Finally, I checked your latest ledger history and can confirm the transaction has successfully landed on-chain. You are all set! 🚀
+```
+
+---
+
+## JavaScript / TypeScript Support via MCP
+
+If you are orchestrating agents outside of Python (such as JS LangGraph, ElizaOS, or DayS), you can achieve exact feature parity via our Model Context Protocol (MCP) Server using LangChain's generic MCP adapters.
+
+### JS Integration Example
+
+```typescript
+import { loadMcpTools } from "@langchain/mcp-adapters";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+// Instantiates the Python MCP server securely in the background
+const transport = new StdioClientTransport({
+    command: "uvx",
+    args: ["modexia-mcp"],
+    env: { MODEXIA_API_KEY: process.env.MODEXIA_API_KEY }
+});
+
+// The JS Agent now has the exact same 8 Tools from above!
+const tools = await loadMcpTools(transport);
+```
+
+## API reference
+
+For more information on how to architect LangChain solutions with Modexia, please refer to the [Modexia Developer Portal](https://modexia.software) or view the raw implementation on our [GitHub Repository](https://github.com/Modaniels/SDKs).
