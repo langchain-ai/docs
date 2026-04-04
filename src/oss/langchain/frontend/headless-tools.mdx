@@ -1,0 +1,400 @@
+---
+title: Headless tools
+description: Run browser and device APIs on the client with headless tool implementations
+---
+
+Headless tools let your agent call tools whose real execution must happen in the
+user's app instead of on the server. The agent still sees a normal tool schema,
+but the implementation lives in the frontend, where it can access browser APIs
+like IndexedDB, geolocation, clipboard, canvas, or file pickers.
+
+This pattern is especially useful when data should stay local to the device.
+The playground example on this page uses a small browser-memory toolkit backed
+by IndexedDB plus a geolocation tool that runs entirely on the client.
+
+import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+
+<PatternEmbed pattern="headless-tools" />
+
+## How headless tools work
+
+1. Register a schema-only tool definition on the agent.
+2. Implement the matching tool in the frontend with `.implement(...)`.
+3. Pass those implementations to `useStream({ tools: [...] })`.
+4. When the agent emits a matching tool call, the client runs it and resumes
+   the interrupted run with the tool result.
+
+<Tip>
+Keep tool definitions and implementations in separate modules. Share the
+definitions between your agent and your frontend so the tool names and schemas
+stay aligned, then keep browser-only code in a client-only `impl` module.
+</Tip>
+
+## Register the tool on the agent
+
+The playground defines a small set of client-side tools:
+`memory_put`, `memory_get`, `memory_list`, `memory_search`, `memory_forget`,
+and `geolocation_get`.
+
+For JavaScript agents, you can share a single `tools.ts` file between the agent
+and the frontend. For Python agents, define the schema on the server, then
+mirror the same tool name and argument fields in a frontend `tools.ts` file.
+
+<CodeGroup>
+
+:::python
+```python agent.py
+from typing import Any
+
+from langchain import create_agent
+from langchain.tools import tool
+from langgraph.checkpoint.memory import MemorySaver
+from pydantic import BaseModel
+
+
+class MemoryPutInput(BaseModel):
+    key: str
+    value: Any
+
+
+class MemoryGetInput(BaseModel):
+    key: str
+
+
+class GeolocationGetInput(BaseModel):
+    save: bool = True
+
+
+memory_put = tool(
+    name="memory_put",
+    description="Store a memory in the user's browser.",
+    args_schema=MemoryPutInput,
+)
+
+memory_get = tool(
+    name="memory_get",
+    description="Look up a memory stored in the user's browser.",
+    args_schema=MemoryGetInput,
+)
+
+geolocation_get = tool(
+    name="geolocation_get",
+    description="Get the user's current location from the browser.",
+    args_schema=GeolocationGetInput,
+)
+
+agent = create_agent(
+    model="openai:gpt-5.4",
+    tools=[memory_put, memory_get, geolocation_get],
+    checkpointer=MemorySaver(),
+)
+```
+
+Mirror the tool names and schemas on the client so the frontend can attach implementations.
+
+```ts tools.ts
+import * as z from "zod";
+import { tool } from "langchain";
+
+// Mirror the Python tool names and schemas on the client.
+export const memoryPut = tool({
+  name: "memory_put",
+  description: "Store a memory in the user's browser.",
+  schema: z.object({
+    key: z.string(),
+    value: z.unknown(),
+  }),
+});
+
+export const memoryGet = tool({
+  name: "memory_get",
+  description: "Look up a memory stored in the user's browser.",
+  schema: z.object({
+    key: z.string(),
+  }),
+});
+
+export const geolocationGet = tool({
+  name: "geolocation_get",
+  description: "Get the user's current location from the browser.",
+  schema: z.object({
+    save: z.boolean().optional(),
+  }),
+});
+```
+
+:::
+
+:::js
+```ts tools.ts
+import * as z from "zod";
+import { tool } from "langchain";
+
+export const memoryPut = tool({
+  name: "memory_put",
+  description: "Store a memory in the user's browser.",
+  schema: z.object({
+    key: z.string(),
+    value: z.unknown(),
+  }),
+});
+
+export const memoryGet = tool({
+  name: "memory_get",
+  description: "Look up a memory stored in the user's browser.",
+  schema: z.object({
+    key: z.string(),
+  }),
+});
+
+export const geolocationGet = tool({
+  name: "geolocation_get",
+  description: "Get the user's current location from the browser.",
+  schema: z.object({
+    save: z.boolean().optional(),
+  }),
+});
+```
+
+```ts agent.ts
+import { createAgent } from "langchain";
+import { MemorySaver } from "@langchain/langgraph";
+
+import { geolocationGet, memoryGet, memoryPut } from "./tools";
+
+export const agent = createAgent({
+  model: "openai:gpt-5.4",
+  tools: [memoryPut, memoryGet, geolocationGet],
+  checkpointer: new MemorySaver(),
+});
+```
+
+:::
+
+</CodeGroup>
+
+## Implement the browser behavior
+
+Put the client-only behavior in a separate module and attach it with
+`.implement(...)`. The real playground includes a fuller IndexedDB store with
+search, listing, expiration, and delete operations. This shorter example shows
+the same shape at a higher level:
+
+```ts impl.ts
+import {
+  geolocationGet as geolocationGetDefinition,
+  memoryGet as memoryGetDefinition,
+  memoryPut as memoryPutDefinition,
+} from "./tools";
+
+async function saveMemory(key: string, value: unknown) {
+  localStorage.setItem(`agent-memory:${key}`, JSON.stringify(value));
+}
+
+async function getMemory(key: string) {
+  const value = localStorage.getItem(`agent-memory:${key}`);
+  return value ? JSON.parse(value) : null;
+}
+
+export const memoryPut = memoryPutDefinition.implement(async ({ key, value }) => {
+  await saveMemory(key, value);
+  return { success: true, key };
+});
+
+export const memoryGet = memoryGetDefinition.implement(async ({ key }) => {
+  const value = await getMemory(key);
+  return value === null ? { found: false, key } : { found: true, key, value };
+});
+
+export const geolocationGet = geolocationGetDefinition.implement(
+  async ({ save = true }) => {
+    const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject),
+    );
+
+    const location = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+    };
+
+    if (save) {
+      await saveMemory("user_location", location);
+    }
+
+    return location;
+  },
+);
+```
+
+## Wire the implementations into `useStream`
+
+Pass the implemented tools to `useStream`. When the agent emits a matching tool
+call, the hook runs the client implementation and resumes the run for you.
+
+:::python
+
+Define a TypeScript interface matching your agent's state schema and pass it as
+a type parameter to `useStream` for type-safe access to state values. In the
+examples below, replace `typeof myAgent` with your interface name:
+
+```ts
+import type { BaseMessage } from "langchain";
+
+interface AgentState {
+  messages: BaseMessage[];
+}
+```
+
+:::
+
+:::js
+
+Import your agent and pass `typeof myAgent` as a type parameter to `useStream`
+for type-safe access to state values:
+
+```ts
+import type { myAgent } from "./agent";
+```
+
+:::
+
+<CodeGroup>
+
+```tsx React
+import { useStream } from "@langchain/react";
+
+import { geolocationGet, memoryGet, memoryPut } from "./impl";
+
+const AGENT_URL = "http://localhost:2024";
+
+export function Chat() {
+  const stream = useStream<typeof myAgent>({
+    apiUrl: AGENT_URL,
+    assistantId: "headless_tools",
+    tools: [memoryPut, memoryGet, geolocationGet],
+  });
+
+  return <ChatView messages={stream.messages} toolCalls={stream.toolCalls} />;
+}
+```
+
+```vue Vue
+<script setup lang="ts">
+import { useStream } from "@langchain/vue";
+
+import { geolocationGet, memoryGet, memoryPut } from "./impl";
+
+const AGENT_URL = "http://localhost:2024";
+
+const stream = useStream<typeof myAgent>({
+  apiUrl: AGENT_URL,
+  assistantId: "headless_tools",
+  tools: [memoryPut, memoryGet, geolocationGet],
+});
+</script>
+
+<template>
+  <ChatView
+    :messages="stream.messages.value"
+    :tool-calls="stream.toolCalls.value"
+  />
+</template>
+```
+
+```svelte Svelte
+<script lang="ts">
+  import { useStream } from "@langchain/svelte";
+
+  import { geolocationGet, memoryGet, memoryPut } from "./impl";
+
+  const AGENT_URL = "http://localhost:2024";
+
+  const { messages, toolCalls } = useStream<typeof myAgent>({
+    apiUrl: AGENT_URL,
+    assistantId: "headless_tools",
+    tools: [memoryPut, memoryGet, geolocationGet],
+  });
+</script>
+
+<ChatView messages={$messages} toolCalls={$toolCalls} />
+```
+
+```ts Angular
+import { Component } from "@angular/core";
+import { useStream } from "@langchain/angular";
+
+import { geolocationGet, memoryGet, memoryPut } from "./impl";
+
+const AGENT_URL = "http://localhost:2024";
+
+@Component({
+  selector: "app-chat",
+  template: `
+    <app-chat-view
+      [messages]="stream.messages()"
+      [toolCalls]="stream.toolCalls()"
+    />
+  `,
+})
+export class ChatComponent {
+  stream = useStream<typeof myAgent>({
+    apiUrl: AGENT_URL,
+    assistantId: "headless_tools",
+    tools: [memoryPut, memoryGet, geolocationGet],
+  });
+}
+```
+
+</CodeGroup>
+
+## Render tool activity inline
+
+The playground renders each memory or geolocation operation as its own card and
+keeps a small memory stats panel near the input. The key step is matching each
+entry in `stream.toolCalls` back to the AI message that triggered it:
+
+```tsx
+function Message({ message, toolCalls }) {
+  const messageToolCalls = toolCalls.filter((tc) =>
+    message.tool_calls?.some((call) => call.id === tc.call.id),
+  );
+
+  return (
+    <div>
+      {message.text && <p>{message.text}</p>}
+      {messageToolCalls.map((tc) => (
+        <HeadlessToolCard key={tc.call.id} toolCall={tc} />
+      ))}
+    </div>
+  );
+}
+```
+
+This works especially well with the richer UI patterns from
+[Tool calling](/oss/langchain/frontend/tool-calling), where each tool result can
+render as a specialized card instead of raw JSON.
+
+## Good fits for headless tools
+
+Use headless tools when the work depends on APIs or data that only exist in the
+client:
+
+- Local memory in IndexedDB or `localStorage`
+- Device APIs like geolocation, clipboard, camera, or file pickers
+- Canvas, audio, or other browser-only rendering primitives
+- Privacy-sensitive data that should stay on the user's device
+- UI actions that need direct access to in-memory frontend state
+
+## Best practices
+
+- Keep tools small and typed. Prefer many narrow tools over one generic
+  "run arbitrary browser code" tool.
+- Return JSON-serializable results. Do not try to return DOM nodes, file
+  handles, or other non-serializable browser objects.
+- Share definitions, separate implementations. The agent and client should agree
+  on tool names and schemas, but only the client should load browser APIs.
+- Surface tool state in the UI. Use `stream.toolCalls` and `onTool` to show
+  pending, success, and error states.
+- Add review when needed. For sensitive client-side actions, pair this pattern
+  with [Human-in-the-loop](/oss/langchain/frontend/human-in-the-loop).
