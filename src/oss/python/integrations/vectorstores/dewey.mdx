@@ -1,0 +1,128 @@
+---
+title: "Dewey integration"
+description: "Integrate with the Dewey vector store using LangChain Python."
+---
+
+>[Dewey](https://meetdewey.com) is a real-time document backend for AI applications. Upload a document collection and Dewey handles conversion, chunking, and embedding. `DeweyVectorStore` exposes that collection as a standard LangChain `VectorStore`. Dewey manages its own embeddings, so no embedding model is required.
+
+For detailed documentation of all `DeweyVectorStore` features and configurations head to the [API reference](https://github.com/meetdewey/langchain-dewey).
+
+## Setup
+
+Sign up at [meetdewey.com](https://meetdewey.com) to get an API key.
+
+If you want to get automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key by uncommenting below:
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Credentials
+
+```python
+import getpass
+import os
+
+os.environ["DEWEY_API_KEY"] = getpass.getpass("Enter your Dewey API key: ")
+```
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-dewey
+```
+
+```bash uv
+uv add langchain-dewey
+```
+</CodeGroup>
+
+## Initialization
+
+### Wrap an existing collection
+
+```python
+from langchain_dewey import DeweyVectorStore
+
+vector_store = DeweyVectorStore(
+    api_key=os.environ["DEWEY_API_KEY"],
+    collection_id="3f7a1b2c-...",
+)
+```
+
+### Create from texts
+
+`from_texts` creates a new collection (or adds to an existing one), uploads the texts, and waits for Dewey to finish processing them before returning. The `embedding` argument is accepted for interface compatibility but is ignored — Dewey manages its own embeddings.
+
+```python
+vector_store = DeweyVectorStore.from_texts(
+    texts=["Neural networks learn via backpropagation.", "Transformers use self-attention."],
+    embedding=None,
+    api_key=os.environ["DEWEY_API_KEY"],
+    collection_name="my-docs",
+)
+```
+
+## Manage vector store
+
+### Add items
+
+```python
+from langchain_core.documents import Document
+
+docs = [
+    Document(page_content="Alpha Centauri is 4.37 light-years away.", metadata={"source": "astronomy.txt"}),
+    Document(page_content="The Milky Way has 200–400 billion stars.", metadata={"source": "astronomy.txt"}),
+]
+
+ids = vector_store.add_documents(docs)
+```
+
+### Delete items
+
+```python
+vector_store.delete(ids=[ids[0]])
+```
+
+## Query vector store
+
+### Similarity search
+
+```python
+results = vector_store.similarity_search("how far is the nearest star?", k=3)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+### Similarity search with scores
+
+```python
+results = vector_store.similarity_search_with_score("how far is the nearest star?", k=3)
+for doc, score in results:
+    print(f"* [SIM={score:.3f}] {doc.page_content}")
+```
+
+### As a retriever
+
+```python
+retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+retriever.invoke("nearest star")
+```
+
+---
+
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Tutorials: working with external knowledge](/oss/langchain/tutorials)
+- [How-to: Question and answer with RAG](/oss/langchain/how_to#qa-with-rag)
+- [Conceptual: Retrieval](/oss/langchain/concepts/retrieval)
+
+---
+
+## API reference
+
+For detailed documentation of all `DeweyVectorStore` features and configurations head to the [API reference](https://github.com/meetdewey/langchain-dewey).

@@ -1,0 +1,73 @@
+---
+title: "Dewey integration"
+description: "Integrate with the Dewey research tool using LangChain Python."
+---
+
+>[Dewey](https://meetdewey.com) is a real-time document backend for AI applications. `create_research_tool` returns a LangChain `@tool` that runs a full Dewey research query — searching, reading, and synthesising content across multiple documents — for use with any LangChain agent.
+
+For detailed documentation head to the [API reference](https://github.com/meetdewey/langchain-dewey).
+
+## Setup
+
+Sign up at [meetdewey.com](https://meetdewey.com) to get an API key.
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-dewey langchain-openai
+```
+
+```bash uv
+uv add langchain-dewey langchain-openai
+```
+</CodeGroup>
+
+```python
+import getpass
+import os
+
+os.environ["DEWEY_API_KEY"] = getpass.getpass("Enter your Dewey API key: ")
+os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter your OpenAI API key: ")
+```
+
+## Usage
+
+```python
+from langchain_dewey import create_research_tool
+
+research = create_research_tool(
+    api_key=os.environ["DEWEY_API_KEY"],
+    collection_id="3f7a1b2c-...",
+    depth="balanced",  # "quick" | "balanced" | "deep" | "exhaustive"
+)
+```
+
+The tool streams Dewey's research SSE internally and returns the completed answer as a Markdown string with citations.
+
+## Use within an agent
+
+```python
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o")
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful research assistant."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_openai_tools_agent(llm, [research], prompt)
+executor = AgentExecutor(agent=agent, tools=[research])
+
+result = executor.invoke({"input": "Summarise the key findings across all documents."})
+print(result["output"])
+```
+
+---
+
+## API reference
+
+For detailed documentation of all `create_research_tool` options head to the [API reference](https://github.com/meetdewey/langchain-dewey).
