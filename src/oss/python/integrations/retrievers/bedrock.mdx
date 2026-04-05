@@ -59,18 +59,25 @@ retriever.invoke(query)
 
 ```python
 from botocore.client import Config
-from langchain_classic.chains import RetrievalQA
 from langchain_aws import Bedrock
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
 
 model_kwargs_claude = {"temperature": 0, "top_k": 10, "max_tokens_to_sample": 3000}
 
 llm = Bedrock(model_id="anthropic.claude-v2", model_kwargs=model_kwargs_claude)
 
-qa = RetrievalQA.from_chain_type(
-    llm=llm, retriever=retriever, return_source_documents=True
-)
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "Answer based on the context:\n\n{context}"),
+    ("human", "{input}"),
+])
 
-qa(query)
+doc_chain = create_stuff_documents_chain(llm, prompt)
+chain = create_retrieval_chain(retriever, doc_chain)
+
+result = chain.invoke({"input": query})
+print(result["answer"])
 ```
 
 ---
