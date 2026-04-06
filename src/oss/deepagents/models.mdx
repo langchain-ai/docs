@@ -89,6 +89,85 @@ To configure model-specific parameters, use @[`init_chat_model`] or instantiate 
   Available parameters vary by provider. See the [chat model integrations](/oss/integrations/chat) page for provider-specific configuration options.
 </Note>
 
+## Select a model at runtime
+
+If your application lets users choose a model (for example using a dropdown in the UI), use [middleware](/oss/langchain/middleware) to swap the model at runtime without rebuilding the agent.
+
+Pass the user's model selection through [runtime context](/oss/langchain/agents#dynamic-model), then use a `wrap_model_call` middleware to override the model on each invocation using the @[`@wrap_model_call`] decorator:
+
+:::python
+```python
+from dataclasses import dataclass
+from langchain.chat_models import init_chat_model
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+from deepagents import create_deep_agent
+from typing import Callable
+
+
+@dataclass
+class Context:
+    model: str
+
+@wrap_model_call
+def configurable_model(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ModelResponse:
+    model_name = request.runtime.context.model
+    model = init_chat_model(model_name)
+    return handler(request.override(model=model))
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    middleware=[configurable_model],
+    context_schema=Context,
+)
+
+# Invoke with the user's model selection
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Hello!"}]},
+    context=Context(model="openai:gpt-4.1"),
+)
+```
+:::
+
+:::js
+```typescript
+import { initChatModel, createMiddleware } from "langchain";
+import { createDeepAgent } from "deepagents";
+import * as z from "zod";
+
+const contextSchema = z.object({
+  model: z.string(),
+});
+
+const configurableModel = createMiddleware({
+  name: "ConfigurableModel",
+  wrapModelCall: async (request, handler) => {
+    const modelName = request.runtime.context.model;
+    const model = await initChatModel(modelName);
+    return handler({ ...request, model });
+  },
+});
+
+const agent = await createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  middleware: [configurableModel],
+  contextSchema,
+});
+
+// Invoke with the user's model selection
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "Hello!" }] },
+  { context: { model: "openai:gpt-4.1" } },
+);
+```
+:::
+
+<Tip>
+For more dynamic model patterns (foe example routing based on conversation complexity or cost optimization), see [Dynamic model](/oss/langchain/agents#dynamic-model) in the LangChain agents guide.
+</Tip>
+
 ## Supported models
 
 Deep Agents work with any chat model that supports [tool calling](/oss/langchain/models#tool-calling). See [chat model integrations](/oss/integrations/chat) for the full list of supported providers.
