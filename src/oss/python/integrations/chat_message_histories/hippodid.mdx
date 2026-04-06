@@ -1,0 +1,236 @@
+---
+title: "HippoDid chat message history"
+description: "Store chat conversation history in HippoDid using LangChain Python."
+---
+
+`HippoDidChatMessageHistory` stores chat conversation history in [HippoDid](https://hippodid.com)'s
+persistent character memory service.
+
+The code lives in the integration package: [langchain-hippodid](https://github.com/SameThoughts/langchain-hippodid/).
+
+## Overview
+
+HippoDidChatMessageHistory provides:
+
+- **Persistent storage**: Messages survive restarts and work across machines
+- **Character-scoped isolation**: Each user gets their own memory via `character_id` or `external_id`
+- **Semantic search**: Hybrid BM25 + vector search across stored memories
+- **Context assembly**: Build formatted prompts with character profile and relevant memories
+- **Three memory modes**: `VERBATIM` (zero AI cost), `EXTRACTED` (AI-structured), `HYBRID`
+
+## Setup
+
+### Install
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-hippodid
+```
+
+```bash uv
+uv add langchain-hippodid
+```
+</CodeGroup>
+
+### Credentials
+
+Get your API key at [hippodid.com](https://hippodid.com). Set it as an environment
+variable or pass it directly:
+
+```python
+import os
+os.environ["HIPPODID_API_KEY"] = "hd_..."
+```
+
+## Initialization
+
+Create a chat history instance for a specific character:
+
+```python
+from langchain_hippodid import HippoDidChatMessageHistory
+
+# Using an existing character ID
+history = HippoDidChatMessageHistory(
+    api_key="hd_...",
+    character_id="your-character-uuid",
+    memory_mode="VERBATIM",
+)
+
+# Or using your system's user ID (auto-creates character if not found)
+history = HippoDidChatMessageHistory(
+    api_key="hd_...",
+    external_id="user_yang_001",
+    memory_mode="EXTRACTED",
+)
+```
+
+### Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `api_key` | *(required)* | HippoDid API key (starts with `hd_`) |
+| `character_id` | `None` | UUID of existing character. Use this or `external_id`. |
+| `external_id` | `None` | Your system's user ID. Auto-creates character if not found. |
+| `base_url` | `https://api.hippodid.com` | API endpoint |
+| `memory_mode` | `"VERBATIM"` | `VERBATIM` (exact, zero cost), `EXTRACTED` (AI-structured), or `HYBRID` |
+| `search_top_k` | `20` | Number of memories to retrieve |
+| `search_query` | `None` | Custom retrieval query |
+
+## Usage
+
+### Add and retrieve messages
+
+```python
+from langchain_core.messages import AIMessage, HumanMessage
+
+# Add messages — stored persistently in HippoDid cloud
+history.add_message(HumanMessage(content="My name is Yang, I'm building an AI startup"))
+history.add_message(AIMessage(content="Nice to meet you Yang! What's your startup called?"))
+history.add_message(HumanMessage(content="SameThoughts — we're building HippoDid"))
+
+# Retrieve messages — works even after restart, from any machine
+messages = history.messages
+for msg in messages:
+    print(f"{msg.type}: {msg.content}")
+```
+
+### Clear conversation history
+
+```python
+history.clear()
+```
+
+### Semantic search
+
+Search across a character's memories using natural language:
+
+```python
+results = history.search("what startup is the user building?", top_k=5)
+for r in results:
+    print(f"[{r.salience}] {r.content}")
+```
+
+### Context assembly
+
+Build a formatted prompt string containing the character's profile and relevant
+memories:
+
+```python
+context = history.get_context("user background and preferences")
+print(context)  # Ready to inject into a system prompt
+```
+
+## Multi-user pattern
+
+Use `external_id` to automatically create and resolve characters by your system's
+user ID. No UUID management needed.
+
+```python
+from langchain_hippodid import HippoDidChatMessageHistory
+from langchain_core.messages import HumanMessage
+
+def get_history_for_user(user_id: str) -> HippoDidChatMessageHistory:
+    """Each user gets their own persistent memory character."""
+    return HippoDidChatMessageHistory(
+        api_key="hd_...",
+        external_id=user_id,
+        memory_mode="EXTRACTED",
+    )
+
+# Different users, completely isolated memories
+history_yang = get_history_for_user("user_yang_001")
+history_sarah = get_history_for_user("user_sarah_002")
+
+history_yang.add_message(HumanMessage(content="I prefer window seats and 5-star hotels"))
+history_sarah.add_message(HumanMessage(content="I'm vegetarian and love hiking trips"))
+
+# Search Yang's memories only
+results = history_yang.search("travel preferences")
+```
+
+## Use with RunnableWithMessageHistory
+
+`HippoDidMemory` provides a `get_history()` factory compatible with
+`RunnableWithMessageHistory`:
+
+```python
+from langchain_hippodid import HippoDidMemory
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+memory = HippoDidMemory(
+    api_key="hd_...",
+    external_id="user_yang_001",
+    memory_mode="VERBATIM",
+)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant. Use conversation history to personalize responses."),
+    MessagesPlaceholder(variable_name="history"),
+    ("human", "{input}"),
+])
+
+chain = prompt | ChatAnthropic(model="claude-sonnet-4-20250514")
+
+chain_with_history = RunnableWithMessageHistory(
+    chain,
+    memory.get_history,
+    input_messages_key="input",
+    history_messages_key="history",
+)
+
+# First invocation — memory is stored to HippoDid
+response = chain_with_history.invoke(
+    {"input": "My name is Yang and I run SameThoughts Inc."},
+    config={"configurable": {"session_id": "session_001"}},
+)
+print(response.content)
+
+# Later — even after restart — memory persists
+response = chain_with_history.invoke(
+    {"input": "What company do I run?"},
+    config={"configurable": {"session_id": "session_001"}},
+)
+print(response.content)
+# → "You run SameThoughts Inc."
+```
+
+## Advanced: Context assembly with a chain
+
+For agents needing the full character identity (profile, personality, memories),
+use `get_context()` to build a rich system prompt:
+
+```python
+from langchain_hippodid import HippoDidChatMessageHistory
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
+
+history = HippoDidChatMessageHistory(
+    api_key="hd_...",
+    character_id="your-character-uuid",
+)
+
+context = history.get_context("user preferences and recent interactions")
+
+response = ChatAnthropic(model="claude-sonnet-4-20250514").invoke([
+    SystemMessage(content=context),
+    HumanMessage(content="Plan a trip based on what you know about my preferences"),
+])
+print(response.content)
+```
+
+## Memory modes
+
+| Mode | Description | AI cost | Best for |
+|---|---|---|---|
+| `VERBATIM` | Stores exact message text as-is | Zero | Chat logs, compliance, free tier |
+| `EXTRACTED` | AI extracts structured facts | BYOK cost | Rich profiles, knowledge building |
+| `HYBRID` | Both verbatim archive and extracted facts | BYOK cost | Enterprise exact recall + search |
+
+## API reference
+
+- [PyPI package](https://pypi.org/project/langchain-hippodid/)
+- [Core SDK](https://pypi.org/project/hippodid/)
+- [Documentation](https://docs.hippodid.com)
+- [Source](https://github.com/SameThoughts/langchain-hippodid)
