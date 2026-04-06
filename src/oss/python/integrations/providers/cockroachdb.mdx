@@ -220,6 +220,38 @@ See [Get your CockroachDB connection string](#get-your-cockroachdb-connection-st
 The checkpointer uses raw `psycopg3` connections (not SQLAlchemy) for compatibility with LangGraph's checkpoint interface. The `from_conn_string` factory accepts `cockroachdb://` URLs and converts them automatically.
 </Tip>
 
+#### Row-Level TTL (v0.2.1+)
+
+Automatically expire old checkpoint data using CockroachDB's [Row-Level TTL](https://www.cockroachlabs.com/docs/stable/row-level-ttl):
+
+```python
+with CockroachDBSaver.from_conn_string(DB_URI) as checkpointer:
+    checkpointer.setup()
+
+    # Expire checkpoints older than 30 days, clean up daily
+    checkpointer.enable_ttl(ttl_interval="30 days", cron="@daily")
+
+    # Use the checkpointer normally -- old data is cleaned up automatically
+    graph = builder.compile(checkpointer=checkpointer)
+
+    # To disable TTL later:
+    # checkpointer.disable_ttl()
+```
+
+Async variant: `await checkpointer.aenable_ttl(ttl_interval="7 days", cron="@hourly")`
+
+<Note>
+TTL deletion is **eventual** -- expired rows remain queryable until CockroachDB's background job runs on the specified cron schedule.
+</Note>
+
+#### Performance optimizations (v0.2.1+)
+
+The checkpointer includes several optimizations for low-latency reads:
+
+- **Batch fetching**: `list()` fetches all blobs and writes in 2 batch queries instead of 2 per checkpoint
+- **Raw BYTEA**: Uses psycopg3 binary protocol instead of hex-encoding blobs in SQL
+- **Prepared statements**: `from_conn_string()` enables server-side query plan caching (`prepare_threshold=5`)
+
 ### Multi-tenancy
 
 Isolate vector data by tenant using an opt-in namespace column. When enabled, all CRUD and search operations are scoped to the specified namespace.
