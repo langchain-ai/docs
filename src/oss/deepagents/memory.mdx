@@ -11,15 +11,17 @@ This page covers **long-term memory**: memory that persists across conversations
 
 ## How memory works
 
-1. **Point the agent at memory files.** Pass file paths to `memory=` when creating the agent. A [backend](/oss/deepagents/backends) controls where those files are stored and who can access them.
-2. **Agent loads memory on startup.** At the start of each conversation, the agent reads its memory files into the system prompt.
-3. **Agent updates memory during the conversation.** As the agent learns new information, it uses its built-in `edit_file` tool to update memory files. Changes are persisted and available in the next conversation.
+1. **Configure memory.** Pass file paths to `memory=` and optional [skills](/oss/deepagents/skills) to `skills=`. A [backend](/oss/deepagents/backends) controls storage and access.
+2. **Agent reads memory.** Files load into the system prompt at startup, or on demand during the conversation.
+3. **Agent writes memory.** The agent updates files via `edit_file` as it learns. Some memory can be [read-only](#read-only-vs-writable-memory).
+
+[Skills](/oss/deepagents/skills) are procedural memory: reusable instructions that tell the agent *how* to perform a task. They use on-demand loading — the agent reads only skill descriptions at startup, then loads the full skill when it matches a task. This keeps context lean until a capability is needed. Developer-defined skills and [organization policies](#organization-level-memory) are typically not writable by the agent. See [read-only vs writable memory](#read-only-vs-writable-memory).
 
 The two most common patterns are [agent-scoped memory](#agent-scoped-memory) (shared across all users) and [user-scoped memory](#user-scoped-memory) (isolated per user).
 
 ## Agent-scoped memory
 
-Give the agent a shared memory file that all users read from and write to. The agent improves over time as it accumulates knowledge across every conversation. It can also learn and update [skills](/oss/deepagents/skills) when it has write access. See [skills as procedural memory](#skills-as-procedural-memory).
+Give the agent its own persistent identity that evolves over time. Agent-scoped memory is shared across all users, so the agent builds up its own persona, accumulated knowledge, and learned preferences through every conversation. As it interacts with users, it develops expertise, refines its approach, and remembers what works. It can also learn and update [skills](/oss/deepagents/skills) when it has write access.
 
 The key is the backend namespace: setting it to `(assistant_id,)` means every conversation for this agent reads and writes the same memory file.
 
@@ -31,10 +33,16 @@ from langgraph.config import get_config
 
 agent = create_deep_agent(
     memory=["/memories/AGENTS.md"],
+    skills=["/skills/"],
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
+                namespace=lambda ctx: (
+                    get_config()["metadata"]["assistant_id"],
+                ),
+            ),
+            "/skills/": StoreBackend(
                 namespace=lambda ctx: (
                     get_config()["metadata"]["assistant_id"],
                 ),
@@ -52,10 +60,17 @@ import { getConfig } from "@langchain/langgraph";
 
 const agent = createDeepAgent({
   memory: ["/memories/AGENTS.md"],
+  skills: ["/skills/"],
   backend: new CompositeBackend(
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
+        namespace: (ctx) => {
+          const config = getConfig();
+          return [config.metadata.assistantId];
+        },
+      }),
+      "/skills/": new StoreBackend({
         namespace: (ctx) => {
           const config = getConfig();
           return [config.metadata.assistantId];
@@ -92,12 +107,31 @@ store.put(
 """),
 )
 
+# Seed a skill
+store.put(
+    ("my-agent",),
+    "/skills/langgraph-docs/SKILL.md",
+    create_file_data("""---
+name: langgraph-docs
+description: Fetch relevant LangGraph documentation to provide accurate guidance.
+---
+
+# langgraph-docs
+
+Use the fetch_url tool to read https://docs.langchain.com/llms.txt, then fetch relevant pages.
+"""),
+)
+
 agent = create_deep_agent(
     memory=["/memories/AGENTS.md"],
+    skills=["/skills/"],
     backend=lambda rt: CompositeBackend(
         default=StateBackend(rt),
         routes={
             "/memories/": StoreBackend(
+                rt, namespace=lambda ctx: ("my-agent",)
+            ),
+            "/skills/": StoreBackend(
                 rt, namespace=lambda ctx: ("my-agent",)
             ),
         },
@@ -139,12 +173,31 @@ await store.put(
 `),
 );
 
+// Seed a skill
+await store.put(
+  ["my-agent"],
+  "/skills/langgraph-docs/SKILL.md",
+  createFileData(`---
+name: langgraph-docs
+description: Fetch relevant LangGraph documentation to provide accurate guidance.
+---
+
+# langgraph-docs
+
+Use the fetch_url tool to read https://docs.langchain.com/llms.txt, then fetch relevant pages.
+`),
+);
+
 const agent = createDeepAgent({
   memory: ["/memories/AGENTS.md"],
+  skills: ["/skills/"],
   backend: (rt) => new CompositeBackend(
     new StateBackend(rt),
     {
       "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => ["my-agent"],
+      }),
+      "/skills/": new StoreBackend(rt, {
         namespace: (ctx) => ["my-agent"],
       }),
     },
@@ -181,10 +234,14 @@ from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
 agent = create_deep_agent(
     memory=["/memories/preferences.md"],
+    skills=["/skills/"],
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
+                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+            ),
+            "/skills/": StoreBackend(
                 namespace=lambda ctx: (ctx.runtime.context.user_id,),
             ),
         },
@@ -199,10 +256,14 @@ import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "d
 
 const agent = createDeepAgent({
   memory: ["/memories/preferences.md"],
+  skills: ["/skills/"],
   backend: new CompositeBackend(
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
+        namespace: (ctx) => [ctx.runtime.context.userId],
+      }),
+      "/skills/": new StoreBackend({
         namespace: (ctx) => [ctx.runtime.context.userId],
       }),
     },
@@ -251,13 +312,33 @@ store.put(
 """),
 )
 
+# Seed a skill for Alice
+store.put(
+    ("user-alice",),
+    "/skills/langgraph-docs/SKILL.md",
+    create_file_data("""---
+name: langgraph-docs
+description: Fetch relevant LangGraph documentation to provide accurate guidance.
+---
+
+# langgraph-docs
+
+Use the fetch_url tool to read https://docs.langchain.com/llms.txt, then fetch relevant pages.
+"""),
+)
+
 agent = create_deep_agent(
     memory=["/memories/preferences.md"],
+    skills=["/skills/"],
     context_schema=Context,
     backend=lambda rt: CompositeBackend(
         default=StateBackend(rt),
         routes={
             "/memories/": StoreBackend(
+                rt,
+                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+            ),
+            "/skills/": StoreBackend(
                 rt,
                 namespace=lambda ctx: (ctx.runtime.context.user_id,),
             ),
@@ -313,13 +394,32 @@ await store.put(
 `),
 );
 
+// Seed a skill for Alice
+await store.put(
+  ["user-alice"],
+  "/skills/langgraph-docs/SKILL.md",
+  createFileData(`---
+name: langgraph-docs
+description: Fetch relevant LangGraph documentation to provide accurate guidance.
+---
+
+# langgraph-docs
+
+Use the fetch_url tool to read https://docs.langchain.com/llms.txt, then fetch relevant pages.
+`),
+);
+
 const agent = createDeepAgent({
   memory: ["/memories/preferences.md"],
+  skills: ["/skills/"],
   contextSchema,
   backend: (rt) => new CompositeBackend(
     new StateBackend(rt),
     {
       "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => [ctx.runtime.context.userId],
+      }),
+      "/skills/": new StoreBackend(rt, {
         namespace: (ctx) => [ctx.runtime.context.userId],
       }),
     },
@@ -352,10 +452,10 @@ The sections above cover the basics: configure memory paths, choose a scope, and
 | Dimension | Question it answers | Options |
 |---|---|---|
 | **Duration** | How long does it last? | [Short-term](/oss/deepagents/context-engineering) (single conversation) or [long-term](#quick-start) (across conversations) |
-| **Information type** | What kind of information is it? | [Episodic](#episodic-memory) (past experiences), [procedural](#skills-as-procedural-memory) (instructions and skills), or [semantic](/oss/concepts/memory#semantic-memory) (facts) |
+| **Information type** | What kind of information is it? | [Episodic](#episodic-memory) (past experiences), [procedural](/oss/deepagents/skills) (instructions and skills), or [semantic](/oss/concepts/memory#semantic-memory) (facts) |
 | **Scope** | Who can see and modify it? | [User](#user-scoped-memory), [agent](#agent-scoped-memory), or [organization](#organization-level-memory) |
 | **Update strategy** | When are memories written? | During conversation (default) or [between conversations](#background-consolidation) |
-| **Retrieval** | How are memories read? | Loaded into prompt (default) or on demand (e.g., [skills](#skills-as-procedural-memory)) |
+| **Retrieval** | How are memories read? | Loaded into prompt (default) or on demand (e.g., [skills](/oss/deepagents/skills)) |
 | **Agent permissions** | Can the agent write to memory? | [Read-write](#read-only-vs-writable-memory) (default) or [read-only](#read-only-vs-writable-memory) (for shared policies) |
 
 ### Episodic memory
@@ -457,47 +557,9 @@ const orgThreads = await client.threads.search({
 
 This is useful for agents that perform complex, multi-step tasks. For example, a coding agent can look back at a past debugging session and skip straight to the likely root cause.
 
-### Skills as procedural memory
-
-[Skills](/oss/deepagents/skills) are a form of [procedural memory](/oss/concepts/memory#procedural-memory): reusable instructions that tell the agent *how* to perform a task. Unlike semantic memory (facts) or episodic memory (experiences), procedural memory encodes step-by-step capabilities the agent can apply on demand.
-
-Skills can be either:
-- **Read-only** (developer-defined): The developer writes skills and the agent uses them but cannot modify them. This is the most common pattern.
-- **Read-write** (agent-learned): The agent creates and updates skills based on experience. When the agent has write access to memory, it can also write to its skills directory. Use [policy hooks](/oss/deepagents/backends#add-policy-hooks) to control which paths are writable.
-
-Skills are typically **agent-scoped** (shared across all users), but can also be user-scoped if stored in a user-namespaced backend.
-
-In Deep Agents, pass skills via the `skills=` parameter. Skills are loaded on demand rather than injected into every prompt, keeping context lean until a capability is needed:
-
-:::python
-```python
-from deepagents import create_deep_agent
-
-agent = create_deep_agent(
-    memory=["/memories/AGENTS.md"],
-    skills=["/skills/"],
-    # ...backend configuration
-)
-```
-:::
-
-:::js
-```typescript
-import { createDeepAgent } from "deepagents";
-
-const agent = createDeepAgent({
-  memory: ["/memories/AGENTS.md"],
-  skills: ["/skills/"],
-  // ...backend configuration
-});
-```
-:::
-
-For a complete guide on defining, organizing, and using skills, see the [Skills](/oss/deepagents/skills) documentation.
-
 ### Organization-level memory
 
-Organization-level memory follows the same pattern as user-scoped memory, but with a shared namespace instead of a per-user one. Use it for policies or knowledge that should apply across all users and agents.
+Organization-level memory follows the same pattern as user-scoped memory, but with an organization-wide namespace instead of a per-user one. Use it for policies or knowledge that should apply across all users and agents in an organization.
 
 Organization memory is typically **read-only** to prevent prompt injection via shared state. See [read-only vs writable memory](#read-only-vs-writable-memory) for details.
 
@@ -518,7 +580,7 @@ agent = create_deep_agent(
                 namespace=lambda ctx: (ctx.runtime.context.user_id,),
             ),
             "/policies/": StoreBackend(
-                namespace=lambda ctx: (),
+                namespace=lambda ctx: (ctx.runtime.context.org_id,),
             ),
         },
     ),
@@ -542,7 +604,7 @@ const agent = createDeepAgent({
         namespace: (ctx) => [ctx.runtime.context.userId],
       }),
       "/policies/": new StoreBackend({
-        namespace: (ctx) => [],
+        namespace: (ctx) => [ctx.runtime.context.orgId],
       }),
     },
   ),
@@ -560,7 +622,7 @@ from deepagents.backends.utils import create_file_data
 client = get_client(url="<DEPLOYMENT_URL>")
 
 await client.store.put_item(
-    (),
+    (org_id,),
     "/compliance.md",
     create_file_data("""## Compliance policies
 - Never disclose internal pricing
@@ -578,7 +640,7 @@ import { createFileData } from "deepagents";
 const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
 
 await client.store.putItem(
-  [],
+  [orgId],
   "/compliance.md",
   createFileData(`## Compliance policies
 - Never disclose internal pricing
