@@ -71,7 +71,7 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     | <span style={{ whiteSpace: "nowrap" }}>`keep_pkg_tools`</span> | _(Added in v0.3.4)_ Optional. Control whether to retain Python packaging tools (`pip`, `setuptools`, `wheel`) in the final image. Accepted values: <ul><li><code>true</code> : Keep all three tools (skip uninstall).</li><li><code>false</code> / omitted : Uninstall all three tools (default behaviour).</li><li><code>list[str]</code> : Names of tools <strong>to retain</strong>. Each value must be one of "pip", "setuptools", "wheel".</li></ul>. By default, all three tools are uninstalled. |
     | <span style={{ whiteSpace: "nowrap" }}>`dockerfile_lines`</span> | Array of additional lines to add to Dockerfile following the import from parent image.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
     | <span style={{ whiteSpace: "nowrap" }}>`checkpointer`</span>   | Configuration for the checkpointer. Supports: <ul><li>`backend` (optional): `"default"`, `"mongo"`, or `"custom"`. Defaults to `"default"` (PostgreSQL). See [Configure checkpointer backend](/langsmith/configure-checkpointer).</li><li>`path` (optional): Path to a custom checkpointer factory (when `backend` is `"custom"`). See [Custom checkpointer](/langsmith/custom-checkpointer).</li><li>`ttl` (optional): Object with `strategy`, `sweep_interval_minutes`, `default_ttl` controlling checkpoint expiry.</li><li>`serde` (optional, 0.5+): Object with `allowed_json_modules` and `pickle_fallback` to tune deserialization behavior.</li></ul> |
-    | <span style={{ whiteSpace: "nowrap" }}>`http`</span>            | HTTP server configuration with the following fields: <ul><li>`app`: Path to custom Starlette/FastAPI app (e.g., `"./src/agent/webapp.py:app"`). See [custom routes guide](/langsmith/custom-routes).</li><li>`cors`: CORS configuration with fields such as `allow_origins`, `allow_methods`, `allow_headers`, `allow_credentials`, `allow_origin_regex`, `expose_headers`, and `max_age`.</li><li>`configurable_headers`: Define which request headers to expose as configurable values via `includes` / `excludes` patterns.</li><li>`logging_headers`: Mirror of `configurable_headers` for excluding sensitive headers from logs.</li><li>`middleware_order`: Choose how custom middleware and auth interact. `auth_first` runs authentication hooks before custom middleware, while `middleware_first` (default) runs your middleware first.</li><li>`enable_custom_route_auth`: Apply auth checks to routes added through `app`.</li><li>`disable_assistants`, `disable_mcp`, `disable_a2a`, `disable_meta`, `disable_runs`, `disable_store`, `disable_threads`, `disable_ui`, `disable_webhooks`: Disable built-in routes or hooks.</li><li>`mount_prefix`: Prefix for mounted routes (e.g., "/my-deployment/api").</li></ul> |
+    | <span style={{ whiteSpace: "nowrap" }}>`http`</span>            | HTTP server configuration with the following fields: <ul><li>`app`: Path to custom Starlette/FastAPI app (e.g., `"./src/agent/webapp.py:app"`). See [custom routes guide](/langsmith/custom-routes).</li><li>`cors`: CORS configuration with fields such as `allow_origins`, `allow_methods`, `allow_headers`, `allow_credentials`, `allow_origin_regex`, `expose_headers`, and `max_age`.</li><li>`configurable_headers`: Define which request headers to expose as configurable values via `includes` / `excludes` patterns.</li><li>`logging_headers`: Mirror of `configurable_headers` for excluding sensitive headers from logs.</li><li>`middleware_order`: Choose how custom middleware and auth interact. `auth_first` runs authentication hooks before custom middleware, while `middleware_first` (default) runs your middleware first.</li><li>`enable_custom_route_auth`: Apply auth checks to routes added through `app`.</li><li>Route disable flags — selectively turn off groups of built-in endpoints:<ul><li>`disable_meta`: Disables the `/` (root), `/info`, `/metrics`, `/docs`, and `/openapi.json` system routes. The `/ok` health check remains available.</li><li>`disable_assistants`: Disables all `/assistants/*` routes.</li><li>`disable_runs`: Disables all `/runs/*` routes.</li><li>`disable_threads`: Disables all `/threads/*` routes.</li><li>`disable_store`: Disables all `/store/*` routes.</li><li>`disable_ui`: Disables all `/ui/*` routes.</li><li>`disable_mcp`: Disables the `/mcp` endpoint. See [Disable MCP](/langsmith/server-mcp#disable-mcp).</li><li>`disable_a2a`: Disables the `/a2a/*` endpoint. See [Disable A2A](/langsmith/server-a2a#disable-a2a).</li><li>`disable_webhooks`: Disables webhook delivery on run completion (not a route toggle). See [Disable webhooks](/langsmith/use-webhooks#disable-webhooks).</li></ul></li><li>`mount_prefix`: Prefix for mounted routes (e.g., "/my-deployment/api").</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`webhooks`</span>        | _(Added in v0.5.36)_ Configuration for outbound webhook delivery. Contains: <ul><li>`env_prefix`: Required prefix for environment variables referenced in header templates (defaults to `LG_WEBHOOK_`).</li><li>`headers`: Static headers to include with webhook requests. Values may contain templates like `${{ env.VAR }}`.</li><li>`url`: URL validation policy with `allowed_domains`, `allowed_ports`, `require_https`, `disable_loopback`, and `max_url_length`.</li></ul> |
     | <span style={{ whiteSpace: "nowrap" }}>`api_version`</span>     | _(Added in v0.3.7)_ Which semantic version of the LangGraph API server to use (e.g., `"0.3"`). Defaults to latest. Check the server [changelog](/langsmith/agent-server-changelog) for details on each release. |
     </Tab>
@@ -370,6 +370,36 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
     }
     ```
 
+    #### Disabling built-in routes
+
+    You can selectively disable groups of built-in HTTP routes using boolean flags in the `http` configuration block. This is useful for production deployments where you want to minimize the server's exposed surface area.
+
+    For example, to disable the system information and documentation routes:
+
+    ```json
+    {
+      "$schema": "https://langgra.ph/schema.json",
+      "dependencies": ["."],
+      "graphs": {
+        "chat": "chat.graph:graph"
+      },
+      "http": {
+        "disable_meta": true
+      }
+    }
+    ```
+
+    Setting `disable_meta` to `true` disables the following routes:
+
+    - `/` — root health check
+    - `/info` — server version and configuration info
+    - `/metrics` — Prometheus and JSON metrics
+    - `/docs` — API documentation UI
+    - `/openapi.json` — OpenAPI specification
+
+    The `/ok` health check endpoint remains available even when `disable_meta` is set, so orchestrators like Kubernetes can still perform liveness and readiness probes.
+
+    Other route disable flags include `disable_assistants`, `disable_runs`, `disable_threads`, `disable_store`, and `disable_ui`. For MCP, A2A, and webhooks, see their respective guides: [Disable MCP](/langsmith/server-mcp#disable-mcp), [Disable A2A](/langsmith/server-a2a#disable-a2a), [Disable webhooks](/langsmith/use-webhooks#disable-webhooks).
 
     </Tab>
     <Tab title="JS">
@@ -402,6 +432,37 @@ To build and run a valid application, the LangGraph CLI requires a JSON configur
       "api_version": "0.2"
     }
     ```
+
+    #### Disabling built-in routes
+
+    You can selectively disable groups of built-in HTTP routes using boolean flags in the `http` configuration block. This is useful for production deployments where you want to minimize the server's exposed surface area.
+
+    For example, to disable the system information and documentation routes:
+
+    ```json
+    {
+      "$schema": "https://langgra.ph/schema.json",
+      "graphs": {
+        "chat": "./src/chat/graph.ts:graph"
+      },
+      "http": {
+        "disable_meta": true
+      }
+    }
+    ```
+
+    Setting `disable_meta` to `true` disables the following routes:
+
+    - `/` — root health check
+    - `/info` — server version and configuration info
+    - `/metrics` — Prometheus and JSON metrics
+    - `/docs` — API documentation UI
+    - `/openapi.json` — OpenAPI specification
+
+    The `/ok` health check endpoint remains available even when `disable_meta` is set, so orchestrators like Kubernetes can still perform liveness and readiness probes.
+
+    Other route disable flags include `disable_assistants`, `disable_runs`, `disable_threads`, `disable_store`, and `disable_ui`. For MCP, A2A, and webhooks, see their respective guides: [Disable MCP](/langsmith/server-mcp#disable-mcp), [Disable A2A](/langsmith/server-a2a#disable-a2a), [Disable webhooks](/langsmith/use-webhooks#disable-webhooks).
+
     </Tab>
 </Tabs>
 

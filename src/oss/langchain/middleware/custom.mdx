@@ -2,6 +2,16 @@
 title: Custom middleware
 ---
 
+import MiddlewareDynamicPromptDecoratorPy from '/snippets/code-samples/middleware-dynamic-prompt-decorator-py.mdx';
+import MiddlewareDynamicPromptClassPy from '/snippets/code-samples/middleware-dynamic-prompt-class-py.mdx';
+import MiddlewareDynamicPromptJs from '/snippets/code-samples/middleware-dynamic-prompt-js.mdx';
+import MiddlewareDynamicModelSelectionDecoratorPy from '/snippets/code-samples/middleware-dynamic-model-selection-decorator-py.mdx';
+import MiddlewareDynamicModelSelectionClassPy from '/snippets/code-samples/middleware-dynamic-model-selection-class-py.mdx';
+import MiddlewareDynamicModelSelectionJs from '/snippets/code-samples/middleware-dynamic-model-selection-js.mdx';
+import MiddlewareToolCallMonitoringDecoratorPy from '/snippets/code-samples/middleware-tool-call-monitoring-decorator-py.mdx';
+import MiddlewareToolCallMonitoringClassPy from '/snippets/code-samples/middleware-tool-call-monitoring-class-py.mdx';
+import MiddlewareToolCallMonitoringJs from '/snippets/code-samples/middleware-tool-call-monitoring-js.mdx';
+
 Build custom middleware by implementing hooks that run at specific points in the agent execution flow.
 
 ## Hooks
@@ -1104,6 +1114,47 @@ console.log(result.messages.at(-1)?.content);
 
 ## Examples
 
+### Dynamic prompt
+
+Dynamically modify the system prompt at runtime to inject context, user-specific instructions, or other information before each model call. This is one of the most common middleware use cases.
+
+:::python
+
+Use the `system_message` field on `ModelRequest` to read and modify the system prompt. It contains a @[`SystemMessage`] object (even if the agent was created with a string `system_prompt`).
+
+<Tabs>
+<Tab title="Decorator">
+
+<MiddlewareDynamicPromptDecoratorPy />
+
+</Tab>
+
+<Tab title="Class">
+
+<MiddlewareDynamicPromptClassPy />
+
+</Tab>
+</Tabs>
+
+<Note>
+- `ModelRequest.system_message` is always a @[`SystemMessage`] object, even if the agent was created with `system_prompt="string"`
+- Use `SystemMessage.content_blocks` to access content as a list of blocks, regardless of whether the original content was a string or list
+- When modifying system messages, use `content_blocks` and append new blocks to preserve existing structure
+- You can pass @[`SystemMessage`] objects directly to `create_agent`'s `system_prompt` parameter for advanced use cases like cache control
+</Note>
+
+:::
+
+:::js
+
+Use the `systemMessage` field in `ModelRequest` to read and modify the system prompt. It contains a @[`SystemMessage`] object (even if the agent was created with a string @[`systemPrompt`]).
+
+<MiddlewareDynamicPromptJs />
+
+Use @[`SystemMessage.concat`] to preserve cache control metadata or structured content blocks created by other middleware.
+
+:::
+
 ### Dynamic model selection
 
 :::python
@@ -1111,53 +1162,13 @@ console.log(result.messages.at(-1)?.content);
 <Tabs>
 <Tab title="Decorator">
 
-```python
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from langchain.chat_models import init_chat_model
-from typing import Callable
-
-
-complex_model = init_chat_model("gpt-4.1")
-simple_model = init_chat_model("gpt-4.1-mini")
-
-@wrap_model_call
-def dynamic_model(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse],
-) -> ModelResponse:
-    # Use different model based on conversation length
-    if len(request.messages) > 10:
-        model = complex_model
-    else:
-        model = simple_model
-    return handler(request.override(model=model))
-```
+<MiddlewareDynamicModelSelectionDecoratorPy />
 
 </Tab>
 
 <Tab title="Class">
 
-```python
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain.chat_models import init_chat_model
-from typing import Callable
-
-complex_model = init_chat_model("gpt-4.1")
-simple_model = init_chat_model("gpt-4.1-mini")
-
-class DynamicModelMiddleware(AgentMiddleware):
-    def wrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        # Use different model based on conversation length
-        if len(request.messages) > 10:
-            model = complex_model
-        else:
-            model = simple_model
-        return handler(request.override(model=model))
-```
+<MiddlewareDynamicModelSelectionClassPy />
 
 </Tab>
 </Tabs>
@@ -1166,110 +1177,7 @@ class DynamicModelMiddleware(AgentMiddleware):
 
 :::js
 
-```typescript
-import { createMiddleware, initChatModel } from "langchain";
-
-const dynamicModelMiddleware = createMiddleware({
-  name: "DynamicModelMiddleware",
-  wrapModelCall: (request, handler) => {
-    const modifiedRequest = { ...request };
-    if (request.messages.length > 10) {
-      modifiedRequest.model = initChatModel("gpt-4.1");
-    } else {
-      modifiedRequest.model = initChatModel("gpt-4.1-mini");
-    }
-    return handler(modifiedRequest);
-  },
-});
-```
-
-:::
-
-### Tool call monitoring
-
-:::python
-
-<Tabs>
-<Tab title="Decorator">
-
-```python
-from langchain.agents.middleware import wrap_tool_call
-from langchain.tools.tool_node import ToolCallRequest
-from langchain.messages import ToolMessage
-from langgraph.types import Command
-from typing import Callable
-
-
-@wrap_tool_call
-def monitor_tool(
-    request: ToolCallRequest,
-    handler: Callable[[ToolCallRequest], ToolMessage | Command],
-) -> ToolMessage | Command:
-    print(f"Executing tool: {request.tool_call['name']}")
-    print(f"Arguments: {request.tool_call['args']}")
-    try:
-        result = handler(request)
-        print(f"Tool completed successfully")
-        return result
-    except Exception as e:
-        print(f"Tool failed: {e}")
-        raise
-```
-
-</Tab>
-
-<Tab title="Class">
-
-```python
-from langchain.tools.tool_node import ToolCallRequest
-from langchain.agents.middleware import AgentMiddleware
-from langchain.messages import ToolMessage
-from langgraph.types import Command
-from typing import Callable
-
-class ToolMonitoringMiddleware(AgentMiddleware):
-    def wrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolMessage | Command],
-    ) -> ToolMessage | Command:
-        print(f"Executing tool: {request.tool_call['name']}")
-        print(f"Arguments: {request.tool_call['args']}")
-        try:
-            result = handler(request)
-            print(f"Tool completed successfully")
-            return result
-        except Exception as e:
-            print(f"Tool failed: {e}")
-            raise
-```
-
-</Tab>
-</Tabs>
-
-:::
-
-:::js
-
-```typescript
-import { createMiddleware } from "langchain";
-
-const toolMonitoringMiddleware = createMiddleware({
-  name: "ToolMonitoringMiddleware",
-  wrapToolCall: (request, handler) => {
-    console.log(`Executing tool: ${request.toolCall.name}`);
-    console.log(`Arguments: ${JSON.stringify(request.toolCall.args)}`);
-    try {
-      const result = handler(request);
-      console.log("Tool completed successfully");
-      return result;
-    } catch (e) {
-      console.log(`Tool failed: ${e}`);
-      throw e;
-    }
-  },
-});
-```
+<MiddlewareDynamicModelSelectionJs />
 
 :::
 
@@ -1367,66 +1275,35 @@ const agent = createAgent({
 
 :::
 
-### Working with system messages
+### Tool call monitoring
 
 :::python
-
-Modify system messages in middleware using the `system_message` field on `ModelRequest`. The `system_message` field contains a @[`SystemMessage`] object (even if the agent was created with a string `system_prompt`).
-
-**Example: Adding context to system message**
 
 <Tabs>
 <Tab title="Decorator">
 
-```python
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from langchain.messages import SystemMessage
-from typing import Callable
-
-
-@wrap_model_call
-def add_context(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse],
-) -> ModelResponse:
-    # Always work with content blocks
-    new_content = list(request.system_message.content_blocks) + [
-        {"type": "text", "text": "Additional context."}
-    ]
-    new_system_message = SystemMessage(content=new_content)
-    return handler(request.override(system_message=new_system_message))
-```
+<MiddlewareToolCallMonitoringDecoratorPy />
 
 </Tab>
 
 <Tab title="Class">
 
-```python
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain.messages import SystemMessage
-from typing import Callable
-
-
-class ContextMiddleware(AgentMiddleware):
-    def wrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        # Always work with content blocks
-        new_content = list(request.system_message.content_blocks) + [
-            {"type": "text", "text": "Additional context."}
-        ]
-        new_system_message = SystemMessage(content=new_content)
-        return handler(request.override(system_message=new_system_message))
-```
+<MiddlewareToolCallMonitoringClassPy />
 
 </Tab>
 </Tabs>
 
-**Example: Working with cache control (Anthropic)**
+:::
 
-When working with Anthropic models, you can use structured content blocks with cache control directives to cache large system prompts:
+:::js
+
+<MiddlewareToolCallMonitoringJs />
+
+:::
+
+### Prompt caching (Anthropic)
+
+When working with Anthropic models, use structured content blocks with cache control directives to cache large system prompts:
 
 <Tabs>
 <Tab title="Decorator">
@@ -1544,6 +1421,7 @@ const agent = createAgent({
 ```
 
 The resulting system message will be:
+
 ```typescript
 new SystemMessage({
   content: [
