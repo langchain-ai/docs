@@ -67,6 +67,107 @@ const agent = createDeepAgent({
 ```
 :::
 
+<Accordion title="Full example: seed memory and invoke">
+
+Populate the store with initial memories, then invoke the agent across two threads to see it remember and update what it learns.
+
+:::python
+```python
+import uuid
+
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from deepagents.backends.utils import create_file_data
+from langgraph.store.memory import InMemoryStore
+
+store = InMemoryStore()  # Use platform store when deploying to LangSmith
+
+# Seed the memory file
+store.put(
+    ("my-agent",),
+    "/memories/AGENTS.md",
+    create_file_data("""## Response style
+- Keep responses concise
+- Use code examples where possible
+"""),
+)
+
+agent = create_deep_agent(
+    memory=["/memories/AGENTS.md"],
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={
+            "/memories/": StoreBackend(
+                rt, namespace=lambda ctx: ("my-agent",)
+            ),
+        },
+    ),
+    store=store,
+)
+
+# Thread 1: the agent learns a new preference and saves it to memory
+config1 = {"configurable": {"thread_id": str(uuid.uuid4())}}
+agent.invoke(
+    {"messages": [{"role": "user", "content": "I prefer detailed explanations. Remember that."}]},
+    config=config1,
+)
+
+# Thread 2: the agent reads memory and applies the preference
+config2 = {"configurable": {"thread_id": str(uuid.uuid4())}}
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Explain how transformers work."}]},
+    config=config2,
+)
+```
+:::
+
+:::js
+```typescript
+import { v4 as uuidv4 } from "uuid";
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend, createFileData } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph";
+
+const store = new InMemoryStore();  // Use platform store when deploying to LangSmith
+
+// Seed the memory file
+await store.put(
+  ["my-agent"],
+  "/memories/AGENTS.md",
+  createFileData(`## Response style
+- Keep responses concise
+- Use code examples where possible
+`),
+);
+
+const agent = createDeepAgent({
+  memory: ["/memories/AGENTS.md"],
+  backend: (rt) => new CompositeBackend(
+    new StateBackend(rt),
+    {
+      "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => ["my-agent"],
+      }),
+    },
+  ),
+  store,
+});
+
+// Thread 1: the agent learns a new preference and saves it to memory
+const config1 = { configurable: { thread_id: uuidv4() } };
+await agent.invoke({
+  messages: [{ role: "user", content: "I prefer detailed explanations. Remember that." }],
+}, config1);
+
+// Thread 2: the agent reads memory and applies the preference
+const config2 = { configurable: { thread_id: uuidv4() } };
+await agent.invoke({
+  messages: [{ role: "user", content: "Explain how transformers work." }],
+}, config2);
+```
+:::
+
+</Accordion>
+
 ## User-scoped memory
 
 Give each user their own memory file. The agent remembers preferences, context, and history per user while core agent instructions stay fixed. Users can also have per-user [skills](/oss/deepagents/skills) if stored in a user-scoped backend.
@@ -109,6 +210,140 @@ const agent = createDeepAgent({
 });
 ```
 :::
+
+<Accordion title="Full example: isolated memory across users">
+
+Seed per-user memories and invoke the agent as two different users. Each user sees only their own preferences.
+
+:::python
+```python
+import uuid
+from dataclasses import dataclass
+
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from deepagents.backends.utils import create_file_data
+from langgraph.store.memory import InMemoryStore
+
+
+@dataclass
+class Context:
+    user_id: str
+
+
+store = InMemoryStore()  # Use platform store when deploying to LangSmith
+
+# Seed preferences for two users
+store.put(
+    ("user-alice",),
+    "/memories/preferences.md",
+    create_file_data("""## Preferences
+- Likes concise bullet points
+- Prefers Python examples
+"""),
+)
+store.put(
+    ("user-bob",),
+    "/memories/preferences.md",
+    create_file_data("""## Preferences
+- Likes detailed explanations
+- Prefers TypeScript examples
+"""),
+)
+
+agent = create_deep_agent(
+    memory=["/memories/preferences.md"],
+    context_schema=Context,
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={
+            "/memories/": StoreBackend(
+                rt,
+                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+            ),
+        },
+    ),
+    store=store,
+)
+
+# Alice's conversation — agent sees her preferences
+agent.invoke(
+    {"messages": [{"role": "user", "content": "How do I read a CSV file?"}]},
+    config={"configurable": {"thread_id": str(uuid.uuid4())}},
+    context=Context(user_id="user-alice"),
+)
+
+# Bob's conversation — agent sees his preferences, not Alice's
+agent.invoke(
+    {"messages": [{"role": "user", "content": "How do I read a CSV file?"}]},
+    config={"configurable": {"thread_id": str(uuid.uuid4())}},
+    context=Context(user_id="user-bob"),
+)
+```
+:::
+
+:::js
+```typescript
+import { v4 as uuidv4 } from "uuid";
+import { z } from "zod";
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend, createFileData } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph";
+
+const contextSchema = z.object({
+  userId: z.string(),
+});
+
+const store = new InMemoryStore();  // Use platform store when deploying to LangSmith
+
+// Seed preferences for two users
+await store.put(
+  ["user-alice"],
+  "/memories/preferences.md",
+  createFileData(`## Preferences
+- Likes concise bullet points
+- Prefers Python examples
+`),
+);
+await store.put(
+  ["user-bob"],
+  "/memories/preferences.md",
+  createFileData(`## Preferences
+- Likes detailed explanations
+- Prefers TypeScript examples
+`),
+);
+
+const agent = createDeepAgent({
+  memory: ["/memories/preferences.md"],
+  contextSchema,
+  backend: (rt) => new CompositeBackend(
+    new StateBackend(rt),
+    {
+      "/memories/": new StoreBackend(rt, {
+        namespace: (ctx) => [ctx.runtime.context.userId],
+      }),
+    },
+  ),
+  store,
+});
+
+// Alice's conversation — agent sees her preferences
+await agent.invoke(
+  { messages: [{ role: "user", content: "How do I read a CSV file?" }] },
+  { configurable: { thread_id: uuidv4() } },
+  { context: { userId: "user-alice" } },
+);
+
+// Bob's conversation — agent sees his preferences, not Alice's
+await agent.invoke(
+  { messages: [{ role: "user", content: "How do I read a CSV file?" }] },
+  { configurable: { thread_id: uuidv4() } },
+  { context: { userId: "user-bob" } },
+);
+```
+:::
+
+</Accordion>
 
 ## Advanced usage
 
