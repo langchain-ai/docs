@@ -1,0 +1,185 @@
+---
+title: Sandbox auth proxy
+sidebarTitle: Auth proxy
+description: Inject credentials into outbound API requests from sandboxes without hardcoding secrets.
+---
+
+import SandboxPreview from "/snippets/langsmith/sandbox-preview-warning.mdx";
+
+<SandboxPreview />
+
+The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, etc.) without hardcoding credentials. When configured on a sandbox, a proxy sidecar automatically injects authentication headers into matching outbound requests using your workspace secrets.
+
+<Warning>
+You must configure your secrets (e.g., `OPENAI_API_KEY`) in your LangSmith [workspace](/langsmith/administration-overview#workspaces) settings before creating a sandbox that references them.
+</Warning>
+
+## Configure auth proxy rules
+
+Add a `proxy_config` when creating a sandbox. Each rule specifies:
+
+| Field | Description |
+|-------|-------------|
+| `match_hosts` | Hosts to intercept (supports globs like `*.github.com`) |
+| `match_paths` | Paths to match (empty = all paths) |
+| `headers` | Headers to inject, each with a `name`, `type`, and `value` |
+| `no_proxy` | Hosts to bypass the proxy entirely (e.g. `localhost`) |
+
+### Header types
+
+Each header has a `type` that controls how its value is stored and displayed:
+
+| Type | Description |
+|------|-------------|
+| `workspace_secret` | References a workspace secret using `{KEY}` syntax. Resolved at push time. |
+| `plaintext` | Value is stored and returned as-is. Use for non-sensitive headers. |
+| `opaque` | Write-only. Value is encrypted at rest and never returned via the API. |
+
+## Single API example
+
+Create a sandbox that automatically injects an OpenAI API key into outbound requests:
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_name": "python-sandbox",
+    "name": "openai-sandbox",
+    "wait_for_ready": true,
+    "proxy_config": {
+      "rules": [
+        {
+          "name": "openai-api",
+          "match_hosts": ["api.openai.com"],
+          "headers": [
+            {
+              "name": "Authorization",
+              "type": "workspace_secret",
+              "value": "Bearer {OPENAI_API_KEY}"
+            }
+          ]
+        }
+      ]
+    }
+  }'
+```
+
+The sandbox can now call OpenAI with no API key setup—the proxy injects it automatically.
+
+## Multiple API example
+
+Add multiple rules to authenticate with several services at once:
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_name": "python-sandbox",
+    "name": "multi-api-sandbox",
+    "wait_for_ready": true,
+    "proxy_config": {
+      "rules": [
+        {
+          "name": "openai-api",
+          "match_hosts": ["api.openai.com"],
+          "headers": [
+            {
+              "name": "Authorization",
+              "type": "workspace_secret",
+              "value": "Bearer {OPENAI_API_KEY}"
+            }
+          ]
+        },
+        {
+          "name": "anthropic-api",
+          "match_hosts": ["api.anthropic.com"],
+          "headers": [
+            {
+              "name": "x-api-key",
+              "type": "workspace_secret",
+              "value": "{ANTHROPIC_API_KEY}"
+            },
+            {
+              "name": "anthropic-version",
+              "type": "plaintext",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        {
+          "name": "github-api",
+          "match_hosts": ["api.github.com"],
+          "match_paths": ["/repos/*", "/user"],
+          "headers": [
+            {
+              "name": "Authorization",
+              "type": "workspace_secret",
+              "value": "Bearer {GITHUB_TOKEN}"
+            }
+          ]
+        }
+      ],
+      "no_proxy": ["localhost", "127.0.0.1"]
+    }
+  }'
+```
+
+## Configure via SDK
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+client.create_sandbox(
+    template_name="python-sandbox",
+    name="openai-sandbox",
+    proxy_config={
+        "rules": [
+            {
+                "name": "openai-api",
+                "match_hosts": ["api.openai.com"],
+                "headers": [
+                    {
+                        "name": "Authorization",
+                        "type": "workspace_secret",
+                        "value": "Bearer {OPENAI_API_KEY}",
+                    }
+                ],
+            }
+        ]
+    },
+)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/experimental/sandbox";
+
+const client = new SandboxClient();
+
+await client.createSandbox({
+  templateName: "python-sandbox",
+  name: "openai-sandbox",
+  proxyConfig: {
+    rules: [
+      {
+        name: "openai-api",
+        matchHosts: ["api.openai.com"],
+        headers: [
+          {
+            name: "Authorization",
+            type: "workspace_secret",
+            value: "Bearer {OPENAI_API_KEY}",
+          },
+        ],
+      },
+    ],
+  },
+});
+```
+
+</CodeGroup>
