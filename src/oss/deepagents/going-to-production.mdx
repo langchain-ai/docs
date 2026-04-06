@@ -172,14 +172,11 @@ Without memory, every conversation starts from scratch. Memory lets your agent r
 
 Memory is always persistent across conversations. The main question is how it's scoped across user and assistant boundaries. The right scope depends on who should see and modify the data:
 
-The examples below are based on an organization running two assistants: an email writing assistant and a social media drafting assistant, serving multiple users.
-
 | Scope | Namespace | Use case | Example |
 | --- | --- | --- | --- |
-| Private | `(assistant_id, user_id)` | Per-user preferences within one assistant | "Sign my emails 'Best, Alex'" for the email assistant only |
-| Assistant | `(assistant_id)` | Shared instructions for one assistant | "Cap posts at 280 characters" for the social media assistant |
-| User | `(user_id)` | Global user profile across all assistants | User's preferred language is Spanish |
-| Organization | `()` | Read-only policies for all users and assistants | "Never disclose internal pricing" |
+| **User** (recommended default) | `(user_id)` | Per-user preferences and context | "I prefer concise responses" |
+| **Assistant** | `(assistant_id)` | Shared instructions for one assistant | "Cap posts at 280 characters" |
+| **Global** | `(org_id)` | Read-only policies for all users and assistants | "Never disclose internal pricing" |
 
 <Warning>
 Shared memory (assistant, user, or organization scope) is a vector for prompt injection. If one user can write to memory that another user's conversation reads, a malicious user could inject instructions into that shared state. Enforce read-only access where appropriate. For example, make organization-wide policies writable only through application code, not by the agent itself.
@@ -187,17 +184,16 @@ Shared memory (assistant, user, or organization scope) is a vector for prompt in
 
 ### Configuration
 
-In Deep Agents, memory is stored as files in a virtual filesystem. By default, files only last for a single conversation. To persist them, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both ephemeral scratch space and persistent [long-term memory](/oss/deepagents/long-term-memory).
+In Deep Agents, memory is stored as files in a virtual filesystem. By default, files only last for a single conversation. To persist them, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both ephemeral scratch space and persistent [long-term memory](/oss/deepagents/memory).
 
 <Tabs>
-  <Tab title="Private (most common)">
-    Namespace by `(assistant_id, user_id)`. Each user gets private memory within a given assistant.
+  <Tab title="User (recommended)">
+    Namespace by `user_id`. Each user gets their own private memory. This is the recommended default since most applications deploy a single assistant.
 
 :::python
 ```python agent.py
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
-from langgraph.config import get_config
 
 agent = create_deep_agent(
     backend=lambda rt: CompositeBackend(
@@ -205,10 +201,7 @@ agent = create_deep_agent(
         routes={
             "/memories/": StoreBackend(
                 rt,
-                namespace=lambda ctx: (
-                    get_config()["metadata"]["assistant_id"],
-                    ctx.runtime.context.user_id,
-                ),
+                namespace=lambda ctx: (ctx.runtime.context.user_id,),
             ),
         },
     ),
@@ -223,7 +216,6 @@ agent = create_deep_agent(
 
 :::js
 ```typescript src/agent.ts
-import { getConfig } from "@langchain/langgraph";
 import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
 
 const agent = createDeepAgent({
@@ -231,10 +223,7 @@ const agent = createDeepAgent({
     new StateBackend(rt),
     {
       "/memories/": new StoreBackend(rt, {
-        namespace: (ctx) => {
-          const config = getConfig();
-          return [config.metadata.assistantId, ctx.runtime.context.userId];
-        },
+        namespace: (ctx) => [ctx.runtime.context.userId],
       }),
     },
   ),
@@ -299,49 +288,7 @@ export { agent };
 :::
 
   </Tab>
-  <Tab title="User">
-    Namespace by `user_id` alone. Memory follows the user across all assistants. Use this for a global user profile (name, timezone, communication preferences) that should apply regardless of which assistant the user is talking to.
-
-:::python
-```python agent.py
-from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
-
-agent = create_deep_agent(
-    backend=lambda rt: CompositeBackend(
-        default=StateBackend(rt),
-        routes={
-            "/memories/": StoreBackend(
-                rt,
-                namespace=lambda ctx: (ctx.runtime.context.user_id,),
-            ),
-        },
-    ),
-)
-```
-:::
-
-:::js
-```typescript src/agent.ts
-import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
-
-const agent = createDeepAgent({
-  backend: (rt) => new CompositeBackend(
-    new StateBackend(rt),
-    {
-      "/memories/": new StoreBackend(rt, {
-        namespace: (ctx) => [ctx.runtime.context.userId],
-      }),
-    },
-  ),
-});
-
-export { agent };
-```
-:::
-
-  </Tab>
-  <Tab title="Organization">
+  <Tab title="Global">
     Namespace by `org_id`. Memory is shared across all users and all assistants. Typically used for organization-wide policies (compliance rules, brand guidelines) that should be read-only for the agent. Write access should be restricted to application code to prevent prompt injection.
 
 :::python
@@ -385,9 +332,9 @@ export { agent };
   </Tab>
 </Tabs>
 
-You can also read and write to the store from your application code using the [Store API](/langsmith/custom-store). See [accessing memories from external code](/oss/deepagents/long-term-memory#accessing-memories-from-external-code) for examples.
+You can also read and write to the store from your application code using the [Store API](/langsmith/custom-store). See [accessing memories from external code](/oss/deepagents/memory#accessing-memories-from-external-code) for examples.
 
-For the full namespace factory API, see [namespace factories](/oss/deepagents/backends#namespace-factories). For memory patterns like self-improving instructions and knowledge bases, see [long-term memory](/oss/deepagents/long-term-memory).
+For the full namespace factory API, see [namespace factories](/oss/deepagents/backends#namespace-factories). For memory patterns like self-improving instructions and knowledge bases, see [long-term memory](/oss/deepagents/memory).
 
 ## Execution environment
 
@@ -684,13 +631,13 @@ for await (const chunk of client.runs.stream(
 
 Sandboxes are isolated containers, so your application code can't directly access files inside them. Use `upload_files()` and `download_files()` to move data across the sandbox boundary:
 
-- **Seed the sandbox before the agent runs**: upload user files, [skill](/oss/deepagents/skills) scripts, configuration, or [persistent memories](/oss/deepagents/long-term-memory) so the agent has what it needs from the start
+- **Seed the sandbox before the agent runs**: upload user files, [skill](/oss/deepagents/skills) scripts, configuration, or [persistent memories](/oss/deepagents/memory) so the agent has what it needs from the start
 - **Retrieve results after the agent finishes**: download generated artifacts (reports, plots, exports) and sync updated memories back for future conversations
 
 For provider-specific file transfer examples, see [working with files](/oss/deepagents/sandboxes#working-with-files). For provider setup, security, and lifecycle patterns, see the full [sandboxes guide](/oss/deepagents/sandboxes).
 
 <Accordion title="Example: syncing skills and memories with custom middleware">
-  [Skill](/oss/deepagents/skills) scripts that the agent needs to execute must be uploaded into the sandbox before the agent runs. You may also want to sync [memories](/oss/deepagents/long-term-memory) so the agent can read and update them inside the container. Use [custom middleware](/oss/langchain/middleware/custom) with `before_agent` and `after_agent` hooks to move files across the sandbox boundary:
+  [Skill](/oss/deepagents/skills) scripts that the agent needs to execute must be uploaded into the sandbox before the agent runs. You may also want to sync [memories](/oss/deepagents/memory) so the agent can read and update them inside the container. Use [custom middleware](/oss/langchain/middleware/custom) with `before_agent` and `after_agent` hooks to move files across the sandbox boundary:
 
 :::python
 ```python agent.py

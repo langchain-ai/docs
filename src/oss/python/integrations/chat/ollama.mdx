@@ -27,7 +27,7 @@ For a complete list of supported models and model variants, see the [Ollama mode
 
 | [Tool calling](/oss/langchain/tools/) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
 | :---: |:----------------------------------------------------:| :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
-| ✅ |                          ✅                           | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| ✅ |                          ✅                           | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ |
 
 ## Setup
 
@@ -62,16 +62,6 @@ The LangChain Ollama integration lives in the `langchain-ollama` package:
 
 ```python
 pip install -qU langchain-ollama
-```
-
-<Warning>
-Make sure you're using the latest Ollama version!
-</Warning>
-
-Update by running:
-
-```python
-pip install -U ollama
 ```
 
 ## Instantiation
@@ -263,6 +253,58 @@ print(query_chain)
 
 ```text
 90%
+```
+
+## Log probabilities
+
+`ChatOllama` supports token-level log probabilities via the `logprobs` and `top_logprobs` parameters. Log probabilities indicate how likely each token was at each generation step.
+
+### Basic usage
+
+```python
+from langchain_ollama import ChatOllama
+
+llm = ChatOllama(model="llama3.1", logprobs=True)
+
+response = llm.invoke("What color is the sky?")
+logprobs = response.response_metadata["logprobs"]
+for entry in logprobs[:5]:
+    print(f"Token: {entry['token']!r:>15}  logprob: {entry['logprob']:.4f}")
+```
+
+```text
+Token:           'The'  logprob: -0.1094
+Token:       ' answer'  logprob: -1.7309
+Token:             ','  logprob: -1.5854
+Token:           ' of'  logprob: -0.4066
+Token:       ' course'  logprob: -0.0000
+```
+
+### Top-K alternatives per token
+
+Use `top_logprobs` to return the most likely alternative tokens at each position:
+
+```python
+llm = ChatOllama(model="llama3.1", logprobs=True, top_logprobs=3)
+
+response = llm.invoke("The capital of France is")
+logprobs = response.response_metadata["logprobs"]
+for entry in logprobs[:3]:
+    print(f"Chosen: {entry['token']!r}")
+    if entry.get("top_logprobs"):
+        for alt in entry["top_logprobs"]:
+            print(f"    {alt['token']!r:>12}  logprob: {alt['logprob']:.4f}")
+```
+
+```text
+Chosen: 'Paris'
+         'Paris'  logprob: -0.5567
+           'The'  logprob: -0.9152
+            '**'  logprob: -4.0410
+Chosen: '.'
+             '.'  logprob: -0.3831
+    '<|eot_id|>'  logprob: -1.5511
+             '!'  logprob: -2.3379
 ```
 
 ## Reasoning models and custom message roles
