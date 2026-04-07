@@ -8,9 +8,54 @@ The CLI stores its configuration in the `~/.deepagents/` directory. The main con
 
 | File | Format | Purpose |
 |------|--------|---------|
-| `config.toml` | [TOML](https://toml.io/) | Model defaults, provider settings, constructor params, profile overrides, MCP trust store |
+| `config.toml` | [TOML](https://toml.io/) | Model defaults, provider settings, constructor params, profile overrides, themes, update settings, MCP trust store |
+| `.env` | Dotenv | Global API keys and secrets |
 | `hooks.json` | JSON | External tool subscriptions to CLI lifecycle events |
-| `.mcp.json` | JSON | MCP server definitions (also auto-discovered from project directories) |
+| `.mcp.json` | JSON | Global MCP server definitions |
+
+## Environment variables
+
+The CLI loads environment variables from dotenv files so you don't need to `export` API keys in your shell profile or duplicate `.env` files across projects.
+
+### Loading order and precedence
+
+Two `.env` files are loaded at startup:
+
+1. **Project `.env`** — the `.env` file in your current working directory (if present)
+2. **Global `~/.deepagents/.env`** — a single shared file that acts as a fallback for all projects
+
+The effective precedence is: **shell environment > project `.env` > global `.env`**. Values already set in the shell are never overwritten—including on `/reload`.
+
+### `DEEPAGENTS_CLI_` prefix
+
+All CLI-specific environment variables use a `DEEPAGENTS_CLI_` prefix (e.g., `DEEPAGENTS_CLI_AUTO_UPDATE`, `DEEPAGENTS_CLI_DEBUG`). See the [CLI environment variable reference](#cli-environment-variable-reference) for the full list.
+
+The prefix also works as an override mechanism for any environment variable the CLI reads, including third-party credentials. The CLI checks `DEEPAGENTS_CLI_{NAME}` first, then falls back to `{NAME}`:
+
+```bash title="~/.deepagents/.env"
+# Override OPENAI_API_KEY only for the CLI, without affecting other tools
+DEEPAGENTS_CLI_OPENAI_API_KEY=sk-cli-only
+
+# Block a shell-exported key within the CLI by setting the prefixed var to empty
+DEEPAGENTS_CLI_ANTHROPIC_API_KEY=
+```
+
+On `/reload`, the CLI re-reads `.env` files and picks up prefixed values, so you can rotate keys without restarting.
+
+### Example
+
+Store API keys once in `~/.deepagents/.env`:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+LANGSMITH_API_KEY=lsv2_...
+TAVILY_API_KEY=tvly-...
+```
+
+Then override per-project where needed by placing a `.env` in the project directory.
+
+---
 
 ## Config file
 
@@ -46,39 +91,17 @@ max_tokens = 4096
 temperature = 0.7
 ```
 
-**Keys:**
+Providers have the following configuration options:
 
-<ResponseField name="models" type="string[]">
-    A list of model names to show in the interactive `/model` switcher for this provider. For providers that already ship with model profiles, any names you add here appear alongside the bundled ones — useful for newly released models that haven't been added to the package yet. For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
-
-    Models listed here **bypass** the profile-based [filtering criteria](/oss/deepagents/cli/providers#which-models-appear-in-the-switcher) and always appear in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.
-
-    This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time.
-</ResponseField>
-
-<ResponseField name="api_key_env" type="string">
-    Optionally override the environment variable name checked for credentials. Most chat model packages read from a default env var automatically — see the [Provider reference](/oss/deepagents/cli/providers#provider-reference) table for which variable each provider checks.
-</ResponseField>
-
-<ResponseField name="base_url" type="string">
-    Optionally override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info.
-</ResponseField>
-
-<ResponseField name="params" type="object">
-    Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
-</ResponseField>
-
-<ResponseField name="profile" type="object">
-    (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile.
-</ResponseField>
-
-<ResponseField name="class_path" type="string">
-    Used for [arbitrary model](#arbitrary-providers) providers. Optional fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass.
-</ResponseField>
-
-<ResponseField name="enabled" type="boolean" default="true">
-    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
-</ResponseField>
+| Key | Description |
+| --- | --- |
+| `models` | `string[]` (optional). A list of model names to show in the interactive `/model` switcher for this provider. For providers that already ship with model profiles, any names you add here appear alongside the bundled ones — useful for newly released models that haven't been added to the package yet. For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.<br></br>Models listed here **bypass** the profile-based [filtering criteria](/oss/deepagents/cli/providers#which-models-appear-in-the-switcher) and always appear in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.<br></br>This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time. |
+| `api_key_env` | `string` (optional). Optionally override the environment variable name checked for credentials. Most chat model packages read from a default env var automatically — see the [Provider reference](/oss/deepagents/cli/providers#provider-reference) table for which variable each provider checks. |
+| `base_url` | `string` (optional). Optionally override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info. |
+| `params` | `object` (optional). Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict). |
+| `profile` | `object` (optional). (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile. |
+| `class_path` | `string` (optional). Used for [arbitrary model](#arbitrary-providers) providers. Optional fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass. |
+| `enabled` | `boolean` (optional, default `true`). Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`. |
 
 ### Model constructor params
 
@@ -132,9 +155,7 @@ deepagents -n "Summarize this repo" --model ollama:llama3 --model-params '{"temp
 
 These take the highest priority, overriding values from config file params. Mid-session params are applied for the current session only and are not persisted. `--model-params` cannot be combined with `--default`.
 
-### Profile overrides
-
-**(Advanced)**
+### Profile overrides (Advanced)
 
 Override fields in the model's runtime profile to change how the CLI interprets model capabilities. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier — useful for testing or for constraining context usage:
 
@@ -157,9 +178,7 @@ max_input_tokens = 8192
 
 Profile overrides are merged into the model's profile after creation. Any feature that reads the profile — context-limit display in the status bar, auto-summarization thresholds, capability checks — will see the overridden values.
 
-#### CLI profile overrides with `--profile-override`
-
-**(Advanced)**
+#### CLI profile overrides with `--profile-override` (Advanced)
 
 To override model profile fields at runtime without editing the config file, pass a JSON object via `--profile-override`:
 
@@ -286,6 +305,141 @@ MyChatModel(model="my-model-v1", base_url="...", api_key="...", temperature=0, m
 </Warning>
 
 Your provider package may optionally provide model profiles at a `_PROFILES` dict in `<package>.data._profiles` in lieu of defining them under the `models` key. See LangChain [model profiles](https://github.com/langchain-ai/langchain/tree/master/libs/model-profiles) for more info.
+
+---
+
+## Skills extra allowed directories
+
+By default, when the CLI loads skills it validates that a resolved skill file path stays inside one of the standard [skill directories](/oss/deepagents/data-locations#skills). This prevents symlinks inside skill directories from reading arbitrary files outside those roots.
+
+If you store shared skill assets in a non-standard location and use symlinks from a standard skill directory to reference them, you can add that location to the containment allowlist. This does **not** add a new skill discovery location — skills are still only discovered from the standard directories.
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml
+        [skills]
+        extra_allowed_dirs = [
+            "~/shared-skills",
+            "/opt/team-skills",
+        ]
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CLI_EXTRA_SKILLS_DIRS="~/shared-skills:/opt/team-skills"
+        ```
+    </Tab>
+</Tabs>
+
+When the environment variable is set, it takes precedence over the config file value. Paths support `~` expansion. Changes take effect on `/reload`.
+
+---
+
+## Themes
+
+Use `/theme` to open an interactive theme selector. Navigate the list to preview themes in real-time, press `Enter` to persist your choice to `config.toml`.
+
+The CLI ships with many built-in themes. The selected theme is persisted under `[ui]`:
+
+```toml
+[ui]
+theme = "langchain-dark"
+```
+
+### User-defined themes
+
+Define custom themes under `[themes.<name>]` sections in `config.toml`. Each section requires `label` (str). `dark` (bool) defaults to `false` if omitted — set to `true` for dark themes. All color fields are optional — omitted fields fall back to the built-in dark or light palette based on the `dark` flag.
+
+```toml
+[themes.my-solarized]
+label = "My Solarized"
+dark = true
+primary = "#268BD2"
+warning = "#B58900"
+
+# Theme names with spaces require TOML quoting
+[themes."ocean breeze"]
+label = "Ocean Breeze"
+primary = "#0077B6"
+background = "#CAF0F8"
+```
+
+User-defined themes appear alongside built-in themes in the `/theme` selector.
+
+### Override built-in theme colors
+
+To tweak a built-in theme's colors without creating a new theme, use a `[themes.<builtin-name>]` section. Only color fields are read — `label` and `dark` are inherited from the built-in:
+
+```toml
+[themes.langchain]
+primary = "#FF5500"
+```
+
+Omitted color fields retain the existing built-in values.
+
+Changes to `[themes.*]` sections take effect on `/reload`.
+
+---
+
+## Auto-update
+
+The CLI can automatically check for and install updates.
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml
+        [update]
+        auto_update = true
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CLI_AUTO_UPDATE=1
+        ```
+    </Tab>
+</Tabs>
+
+The environment variable takes precedence over the config file.
+
+When enabled, the CLI checks PyPI for a newer version at session start and automatically upgrades using the detected install method (uv, Homebrew, or pip). When disabled (default), the CLI shows an update hint with the appropriate install command instead.
+
+You can also check for and install updates manually at any time with the `/update` slash command, which bypasses the cache and reports success or failure inline.
+
+After an upgrade, the CLI shows a "what's new" banner on the next launch with a link to the changelog.
+
+At session exit, if a newer version was detected during the session, an update banner is displayed as a reminder.
+
+---
+
+## Managed deployments
+
+The [install script](https://github.com/langchain-ai/deepagents/blob/main/libs/cli/scripts/install.sh) supports running as root, targeting macOS MDM tools (Kandji, Jamf, etc.) that execute scripts in a minimal root environment.
+
+When `id -u` is `0`, the script:
+
+1. Resolves the real console user's `HOME` (via `/dev/console` or a `/Users` directory scan)
+2. `chown`s all created files back to the target user after each install step
+
+Non-root installs are unaffected: all root-specific code paths short-circuit when not running as root.
+
+To pre-configure auto-update for managed installs, set `DEEPAGENTS_CLI_AUTO_UPDATE=1` in the user's shell profile or deploy a `config.toml` with `[update] auto_update = true` to `~/.deepagents/config.toml`. To suppress automatic updates and update checks entirely, set `DEEPAGENTS_CLI_NO_UPDATE_CHECK=1`.
+
+---
+
+## CLI environment variable reference
+
+All CLI-specific environment variables use the `DEEPAGENTS_CLI_` prefix. See [`DEEPAGENTS_CLI_` prefix](#deepagents_cli_-prefix) for how the prefix also works as an override for third-party credentials.
+
+| Variable | Description |
+|----------|-------------|
+| `DEEPAGENTS_CLI_AUTO_UPDATE` | Enable automatic CLI updates (`1`, `true`, or `yes`) |
+| `DEEPAGENTS_CLI_DEBUG` | Enable verbose debug logging to a file |
+| `DEEPAGENTS_CLI_DEBUG_FILE` | Path for the debug log file (default: `/tmp/deepagents_debug.log`) |
+| `DEEPAGENTS_CLI_EXTRA_SKILLS_DIRS` | Colon-separated paths added to the [skill containment allowlist](#extra-allowed-directories) |
+| `DEEPAGENTS_CLI_LANGSMITH_PROJECT` | Override the LangSmith project name for agent traces. See [Tracing with LangSmith](/oss/deepagents/cli/overview#tracing-with-langsmith) |
+| `DEEPAGENTS_CLI_NO_UPDATE_CHECK` | Disable automatic update checking when set |
+| `DEEPAGENTS_CLI_SHELL_ALLOW_LIST` | Comma-separated shell commands to allow (or `recommended` / `all`) |
+| `DEEPAGENTS_CLI_USER_ID` | Attach a user identifier to LangSmith trace metadata |
 
 ---
 

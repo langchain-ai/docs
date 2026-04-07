@@ -28,7 +28,6 @@ For cloud-specific IAM/Workload Identity authentication, refer to the [IAM authe
 
 * Note: We only officially support Redis versions >= 5 and Valkey version 8.
 * We support both Standalone and Redis Cluster. See the appropriate sections for deployment instructions.
-* **Azure Cache for Redis:** LangSmith does not support the Enterprise clustering policy. Use the OSS clustering policy instead. See [Azure clustering policy documentation](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-best-practices-enterprise-tiers#clustering-policy) for details.
 * We support no authentication, password, and [IAM/Workload Identity](#iam-authentication) authentication.
 * By default, we recommend an instance with at least 2 vCPUs and 8GB of memory. However, the actual requirements will depend on your tracing workload. We recommend monitoring your Redis instance and scaling up as needed.
 
@@ -144,7 +143,7 @@ redis://redis-node-2:6379
 Do not include a password in these URIs, and do not use `rediss` here. For Redis Cluster:
 
 - Provide the password separately via `redis.external.cluster.password` or through a Secret using `passwordSecretKey`.
-- Enable TLS separately with `redis.external.cluster.tlsEnabled: true`.
+- TLS is enabled by default for Redis Cluster (`redis.external.cluster.tlsEnabled: true`). Set `tlsEnabled: false` if your cluster does not use TLS.
 
 ### Configuration
 
@@ -168,7 +167,7 @@ redis:
         - "redis://redis-node-2:6379"
       # Optional. If your cluster requires auth, set a password or use a Secret (recommended).
       password: "your_redis_password"
-      # Enable if your cluster uses TLS.
+      # TLS is enabled by default. Set to false if your cluster does not use TLS.
       tlsEnabled: true
 ```
 
@@ -207,6 +206,42 @@ stringData:
 
 </CodeGroup>
 
+## Azure managed Redis
+
+[Azure Managed Redis](https://azure.microsoft.com/en-us/products/managed-redis) supports two clustering policies that affect how LangSmith connects to it. Choose the configuration below based on the clustering policy of your instance.
+
+### OSS Cluster
+
+LangSmith connects to OSS clustering policy instances using Redis Cluster mode.
+
+As of LangSmith helm chart version **0.13.33**, `ssl_check_hostname=false` is supported as a node URI parameter. In our testing, the OSS clustering policy requires disabling SSL hostname verification. Azure's proxy resolves connections to internal node IPs that are not present in the certificate's SAN, causing hostname verification to fail.
+
+```yaml
+redis:
+  external:
+    enabled: true
+    cluster:
+      enabled: true
+      nodeUris:
+        - "redis://<node_url>:10000?ssl_check_hostname=false"
+      tlsEnabled: true
+```
+
+### EnterpriseCluster
+
+As of LangSmith helm chart version **0.13.33**, LangSmith supports Azure Managed Redis with the EnterpriseCluster policy. This policy exposes a single endpoint that handles sharding internally. LangSmith must connect to it as a standalone (single-instance) client, but it does not support cluster unsafe operations such as MULTI/EXEC. Set `redis.external.clusterSafeMode: true` to disable unsafe cluster operations.
+
+```yaml
+redis:
+  external:
+    enabled: true
+    connectionUrl: "rediss://<azure-redis-host>:6380"
+    # Required for EnterpriseCluster: use a single-instance client and disable unsafe cluster operations
+    clusterSafeMode: true
+```
+
+For Microsoft Entra (IAM) authentication with EnterpriseCluster, see the [Azure tab in IAM authentication](#azure-cache-for-redis) and include `clusterSafeMode: true` in your Helm values.
+
 ## TLS with Redis
 
 Use this section to configure TLS for Redis connections. For mounting internal/public CAs so LangSmith trusts your Redis server certificate, see [Configure custom TLS certificates](/langsmith/self-host-custom-tls-certificates#mount-internal-cas-for-tls).
@@ -217,7 +252,7 @@ To validate the Redis server certificate:
 
 - Provide a CA bundle using `config.customCa.secretName` and `config.customCa.secretKey`.
 - For Standalone Redis, use `rediss://` in the connection URL.
-- For Redis Cluster, set `redis.external.cluster.tlsEnabled: true`.
+- For Redis Cluster, `redis.external.cluster.tlsEnabled` defaults to `true`. Ensure it is not set to `false`.
 
 <Warning>
 Mount a custom CA only when your Redis server uses an internal or private CA. Publicly trusted CAs do not require this configuration.
@@ -279,7 +314,7 @@ If your Redis server requires client certificate authentication:
 - Provide a Secret with your client certificate and key.
 - Reference it via `redis.external.clientCert.secretName` and specify the keys with `certSecretKey` and `keySecretKey`.
 - For Standalone Redis, keep using `rediss://` in the connection URL.
-- For Redis Cluster, set `redis.external.cluster.tlsEnabled: true`.
+- For Redis Cluster, `redis.external.cluster.tlsEnabled` defaults to `true`. Ensure it is not set to `false`.
 
 <CodeGroup>
 
@@ -543,6 +578,8 @@ redis:
     enabled: true
     existingSecretName: "redis-secret"
     iamAuthProvider: "azure"
+    # Include if using EnterpriseCluster policy. See the Azure managed Redis section for details.
+    # clusterSafeMode: true
 ```
 
 ```yaml

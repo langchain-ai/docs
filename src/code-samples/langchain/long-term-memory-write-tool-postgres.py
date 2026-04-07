@@ -1,6 +1,5 @@
 # :snippet-start: long-term-memory-write-tool-postgres-py
 from dataclasses import dataclass
-from typing import Any, cast
 
 from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
@@ -22,9 +21,7 @@ class UserInfo(TypedDict):
 def save_user_info(user_info: UserInfo, runtime: ToolRuntime[Context]) -> str:
     """Save user info."""
     assert runtime.store is not None
-    runtime.store.put(
-        ("users",), runtime.context.user_id, cast("dict[str, Any]", user_info)
-    )
+    runtime.store.put(("users",), runtime.context.user_id, dict(user_info))
     return "Successfully saved user info."
 
 

@@ -3,20 +3,22 @@ title: Log LLM calls
 sidebarTitle: Log LLM calls
 ---
 
-This guide will cover how to log LLM calls to LangSmith when you are using a custom model or a custom input/output format. To make the most of LangSmith's LLM trace processing, you should log your LLM traces in one of the specified formats.
+When you call an LLM directly, outside of LangChain or a [supported integration](/langsmith/integrations), you need to provide specific metadata so that LangSmith can display token counts, calculate costs, and let you open the run in the [Playground](/langsmith/prompt-engineering-concepts#playground) with the correct provider and model.
 
-LangSmith offers the following benefits for LLM traces:
-- Rich, structured rendering of message lists
-- Token and cost tracking per LLM call, per trace and across traces over time
+There are four requirements for a fully functional LLM trace:
 
-If you don't log your LLM traces in the suggested formats, you will still be able to log the data to LangSmith, but it may not be processed or rendered in expected ways.
-
-If you are using LangChain OSS to call language models or LangSmith wrappers ([OpenAI](/langsmith/trace-openai), [Anthropic](/langsmith/trace-anthropic)), these approaches will automatically log traces in the correct format.
+| Requirement | What to do | Enables |
+|---|---|---|
+| 1. Set `run_type="llm"` | Pass `run_type="llm"` to `@traceable` | LLM-specific rendering, token/cost display |
+| 2. Format inputs/outputs | Use OpenAI, Anthropic, or LangChain message format | Structured message rendering, Playground support |
+| 3. Set `ls_provider` and `ls_model_name` | Pass both in `metadata` | Cost tracking, Playground model selection |
+| 4. Provide token counts | Set `usage_metadata` on the run | Token counts and cost calculation |
 
 <Note>
-The examples on this page use the `traceable` decorator/wrapper to log the model run (which is the recommended approach for Python and JS/TS). However, the same idea applies if you are using the [RunTree](/langsmith/annotate-code#use-the-runtree-api) or [API](https://api.smith.langchain.com/redoc) directly.
-</Note>
+If you are using LangChain OSS, the [OpenAI wrapper](/langsmith/trace-openai), or the [Anthropic wrapper](/langsmith/trace-anthropic), these details are handled automatically.
 
+The examples on this page use the `traceable` decorator/wrapper (the recommended approach for Python and JS/TS). The same requirements apply if you use the [RunTree](/langsmith/annotate-code#use-the-runtree-api) or [API](https://api.smith.langchain.com/redoc) directly.
+</Note>
 
 ## Messages format
 
@@ -182,8 +184,6 @@ When tracing a custom model or a custom input/output format, it must either foll
 
 </Expandable>
 
-
-### Examples
 <CodeGroup>
 
 ```python Text and reasoning
@@ -349,7 +349,7 @@ output = {
 </CodeGroup>
 
 
-## Converting custom I/O formats into LangSmith compatible formats
+## Convert custom I/O formats into LangSmith compatible formats
 
 If you're using a custom input or output format, you can convert it to a LangSmith compatible format using `process_inputs`/`processInputs` and `process_outputs`/`processOutputs` functions on the [`@traceable` decorator](https://docs.smith.langchain.com/reference/python/run_helpers/langsmith.run_helpers.traceable) (Python) or [`traceable` function](https://docs.smith.langchain.com/reference/js/functions/traceable.traceable) (TS).
 
@@ -392,7 +392,7 @@ def chat_model(inputs: dict) -> dict:
 </Expandable>
 
 
-## Identifying a custom model in traces
+## Identify a custom model in traces
 
 When using a custom model, it is recommended to also provide the following `metadata` fields to identify the model when viewing traces and when filtering.
 
@@ -549,8 +549,22 @@ To learn more about how to use the `metadata` fields, refer to the [Add metadata
 
 ## Provide token and cost information
 
-LangSmith calculates costs derived from token counts and model prices automatically. Learn about [how to provide tokens and/or costs in a run](/langsmith/cost-tracking#cost-tracking) and [viewing costs in the LangSmith UI](/langsmith/cost-tracking#viewing-costs-in-the-langsmith-ui).
+Token counts enable cost calculation and are displayed in the trace UI. There are two ways to provide them:
 
+- **Set `usage_metadata` on the run tree**: call `get_current_run_tree()` / `getCurrentRunTree()` inside your `@traceable` function and set the `usage_metadata` field. This does not change your function's return value.
+- **Return `usage_metadata` in the output**: include `usage_metadata` as a top-level key in the dictionary your function returns.
+
+### Supported `usage_metadata` fields
+
+| Field | Type | Description |
+|---|---|---|
+| `input_tokens` | `int` | Total input/prompt tokens |
+| `output_tokens` | `int` | Total output/completion tokens |
+| `total_tokens` | `int` | Sum of input + output (optional, can be inferred) |
+| `input_token_details` | `object` | Breakdown: `cache_read`, `cache_creation`, `audio`, `text`, `image` |
+| `output_token_details` | `object` | Breakdown: `reasoning`, `audio`, `text`, `image` |
+
+To send costs directly (for non-linear pricing), you can also include `input_cost`, `output_cost`, and `total_cost` fields. See [Cost tracking](/langsmith/cost-tracking) for details on configuring model pricing and viewing costs in the UI.
 
 ## Time-to-first-token
 
