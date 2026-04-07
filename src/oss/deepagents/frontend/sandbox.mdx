@@ -78,7 +78,7 @@ lives, and how it's resolved at runtime.
 ### Thread-scoped sandbox (recommended)
 
 Each LangGraph thread gets its own sandbox. The sandbox ID is stored in the
-thread's metadata and resolved at runtime via `getConfig()`.
+thread's metadata and resolved at runtime via a [graph factory](/langsmith/graph-rebuild) that reads `thread_id` from the runtime.
 This is the recommended approach for most applications:
 
 - Conversations are isolated — file changes in one thread don't affect another
@@ -118,16 +118,25 @@ All threads under the same assistant share a single sandbox. Useful for
 persistent project environments where you want changes to carry across
 conversations:
 
+:::python
 <Note>
-Accessing `runtime.server_info` (Python) / `runtime.serverInfo` (JS/TS) requires `deepagents>=0.5.0`.
+Accessing `runtime.server_info` requires `deepagents>=0.5.0`.
 </Note>
+:::
+
+:::js
+<Note>
+Accessing `runtime.serverInfo` requires `deepagents>=1.9.0`.
+</Note>
+:::
 
 :::python
 
 ```python
-def sandbox_backend_factory(runtime):
+async def agent(runtime: Runtime):
     assistant_id = runtime.server_info.assistant_id  # [!code highlight]
-    return get_or_create_sandbox_for_assistant(assistant_id)
+    sandbox = await get_or_create_sandbox_for_assistant(assistant_id)
+    return create_deep_agent(backend=sandbox)
 ```
 
 :::
@@ -135,9 +144,10 @@ def sandbox_backend_factory(runtime):
 :::js
 
 ```ts
-const sandboxBackendFactory = async (runtime: BackendRuntime) => {
+export async function agent(runtime: Runtime) {
   const assistantId = runtime.serverInfo.assistantId;  // [!code highlight]
-  return getOrCreateSandboxForAssistant(assistantId);
+  const sandbox = await getOrCreateSandboxForAssistant(assistantId);
+  return createDeepAgent({ backend: sandbox });
 }
 ```
 
@@ -151,9 +161,10 @@ authentication and user identification:
 :::python
 
 ```python
-def sandbox_backend_factory(runtime):
+async def agent(runtime: Runtime):
     user_id = runtime.server_info.user.identity  # [!code highlight]
-    return get_or_create_sandbox_for_user(user_id)
+    sandbox = await get_or_create_sandbox_for_user(user_id)
+    return create_deep_agent(backend=sandbox)
 ```
 
 :::
@@ -161,9 +172,10 @@ def sandbox_backend_factory(runtime):
 :::js
 
 ```ts
-const sandboxBackendFactory = async (runtime: BackendRuntime) => {
+export async function agent(runtime: Runtime) {
   const userId = runtime.serverInfo.user.identity;  // [!code highlight]
-  return getOrCreateSandboxForUser(userId);
+  const sandbox = await getOrCreateSandboxForUser(userId);
+  return createDeepAgent({ backend: sandbox });
 }
 ```
 
@@ -243,19 +255,23 @@ commands. No tool configuration needed.
 ### Resolve a sandbox per thread
 
 Instead of creating a sandbox at module level (which would be shared across
-all threads and may expire), resolve the sandbox per-thread at runtime. The sandbox reads `thread_id` from the LangGraph config via `getConfig()`:
+all threads and may expire), resolve the sandbox per-thread at runtime using a
+[graph factory](/langsmith/graph-rebuild). The factory receives a `Runtime`
+on each invocation, so it can read `thread_id` from `runtime.execution_info`
+and build the agent with the correct sandbox before the run starts:
 
 :::js
 
 ```ts
 import { createDeepAgent, LangSmithSandbox } from "deepagents";
-import { getConfig } from "@langchain/langgraph";
+import { Client } from "@langchain/langgraph-sdk";
+import type { Runtime } from "@langchain/langgraph";
 
 async function getOrCreateSandboxForThread(threadId: string): Promise<LangSmithSandbox> {
   // Check thread metadata for existing sandbox_id
   const client = new Client({ apiUrl: "http://localhost:2024" });
   const thread = await client.threads.get(threadId);
-  const sandboxId = thread.metadata?.sandbox_id;
+  const sandboxId = thread.metadata?.sandbox_id as string | undefined;
 
   if (sandboxId) {
     // Reconnect to existing sandbox
@@ -271,21 +287,16 @@ async function getOrCreateSandboxForThread(threadId: string): Promise<LangSmithS
   return sandbox;
 }
 
-// Create a sandbox that resolves per-thread at runtime
-const sandbox = new LangSmithSandbox({
-  resolve: async () => {
-    const config = getConfig();
-    const threadId = config.configurable?.thread_id;
-    if (!threadId) throw new Error("No thread_id — agent must run on a thread");
-    return getOrCreateSandboxForThread(threadId);
-  },
-});
-
-export const agent = createDeepAgent({
-  model: "anthropic:claude-sonnet-4-5",
-  backend: sandbox,
-  systemPrompt: "You are an expert developer working on a project in /app.",
-});
+export async function agent(runtime: Runtime) {
+  const threadId = runtime.executionInfo.threadId;  // [!code highlight]
+  if (!threadId) throw new Error("No thread_id — agent must run on a thread");
+  const sandbox = await getOrCreateSandboxForThread(threadId);
+  return createDeepAgent({
+    model: "anthropic:claude-sonnet-4-5",
+    backend: sandbox,
+    systemPrompt: "You are an expert developer working on a project in /app.",
+  });
+}
 ```
 
 :::
@@ -294,28 +305,41 @@ export const agent = createDeepAgent({
 
 ```python
 from deepagents import create_deep_agent
-from deepagents.sandbox import LangSmithSandbox
-from langgraph.config import get_config
+from deepagents.sandbox import LangSmithSandbox, SandboxClient
+from langgraph.runtime import Runtime
+from langgraph_sdk import get_client
 
 
-def get_or_create_sandbox_for_thread(thread_id: str) -> LangSmithSandbox:
-    # Look up or create sandbox based on thread_id
-    ...
+async def get_or_create_sandbox_for_thread(thread_id: str) -> LangSmithSandbox:
+    # Check thread metadata for an existing sandbox_id
+    client = get_client(url="http://localhost:2024")
+    thread = await client.threads.get(thread_id)
+    sandbox_id = (thread.get("metadata") or {}).get("sandbox_id")
+
+    if sandbox_id:
+        # Reconnect to existing sandbox
+        sandbox = await SandboxClient().get_sandbox(sandbox_id)
+        return LangSmithSandbox(sandbox=sandbox)
+
+    # Create a new sandbox and store its ID in thread metadata
+    sandbox = await LangSmithSandbox.create(template_name="my-template")
+    await seed_sandbox(sandbox)
+    await client.threads.update(thread_id, metadata={"sandbox_id": sandbox.id})
+    return sandbox
 
 
-sandbox = LangSmithSandbox(
-    resolve=lambda: get_or_create_sandbox_for_thread(
-        get_config()["configurable"]["thread_id"]
-    ),
-)
-
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-5",
-    backend=sandbox,
-)
+async def agent(runtime: Runtime):
+    thread_id = runtime.execution_info.thread_id  # [!code highlight]
+    sandbox = await get_or_create_sandbox_for_thread(thread_id)
+    return create_deep_agent(
+        model="anthropic:claude-sonnet-4-5",
+        backend=sandbox,
+    )
 ```
 
 :::
+
+Wire the factory into `langgraph.json` as the graph entry point so the server calls it on each run.
 
 ### Seed the sandbox
 

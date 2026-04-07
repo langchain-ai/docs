@@ -1685,7 +1685,11 @@ You can access execution identity and retry information via `runtime.executionIn
 | `checkpointNs` | `string` | Checkpoint namespace for the current execution. |
 | `taskId` | `string` | Task ID for the current execution. |
 | `nodeAttempt` | `number` | Current execution attempt number (1-indexed). |
-| `nodeFirstAttemptTime` | `number \| undefined` | Unix timestamp (seconds) of when the first attempt started. |
+| `nodeFirstAttemptTime` | `number \| undefined` | Unix timestamp (seconds) of when the first attempt started. Stays the same across retries. |
+
+#### Access thread and run IDs
+
+Use `executionInfo` to access the thread ID, run ID, and other identity fields inside a node:
 
 ```ts
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
@@ -1697,9 +1701,6 @@ const State = Annotation.Root({
 const myNode = async (state: typeof State.State, runtime: any) => {
   const info = runtime.executionInfo;
   console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
-  if (info.nodeAttempt > 1) {  // [!code highlight]
-    return { result: "fallback" };
-  }
   return { result: "done" };
 };
 
@@ -1709,6 +1710,35 @@ const graph = new StateGraph(State)
   .addEdge("my_node", END)
   .compile();
 ```
+
+#### Adjust behavior based on retry state
+
+When a node has a retry policy, use `executionInfo` to inspect the current attempt number and switch to a fallback after the first attempt fails:
+
+```ts
+import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
+
+const State = Annotation.Root({
+  result: Annotation<string>(),
+});
+
+const myNode = async (state: typeof State.State, runtime: any) => {
+  const info = runtime.executionInfo;
+  if (info.nodeAttempt > 1) {  // [!code highlight]
+    // use a fallback on retries
+    return { result: await callFallbackApi() };
+  }
+  return { result: await callPrimaryApi() };
+};
+
+const graph = new StateGraph(State)
+  .addNode("my_node", myNode, { retryPolicy: { maxAttempts: 3 } })
+  .addEdge(START, "my_node")
+  .addEdge("my_node", END)
+  .compile();
+```
+
+`executionInfo` is available on the `Runtime` object even without a retry policy — `nodeAttempt` defaults to `1` and `nodeFirstAttemptTime` is set to the time the node starts executing.
 
 ### Access server info inside a node
 
@@ -1736,7 +1766,7 @@ const myNode = async (state: typeof State.State, runtime: any) => {
 `serverInfo` is `null` when the graph is not running on LangGraph Server.
 
 <Note>
-Requires `deepagents>=0.5.0` (or the corresponding `@langchain/langgraph` release) for `runtime.executionInfo` and `runtime.serverInfo`.
+Requires `deepagents>=1.9.0` (or the corresponding `@langchain/langgraph` release) for `runtime.executionInfo` and `runtime.serverInfo`.
 </Note>
 
 :::
