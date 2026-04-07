@@ -22,6 +22,22 @@ The `read_file` tool natively supports binary files (images, PDFs, audio, video)
 
 Sandboxes and the @[`LocalShellBackend`] also provide an `execute` tool.
 
+This page explains how to [choose a backend](#specify-a-backend), [route different paths to different backends](#route-to-different-backends), [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres), [add policy hooks](#add-policy-hooks), [work with binary and multimodal files](#multimodal-and-binary-files), [comply with the backend protocol](#protocol-reference), and [update existing backends to v2](#update-existing-backends-to-v2).
+
+## Quickstart
+
+Here are a few prebuilt filesystem backends that you can quickly use with your deep agent:
+
+| Built-in backend | Description |
+|---|---|
+| [Default](#statebackend-ephemeral) | `agent = create_deep_agent()` <br></br> Ephemeral in state. The default filesystem backend for an agent is stored in `langgraph` state. Note that this filesystem only persists _for a single thread_. |
+| [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. |
+| [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(backend=StoreBackend())` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
+| [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
+| [Local shell](#localshellbackend-local-shell) | `agent = create_deep_agent(backend=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}))` <br></br>Filesystem and shell execution directly on the host. No isolation—use only in controlled development environments. See [security considerations](#localshellbackend-local-shell) below. |
+| [Composite](#compositebackend-router) | Ephemeral by default, `/memories/` persisted. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
+
+
 ```mermaid
 graph TB
     Tools[Filesystem Tools] --> Backend[Backend]
@@ -52,22 +68,6 @@ graph TB
     class Router decision
     class Execute output
 ```
-
-This page explains how to [choose a backend](#specify-a-backend), [route different paths to different backends](#route-to-different-backends), [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres), [add policy hooks](#add-policy-hooks), [work with binary and multimodal files](#multimodal-and-binary-files), [comply with the backend protocol](#protocol-reference), and [update existing backends to v2](#update-existing-backends-to-v2).
-
-## Quickstart
-
-Here are a few prebuilt filesystem backends that you can quickly use with your deep agent:
-
-| Built-in backend | Description |
-|---|---|
-| [Default](#statebackend-ephemeral) | `agent = create_deep_agent()` <br></br> Ephemeral in state. The default filesystem backend for an agent is stored in `langgraph` state. Note that this filesystem only persists _for a single thread_. |
-| [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. |
-| [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(backend=StoreBackend())` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
-| [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
-| [Local shell](#localshellbackend-local-shell) | `agent = create_deep_agent(backend=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}))` <br></br>Filesystem and shell execution directly on the host. No isolation—use only in controlled development environments. See [security considerations](#localshellbackend-local-shell) below. |
-| [Composite](#compositebackend-router) | Ephemeral by default, `/memories/` persisted. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
-
 
 ## Built-in backends
 
@@ -220,33 +220,50 @@ NamespaceFactory = Callable[[BackendContext], tuple[str, ...]]
 
 The `BackendContext` provides:
 - `ctx.runtime.context` — User-supplied context passed via LangGraph's [context schema](https://langchain-ai.github.io/langgraph/concepts/runtime/) (for example, `user_id`)
+:::python
+- `ctx.runtime.server_info` — Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
+- `ctx.runtime.execution_info` — Execution identity information (thread ID, run ID, checkpoint ID)
+:::
+:::js
+- `ctx.runtime.serverInfo` — Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
+- `ctx.runtime.executionInfo` — Execution identity information (thread ID, run ID, checkpoint ID)
+:::
 - `ctx.state` — Current agent state
 
-For `assistant_id` and `thread_id`, use `langgraph.config.get_config()` inside the factory — these are available in LangGraph config metadata but not on the context schema.
+:::python
+<Note>
+`ctx.runtime.server_info` and `ctx.runtime.execution_info` require `deepagents>=0.5.0`.
+</Note>
+:::
+
+:::js
+<Note>
+`ctx.runtime.serverInfo` and `ctx.runtime.executionInfo` require `deepagents>=1.9.0`.
+</Note>
+:::
 
 **Common namespace patterns:**
 
 :::python
 ```python
-from langgraph.config import get_config
 from deepagents.backends import StoreBackend
 
 # Per-user: each user gets their own isolated storage
 backend = StoreBackend(
-    namespace=lambda ctx: (ctx.runtime.context.user_id,),
+    namespace=lambda ctx: (ctx.runtime.server_info.user.identity,),  # [!code highlight]
 )
 
 # Per-assistant: all users of the same assistant share storage
 backend = StoreBackend(
     namespace=lambda ctx: (
-        get_config()["metadata"]["assistant_id"],
+        ctx.runtime.server_info.assistant_id,  # [!code highlight]
     ),
 )
 
 # Per-thread: storage scoped to a single conversation
 backend = StoreBackend(
     namespace=lambda ctx: (
-        get_config()["configurable"]["thread_id"],
+        ctx.runtime.execution_info.thread_id,  # [!code highlight]
     ),
 )
 ```
@@ -254,28 +271,21 @@ backend = StoreBackend(
 
 :::js
 ```typescript
-import { getConfig } from "@langchain/langgraph";
 import { StoreBackend } from "deepagents";
 
 // Per-user: each user gets their own isolated storage
 const backend = new StoreBackend({
-  namespace: (ctx) => [ctx.runtime.context.userId],
+  namespace: (ctx) => [ctx.runtime.serverInfo.user.identity],  // [!code highlight]
 });
 
 // Per-assistant: all users of the same assistant share storage
 const backend = new StoreBackend({
-  namespace: (ctx) => {
-    const config = getConfig();
-    return [config.metadata.assistantId];
-  },
+  namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
 });
 
 // Per-thread: storage scoped to a single conversation
 const backend = new StoreBackend({
-  namespace: (ctx) => {
-    const config = getConfig();
-    return [config.configurable.threadId];
-  },
+  namespace: (ctx) => [ctx.runtime.executionInfo.threadId],  // [!code highlight]
 });
 ```
 :::
