@@ -18,6 +18,18 @@ import { PatternEmbed } from "/snippets/pattern-embed.jsx"
 
 ## How headless tools work
 
+At a high level, headless tools split the tool schema from the browser-only implementation.
+
+:::python
+1. Register a tool on the agent that immediately calls `interrupt()` to defer execution to the frontend.
+2. Mirror the same tool names and argument fields in frontend definitions.
+3. Implement the matching tools in the frontend with `.implement(...)` and pass
+   them to `useStream({ tools: [...] })`.
+4. When the agent invokes a matching tool, the client handles the action and
+   resumes the interrupted run with the tool result.
+:::
+
+:::js
 1. Register a schema-only tool definition on the agent.
 2. Implement the matching tool in the frontend with `.implement(...)`.
 3. Pass those implementations to `useStream({ tools: [...] })`.
@@ -29,26 +41,26 @@ Keep tool definitions and implementations in separate modules. Share the
 definitions between your agent and your frontend so the tool names and schemas
 stay aligned, then keep browser-only code in a client-only `impl` module.
 </Tip>
+:::
 
 ## Register the tool on the agent
 
-The playground defines the following client-side tools:
-`memory_put`, `memory_get`, `memory_list`, `memory_search`, `memory_forget`,
-and `geolocation_get`.
-
-For JavaScript agents, you can share a single `tools.ts` file between the agent
-and the frontend. For Python agents, define the schema on the server, then
-mirror the same tool name and argument fields in a frontend `tools.ts` file.
-
-<CodeGroup>
+The playground defines a small set of client-side tools that follow the same
+pattern: the agent exposes a tool schema, and the frontend handles the actual
+execution.
 
 :::python
+Define normal tools on the server that immediately call `interrupt()`, then
+mirror the same tool names and argument fields in a
+frontend `tools.ts` file.
+
 ```python agent.py
 from typing import Any
 
 from langchain import create_agent
-from langchain.tools import tool
+from langchain.tools import ToolRuntime, tool
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import interrupt
 from pydantic import BaseModel
 
 
@@ -65,23 +77,54 @@ class GeolocationGetInput(BaseModel):
     save: bool = True
 
 
-memory_put = tool(
-    name="memory_put",
+def _interrupt_for_client(
+    tool_name: str,
+    args: dict[str, Any],
+    runtime: ToolRuntime,
+) -> Any:
+    return interrupt({
+        "type": "tool",
+        "tool_call": {
+            "id": runtime.tool_call_id,
+            "name": tool_name,
+            "args": args,
+        },
+    })
+
+
+@tool(
+    "memory_put",
     description="Store a memory in the user's browser.",
     args_schema=MemoryPutInput,
 )
+def memory_put(key: str, value: Any, runtime: ToolRuntime) -> Any:
+    return _interrupt_for_client(
+        "memory_put",
+        {"key": key, "value": value},
+        runtime,
+    )
 
-memory_get = tool(
-    name="memory_get",
+
+@tool(
+    "memory_get",
     description="Look up a memory stored in the user's browser.",
     args_schema=MemoryGetInput,
 )
+def memory_get(key: str, runtime: ToolRuntime) -> Any:
+    return _interrupt_for_client("memory_get", {"key": key}, runtime)
 
-geolocation_get = tool(
-    name="geolocation_get",
+
+@tool(
+    "geolocation_get",
     description="Get the user's current location from the browser.",
     args_schema=GeolocationGetInput,
 )
+def geolocation_get(runtime: ToolRuntime, save: bool = True) -> Any:
+    return _interrupt_for_client(
+        "geolocation_get",
+        {"save": save},
+        runtime,
+    )
 
 agent = create_agent(
     model="openai:gpt-5.4",
@@ -90,7 +133,9 @@ agent = create_agent(
 )
 ```
 
-Mirror the tool names and schemas on the client so the frontend can attach implementations.
+Each tool interrupts with a structured payload the frontend can handle, then
+returns the value provided when the run resumes. Mirror the same tool names and
+schemas on the client so the frontend can attach implementations.
 
 ```ts tools.ts
 import * as z from "zod";
@@ -126,6 +171,10 @@ export const geolocationGet = tool({
 :::
 
 :::js
+Define the tools once in a shared `tools.ts` file and use that file from both
+the agent and the frontend.
+
+<CodeGroup>
 ```ts tools.ts
 import * as z from "zod";
 import { tool } from "langchain";
@@ -168,10 +217,8 @@ export const agent = createAgent({
   checkpointer: new MemorySaver(),
 });
 ```
-
-:::
-
 </CodeGroup>
+:::
 
 ## Implement the browser behavior
 
@@ -235,41 +282,36 @@ call, the hook runs the client implementation and resumes the run for you.
 :::python
 
 Define a TypeScript interface matching your agent's state schema and pass it as
-a type parameter to `useStream` for type-safe access to state values. In the
-examples below, replace `typeof myAgent` with your interface name:
+a type parameter to `useStream` for type-safe access to state values:
 
-```ts
-import type { BaseMessage } from "langchain";
-
-interface AgentState {
+```ts types.ts
+export interface AgentState {
   messages: BaseMessage[];
 }
 ```
-
 :::
 
 :::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream`
-for type-safe access to state values:
+The agent state can be inferred from the agent definition:
 
 ```ts
 import type { myAgent } from "./agent";
-```
 
+export type AgentState = typeof myAgent;
+```
 :::
 
 <CodeGroup>
-
 ```tsx React
 import { useStream } from "@langchain/react";
 
 import { geolocationGet, memoryGet, memoryPut } from "./impl";
+import type { AgentState } from "./types";
 
 const AGENT_URL = "http://localhost:2024";
 
 export function Chat() {
-  const stream = useStream<typeof myAgent>({
+  const stream = useStream<AgentState>({
     apiUrl: AGENT_URL,
     assistantId: "headless_tools",
     tools: [memoryPut, memoryGet, geolocationGet],
@@ -284,10 +326,11 @@ export function Chat() {
 import { useStream } from "@langchain/vue";
 
 import { geolocationGet, memoryGet, memoryPut } from "./impl";
+import type { AgentState } from "./types";
 
 const AGENT_URL = "http://localhost:2024";
 
-const stream = useStream<typeof myAgent>({
+const stream = useStream<AgentState>({
   apiUrl: AGENT_URL,
   assistantId: "headless_tools",
   tools: [memoryPut, memoryGet, geolocationGet],
@@ -307,10 +350,11 @@ const stream = useStream<typeof myAgent>({
   import { useStream } from "@langchain/svelte";
 
   import { geolocationGet, memoryGet, memoryPut } from "./impl";
+  import type { AgentState } from "./types";
 
   const AGENT_URL = "http://localhost:2024";
 
-  const { messages, toolCalls } = useStream<typeof myAgent>({
+  const { messages, toolCalls } = useStream<AgentState>({
     apiUrl: AGENT_URL,
     assistantId: "headless_tools",
     tools: [memoryPut, memoryGet, geolocationGet],
@@ -325,6 +369,7 @@ import { Component } from "@angular/core";
 import { useStream } from "@langchain/angular";
 
 import { geolocationGet, memoryGet, memoryPut } from "./impl";
+import type { AgentState } from "./types";
 
 const AGENT_URL = "http://localhost:2024";
 
@@ -338,7 +383,7 @@ const AGENT_URL = "http://localhost:2024";
   `,
 })
 export class ChatComponent {
-  stream = useStream<typeof myAgent>({
+  stream = useStream<AgentState>({
     apiUrl: AGENT_URL,
     assistantId: "headless_tools",
     tools: [memoryPut, memoryGet, geolocationGet],
@@ -355,7 +400,12 @@ keeps a small memory stats panel near the input. The key step is matching each
 entry in `stream.toolCalls` back to the AI message that triggered it:
 
 ```tsx
-function Message({ message, toolCalls }) {
+import type { ToolCallWithResult, DefaultToolCall } from "@langchain/react";
+
+function Message({ message, toolCalls }: {
+  message: AIMessage,
+  toolCalls: ToolCallWithResult[]
+}) {
   const messageToolCalls = toolCalls.filter((tc) =>
     message.tool_calls?.some((call) => call.id === tc.call.id),
   );
