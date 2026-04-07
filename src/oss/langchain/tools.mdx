@@ -177,6 +177,8 @@ Tools can access runtime information through the @[`ToolRuntime`] parameter, whi
 | **Context** | Immutable configuration passed at invocation time (user IDs, session info) | Personalize responses based on user identity |
 | **Store** | Long-term memory - persistent data that survives across conversations | Save user preferences, maintain knowledge base |
 | **Stream Writer** | Emit real-time updates during tool execution | Show progress for long-running operations |
+| **Execution Info** | Identity and retry information for the current execution (thread ID, run ID, attempt number) | Access thread/run IDs, adjust behavior based on retry state |
+| **Server Info** | Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user) | Access assistant ID, graph ID, or authenticated user info |
 | **Config** | @[`RunnableConfig`] for the execution | Access callbacks, tags, and metadata |
 | **Tool Call ID** | Unique identifier for the current tool invocation | Correlate tool calls for logs and model invocations |
 
@@ -585,6 +587,118 @@ const getWeather = tool(
 );
 ```
 
+:::
+
+### Execution info
+
+Access thread ID, run ID, and retry state from within a tool via `runtime.execution_info`:
+
+:::python
+```python
+from langchain.tools import tool, ToolRuntime
+
+@tool
+def log_execution_context(runtime: ToolRuntime) -> str:
+    """Log execution identity information."""
+    info = runtime.execution_info
+    print(f"Thread: {info.thread_id}, Run: {info.run_id}")  # [!code highlight]
+    print(f"Attempt: {info.node_attempt}")
+    return "done"
+```
+:::
+
+:::js
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const logExecutionContext = tool(
+  async (_input, runtime) => {
+    const info = runtime.executionInfo;
+    console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
+    console.log(`Attempt: ${info.nodeAttempt}`);
+    return "done";
+  },
+  {
+    name: "log_execution_context",
+    description: "Log execution identity information.",
+    schema: z.object({}),
+  }
+);
+```
+:::
+
+:::python
+<Note>
+Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`).
+</Note>
+:::
+
+:::js
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
+</Note>
+:::
+
+### Server info
+
+When your tool runs on LangGraph Server, access the assistant ID, graph ID, and authenticated user via `runtime.server_info`:
+
+:::python
+```python
+from langchain.tools import tool, ToolRuntime
+
+@tool
+def get_assistant_scoped_data(runtime: ToolRuntime) -> str:
+    """Fetch data scoped to the current assistant."""
+    server = runtime.server_info
+    if server is not None:
+        print(f"Assistant: {server.assistant_id}, Graph: {server.graph_id}")  # [!code highlight]
+        if server.user is not None:
+            print(f"User: {server.user.identity}")  # [!code highlight]
+    return "done"
+```
+
+`server_info` is `None` when the tool is not running on LangGraph Server (e.g., during local development or testing).
+:::
+
+:::js
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const getAssistantScopedData = tool(
+  async (_input, runtime) => {
+    const server = runtime.serverInfo;
+    if (server != null) {
+      console.log(`Assistant: ${server.assistantId}, Graph: ${server.graphId}`);  // [!code highlight]
+      if (server.user != null) {
+        console.log(`User: ${server.user.identity}`);  // [!code highlight]
+      }
+    }
+    return "done";
+  },
+  {
+    name: "get_assistant_scoped_data",
+    description: "Fetch data scoped to the current assistant.",
+    schema: z.object({}),
+  }
+);
+```
+
+`serverInfo` is `null` when the tool is not running on LangGraph Server.
+:::
+
+:::python
+<Note>
+Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`).
+</Note>
+:::
+
+:::js
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
+</Note>
 :::
 
 ## ToolNode

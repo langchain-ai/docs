@@ -266,7 +266,6 @@ If you are using memory, skills, or human-in-the-loop, the following middleware 
 - @[`MemoryMiddleware`]: Persists and retrieves conversation context across sessions when the `memory` argument is provided
 - @[`SkillsMiddleware`]: Enables custom skills when the `skills` argument is provided
 - `HumanInTheLoopMiddleware`: Pauses for human approval or input at specified points when the `interruptOn` argument is provided
-:::
 
 ### Pre-built middleware
 
@@ -283,6 +282,10 @@ The `deepagents` library also exposes @[create_summarization_tool_middleware], e
 The `deepagents` package also exposes @[createSummarizationMiddleware] for the same workflow. For more detail, see [Summarization in the harness](/oss/deepagents/harness#summarization).
 
 :::
+
+### Provider-specific middleware
+
+For provider-specific middleware that is optimized for specific LLM providers, see [Official integrations](/oss/integrations/middleware#official-integrations) and [Community integrations](/oss/integrations/middleware#community-integrations).
 
 ### Custom middleware
 
@@ -387,7 +390,7 @@ Graph state is scoped to a thread by design, so updates are safe under concurren
 
 **Do this:**
 
-::::python
+:::python
 ```python
 class CustomMiddleware(AgentMiddleware):
     def __init__(self):
@@ -396,9 +399,9 @@ class CustomMiddleware(AgentMiddleware):
     def before_agent(self, state, runtime):
         return {"x": state.get("x", 0) + 1}  # Update graph state instead
 ```
-::::
+:::
 
-::::js
+:::js
 ```typescript
 const customMiddleware = createMiddleware({
   name: "CustomMiddleware",
@@ -407,11 +410,11 @@ const customMiddleware = createMiddleware({
   },
 });
 ```
-::::
+:::
 
 Do **not** do this:
 
-::::python
+:::python
 ```python
 class CustomMiddleware(AgentMiddleware):
     def __init__(self):
@@ -420,9 +423,9 @@ class CustomMiddleware(AgentMiddleware):
     def before_agent(self, state, runtime):
         self.x += 1  # Mutation causes race conditions
 ```
-::::
+:::
 
-::::js
+:::js
 ```typescript
 let x = 1;
 
@@ -433,7 +436,7 @@ const customMiddleware = createMiddleware({
   },
 });
 ```
-::::
+:::
 
 :::python
 Mutation in place, such as modifying `self.x` in `before_agent` or changing other shared values in hooks, can lead to subtle bugs and race conditions because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
@@ -665,7 +668,7 @@ You can pass one or more file paths to the `memory` parameter when creating your
     )
 
     agent = create_deep_agent(
-        backend=(lambda rt: StoreBackend(rt)),
+        backend=StoreBackend(),
         store=store,
         memory=[
             "/AGENTS.md"
@@ -738,7 +741,8 @@ You can pass one or more file paths to the `memory` parameter when creating your
     function createFileData(content: string): FileData {
       const now = new Date().toISOString();
       return {
-        content: content.split("\n"),
+        content,
+        mimeType: "text/plain",
         created_at: now,
         modified_at: now,
       };
@@ -770,7 +774,6 @@ You can pass one or more file paths to the `memory` parameter when creating your
     import {
       InMemoryStore,
       MemorySaver,
-      type BaseStore,
     } from "@langchain/langgraph";
 
     const AGENTS_MD_URL =
@@ -789,7 +792,8 @@ You can pass one or more file paths to the `memory` parameter when creating your
     function createFileData(content: string): FileData {
       const now = new Date().toISOString();
       return {
-        content: content.split("\n"),
+        content,
+        mimeType: "text/plain",
         created_at: now,
         modified_at: now,
       };
@@ -801,15 +805,8 @@ You can pass one or more file paths to the `memory` parameter when creating your
 
     const checkpointer = new MemorySaver();
 
-    const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
-      return new StoreBackend({
-        state: config.state,
-        store: config.store ?? store,
-      });
-    };
-
     const agent = await createDeepAgent({
-      backend: backendFactory,
+      backend: new StoreBackend(),
       store: store,
       checkpointer: checkpointer,
       memory: ["/AGENTS.md"],
@@ -837,8 +834,7 @@ You can pass one or more file paths to the `memory` parameter when creating your
     const checkpointer = new MemorySaver();
 
     const agent = await createDeepAgent({
-      backend: (config) =>
-        new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
+      backend: new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
       memory: ["./AGENTS.md", "./.deepagents/AGENTS.md"],
       interruptOn: {
         read_file: true,
