@@ -16,6 +16,10 @@ import BackendCompositeJs from '/snippets/backend-composite-js.mdx';
 
 Deep Agents expose a filesystem surface to the agent via tools like `ls`, `read_file`, `write_file`, `edit_file`, `glob`, and `grep`. These tools operate through a pluggable backend. The `read_file` tool natively supports image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) across all backends, returning them as multimodal content blocks.
 
+:::js
+The `read_file` tool natively supports binary files (images, PDFs, audio, video) across all backends, returning a `ReadResult` with typed `content` and `mimeType`.
+:::
+
 Sandboxes and the @[`LocalShellBackend`] also provide an `execute` tool.
 
 ```mermaid
@@ -49,7 +53,7 @@ graph TB
     class Execute output
 ```
 
-This page explains how to [choose a backend](#specify-a-backend), [route different paths to different backends](#route-to-different-backends), [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres), [add policy hooks](#add-policy-hooks), and [comply with the `BackendProtocol`](#protocol-reference).
+This page explains how to [choose a backend](#specify-a-backend), [route different paths to different backends](#route-to-different-backends), [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres), [add policy hooks](#add-policy-hooks), [work with binary and multimodal files](#multimodal-and-binary-files), [comply with the backend protocol](#protocol-reference), and [update existing backends to v2](#update-existing-backends-to-v2).
 
 ## Quickstart
 
@@ -59,7 +63,7 @@ Here are a few prebuilt filesystem backends that you can quickly use with your d
 |---|---|
 | [Default](#statebackend-ephemeral) | `agent = create_deep_agent()` <br></br> Ephemeral in state. The default filesystem backend for an agent is stored in `langgraph` state. Note that this filesystem only persists _for a single thread_. |
 | [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. |
-| [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(backend=lambda rt: StoreBackend(rt))` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
+| [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(backend=StoreBackend())` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
 | [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
 | [Local shell](#localshellbackend-local-shell) | `agent = create_deep_agent(backend=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}))` <br></br>Filesystem and shell execution directly on the host. No isolation—use only in controlled development environments. See [security considerations](#localshellbackend-local-shell) below. |
 | [Composite](#compositebackend-router) | Ephemeral by default, `/memories/` persisted. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
@@ -208,6 +212,8 @@ Use with extreme caution and only in appropriate environments.
 
 A namespace factory controls where `StoreBackend` reads and writes data. It receives a `BackendContext` and returns a tuple of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
 
+Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
+
 ```python
 NamespaceFactory = Callable[[BackendContext], tuple[str, ...]]
 ```
@@ -226,22 +232,19 @@ from langgraph.config import get_config
 from deepagents.backends import StoreBackend
 
 # Per-user: each user gets their own isolated storage
-backend = lambda rt: StoreBackend(
-    rt,
+backend = StoreBackend(
     namespace=lambda ctx: (ctx.runtime.context.user_id,),
 )
 
 # Per-assistant: all users of the same assistant share storage
-backend = lambda rt: StoreBackend(
-    rt,
+backend = StoreBackend(
     namespace=lambda ctx: (
         get_config()["metadata"]["assistant_id"],
     ),
 )
 
 # Per-thread: storage scoped to a single conversation
-backend = lambda rt: StoreBackend(
-    rt,
+backend = StoreBackend(
     namespace=lambda ctx: (
         get_config()["configurable"]["thread_id"],
     ),
@@ -255,12 +258,12 @@ import { getConfig } from "@langchain/langgraph";
 import { StoreBackend } from "deepagents";
 
 // Per-user: each user gets their own isolated storage
-const backend = (rt) => new StoreBackend(rt, {
+const backend = new StoreBackend({
   namespace: (ctx) => [ctx.runtime.context.userId],
 });
 
 // Per-assistant: all users of the same assistant share storage
-const backend = (rt) => new StoreBackend(rt, {
+const backend = new StoreBackend({
   namespace: (ctx) => {
     const config = getConfig();
     return [config.metadata.assistantId];
@@ -268,7 +271,7 @@ const backend = (rt) => new StoreBackend(rt, {
 });
 
 // Per-thread: storage scoped to a single conversation
-const backend = (rt) => new StoreBackend(rt, {
+const backend = new StoreBackend({
   namespace: (ctx) => {
     const config = getConfig();
     return [config.configurable.threadId];
@@ -317,11 +320,21 @@ Namespace components must contain only alphanumeric characters, hyphens, undersc
 
 ## Specify a backend
 
-- Pass a backend to `create_deep_agent(backend=...)`. The filesystem middleware uses it for all tooling.
-- You can pass either:
-    - An instance implementing `BackendProtocol` (for example, `FilesystemBackend(root_dir=".")`), or
-    - A factory `BackendFactory = Callable[[ToolRuntime], BackendProtocol]` (for backends that need runtime like `StateBackend` or `StoreBackend`).
-- If omitted, the default is `lambda rt: StateBackend(rt)`.
+:::python
+- Pass a backend instance to `create_deep_agent(backend=...)`. The filesystem middleware uses it for all tooling.
+- The backend must implement `BackendProtocol` (for example, `StateBackend()`, `FilesystemBackend(root_dir=".")`, `StoreBackend()`).
+- If omitted, the default is `StateBackend()`.
+:::
+
+:::js
+- Pass a backend instance to `createDeepAgent({ backend: ... })`. The filesystem middleware uses it for all tooling.
+- The backend must implement `AnyBackendProtocol` (`BackendProtocolV1` or `BackendProtocolV2`) — for example, `new StateBackend()`, `new FilesystemBackend({ rootDir: "." })`, `new StoreBackend()`.
+- If omitted, the default is `new StateBackend()`.
+
+<Note>
+Before version 1.9.0, only `BackendProtocol` was supported which is now `BackendProtocolV1`. V1 backends are automatically adapted to V2 at runtime via `adaptBackendProtocol()`. No code changes are required to keep using existing V1 backends. To update to v2, see [update existing backends to v2](#update-existing-backends-to-v2).
+</Note>
+:::
 
 
 ## Route to different backends
@@ -333,14 +346,14 @@ Route parts of the namespace to different backends. Commonly used to persist `/m
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, FilesystemBackend
 
-composite_backend = lambda rt: CompositeBackend(
-    default=StateBackend(rt),
-    routes={
-        "/memories/": FilesystemBackend(root_dir="/deepagents/myagent", virtual_mode=True),
-    },
+agent = create_deep_agent(
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/memories/": FilesystemBackend(root_dir="/deepagents/myagent", virtual_mode=True),
+        },
+    )
 )
-
-agent = create_deep_agent(backend=composite_backend)
 ```
 :::
 
@@ -348,14 +361,14 @@ agent = create_deep_agent(backend=composite_backend)
 ```typescript
 import { createDeepAgent, CompositeBackend, FilesystemBackend, StateBackend } from "deepagents";
 
-const compositeBackend = (rt) => new CompositeBackend(
-  new StateBackend(rt),
-  {
-    "/memories/": new FilesystemBackend({ rootDir: "/deepagents/myagent", virtualMode: true }),
-  },
-);
-
-const agent = createDeepAgent({ backend: compositeBackend });
+const agent = createDeepAgent({
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      "/memories/": new FilesystemBackend({ rootDir: "/deepagents/myagent", virtualMode: true }),
+    },
+  ),
+});
 ```
 :::
 
@@ -366,7 +379,7 @@ Behavior:
 
 Notes:
 - Longer prefixes win (for example, route `"/memories/projects/"` can override `"/memories/"`).
-- For StoreBackend routing, ensure the agent runtime provides a store (`runtime.store`).
+- For StoreBackend routing, ensure a store is provided via `create_deep_agent(store=...)` or provisioned by the platform.
 
 ## Use a virtual filesystem
 
@@ -375,16 +388,27 @@ Build a custom backend to project a remote or database filesystem (e.g., S3 or P
 Design guidelines:
 
 - Paths are absolute (`/x/y.txt`). Decide how to map them to your storage keys/rows.
-- Implement `ls_info` and `glob_info` efficiently (server-side listing where available, otherwise local filter).
-- Return user-readable error strings for missing files or invalid regex patterns.
-- For external persistence, set `files_update=None` in results; only in-state backends should return a `files_update` dict.
+- Implement `ls` and `glob` efficiently (server-side filtering where available, otherwise local filter).
+- For external persistence (S3, Postgres, etc.), return `files_update=None` (Python) or omit `filesUpdate` (JS) in write/edit results — only in-memory state backends need to return a files update dict.
+
+:::python
+- Use `ls` and `glob` as the method names.
+- Return structured result types with an `error` field for missing files or invalid patterns (do not raise).
+:::
+
+:::js
+- Use `ls` and `glob` as the method names.
+- All query methods (`ls`, `read`, `readRaw`, `grep`, `glob`) must return structured Result objects (e.g., `LsResult`, `ReadResult`) with an optional `error` field.
+- Support binary files in `read()` by returning `Uint8Array` content with the appropriate `mimeType`.
+:::
 
 S3-style outline:
 
 :::python
 ```python
-from deepagents.backends.protocol import BackendProtocol, WriteResult, EditResult
-from deepagents.backends.utils import FileInfo, GrepMatch
+from deepagents.backends.protocol import (
+    BackendProtocol, WriteResult, EditResult, LsResult, ReadResult, GrepResult, GlobResult,
+)
 
 class S3Backend(BackendProtocol):
     def __init__(self, bucket: str, prefix: str = ""):
@@ -394,19 +418,19 @@ class S3Backend(BackendProtocol):
     def _key(self, path: str) -> str:
         return f"{self.prefix}{path}"
 
-    def ls_info(self, path: str) -> list[FileInfo]:
+    def ls(self, path: str) -> LsResult:
         # List objects under _key(path); build FileInfo entries (path, size, modified_at)
         ...
 
-    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
-        # Fetch object; return numbered content or an error string
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
+        # Fetch object; return ReadResult(file_data=...) or ReadResult(error=...)
         ...
 
-    def grep_raw(self, pattern: str, path: str | None = None, glob: str | None = None) -> list[GrepMatch] | str:
+    def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
         # Optionally filter server‑side; else list and scan content
         ...
 
-    def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
+    def glob(self, pattern: str, path: str = "/") -> GlobResult:
         # Apply glob relative to path across keys
         ...
 
@@ -420,13 +444,84 @@ class S3Backend(BackendProtocol):
 ```
 :::
 
+:::js
+```typescript
+import {
+  type BackendProtocolV2,
+  type LsResult,
+  type ReadResult,
+  type ReadRawResult,
+  type GrepResult,
+  type GlobResult,
+  type WriteResult,
+  type EditResult,
+} from "deepagents";
+
+class S3Backend implements BackendProtocolV2 {
+  constructor(private bucket: string, private prefix: string = "") {
+    this.prefix = prefix.replace(/\/$/, "");
+  }
+
+  private key(path: string): string {
+    return `${this.prefix}${path}`;
+  }
+
+  async ls(path: string): Promise<LsResult> {
+    // List objects under key(path); return { files: [...] }
+    ...
+  }
+
+  async read(filePath: string, offset?: number, limit?: number): Promise<ReadResult> {
+    // Fetch object; return { content, mimeType }
+    // For binary files, return Uint8Array content
+    ...
+  }
+
+  async readRaw(filePath: string): Promise<ReadRawResult> {
+    // Return { data: FileData }
+    ...
+  }
+
+  async grep(pattern: string, path?: string | null, glob?: string | null): Promise<GrepResult> {
+    // Search text files; skip binary; return { matches: [...] }
+    ...
+  }
+
+  async glob(pattern: string, path = "/"): Promise<GlobResult> {
+    // Apply glob relative to path; return { files: [...] }
+    ...
+  }
+
+  async write(filePath: string, content: string): Promise<WriteResult> {
+    // Enforce create-only semantics; return { path: filePath, filesUpdate: null }
+    ...
+  }
+
+  async edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean): Promise<EditResult> {
+    // Read → replace → write → return { path, occurrences }
+    ...
+  }
+}
+```
+:::
+
 Postgres-style outline:
 
+:::python
 - Table `files(path text primary key, content text, created_at timestamptz, modified_at timestamptz)`
 - Map tool operations onto SQL:
-  - `ls_info` uses `WHERE path LIKE $1 || '%'`
-  - `glob_info` filter in SQL or fetch then apply glob in Python
-  - `grep_raw` can fetch candidate rows by extension or last modified time, then scan lines
+  - `ls` uses `WHERE path LIKE $1 || '%'`
+  - `glob` filter in SQL or fetch then apply glob in Python
+  - `grep` can fetch candidate rows by extension or last modified time, then scan lines
+:::
+
+:::js
+- Table `files(path text primary key, content text, mime_type text, created_at timestamptz, modified_at timestamptz)`
+- Map tool operations onto SQL:
+  - `ls` uses `WHERE path LIKE $1 || '%'` → return `LsResult`
+  - `glob` filter in SQL or fetch then apply glob locally → return `GlobResult`
+  - `grep` can fetch candidate rows by extension or last modified time, then scan lines (skip rows where `mime_type` is binary) → return `GrepResult`
+:::
 
 ## Add policy hooks
 
@@ -456,12 +551,42 @@ class GuardedBackend(FilesystemBackend):
 ```
 :::
 
+:::js
+```typescript
+import { FilesystemBackend, type WriteResult, type EditResult } from "deepagents";
+
+class GuardedBackend extends FilesystemBackend {
+  private denyPrefixes: string[];
+
+  constructor({ denyPrefixes, ...options }: { denyPrefixes: string[]; rootDir?: string }) {
+    super(options);
+    this.denyPrefixes = denyPrefixes.map(p => p.endsWith("/") ? p : p + "/");
+  }
+
+  async write(filePath: string, content: string): Promise<WriteResult> {
+    if (this.denyPrefixes.some(p => filePath.startsWith(p))) {
+      return { error: `Writes are not allowed under ${filePath}` };
+    }
+    return super.write(filePath, content);
+  }
+
+  async edit(filePath: string, oldString: string, newString: string, replaceAll = false): Promise<EditResult> {
+    if (this.denyPrefixes.some(p => filePath.startsWith(p))) {
+      return { error: `Edits are not allowed under ${filePath}` };
+    }
+    return super.edit(filePath, oldString, newString, replaceAll);
+  }
+}
+```
+:::
+
 Generic wrapper (works with any backend):
 
 :::python
 ```python
-from deepagents.backends.protocol import BackendProtocol, WriteResult, EditResult
-from deepagents.backends.utils import FileInfo, GrepMatch
+from deepagents.backends.protocol import (
+    BackendProtocol, WriteResult, EditResult, LsResult, ReadResult, GrepResult, GlobResult,
+)
 
 class PolicyWrapper(BackendProtocol):
     def __init__(self, inner: BackendProtocol, deny_prefixes: list[str] | None = None):
@@ -471,14 +596,15 @@ class PolicyWrapper(BackendProtocol):
     def _deny(self, path: str) -> bool:
         return any(path.startswith(p) for p in self.deny_prefixes)
 
-    def ls_info(self, path: str) -> list[FileInfo]:
-        return self.inner.ls_info(path)
-    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+    def ls(self, path: str) -> LsResult:
+        return self.inner.ls(path)
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         return self.inner.read(file_path, offset=offset, limit=limit)
-    def grep_raw(self, pattern: str, path: str | None = None, glob: str | None = None) -> list[GrepMatch] | str:
-        return self.inner.grep_raw(pattern, path, glob)
-    def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:
-        return self.inner.glob_info(pattern, path)
+    def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
+        return self.inner.grep(pattern, path, glob)
+    def glob(self, pattern: str, path: str = "/") -> GlobResult:
+        return self.inner.glob(pattern, path)
     def write(self, file_path: str, content: str) -> WriteResult:
         if self._deny(file_path):
             return WriteResult(error=f"Writes are not allowed under {file_path}")
@@ -490,18 +616,215 @@ class PolicyWrapper(BackendProtocol):
 ```
 :::
 
+:::js
+```typescript
+import {
+  type BackendProtocolV2,
+  type LsResult,
+  type ReadResult,
+  type ReadRawResult,
+  type GrepResult,
+  type GlobResult,
+  type WriteResult,
+  type EditResult,
+} from "deepagents";
+
+class PolicyWrapper implements BackendProtocolV2 {
+  private denyPrefixes: string[];
+
+  constructor(private inner: BackendProtocolV2, denyPrefixes: string[] = []) {
+    this.denyPrefixes = denyPrefixes.map(p => p.endsWith("/") ? p : p + "/");
+  }
+
+  private isDenied(path: string): boolean {
+    return this.denyPrefixes.some(p => path.startsWith(p));
+  }
+
+  ls(path: string): Promise<LsResult> { return this.inner.ls(path); }
+  read(filePath: string, offset?: number, limit?: number): Promise<ReadResult> { return this.inner.read(filePath, offset, limit); }
+  readRaw(filePath: string): Promise<ReadRawResult> { return this.inner.readRaw(filePath); }
+  grep(pattern: string, path?: string | null, glob?: string | null): Promise<GrepResult> { return this.inner.grep(pattern, path, glob); }
+  glob(pattern: string, path?: string): Promise<GlobResult> { return this.inner.glob(pattern, path); }
+
+  async write(filePath: string, content: string): Promise<WriteResult> {
+    if (this.isDenied(filePath)) return { error: `Writes are not allowed under ${filePath}` };
+    return this.inner.write(filePath, content);
+  }
+
+  async edit(filePath: string, oldString: string, newString: string, replaceAll = false): Promise<EditResult> {
+    if (this.isDenied(filePath)) return { error: `Edits are not allowed under ${filePath}` };
+    return this.inner.edit(filePath, oldString, newString, replaceAll);
+  }
+}
+```
+:::
+
+:::js
+## Multimodal and binary files
+
+V2 backends support binary files natively. When `read()` encounters a binary file (determined by MIME type from the file extension), it returns a `ReadResult` with `Uint8Array` content and the corresponding `mimeType`. Text files return `string` content.
+
+### Supported MIME types
+
+| Category | Extensions | MIME types |
+|----------|-----------|------------|
+| Images | `.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.svg`, `.heic`, `.heif` | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/svg+xml`, `image/heic`, `image/heif` |
+| Audio | `.mp3`, `.wav`, `.aiff`, `.aac`, `.ogg`, `.flac` | `audio/mpeg`, `audio/wav`, `audio/aiff`, `audio/aac`, `audio/ogg`, `audio/flac` |
+| Video | `.mp4`, `.webm`, `.mpeg`/`.mpg`, `.mov`, `.avi`, `.flv`, `.wmv`, `.3gpp` | `video/mp4`, `video/webm`, `video/mpeg`, `video/quicktime`, `video/x-msvideo`, `video/x-flv`, `video/x-ms-wmv`, `video/3gpp` |
+| Documents | `.pdf`, `.ppt`, `.pptx` | `application/pdf`, `application/vnd.ms-powerpoint`, `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+| Text | `.txt`, `.html`, `.json`, `.js`, `.ts`, `.py`, etc. | `text/plain`, `text/html`, `application/json`, etc. |
+
+### Read binary files
+
+```typescript
+const result = await backend.read("/workspace/screenshot.png");
+
+if (result.error) {
+  console.error(result.error);
+} else if (result.content instanceof Uint8Array) {
+  // Binary file — content is Uint8Array, mimeType is set
+  console.log(`Binary file: ${result.mimeType}`); // "image/png"
+} else {
+  // Text file — content is string
+  console.log(`Text file: ${result.mimeType}`); // "text/plain"
+}
+```
+
+### FileData format
+
+`FileData` is the type used to store file content in state and store backends.
+
+```typescript
+type FileData =
+  // Current format (v2)
+  | {
+      content: string | Uint8Array; // string for text, Uint8Array for binary
+      mimeType: string;             // e.g. "text/plain", "image/png"
+      created_at: string;           // ISO 8601 timestamp
+      modified_at: string;          // ISO 8601 timestamp
+    }
+  // Legacy format (v1)
+  | {
+      content: string[];            // array of lines
+      created_at: string;           // ISO 8601 timestamp
+      modified_at: string;          // ISO 8601 timestamp
+    };
+```
+
+Backends may encounter either format when reading from state or store. The framework handles both transparently. New writes default to the v2 format. During rolling deployments where older readers need the legacy format, pass `fileFormat: "v1"` to the backend constructor (e.g., `new StoreBackend({ fileFormat: "v1" })`).
+:::
+
+## Migrate from backend factories
+
+<Warning>
+The backend factory pattern is **deprecated**. Pass pre-constructed backend instances directly instead of factory functions.
+</Warning>
+
+Previously, backends like `StateBackend` and `StoreBackend` required a factory function that received a runtime object, because they needed runtime context (state, store) to operate. Backends now resolve this context internally via LangGraph's `get_config()`, `get_store()`, and `get_runtime()` helpers, so you can pass instances directly.
+
+### What changed
+
+| Before (deprecated) | After |
+|---|---|
+| `backend=lambda rt: StateBackend(rt)` | `backend=StateBackend()` |
+| `backend=lambda rt: StoreBackend(rt)` | `backend=StoreBackend()` |
+| `backend=lambda rt: CompositeBackend(default=StateBackend(rt), ...)` | `backend=CompositeBackend(default=StateBackend(), ...)` |
+| `backend: (config) => new StateBackend(config)` | `backend: new StateBackend()` |
+| `backend: (config) => new StoreBackend(config)` | `backend: new StoreBackend()` |
+
+### Deprecated APIs
+
+:::python
+
+| Deprecated | Replacement |
+|---|---|
+| Passing a callable to `backend=` in `create_deep_agent` | Pass a backend instance directly |
+| `runtime` constructor argument on `StateBackend(runtime)` | `StateBackend()` (no arguments needed) |
+| `runtime` constructor argument on `StoreBackend(runtime)` | `StoreBackend()` or `StoreBackend(namespace=..., store=...)` |
+| `files_update` field on `WriteResult` and `EditResult` | State writes are now handled internally by the backend |
+| `Command` wrapping in middleware write/edit tools | Tools return plain strings; no `Command(update=...)` needed |
+
+:::
+
+:::js
+
+| Deprecated | Replacement |
+|---|---|
+| `BackendFactory` type | Pass a backend instance directly |
+| `BackendRuntime` interface | Backends resolve context internally |
+| `StateBackend(runtime, options?)` constructor overload | `new StateBackend(options?)` |
+| `StoreBackend(stateAndStore, options?)` constructor overload | `new StoreBackend(options?)` |
+| `filesUpdate` field on `WriteResult` and `EditResult` | State writes are now handled internally by the backend |
+
+:::
+
+<Note>
+The factory pattern still works at runtime and emits a deprecation warning. Update your code to use direct instances before the next major version.
+</Note>
+
+### Migration example
+
+:::python
+```python
+# Before (deprecated)
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+
+agent = create_deep_agent(
+    backend=lambda rt: CompositeBackend(
+        default=StateBackend(rt),
+        routes={"/memories/": StoreBackend(rt, namespace=lambda ctx: (ctx.runtime.context.user_id,))},
+    ),
+)
+
+# After
+agent = create_deep_agent(
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={"/memories/": StoreBackend(namespace=lambda ctx: (ctx.runtime.context.user_id,))},
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+// Before (deprecated)
+import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
+
+const agent = createDeepAgent({
+  backend: (config) => new CompositeBackend(
+    new StateBackend(config),
+    { "/memories/": new StoreBackend(config, {
+      namespace: (ctx) => [ctx.runtime.context.userId],
+    }) },
+  ),
+});
+
+// After
+const agent = createDeepAgent({
+  backend: new CompositeBackend(
+    new StateBackend(),
+    { "/memories/": new StoreBackend({
+      namespace: (ctx) => [ctx.runtime.context.userId],
+    }) },
+  ),
+});
+```
+:::
+
 ## Protocol reference
 
 Backends must implement @[`BackendProtocol`].
 
-Required endpoints:
-- `ls_info(path: str) -> list[FileInfo]`
+Required methods:
+- `ls(path: str) -> LsResult`
   - Return entries with at least `path`. Include `is_dir`, `size`, `modified_at` when available. Sort by `path` for deterministic output.
-- `read(file_path: str, offset: int = 0, limit: int = 2000) -> str`
-  - Return numbered content. On missing file, return `"Error: File '/x' not found"`.
-- `grep_raw(pattern: str, path: Optional[str] = None, glob: Optional[str] = None) -> list[GrepMatch] | str`
-  - Return structured matches. For an invalid regex, return a string like `"Invalid regex pattern: ..."` (do not raise).
-- `glob_info(pattern: str, path: str = "/") -> list[FileInfo]`
+- `read(file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult`
+  - Return file data on success. On missing file, return `ReadResult(error="Error: File '/x' not found")`.
+- `grep(pattern: str, path: Optional[str] = None, glob: Optional[str] = None) -> GrepResult`
+  - Return structured matches. On error, return `GrepResult(error="...")` (do not raise).
+- `glob(pattern: str, path: str = "/") -> GlobResult`
   - Return matched files as `FileInfo` entries (empty list if none).
 - `write(file_path: str, content: str) -> WriteResult`
   - Create-only. On conflict, return `WriteResult(error=...)`. On success, set `path` and for state backends set `files_update={...}`; external backends should use `files_update=None`.
@@ -509,7 +832,115 @@ Required endpoints:
   - Enforce uniqueness of `old_string` unless `replace_all=True`. If not found, return error. Include `occurrences` on success.
 
 Supporting types:
+- `LsResult(error, entries)` — `entries` is a `list[FileInfo]` on success, `None` on failure.
+- `ReadResult(error, file_data)` — `file_data` is a `FileData` dict on success, `None` on failure.
+- `GrepResult(error, matches)` — `matches` is a `list[GrepMatch]` on success, `None` on failure.
+- `GlobResult(error, matches)` — `matches` is a `list[FileInfo]` on success, `None` on failure.
 - `WriteResult(error, path, files_update)`
 - `EditResult(error, path, files_update, occurrences)`
 - `FileInfo` with fields: `path` (required), optionally `is_dir`, `size`, `modified_at`.
 - `GrepMatch` with fields: `path`, `line`, `text`.
+- `FileData` with fields: `content` (str), `encoding` (`"utf-8"` or `"base64"`), `created_at`, `modified_at`.
+:::
+
+:::js
+Backends implement `BackendProtocolV2`. All query methods return structured Result objects with `{ error?: string, ...data }`.
+
+### Required methods
+
+- **`ls(path: string) → LsResult`**
+  - List files and directories in the specified directory (non-recursive). Directories have a trailing `/` in their path and `is_dir=true`. Include `is_dir`, `size`, `modified_at` when available.
+
+- **`read(filePath: string, offset?: number, limit?: number) → ReadResult`**
+  - Read file content. For text files, content is paginated by line offset/limit (default offset 0, limit 500). For binary files, the full raw `Uint8Array` content is returned with the `mimeType` field set. On missing file, return `{ error: "File '/x' not found" }`.
+
+- **`readRaw(filePath: string) → ReadRawResult`**
+  - Read file content as raw `FileData`. Returns the full file data including timestamps.
+
+- **`grep(pattern: string, path?: string | null, glob?: string | null) → GrepResult`**
+  - Search file contents for a literal text pattern. Binary files (determined by MIME type) are skipped. On failure, return `{ error: "..." }`.
+
+- **`glob(pattern: string, path?: string) → GlobResult`**
+  - Return files matching a glob pattern as `FileInfo` entries.
+
+- **`write(filePath: string, content: string) → WriteResult`**
+  - Create-only semantics. On conflict, return `{ error: "..." }`. On success, set `path` and for state backends set `filesUpdate={...}`; external backends should use `filesUpdate=null`.
+
+- **`edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean) → EditResult`**
+  - Enforce uniqueness of `oldString` unless `replaceAll=true`. If not found, return error. Include `occurrences` on success.
+
+### Optional methods
+
+- **`uploadFiles(files: Array<[string, Uint8Array]>) → FileUploadResponse[]`** — Upload multiple files (for sandbox backends).
+- **`downloadFiles(paths: string[]) → FileDownloadResponse[]`** — Download multiple files (for sandbox backends).
+
+### Result types
+
+| Type | Success fields | Error field |
+|------|----------------|-------------|
+| `ReadResult` | `content?: string \| Uint8Array`, `mimeType?: string` | `error` |
+| `ReadRawResult` | `data?: FileData` | `error` |
+| `LsResult` | `files?: FileInfo[]` | `error` |
+| `GlobResult` | `files?: FileInfo[]` | `error` |
+| `GrepResult` | `matches?: GrepMatch[]` | `error` |
+| `WriteResult` | `path?: string` | `error` |
+| `EditResult` | `path?: string`, `occurrences?: number` | `error` |
+
+### Supporting types
+
+- **`FileInfo`** — `path` (required), optionally `is_dir`, `size`, `modified_at`.
+- **`GrepMatch`** — `path`, `line` (1-indexed), `text`.
+- **`FileData`** — File content with timestamps. See [FileData format](#filedata-format).
+
+### Sandbox extension
+
+`SandboxBackendProtocolV2` extends `BackendProtocolV2` with:
+
+- **`execute(command: string) → ExecuteResponse`** — Run a shell command in the sandbox.
+- **`readonly id: string`** — Unique identifier for the sandbox instance.
+:::
+
+:::js
+## Update existing backends to V2
+
+<Accordion title="Migration guide">
+
+### Method renames
+
+| V1 method | V2 method | Return type change |
+|-----------|-----------|-------------------|
+| `lsInfo(path)` | `ls(path)` | `FileInfo[]` → `LsResult` |
+| `read(filePath, offset, limit)` | `read(filePath, offset, limit)` | `string` → `ReadResult` |
+| `readRaw(filePath)` | `readRaw(filePath)` | `FileData` → `ReadRawResult` |
+| `grepRaw(pattern, path, glob)` | `grep(pattern, path, glob)` | `GrepMatch[] \| string` → `GrepResult` |
+| `globInfo(pattern, path)` | `glob(pattern, path)` | `FileInfo[]` → `GlobResult` |
+| `write(...)` | `write(...)` | Unchanged (`WriteResult`) |
+| `edit(...)` | `edit(...)` | Unchanged (`EditResult`) |
+
+### Type renames
+
+| V1 type | V2 type |
+|---------|---------|
+| `BackendProtocol` | `BackendProtocolV2` |
+| `SandboxBackendProtocol` | `SandboxBackendProtocolV2` |
+
+### Adaptation utilities
+
+If you have existing V1 backends that you need to use with V2-only code, use the adaptation functions:
+
+```typescript
+import { adaptBackendProtocol, adaptSandboxProtocol } from "deepagents";
+
+// Adapt a V1 backend to V2
+const v2Backend = adaptBackendProtocol(v1Backend);
+
+// Adapt a V1 sandbox to V2
+const v2Sandbox = adaptSandboxProtocol(v1Sandbox);
+```
+
+<Note>
+The framework auto-adapts V1 backends passed to `createDeepAgent()`. Manual adaptation is only needed when calling protocol methods directly.
+</Note>
+
+</Accordion>
+:::
