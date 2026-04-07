@@ -187,6 +187,45 @@ def context_aware_tool(runtime: ToolRuntime) -> str:
 `server_info` is `None` when not running on LangGraph Server (e.g., during local development).
 :::
 
+:::js
+Access execution identity (thread ID, run ID) via `runtime.executionInfo`, and server-specific metadata (assistant ID, authenticated user) via `runtime.serverInfo` when running on LangGraph Server:
+
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const contextAwareTool = tool(
+  async (_input, runtime) => {
+    // Access thread and run IDs
+    const info = runtime.executionInfo;
+    console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
+
+    // Access server info (only available on LangGraph Server)
+    const server = runtime.serverInfo;
+    if (server != null) {
+      console.log(`Assistant: ${server.assistantId}`);  // [!code highlight]
+      if (server.user != null) {
+        console.log(`User: ${server.user.identity}`);  // [!code highlight]
+      }
+    }
+
+    return "done";
+  },
+  {
+    name: "context_aware_tool",
+    description: "A tool that uses execution and server info.",
+    schema: z.object({}),
+  }
+);
+```
+
+`serverInfo` is `null` when not running on LangGraph Server (e.g., during local development).
+:::
+
+<Note>
+Requires `deepagents>=0.5.0` (or the corresponding `langchain>=1.1.0` / `langgraph>=1.1.3` releases) for `runtime.execution_info` and `runtime.server_info`.
+</Note>
+
 ### Inside middleware
 
 You can access runtime information in middleware to create dynamic prompts, modify messages, or control agent behavior based on user context.
@@ -319,3 +358,27 @@ def auth_gate(state: AgentState, runtime: Runtime) -> dict | None:
     return None
 ```
 :::
+
+:::js
+Middleware hooks can also access `runtime.executionInfo` and `runtime.serverInfo`:
+
+```ts
+import { createMiddleware } from "langchain";
+
+const authGate = createMiddleware({
+  name: "AuthGate",
+  beforeModel: (state, runtime) => {
+    const server = runtime.serverInfo;
+    if (server != null && server.user == null) {  // [!code highlight]
+      throw new Error("Authentication required");
+    }
+    console.log(`Thread: ${runtime.executionInfo.threadId}`);  // [!code highlight]
+    return;
+  },
+});
+```
+:::
+
+<Note>
+Requires `deepagents>=0.5.0` (or the corresponding `langchain>=1.1.0` / `langgraph>=1.1.3` releases).
+</Note>

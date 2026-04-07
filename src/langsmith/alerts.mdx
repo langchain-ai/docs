@@ -16,6 +16,7 @@ Effective observability in LLM applications requires proactive detection of fail
 - API rate limit violations from model providers
 - Latency increases for your application
 - Application changes that affect feedback scores reflecting end-user experience
+- Unexpected cost spikes from LLM usage
 
 Alerts in LangSmith are project-scoped, requiring separate configuration for each monitored project.
 
@@ -32,6 +33,7 @@ LangSmith offers threshold-based alerting on the following metrics:
 | Metric Type        | Description                         | Use Case                                                                                                                                                                                 |
 | ------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Run Count**      | Tracks the total number of runs over a time window. | Monitor whether a pipeline is producing runs at the expected volume and alert when it drops unexpectedly. |
+| **Cost**           | Tracks the total cost of runs over a time window | Monitor LLM spending to alert when costs exceed expected thresholds. Requires [cost tracking](/langsmith/cost-tracking) to be configured. |
 | **Errors**   | Tracks runs with an error status. Alert on total error count or error percent (rate of errored runs out of all runs). | Monitor for failures in an application, or alert when the error rate exceeds an acceptable threshold. |
 | **Feedback Score** | Measures the average feedback score | Track [feedback from end users](/langsmith/attach-user-feedback) or [online evaluation results](/langsmith/online-evaluations-llm-as-judge) to alert on regressions. |
 | **Latency**        | Measures average run execution time | Tracks the latency of your application to alert on spikes and performance bottlenecks. |
@@ -137,6 +139,61 @@ You can preview alert behavior over a historical time window to understand how m
     - [PagerDuty Events API v2 Documentation](https://developer.pagerduty.com/docs/events-api-v2/overview/)
     - [PagerDuty Integration Guide](https://support.pagerduty.com/docs/services-and-integrations)
   </Tab>
+  <Tab title="Dynatrace">
+    Configure Dynatrace as a notification channel using Dynatrace's [Events API v2](https://docs.dynatrace.com/docs/dynatrace-api/environment-api/events-v2/post-event). This integration sends LangSmith alert events to your Dynatrace environment, enabling correlation with your broader infrastructure monitoring.
+
+    **Prerequisites**
+
+    - An active Dynatrace environment (SaaS or Managed).
+    - A Dynatrace API access token with the `events.ingest` scope.
+
+    If you're working from a custom [deployment](/langsmith/self-hosted) of LangSmith, make sure there are no firewall settings blocking egress traffic from LangSmith services.
+
+    #### 1. Create an API token in Dynatrace
+
+    1. Log in to your Dynatrace environment.
+    1. Navigate to **Access Tokens**.
+    1. Click **Generate new token**.
+    1. Provide a descriptive name (e.g., "LangSmith Alerts").
+    1. Under **Scopes**, search for and enable `events.ingest` (Ingest events).
+    1. Click **Generate token**.
+    1. Copy the generated token and store it securely. The token is only displayed once.
+
+    #### 2. Obtain your Dynatrace environment URL
+
+    Your Dynatrace environment URL follows this format:
+
+    ```
+    https://{your-environment-id}.live.dynatrace.com
+    ```
+
+    You can find your environment ID in the browser URL bar when logged in to Dynatrace.
+
+    #### 3. Configure LangSmith alert with Dynatrace
+
+    1. In the **Notifications Settings** for your alert setup in LangSmith, select **Dynatrace**.
+    1. Enter your Dynatrace environment URL.
+    1. Click the key icon to save the API token as a workspace secret or select an existing workspace secret. As a best practice, save the API token as a workspace secret rather than adding it directly. This allows you to re-use the same token across alerts for a workspace.
+    1. Configure additional notification options:
+       - **Event Type**: Select the Dynatrace event type (e.g., `CUSTOM_ALERT`, `ERROR_EVENT`)
+    1. Send a test alert by clicking **Send Test Notification**.
+    1. Verify the event appears in your Dynatrace environment.
+
+    #### Troubleshooting
+
+    If events aren't appearing in Dynatrace:
+
+    - Verify the API token has the `events.ingest` scope and is not expired.
+    - Ensure the environment URL is correct and includes your environment ID.
+    - Confirm the `Authorization` header format uses `Api-Token` (not `Bearer`).
+    - Check that your Dynatrace environment is active and accessible.
+    - Review network connectivity if your LangSmith instance is behind a firewall.
+
+    #### Additional resources
+
+    - [Dynatrace Events API v2 Documentation](https://docs.dynatrace.com/docs/dynatrace-api/environment-api/events-v2/post-event)
+    - [Dynatrace Access Tokens](https://docs.dynatrace.com/docs/manage/access-control/access-tokens)
+  </Tab>
   <Tab title="Webhook">
     Webhooks enable integration with custom services and third-party platforms by sending HTTP POST requests when alert conditions are triggered. Use webhooks to forward alert data to ticketing systems, chat applications, or custom monitoring solutions.
 
@@ -182,7 +239,7 @@ You can preview alert behavior over a historical time window to understand how m
         - `alert_rule_id`: A UUID to identify the LangSmith alert. This can be used as a de-duplication key in the webhook service.
         - `alert_rule_name`: The name of the alert rule.
         - `alert_rule_type`: The type of alert (as of 04/01/2025 all alerts are of type `threshold`).
-        - `alert_rule_attribute`: The attribute associated with the alert rule - `error_count`, `feedback_score` or `latency`.
+        - `alert_rule_attribute`: The attribute associated with the alert rule - `error_count`, `feedback_score`, `latency`, or `cost`.
         - `triggered_metric_value`: The value of the metric at the time the threshold was triggered.
         - `triggered_threshold`: The threshold that triggered the alert.
         - `timestamp`: The timestamp that triggered the alert.

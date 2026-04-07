@@ -115,10 +115,11 @@ answers = [
 ]
 
 ls_client = Client()
-dataset = ls_client.create_dataset(
-    "weather agent",
+dataset = ls_client.create_dataset("weather agent")
+ls_client.create_examples(
     inputs=[{"question": q} for q in questions],
-    outputs=[{"answers": a} for a in answers],
+    outputs=[{"answer": a} for a in answers],
+    dataset_id=dataset.id,
 )
 ```
 
@@ -168,6 +169,7 @@ If all of your graph nodes are defined as sync functions then you can use `evalu
 Requires `langsmith>=0.2.0`
 
 ```python
+import asyncio
 from langsmith import aevaluate
 
 def example_to_state(inputs: dict) -> dict:
@@ -177,13 +179,21 @@ def example_to_state(inputs: dict) -> dict:
 # Remember that langgraph graphs are also langchain runnables.
 target = example_to_state | app
 
-experiment_results = await aevaluate(
-    target,
-    data="weather agent",
-    evaluators=[correct],
-    max_concurrency=4,  # optional
-    experiment_prefix="claude-3.5-baseline",  # optional
-)
+async def main():
+    experiment_results = await aevaluate(
+        target,
+        data="weather agent",
+        evaluators=[correct],
+        max_concurrency=4,  # optional
+        experiment_prefix="claude-sonnet-4-6-baseline",  # optional
+        metadata={  # optional, used to populate model/prompt/tool columns in UI
+            "models": "anthropic:claude-sonnet-4-6",
+            "tools": [{"name": "search", "description": "Call to surf the web."}],
+        },
+    )
+    print(experiment_results)
+
+asyncio.run(main())
 ```
 
 ## Evaluating intermediate steps
@@ -197,13 +207,19 @@ def right_tool(outputs: dict) -> bool:
     tool_calls = outputs["messages"][1].tool_calls
     return bool(tool_calls and tool_calls[0]["name"] == "search")
 
-experiment_results = await aevaluate(
-    target,
-    data="weather agent",
-    evaluators=[correct, right_tool],
-    max_concurrency=4,  # optional
-    experiment_prefix="claude-3.5-baseline",  # optional
-)
+async def main():
+    experiment_results = await aevaluate(
+        target,
+        data="weather agent",
+        evaluators=[correct, right_tool],
+        max_concurrency=4,  # optional
+        experiment_prefix="claude-sonnet-4-6-baseline",  # optional
+        metadata={  # optional, used to populate model/prompt/tool columns in UI
+            "models": "anthropic:claude-sonnet-4-6",
+            "tools": [{"name": "search", "description": "Call to surf the web."}],
+        },
+    )
+    print(experiment_results)
 ```
 
 If we need access to information about intermediate steps that isn't in state, we can look at the Run object. This contains the full traces for all node inputs and outputs:
@@ -222,13 +238,19 @@ def right_tool_from_run(run: Run, example: Example) -> dict:
     right_tool = bool(tool_calls and tool_calls[0]["name"] == "search")
     return {"key": "right_tool", "value": right_tool}
 
-experiment_results = await aevaluate(
-    target,
-    data="weather agent",
-    evaluators=[correct, right_tool_from_run],
-    max_concurrency=4,  # optional
-    experiment_prefix="claude-3.5-baseline",  # optional
-)
+async def main():
+    experiment_results = await aevaluate(
+        target,
+        data="weather agent",
+        evaluators=[correct, right_tool_from_run],
+        max_concurrency=4,  # optional
+        experiment_prefix="claude-sonnet-4-6-baseline",  # optional
+        metadata={  # optional, used to populate model/prompt/tool columns in UI
+            "models": "anthropic:claude-sonnet-4-6",
+            "tools": [{"name": "search", "description": "Call to surf the web."}],
+        },
+    )
+    print(experiment_results)
 ```
 
 ## Running and evaluating individual nodes
@@ -238,13 +260,19 @@ Sometimes you want to evaluate a single node directly to save time and costs. `l
 ```python
 node_target = example_to_state | app.nodes["agent"]
 
-node_experiment_results = await aevaluate(
-    node_target,
-    data="weather agent",
-    evaluators=[right_tool_from_run],
-    max_concurrency=4,  # optional
-    experiment_prefix="claude-3.5-model-node",  # optional
-)
+async def main():
+    node_experiment_results = await aevaluate(
+        node_target,
+        data="weather agent",
+        evaluators=[right_tool_from_run],
+        max_concurrency=4,  # optional
+        experiment_prefix="claude-sonnet-4-6-model-node",  # optional
+        metadata={  # optional, used to populate model/prompt/tool columns in UI
+            "models": "anthropic:claude-sonnet-4-6",
+            "tools": [{"name": "search", "description": "Call to surf the web."}],
+        },
+    )
+    print(node_experiment_results)
 ```
 
 ## Related
@@ -256,6 +284,7 @@ node_experiment_results = await aevaluate(
 <Accordion title="Click to see a consolidated code snippet">
 
 ```python
+import asyncio
 from typing import Annotated, Literal, TypedDict
 from langchain.chat_models import init_chat_model
 from langchain.tools import tool
@@ -347,13 +376,17 @@ answers = [
 
 # Create a dataset
 ls_client = Client()
-dataset = ls_client.create_dataset(
-    "weather agent",
+dataset = ls_client.create_dataset("weather agent")
+ls_client.create_examples(
     inputs=[{"question": q} for q in questions],
-    outputs=[{"answers": a} for a in answers],
+    outputs=[{"answer": a} for a in answers],
+    dataset_id=dataset.id,
 )
 
 # Define evaluators
+
+judge_llm = init_chat_model("gpt-4.1")
+
 async def correct(outputs: dict, reference_outputs: dict) -> bool:
     instructions = (
         "Given an actual answer and an expected answer, determine whether"
@@ -383,14 +416,29 @@ def right_tool(outputs: dict) -> bool:
     tool_calls = outputs["messages"][1].tool_calls
     return bool(tool_calls and tool_calls[0]["name"] == "search")
 
+def example_to_state(inputs: dict) -> dict:
+  return {"messages": [{"role": "user", "content": inputs['question']}]}
+
+# We use LCEL declarative syntax here.
+# Remember that langgraph graphs are also langchain runnables.
+target = example_to_state | app
+
 # Run evaluation
-experiment_results = await aevaluate(
-    target,
-    data="weather agent",
-    evaluators=[correct, right_tool],
-    max_concurrency=4,  # optional
-    experiment_prefix="claude-3.5-baseline",  # optional
-)
+async def main():
+    experiment_results = await aevaluate(
+        target,
+        data="weather agent",
+        evaluators=[correct, right_tool],
+        max_concurrency=4,  # optional
+        experiment_prefix="claude-sonnet-4-6-baseline",  # optional
+        metadata={  # optional, used to populate model/prompt/tool columns in UI
+            "models": "anthropic:claude-sonnet-4-6",
+            "tools": [{"name": "search", "description": "Call to surf the web."}],
+        },
+    )
+    print(experiment_results)
+
+asyncio.run(main())
 ```
 
 </Accordion>
