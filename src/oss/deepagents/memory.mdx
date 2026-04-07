@@ -661,14 +661,7 @@ By default, the agent writes memories during the conversation (hot path). An alt
 
 For most applications, the hot path is sufficient. Add background consolidation when you need to reduce latency or improve memory quality across many conversations.
 
-All three approaches deploy a **consolidation agent** alongside your main agent: a deep agent that reads conversation history, extracts key facts, and merges them into the memory store.
-
-| Trigger | When it runs | Best for |
-|---|---|---|
-| **[Cron](#cron)** | Fixed schedule (e.g., every 6 hours) | Batching across many conversations, synthesizing trends |
-| **[Scheduled run](#scheduled-run)** | After a delay on the same thread | Simple setups where the client controls when consolidation fires |
-
-All three approaches use the same consolidation agent and deployment configuration. Define these once, then choose a trigger.
+The recommended pattern is to deploy a **consolidation agent** alongside your main agent — a deep agent that reads recent conversation history, extracts key facts, and merges them into the memory store — and trigger it on a [cron schedule](#cron). Pick a cadence that reflects how often your users actually interact with the agent: a chat product with steady daily traffic might consolidate every few hours, while a tool used a handful of times per week only needs to run nightly or weekly. Consolidating much more often than users converse just burns tokens on no-op runs.
 
 #### Consolidation agent
 
@@ -788,7 +781,7 @@ export { agent };
 
 #### Cron
 
-A [cron job](/langsmith/cron-jobs) runs the consolidation agent on a fixed schedule. The agent searches all recent conversations and synthesizes them into memory.
+A [cron job](/langsmith/cron-jobs) runs the consolidation agent on a fixed schedule. The agent searches recent conversations and synthesizes them into memory. Match the schedule to your usage patterns so consolidation runs roughly track real activity.
 
 ```mermaid
 graph LR
@@ -843,85 +836,6 @@ const cronJob = await client.crons.create(
 <Note>
 All cron schedules are interpreted in **UTC**. See [cron jobs](/langsmith/cron-jobs) for details on managing and deleting cron jobs.
 </Note>
-
-#### Scheduled run
-
-Schedule a run after each conversation using the `after_seconds` parameter. This is activity-driven: consolidation only fires when a user has been active. Pass the same `thread_id` so the consolidation agent has access to the conversation context.
-
-```mermaid
-graph LR
-    Store[(Memory store)] -.->|reads| Conv[Conversation]
-    Conv -->|after_seconds| Agent[Consolidation agent]
-    Agent -->|writes| Store
-
-    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
-    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
-    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
-
-    class Conv trigger
-    class Agent process
-    class Store output
-```
-
-The delay gives the conversation time to finish (the user may send follow-up messages) so the consolidation agent sees the full exchange.
-
-If the user sends another message during the delay, the new run's `multitask_strategy` controls what happens to the pending consolidation run. Use `rollback` on the new run to delete the stale consolidation run, then schedule a fresh one after the next response:
-
-:::python
-```python
-from langgraph_sdk import get_client
-
-client = get_client(url="<DEPLOYMENT_URL>")
-
-# Schedule consolidation 30 minutes after the conversation
-await client.runs.create(
-    thread_id=thread["thread_id"],
-    assistant_id="consolidation_agent",
-    input={"messages": [{"role": "user", "content": "Consolidate recent memories."}]},
-    after_seconds=1800,
-)
-
-# If the user sends another message, use rollback on the new run
-# to delete the pending consolidation run before starting
-await client.runs.stream(
-    thread_id=thread["thread_id"],
-    assistant_id="agent",
-    input={"messages": [{"role": "user", "content": new_message}]},
-    multitask_strategy="rollback",
-)
-```
-:::
-
-:::js
-```typescript
-import { Client } from "@langchain/langgraph-sdk";
-
-const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
-
-// Schedule consolidation 30 minutes after the conversation
-await client.runs.create(
-  thread.thread_id,
-  "consolidation_agent",
-  {
-    input: { messages: [{ role: "user", content: "Consolidate recent memories." }] },
-    afterSeconds: 1800,
-  },
-);
-
-// If the user sends another message, use rollback on the new run
-// to delete the pending consolidation run before starting
-const stream = client.runs.stream(
-  thread.thread_id,
-  "agent",
-  {
-    input: { messages: [{ role: "user", content: newMessage }] },
-    multitaskStrategy: "rollback",
-  },
-);
-```
-:::
-
-See [double texting](/langsmith/double-texting) for details on how `multitask_strategy` controls the behavior of concurrent runs on the same thread.
 
 For more on deploying agents with background processes, see [going to production](/oss/deepagents/going-to-production).
 
