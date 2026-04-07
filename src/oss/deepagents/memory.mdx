@@ -28,10 +28,21 @@ Give the agent its own persistent identity that evolves over time. Agent-scoped 
 The key is the backend namespace: setting it to `(assistant_id,)` means every conversation for this agent reads and writes to the same memory file.
 
 :::python
+<Note>
+Accessing `ctx.runtime.server_info` requires `deepagents>=0.5.0`. On older versions, read the assistant ID from `get_config()["metadata"]["assistant_id"]` instead.
+</Note>
+:::
+
+:::js
+<Note>
+Accessing `ctx.runtime.serverInfo` requires `deepagents>=1.9.0`. On older versions, read the assistant ID from `getConfig().metadata.assistantId` instead.
+</Note>
+:::
+
+:::python
 ```python
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
-from langgraph.config import get_config
 
 agent = create_deep_agent(
     memory=["/memories/AGENTS.md"],
@@ -41,12 +52,12 @@ agent = create_deep_agent(
         routes={
             "/memories/": StoreBackend(
                 namespace=lambda ctx: (
-                    get_config()["metadata"]["assistant_id"],
+                    ctx.runtime.server_info.assistant_id,  # [!code highlight]
                 ),
             ),
             "/skills/": StoreBackend(
                 namespace=lambda ctx: (
-                    get_config()["metadata"]["assistant_id"],
+                    ctx.runtime.server_info.assistant_id,  # [!code highlight]
                 ),
             ),
         },
@@ -58,7 +69,6 @@ agent = create_deep_agent(
 :::js
 ```typescript
 import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend } from "deepagents";
-import { getConfig } from "@langchain/langgraph";
 
 const agent = createDeepAgent({
   memory: ["/memories/AGENTS.md"],
@@ -67,16 +77,10 @@ const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => {
-          const config = getConfig();
-          return [config.metadata.assistantId];
-        },
+        namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
       }),
       "/skills/": new StoreBackend({
-        namespace: (ctx) => {
-          const config = getConfig();
-          return [config.metadata.assistantId];
-        },
+        namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
       }),
     },
   ),
@@ -471,17 +475,15 @@ To make past conversations searchable, wrap thread search in a tool. The `user_i
 :::python
 ```python
 from langgraph_sdk import get_client
-from langchain.tools import tool
-from langgraph.config import get_config
+from langchain.tools import tool, ToolRuntime
 
 client = get_client(url="<DEPLOYMENT_URL>")
 
 
 @tool
-async def search_past_conversations(query: str) -> str:
+async def search_past_conversations(query: str, runtime: ToolRuntime) -> str:
     """Search past conversations for relevant context."""
-    config = get_config()
-    user_id = config["metadata"]["user_id"]
+    user_id = runtime.server_info.user.identity  # [!code highlight]
     threads = await client.threads.search(
         metadata={"user_id": user_id},
         limit=5,
@@ -497,15 +499,13 @@ async def search_past_conversations(query: str) -> str:
 :::js
 ```typescript
 import { Client } from "@langchain/langgraph-sdk";
-import { getConfig } from "@langchain/langgraph";
 import { tool } from "@langchain/core/tools";
 
 const client = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
 
 const searchPastConversations = tool(
-  async ({ query }: { query: string }) => {
-    const config = getConfig();
-    const userId = config.metadata.userId;
+  async ({ query }, runtime) => {
+    const userId = runtime.serverInfo.user.identity;  // [!code highlight]
     const threads = await client.threads.search({
       metadata: { userId },
       limit: 5,
@@ -678,18 +678,16 @@ The consolidation agent reads recent conversation history and merges key facts i
 from datetime import datetime, timedelta, timezone
 
 from deepagents import create_deep_agent
-from langchain.tools import tool
-from langgraph.config import get_config
+from langchain.tools import tool, ToolRuntime
 from langgraph_sdk import get_client
 
 sdk_client = get_client(url="<DEPLOYMENT_URL>")
 
 
 @tool
-async def search_recent_conversations(query: str) -> str:
+async def search_recent_conversations(query: str, runtime: ToolRuntime) -> str:
     """Search this user's conversations updated in the last 6 hours."""
-    config = get_config()
-    user_id = config["configurable"]["langgraph_auth_user_id"]
+    user_id = runtime.server_info.user.identity  # [!code highlight]
 
     since = datetime.now(timezone.utc) - timedelta(hours=6)
     threads = await sdk_client.threads.search(
@@ -719,15 +717,13 @@ Merge new facts, remove outdated information, and keep it concise.""",
 ```typescript src/consolidation-agent.ts
 import { createDeepAgent } from "deepagents";
 import { Client } from "@langchain/langgraph-sdk";
-import { getConfig } from "@langchain/langgraph";
 import { tool } from "@langchain/core/tools";
 
 const sdkClient = new Client({ apiUrl: "<DEPLOYMENT_URL>" });
 
 const searchRecentConversations = tool(
-  async ({ query }: { query: string }) => {
-    const config = getConfig();
-    const userId = config.configurable.langgraph_auth_user_id;
+  async ({ query }, runtime) => {
+    const userId = runtime.serverInfo.user.identity;  // [!code highlight]
 
     const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
     const threads = await sdkClient.threads.search({
@@ -880,7 +876,7 @@ To give each agent its own memory in a shared deployment, add `assistant_id` to 
 ```python
 StoreBackend(
     namespace=lambda ctx: (
-        get_config()["metadata"]["assistant_id"],
+        ctx.runtime.server_info.assistant_id,  # [!code highlight]
         ctx.runtime.context.user_id,
     ),
 )
@@ -890,10 +886,10 @@ StoreBackend(
 :::js
 ```typescript
 new StoreBackend({
-  namespace: (ctx) => {
-    const config = getConfig();
-    return [config.metadata.assistantId, ctx.runtime.context.userId];
-  },
+  namespace: (ctx) => [
+    ctx.runtime.serverInfo.assistantId,  // [!code highlight]
+    ctx.runtime.context.userId,
+  ],
 })
 ```
 :::

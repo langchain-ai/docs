@@ -1565,12 +1565,45 @@ By default, the retry policy retries on any exception except for the following:
 
 ### Access execution info inside a node
 
-Requires `langgraph>=1.1.3`. When a node has a retry policy, you can inspect the current attempt number and the time of the first attempt via `runtime.execution_info`. This is useful for adjusting behavior based on retry state (e.g., switching to a fallback provider after the first attempt fails).
+You can access execution identity and retry information via `runtime.execution_info`. This surfaces thread, run, and checkpoint identifiers as well as retry state, without needing to read from `config` directly.
 
-| Attribute | Description |
-| --------- | ----------- |
-| `node_attempt` | Current execution attempt number (1-indexed). `1` on the first try, `2` on the first retry, etc. |
-| `node_first_attempt_time` | Unix timestamp (seconds) of when the first attempt started. Stays the same across retries. |
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `thread_id` | `str \| None` | Thread ID for the current execution. `None` without a checkpointer. |
+| `run_id` | `str \| None` | Run ID for the current execution. `None` when not provided in config. |
+| `checkpoint_id` | `str` | Checkpoint ID for the current execution. |
+| `checkpoint_ns` | `str` | Checkpoint namespace for the current execution. |
+| `task_id` | `str` | Task ID for the current execution. |
+| `node_attempt` | `int` | Current execution attempt number (1-indexed). `1` on the first try, `2` on the first retry, etc. |
+| `node_first_attempt_time` | `float \| None` | Unix timestamp (seconds) of when the first attempt started. Stays the same across retries. |
+
+#### Access thread and run IDs
+
+Use `execution_info` to access the thread ID, run ID, and other identity fields inside a node:
+
+```python
+from langgraph.graph import StateGraph, START, END
+from langgraph.runtime import Runtime
+from typing_extensions import TypedDict
+
+class State(TypedDict):
+    result: str
+
+def my_node(state: State, runtime: Runtime):
+    info = runtime.execution_info
+    print(f"Thread: {info.thread_id}, Run: {info.run_id}")  # [!code highlight]
+    return {"result": "done"}
+
+builder = StateGraph(State)
+builder.add_node("my_node", my_node)
+builder.add_edge(START, "my_node")
+builder.add_edge("my_node", END)
+graph = builder.compile()
+```
+
+#### Adjust behavior based on retry state
+
+When a node has a retry policy, use `execution_info` to inspect the current attempt number and switch to a fallback after the first attempt fails:
 
 ```python
 from langgraph.graph import StateGraph, START, END
@@ -1596,6 +1629,147 @@ graph = builder.compile()
 ```
 
 `execution_info` is available on the `Runtime` object even without a retry policy — `node_attempt` defaults to `1` and `node_first_attempt_time` is set to the time the node starts executing.
+
+### Access server info inside a node
+
+When your graph runs on LangGraph Server, you can access server-specific metadata via `runtime.server_info`. This surfaces the assistant ID, graph ID, and authenticated user without needing to read from config metadata or configurable keys directly.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `assistant_id` | `str` | The assistant ID for the current deployment. |
+| `graph_id` | `str` | The graph ID for the current deployment. |
+| `user` | `BaseUser \| None` | The authenticated user, if [custom auth](/langsmith/custom-auth) is configured. |
+
+```python
+from langgraph.graph import StateGraph, START, END
+from langgraph.runtime import Runtime
+from typing_extensions import TypedDict
+
+class State(TypedDict):
+    result: str
+
+def my_node(state: State, runtime: Runtime):
+    server = runtime.server_info
+    if server is not None:
+        print(f"Assistant: {server.assistant_id}, Graph: {server.graph_id}")  # [!code highlight]
+        if server.user is not None:
+            print(f"User: {server.user.identity}")
+    return {"result": "done"}
+
+builder = StateGraph(State)
+builder.add_node("my_node", my_node)
+builder.add_edge(START, "my_node")
+builder.add_edge("my_node", END)
+graph = builder.compile()
+```
+
+`server_info` is `None` when the graph is not running on LangGraph Server (e.g., during local development or testing).
+
+<Note>
+Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`) for `runtime.execution_info` and `runtime.server_info`.
+</Note>
+
+:::
+
+:::js
+
+### Access execution info inside a node
+
+You can access execution identity and retry information via `runtime.executionInfo`. This surfaces thread, run, and checkpoint identifiers as well as retry state, without needing to read from `config` directly.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `threadId` | `string \| undefined` | Thread ID for the current execution. |
+| `runId` | `string \| undefined` | Run ID for the current execution. |
+| `checkpointId` | `string` | Checkpoint ID for the current execution. |
+| `checkpointNs` | `string` | Checkpoint namespace for the current execution. |
+| `taskId` | `string` | Task ID for the current execution. |
+| `nodeAttempt` | `number` | Current execution attempt number (1-indexed). |
+| `nodeFirstAttemptTime` | `number \| undefined` | Unix timestamp (seconds) of when the first attempt started. Stays the same across retries. |
+
+#### Access thread and run IDs
+
+Use `executionInfo` to access the thread ID, run ID, and other identity fields inside a node:
+
+```ts
+import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  result: z.string(),
+});
+
+const myNode: GraphNode<typeof State> = async (state, runtime) => {
+  const info = runtime.executionInfo;
+  console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
+  return { result: "done" };
+};
+
+const graph = new StateGraph(State)
+  .addNode("my_node", myNode)
+  .addEdge(START, "my_node")
+  .addEdge("my_node", END)
+  .compile();
+```
+
+#### Adjust behavior based on retry state
+
+When a node has a retry policy, use `executionInfo` to inspect the current attempt number and switch to a fallback after the first attempt fails:
+
+```ts
+import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  result: z.string(),
+});
+
+const myNode: GraphNode<typeof State> = async (state, runtime) => {
+  const info = runtime.executionInfo;
+  if (info.nodeAttempt > 1) {  // [!code highlight]
+    // use a fallback on retries
+    return { result: await callFallbackApi() };
+  }
+  return { result: await callPrimaryApi() };
+};
+
+const graph = new StateGraph(State)
+  .addNode("my_node", myNode, { retryPolicy: { maxAttempts: 3 } })
+  .addEdge(START, "my_node")
+  .addEdge("my_node", END)
+  .compile();
+```
+
+`executionInfo` is available on the `Runtime` object even without a retry policy — `nodeAttempt` defaults to `1` and `nodeFirstAttemptTime` is set to the time the node starts executing.
+
+### Access server info inside a node
+
+When your graph runs on LangGraph Server, you can access server-specific metadata via `runtime.serverInfo`.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `assistantId` | `string` | The assistant ID for the current deployment. |
+| `graphId` | `string` | The graph ID for the current deployment. |
+| `user` | `BaseUser \| null` | The authenticated user, if [custom auth](/langsmith/custom-auth) is configured. |
+
+```ts
+const myNode: GraphNode<typeof State> = async (state, runtime) => {
+  const server = runtime.serverInfo;
+  if (server != null) {
+    console.log(`Assistant: ${server.assistantId}, Graph: ${server.graphId}`);  // [!code highlight]
+    if (server.user != null) {
+      console.log(`User: ${server.user.identity}`);
+    }
+  }
+  return { result: "done" };
+};
+```
+
+`serverInfo` is `null` when the graph is not running on LangGraph Server.
+
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`) for `runtime.executionInfo` and `runtime.serverInfo`.
+</Note>
 
 :::
 
@@ -3315,16 +3489,18 @@ A common use case is updating graph state from inside a tool. For example, in a 
 
 :::python
 ```python
+from langchain.tools import ToolRuntime
+
 @tool
-def lookup_user_info(tool_call_id: Annotated[str, InjectedToolCallId], config: RunnableConfig):
+def lookup_user_info(runtime: ToolRuntime):
     """Use this to look up user information to better assist them with their questions."""
-    user_info = get_user_info(config.get("configurable", {}).get("user_id"))
+    user_info = get_user_info(runtime.server_info.user.identity)  # [!code highlight]
     return Command(
         update={
             # update the state keys
             "user_info": user_info,
             # update the message history
-            "messages": [ToolMessage("Successfully looked up user information", tool_call_id=tool_call_id)]
+            "messages": [ToolMessage("Successfully looked up user information", tool_call_id=runtime.tool_call_id)]
         }
     )
 ```
@@ -3337,8 +3513,8 @@ import { Command } from "@langchain/langgraph";
 import * as z from "zod";
 
 const lookupUserInfo = tool(
-  async (input, config) => {
-    const userId = config.configurable?.userId;
+  async (input, runtime) => {
+    const userId = runtime.serverInfo?.user?.identity;  // [!code highlight]
     const userInfo = getUserInfo(userId);
     return new Command({
       update: {
@@ -3348,7 +3524,7 @@ const lookupUserInfo = tool(
         messages: [{
           role: "tool",
           content: "Successfully looked up user information",
-          tool_call_id: config.toolCall.id
+          tool_call_id: runtime.toolCall.id
         }]
       }
     });
