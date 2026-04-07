@@ -19,7 +19,7 @@ This guide provides a quick overview for getting started with Moonshot AI [chat 
 
 ### Model features
 
-| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | [Video input](/oss/langchain/messages#multimodal) | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | [Video input](/oss/langchain/messages#multimodal) (`kimi-k2.5` only) | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
 | :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
 | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
 
@@ -39,15 +39,12 @@ if not os.getenv("MOONSHOT_API_KEY"):
     os.environ["MOONSHOT_API_KEY"] = getpass.getpass("Enter your Moonshot API key: ")
 ```
 
-By default, the package targets Moonshot's international endpoint. If you are using Moonshot's China endpoint explicitly, you can set:
+By default, the package uses Moonshot's international endpoint (`https://api.moonshot.ai/v1`). To use the China endpoint instead, set:
 
 ```python
 import os
 
-os.environ.setdefault("MOONSHOT_API_BASE", "https://api.moonshot.ai/v1")
-
-# If you are using the China endpoint instead, use:
-# os.environ["MOONSHOT_API_BASE"] = "https://api.moonshot.cn/v1"
+os.environ["MOONSHOT_API_BASE"] = "https://api.moonshot.cn/v1"
 ```
 
 To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
@@ -92,7 +89,7 @@ llm = ChatMoonshot(
 ```
 
 <Note>
-    For `kimi-k2.5`, `thinking=True` requires `temperature=1.0`, while `thinking=False` requires `temperature=0.6`.
+    For `kimi-k2.5`, if `temperature` is set, it must be `1.0` when `thinking=True` and `0.6` when `thinking=False`. Omitting `thinking` (or setting it to `None`) is treated as thinking-enabled for validation purposes. To use `temperature=0.6`, explicitly set `thinking=False`.
 </Note>
 
 ## Invocation
@@ -109,9 +106,6 @@ print(ai_msg.text)
 print(ai_msg.usage_metadata)
 ```
 
-<Tip>
-    `ChatMoonshot` returns standard LangChain `AIMessage` objects, so you can use normal LangChain invocation patterns with tuple messages, message objects, or LCEL pipelines.
-</Tip>
 
 ## Reasoning output
 
@@ -198,12 +192,10 @@ response = llm_with_tools.invoke(messages)
 print(response.tool_calls)
 
 if response.tool_calls:
+    tools_map = {"add": add, "multiply": multiply}
     tool_results = []
     for tool_call in response.tool_calls:
-        if tool_call["name"] == "add":
-            result = add.invoke(tool_call["args"])
-        else:
-            result = multiply.invoke(tool_call["args"])
+        result = tools_map[tool_call["name"]].invoke(tool_call["args"])
         tool_results.append(
             ToolMessage(content=str(result), tool_call_id=tool_call["id"])
         )
@@ -213,7 +205,7 @@ if response.tool_calls:
 ```
 
 <Note>
-    The integration accepts standard `tool_choice` values for API compatibility, but forced `tool_choice` is intentionally treated as unsupported in the current LangChain standard-test suite. For `kimi-k2.5` with `thinking=True`, tool forcing must remain `tool_choice="auto"` or `"none"`.
+    For `kimi-k2.5` with `thinking=True`, `tool_choice` must be `"auto"` or `"none"`. Forced tool choice (specifying a function name) is not supported.
 </Note>
 
 ## Structured output
@@ -269,7 +261,7 @@ print(response.text)
 - `ChatMoonshot` is a standalone LangChain integration package for Moonshot AI chat models built on top of `langchain-openai`.
 - Moonshot-specific request controls exposed by the package include `thinking`, `prompt_cache_key`, `safety_identifier`, and `max_completion_tokens`.
 - `kimi-k2.5` is validated more strictly than generic OpenAI-compatible chat models.
-- For `kimi-k2.5`, `top_p` must remain `0.95`, `n` must remain `1`, and both penalties must remain `0.0`.
+- For `kimi-k2.5`, `top_p` must remain `0.95`, `n` must remain `1`, and both `presence_penalty` and `frequency_penalty` must remain `0.0`.
 - When `thinking=True`, Moonshot builtin `$web_search` is rejected for `kimi-k2.5`.
 
 ## Repository
