@@ -1,0 +1,299 @@
+---
+title: Deploy with the CLI
+description: Deploy a Deep Agent to LangSmith with the deepagents deploy command and deepagents.toml configuration file
+---
+
+The [Deep Agents CLI](/oss/deepagents/cli/overview) includes a `deploy` command that packages and deploys your agent to [LangSmith Deployment](/langsmith/deployment) in a single step. Define your agent's configuration in a `deepagents.toml` file and deploy directly from your project directory.
+
+```bash
+deepagents deploy
+```
+
+By default, the command looks for `deepagents.toml` in the current directory. Pass `--config` to use a different path:
+
+```bash
+deepagents deploy --config path/to/deepagents.toml
+```
+
+## Configuration file
+
+`deepagents.toml` is the single configuration file for your deployed agent. It controls the agent's identity, memory, skills, tools, MCP servers, sandbox environment, and build settings. Every section except `[agent]` is optional and has sensible defaults.
+
+Here is a full example with all available options:
+
+```toml deepagents.toml
+[agent]
+name = "my-agent"
+model = "anthropic:claude-sonnet-4-6"
+system_prompt = "You are a helpful assistant that specializes in data analysis."
+
+[memory]
+sources = ["./AGENTS.md"]
+scope = "agent"
+
+[skills]
+sources = ["./skills/"]
+
+[tools]
+python_file = "./tools.py"
+functions = ["search_database", "run_query"]
+
+[mcp]
+config = "./.mcp.json"
+
+[sandbox]
+provider = "langsmith"
+template = "deepagents-deploy"
+image = "python:3"
+
+[deploy]
+python_version = "3.12"
+dependencies = ["pandas", "numpy"]
+env_file = ".env"
+```
+
+## Sections
+
+### `[agent]` (required)
+
+Core agent identity. This is the only required section. For more on model selection and provider configuration, see [models](/oss/deepagents/models).
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | string | **(required)** | Name for the deployed agent. Used as the assistant identifier in LangSmith. |
+| `model` | string | `"anthropic:claude-sonnet-4-6"` | Model identifier in `provider:model` format. |
+| `system_prompt` | string | `""` | System prompt injected at the start of every conversation. |
+
+```toml
+[agent]
+name = "research-assistant"
+model = "anthropic:claude-sonnet-4-6"
+system_prompt = """You are a research assistant that helps users find and synthesize
+information from academic papers. Always cite your sources."""
+```
+
+<Note>
+The <code>name</code> field is the only required value in the entire configuration file. Everything else has defaults.
+</Note>
+
+### `[memory]`
+
+Configure persistent memory files (such as `AGENTS.md`) that are loaded into the agent's context. Memory sources are files that the agent can read at the start of each conversation to recall accumulated knowledge and instructions. For memory patterns like self-improving instructions and knowledge bases, see [memory](/oss/deepagents/memory).
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `sources` | list of strings | `[]` | Paths to memory files, relative to the project root. Each path must point to an existing file. |
+| `scope` | string | `"agent"` | Memory isolation level. `"agent"` shares memory across all users. `"user"` isolates memory per user via the authenticated user ID. |
+
+```toml
+[memory]
+sources = ["./AGENTS.md", "./docs/guidelines.md"]
+scope = "user"
+```
+
+**Scope behavior:**
+
+- `"agent"`: All users share the same memory. Changes one user makes are visible to everyone. Use this for shared knowledge bases or team-wide instructions.
+- `"user"`: Each user gets their own copy of memory. Use this when the agent should learn per-user preferences without cross-contamination.
+
+<Warning>
+With <code>scope = "agent"</code>, any user can write to shared memory. This is a prompt injection vector if untrusted users have access. Use <code>"user"</code> scope unless you have a specific reason to share memory and have mitigations in place.
+</Warning>
+
+### `[skills]`
+
+Point to directories containing skill definitions. Each source must be a directory (not a file) containing `SKILL.md` files that define the skill's name, description, and instructions. For how to author and organize skills, see [skills](/oss/deepagents/skills).
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `sources` | list of strings | `[]` | Paths to skill directories, relative to the project root. Each path must be an existing directory. |
+
+```toml
+[skills]
+sources = ["./skills/", "./shared-skills/data-analysis/"]
+```
+
+The agent discovers skills by scanning each directory for `SKILL.md` files. Subdirectories are included, so a single top-level path can contain multiple skills:
+
+```txt
+skills/
+├── code-review/
+│   └── SKILL.md
+├── data-analysis/
+│   └── SKILL.md
+└── summarization/
+    └── SKILL.md
+```
+
+### `[tools]`
+
+Register custom Python tools. Functions decorated with `@tool` in the specified file are discovered and made available to the agent.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `python_file` | string | `null` | Path to a Python file containing `@tool`-decorated functions, relative to the project root. |
+| `functions` | list of strings | `null` | Explicit list of function names to register from the file. If omitted, all `@tool`-decorated functions in the file are auto-discovered. |
+
+```toml
+[tools]
+python_file = "./tools.py"
+functions = ["search_database", "run_query"]
+```
+
+When `functions` is omitted, auto-discovery registers every function decorated with `@tool`:
+
+```toml
+[tools]
+python_file = "./tools.py"
+# All @tool functions in tools.py are registered automatically
+```
+
+Example `tools.py`:
+
+```python tools.py
+from langchain.tools import tool
+
+@tool
+def search_database(query: str) -> str:
+    """Search the internal database for relevant records."""
+    # Implementation here
+    ...
+
+@tool
+def run_query(sql: str) -> str:
+    """Execute a read-only SQL query against the data warehouse."""
+    # Implementation here
+    ...
+```
+
+### `[mcp]`
+
+Connect external [MCP](https://modelcontextprotocol.io/) servers to give the agent access to additional tools and resources. For details on configuring MCP tools, see [MCP tools](/oss/deepagents/cli/mcp-tools).
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `config` | string | `null` | Path to an MCP configuration file (typically `.mcp.json`), relative to the project root. |
+
+```toml
+[mcp]
+config = "./.mcp.json"
+```
+
+The MCP config file follows the standard MCP format:
+
+```json .mcp.json
+{
+  "mcpServers": {
+    "my-server": {
+      "type": "sse",
+      "url": "https://my-mcp-server.example.com/sse"
+    }
+  }
+}
+```
+
+<Warning>
+Only <code>http</code> and <code>sse</code> transports are supported in deployed contexts. Servers using <code>stdio</code> transport will fail validation because there is no local process to spawn in a deployed environment. Convert stdio servers to http or sse before deploying.
+</Warning>
+
+### `[sandbox]`
+
+Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes).
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `provider` | string | `"langsmith"` | Sandbox provider. Determines where the container runs. |
+| `template` | string | `"deepagents-deploy"` | Provider-specific template name for the sandbox environment. |
+| `image` | string | `"python:3"` | Base Docker image for the sandbox container. |
+
+```toml
+[sandbox]
+provider = "langsmith"
+template = "deepagents-deploy"
+image = "python:3.12-slim"
+```
+
+Use a custom image when your agent needs pre-installed system packages or libraries:
+
+```toml
+[sandbox]
+provider = "langsmith"
+image = "python:3.12-slim"
+# System-level dependencies are baked into the image.
+# Python dependencies go in [deploy].dependencies.
+```
+
+### `[deploy]`
+
+Build settings that control how the deployment artifact is constructed.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `python_version` | string | `"3.12"` | Python version for the deployment runtime. |
+| `dependencies` | list of strings | `[]` | Additional Python packages to install in the deployment. These are installed alongside the agent code. |
+| `env_file` | string | `null` | Path to a `.env` file containing environment variables (API keys, secrets). The file must exist if specified. |
+
+```toml
+[deploy]
+python_version = "3.12"
+dependencies = ["pandas>=2.0", "numpy", "httpx"]
+env_file = ".env"
+```
+
+<Tip>
+Dependencies specified here are installed in the deployment image at build time. For sandbox-specific packages that the agent installs at runtime, use the sandbox's <code>execute</code> tool instead.
+</Tip>
+
+## Minimal configuration
+
+The only required field is `[agent].name`. A minimal `deepagents.toml` looks like this:
+
+```toml deepagents.toml
+[agent]
+name = "my-agent"
+```
+
+This deploys an agent with all defaults: the `anthropic:claude-sonnet-4-6` model, no persistent memory, no custom tools, and a LangSmith sandbox.
+
+## Starter template
+
+Run `deepagents init` to generate a starter `deepagents.toml` with commented examples for every section:
+
+```bash
+deepagents init
+```
+
+This creates:
+
+```toml deepagents.toml
+[agent]
+name = "my-agent"
+model = "anthropic:claude-sonnet-4-6"
+# system_prompt = "You are a helpful assistant"
+
+[memory]
+sources = ["./AGENTS.md"]
+scope = "agent"  # "agent" = shared across all users, "user" = per-user isolation
+
+[skills]
+sources = ["./skills/"]
+
+# [tools]
+# python_file = "./tools.py"
+# functions = ["my_tool"]  # Optional: explicit list (else auto-discover @tool functions)
+
+# [mcp]
+# config = "./.mcp.json"  # Only http/sse servers supported in deployed context
+
+[sandbox]
+provider = "langsmith"
+# template = "deepagents-deploy"
+# image = "python:3"
+
+[deploy]
+python_version = "3.12"
+# dependencies = []
+# env_file = ".env"
+```
+
+
