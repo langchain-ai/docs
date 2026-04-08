@@ -8,7 +8,7 @@ The CLI stores its configuration in the `~/.deepagents/` directory. The main con
 
 | File | Format | Purpose |
 |------|--------|---------|
-| `config.toml` | [TOML](https://toml.io/) | Model defaults, provider settings, constructor params, profile overrides, themes, update settings, MCP trust store |
+| `config.toml` | TOML | Model defaults, provider settings, constructor params, profile overrides, themes, update settings, MCP trust store |
 | `.env` | Dotenv | Global API keys and secrets |
 | `hooks.json` | JSON | External tool subscriptions to CLI lifecycle events |
 | `.mcp.json` | JSON | Global MCP server definitions |
@@ -51,6 +51,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 LANGSMITH_API_KEY=lsv2_...
 TAVILY_API_KEY=tvly-...
+
+# If OPENAI_API_KEY is already exported in your shell for other tools,
+# use the prefix to give the CLI its own key without conflict
+DEEPAGENTS_CLI_OPENAI_API_KEY=sk-cli-only-...
 ```
 
 Then override per-project where needed by placing a `.env` in the project directory.
@@ -93,15 +97,37 @@ temperature = 0.7
 
 Providers have the following configuration options:
 
-| Key | Description |
-| --- | --- |
-| `models` | `string[]` (optional). A list of model names to show in the interactive `/model` switcher for this provider. For providers that already ship with model profiles, any names you add here appear alongside the bundled ones — useful for newly released models that haven't been added to the package yet. For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.<br></br>Models listed here **bypass** the profile-based [filtering criteria](/oss/deepagents/cli/providers#which-models-appear-in-the-switcher) and always appear in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.<br></br>This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time. |
-| `api_key_env` | `string` (optional). Optionally override the environment variable name checked for credentials. Most chat model packages read from a default env var automatically — see the [Provider reference](/oss/deepagents/cli/providers#provider-reference) table for which variable each provider checks. |
-| `base_url` | `string` (optional). Optionally override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info. |
-| `params` | `object` (optional). Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict). |
-| `profile` | `object` (optional). (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile. |
-| `class_path` | `string` (optional). Used for [arbitrary model](#arbitrary-providers) providers. Optional fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass. |
-| `enabled` | `boolean` (optional, default `true`). Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`. |
+<ResponseField name="models" type="string[]" post={["optional"]}>
+    A list of model names to show in the interactive `/model` switcher for this provider. For providers that already ship with model profiles, any names you add here appear alongside the bundled ones, useful for newly released models that haven't been added to the package yet. For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
+
+    Models listed here **bypass** the profile-based [filtering criteria](/oss/deepagents/cli/providers#which-models-appear-in-the-switcher) and always appear in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.
+
+    This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time.
+</ResponseField>
+
+<ResponseField name="api_key_env" type="string" post={["optional"]}>
+    Override the environment variable name checked for credentials. Most chat model packages read from a default env var automatically. See the [Provider reference](/oss/deepagents/cli/providers#provider-reference) table for which variable each provider checks.
+</ResponseField>
+
+<ResponseField name="base_url" type="string" post={["optional"]}>
+    Override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info.
+</ResponseField>
+
+<ResponseField name="params" type="object" post={["optional"]}>
+    Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
+</ResponseField>
+
+<ResponseField name="profile" type="object" post={["optional"]}>
+    (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile.
+</ResponseField>
+
+<ResponseField name="class_path" type="string" post={["optional"]}>
+    Used for [arbitrary model](#arbitrary-providers) providers. Fully-qualified Python class in `module.path:ClassName` format. When set, the CLI imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" default="true" post={["optional"]}>
+    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
+</ResponseField>
 
 ### Model constructor params
 
@@ -312,26 +338,27 @@ Your provider package may optionally provide model profiles at a `_PROFILES` dic
 
 By default, when the CLI loads skills it validates that a resolved skill file path stays inside one of the standard [skill directories](/oss/deepagents/data-locations#skills). This prevents symlinks inside skill directories from reading arbitrary files outside those roots.
 
-If you store shared skill assets in a non-standard location and use symlinks from a standard skill directory to reference them, you can add that location to the containment allowlist. This does **not** add a new skill discovery location — skills are still only discovered from the standard directories.
+If you store shared skill assets in a non-standard location and use symlinks from a standard skill directory to reference them, you can add that location to the containment allowlist. This does **not** add a new skill discovery location: skills are still only discovered from the standard directories.
 
-<Tabs>
-    <Tab title="Config file">
-        ```toml
-        [skills]
-        extra_allowed_dirs = [
-            "~/shared-skills",
-            "/opt/team-skills",
-        ]
-        ```
-    </Tab>
-    <Tab title="Environment variable">
-        ```bash
-        export DEEPAGENTS_CLI_EXTRA_SKILLS_DIRS="~/shared-skills:/opt/team-skills"
-        ```
-    </Tab>
-</Tabs>
+<ResponseField name="extra_allowed_dirs" type="string[]" post={["optional"]}>
+    Paths added to the skill containment allowlist. Supports `~` expansion.
 
-When the environment variable is set, it takes precedence over the config file value. Paths support `~` expansion. Changes take effect on `/reload`.
+    ```toml
+    [skills]
+    extra_allowed_dirs = [
+        "~/shared-skills",
+        "/opt/team-skills",
+    ]
+    ```
+</ResponseField>
+
+Alternatively, set the `DEEPAGENTS_CLI_EXTRA_SKILLS_DIRS` environment variable as a colon-separated list:
+
+```bash
+export DEEPAGENTS_CLI_EXTRA_SKILLS_DIRS="~/shared-skills:/opt/team-skills"
+```
+
+When the environment variable is set, it takes precedence over the config file value. Changes take effect on `/reload`.
 
 ---
 
@@ -339,7 +366,7 @@ When the environment variable is set, it takes precedence over the config file v
 
 Use `/theme` to open an interactive theme selector. Navigate the list to preview themes in real-time, press `Enter` to persist your choice to `config.toml`.
 
-The CLI ships with many built-in themes. The selected theme is persisted under `[ui]`:
+The CLI ships with many built-in themes. The default theme is `langchain`, a dark theme with LangChain-branded colors. The selected theme is persisted under `[ui]`:
 
 ```toml
 [ui]
@@ -430,16 +457,37 @@ To pre-configure auto-update for managed installs, set `DEEPAGENTS_CLI_AUTO_UPDA
 
 All CLI-specific environment variables use the `DEEPAGENTS_CLI_` prefix. See [`DEEPAGENTS_CLI_` prefix](#deepagents_cli_-prefix) for how the prefix also works as an override for third-party credentials.
 
-| Variable | Description |
-|----------|-------------|
-| `DEEPAGENTS_CLI_AUTO_UPDATE` | Enable automatic CLI updates (`1`, `true`, or `yes`) |
-| `DEEPAGENTS_CLI_DEBUG` | Enable verbose debug logging to a file |
-| `DEEPAGENTS_CLI_DEBUG_FILE` | Path for the debug log file (default: `/tmp/deepagents_debug.log`) |
-| `DEEPAGENTS_CLI_EXTRA_SKILLS_DIRS` | Colon-separated paths added to the [skill containment allowlist](#extra-allowed-directories) |
-| `DEEPAGENTS_CLI_LANGSMITH_PROJECT` | Override the LangSmith project name for agent traces. See [Tracing with LangSmith](/oss/deepagents/cli/overview#tracing-with-langsmith) |
-| `DEEPAGENTS_CLI_NO_UPDATE_CHECK` | Disable automatic update checking when set |
-| `DEEPAGENTS_CLI_SHELL_ALLOW_LIST` | Comma-separated shell commands to allow (or `recommended` / `all`) |
-| `DEEPAGENTS_CLI_USER_ID` | Attach a user identifier to LangSmith trace metadata |
+<ResponseField name="DEEPAGENTS_CLI_AUTO_UPDATE" type="string" post={["optional"]}>
+    Enable automatic CLI updates (`1`, `true`, or `yes`).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CLI_DEBUG" type="string" post={["optional"]}>
+    Enable verbose debug logging to a file.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CLI_DEBUG_FILE" type="string" default="/tmp/deepagents_debug.log" post={["optional"]}>
+    Path for the debug log file.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CLI_EXTRA_SKILLS_DIRS" type="string" post={["optional"]}>
+    Colon-separated paths added to the [skill containment allowlist](#extra-allowed-directories).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CLI_LANGSMITH_PROJECT" type="string" post={["optional"]}>
+    Override the LangSmith project name for agent traces. See [Tracing with LangSmith](/oss/deepagents/cli/overview#tracing-with-langsmith).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CLI_NO_UPDATE_CHECK" type="string" post={["optional"]}>
+    Disable automatic update checking when set.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CLI_SHELL_ALLOW_LIST" type="string" post={["optional"]}>
+    Comma-separated shell commands to allow (or `recommended` / `all`).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CLI_USER_ID" type="string" post={["optional"]}>
+    Attach a user identifier to LangSmith trace metadata.
+</ResponseField>
 
 ---
 
@@ -482,10 +530,13 @@ Now every time a session starts or ends, the CLI appends the event payload to `~
 
 The config file contains a single `hooks` array. Each entry has:
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `command` | `list[str]` | Yes | Command and arguments to run (no shell expansion — use `["bash", "-c", "..."]` if needed) |
-| `events` | `list[str]` | No | Event names to subscribe to. Omit or leave empty to receive **all** events |
+<ResponseField name="command" type="list[str]" required>
+    Command and arguments to run. No shell expansion: use `["bash", "-c", "..."]` if needed.
+</ResponseField>
+
+<ResponseField name="events" type="list[str]" post={["optional"]}>
+    Event names to subscribe to. Omit or leave empty to receive **all** events.
+</ResponseField>
 
 ```json
 {
@@ -520,17 +571,17 @@ Each hook command receives a JSON object on stdin with an `"event"` key plus eve
 
 Fired when an agent session begins (both interactive and non-interactive modes).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `thread_id` | `string` | The session thread identifier |
+<ResponseField name="thread_id" type="string" required>
+    The session thread identifier.
+</ResponseField>
 
 #### `session.end`
 
 Fired when a session exits.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `thread_id` | `string` | The session thread identifier |
+<ResponseField name="thread_id" type="string" required>
+    The session thread identifier.
+</ResponseField>
 
 #### `user.prompt`
 
@@ -548,25 +599,25 @@ No additional fields.
 
 Fired before the approval dialog when one or more tool calls need user permission.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `tool_names` | `list[str]` | Names of the tools requesting approval |
+<ResponseField name="tool_names" type="list[str]" required>
+    Names of the tools requesting approval.
+</ResponseField>
 
 #### `tool.error`
 
 Fired when a tool call returns an error.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `tool_names` | `list[str]` | Names of the tool(s) that errored |
+<ResponseField name="tool_names" type="list[str]" required>
+    Names of the tool(s) that errored.
+</ResponseField>
 
 #### `task.complete`
 
 Fired when the agent finishes its current task (the streaming loop ends without further interrupts).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `thread_id` | `string` | The session thread identifier |
+<ResponseField name="thread_id" type="string" required>
+    The session thread identifier.
+</ResponseField>
 
 #### `context.compact`
 
@@ -585,8 +636,7 @@ No additional fields.
 
 ### Hook examples
 
-#### Log all events to a file
-
+<Accordion title="Log all events to a file">
 ```json
 {
   "hooks": [
@@ -597,9 +647,9 @@ No additional fields.
   ]
 }
 ```
+</Accordion>
 
-#### Desktop notification on task completion (macOS)
-
+<Accordion title="Desktop notification on task completion (macOS)">
 ```json
 {
   "hooks": [
@@ -613,9 +663,9 @@ No additional fields.
   ]
 }
 ```
+</Accordion>
 
-#### Python handler
-
+<Accordion title="Python handler">
 Write a handler script that reads the JSON payload from stdin:
 
 ```python title="my_handler.py"
@@ -641,6 +691,7 @@ elif event == "permission.request":
   ]
 }
 ```
+</Accordion>
 
 ### Security considerations
 
