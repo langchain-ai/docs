@@ -210,35 +210,34 @@ Use with extreme caution and only in appropriate environments.
 
 #### Namespace factories
 
-A namespace factory controls where `StoreBackend` reads and writes data. It receives a `BackendContext` and returns a tuple of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
+A namespace factory controls where `StoreBackend` reads and writes data. It receives a LangGraph @[`Runtime`] and returns a tuple of strings used as the store namespace. Use namespace factories to isolate data between users, tenants, or assistants.
 
 Pass the namespace factory to the `namespace` parameter when constructing a `StoreBackend`:
 
 ```python
-NamespaceFactory = Callable[[BackendContext], tuple[str, ...]]
+NamespaceFactory = Callable[[Runtime], tuple[str, ...]]
 ```
 
-The `BackendContext` provides:
-- `ctx.runtime.context` — User-supplied context passed via LangGraph's [context schema](https://langchain-ai.github.io/langgraph/concepts/runtime/) (for example, `user_id`)
+The `Runtime` provides:
+- `rt.context` — User-supplied context passed via LangGraph's [context schema](https://langchain-ai.github.io/langgraph/concepts/runtime/) (for example, `user_id`)
 :::python
-- `ctx.runtime.server_info` — Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
-- `ctx.runtime.execution_info` — Execution identity information (thread ID, run ID, checkpoint ID)
+- `rt.server_info` — Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
+- `rt.execution_info` — Execution identity information (thread ID, run ID, checkpoint ID)
 :::
 :::js
-- `ctx.runtime.serverInfo` — Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
-- `ctx.runtime.executionInfo` — Execution identity information (thread ID, run ID, checkpoint ID)
+- `rt.serverInfo` — Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
+- `rt.executionInfo` — Execution identity information (thread ID, run ID, checkpoint ID)
 :::
-- `ctx.state` — Current agent state
 
 :::python
 <Note>
-`ctx.runtime.server_info` and `ctx.runtime.execution_info` require `deepagents>=0.5.0`.
+The `Runtime` argument is available in `deepagents>=0.5.2`. Earlier 0.5.x releases passed a `BackendContext` instead — see [migrating from `BackendContext`](#migrating-from-backendcontext) below. `rt.server_info` and `rt.execution_info` require `deepagents>=0.5.0`.
 </Note>
 :::
 
 :::js
 <Note>
-`ctx.runtime.serverInfo` and `ctx.runtime.executionInfo` require `deepagents>=1.9.0`.
+The `Runtime` argument is available in `deepagents>=1.9.1`. Earlier 1.9.x releases passed a `BackendContext` instead — see [migrating from `BackendContext`](#migrating-from-backendcontext) below. `rt.serverInfo` and `rt.executionInfo` require `deepagents>=1.9.0`.
 </Note>
 :::
 
@@ -250,20 +249,20 @@ from deepagents.backends import StoreBackend
 
 # Per-user: each user gets their own isolated storage
 backend = StoreBackend(
-    namespace=lambda ctx: (ctx.runtime.server_info.user.identity,),  # [!code highlight]
+    namespace=lambda rt: (rt.server_info.user.identity,),  # [!code highlight]
 )
 
 # Per-assistant: all users of the same assistant share storage
 backend = StoreBackend(
-    namespace=lambda ctx: (
-        ctx.runtime.server_info.assistant_id,  # [!code highlight]
+    namespace=lambda rt: (
+        rt.server_info.assistant_id,  # [!code highlight]
     ),
 )
 
 # Per-thread: storage scoped to a single conversation
 backend = StoreBackend(
-    namespace=lambda ctx: (
-        ctx.runtime.execution_info.thread_id,  # [!code highlight]
+    namespace=lambda rt: (
+        rt.execution_info.thread_id,  # [!code highlight]
     ),
 )
 ```
@@ -275,17 +274,17 @@ import { StoreBackend } from "deepagents";
 
 // Per-user: each user gets their own isolated storage
 const backend = new StoreBackend({
-  namespace: (ctx) => [ctx.runtime.serverInfo.user.identity],  // [!code highlight]
+  namespace: (rt) => [rt.serverInfo.user.identity],  // [!code highlight]
 });
 
 // Per-assistant: all users of the same assistant share storage
 const backend = new StoreBackend({
-  namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
+  namespace: (rt) => [rt.serverInfo.assistantId],  // [!code highlight]
 });
 
 // Per-thread: storage scoped to a single conversation
 const backend = new StoreBackend({
-  namespace: (ctx) => [ctx.runtime.executionInfo.threadId],  // [!code highlight]
+  namespace: (rt) => [rt.executionInfo.threadId],  // [!code highlight]
 });
 ```
 :::
@@ -791,7 +790,7 @@ agent = create_deep_agent(
 agent = create_deep_agent(
     backend=CompositeBackend(
         default=StateBackend(),
-        routes={"/memories/": StoreBackend(namespace=lambda ctx: (ctx.runtime.context.user_id,))},
+        routes={"/memories/": StoreBackend(namespace=lambda rt: (rt.context.user_id,))},
     ),
 )
 ```
@@ -816,9 +815,47 @@ const agent = createDeepAgent({
   backend: new CompositeBackend(
     new StateBackend(),
     { "/memories/": new StoreBackend({
-      namespace: (ctx) => [ctx.runtime.context.userId],
+      namespace: (rt) => [rt.context.userId],
     }) },
   ),
+});
+```
+:::
+
+### Migrating from `BackendContext`
+
+In `deepagents>=0.5.2` (Python) and `deepagents>=1.9.1` (TypeScript), namespace factories receive a LangGraph @[`Runtime`] directly instead of a `BackendContext` wrapper. The old `BackendContext` form still works but emits a deprecation warning and will be removed in `deepagents>=0.7`.
+
+**What changed:**
+
+- The factory argument is now a `Runtime`, not a `BackendContext`.
+- Drop the `.runtime` accessor — for example, `ctx.runtime.context.user_id` becomes `rt.context.user_id`.
+- `ctx.state` is no longer available on the factory argument. If you need state, read it from the store or pass it through `Runtime.context`.
+
+:::python
+```python
+# Before (deprecated, removed in v0.7)
+StoreBackend(
+    namespace=lambda ctx: (ctx.runtime.context.user_id,),  # [!code --]
+)
+
+# After
+StoreBackend(
+    namespace=lambda rt: (rt.context.user_id,),  # [!code ++]
+)
+```
+:::
+
+:::js
+```typescript
+// Before (deprecated, removed in v0.7)
+new StoreBackend({
+  namespace: (ctx) => [ctx.runtime.context.userId],  // [!code --]
+});
+
+// After
+new StoreBackend({
+  namespace: (rt) => [rt.context.userId],  // [!code ++]
 });
 ```
 :::
