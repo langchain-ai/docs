@@ -30,7 +30,14 @@ The CLI integrates automatically with the [following model providers](#provider-
 
 2. **Set credentials**
 
-    Most providers require an API key. Set the appropriate environment variable listed in the table below. Some providers use other credentials (for example, Vertex AI uses `GOOGLE_CLOUD_PROJECT` plus ADC). Refer to each integration package's docs for details.
+    Store API keys in `~/.deepagents/.env` so they're available across all projects, or export them in your shell:
+
+    ```bash
+    ANTHROPIC_API_KEY=sk-ant-...
+    OPENAI_API_KEY=sk-...
+    ```
+
+    Some providers use other credentials (for example, Vertex AI uses `GOOGLE_CLOUD_PROJECT` plus ADC). See the table below for the required variable per provider. You can also scope credentials to the CLI with the [`DEEPAGENTS_CLI_` prefix](/oss/deepagents/cli/configuration#deepagents_cli_-prefix).
 
 :::python
 
@@ -113,9 +120,7 @@ To switch models in the CLI, either:
 1. **Use the interactive model switcher** with the `/model` command. This displays available models sourced from each installed LangChain provider package's [model profiles](/oss/langchain/models#model-profiles).
 
     <Note>
-        These profiles are not an exhaustive list of available models. If the model you want isn't shown, use option 2 instead (useful for newly released models that haven't been added to the profiles yet).
-
-        See [Which models appear in the switcher](#which-models-appear-in-the-switcher) for the full set of criteria.
+        Not all models appear here. If yours is missing, pass the model name directly (e.g. `/model gpt-5.4`). See [Which models appear in the switcher](#which-models-appear-in-the-switcher) for details.
     </Note>
 2. **Specify a model name directly** as an argument, e.g. `/model gpt-5.4`. You can use any model supported by the chosen provider, regardless of whether it appears in the list from option 1. The model name will be passed to the API request.
 3. **Specify the model at launch** via `--model`, e.g.
@@ -126,35 +131,39 @@ To switch models in the CLI, either:
 
 ### Which models appear in the switcher
 
-The interactive `/model` selector builds its list dynamically—it is not a hardcoded list baked into the CLI. A model appears in the switcher when **all** of the following are true:
+The `/model` selector dynamically builds its list from installed provider packages. Expand below for the full criteria and troubleshooting.
 
-1. **The provider package is installed.** Each provider (e.g. `langchain-anthropic`, `langchain-openai`) must be installed alongside `deepagents-cli`—either as an [install extra](/oss/deepagents/cli/providers#quick-start) (e.g. `uv tool install 'deepagents-cli[ollama]'`) or added later with `uv tool install deepagents-cli --with <package>`. If a package is missing, its entire provider section is absent from the switcher.
-2. **The model has a profile with `tool_calling` enabled.** The CLI requires tool-calling support, so models without `tool_calling: true` in their profile are excluded. This is the most common reason a model is missing from the list. For providers that don't bundle profiles (see the [Provider reference](#provider-reference) table), you can define one in `config.toml`:
+<Accordion title="How the switcher builds its model list" icon="list-search">
+    The interactive `/model` selector builds its list dynamically—it is not a hardcoded list baked into the CLI. A model appears in the switcher when **all** of the following are true:
 
-    ```toml
-    [models.providers.ollama.profile."qwen3:4b"]
-    tool_calling = true
-    max_input_tokens = 32768
-    max_output_tokens = 8192
-    ```
+    1. **The provider package is installed.** Each provider (e.g. `langchain-anthropic`, `langchain-openai`) must be installed alongside `deepagents-cli`—either as an [install extra](/oss/deepagents/cli/providers#quick-start) (e.g. `uv tool install 'deepagents-cli[ollama]'`) or added later with `uv tool install deepagents-cli --with <package>`. If a package is missing, its entire provider section is absent from the switcher.
+    2. **The model has a profile with `tool_calling` enabled.** The CLI requires tool-calling support, so models without `tool_calling: true` in their profile are excluded. This is the most common reason a model is missing from the list. For providers that don't bundle profiles (see the [Provider reference](#provider-reference) table), you can define one in `config.toml`:
 
-    This is not strictly required for the model to appear in the switcher — adding it to the [`models` list](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) also works and is simpler. A profile is useful when you want the CLI to know the model's context window and capabilities for features like auto-summarization. See [Profile overrides](/oss/deepagents/cli/configuration#profile-overrides) for all overridable fields.
-3. **The model accepts and produces text.** Models whose profile explicitly sets `text_inputs` or `text_outputs` to `false` (e.g. embedding or image-generation models) are excluded.
+        ```toml
+        [models.providers.ollama.profile."qwen3:4b"]
+        tool_calling = true
+        max_input_tokens = 32768
+        max_output_tokens = 8192
+        ```
 
-Models defined in `config.toml` under [`[models.providers.<name>].models`](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) bypass the profile filter—they always appear in the switcher regardless of profile metadata. This is the recommended way to add models that are missing from the list.
+        This is not strictly required for the model to appear in the switcher — adding it to the [`models` list](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) also works and is simpler. A profile is useful when you want the CLI to know the model's context window and capabilities for features like auto-summarization. See [Profile overrides](/oss/deepagents/cli/configuration#profile-overrides) for all overridable fields.
+    3. **The model accepts and produces text.** Models whose profile explicitly sets `text_inputs` or `text_outputs` to `false` (e.g. embedding or image-generation models) are excluded.
 
-<Tip>
-    Credential status does **not** affect whether a model is listed. The switcher shows all qualifying models and displays a credential indicator next to each provider header: a checkmark for confirmed credentials, a warning for missing credentials, or a question mark when credential status is unknown. You can still select a model with missing credentials—the provider will report an authentication error at request time.
-</Tip>
+    Models defined in `config.toml` under [`[models.providers.<name>].models`](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) bypass the profile filter—they always appear in the switcher regardless of profile metadata. This is the recommended way to add models that are missing from the list.
 
-#### Troubleshooting missing models
+    <Tip>
+        Credential status does **not** affect whether a model is listed. The switcher shows all qualifying models and displays a credential indicator next to each provider header: a checkmark for confirmed credentials, a warning for missing credentials, or a question mark when credential status is unknown. You can still select a model with missing credentials—the provider will report an authentication error at request time.
+    </Tip>
 
-| Symptom | Likely cause | Fix |
-| --- | --- | --- |
-| Entire provider missing from switcher | Provider package not installed | Install the package (e.g. `uv tool install deepagents-cli --with langchain-groq`) |
-| Provider shown but specific model missing | Model profile has `tool_calling: false` or no profile exists | Add the model to `[models.providers.<name>].models` in `config.toml`, or use `/model <provider>:<model>` directly |
-| Provider shows ⚠ "missing credentials" | API key env var not set | Set the credential env var from the [Provider reference](#provider-reference) table |
-| Provider shows ? "credentials unknown" | Provider uses non-standard auth that the CLI can't verify | Credentials may still work—try switching to the model. If auth fails, check the provider's docs |
+    #### Troubleshooting missing models
+
+    | Symptom | Likely cause | Fix |
+    | --- | --- | --- |
+    | Entire provider missing from switcher | Provider package not installed | Install the package (e.g. `uv tool install deepagents-cli --with langchain-groq`) |
+    | Provider shown but specific model missing | Model profile has `tool_calling: false` or no profile exists | Add the model to `[models.providers.<name>].models` in `config.toml`, or use `/model <provider>:<model>` directly |
+    | Provider shows ⚠ "missing credentials" | API key env var not set | Set the credential env var from the [Provider reference](#provider-reference) table |
+    | Provider shows ? "credentials unknown" | Provider uses non-standard auth that the CLI can't verify | Credentials may still work—try switching to the model. If auth fails, check the provider's docs |
+</Accordion>
 
 ### Setting a default model
 
