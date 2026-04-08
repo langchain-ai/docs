@@ -27,9 +27,12 @@ name = "my-agent"
 model = "anthropic:claude-sonnet-4-6"
 system_prompt = "You are a helpful assistant that specializes in data analysis."
 
-[memory]
+[agent_memories]
+backend = "hub"
 sources = ["./AGENTS.md"]
-scope = "agent"
+
+[user_memories]
+sources = ["./user_seed/preferences.md"]
 
 [skills]
 sources = ["./skills/"]
@@ -76,29 +79,44 @@ information from academic papers. Always cite your sources."""
 The <code>name</code> field is the only required value in the entire configuration file. Everything else has defaults.
 </Note>
 
-### `[memory]`
+### `[agent_memories]`
 
-Configure persistent memory files (such as `AGENTS.md`) that are loaded into the agent's context. Memory sources are files that the agent can read at the start of each conversation to recall accumulated knowledge and instructions. For memory patterns like self-improving instructions and knowledge bases, see [memory](/oss/deepagents/memory).
+Agent-scoped memory files shared across all users. Mounted at `/agent_memories/` at runtime. For memory patterns like self-improving instructions and knowledge bases, see [memory](/oss/deepagents/memory).
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `sources` | list of strings | `[]` | Paths to memory files, relative to the project root. Each path must point to an existing file. |
-| `scope` | string | `"agent"` | Memory isolation level. `"agent"` shares memory across all users. `"user"` isolates memory per user via the authenticated user ID. |
+| `backend` | string | `"hub"` | Storage backend. `"hub"` uses a LangSmith Prompt Hub repo (versioned, visible in the UI). `"store"` uses the LangGraph persistent store, namespaced by `(agent_name, "agent_memories")`. |
+| `sources` | list of strings | `[]` | Paths to memory files, relative to the project root. These are bundled into the chosen backend at deploy time. |
 
 ```toml
-[memory]
+[agent_memories]
+backend = "hub"
 sources = ["./AGENTS.md", "./docs/guidelines.md"]
-scope = "user"
 ```
 
-**Scope behavior:**
+**Backend options:**
 
-- `"agent"`: All users share the same memory. Changes one user makes are visible to everyone. Use this for shared knowledge bases or team-wide instructions.
-- `"user"`: Each user gets their own copy of memory. Use this when the agent should learn per-user preferences without cross-contamination.
+- `"hub"`: Stores memory in a LangSmith Prompt Hub repo. Files are versioned and visible in the LangSmith UI, making it easy to inspect and edit agent memory outside of conversations.
+- `"store"`: Stores memory in the LangGraph persistent store. Files are namespaced by agent name, so each agent has its own memory space.
 
 <Warning>
-With <code>scope = "agent"</code>, any user can write to shared memory. This is a prompt injection vector if untrusted users have access. Use <code>"user"</code> scope unless you have a specific reason to share memory and have mitigations in place.
+Agent memories are shared across all users. Any user can read and write to them. If untrusted users have access, consider using <code>[user_memories]</code> instead for sensitive data.
 </Warning>
+
+### `[user_memories]`
+
+User-scoped memory files isolated per user. Mounted at `/user_memories/` at runtime, backed by the LangGraph store with a namespace of `(agent_name, user_id, "user_memories")`. Each user gets their own private copy. For memory patterns like self-improving instructions and knowledge bases, see [memory](/oss/deepagents/memory).
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `sources` | list of strings | `[]` | Paths to seed files, relative to the project root. These are used as initial templates for each user's memory space. |
+
+```toml
+[user_memories]
+sources = ["./user_seed/preferences.md"]
+```
+
+Seed files provide a starting point for each user. When a new user interacts with the agent for the first time, these files are available in their `/user_memories/` directory. As the agent learns user-specific preferences and context, it updates files in this directory without affecting other users.
 
 ### `[skills]`
 
@@ -271,9 +289,12 @@ name = "my-agent"
 model = "anthropic:claude-sonnet-4-6"
 # system_prompt = "You are a helpful assistant"
 
-[memory]
+[agent_memories]
+backend = "hub"
 sources = ["./AGENTS.md"]
-scope = "agent"  # "agent" = shared across all users, "user" = per-user isolation
+
+[user_memories]
+# sources = ["./user_seed/preferences.md"]
 
 [skills]
 sources = ["./skills/"]
