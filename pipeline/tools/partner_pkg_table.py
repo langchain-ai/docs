@@ -200,7 +200,7 @@ description: "Integrate with providers using LangChain Python."
 
 LangChain offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
 
-A **provider** is a third-party service or platform that LangChain integrates with to access AI capabilities like chat models, embeddings, and vector stores. These providers have standalone `langchain-provider` packages for improved versioning, dependency management, and testing.
+A **provider** is a company or platform that hosts AI models and exposes them through an API (e.g., OpenAI, Anthropic, Google). Many providers have a dedicated `langchain-<provider>` package that implements one or more of LangChain's standard interfaces—chat models, embedding models, vector stores, and more—giving you a consistent API regardless of the underlying provider. Install the package, pick a model name, and swap providers without changing your code.
 
 <Columns cols={{3}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />
@@ -213,13 +213,17 @@ A **provider** is a third-party service or platform that LangChain integrates wi
 
 To see a full list of integrations by component type, refer to the categories in the sidebar.
 
+<Tip>
+    For a conceptual overview of how providers and models work in LangChain, including how to find model names, use new models immediately, and work with routers—see [Providers and models](/oss/concepts/providers-and-models).
+</Tip>
+
 ## Popular providers
 
 {table()}
 
 ## All providers
 
-[See all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
+See [all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
 
 Community integrations can be found in [`langchain-community`](https://github.com/langchain-ai/langchain-community).
 

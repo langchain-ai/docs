@@ -1,0 +1,142 @@
+---
+title: Deploy with the CLI
+description: Deploy a Deep Agent to LangSmith with the deepagents deploy command and deepagents.toml configuration file
+---
+
+The [Deep Agents CLI](/oss/deepagents/cli/overview) includes a `deploy` command that packages and deploys your agent to [LangSmith Deployment](/langsmith/deployment) in a single step. Define your agent's configuration in a `deepagents.toml` file and deploy directly from your project directory.
+
+```bash
+deepagents deploy
+```
+
+By default, the command looks for `deepagents.toml` in the current directory. Pass `--config` to use a different path:
+
+```bash
+deepagents deploy --config path/to/deepagents.toml
+```
+
+## Project layout
+
+The deploy command uses a convention-based project layout. Place the following files alongside your `deepagents.toml` and they are automatically discovered:
+
+| File/directory | Purpose | Required |
+| --- | --- | --- |
+| `AGENTS.md` | [Memory](/oss/deepagents/customization#memory) for the agent. Provides persistent context (project conventions, instructions, preferences) that is always loaded at startup. | Yes |
+| `skills/` | Directory of [skill](/oss/deepagents/skills) definitions. Each subdirectory should contain a `SKILL.md` file. | No |
+| `mcp.json` | [MCP](https://modelcontextprotocol.io/) server configuration. Only `http` and `sse` transports are supported in deployed contexts. | No |
+| `.env` | Environment variables (API keys, secrets). Placed alongside `deepagents.toml` at the project root. | No |
+
+```txt
+my-agent/
+├── deepagents.toml
+├── AGENTS.md
+├── .env
+├── mcp.json
+└── skills/
+    ├── code-review/
+    │   └── SKILL.md
+    └── data-analysis/
+        └── SKILL.md
+```
+
+The `.env` file lives alongside `deepagents.toml` at the project root. The deploy command automatically picks it up if present.
+
+<Warning>
+<code>mcp.json</code> must only contain servers using <code>http</code> or <code>sse</code> transports. Servers using <code>stdio</code> transport are not supported in deployed environments because there is no local process to spawn. Convert stdio servers to http or sse before deploying.
+</Warning>
+
+## Configuration file
+
+`deepagents.toml` configures the agent's identity and sandbox environment. Only the `[agent]` section is required. The `[sandbox]` section is optional and defaults to no sandbox.
+
+### `[agent]` (required)
+
+Core agent identity. For more on model selection and provider configuration, see [models](/oss/deepagents/models).
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | string | **(required)** | Name for the deployed agent. Used as the assistant identifier in LangSmith. |
+| `model` | string | `"anthropic:claude-sonnet-4-6"` | Model identifier in `provider:model` format. |
+
+```toml
+[agent]
+name = "research-assistant"
+model = "anthropic:claude-sonnet-4-6"
+```
+
+The `model` field uses `provider:model` format. Supported providers:
+
+| Provider | Prefix | Example |
+| --- | --- | --- |
+| Anthropic | `anthropic:` | `anthropic:claude-sonnet-4-6` |
+| OpenAI | `openai:` | `openai:gpt-4o` |
+| Google | `google:` | `google:gemini-2.5-pro` |
+| Amazon Bedrock | `bedrock:` | `bedrock:anthropic.claude-sonnet-4-6` |
+| Azure OpenAI | `azure:` | `azure:gpt-4o` |
+| Fireworks | `fireworks:` | `fireworks:accounts/fireworks/models/llama-v3p1-70b-instruct` |
+| Baseten | `baseten:` | `baseten:model-id` |
+| OpenRouter | `openrouter:` | `openrouter:anthropic/claude-sonnet-4-6` |
+
+For the full list of providers and configuration details, see [models](/oss/deepagents/models).
+
+<Note>
+The <code>name</code> field is the only required value in the entire configuration file. Everything else has defaults.
+</Note>
+
+### `[sandbox]`
+
+Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes).
+
+When omitted or set to `provider = "none"`, the sandbox is disabled. Sandboxes are for if you need code execution or skill script execution.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `provider` | string | `"none"` | Sandbox provider. Determines where the container runs. |
+| `template` | string | `"deepagents-deploy"` | Provider-specific template name for the sandbox environment. |
+| `image` | string | `"python:3"` | Base Docker image for the sandbox container. |
+| `scope` | string | `"thread"` | Sandbox lifecycle scope. `"thread"` creates one sandbox per conversation. `"assistant"` shares a single sandbox across all conversations for the same assistant. |
+
+Supported sandbox providers:
+
+| Provider | `provider` value | Description |
+| --- | --- | --- |
+| None | `"none"` | No sandbox. Only needed for code execution or skill script execution. |
+| LangSmith | `"langsmith"` | Managed sandbox hosted by LangSmith. No additional setup required. Currently in private preview — [sign up for the waitlist](/langsmith/sandboxes#sandboxes-overview). |
+| Daytona | `"daytona"` | [Daytona](https://www.daytona.io/) cloud sandboxes. |
+| Modal | `"modal"` | [Modal](https://modal.com/) serverless containers. |
+| Runloop | `"runloop"` | [Runloop](https://www.runloop.ai/) dev sandboxes. |
+
+```toml
+[sandbox]
+provider = "langsmith"
+template = "coding-agent"
+image = "python:3.12"
+```
+
+**Scope behavior:**
+
+- `"thread"` (default): Each conversation gets its own sandbox. Different threads get different sandboxes, but the same thread reuses its sandbox across turns. Use this when each conversation should start with a clean environment.
+- `"assistant"`: All conversations share one sandbox. Files, installed packages, and other state persist across conversations. Use this when the agent maintains a long-lived workspace like a cloned repo.
+
+## Examples
+
+A content writing agent that only needs a model and system prompt, with no code execution:
+
+```toml deepagents.toml
+[agent]
+name = "deepagents-deploy-content-writer"
+model = "anthropic:claude-sonnet-4-6"
+```
+
+A coding agent with a LangSmith sandbox for running code:
+
+```toml deepagents.toml
+[agent]
+name = "deepagents-deploy-coding-agent"
+model = "anthropic:claude-sonnet-4-5"
+
+[sandbox]
+provider = "langsmith"
+template = "coding-agent"
+image = "python:3.12"
+```
