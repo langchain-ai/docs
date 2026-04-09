@@ -419,25 +419,25 @@ The key decision is how long a sandbox lives. Does each conversation get a fresh
 | **Assistant-scoped** | [Assistant](/langsmith/assistants) config | Shared across all conversations | A coding assistant that maintains a cloned repo across conversations |
 
 <Note>
-The examples below use an async [graph factory](/langsmith/graph-rebuild) instead of a static graph because the sandbox needs the `thread_id` or `assistant_id` from the runtime to look up or create the correct sandbox. A graph factory receives the runtime on each run, so it can resolve the sandbox before building the agent. The factory is async because sandbox creation is an I/O-bound operation that requires runtime information like `thread_id` or `assistant_id` that is only available at invocation time.
+The examples below use an async [graph factory](/langsmith/graph-rebuild) instead of a static graph because the sandbox needs the `thread_id` or `assistant_id` to look up or create the correct sandbox. Graph factories don't receive a full `Runtime` (no `server_info` or `execution_info`); instead, accept a `RunnableConfig` and read `thread_id` and `assistant_id` from `config["configurable"]`. The factory is async because sandbox creation is an I/O-bound operation that requires per-run information only available at invocation time.
 </Note>
 
 <Tabs>
   <Tab title="Thread-scoped (most common)">
-    Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the runtime, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. The provider's label-based lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
+    Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the run config, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. The provider's label-based lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
 
 :::python
 ```python agent.py
 from daytona import CreateSandboxFromSnapshotParams, Daytona
 from deepagents import create_deep_agent
+from langchain_core.runnables import RunnableConfig
 from langchain_daytona import DaytonaSandbox
-from langgraph.runtime import Runtime
 
 client = Daytona()
 
 
-async def agent(runtime: Runtime):
-    thread_id = runtime.execution_info.thread_id  # [!code highlight]
+async def agent(config: RunnableConfig):
+    thread_id = config["configurable"]["thread_id"]  # [!code highlight]
     try:
         sandbox = await client.find_one(labels={"thread_id": thread_id})
     except Exception:
@@ -456,12 +456,12 @@ async def agent(runtime: Runtime):
 import { Daytona } from "@daytonaio/sdk";
 import { DaytonaSandbox } from "@langchain/daytona";
 import { createDeepAgent } from "deepagents";
-import type { Runtime } from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 
 const client = new Daytona();
 
-export async function agent(runtime: Runtime) {
-  const threadId = runtime.executionInfo.threadId;  // [!code highlight]
+export async function agent(config: LangGraphRunnableConfig) {
+  const threadId = config.configurable?.thread_id as string;  // [!code highlight]
   let sandbox;
   try {
     sandbox = await client.findOne({ labels: { thread_id: threadId } });
@@ -478,20 +478,20 @@ export async function agent(runtime: Runtime) {
 
   </Tab>
   <Tab title="Assistant-scoped">
-    All conversations share one sandbox. The [graph factory](/langsmith/graph-rebuild) reads the [assistant](/langsmith/assistants) ID from `runtime.server_info`, so every thread on the same assistant returns to the same environment. Files, installed packages, and cloned repositories persist across conversations.
+    All conversations share one sandbox. The [graph factory](/langsmith/graph-rebuild) reads the [assistant](/langsmith/assistants) ID from `config["configurable"]`, so every thread on the same assistant returns to the same environment. Files, installed packages, and cloned repositories persist across conversations.
 
 :::python
 ```python agent.py
 from daytona import CreateSandboxFromSnapshotParams, Daytona
 from deepagents import create_deep_agent
+from langchain_core.runnables import RunnableConfig
 from langchain_daytona import DaytonaSandbox
-from langgraph.runtime import Runtime
 
 client = Daytona()
 
 
-async def agent(runtime: Runtime):
-    assistant_id = runtime.server_info.assistant_id  # [!code highlight]
+async def agent(config: RunnableConfig):
+    assistant_id = config["configurable"]["assistant_id"]  # [!code highlight]
     try:
         sandbox = await client.find_one(labels={"assistant_id": assistant_id})
     except Exception:
@@ -507,12 +507,12 @@ async def agent(runtime: Runtime):
 import { Daytona } from "@daytonaio/sdk";
 import { DaytonaSandbox } from "@langchain/daytona";
 import { createDeepAgent } from "deepagents";
-import type { Runtime } from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 
 const client = new Daytona();
 
-export async function agent(runtime: Runtime) {
-  const assistantId = runtime.serverInfo.assistantId;  // [!code highlight]
+export async function agent(config: LangGraphRunnableConfig) {
+  const assistantId = config.configurable?.assistant_id as string;  // [!code highlight]
   let sandbox;
   try {
     sandbox = await client.findOne({ labels: { assistant_id: assistantId } });
