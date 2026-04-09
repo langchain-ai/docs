@@ -1,0 +1,133 @@
+---
+title: "SingleStore semantic cache"
+description: "Integrate with the SingleStoreSemanticCache using LangChain Python."
+---
+
+`SingleStoreSemanticCache` implements semantic caching for LLM responses using [SingleStore](https://singlestore.com/) vector capabilities. Instead of exact string matching, it uses embeddings to find semantically similar cached queries, reducing API costs and improving response times.
+
+Internally, `SingleStoreSemanticCache` creates a [`SingleStoreVectorStore`](/oss/integrations/vectorstores/singlestore) instance per LLM configuration, storing prompts as embedded vectors and returning cached responses when a semantically similar query is found.
+
+| Class | Package | JS support |
+| :--- | :--- | :---: |
+| `SingleStoreSemanticCache` | `langchain_singlestore` | ❌ |
+
+## Setup
+
+```bash
+pip install -qU langchain-singlestore
+```
+
+## Initialization
+
+### Required parameters
+
+- **embedding** (`Embeddings`): A text embedding model for computing query similarity.
+
+### Cache parameters
+
+- **cache_table_prefix** (`str`): Prefix for cache table names. Each LLM configuration gets its own table named `{prefix}{hash}`. Defaults to `"cache_"`.
+- **search_threshold** (`float`): The minimum similarity score for a cached result to be considered a match. Defaults to `0.2`. When using `DOT_PRODUCT`, results with a score above this threshold are returned. When using `EUCLIDEAN_DISTANCE`, results with a score below this threshold are returned.
+
+### SingleStoreVectorStore parameters
+
+All additional keyword arguments are passed directly to the underlying [`SingleStoreVectorStore`](/oss/integrations/vectorstores/singlestore). This includes:
+
+- **distance_strategy** (`DistanceStrategy`): Strategy for calculating vector distances. Defaults to `DOT_PRODUCT`. Options: `DOT_PRODUCT`, `EUCLIDEAN_DISTANCE`.
+- **content_field** (`str`): Field to store prompt content. Defaults to `"content"`.
+- **metadata_field** (`str`): Field to store metadata. Defaults to `"metadata"`.
+- **vector_field** (`str`): Field to store vectors. Defaults to `"vector"`.
+- **id_field** (`str`): Field to store IDs. Defaults to `"id"`.
+- **use_vector_index** (`bool`): Enable vector indexing (requires SingleStore 8.5+). Defaults to `False`.
+- **vector_index_name** (`str`): Name of the vector index. Ignored if `use_vector_index` is `False`.
+- **vector_index_options** (`dict`): Options for the vector index. Ignored if `use_vector_index` is `False`.
+- **vector_size** (`int`): Size of the vector. Defaults to `1536`. Required if `use_vector_index` is `True`.
+
+For the full list of vector store, connection pool, database connection, and driver options, see the [`SingleStoreVectorStore` integration page](/oss/integrations/vectorstores/singlestore).
+
+### Environment variables
+
+Connection parameters and credentials can be provided through environment variables instead of passing them directly. The underlying `singlestoredb` driver recognizes the following variables:
+
+| Environment variable | Description |
+| :--- | :--- |
+| `SINGLESTOREDB_URL` | Connection URL in the format `user:password@host:port/db_name` |
+| `SINGLESTOREDB_HOST` | Database hostname or IP address |
+| `SINGLESTOREDB_PORT` | Database port number |
+| `SINGLESTOREDB_USER` | Database username |
+| `SINGLESTOREDB_PASSWORD` | Database password |
+| `SINGLESTOREDB_DATABASE` | Database name |
+
+For a complete list of supported connection parameters, see the [`singlestoredb.connect` API reference](https://singlestoredb-python.labs.singlestore.com/generated/singlestoredb.connect.html).
+
+## Basic usage
+
+```python
+from langchain.globals import set_llm_cache
+from langchain_openai import OpenAI, OpenAIEmbeddings
+from langchain_singlestore import SingleStoreSemanticCache
+
+set_llm_cache(
+    SingleStoreSemanticCache(
+        embedding=OpenAIEmbeddings(),
+        host="127.0.0.1:3306/db",
+    )
+)
+
+llm = OpenAI()
+
+# First call: hits the LLM API
+response = llm.invoke("What is the capital of France?")
+
+# Semantically similar query: returns cached result
+response = llm.invoke("Tell me the capital city of France")
+```
+
+## Configure with environment variables
+
+```python
+import os
+
+from langchain.globals import set_llm_cache
+from langchain_openai import OpenAI, OpenAIEmbeddings
+from langchain_singlestore import SingleStoreSemanticCache
+
+os.environ["SINGLESTOREDB_URL"] = "user:password@host:3306/db_name"
+
+set_llm_cache(
+    SingleStoreSemanticCache(
+        embedding=OpenAIEmbeddings(),
+    )
+)
+```
+
+## Configure with vector index
+
+```python
+from langchain.globals import set_llm_cache
+from langchain_openai import OpenAIEmbeddings
+from langchain_singlestore import SingleStoreSemanticCache
+
+set_llm_cache(
+    SingleStoreSemanticCache(
+        embedding=OpenAIEmbeddings(),
+        host="127.0.0.1:3306/db",
+        search_threshold=0.3,
+        use_vector_index=True,
+        vector_size=1536,
+    )
+)
+```
+
+## Clear the cache
+
+Clear the cache for a specific LLM configuration:
+
+```python
+from langchain.globals import get_llm_cache
+
+get_llm_cache().clear(llm_string="my_llm_string")
+```
+
+## API reference
+
+For detailed documentation of all `SingleStoreSemanticCache` features and configurations, see the [langchain-singlestore GitHub repository](https://github.com/singlestore-labs/langchain-singlestore/).

@@ -1,0 +1,203 @@
+---
+title: "SingleStore SQL database retriever"
+description: "Integrate with the SingleStoreSQLDatabaseRetriever using LangChain Python."
+---
+
+`SingleStoreSQLDatabaseRetriever` enables LangChain agents and chains to execute SQL queries directly against a [SingleStore](https://singlestore.com/) database and retrieve results as structured documents. This is useful for building database-aware AI applications that query structured data.
+
+| Class | Package | JS support |
+| :--- | :--- | :---: |
+| `SingleStoreSQLDatabaseRetriever` | `langchain_singlestore` | ❌ |
+
+## Setup
+
+```bash
+pip install -qU langchain-singlestore
+```
+
+## Initialization
+
+### Retriever parameters
+
+- **row_to_document_fn** (`Callable[[dict, int], Document]`): Custom function to convert database rows to documents. Receives `(row_dict, row_index)` and returns a `Document`. If `None`, the default converter formats each column as `key: value` lines in the page content, with all column values also added to metadata.
+
+### Connection pool parameters
+
+- **pool_size** (`int`): Number of active connections in the pool. Defaults to `5`.
+- **max_overflow** (`int`): Maximum connections beyond `pool_size`. Defaults to `10`.
+- **timeout** (`float`): Connection timeout in seconds. Defaults to `30`.
+
+### Database connection parameters
+
+All remaining keyword arguments are passed directly to the underlying [`singlestoredb` Python driver](https://singlestoredb-python.labs.singlestore.com/generated/singlestoredb.connect.html):
+
+- **host** (`str`): Hostname, IP address, or URL for the database. Supports the URL format `[scheme://][user:password@]host[:port]/db_name`.
+- **user** (`str`): Database username.
+- **password** (`str`): Database password.
+- **port** (`int`): Database port. Defaults to `3306` for non-HTTP connections, `80` for HTTP, and `443` for HTTPS.
+- **database** (`str`): Database name.
+- **pure_python** (`bool`): Use the connector in pure Python mode.
+- **local_infile** (`bool`): Allow local file uploads.
+- **charset** (`str`): Character set for string values.
+- **ssl_key**, **ssl_cert**, **ssl_ca** (`str`): Paths to SSL key, certificate, and CA files.
+- **ssl_cipher** (`str`): Sets the SSL cipher list.
+- **ssl_disabled** (`bool`): Disable SSL usage.
+- **ssl_verify_cert** (`bool`): Verify the server's certificate. Automatically enabled if `ssl_ca` is specified.
+- **ssl_verify_identity** (`bool`): Verify the server's identity.
+- **credential_type** (`str`): Type of authentication: `PASSWORD`, `JWT`, or `BROWSER_SSO`.
+- **autocommit** (`bool`): Enable autocommits.
+- **results_type** (`str`): Structure of query results (e.g., `tuples`, `namedtuples`, `dicts`).
+
+For a complete list of supported parameters, see the [`singlestoredb.connect` API reference](https://singlestoredb-python.labs.singlestore.com/generated/singlestoredb.connect.html).
+
+### Environment variables
+
+Connection parameters and credentials can be provided through environment variables. The underlying `singlestoredb` driver recognizes the following variables:
+
+| Environment variable | Description |
+| :--- | :--- |
+| `SINGLESTOREDB_URL` | Connection URL in the format `user:password@host:port/db_name` |
+| `SINGLESTOREDB_HOST` | Database hostname or IP address |
+| `SINGLESTOREDB_PORT` | Database port number |
+| `SINGLESTOREDB_USER` | Database username |
+| `SINGLESTOREDB_PASSWORD` | Database password |
+| `SINGLESTOREDB_DATABASE` | Database name |
+
+## Basic usage
+
+```python
+import os
+
+from langchain_singlestore import SingleStoreSQLDatabaseRetriever
+
+os.environ["SINGLESTOREDB_URL"] = "user:password@host:3306/db_name"
+
+retriever = SingleStoreSQLDatabaseRetriever()
+
+# Execute a query and get results as documents
+docs = retriever.invoke("SELECT id, name, email FROM users LIMIT 10")
+
+for doc in docs:
+    print(doc.page_content)
+    print(doc.metadata)
+```
+
+Each row becomes a `Document` where the page content contains all columns formatted as `key: value` lines, and the metadata includes `row_index`, `source` (`"singlestore_database"`), and all column values.
+
+## Configure with explicit connection parameters
+
+```python
+from langchain_singlestore import SingleStoreSQLDatabaseRetriever
+
+retriever = SingleStoreSQLDatabaseRetriever(
+    host="127.0.0.1",
+    port=3306,
+    user="user",
+    password="password",
+    database="my_database",
+    pool_size=10,
+    timeout=60,
+)
+```
+
+## Custom row conversion
+
+Convert database rows to documents using a custom function:
+
+```python
+from langchain_core.documents import Document
+from langchain_singlestore import SingleStoreSQLDatabaseRetriever
+
+
+def custom_row_converter(row_dict: dict, row_index: int) -> Document:
+    """Convert a database row to a Document with custom formatting."""
+    content = f"Record {row_index}: {row_dict.get('name', 'Unknown')}"
+    metadata = {
+        "index": row_index,
+        "record_id": row_dict.get("id"),
+        "source": "database",
+    }
+    return Document(page_content=content, metadata=metadata)
+
+
+retriever = SingleStoreSQLDatabaseRetriever(
+    host="root:password@127.0.0.1:3306/my_database",
+    row_to_document_fn=custom_row_converter,
+)
+
+docs = retriever.invoke("SELECT id, name FROM customers")
+```
+
+## One-off query execution
+
+Use `SingleStoreSQLDatabaseChain.query_to_document` for quick, one-off queries that automatically clean up the connection:
+
+```python
+from langchain_singlestore import SingleStoreSQLDatabaseChain
+
+docs = SingleStoreSQLDatabaseChain.query_to_document(
+    query="SELECT * FROM orders",
+    host="root:password@127.0.0.1:3306/db",
+    row_limit=100,
+)
+
+print(f"Retrieved {len(docs)} records")
+```
+
+## Close the connection
+
+Call `close()` to dispose of the connection pool when the retriever is no longer needed:
+
+```python
+retriever.close()
+```
+
+## Use with LangChain agents
+
+```python
+import os
+
+from langchain.agents import create_tool_use_agent
+
+from langchain_openai import ChatOpenAI
+from langchain_singlestore import SingleStoreSQLDatabaseRetriever
+
+os.environ["SINGLESTOREDB_URL"] = "user:password@host:3306/db_name"
+
+retriever = SingleStoreSQLDatabaseRetriever()
+
+llm = ChatOpenAI(model="gpt-4")
+
+# Build a tool that executes queries
+def query_database(query: str) -> str:
+    """Execute SQL query and return formatted results."""
+    docs = retriever.invoke(query)
+    return "\n\n".join([doc.page_content for doc in docs])
+
+# Use in agent
+agent = create_tool_use_agent(
+    llm,
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "query_database",
+                "description": "Execute SQL queries against the database",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "SQL query to execute"
+                        }
+                    }
+                }
+            }
+        }
+    ]
+)
+```
+
+## API reference
+
+For detailed documentation of all `SingleStoreSQLDatabaseRetriever` features and configurations, see the [langchain-singlestore GitHub repository](https://github.com/singlestore-labs/langchain-singlestore/).

@@ -1,0 +1,159 @@
+---
+title: "SingleStore chat message history"
+description: "Store chat message history in SingleStore using LangChain Python."
+---
+
+`SingleStoreChatMessageHistory` provides persistent storage for chat message history in [SingleStore](https://singlestore.com/). It integrates with LangChain chat models and chains to maintain conversation context across sessions.
+
+| Class | Package | JS support |
+| :--- | :--- | :---: |
+| `SingleStoreChatMessageHistory` | `langchain_singlestore` | ❌ |
+
+## Setup
+
+```bash
+pip install -qU langchain-singlestore
+```
+
+## Initialization
+
+### Required parameters
+
+- **session_id** (`str`): Unique identifier for the conversation session.
+
+### Table parameters
+
+- **table_name** (`str`): Name of the table for storing messages. Defaults to `"message_store"`.
+- **id_field** (`str`): Name of the auto-increment primary key column. Defaults to `"id"`.
+- **session_id_field** (`str`): Name of the column storing session IDs. Defaults to `"session_id"`.
+- **message_field** (`str`): Name of the column storing message JSON. Defaults to `"message"`.
+
+### Connection pool parameters
+
+- **pool_size** (`int`): Number of active connections in the pool. Defaults to `5`.
+- **max_overflow** (`int`): Maximum connections beyond `pool_size`. Defaults to `10`.
+- **timeout** (`float`): Connection timeout in seconds. Defaults to `30`.
+
+### Database connection parameters
+
+All remaining keyword arguments are passed directly to the underlying [`singlestoredb` Python driver](https://singlestoredb-python.labs.singlestore.com/generated/singlestoredb.connect.html):
+
+- **host** (`str`): Hostname, IP address, or URL for the database. Supports the URL format `[scheme://][user:password@]host[:port]/db_name`.
+- **user** (`str`): Database username.
+- **password** (`str`): Database password.
+- **port** (`int`): Database port. Defaults to `3306` for non-HTTP connections, `80` for HTTP, and `443` for HTTPS.
+- **database** (`str`): Database name.
+- **pure_python** (`bool`): Use the connector in pure Python mode.
+- **local_infile** (`bool`): Allow local file uploads.
+- **charset** (`str`): Character set for string values.
+- **ssl_key**, **ssl_cert**, **ssl_ca** (`str`): Paths to SSL key, certificate, and CA files.
+- **ssl_cipher** (`str`): Sets the SSL cipher list.
+- **ssl_disabled** (`bool`): Disable SSL usage.
+- **ssl_verify_cert** (`bool`): Verify the server's certificate. Automatically enabled if `ssl_ca` is specified.
+- **ssl_verify_identity** (`bool`): Verify the server's identity.
+- **credential_type** (`str`): Type of authentication: `PASSWORD`, `JWT`, or `BROWSER_SSO`.
+- **autocommit** (`bool`): Enable autocommits.
+- **results_type** (`str`): Structure of query results (e.g., `tuples`, `namedtuples`, `dicts`).
+
+For a complete list of supported parameters, see the [`singlestoredb.connect` API reference](https://singlestoredb-python.labs.singlestore.com/generated/singlestoredb.connect.html).
+
+### Environment variables
+
+Connection parameters and credentials can be provided through environment variables instead of passing them directly:
+
+| Environment variable | Description |
+| :--- | :--- |
+| `SINGLESTOREDB_URL` | Connection URL in the format `user:password@host:port/db_name` |
+| `SINGLESTOREDB_HOST` | Database hostname or IP address |
+| `SINGLESTOREDB_PORT` | Database port number |
+| `SINGLESTOREDB_USER` | Database username |
+| `SINGLESTOREDB_PASSWORD` | Database password |
+| `SINGLESTOREDB_DATABASE` | Database name |
+
+## Basic usage
+
+```python
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_singlestore import SingleStoreChatMessageHistory
+
+chat_history = SingleStoreChatMessageHistory(
+    session_id="user-123-session-1",
+    host="127.0.0.1:3306/db",
+)
+
+# Add messages
+chat_history.add_message(HumanMessage(content="What is SingleStore?"))
+chat_history.add_message(
+    AIMessage(content="SingleStore is a high-performance distributed SQL database.")
+)
+
+# Retrieve messages
+for msg in chat_history.messages:
+    print(f"{msg.type}: {msg.content}")
+```
+
+## Configure with environment variables
+
+```python
+import os
+
+from langchain_singlestore import SingleStoreChatMessageHistory
+
+os.environ["SINGLESTOREDB_URL"] = "user:password@host:3306/db_name"
+
+chat_history = SingleStoreChatMessageHistory(
+    session_id="user-123-session-1",
+)
+```
+
+## Configure with explicit connection parameters
+
+```python
+from langchain_singlestore import SingleStoreChatMessageHistory
+
+chat_history = SingleStoreChatMessageHistory(
+    session_id="user-123-session-1",
+    host="127.0.0.1",
+    port=3306,
+    user="user",
+    password="password",
+    database="db",
+    table_name="my_custom_table",
+    pool_size=10,
+    timeout=60,
+)
+```
+
+## Clear conversation history
+
+```python
+chat_history.clear()
+```
+
+## Use with a chat model
+
+```python
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_openai import ChatOpenAI
+from langchain_singlestore import SingleStoreChatMessageHistory
+
+chat_history = SingleStoreChatMessageHistory(
+    session_id="user-123-session-2",
+    host="127.0.0.1:3306/db",
+)
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You are a helpful assistant."),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{input}"),
+    ]
+)
+
+llm = ChatOpenAI()
+chain = prompt | llm
+```
+
+## API reference
+
+For detailed documentation of all `SingleStoreChatMessageHistory` features and configurations, see the [langchain-singlestore GitHub repository](https://github.com/singlestore-labs/langchain-singlestore/).
