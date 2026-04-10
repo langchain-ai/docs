@@ -60,6 +60,7 @@ const searchDatabase = tool(
   }
 );
 ```
+
 :::
 
 <Note>
@@ -71,6 +72,7 @@ const searchDatabase = tool(
 </Warning>
 
 :::python
+
 ### Customize tool properties
 
 #### Custom tool name
@@ -175,6 +177,8 @@ Tools can access runtime information through the @[`ToolRuntime`] parameter, whi
 | **Context** | Immutable configuration passed at invocation time (user IDs, session info) | Personalize responses based on user identity |
 | **Store** | Long-term memory - persistent data that survives across conversations | Save user preferences, maintain knowledge base |
 | **Stream Writer** | Emit real-time updates during tool execution | Show progress for long-running operations |
+| **Execution Info** | Identity and retry information for the current execution (thread ID, run ID, attempt number) | Access thread/run IDs, adjust behavior based on retry state |
+| **Server Info** | Server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user) | Access assistant ID, graph ID, or authenticated user info |
 | **Config** | @[`RunnableConfig`] for the execution | Access callbacks, tags, and metadata |
 | **Tool Call ID** | Unique identifier for the current tool invocation | Correlate tool calls for logs and model invocations |
 
@@ -345,6 +349,7 @@ result = agent.invoke(
     context=UserContext(user_id="user123")
 )
 ```
+
 :::
 
 :::js
@@ -385,6 +390,7 @@ const result = await agent.invoke(
   }
 );
 ```
+
 :::
 
 ### Long-term memory (Store)
@@ -403,7 +409,7 @@ from typing import Any
 from langgraph.store.memory import InMemoryStore
 from langchain.agents import create_agent
 from langchain.tools import tool, ToolRuntime
-
+from langchain_openai import ChatOpenAI
 
 # Access memory
 @tool
@@ -420,6 +426,8 @@ def save_user_info(user_id: str, user_info: dict[str, Any], runtime: ToolRuntime
     store = runtime.store
     store.put(("users",), user_id, user_info)
     return "Successfully saved user info."
+
+model = ChatOpenAI(model="gpt-4.1")
 
 store = InMemoryStore()
 agent = create_agent(
@@ -442,6 +450,7 @@ agent.invoke({
 # - Age: 25
 # - Email: foo@langchain.dev
 ```
+
 :::
 
 :::js
@@ -519,6 +528,7 @@ console.log(result);
 // - Age: 25
 // - Email: foo@langchain.dev
 ```
+
 :::
 
 ### Stream writer
@@ -576,6 +586,119 @@ const getWeather = tool(
   }
 );
 ```
+
+:::
+
+### Execution info
+
+Access thread ID, run ID, and retry state from within a tool via `runtime.execution_info`:
+
+:::python
+```python
+from langchain.tools import tool, ToolRuntime
+
+@tool
+def log_execution_context(runtime: ToolRuntime) -> str:
+    """Log execution identity information."""
+    info = runtime.execution_info
+    print(f"Thread: {info.thread_id}, Run: {info.run_id}")  # [!code highlight]
+    print(f"Attempt: {info.node_attempt}")
+    return "done"
+```
+:::
+
+:::js
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const logExecutionContext = tool(
+  async (_input, runtime) => {
+    const info = runtime.executionInfo;
+    console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
+    console.log(`Attempt: ${info.nodeAttempt}`);
+    return "done";
+  },
+  {
+    name: "log_execution_context",
+    description: "Log execution identity information.",
+    schema: z.object({}),
+  }
+);
+```
+:::
+
+:::python
+<Note>
+Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`).
+</Note>
+:::
+
+:::js
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
+</Note>
+:::
+
+### Server info
+
+When your tool runs on LangGraph Server, access the assistant ID, graph ID, and authenticated user via `runtime.server_info`:
+
+:::python
+```python
+from langchain.tools import tool, ToolRuntime
+
+@tool
+def get_assistant_scoped_data(runtime: ToolRuntime) -> str:
+    """Fetch data scoped to the current assistant."""
+    server = runtime.server_info
+    if server is not None:
+        print(f"Assistant: {server.assistant_id}, Graph: {server.graph_id}")  # [!code highlight]
+        if server.user is not None:
+            print(f"User: {server.user.identity}")  # [!code highlight]
+    return "done"
+```
+
+`server_info` is `None` when the tool is not running on LangGraph Server (e.g., during local development or testing).
+:::
+
+:::js
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const getAssistantScopedData = tool(
+  async (_input, runtime) => {
+    const server = runtime.serverInfo;
+    if (server != null) {
+      console.log(`Assistant: ${server.assistantId}, Graph: ${server.graphId}`);  // [!code highlight]
+      if (server.user != null) {
+        console.log(`User: ${server.user.identity}`);  // [!code highlight]
+      }
+    }
+    return "done";
+  },
+  {
+    name: "get_assistant_scoped_data",
+    description: "Fetch data scoped to the current assistant.",
+    schema: z.object({}),
+  }
+);
+```
+
+`serverInfo` is `null` when the tool is not running on LangGraph Server.
+:::
+
+:::python
+<Note>
+Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`).
+</Note>
+:::
+
+:::js
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
+</Note>
 :::
 
 ## ToolNode
@@ -589,6 +712,7 @@ const getWeather = tool(
 ### Basic usage
 
 :::python
+
 ```python
 from langchain.tools import tool
 from langgraph.prebuilt import ToolNode
@@ -612,9 +736,11 @@ builder = StateGraph(MessagesState)
 builder.add_node("tools", tool_node)
 # ... add other nodes and edges
 ```
+
 :::
 
 :::js
+
 ```typescript
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { tool } from "@langchain/core/tools";
@@ -641,6 +767,7 @@ const calculator = tool(
 // Create the ToolNode with your tools
 const toolNode = new ToolNode([search, calculator]);
 ```
+
 :::
 
 ### Tool return values
@@ -730,6 +857,7 @@ Use this when the tool is not just returning data, but also mutating agent state
 Configure how tool errors are handled. See the @[`ToolNode`] API reference for all options.
 
 :::python
+
 ```python
 from langgraph.prebuilt import ToolNode
 
@@ -751,9 +879,11 @@ tool_node = ToolNode(tools, handle_tool_errors=handle_error)
 # Only catch specific exception types
 tool_node = ToolNode(tools, handle_tool_errors=(ValueError, TypeError))
 ```
+
 :::
 
 :::js
+
 ```typescript
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 
@@ -768,6 +898,7 @@ const toolNode = new ToolNode(tools, {
   handleToolErrors: "Something went wrong, please try again."
 });
 ```
+
 :::
 
 ### Route with tools_condition
@@ -775,6 +906,7 @@ const toolNode = new ToolNode(tools, {
 Use @[`tools_condition`] for conditional routing based on whether the LLM made tool calls:
 
 :::python
+
 ```python
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.graph import StateGraph, MessagesState, START, END
@@ -789,9 +921,11 @@ builder.add_edge("tools", "llm")
 
 graph = builder.compile()
 ```
+
 :::
 
 :::js
+
 ```typescript
 import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
 import { StateGraph, MessagesAnnotation } from "@langchain/langgraph";
@@ -805,6 +939,7 @@ const builder = new StateGraph(MessagesAnnotation)
 
 const graph = builder.compile();
 ```
+
 :::
 
 ### State injection
@@ -812,6 +947,7 @@ const graph = builder.compile();
 Tools can access the current graph state through @[`ToolRuntime`]:
 
 :::python
+
 ```python
 from langchain.tools import tool, ToolRuntime
 from langgraph.prebuilt import ToolNode
@@ -824,6 +960,7 @@ def get_message_count(runtime: ToolRuntime) -> str:
 
 tool_node = ToolNode([get_message_count])
 ```
+
 :::
 
 For more details on accessing state, context, and long-term memory from tools, see [Access context](#access-context).
