@@ -1,4 +1,4 @@
-.PHONY: all dev build export format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build export htmltest export-htmltest format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
 
 # Default target
 all: help
@@ -15,10 +15,38 @@ build:
 
 # Offline zip via Mintlify (https://www.mintlify.com/docs/deploy/export).
 # Must run from build/: docs.json paths are oss/python/... and oss/javascript/... but sources live under src/oss/... until the pipeline emits build/oss/{python,javascript}/...
-# Example: make export MINT_EXPORT_ARGS='--output ../langchain-docs-export.zip'
+# Default mint output when run from build/ is build/export.zip. Override with MINT_EXPORT_ARGS='--output other.zip' (path relative to build/) and matching EXPORT_ZIP=build/other.zip for htmltest.
 export: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run: npm install -g mint@latest"; exit 1; }
 	@cd build && mint export $(MINT_EXPORT_ARGS)
+
+# Zip produced by make export (default Mintlify name: export.zip in build/). Override if you used --output.
+EXPORT_ZIP ?= build/export.zip
+# Unpacked copy for htmltest (gitignored under build/).
+HTMLTEST_UNPACK_DIR ?= build/mint-export-htmltest-unpacked
+# Default: skip external link checks (faster, no network). Full crawl: make htmltest HTMLTEST_ARGS=
+HTMLTEST_ARGS ?= -s
+
+# Unzip EXPORT_ZIP and run htmltest (https://github.com/wjdp/htmltest). Run after make export.
+htmltest:
+	@command -v htmltest >/dev/null 2>&1 || { echo "Error: htmltest not found. Install: brew install htmltest  OR  curl https://htmltest.wjdp.uk | sudo bash -s -- -b /usr/local/bin"; exit 1; }
+	@command -v unzip >/dev/null 2>&1 || { echo "Error: unzip not found."; exit 1; }
+	@test -f $(EXPORT_ZIP) || { echo "Error: $(EXPORT_ZIP) not found. Run make export first, or set EXPORT_ZIP to your mint export zip path."; exit 1; }
+	mkdir -p $(HTMLTEST_UNPACK_DIR)
+	unzip -q -o $(EXPORT_ZIP) -d $(HTMLTEST_UNPACK_DIR)
+	@bash -ec 'ROOT="$(HTMLTEST_UNPACK_DIR)"; \
+		COUNT=$$(find "$$ROOT" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d " "); \
+		if [ "$$COUNT" -eq 1 ]; then \
+			ONLY=$$(find "$$ROOT" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1); \
+			if [ -d "$$ONLY" ]; then ROOT="$$ONLY"; fi; \
+		fi; \
+		echo "htmltest root: $$ROOT"; \
+		htmltest $(HTMLTEST_ARGS) -c "$(CURDIR)/htmltest-mint-export.yml" "$$ROOT"'
+
+# make export then make htmltest (sequential; use this for a one-shot check).
+export-htmltest:
+	@$(MAKE) export
+	@$(MAKE) htmltest
 
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests
@@ -165,6 +193,8 @@ help:
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
 	@echo "  make export             - Run mint export from ./build (optional: MINT_EXPORT_ARGS)"
+	@echo "  make htmltest           - Unzip EXPORT_ZIP (default build/export.zip), run htmltest (HTMLTEST_ARGS)"
+	@echo "  make export-htmltest    - make export then make htmltest"
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"

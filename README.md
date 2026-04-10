@@ -224,6 +224,14 @@ Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licen
 
 **Prevention**: Always use the provided Make commands instead of running raw `mint` commands from the project root.
 
+### Offline export and `htmltest`
+
+Use **`make export`** to run [`mint export`](https://www.mintlify.com/docs/deploy/export) from `build/` after `make build` so Python and JavaScript OSS routes match the files on disk. The default zip path is **`build/export.zip`** (Mintlify’s default filename when exporting from `build/`).
+
+Then run **`make htmltest`** to unpack that zip under `build/mint-export-htmltest-unpacked/` and run [htmltest](https://github.com/wjdp/htmltest) on the static HTML. Install htmltest first (for example `brew install htmltest`, or the [install script](https://github.com/wjdp/htmltest#installation)). By default external URLs are skipped (`HTMLTEST_ARGS=-s`); run a full check with `make htmltest HTMLTEST_ARGS=`. If you exported to a different file, set `EXPORT_ZIP` (for example `make htmltest EXPORT_ZIP=build/my-export.zip`).
+
+**`make export-htmltest`** runs **`make export`** and then **`make htmltest`** in one go.
+
 ### Warning: page doesn't exist
 
 If adding a new group, ensure the root `index.mdx` is included in the `pages` array like:
