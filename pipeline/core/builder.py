@@ -825,7 +825,6 @@ class DocumentationBuilder:
 
     # Maps npm dist filenames to their output names in build/snippets/
     _NPM_SNIPPET_FILES: dict[str, str] = {
-        "ChatLangChainEmbed.jsx": "chat-langchain-embed.jsx",
         "PatternEmbed.jsx": "pattern-embed.jsx",
         "ExampleEmbed.jsx": "example-embed.jsx",
     }
