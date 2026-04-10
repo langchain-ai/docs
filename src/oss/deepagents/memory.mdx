@@ -29,13 +29,13 @@ The key is the backend namespace: setting it to `(assistant_id,)` means every co
 
 :::python
 <Note>
-Accessing `ctx.runtime.server_info` requires `deepagents>=0.5.0`. On older versions, read the assistant ID from `get_config()["metadata"]["assistant_id"]` instead.
+Accessing `rt.server_info` requires `deepagents>=0.5.0`. On older versions, read the assistant ID from `get_config()["metadata"]["assistant_id"]` instead.
 </Note>
 :::
 
 :::js
 <Note>
-Accessing `ctx.runtime.serverInfo` requires `deepagents>=1.9.0`. On older versions, read the assistant ID from `getConfig().metadata.assistantId` instead.
+Accessing `rt.serverInfo` requires `deepagents>=1.9.0`. On older versions, read the assistant ID from `getConfig().metadata.assistantId` instead.
 </Note>
 :::
 
@@ -51,13 +51,13 @@ agent = create_deep_agent(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
-                namespace=lambda ctx: (
-                    ctx.runtime.server_info.assistant_id,  # [!code highlight]
+                namespace=lambda rt: (
+                    rt.server_info.assistant_id,  # [!code highlight]
                 ),
             ),
             "/skills/": StoreBackend(
-                namespace=lambda ctx: (
-                    ctx.runtime.server_info.assistant_id,  # [!code highlight]
+                namespace=lambda rt: (
+                    rt.server_info.assistant_id,  # [!code highlight]
                 ),
             ),
         },
@@ -77,10 +77,10 @@ const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
+        namespace: (rt) => [rt.serverInfo.assistantId],  // [!code highlight]
       }),
       "/skills/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
+        namespace: (rt) => [rt.serverInfo.assistantId],  // [!code highlight]
       }),
     },
   ),
@@ -135,10 +135,10 @@ agent = create_deep_agent(
         default=StateBackend(rt),
         routes={
             "/memories/": StoreBackend(
-                rt, namespace=lambda ctx: ("my-agent",)
+                rt, namespace=lambda rt: ("my-agent",)
             ),
             "/skills/": StoreBackend(
-                rt, namespace=lambda ctx: ("my-agent",)
+                rt, namespace=lambda rt: ("my-agent",)
             ),
         },
     ),
@@ -201,10 +201,10 @@ const agent = createDeepAgent({
     new StateBackend(rt),
     {
       "/memories/": new StoreBackend(rt, {
-        namespace: (ctx) => ["my-agent"],
+        namespace: (rt) => ["my-agent"],
       }),
       "/skills/": new StoreBackend(rt, {
-        namespace: (ctx) => ["my-agent"],
+        namespace: (rt) => ["my-agent"],
       }),
     },
   ),
@@ -245,10 +245,10 @@ agent = create_deep_agent(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
-                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+                namespace=lambda rt: (rt.server_info.user.identity,),
             ),
             "/skills/": StoreBackend(
-                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+                namespace=lambda rt: (rt.server_info.user.identity,),
             ),
         },
     ),
@@ -267,10 +267,10 @@ const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.context.userId],
+        namespace: (rt) => [rt.serverInfo.user.identity],
       }),
       "/skills/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.context.userId],
+        namespace: (rt) => [rt.serverInfo.user.identity],
       }),
     },
   ),
@@ -285,17 +285,11 @@ Seed per-user memories and invoke the agent as two different users. Each user se
 :::python
 ```python
 from langchain_core.utils.uuid import uuid7
-from dataclasses import dataclass
 
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from deepagents.backends.utils import create_file_data
 from langgraph.store.memory import InMemoryStore
-
-
-@dataclass
-class Context:
-    user_id: str
 
 
 store = InMemoryStore()  # Use platform store when deploying to LangSmith
@@ -336,35 +330,28 @@ Use the fetch_url tool to read https://docs.langchain.com/llms.txt, then fetch r
 agent = create_deep_agent(
     memory=["/memories/preferences.md"],
     skills=["/skills/"],
-    context_schema=Context,
     backend=lambda rt: CompositeBackend(
         default=StateBackend(rt),
         routes={
             "/memories/": StoreBackend(
                 rt,
-                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+                namespace=lambda rt: (rt.server_info.user.identity,),
             ),
             "/skills/": StoreBackend(
                 rt,
-                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+                namespace=lambda rt: (rt.server_info.user.identity,),
             ),
         },
     ),
     store=store,
 )
 
-# Alice's conversation — agent sees her preferences
+# When deployed, each authenticated request resolves
+# `rt.server_info.user.identity` to the calling user, so Alice and Bob
+# automatically see only their own preferences.
 agent.invoke(
     {"messages": [{"role": "user", "content": "How do I read a CSV file?"}]},
     config={"configurable": {"thread_id": str(uuid7())}},
-    context=Context(user_id="user-alice"),
-)
-
-# Bob's conversation — agent sees his preferences, not Alice's
-agent.invoke(
-    {"messages": [{"role": "user", "content": "How do I read a CSV file?"}]},
-    config={"configurable": {"thread_id": str(uuid7())}},
-    context=Context(user_id="user-bob"),
 )
 ```
 :::
@@ -372,13 +359,8 @@ agent.invoke(
 :::js
 ```typescript
 import { v4 as uuidv4 } from "uuid";
-import { z } from "zod";
 import { createDeepAgent, CompositeBackend, StateBackend, StoreBackend, createFileData } from "deepagents";
 import { InMemoryStore } from "@langchain/langgraph";
-
-const contextSchema = z.object({
-  userId: z.string(),
-});
 
 const store = new InMemoryStore();  // Use platform store when deploying to LangSmith
 
@@ -418,33 +400,26 @@ Use the fetch_url tool to read https://docs.langchain.com/llms.txt, then fetch r
 const agent = createDeepAgent({
   memory: ["/memories/preferences.md"],
   skills: ["/skills/"],
-  contextSchema,
   backend: (rt) => new CompositeBackend(
     new StateBackend(rt),
     {
       "/memories/": new StoreBackend(rt, {
-        namespace: (ctx) => [ctx.runtime.context.userId],
+        namespace: (rt) => [rt.serverInfo.user.identity],
       }),
       "/skills/": new StoreBackend(rt, {
-        namespace: (ctx) => [ctx.runtime.context.userId],
+        namespace: (rt) => [rt.serverInfo.user.identity],
       }),
     },
   ),
   store,
 });
 
-// Alice's conversation — agent sees her preferences
+// When deployed, each authenticated request resolves
+// `rt.serverInfo.user.identity` to the calling user, so Alice and Bob
+// automatically see only their own preferences.
 await agent.invoke(
   { messages: [{ role: "user", content: "How do I read a CSV file?" }] },
   { configurable: { thread_id: uuidv4() } },
-  { context: { userId: "user-alice" } },
-);
-
-// Bob's conversation — agent sees his preferences, not Alice's
-await agent.invoke(
-  { messages: [{ role: "user", content: "How do I read a CSV file?" }] },
-  { configurable: { thread_id: uuidv4() } },
-  { context: { userId: "user-bob" } },
 );
 ```
 :::
@@ -581,10 +556,10 @@ agent = create_deep_agent(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
-                namespace=lambda ctx: (ctx.runtime.context.user_id,),
+                namespace=lambda rt: (rt.server_info.user.identity,),
             ),
             "/policies/": StoreBackend(
-                namespace=lambda ctx: (ctx.runtime.context.org_id,),
+                namespace=lambda rt: (rt.context.org_id,),
             ),
         },
     ),
@@ -605,10 +580,10 @@ const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.context.userId],
+        namespace: (rt) => [rt.serverInfo.user.identity],
       }),
       "/policies/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.context.orgId],
+        namespace: (rt) => [rt.context.orgId],
       }),
     },
   ),
@@ -875,9 +850,9 @@ To give each agent its own memory in a shared deployment, add `assistant_id` to 
 :::python
 ```python
 StoreBackend(
-    namespace=lambda ctx: (
-        ctx.runtime.server_info.assistant_id,  # [!code highlight]
-        ctx.runtime.context.user_id,
+    namespace=lambda rt: (
+        rt.server_info.assistant_id,  # [!code highlight]
+        rt.server_info.user.identity,
     ),
 )
 ```
@@ -886,9 +861,9 @@ StoreBackend(
 :::js
 ```typescript
 new StoreBackend({
-  namespace: (ctx) => [
-    ctx.runtime.serverInfo.assistantId,  // [!code highlight]
-    ctx.runtime.context.userId,
+  namespace: (rt) => [
+    rt.serverInfo.assistantId,  // [!code highlight]
+    rt.serverInfo.user.identity,
   ],
 })
 ```
