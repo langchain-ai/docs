@@ -1,10 +1,9 @@
 ---
-title: Custom model providers
-sidebarTitle: Model providers
+title: Model providers
 description: Configure any LangChain-compatible model provider for the Deep Agents CLI
 ---
 
-The Deep Agents CLI supports any [chat model provider compatible with LangChain](/oss/langchain/models), unlocking use for virtually any LLM that supports tool calling. Any service that exposes an OpenAI-compatible or Anthropic-compatible API also works out of the box—see [Compatible APIs](/oss/deepagents/cli/configuration#compatible-apis).
+The Deep Agents CLI supports any [chat model provider compatible with LangChain](/oss/integrations/chat), unlocking use for virtually any LLM that supports tool calling. Any service that exposes an OpenAI-compatible or Anthropic-compatible API also works out of the box—see [Compatible APIs](/oss/deepagents/cli/configuration#compatible-apis).
 
 ## Quick start
 
@@ -12,14 +11,15 @@ The CLI integrates automatically with the [following model providers](#provider-
 
 1. **Install provider packages**
 
-    Each model provider requires installing its corresponding LangChain integration package. These are available as optional extras when installing the CLI:
+    Each model provider requires installing its corresponding LangChain integration package. These are available as optional extras when installing the CLI, done intentionally to keep the application lightweight:
 
     ```bash
-    # Quick install with chosen providers (OpenAI included automatically)
-    DEEPAGENTS_EXTRAS="anthropic,groq" curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/scripts/install.sh | bash
+    # Quick install with chosen providers
+    # OpenAI, Anthropic, and Gemini are included by default
+    DEEPAGENTS_EXTRAS="baseten,groq" curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/scripts/install.sh | bash
 
     # Or install directly with uv
-    uv tool install 'deepagents-cli[anthropic,groq]'
+    uv tool install 'deepagents-cli[baseten,groq]'
 
     # Add additional packages at a later date
     uv tool install deepagents-cli --with langchain-ollama
@@ -30,13 +30,24 @@ The CLI integrates automatically with the [following model providers](#provider-
 
 2. **Set credentials**
 
-    Most providers require an API key. Set the appropriate environment variable listed in the table below. Some providers use other credentials (for example, Vertex AI uses `GOOGLE_CLOUD_PROJECT` plus ADC). Refer to each integration package's docs for details.
+    Store API keys in `~/.deepagents/.env` so they're available across all projects, or export them in your shell:
 
-:::python
+    ```bash
+    ANTHROPIC_API_KEY=sk-ant-...
+    OPENAI_API_KEY=sk-...
+    ```
+
+    Some providers use other credentials (for example, Vertex AI uses `GOOGLE_CLOUD_PROJECT` plus ADC). See the table below for the required variable per provider. You can also scope credentials to the CLI with the [`DEEPAGENTS_CLI_` prefix](/oss/deepagents/cli/configuration#deepagents_cli_-prefix).
 
 ### Provider reference
 
-Using a provider not listed here? See [Arbitrary providers](/oss/deepagents/cli/configuration#arbitrary-providers): any LangChain-compatible provider can be used in the CLI with some additional setup.
+:::js
+The Deep Agents CLI is built in Python, please use the [Python provider reference docs](https://docs.langchain.com/oss/python/deepagents/cli/providers#provider-reference).
+:::
+
+:::python
+
+Using a provider not listed here? See [Arbitrary providers](/oss/deepagents/cli/configuration#arbitrary-providers): any LangChain-compatible provider can be used in the CLI with additional setup.
 
 | Provider | Package | Credential env var | Model profiles |
 | --- | --- | --- | --- |
@@ -44,7 +55,7 @@ Using a provider not listed here? See [Arbitrary providers](/oss/deepagents/cli/
 | Azure OpenAI | [`langchain-openai`](/oss/integrations/chat/azure_chat_openai) | `AZURE_OPENAI_API_KEY` | ✅ |
 | Anthropic | [`langchain-anthropic`](/oss/integrations/chat/anthropic) | `ANTHROPIC_API_KEY` | ✅ |
 | Google Gemini API | [`langchain-google-genai`](/oss/integrations/chat/google_generative_ai) | `GOOGLE_API_KEY` | ✅ |
-| Google Vertex AI | [`langchain-google-vertexai`](/oss/integrations/chat/google_generative_ai#credentials) | `GOOGLE_CLOUD_PROJECT` | ✅ |
+| Google Vertex AI | [`langchain-google-genai`](/oss/integrations/chat/google_generative_ai#credentials) | `GOOGLE_CLOUD_PROJECT` | ✅ |
 | Baseten | [`langchain-baseten`](https://github.com/basetenlabs/langchain-baseten) | `BASETEN_API_KEY` | ✅ |
 | AWS Bedrock | [`langchain-aws`](/oss/integrations/chat/bedrock) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | ✅ |
 | AWS Bedrock Converse | [`langchain-aws`](/oss/integrations/chat/bedrock) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | ✅ |
@@ -64,10 +75,47 @@ Using a provider not listed here? See [Arbitrary providers](/oss/deepagents/cli/
 | LiteLLM | [`langchain-litellm`](/oss/integrations/chat/litellm) | Per-provider (see [docs](https://docs.litellm.ai/)) | ❌ |
 
 <Tip>
-    A **[model profile](/oss/langchain/models#model-profiles)** is a bundle of metadata (model name, default parameters, capabilities, etc.) that ships with a provider package, largely powered by the [models.dev](https://models.dev/) project. Providers that include model profiles have their models listed automatically in the interactive `/model` switcher, subject to the [filtering criteria](#which-models-appear-in-the-switcher) (notably, `tool_calling` must be enabled). Providers without model profiles require you to specify the model name directly or add models via `config.toml`.
+    You can scope any credential to the CLI by adding a `DEEPAGENTS_CLI_` prefix. For example, `DEEPAGENTS_CLI_OPENAI_API_KEY` takes priority over `OPENAI_API_KEY` within the CLI without affecting other tools. See [`DEEPAGENTS_CLI_` prefix](/oss/deepagents/cli/configuration#deepagents_cli_-prefix) for details.
+</Tip>
+
+<Tip>
+    A **[model profile](/oss/langchain/models#model-profiles)** is a bundle of metadata (model name, default parameters, capabilities, etc.) that ships with a provider package, largely powered by the [models.dev](https://models.dev/) project.
+
+    Providers that include model profiles have their models listed automatically in the interactive `/model` switcher, subject to the [filtering criteria](#which-models-appear-in-the-switcher) (notably, `tool_calling` must be enabled). Providers without model profiles require you to specify the model name directly or add models via `config.toml`.
 </Tip>
 
 :::
+
+### Model routers and proxies
+
+Model routers like [OpenRouter](https://openrouter.ai/) and [LiteLLM](https://docs.litellm.ai/) provide access to models from multiple providers through a single endpoint.
+
+Use the dedicated integration packages for these services:
+
+:::python
+| Router | Package | Config |
+| --- | --- | --- |
+| OpenRouter | [`langchain-openrouter`](/oss/integrations/chat/openrouter) | `openrouter:<model>` (built-in, see [Provider reference](#provider-reference)) |
+| LiteLLM | [`langchain-litellm`](/oss/integrations/chat/litellm) | `litellm:<model>` (built-in, see [Provider reference](#provider-reference)) |
+:::
+
+:::js
+| Router | Package |
+| --- | --- |
+| OpenRouter | [`langchain-openrouter`](/oss/integrations/chat/openrouter) |
+:::
+
+**OpenRouter** is a built-in provider—install the package and use it directly:
+
+```bash
+uv tool install 'deepagents-cli[openrouter]'
+```
+
+**LiteLLM** is also a built-in provider:
+
+```bash
+uv tool install 'deepagents-cli[litellm]'
+```
 
 ### Switching models
 
@@ -76,46 +124,50 @@ To switch models in the CLI, either:
 1. **Use the interactive model switcher** with the `/model` command. This displays available models sourced from each installed LangChain provider package's [model profiles](/oss/langchain/models#model-profiles).
 
     <Note>
-        These profiles are not an exhaustive list of available models. If the model you want isn't shown, use option 2 instead (useful for newly released models that haven't been added to the profiles yet). See [Which models appear in the switcher](#which-models-appear-in-the-switcher) for the full set of criteria.
+        Not all models appear here. If yours is missing, pass the model name directly (e.g. `/model gpt-5.4`). See [Which models appear in the switcher](#which-models-appear-in-the-switcher) for details.
     </Note>
-2. **Specify a model name directly** as an argument, e.g. `/model openai:gpt-4o`. You can use any model supported by the chosen provider, regardless of whether it appears in the list from option 1. The model name will be passed to the API request.
+2. **Specify a model name directly** as an argument, e.g. `/model gpt-5.4`. You can use any model supported by the chosen provider, regardless of whether it appears in the list from option 1. The model name will be passed to the API request.
 3. **Specify the model at launch** via `--model`, e.g.
 
     ```txt
-    deepagents --model openai:gpt-4o
+    deepagents --model openai:gpt-5.4
     ```
 
 ### Which models appear in the switcher
 
-The interactive `/model` selector builds its list dynamically—it is not a hardcoded list baked into the CLI. A model appears in the switcher when **all** of the following are true:
+The `/model` selector dynamically builds its list from installed provider packages. Expand below for the full criteria and troubleshooting.
 
-1. **The provider package is installed.** Each provider (e.g. `langchain-anthropic`, `langchain-openai`) must be installed alongside `deepagents-cli`—either as an [install extra](/oss/deepagents/cli/providers#quick-start) (e.g. `uv tool install 'deepagents-cli[anthropic]'`) or added later with `uv tool install deepagents-cli --with <package>`. If a package is missing, its entire provider section is absent from the switcher.
-2. **The model has a profile with `tool_calling` enabled.** The CLI is a tool-calling agent, so it filters out models that don't support tool calling, as indicated in their profile data. This is the most common reason a model is missing from the list. For providers that don't bundle profiles (see the [Provider reference](#provider-reference) table), you can define one in `config.toml`:
+<Accordion title="How the switcher builds its model list" icon="list-search">
+    The interactive `/model` selector builds its list dynamically—it is not a hardcoded list baked into the CLI. A model appears in the switcher when **all** of the following are true:
 
-    ```toml
-    [models.providers.ollama.profile."qwen3:4b"]
-    tool_calling = true
-    max_input_tokens = 32768
-    max_output_tokens = 8192
-    ```
+    1. **The provider package is installed.** Each provider (e.g. `langchain-anthropic`, `langchain-openai`) must be installed alongside `deepagents-cli`—either as an [install extra](/oss/deepagents/cli/providers#quick-start) (e.g. `uv tool install 'deepagents-cli[ollama]'`) or added later with `uv tool install deepagents-cli --with <package>`. If a package is missing, its entire provider section is absent from the switcher.
+    2. **The model has a profile with `tool_calling` enabled.** The CLI requires tool-calling support, so models without `tool_calling: true` in their profile are excluded. This is the most common reason a model is missing from the list. For providers that don't bundle profiles (see the [Provider reference](#provider-reference) table), you can define one in `config.toml`:
 
-    This is not strictly required for the model to appear in the switcher — adding it to the [`models` list](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) also works and is simpler. A profile is useful when you want the CLI to know the model's context window and capabilities for features like auto-summarization. See [Profile overrides](/oss/deepagents/cli/configuration#profile-overrides) for all overridable fields.
-3. **The model accepts and produces text.** Models whose profile explicitly sets `text_inputs` or `text_outputs` to `false` (e.g. embedding or image-generation models) are excluded.
+        ```toml
+        [models.providers.ollama.profile."qwen3:4b"]
+        tool_calling = true
+        max_input_tokens = 32768
+        max_output_tokens = 8192
+        ```
 
-Models defined in `config.toml` under [`[models.providers.<name>].models`](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) bypass the profile filter—they always appear in the switcher regardless of profile metadata. This is the recommended way to add models that are missing from the list.
+        This is not strictly required for the model to appear in the switcher — adding it to the [`models` list](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) also works and is simpler. A profile is useful when you want the CLI to know the model's context window and capabilities for features like auto-summarization. See [Profile overrides](/oss/deepagents/cli/configuration#profile-overrides-advanced) for all overridable fields.
+    3. **The model accepts and produces text.** Models whose profile explicitly sets `text_inputs` or `text_outputs` to `false` (e.g. embedding or image-generation models) are excluded.
 
-<Tip>
-    Credential status does **not** affect whether a model is listed. The switcher shows all qualifying models and displays a credential indicator next to each provider header: a checkmark for confirmed credentials, a warning for missing credentials, or a question mark when credential status is unknown. You can still select a model with missing credentials—the provider will report an authentication error at request time.
-</Tip>
+    Models defined in `config.toml` under [`[models.providers.<name>].models`](/oss/deepagents/cli/configuration#adding-models-to-the-interactive-switcher) bypass the profile filter—they always appear in the switcher regardless of profile metadata. This is the recommended way to add models that are missing from the list.
 
-#### Troubleshooting missing models
+    <Tip>
+        Credential status does **not** affect whether a model is listed. The switcher shows all qualifying models and displays a credential indicator next to each provider header: a checkmark for confirmed credentials, a warning for missing credentials, or a question mark when credential status is unknown. You can still select a model with missing credentials—the provider will report an authentication error at request time.
+    </Tip>
 
-| Symptom | Likely cause | Fix |
-| --- | --- | --- |
-| Entire provider missing from switcher | Provider package not installed | Install the package (e.g. `uv tool install deepagents-cli --with langchain-groq`) |
-| Provider shown but specific model missing | Model profile has `tool_calling: false` or no profile exists | Add the model to `[models.providers.<name>].models` in `config.toml`, or use `/model <provider>:<model>` directly |
+    #### Troubleshooting missing models
+
+    | Symptom | Likely cause | Fix |
+    | --- | --- | --- |
+    | Entire provider missing from switcher | Provider package not installed | Install the package (e.g. `uv tool install deepagents-cli --with langchain-groq`) |
+    | Provider shown but specific model missing | Model profile has `tool_calling: false` or no profile exists | Add the model to `[models.providers.<name>].models` in `config.toml`, or use `/model <provider>:<model>` directly |
 | Provider shows ⚠ "missing credentials" | API key env var not set | Set the credential env var from the [Provider reference](#provider-reference) table |
-| Provider shows ? "credentials unknown" | Provider uses non-standard auth that the CLI can't verify | Credentials may still work—try switching to the model. If auth fails, check the provider's docs |
+    | Provider shows ? "credentials unknown" | Provider uses non-standard auth that the CLI can't verify | Credentials may still work—try switching to the model. If auth fails, check the provider's docs |
+</Accordion>
 
 ### Setting a default model
 
@@ -159,37 +211,6 @@ When the CLI launches, it resolves which model to use in the following order:
 4. **Environment auto-detection**: Falls back to the first available startup credential, checked in order: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_CLOUD_PROJECT` (Vertex AI).
 
 This startup fallback intentionally checks only those four credentials. Other supported providers (for example, Groq) are still available via `--model`, `/model`, and saved defaults (`[models].default` / `[models].recent`).
-
-### Model routers and proxies
-
-Model routers like [OpenRouter](https://openrouter.ai/) and [LiteLLM](https://docs.litellm.ai/) provide access to models from multiple providers through a single endpoint.
-
-Use the dedicated integration packages for these services:
-
-:::python
-| Router | Package | Config |
-| --- | --- | --- |
-| OpenRouter | [`langchain-openrouter`](/oss/integrations/chat/openrouter) | `openrouter:<model>` (built-in, see [Provider reference](#provider-reference)) |
-| LiteLLM | [`langchain-litellm`](/oss/integrations/chat/litellm) | `litellm:<model>` (built-in, see [Provider reference](#provider-reference)) |
-:::
-
-:::js
-| Router | Package |
-| --- | --- |
-| OpenRouter | [`langchain-openrouter`](/oss/integrations/chat/openrouter) |
-:::
-
-**OpenRouter** is a built-in provider—install the package and use it directly:
-
-```bash
-uv tool install 'deepagents-cli[openrouter]'
-```
-
-**LiteLLM** is also a built-in provider:
-
-```bash
-uv tool install 'deepagents-cli[litellm]'
-```
 
 ---
 

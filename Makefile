@@ -1,4 +1,4 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build export format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
 
 # Default target
 all: help
@@ -12,6 +12,13 @@ build:
 	@echo "Building documentation..."
 	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline build
+
+# Offline zip via Mintlify (https://www.mintlify.com/docs/deploy/export).
+# Must run from build/: docs.json paths are oss/python/... and oss/javascript/... but sources live under src/oss/... until the pipeline emits build/oss/{python,javascript}/...
+# Example: make export MINT_EXPORT_ARGS='--output ../langchain-docs-export.zip'
+export: build
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run: npm install -g mint@latest"; exit 1; }
+	@cd build && mint export $(MINT_EXPORT_ARGS)
 
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests
@@ -157,6 +164,7 @@ help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
+	@echo "  make export             - Run mint export from ./build (optional: MINT_EXPORT_ARGS)"
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"

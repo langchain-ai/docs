@@ -440,14 +440,14 @@ There are two approaches depending on whether tools are known ahead of time:
 
         ```typescript
         import { createMiddleware } from "langchain";
-        import { createDeepAgent } from "deepagents";
+        import { createDeepAgent, StoreBackend } from "deepagents";
         import * as z from "zod";
         import { InMemoryStore } from "@langchain/langgraph";
-        
+
         const contextSchema = z.object({
           userId: z.string(),
         });
-        
+
         const storeBasedTools = createMiddleware({
           name: "StoreBasedTools",
           contextSchema,
@@ -455,7 +455,7 @@ There are two approaches depending on whether tools are known ahead of time:
             const userId =
               (request.runtime?.context as { userId?: string } | undefined)?.userId ??
                 "user-123";
-        
+
             // Read from Store: get user's enabled features
             const runtimeStore = request.runtime?.store as InMemoryStore | undefined;
             const rawFlags = (await runtimeStore?.get(
@@ -463,23 +463,23 @@ There are two approaches depending on whether tools are known ahead of time:
               userId as string,
             )) as unknown;
             const featureFlags = rawFlags as FeatureFlags | undefined;
-        
+
             let filteredTools = request.tools;
-        
+
             if (featureFlags) {
               const enabledFeatures = featureFlags.enabledTools || [];
               filteredTools = request.tools.filter((t) =>
                 enabledFeatures.includes(t.name as string)
               );
             }
-        
+
             return handler({ ...request, tools: filteredTools });
           },
         });
-        
+
         const agent = await createDeepAgent({
           model: "claude-sonnet-4-20250514",
-          backend: backendFactory,
+          backend: new StoreBackend(),
           store,
           checkpointer,
           tools,
@@ -548,20 +548,20 @@ There are two approaches depending on whether tools are known ahead of time:
         import * as z from "zod";
         import { createMiddleware } from "langchain";
         import { createDeepAgent } from "deepagents";
-        
+
         const contextSchema = z.object({
           userRole: z.string(),
         });
-        
+
         const contextBasedTools = createMiddleware({
           name: "ContextBasedTools",
           contextSchema,
           wrapModelCall: (request, handler) => {
             // Read from Runtime Context: get user role
             const userRole = request.runtime.context.userRole;
-        
+
             let filteredTools = request.tools;
-        
+
             if (userRole === "admin") {
               // Admins get all tools
             } else if (userRole === "editor") {
@@ -571,11 +571,11 @@ There are two approaches depending on whether tools are known ahead of time:
                 (t) => (t.name as string).startsWith("read_"),
               );
             }
-        
+
             return handler({ ...request, tools: filteredTools });
           },
         });
-        
+
         const agent = await createDeepAgent({
           model: "claude-sonnet-4-20250514",
           store,
@@ -1070,7 +1070,12 @@ const agent = createAgent({
 
 ## Invocation
 
+:::python
 You can invoke an agent by passing an update to its [`State`](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesstate) in their state; to invoke the agent, pass a new message:
+:::
+:::js
+You can invoke an agent by passing an update to its [`State`](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesvalue) in their state; to invoke the agent, pass a new message:
+:::
 
 :::python
 ```python

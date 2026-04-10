@@ -46,28 +46,58 @@ import SandboxBasicJs from '/snippets/deepagents-sandbox-basic-js.mdx';
 :::python
 ```python
 create_deep_agent(
-    name: str | None = None,
     model: str | BaseChatModel | None = None,
     tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
     *,
-    system_prompt: str | SystemMessage | None = None
+    system_prompt: str | SystemMessage | None = None,
+    middleware: Sequence[AgentMiddleware] = (),
+    subagents: Sequence[SubAgent | CompiledSubAgent | AsyncSubAgent] | None = None,
+    skills: list[str] | None = None,
+    memory: list[str] | None = None,
+    response_format: ResponseFormat[ResponseT] | type[ResponseT] | dict[str, Any] | None = None,
+    backend: BackendProtocol | BackendFactory | None = None,
+    interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
+    ...
 ) -> CompiledStateGraph
 ```
 
-For more information, see the @[`create_deep_agent`] API reference.
+For the full parameter list, see the @[`create_deep_agent`] API reference.
 :::
 
 :::js
 ```typescript
 const agent = createDeepAgent({
-  name?: string,
   model?: BaseLanguageModel | string,
   tools?: TTools | StructuredTool[],
   systemPrompt?: string | SystemMessage,
+  middleware?: TMiddleware,
+  subagents?: TSubagents,
+  responseFormat?: TResponse,
+  backend?: AnyBackendProtocol | ((config) => AnyBackendProtocol),
+  interruptOn?: Record<string, boolean | InterruptOnConfig>,
+  memory?: string[],
+  skills?: string[],
+  ...
 });
 ```
 
-For more information, see [Customizing Deep Agents](https://reference.langchain.com/javascript/modules/deepagents.html#customizing-deep-agents).
+For the full parameter list, see the [`createDeepAgent`](https://reference.langchain.com/javascript/deepagents/agent/createDeepAgent) API reference.
+:::
+
+## Model
+
+Pass a `model` string in `provider:model` format, or an initialized model instance. Defaults to `anthropic:claude-sonnet-4-6`. See [supported models](/oss/deepagents/models#supported-models) for all providers and [suggested models](/oss/deepagents/models#suggested-models) for tested recommendations.
+
+<Tip>
+    Use the `provider:model` format (for example `openai:gpt-5`) to quickly switch between models.
+</Tip>
+
+:::python
+<ChatModelTabsDaPy />
+:::
+
+:::js
+<ChatModelTabsDaJs />
 :::
 
 ### Connection resilience
@@ -115,23 +145,9 @@ const agent = createDeepAgent({
 
 :::
 
-<Tip>For long-running agent tasks on unreliable networks, consider increasing `max_retries` to 10–15 and pairing it with a [checkpointer](/oss/langgraph/persistence) so that progress is preserved across failures.</Tip>
-
-## Model
-
-By default, `deepagents` uses [`claude-sonnet-4-6`](https://platform.claude.com/docs/en/about-claude/models/overview). You can customize the model by passing any supported <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model)">model identifier string</Tooltip> or [LangChain model object](/oss/integrations/chat).
-
 <Tip>
-    Use the `provider:model` format (for example `openai:gpt-5`) to quickly switch between models.
+    For long-running agent tasks on unreliable networks, consider increasing `max_retries` to 10–15 and pairing it with a [checkpointer](/oss/langgraph/persistence) so that progress is preserved across failures.
 </Tip>
-
-:::python
-<ChatModelTabsDaPy />
-:::
-
-:::js
-<ChatModelTabsDaJs />
-:::
 
 ## Tools
 
@@ -266,7 +282,6 @@ If you are using memory, skills, or human-in-the-loop, the following middleware 
 - @[`MemoryMiddleware`]: Persists and retrieves conversation context across sessions when the `memory` argument is provided
 - @[`SkillsMiddleware`]: Enables custom skills when the `skills` argument is provided
 - `HumanInTheLoopMiddleware`: Pauses for human approval or input at specified points when the `interruptOn` argument is provided
-:::
 
 ### Pre-built middleware
 
@@ -274,15 +289,19 @@ LangChain exposes additional pre-built middleware that let you add-on various fe
 
 :::python
 
-The `deepagents` library also exposes @[create_summarization_tool_middleware], enabling agents to trigger summarization at opportune times—such as between tasks—instead of at fixed token intervals. For more detail, see [Summarization in the harness](/oss/deepagents/harness#summarization).
+The `deepagents` library also exposes @[create_summarization_tool_middleware], enabling agents to trigger summarization at opportune times—such as between tasks—instead of at fixed token intervals. For more detail, see [Summarization](/oss/deepagents/context-engineering#summarization).
 
 :::
 
 :::js
 
-The `deepagents` package also exposes @[createSummarizationMiddleware] for the same workflow. For more detail, see [Summarization in the harness](/oss/deepagents/harness#summarization).
+The `deepagents` package also exposes @[createSummarizationMiddleware] for the same workflow. For more detail, see [Summarization](/oss/deepagents/context-engineering#summarization).
 
 :::
+
+### Provider-specific middleware
+
+For provider-specific middleware that is optimized for specific LLM providers, see [Official integrations](/oss/integrations/middleware#official-integrations) and [Community integrations](/oss/integrations/middleware#community-integrations).
 
 ### Custom middleware
 
@@ -372,7 +391,7 @@ const logToolCallsMiddleware = createMiddleware({
 });
 
 const agent = await createDeepAgent({
-  model: "claude-sonnet-4-20250514",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [getWeather] as any,
   middleware: [logToolCallsMiddleware] as any,
 });
@@ -387,7 +406,7 @@ Graph state is scoped to a thread by design, so updates are safe under concurren
 
 **Do this:**
 
-::::python
+:::python
 ```python
 class CustomMiddleware(AgentMiddleware):
     def __init__(self):
@@ -396,9 +415,9 @@ class CustomMiddleware(AgentMiddleware):
     def before_agent(self, state, runtime):
         return {"x": state.get("x", 0) + 1}  # Update graph state instead
 ```
-::::
+:::
 
-::::js
+:::js
 ```typescript
 const customMiddleware = createMiddleware({
   name: "CustomMiddleware",
@@ -407,11 +426,11 @@ const customMiddleware = createMiddleware({
   },
 });
 ```
-::::
+:::
 
 Do **not** do this:
 
-::::python
+:::python
 ```python
 class CustomMiddleware(AgentMiddleware):
     def __init__(self):
@@ -420,9 +439,9 @@ class CustomMiddleware(AgentMiddleware):
     def before_agent(self, state, runtime):
         self.x += 1  # Mutation causes race conditions
 ```
-::::
+:::
 
-::::js
+:::js
 ```typescript
 let x = 1;
 
@@ -433,7 +452,7 @@ const customMiddleware = createMiddleware({
   },
 });
 ```
-::::
+:::
 
 :::python
 Mutation in place, such as modifying `self.x` in `before_agent` or changing other shared values in hooks, can lead to subtle bugs and race conditions because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
@@ -609,106 +628,106 @@ You can pass one or more file paths to the `memory` parameter when creating your
 :::python
 
 <Tabs>
-  <Tab title="StateBackend">
-    ```python
-    from urllib.request import urlopen
+    <Tab title="StateBackend">
+        ```python
+        from urllib.request import urlopen
 
-    from deepagents import create_deep_agent
-    from deepagents.backends.utils import create_file_data
-    from langgraph.checkpoint.memory import MemorySaver
+        from deepagents import create_deep_agent
+        from deepagents.backends.utils import create_file_data
+        from langgraph.checkpoint.memory import MemorySaver
 
-    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
-        agents_md = response.read().decode("utf-8")
-    checkpointer = MemorySaver()
+        with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
+            agents_md = response.read().decode("utf-8")
+        checkpointer = MemorySaver()
 
-    agent = create_deep_agent(
-        memory=[
-            "/AGENTS.md"
-        ],
-        checkpointer=checkpointer,
-    )
-
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Please tell me what's in your memory files.",
-                }
+        agent = create_deep_agent(
+            memory=[
+                "/AGENTS.md"
             ],
-            # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
-            "files": {"/AGENTS.md": create_file_data(agents_md)},
-        },
-        config={"configurable": {"thread_id": "123456"}},
-    )
-    ```
-  </Tab>
-  <Tab title="StoreBackend">
-    ```python
-    from urllib.request import urlopen
+            checkpointer=checkpointer,
+        )
 
-    from deepagents import create_deep_agent
-    from deepagents.backends import StoreBackend
-    from deepagents.backends.utils import create_file_data
-    from langgraph.store.memory import InMemoryStore
+        result = agent.invoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Please tell me what's in your memory files.",
+                    }
+                ],
+                # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
+                "files": {"/AGENTS.md": create_file_data(agents_md)},
+            },
+            config={"configurable": {"thread_id": "123456"}},
+        )
+        ```
+    </Tab>
+    <Tab title="StoreBackend">
+        ```python
+        from urllib.request import urlopen
 
-    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
-        agents_md = response.read().decode("utf-8")
+        from deepagents import create_deep_agent
+        from deepagents.backends import StoreBackend
+        from deepagents.backends.utils import create_file_data
+        from langgraph.store.memory import InMemoryStore
 
-    # Create the store and add the file to it
-    store = InMemoryStore()
-    file_data = create_file_data(agents_md)
-    store.put(
-        namespace=("filesystem",),
-        key="/AGENTS.md",
-        value=file_data
-    )
+        with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
+            agents_md = response.read().decode("utf-8")
 
-    agent = create_deep_agent(
-        backend=(lambda rt: StoreBackend(rt)),
-        store=store,
-        memory=[
-            "/AGENTS.md"
-        ]
-    )
+        # Create the store and add the file to it
+        store = InMemoryStore()
+        file_data = create_file_data(agents_md)
+        store.put(
+            namespace=("filesystem",),
+            key="/AGENTS.md",
+            value=file_data
+        )
 
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Please tell me what's in your memory files.",
-                }
+        agent = create_deep_agent(
+            backend=StoreBackend(),
+            store=store,
+            memory=[
+                "/AGENTS.md"
+            ]
+        )
+
+        result = agent.invoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Please tell me what's in your memory files.",
+                    }
+                ],
+                "files": {"/AGENTS.md": create_file_data(agents_md)},
+            },
+            config={"configurable": {"thread_id": "12345"}},
+        )
+        ```
+    </Tab>
+    <Tab title="FilesystemBackend">
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends import FilesystemBackend
+        from langgraph.checkpoint.memory import MemorySaver
+
+        # Checkpointer is REQUIRED for human-in-the-loop
+        checkpointer = MemorySaver()
+
+        agent = create_deep_agent(
+            backend=FilesystemBackend(root_dir="/Users/user/{project}"),
+            memory=[
+                "./AGENTS.md"
             ],
-            "files": {"/AGENTS.md": create_file_data(agents_md)},
-        },
-        config={"configurable": {"thread_id": "12345"}},
-    )
-    ```
-  </Tab>
-  <Tab title="FilesystemBackend">
-    ```python
-    from deepagents import create_deep_agent
-    from langgraph.checkpoint.memory import MemorySaver
-    from deepagents.backends import FilesystemBackend
-
-    # Checkpointer is REQUIRED for human-in-the-loop
-    checkpointer = MemorySaver()
-
-    agent = create_deep_agent(
-        backend=FilesystemBackend(root_dir="/Users/user/{project}"),
-        memory=[
-            "./AGENTS.md"
-        ],
-        interrupt_on={
-            "write_file": True,  # Default: approve, edit, reject
-            "read_file": False,  # No interrupts needed
-            "edit_file": True    # Default: approve, edit, reject
-        },
-        checkpointer=checkpointer,  # Required!
-    )
-    ```
-  </Tab>
+            interrupt_on={
+                "write_file": True,  # Default: approve, edit, reject
+                "read_file": False,  # No interrupts needed
+                "edit_file": True    # Default: approve, edit, reject
+            },
+            checkpointer=checkpointer,  # Required!
+        )
+        ```
+    </Tab>
 </Tabs>
 
 :::
@@ -738,7 +757,8 @@ You can pass one or more file paths to the `memory` parameter when creating your
     function createFileData(content: string): FileData {
       const now = new Date().toISOString();
       return {
-        content: content.split("\n"),
+        content,
+        mimeType: "text/plain",
         created_at: now,
         modified_at: now,
       };
@@ -770,7 +790,6 @@ You can pass one or more file paths to the `memory` parameter when creating your
     import {
       InMemoryStore,
       MemorySaver,
-      type BaseStore,
     } from "@langchain/langgraph";
 
     const AGENTS_MD_URL =
@@ -789,7 +808,8 @@ You can pass one or more file paths to the `memory` parameter when creating your
     function createFileData(content: string): FileData {
       const now = new Date().toISOString();
       return {
-        content: content.split("\n"),
+        content,
+        mimeType: "text/plain",
         created_at: now,
         modified_at: now,
       };
@@ -801,15 +821,8 @@ You can pass one or more file paths to the `memory` parameter when creating your
 
     const checkpointer = new MemorySaver();
 
-    const backendFactory = (config: { state: unknown; store?: BaseStore }) => {
-      return new StoreBackend({
-        state: config.state,
-        store: config.store ?? store,
-      });
-    };
-
     const agent = await createDeepAgent({
-      backend: backendFactory,
+      backend: new StoreBackend(),
       store: store,
       checkpointer: checkpointer,
       memory: ["/AGENTS.md"],
@@ -837,8 +850,7 @@ You can pass one or more file paths to the `memory` parameter when creating your
     const checkpointer = new MemorySaver();
 
     const agent = await createDeepAgent({
-      backend: (config) =>
-        new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
+      backend: new FilesystemBackend({ rootDir: "/Users/user/{project}" }),
       memory: ["./AGENTS.md", "./.deepagents/AGENTS.md"],
       interruptOn: {
         read_file: true,
@@ -858,7 +870,7 @@ You can pass one or more file paths to the `memory` parameter when creating your
 Deep Agents support [structured output](/oss/langchain/structured-output).
 :::python
 You can set a desired structured output schema by passing it as the `response_format` argument to the call to `create_deep_agent()`.
-When the model generates the structured data, it’s captured, validated, and returned in the 'structured_response' key of the deep agent’s state.
+When the model generates the structured data, it's captured, validated, and returned in the 'structured_response' key of the deep agent's state.
 
 ```python
 import os
