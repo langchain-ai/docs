@@ -1,0 +1,74 @@
+# Semantix
+
+>[Semantix](https://github.com/labrat-akhona/semantix-ai) is a semantic type system for AI outputs.
+>It validates that LLM outputs match a **natural language intent** — not just a structural schema.
+>Uses local NLI (Natural Language Inference) models for fast, offline evaluation (~15ms per check, zero API cost).
+
+## Installation
+
+```bash
+pip install "semantix-ai[langchain]"
+```
+
+No API keys required for validation — the default judge runs entirely locally.
+
+## Semantic Output Validation
+
+`SemanticValidator` implements LangChain's `Runnable` interface and validates text against an `Intent` — a class whose docstring describes what the output should mean:
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from semantix import Intent
+from semantix.integrations.langchain import SemanticValidator
+
+class Polite(Intent):
+    """The text must be polite, professional, and free of aggressive language."""
+
+validator = SemanticValidator(Polite)
+
+# Use in a chain with the | pipe operator
+chain = prompt | llm | StrOutputParser() | validator
+result = chain.invoke({"event": "the company retreat"})
+```
+
+When validation fails, `SemanticValidator` raises `OutputParserException` — compatible with LangChain's `RetryWithErrorOutputParser` for automatic retries.
+
+## How It Works
+
+1. Define an `Intent` with a docstring describing the semantic requirement
+2. The validator evaluates the LLM output against the intent using NLI entailment scoring
+3. If the score exceeds the threshold (default 0.5), the text passes through unchanged
+4. If it fails, an `OutputParserException` is raised with the score and reason
+
+## Custom Judges
+
+Semantix supports pluggable judge backends:
+
+```python
+from semantix import NLIJudge, EmbeddingJudge, LLMJudge
+
+# NLI entailment (default, local, no API key)
+validator = SemanticValidator(Polite, judge=NLIJudge())
+
+# Embedding cosine similarity (fast, local)
+validator = SemanticValidator(Polite, judge=EmbeddingJudge())
+
+# LLM-based (accurate, needs OpenAI API key)
+validator = SemanticValidator(Polite, judge=LLMJudge(model="gpt-4o-mini"))
+```
+
+## Composite Intents
+
+Combine intents with `AllOf` (all must pass) or `AnyOf` (any must pass):
+
+```python
+from semantix import AllOf, AnyOf
+
+PoliteAndPositive = AllOf(Polite, Positive)
+validator = SemanticValidator(PoliteAndPositive)
+```
+
+## Resources
+
+- [PyPI](https://pypi.org/project/semantix-ai/)
+- [Repository](https://github.com/labrat-akhona/semantix-ai)
