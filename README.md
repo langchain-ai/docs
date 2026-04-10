@@ -210,7 +210,7 @@ Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licen
 1. **Use the safe Make commands** (recommended):
 
    ```bash
-   make broken-links      # Builds docs first, then checks links (with known exclusions)
+   make broken-links-with-anchors      # Builds docs first, then checks internal links
    ```
 
 2. **Run Mintlify commands from the build directory**:
