@@ -6,151 +6,95 @@ icon: "book"
 
 import MaxRunsPerTrace from '/snippets/langsmith/max-runs-per-trace.mdx';
 
-This page covers key concepts that are important to understand when logging traces to LangSmith.
+LangSmith Observability lets you record, inspect, and analyze every step your LLM application takes. This page explains how data is structured in LangSmith and how to send traces.
 
-A [_trace_](#traces) records the sequence of steps your application takes—from receiving an input, through intermediate processing, to producing a final output. Each step within a trace is represented by a [_run_](#runs). Multiple traces are grouped together within a [_project_](#projects), and traces from multi-turn conversations can be linked together as a [_thread_](#threads).
+## How LangSmith structures data
 
-The following diagram displays these concepts in the context of a simple RAG app, which retrieves documents from an index and generates an answer.
+LangSmith groups multiple [_traces_](#traces) within a [_project_](#projects). Each trace records the sequence of steps your application takes for a single operation, which are made up of individual [_runs_](#runs). You can link together traces from multi-turn conversations as a [_thread_](#threads).
 
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/primitives.png"
-    alt="Primitives of LangSmith Project, Trace, Run in the context of a question and answer RAG app."
-/>
+```mermaid actions={false}
+graph TB
+    Project -->|contains| Trace1[Trace]
+    Project -->|contains| Trace2[Trace]
+    Trace1 -->|contains| Run1[Run]
+    Trace1 -->|contains| Run2[Run]
+    Trace1 -->|contains| Run3[Run]
+    Trace1 -->|part of| Thread
+    Trace2 -->|part of| Thread
+```
 
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/primitives-dark.png"
-    alt="Primitives of LangSmith Project, Trace, Run in the context of a question and answer RAG app."
-/>
+### Projects
 
-## Runs
+A _project_ is a container for all the traces related to a single application or service.
 
-A _run_ is a span representing a single unit of work or operation within your LLM application. This could be anything from a single call to an LLM or chain, to a prompt formatting call, to a runnable lambda invocation. If you are familiar with [OpenTelemetry](https://opentelemetry.io/), you can think of a run as a span.
+[Log traces to a project](/langsmith/log-traces-to-project).
 
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/run-page-light.png"
-    alt="Run details page in the LangSmith UI."
-/>
+### Traces
 
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/run-page-dark.png"
-    alt="Run details page in the LangSmith UI."
-/>
-
-## Traces
-
-A _trace_ is a collection of runs for a single operation. For example, if you have a user request that triggers a chain, and that chain makes a call to an LLM, then to an output parser, and so on, all of these runs would be part of the same trace. If you are familiar with [OpenTelemetry](https://opentelemetry.io/), you can think of a LangSmith trace as a collection of spans. Runs are bound to a trace by a unique trace ID.
-
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/trace-light.png"
-    alt="Trace with individual runs in the LangSmith UI."
-/>
-
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/trace-dark.png"
-    alt="Trace with individual runs in the LangSmith UI."
-/>
+A _trace_ is a collection of runs for a single operation. For example, if a user request triggers a chain that calls an LLM and then an output parser, all of those runs belong to the same trace. Runs are bound to a trace by a unique trace ID. If you are familiar with [OpenTelemetry](https://opentelemetry.io/), you can think of a LangSmith trace as a collection of spans.
 
 <Note><MaxRunsPerTrace /></Note>
 
-## Threads
+### Runs
 
-A _thread_ is a sequence of traces representing a single conversation. Many LLM applications have a chatbot-like interface in which the user and the LLM application engage in a multi-turn conversation. Each turn in the conversation is represented as its own trace, but these traces are linked together by being part of the same thread. The most recent trace in a thread is the latest message exchange.
+A _run_ is a span representing a single unit of work within your LLM application: a call to an LLM, a prompt formatting step, a retrieval call, or any other discrete operation. If you are familiar with [OpenTelemetry](https://opentelemetry.io/), you can think of a run as a span.
 
-To group traces into threads, you pass a special metadata key (`session_id`, `thread_id`, or `conversation_id`) with a unique identifier value that links the traces together.
+### Threads
+
+A _thread_ is a sequence of traces representing a single conversation. Each turn in a multi-turn conversation is its own trace, but traces are linked by a shared identifier. To group traces into threads, pass a special metadata key (`session_id`, `thread_id`, or `conversation_id`) with a unique value.
 
 [Learn how to configure threads](/langsmith/threads).
-
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/thread-overview-light.png"
-    alt="Thread representing a sequence of traces in a multi-turn conversation."
-/>
-
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/thread-overview-dark.png"
-    alt="Thread representing a sequence of traces in a multi-turn conversation."
-/>
 
 <Callout type="info" icon="feather">
 Use **[Polly](/langsmith/polly)** to analyze traces, runs, and threads. Polly helps you understand agent performance, debug issues, and gain insights from conversation threads without manually digging through data.
 </Callout>
 
-## Projects
+## Trace enrichment
 
-A _project_ is a collection of traces. You can think of a project as a container for all the traces that are related to a single application or service. You can have multiple projects, and each project can have multiple traces.
+### Feedback
 
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/project-light.png"
-    alt="Project containing traces in the LangSmith UI with the + Project button at the top of the table."
-/>
+_Feedback_ allows you to score an individual run based on certain criteria. Each feedback entry consists of a tag and a score, and is bound to a run by a unique run ID. Feedback can be continuous or discrete (categorical), and tags can be reused across runs within an organization.
 
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/project-dark.png"
-    alt="Project containing traces in the LangSmith UI with the + Project button at the top of the table."
-/>
+For more on how feedback is stored, refer to the [Feedback data format guide](/langsmith/feedback-data-format).
 
-For more details on project setup and traces, refer to [Log traces to a project](/langsmith/log-traces-to-project).
+### Tags
 
-## Feedback
-
-_Feedback_ allows you to score an individual run based on certain criteria. Each feedback entry consists of a feedback tag and feedback score, and is bound to a run by a unique run ID. Feedback can be continuous or discrete (categorical), and you can reuse feedback tags across different runs within an organization.
-
-You can collect feedback on runs in a number of ways:
-
-1. [Sent up along with a trace](/langsmith/attach-user-feedback) from the LLM application.
-2. Generated by a user in the app [inline](/langsmith/annotate-traces-inline) or in an [annotation queue](/langsmith/annotation-queues).
-3. Generated by an automatic evaluator during [offline evaluation](/langsmith/evaluate-llm-application).
-4. Generated by an [online evaluator](/langsmith/online-evaluations-llm-as-judge).
-
-To learn more about how feedback is stored in the application, refer to the [Feedback data format guide](/langsmith/feedback-data-format).
-
-## Tags
-
-_Tags_ are collections of strings that can be attached to runs. You can use tags to do the following in the LangSmith UI:
-
-- Categorize runs for easier search.
-- Filter runs.
-- Group runs together for analysis.
+_Tags_ are strings you can attach to runs to categorize, filter, and group them in the LangSmith UI.
 
 [Learn how to attach tags to your traces](/langsmith/add-metadata-tags).
 
-## Metadata
+### Metadata
 
-_Metadata_ is a collection of key-value pairs that you can attach to runs. You can use metadata to store additional information about a run, such as the version of the application that generated the run, the environment in which the run was generated, or any other information that you want to associate with a run. Similarly to tags, you can use metadata to filter runs in the LangSmith UI or group runs together for analysis.
+_Metadata_ is a collection of key-value pairs you can attach to runs. For example, application version, environment, or any other contextual information. Similarly to tags, you can use metadata to filter and group runs.
 
 [Learn how to add metadata to your traces](/langsmith/add-metadata-tags).
 
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/metadata-light.png"
-    alt="Metadata for a run in the LangSmith UI."
-/>
+## Sending traces
 
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/metadata-dark.png"
-    alt="Metadata for a run in the LangSmith UI."
-/>
+There are two ways to send trace data to LangSmith.
 
-## Data storage and retention
+### Integrations
 
-For traces ingested on or after Wednesday, May 22, 2024, LangSmith (SaaS) retains trace data for a maximum of 400 days past the date and time the trace was inserted into the LangSmith trace database.
+LangSmith _integrations_ provide automatic tracing for popular LLM providers and agent frameworks (the equivalent of auto-instrumentation in general observability). When you use a supported framework such as LangChain, LangGraph, OpenAI, Anthropic, or CrewAI, the integration captures inputs, outputs, and metadata without requiring manual code changes.
 
-After 400 days, the traces are permanently deleted from LangSmith, with a limited amount of metadata retained for the purpose of showing accurate statistics, such as historic usage and cost.
+[Browse all integrations](/langsmith/integrations).
 
-For more information on data retention tiers, pricing, and auto-upgrade scenarios, refer to [Usage and billing: Data retention](/langsmith/administration-overview#data-retention).
+### Manual instrumentation
+
+_Manual instrumentation_ lets you add tracing to any code, regardless of the framework. Use it when you're not using a supported integration or when you need granular control over what gets traced. LangSmith provides three mechanisms:
+
+- `@traceable` / `traceable`: a decorator to trace any function
+- `trace` context manager (Python): wrap specific code blocks
+- `RunTree` API: low-level, explicit trace construction
+
+[Learn how to add manual instrumentation](/langsmith/annotate-code).
+
+## Data retention
+
+LangSmith (SaaS) retains trace data for 400 days from ingestion. After that, traces are permanently deleted, with limited metadata retained for usage statistics. For details on retention tiers and pricing, refer to [Usage and billing: Data retention](/langsmith/administration-overview#data-retention).
 
 <Note>
-If you wish to keep tracing data longer than the data retention period, you can add it to a dataset. A [dataset](/langsmith/manage-datasets) allows you to store the trace inputs and outputs (e.g., as a key-value dataset), and will persist indefinitely, even after the trace gets deleted.
+To keep data beyond the retention period, add it to a [dataset](/langsmith/manage-datasets). Datasets persist indefinitely, even after the source trace is deleted.
 </Note>
 
 To delete traces before their expiration date, see [Manage a trace](/langsmith/manage-trace#delete-a-trace).
