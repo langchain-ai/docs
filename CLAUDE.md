@@ -23,10 +23,9 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Images | `src/images/` |
 | Provider icons | `src/images/providers/` |
 | Navigation config | `src/docs.json` |
-| API reference (auto-generated) | `reference/` — do not edit |
 | Build system | `pipeline/` |
-| Icon library | Tabler — https://tabler.io/icons |
-| Mintlify components | https://mintlify.com/docs/components |
+| Icon library | Tabler — <https://tabler.io/icons> |
+| Mintlify components | <https://mintlify.com/docs/components> |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
 ## Repository structure
@@ -34,11 +33,11 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 ```txt
 docs/
 ├── src/                        # All manually authored content
-│   ├── docs.json               # Mintlify config + navigation (88KB)
+│   ├── docs.json               # Mintlify config + navigation
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
-│   ├── langsmith/              # LangSmith product docs (~324 MDX files)
-│   ├── oss/                    # Open source docs (~1800 MDX files)
+│   ├── langsmith/              # LangSmith product docs
+│   ├── oss/                    # Open source docs
 │   │   ├── langchain/          #   LangChain framework
 │   │   ├── langgraph/          #   LangGraph framework
 │   │   ├── deepagents/         #   Deep Agents
@@ -56,7 +55,6 @@ docs/
 │   │   └── providers/          #   Provider icons (dark/ and light/ variants)
 │   └── fonts/                  # TWK Lausanne font files
 ├── pipeline/                   # Python build system & preprocessors
-├── reference/                  # Auto-generated API reference — do not edit
 ├── build/                      # Build output — do not edit
 ├── scripts/                    # Helper utilities
 └── tests/                      # Pipeline tests
@@ -64,7 +62,7 @@ docs/
 
 ## Navigation map
 
-Navigation is defined in `src/docs.json`. The site has 4 products. When adding pages, find the correct product/tab/group below, then update the matching section in `docs.json`.
+Navigation is defined in `src/docs.json`. The site has 4 products (Home, LangSmith, LangSmith Fleet, Open source). When adding pages, find the correct product/tab/group below, then update the matching section in `docs.json`.
 
 ### Home
 
@@ -74,37 +72,40 @@ Single page (`src/index.mdx`). No tabs.
 
 7 tabs, all files in `src/langsmith/`:
 
-| Tab | Groups | Key files/directories |
-|-----|--------|----------------------|
-| Get started | Account administration (Workspace setup, Users & access control, Billing & usage), Tools, Additional resources (Data & compliance, FAQ) | `home.mdx`, `create-account-api-key.mdx`, `rbac.mdx`, `abac.mdx` |
-| Observability | Tracing setup (Integrations, Manual instrumentation), Configuration & troubleshooting, Viewing & managing traces, Automations, Feedback & evaluation, Monitoring & alerting, Data type reference | `tracing/`, `observability/` |
-| Evaluation | Datasets, Set up evaluations (Run, Types, Frameworks, Techniques, Tutorials), Analyze experiment results, Annotation & human feedback | `evaluation/` |
-| Prompt engineering | Create and update prompts, Tutorials | `prompt-engineering/` |
-| Agent deployment | Configure app, Deployment guides, App development, Studio, Auth & access control, Server customization | `agent-deployment/` |
-| Platform setup | Overview, Hybrid, Self-hosted (by cloud provider, Setup guides, Enable features, Configuration, External services, Auth, Observability, Scripts) | `self-hosted/`, `self-hosted-changelog.mdx` |
-| Reference | LangSmith Deployment (Agent Server API, Control Plane API), Releases | `reference/` |
+| Tab | Groups |
+|-----|--------|
+| Get started | Account administration (Workspace setup, Users & access control, Billing & usage), Tools, Additional resources |
+| Observability | Tracing setup, Configuration & troubleshooting, Viewing & managing traces, Automations, Feedback & evaluation, Monitoring & alerting, Data type reference |
+| Evaluation | Datasets, Set up evaluations, Analyze experiment results, Annotation & human feedback, Common data types |
+| Prompt engineering | Create and update prompts, Tutorials |
+| Agent deployment | Agent server, Core capabilities, Develop agents, Deployment guides, Studio, Auth & access control, Server customization |
+| Platform setup | Overview, Hybrid, Self-hosted (by cloud provider, Setup guides, Enable features, Configuration, External services, Auth, Observability, Scripts) |
+| Reference | LangSmith Deployment (Agent Server API, Control Plane API), Releases |
 
-### Agent Builder (`src/langsmith/`)
+All LangSmith files are flat in `src/langsmith/` (no per-tab subdirectories except `fleet/` and `images/`).
 
-Flat groups (no tabs), files in `src/langsmith/agent-builder/`:
+### LangSmith Fleet (`src/langsmith/fleet/`)
+
+Flat groups (no tabs):
 
 - Get started
-- Tools and integrations
+- Configure
+- Tools and automation
 - Advanced
 - Additional resources
 
 ### Open source (`src/oss/`)
 
-2 language dropdowns (Python, TypeScript), each with 7 identical tabs:
+2 language dropdowns (Python, TypeScript), each with 7 tabs sharing the same names. Groups listed below are for the Python dropdown; TypeScript groups differ in some tabs (noted with *).
 
-| Tab | Directory | Notes |
-|-----|-----------|-------|
-| Deep Agents | `src/oss/deepagents/` | Get started, Core capabilities, Streaming, Protocols, CLI |
-| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Advanced usage, Multi-agent |
-| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Graph API, Functional API |
-| Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Per-provider pages |
-| Learn | `src/oss/` (various) | Tutorials, Conceptual overviews |
-| Reference | `reference/` | Auto-generated — do not edit |
+| Tab | Directory | Groups |
+|-----|-----------|--------|
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Command line interface |
+| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Deploy with LangSmith |
+| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
+| Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
+| Learn* | `src/oss/` (various) | Tutorials, Conceptual overviews, Additional resources (TS adds: "LangChain Academy") |
+| Reference | `src/oss/reference/` | Reference, Errors, Releases, Policies — auto-generated, do not edit |
 | Contribute | `src/oss/contributing/` | Contribution guides, integration authoring |
 
 ## Local development
@@ -205,6 +206,12 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
+
+### Model references
+
+Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
+
+Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
 
 ## Adding pages
 

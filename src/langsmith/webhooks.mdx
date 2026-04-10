@@ -133,6 +133,39 @@ When delivering events to your webhook endpoint we follow these guidelines
 - If your endpoint returns a 4xx status code, we declare the delivery failed and do not retry.
 - Anything your endpoint returns in the body will be ignored
 
+## Ensuring evaluations complete before the webhook fires
+
+By default, automation rules run on independent schedules. A webhook rule and an online evaluator rule scanning the same project can pick up the same run at different times, so the webhook may fire before the evaluator has had a chance to score the run.
+
+The recommended solution is to add a _feedback filter_ to your webhook rule. This tells LangSmith to send a run to your webhook only once it already carries the expected score, regardless of when it was evaluated.
+
+For example, you have an online evaluator that produces an `answer_usefulness` score, and a webhook rule that should only fire after that score is present.
+
+1. Open the webhook automation rule in the **Automations** tab of your tracing project.
+1. Edit the rule's filter to require the feedback key. In the filter builder, add a condition:
+
+   ```
+   has(feedback_key, "answer_usefulness")
+   ```
+
+1. Save the rule.
+
+Now the webhook rule will skip any run that does not yet have an `answer_usefulness` score. When the evaluator rule runs and attaches the score, the webhook rule's next polling cycle will pick up those runs and send them to your endpoint.
+
+<Tip>
+You can also filter on the score value itself, not just its presence. For example, to only send runs with a low usefulness score to your endpoint:
+
+```
+has(feedback_key, "answer_usefulness") and feedback_score < 0.5
+```
+
+For the full filter syntax, refer to [Filter traces](/langsmith/filter-traces-in-application).
+</Tip>
+
+<Note>
+Within a single automation rule, actions execute in a fixed order: annotation queue → dataset → webhook → evaluation. This means that if your webhook and evaluator are configured on the **same** rule, the webhook will always fire before the evaluation completes on that rule's run. To ensure the webhook receives evaluation scores, keep the webhook and evaluator as **separate rules** and use a feedback filter on the webhook rule as described in the example.
+</Note>
+
 ## Example with Modal
 
 ### Setup

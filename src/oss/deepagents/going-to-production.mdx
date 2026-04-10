@@ -24,9 +24,9 @@ This page covers:
 
 ## LangSmith Deployments
 
-The fastest way to get a Deep Agent into production is [LangSmith Deployments](/langsmith/deployment). It provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
+The fastest way to get a Deep Agent into production is [`deepagents deploy`](/oss/deepagents/deploy), which packages your agent configuration and deploys it as a LangSmith Deployment with one command. Alternatively, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
 
-For setup instructions, see the [LangSmith Deployments quickstart](/langsmith/deployment-quickstart).
+For the CLI-based approach, see [Deploy with the CLI](/oss/deepagents/deploy). For manual setup, see the [LangSmith Deployments quickstart](/langsmith/deployment-quickstart).
 
 All code snippets on this page use the following `langgraph.json` unless otherwise specified:
 
@@ -193,13 +193,13 @@ In Deep Agents, memory is stored as files in a virtual filesystem. By default, f
 
 :::python
 <Note>
-The `ctx.runtime.server_info` and `ctx.runtime.execution_info` namespace patterns shown below require `deepagents>=0.5.0`.
+The `rt.server_info` and `rt.execution_info` namespace patterns shown below require `deepagents>=0.5.0`.
 </Note>
 :::
 
 :::js
 <Note>
-The `ctx.runtime.serverInfo` and `ctx.runtime.executionInfo` namespace patterns shown below require `deepagents>=1.9.0`.
+The `rt.serverInfo` and `rt.executionInfo` namespace patterns shown below require `deepagents>=1.9.0`.
 </Note>
 :::
 
@@ -217,9 +217,9 @@ agent = create_deep_agent(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
-                namespace=lambda ctx: (
-                    ctx.runtime.server_info.assistant_id,  # [!code highlight]
-                    ctx.runtime.server_info.user.identity,  # [!code highlight]
+                namespace=lambda rt: (
+                    rt.server_info.assistant_id,  # [!code highlight]
+                    rt.server_info.user.identity,  # [!code highlight]
                 ),
             ),
         },
@@ -242,9 +242,9 @@ export const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => [
-          ctx.runtime.serverInfo.assistantId,  // [!code highlight]
-          ctx.runtime.serverInfo.user.identity,  // [!code highlight]
+        namespace: (rt) => [
+          rt.serverInfo.assistantId,  // [!code highlight]
+          rt.serverInfo.user.identity,  // [!code highlight]
         ],
       }),
     },
@@ -272,8 +272,8 @@ agent = create_deep_agent(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
-                namespace=lambda ctx: (
-                    ctx.runtime.server_info.assistant_id,  # [!code highlight]
+                namespace=lambda rt: (
+                    rt.server_info.assistant_id,  # [!code highlight]
                 ),
             ),
         },
@@ -291,7 +291,7 @@ export const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.serverInfo.assistantId],  // [!code highlight]
+        namespace: (rt) => [rt.serverInfo.assistantId],  // [!code highlight]
       }),
     },
   ),
@@ -313,7 +313,7 @@ agent = create_deep_agent(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
-                namespace=lambda ctx: (ctx.runtime.server_info.user.identity,),  # [!code highlight]
+                namespace=lambda rt: (rt.server_info.user.identity,),  # [!code highlight]
             ),
         },
     ),
@@ -330,7 +330,7 @@ export const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.serverInfo.user.identity],  // [!code highlight]
+        namespace: (rt) => [rt.serverInfo.user.identity],  // [!code highlight]
       }),
     },
   ),
@@ -352,7 +352,7 @@ agent = create_deep_agent(
         default=StateBackend(),
         routes={
             "/memories/": StoreBackend(
-                namespace=lambda ctx: (ctx.runtime.context.org_id,),
+                namespace=lambda rt: (rt.context.org_id,),
             ),
         },
     ),
@@ -369,7 +369,7 @@ export const agent = createDeepAgent({
     new StateBackend(),
     {
       "/memories/": new StoreBackend({
-        namespace: (ctx) => [ctx.runtime.context.orgId],
+        namespace: (rt) => [rt.context.orgId],
       }),
     },
   ),
@@ -380,7 +380,7 @@ export const agent = createDeepAgent({
   </Tab>
 </Tabs>
 
-You can also read and write to the store from your application code using the [Store API](/langsmith/custom-store). See [accessing memories from external code](/oss/deepagents/memory#accessing-memories-from-external-code) for examples.
+You can also read and write to the store from your application code using the [Store API](/langsmith/custom-store). See [Advanced usage](/oss/deepagents/memory#advanced-usage) for examples.
 
 For the full namespace factory API, see [namespace factories](/oss/deepagents/backends#namespace-factories). For memory patterns like self-improving instructions and knowledge bases, see [long-term memory](/oss/deepagents/memory).
 
@@ -419,25 +419,25 @@ The key decision is how long a sandbox lives. Does each conversation get a fresh
 | **Assistant-scoped** | [Assistant](/langsmith/assistants) config | Shared across all conversations | A coding assistant that maintains a cloned repo across conversations |
 
 <Note>
-The examples below use an async [graph factory](/langsmith/graph-rebuild) instead of a static graph because the sandbox needs the `thread_id` or `assistant_id` from the runtime to look up or create the correct sandbox. A graph factory receives the runtime on each run, so it can resolve the sandbox before building the agent. The factory is async because sandbox creation is an I/O-bound operation that requires runtime information like `thread_id` or `assistant_id` that is only available at invocation time.
+The examples below use an async [graph factory](/langsmith/graph-rebuild) instead of a static graph because the sandbox needs the `thread_id` or `assistant_id` to look up or create the correct sandbox. Graph factories don't receive a full `Runtime` (no `server_info` or `execution_info`); instead, accept a `RunnableConfig` and read `thread_id` and `assistant_id` from `config["configurable"]`. The factory is async because sandbox creation is an I/O-bound operation that requires per-run information only available at invocation time.
 </Note>
 
 <Tabs>
   <Tab title="Thread-scoped (most common)">
-    Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the runtime, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. The provider's label-based lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
+    Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the run config, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. The provider's label-based lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
 
 :::python
 ```python agent.py
 from daytona import CreateSandboxFromSnapshotParams, Daytona
 from deepagents import create_deep_agent
+from langchain_core.runnables import RunnableConfig
 from langchain_daytona import DaytonaSandbox
-from langgraph.runtime import Runtime
 
 client = Daytona()
 
 
-async def agent(runtime: Runtime):
-    thread_id = runtime.execution_info.thread_id  # [!code highlight]
+async def agent(config: RunnableConfig):
+    thread_id = config["configurable"]["thread_id"]  # [!code highlight]
     try:
         sandbox = await client.find_one(labels={"thread_id": thread_id})
     except Exception:
@@ -456,12 +456,12 @@ async def agent(runtime: Runtime):
 import { Daytona } from "@daytonaio/sdk";
 import { DaytonaSandbox } from "@langchain/daytona";
 import { createDeepAgent } from "deepagents";
-import type { Runtime } from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 
 const client = new Daytona();
 
-export async function agent(runtime: Runtime) {
-  const threadId = runtime.executionInfo.threadId;  // [!code highlight]
+export async function agent(config: LangGraphRunnableConfig) {
+  const threadId = config.configurable?.thread_id as string;  // [!code highlight]
   let sandbox;
   try {
     sandbox = await client.findOne({ labels: { thread_id: threadId } });
@@ -478,20 +478,20 @@ export async function agent(runtime: Runtime) {
 
   </Tab>
   <Tab title="Assistant-scoped">
-    All conversations share one sandbox. The [graph factory](/langsmith/graph-rebuild) reads the [assistant](/langsmith/assistants) ID from `runtime.server_info`, so every thread on the same assistant returns to the same environment. Files, installed packages, and cloned repositories persist across conversations.
+    All conversations share one sandbox. The [graph factory](/langsmith/graph-rebuild) reads the [assistant](/langsmith/assistants) ID from `config["configurable"]`, so every thread on the same assistant returns to the same environment. Files, installed packages, and cloned repositories persist across conversations.
 
 :::python
 ```python agent.py
 from daytona import CreateSandboxFromSnapshotParams, Daytona
 from deepagents import create_deep_agent
+from langchain_core.runnables import RunnableConfig
 from langchain_daytona import DaytonaSandbox
-from langgraph.runtime import Runtime
 
 client = Daytona()
 
 
-async def agent(runtime: Runtime):
-    assistant_id = runtime.server_info.assistant_id  # [!code highlight]
+async def agent(config: RunnableConfig):
+    assistant_id = config["configurable"]["assistant_id"]  # [!code highlight]
     try:
         sandbox = await client.find_one(labels={"assistant_id": assistant_id})
     except Exception:
@@ -507,12 +507,12 @@ async def agent(runtime: Runtime):
 import { Daytona } from "@daytonaio/sdk";
 import { DaytonaSandbox } from "@langchain/daytona";
 import { createDeepAgent } from "deepagents";
-import type { Runtime } from "@langchain/langgraph";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 
 const client = new Daytona();
 
-export async function agent(runtime: Runtime) {
-  const assistantId = runtime.serverInfo.assistantId;  // [!code highlight]
+export async function agent(config: LangGraphRunnableConfig) {
+  const assistantId = config.configurable?.assistant_id as string;  // [!code highlight]
   let sandbox;
   try {
     sandbox = await client.findOne({ labels: { assistant_id: assistantId } });
@@ -745,11 +745,11 @@ backend = CompositeBackend(
     routes={
         "/skills/": StoreBackend(
             rt,
-            namespace=lambda ctx: ("skills", ctx.runtime.server_info.user.identity),  # [!code highlight]
+            namespace=lambda rt: ("skills", rt.server_info.user.identity),  # [!code highlight]
         ),
         "/memories/": StoreBackend(
             rt,
-            namespace=lambda ctx: ("memories", ctx.runtime.server_info.user.identity),  # [!code highlight]
+            namespace=lambda rt: ("memories", rt.server_info.user.identity),  # [!code highlight]
         ),
     },
 )
@@ -822,10 +822,10 @@ const backend = new CompositeBackend(
   await DaytonaSandbox.fromId(sandbox.id),
   {
     "/skills/": new StoreBackend({
-      namespace: (ctx) => ["skills", ctx.runtime.serverInfo.user.identity],  // [!code highlight]
+      namespace: (rt) => ["skills", rt.serverInfo.user.identity],  // [!code highlight]
     }),
     "/memories/": new StoreBackend({
-      namespace: (ctx) => ["memories", ctx.runtime.serverInfo.user.identity],  // [!code highlight]
+      namespace: (rt) => ["memories", rt.serverInfo.user.identity],  // [!code highlight]
     }),
   },
 );

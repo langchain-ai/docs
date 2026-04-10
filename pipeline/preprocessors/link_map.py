@@ -42,6 +42,7 @@ LINK_MAPS: list[LinkMap] = [
             "SkillsMiddleware": "deepagents/middleware/skills/SkillsMiddleware",
             "MemoryMiddleware": "deepagents/middleware/memory/MemoryMiddleware",
             "FilesystemMiddleware": "deepagents/middleware/filesystem/FilesystemMiddleware",
+            "FilesystemPermission": "deepagents/middleware/permissions/FilesystemPermission",
             "SummarizationToolMiddleware": "deepagents/middleware/summarization/SummarizationToolMiddleware",
             "PatchToolCallsMiddleware": "deepagents/middleware/patch_tool_calls/PatchToolCallsMiddleware",
             "StateBackend": "deepagents/backends/state/StateBackend",
