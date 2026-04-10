@@ -61,7 +61,7 @@ Single page (`src/index.mdx`). No tabs.
 | Platform setup | Overview, Hybrid, Self-hosted (by cloud provider, Setup guides, Enable features, Configuration, External services, Auth) |
 | Reference | LangSmith Deployment APIs, Releases |
 
-### Agent Builder (`src/langsmith/agent-builder/`)
+### Fleet (`src/langsmith/fleet/`)
 Flat groups (no tabs): Get started, Tools and integrations, Advanced, Additional resources
 
 ### Open source (`src/oss/`)
