@@ -1,0 +1,122 @@
+---
+title: "Leap0"
+sidebarTitle: "Leap0"
+description: "Use Leap0 sandbox backends with Deep Agents for isolated code execution with fast cold starts"
+---
+
+[Leap0](https://leap0.dev) provides cloud sandboxes for AI agents: isolated compute, filesystem, and network boundaries, with sandboxes that start in about 200ms. See the [Leap0 docs](https://leap0.dev/docs) for signup, API keys, and platform details.
+
+The LangChain integration is published as [`@leap0/langchain-leap0`](https://www.npmjs.com/package/@leap0/langchain-leap0). It implements the Deep Agents sandbox backend and pairs with the [`leap0`](https://www.npmjs.com/package/leap0) TypeScript SDK.
+
+## Setup
+
+<CodeGroup>
+    ```bash npm
+    npm install @leap0/langchain-leap0 deepagents leap0
+    ```
+
+    ```bash yarn
+    yarn add @leap0/langchain-leap0 deepagents leap0
+    ```
+
+    ```bash pnpm
+    pnpm add @leap0/langchain-leap0 deepagents leap0
+    ```
+</CodeGroup>
+
+`@leap0/langchain-leap0` declares **peer dependencies** on `deepagents` and `leap0`; install them alongside the integration package as shown above.
+
+### Authentication
+
+```bash
+export LEAP0_API_KEY="your-key"
+```
+
+## Create a sandbox backend
+
+Create a sandbox with the Leap0 SDK, then connect it with `Leap0Sandbox.fromConnected`.
+
+:::js
+```typescript
+import { Leap0Client } from "leap0";
+import { Leap0Sandbox } from "@leap0/langchain-leap0";
+
+const client = new Leap0Client();
+const sandbox = await client.sandboxes.create();
+const backend = Leap0Sandbox.fromConnected(client, sandbox);
+
+try {
+  const result = await backend.execute("echo 'Hello from Leap0'");
+  console.log(result.output);
+} finally {
+  try {
+    await sandbox.delete();
+  } finally {
+    await client.close();
+  }
+}
+```
+:::
+
+### One-step create
+
+To have the integration create a `Leap0Client`, provision a sandbox, and own teardown:
+
+:::js
+```typescript
+import { Leap0Sandbox } from "@leap0/langchain-leap0";
+
+const backend = await Leap0Sandbox.create({
+  leap0Config: {},
+  createParams: { templateName: "base" },
+});
+
+try {
+  const result = await backend.execute("echo hello");
+  console.log(result.output);
+} finally {
+  await backend.close(); // deletes sandbox and closes the client
+}
+```
+:::
+
+## Usage with Deep Agents
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { Leap0Sandbox } from "@leap0/langchain-leap0";
+import { Leap0Client } from "leap0";
+
+const client = new Leap0Client();
+const sandbox = await client.sandboxes.create();
+const backend = Leap0Sandbox.fromConnected(client, sandbox);
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-sonnet-4-20250514" }),
+    systemPrompt: "You are a coding assistant with sandbox access.",
+    backend,
+  });
+
+  const result = await agent.invoke({
+    messages: [
+      { role: "user", content: "Create a hello world Python script and run it" },
+    ],
+  });
+} finally {
+  try {
+    await sandbox.delete();
+  } finally {
+    await client.close();
+  }
+}
+```
+:::
+
+## Cleanup
+
+You are responsible for managing the sandbox lifecycle via the Leap0 SDK unless you use `Leap0Sandbox.create` and `backend.close()` as above.
+
+See also: [Sandboxes](/oss/deepagents/sandboxes).
