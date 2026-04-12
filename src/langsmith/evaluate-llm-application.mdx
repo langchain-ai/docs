@@ -205,7 +205,7 @@ function correct({
 
 ### In LangSmith UI
 
-You can also define an evaluator in the [LangSmith UI](https://smith.langchain.com). You can [create evaluators in the UI](/langsmith/llm-as-judge#ui) under the **Evaluators** tab. These evaluators will be [automatically triggered with every new experiment](/langsmith/bind-evaluator-to-dataset).
+You can also define an evaluator in the [LangSmith UI](https://smith.langchain.com). You can [create evaluators in the UI](/langsmith/llm-as-judge) under the **Evaluators** tab. These evaluators will be [automatically triggered with every new experiment](/langsmith/bind-evaluator-to-dataset).
 
 
 ## Run the evaluation
@@ -217,13 +217,38 @@ The key arguments are:
 * a target function that takes an input dictionary and returns an output dictionary. The `example.inputs` field of each [Example](/langsmith/example-data-format) is what gets passed to the target function. In this case our `toxicity_classifier` is already set up to take in example inputs so we can use it directly.
 * `data` - the name OR UUID of the LangSmith dataset to evaluate on, or an iterator of examples.
 * `evaluators` - a list of evaluators to score the outputs of the function; dataset evaluators in the [Langsmith UI](https://smith.langchain.com) will also automatically get triggered.
-
+* `metadata` - an optional object to attach to the experiment. Pass `models`, `prompts`, and `tools` keys to populate the corresponding columns in the experiment table view.
 
 Python: Requires `langsmith>=0.3.13`
 
 <CodeGroup>
 
 ```python Python
+# optional metadata, used to populate model/prompt/tool columns in UI
+EXPERIMENT_METADATA = {
+    "models": [
+        "openai:gpt-4.1-mini",
+        {
+            "id": ["langchain", "chat_models", "openai", "ChatOpenAI"],
+            "lc": 1,
+            "type": "constructor",
+            "kwargs": {"model_name": "gpt-4.1", "temperature": 0.2},
+        },
+    ],
+    "prompts": ["my-org/my-eval-prompt:abc12345"],
+    "tools": [
+        {
+            "name": "web_search",
+            "description": "Search the web for information",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    ],
+}
+
 # Can equivalently use the 'evaluate' function directly:
 # from langsmith import evaluate; evaluate(...)
 results = ls_client.evaluate(
@@ -232,32 +257,98 @@ results = ls_client.evaluate(
     evaluators=[correct],
     experiment_prefix="gpt-4.1-mini, baseline",  # optional, experiment name prefix
     description="Testing the baseline system.",  # optional, experiment description
-    max_concurrency=4, # optional, add concurrency
+    max_concurrency=4,  # optional, add concurrency
+    metadata=EXPERIMENT_METADATA,  # optional, used to populate model/prompt/tool columns in UI
 )
 ```
 
 ```typescript TypeScript
 import { evaluate } from "langsmith/evaluation";
 
+// optional metadata, used to populate model/prompt/tool columns in UI
+const EXPERIMENT_METADATA = {
+  models: [
+    "openai:gpt-4.1-mini",
+    {
+      id: ["langchain", "chat_models", "openai", "ChatOpenAI"],
+      lc: 1,
+      type: "constructor",
+      kwargs: { model_name: "gpt-4.1", temperature: 0.2 },
+    },
+  ],
+  prompts: ["my-org/my-eval-prompt:abc12345"],
+  tools: [
+    {
+      name: "web_search",
+      description: "Search the web for information",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+      },
+    },
+  ],
+};
+
 await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
   data: datasetName,
   evaluators: [correct],
   experimentPrefix: "gpt-4.1-mini, baseline",  // optional, experiment name prefix
   maxConcurrency: 4, // optional, add concurrency
+  metadata: EXPERIMENT_METADATA,  // optional, used to populate model/prompt/tool columns in UI
 });
 ```
 
 </CodeGroup>
 
-## Explore the results[​](#explore-the-results "Direct link to Explore the results")
+## Explore the results
 
-Each invocation of `evaluate()` creates an [Experiment](/langsmith/evaluation-concepts#experiment) which can be viewed in the LangSmith UI or queried via the SDK. Evaluation scores are stored against each actual output as feedback.
+Each invocation of `evaluate()` creates an [experiment](/langsmith/evaluation-concepts#experiment) that you can view in the LangSmith UI or query via the SDK. See [Analyze an experiment](/langsmith/analyze-an-experiment) for more details.
 
-*If you've annotated your code for tracing, you can open the trace of each row in a side panel view.*
+Experiments run against a dataset are listed in the experiments table.
 
-![View experiment](/langsmith/images/view-experiment.gif)
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/experiments-table-light.png"
+  alt="Experiments table showing a list of experiments with columns for experiment name, description, dataset, feedback score, and more."
+/>
 
-## Reference code[​](#reference-code "Direct link to Reference code")
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/experiments-table-dark.png"
+  alt="Experiments table showing a list of experiments with columns for experiment name, description, dataset, feedback score, and more."
+/>
+
+Click an experiment row to see scores for each example. Filter and sort by score to identify patterns in where your application performs well or poorly.
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/experiment-view-light.png"
+  alt="Experiment view showing a table of examples with columns for input, output, reference output, feedback score, and more."
+/>
+
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/experiment-view-dark.png"
+  alt="Experiment view showing a table of examples with columns for input, output, reference output, feedback score, and more."
+/>
+
+Click an example to open its details panel, which includes inputs, outputs, reference outputs, and any associated traces (if you've annotated your code for tracing).
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/experiment-view-details-panel-light.png"
+  alt="Experiment view details panel showing the inputs, outputs, reference outputs, and trace for a single example."
+/>
+
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/experiment-view-details-panel-dark.png"
+  alt="Experiment view details panel showing the inputs, outputs, reference outputs, and trace for a single example."
+/>
+
+
+## Reference code
 
 <Accordion title="Click to see a consolidated code snippet">
     <CodeGroup>
@@ -324,6 +415,32 @@ def correct(inputs: dict, outputs: dict, reference_outputs: dict) -> bool:
     return outputs["output"] == reference_outputs["label"]
 
 # Step 4. Run the evaluation
+
+# optional metadata, used to populate model/prompt/tool columns in UI
+EXPERIMENT_METADATA = {
+    "models": [
+        "openai:gpt-4.1-mini",
+        {
+            "id": ["langchain", "chat_models", "openai", "ChatOpenAI"],
+            "lc": 1,
+            "type": "constructor",
+            "kwargs": {"model_name": "gpt-4.1", "temperature": 0.2},
+        },
+    ],
+    "prompts": ["my-org/my-eval-prompt:abc12345"],
+    "tools": [
+        {
+            "name": "web_search",
+            "description": "Search the web for information",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    ],
+}
+
 # Client.evaluate() and evaluate() behave the same.
 results = ls_client.evaluate(
     toxicity_classifier,
@@ -332,6 +449,7 @@ results = ls_client.evaluate(
     experiment_prefix="gpt-4.1-mini, simple",  # optional, experiment name prefix
     description="Testing the baseline system.",  # optional, experiment description
     max_concurrency=4,  # optional, add concurrency
+    metadata=EXPERIMENT_METADATA,  # optional, used to populate model/prompt/tool columns in UI
 )
 ```
 
@@ -401,18 +519,44 @@ function correct({
   return { key: "correct", score };
 }
 
+// optional metadata, used to populate model/prompt/tool columns in UI
+const EXPERIMENT_METADATA = {
+  models: [
+    "openai:gpt-4.1-mini",
+    {
+      id: ["langchain", "chat_models", "openai", "ChatOpenAI"],
+      lc: 1,
+      type: "constructor",
+      kwargs: { model_name: "gpt-4.1", temperature: 0.2 },
+    },
+  ],
+  prompts: ["my-org/my-eval-prompt:abc12345"],
+  tools: [
+    {
+      name: "web_search",
+      description: "Search the web for information",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+      },
+    },
+  ],
+};
+
 await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
   data: datasetName,
   evaluators: [correct],
   experimentPrefix: "gpt-4.1-mini, simple",  // optional, experiment name prefix
   maxConcurrency: 4, // optional, add concurrency
+  metadata: EXPERIMENT_METADATA,  // optional, used to populate model/prompt/tool columns in UI
 });
 ```
 
 </CodeGroup>
 </Accordion>
 
-## Related[​](#related "Direct link to Related")
+## Related
 
 * [Run an evaluation asynchronously](/langsmith/evaluation-async)
 * [Run an evaluation via the REST API](/langsmith/run-evals-api-only)

@@ -15,6 +15,8 @@ LangGraph exposes a @[`Runtime`] object with the following information:
 1. **Context**: static information like user id, db connections, or other dependencies for an agent invocation
 2. **Store**: a @[BaseStore] instance used for [long-term memory](/oss/langchain/long-term-memory)
 3. **Stream writer**: an object used for streaming information via the `"custom"` stream mode
+4. **Execution info**: identity and retry information for the current execution (thread ID, run ID, attempt number)
+5. **Server info**: server-specific metadata when running on LangGraph Server (assistant ID, graph ID, authenticated user)
 
 :::python
 <Tip>
@@ -157,6 +159,81 @@ const fetchUserEmailPreferences = tool(
 ```
 :::
 
+### Execution info and server info inside tools
+
+:::python
+Access execution identity (thread ID, run ID) via `runtime.execution_info`, and server-specific metadata (assistant ID, authenticated user) via `runtime.server_info` when running on LangGraph Server:
+
+```python
+from langchain.tools import tool, ToolRuntime
+
+@tool
+def context_aware_tool(runtime: ToolRuntime) -> str:
+    """A tool that uses execution and server info."""
+    # Access thread and run IDs
+    info = runtime.execution_info
+    print(f"Thread: {info.thread_id}, Run: {info.run_id}")  # [!code highlight]
+
+    # Access server info (only available on LangGraph Server)
+    server = runtime.server_info
+    if server is not None:
+        print(f"Assistant: {server.assistant_id}")  # [!code highlight]
+        if server.user is not None:
+            print(f"User: {server.user.identity}")  # [!code highlight]
+
+    return "done"
+```
+
+`server_info` is `None` when not running on LangGraph Server (e.g., during local development).
+:::
+
+:::js
+Access execution identity (thread ID, run ID) via `runtime.executionInfo`, and server-specific metadata (assistant ID, authenticated user) via `runtime.serverInfo` when running on LangGraph Server:
+
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const contextAwareTool = tool(
+  async (_input, runtime) => {
+    // Access thread and run IDs
+    const info = runtime.executionInfo;
+    console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
+
+    // Access server info (only available on LangGraph Server)
+    const server = runtime.serverInfo;
+    if (server != null) {
+      console.log(`Assistant: ${server.assistantId}`);  // [!code highlight]
+      if (server.user != null) {
+        console.log(`User: ${server.user.identity}`);  // [!code highlight]
+      }
+    }
+
+    return "done";
+  },
+  {
+    name: "context_aware_tool",
+    description: "A tool that uses execution and server info.",
+    schema: z.object({}),
+  }
+);
+```
+
+`serverInfo` is `null` when not running on LangGraph Server (e.g., during local development).
+:::
+
+:::python
+<Note>
+Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`) for `runtime.execution_info` and `runtime.server_info`.
+</Note>
+:::
+
+:::js
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`) for `runtime.executionInfo` and `runtime.serverInfo`.
+</Note>
+:::
+
 ### Inside middleware
 
 You can access runtime information in middleware to create dynamic prompts, modify messages, or control agent behavior based on user context.
@@ -266,4 +343,58 @@ const result = await agent.invoke(
 );
 
 ```
+:::
+
+### Execution info and server info inside middleware
+
+:::python
+Middleware hooks can also access `runtime.execution_info` and `runtime.server_info`:
+
+```python
+from langchain.agents import AgentState
+from langchain.agents.middleware import before_model
+from langgraph.runtime import Runtime
+
+
+@before_model
+def auth_gate(state: AgentState, runtime: Runtime) -> dict | None:
+    """Block unauthenticated users when running on LangGraph Server."""
+    server = runtime.server_info
+    if server is not None and server.user is None:  # [!code highlight]
+        raise ValueError("Authentication required")
+    print(f"Thread: {runtime.execution_info.thread_id}")  # [!code highlight]
+    return None
+```
+:::
+
+:::js
+Middleware hooks can also access `runtime.executionInfo` and `runtime.serverInfo`:
+
+```ts
+import { createMiddleware } from "langchain";
+
+const authGate = createMiddleware({
+  name: "AuthGate",
+  beforeModel: (state, runtime) => {
+    const server = runtime.serverInfo;
+    if (server != null && server.user == null) {  // [!code highlight]
+      throw new Error("Authentication required");
+    }
+    console.log(`Thread: ${runtime.executionInfo.threadId}`);  // [!code highlight]
+    return;
+  },
+});
+```
+:::
+
+:::python
+<Note>
+Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`).
+</Note>
+:::
+
+:::js
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
+</Note>
 :::
