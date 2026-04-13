@@ -1,0 +1,313 @@
+---
+title: "CosVectors vector store"
+description: "Integrate with the Tencent Cloud CosVectors vector store using LangChain Python."
+---
+
+`CosVectors` is an implementation of a LangChain vector store using Tencent Cloud COS vector storage buckets.
+
+This guide covers how to use the `CosVectors` API with LangChain.
+
+The code lives in the integration package: [langchain-cos-vectors](https://pypi.org/project/langchain-cos-vectors/).
+
+## Overview
+
+CosVectors is a vector storage bucket product from Tencent Cloud Object Storage (COS) that provides:
+
+- **Vector storage and retrieval** via COS vector buckets
+- **Cosine and Euclidean distance** metrics for similarity search
+- **Metadata filtering** on search results
+- **MMR search** (Maximal Marginal Relevance) for diverse results
+- **Batch operations** with configurable batch size
+- **Auto-creation** of buckets and indexes when they don't exist
+
+## Setup
+
+### Install
+
+Install the integration library, `langchain-cos-vectors`.
+
+```bash
+pip install -qU langchain-cos-vectors
+```
+
+This also installs:
+- `cos-python-sdk-v5>=1.9.0` — Tencent Cloud COS Python SDK
+- `langchain-core>=1.0.0,<2.0.0` — LangChain core library
+- `numpy` — Numerical computation library
+
+### Tencent Cloud credentials
+
+You need a Tencent Cloud account with COS enabled:
+
+1. Sign up at [cloud.tencent.com](https://cloud.tencent.com)
+2. Enable Cloud Object Storage (COS)
+3. Get your `SecretId` and `SecretKey` from [API Key Management](https://console.cloud.tencent.com/cam/capi)
+
+### Set your credentials
+
+**Option 1: Pass directly**
+
+```python
+COS_CONFIG = {
+    "Region": "ap-beijing",
+    "SecretId": "your-secret-id",
+    "SecretKey": "your-secret-key",
+}
+BUCKET = "your-vector-bucket-1253960454"
+INDEX = "my-index"
+```
+
+**Option 2: Use environment variables**
+
+```bash
+export COS_SECRET_ID="your-secret-id"
+export COS_SECRET_KEY="your-secret-key"
+export COS_REGION="ap-beijing"
+```
+
+<Tip>
+For production, always use environment variables or a secrets manager to avoid hardcoding credentials.
+</Tip>
+
+## Initialization
+
+### Create an embedding instance
+
+Use any [LangChain embeddings model](/oss/integrations/embeddings/).
+
+<Tabs>
+    <Tab title="HuggingFace (free)">
+```python
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh-v1.5")
+```
+    </Tab>
+    <Tab title="OpenAI">
+```python
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+```
+    </Tab>
+</Tabs>
+
+### Initialize via constructor
+
+```python
+from langchain_cos_vectors import CosVectors
+
+vector_store = CosVectors(
+    embedding=embeddings,
+    cos_config={
+        "Region": "ap-beijing",
+        "SecretId": "your-secret-id",
+        "SecretKey": "your-secret-key",
+    },
+    bucket="your-vector-bucket-1253960454",
+    index="my-index",
+    create_if_not_exists=True,  # Auto-create bucket and index
+)
+```
+
+### Initialize via `from_texts`
+
+Create a vector store and add data in one step:
+
+```python
+vector_store = CosVectors.from_texts(
+    texts=["First document", "Second document"],
+    embedding=embeddings,
+    metadatas=[{"source": "a"}, {"source": "b"}],
+    cos_secret_id="your-secret-id",
+    cos_secret_key="your-secret-key",
+    cos_region="ap-beijing",
+    bucket="your-vector-bucket-1253960454",
+    index="my-index",
+)
+```
+
+## Manage vector store
+
+### Add documents
+
+Add documents with metadata:
+
+```python
+from langchain_core.documents import Document
+
+docs = [
+    Document(
+        page_content="LangChain is a framework for building LLM applications",
+        metadata={"source": "docs", "topic": "langchain"},
+    ),
+    Document(
+        page_content="Vector databases store text as embeddings for semantic search",
+        metadata={"source": "tutorial", "topic": "vector_db"},
+    ),
+    Document(
+        page_content="RAG stands for Retrieval-Augmented Generation",
+        metadata={"source": "paper", "topic": "rag"},
+    ),
+]
+
+ids = vector_store.add_documents(docs)
+```
+
+### Add texts
+
+Add text directly without structuring as documents:
+
+```python
+ids = vector_store.add_texts(
+    texts=["Text one", "Text two", "Text three"],
+    metadatas=[{"key": "val1"}, {"key": "val2"}, {"key": "val3"}],  # Optional
+    ids=["id1", "id2", "id3"],  # Optional, auto-generated UUIDs if omitted
+    batch_size=25,               # Batch size per write, default 25
+)
+```
+
+### Delete documents
+
+Delete documents by ID:
+
+```python
+vector_store.delete(ids=["document-id-1", "document-id-2"])
+```
+
+## Query vector store
+
+### Similarity search
+
+Search for similar documents using natural language:
+
+```python
+results = vector_store.similarity_search(
+    query="What is LangChain?",
+    k=4,                        # Number of results, default 4
+    filter={"topic": "rag"},    # Metadata filter (optional)
+)
+
+for doc in results:
+    print(f"[{doc.metadata}] {doc.page_content}")
+```
+
+### Similarity search with scores
+
+Get distance scores with results (lower is more similar for cosine distance, range 0–2):
+
+```python
+results_with_scores = vector_store.similarity_search_with_score(
+    query="electric vehicles",
+    k=3,
+)
+
+for doc, score in results_with_scores:
+    print(f"[Distance: {score:.4f}] {doc.page_content}")
+```
+
+<Note>
+Distance scores use cosine distance (range 0–2). **Lower scores indicate higher similarity.** To convert to a relevance score (higher is better), use `1 - distance`.
+</Note>
+
+### Search by vector
+
+Search using a pre-computed embedding vector:
+
+```python
+query_embedding = embeddings.embed_query("query text")
+
+results = vector_store.similarity_search_by_vector(
+    embedding=query_embedding,
+    k=4,
+)
+```
+
+### Maximum marginal relevance (MMR) search
+
+Retrieve diverse results that balance relevance and diversity:
+
+```python
+results = vector_store.max_marginal_relevance_search(
+    query="query text",
+    k=4,              # Number of results to return
+    fetch_k=20,       # Number of candidates to consider
+    lambda_mult=0.5,  # 0 = max diversity, 1 = max relevance
+)
+```
+
+## Using as a retriever
+
+Convert CosVectors to a LangChain Retriever for use in RAG chains:
+
+```python
+retriever = vector_store.as_retriever(
+    search_type="similarity",   # Search type: similarity / mmr
+    search_kwargs={"k": 3},
+)
+
+docs = retriever.invoke("Retrieval-Augmented Generation")
+for doc in docs:
+    print(doc.page_content)
+```
+
+## Configuration
+
+### Constructor parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `embedding` | `Embeddings` | ✅ | - | LangChain Embeddings instance |
+| `cos_config` | `dict` | ✅ | - | COS config dict with `Region`, `SecretId`, `SecretKey` |
+| `bucket` | `str` | ✅ | - | Vector bucket name |
+| `index` | `str` | ✅ | - | Vector index name |
+| `endpoint` | `str` | ❌ | Auto-generated | Custom COS Vectors service endpoint |
+| `distance_metric` | `str` | ❌ | `"cosine"` | Distance metric: `cosine` or `euclidean` |
+| `create_if_not_exists` | `bool` | ❌ | `False` | Auto-create bucket and index if missing |
+| `text_field` | `str` | ❌ | `"text"` | Metadata field name for storing raw text |
+
+### `cos_config` fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `Region` | `str` | ✅ | Tencent Cloud region (e.g. `ap-beijing`, `ap-guangzhou`) |
+| `SecretId` | `str` | ✅ | Tencent Cloud API secret ID |
+| `SecretKey` | `str` | ✅ | Tencent Cloud API secret key |
+| `Token` | `str` | ❌ | Temporary credential token |
+| `Endpoint` | `str` | ❌ | Custom endpoint (lower priority than constructor `endpoint`) |
+
+### `from_texts` parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `texts` | `List[str]` | ✅ | - | Texts to add |
+| `embedding` | `Embeddings` | ✅ | - | Embeddings instance |
+| `metadatas` | `List[dict]` | ❌ | `None` | Metadata list |
+| `cos_secret_id` | `str` | ❌ | Env var | Tencent Cloud SecretId |
+| `cos_secret_key` | `str` | ❌ | Env var | Tencent Cloud SecretKey |
+| `cos_region` | `str` | ❌ | Env var | Tencent Cloud Region |
+| `bucket` | `str` | ❌ | `"langchain-vectors"` | Vector bucket name |
+| `index` | `str` | ❌ | `"langchain-index"` | Vector index name |
+| `endpoint` | `str` | ❌ | Auto-generated | Custom endpoint |
+| `distance_metric` | `str` | ❌ | `"cosine"` | Distance metric |
+| `batch_size` | `int` | ❌ | `25` | Batch write size |
+| `ids` | `List[str]` | ❌ | Auto-generated | Custom document IDs |
+
+### Endpoint resolution
+
+Endpoints are resolved in this priority order (highest to lowest):
+
+1. Constructor `endpoint` parameter
+2. `cos_config` `Endpoint` field
+3. Auto-generated: `vectors.{Region}.coslake.com`
+
+## Usage for retrieval-augmented generation (RAG)
+
+For implementing RAG with CosVectors as your vector store, see the [LangChain RAG tutorial](/oss/langchain/rag). The CosVectors vector store can be used in place of any other vector store in those patterns.
+
+## API reference
+
+For detailed documentation of all features and configurations:
+
+- [langchain-cos-vectors PyPI](https://pypi.org/project/langchain-cos-vectors/)
+- [Tencent Cloud COS Documentation](https://cloud.tencent.com/document/product/436)

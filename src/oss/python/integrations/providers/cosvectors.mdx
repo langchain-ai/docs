@@ -1,0 +1,162 @@
+---
+title: "CosVectors integrations"
+description: "Integrate with Tencent Cloud CosVectors using LangChain Python."
+---
+
+>[CosVectors](https://cloud.tencent.com/product/cos) is a vector storage bucket product from Tencent Cloud Object Storage (COS). It supports vector storage, retrieval, and similarity search, and integrates seamlessly into LangChain RAG workflows.
+
+**Key features:**
+- **Vector storage bucket**: Purpose-built vector storage on top of Tencent Cloud COS
+- **Similarity search**: Native cosine and Euclidean distance metrics
+- **Metadata filtering**: Filter search results by metadata fields
+- **MMR search**: Maximal Marginal Relevance for diverse results
+- **Batch operations**: Efficient batch insert with configurable batch size
+- **Auto-creation**: Automatically create buckets and indexes on demand
+
+## Installation and Setup
+
+Install the LangChain integration:
+
+```bash
+pip install langchain-cos-vectors
+```
+
+This installs the following core dependencies:
+- `cos-python-sdk-v5>=1.9.0` — Tencent Cloud COS Python SDK
+- `langchain-core>=1.0.0,<2.0.0` — LangChain core library
+- `numpy` — Numerical computation library
+
+### Get your Tencent Cloud credentials
+
+You'll need a Tencent Cloud account with COS enabled:
+
+1. Sign up at [cloud.tencent.com](https://cloud.tencent.com)
+2. Enable COS (Cloud Object Storage)
+3. Get your `SecretId` and `SecretKey` from the [API Key Management Console](https://console.cloud.tencent.com/cam/capi)
+
+### Choose an embedding model
+
+**Option A: HuggingFace (free, recommended for Chinese)**
+
+```bash
+pip install langchain-huggingface
+```
+
+> Recommended model: `BAAI/bge-small-zh-v1.5` — optimized for Chinese, 512 dimensions, auto-downloads on first run (~90MB).
+
+**Option B: OpenAI (requires API key)**
+
+```bash
+pip install langchain-openai
+```
+
+## Integrations
+
+### Vector Store
+
+CosVectors can be used as a vector store with native vector support, cosine and Euclidean distance metrics.
+
+**Key features:**
+- Cosine and Euclidean distance metrics
+- Metadata filtering
+- MMR (Maximal Marginal Relevance) search
+- Batch insert with configurable batch size
+- Auto-creation of buckets and indexes
+
+See [CosVectors vector store documentation](/oss/integrations/vectorstores/cosvectors) for detailed usage.
+
+**Quick example:**
+
+```python
+from langchain_cos_vectors import CosVectors
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh-v1.5")
+
+vector_store = CosVectors(
+    embedding=embeddings,
+    cos_config={
+        "Region": "ap-beijing",
+        "SecretId": "your-secret-id",
+        "SecretKey": "your-secret-key",
+    },
+    bucket="your-vector-bucket-1253960454",
+    index="my-index",
+    create_if_not_exists=True,
+)
+
+# Add and search
+from langchain_core.documents import Document
+
+docs = [
+    Document(page_content="LangChain is a framework for building LLM applications", metadata={"topic": "langchain"}),
+    Document(page_content="RAG stands for Retrieval-Augmented Generation", metadata={"topic": "rag"}),
+]
+ids = vector_store.add_documents(docs)
+results = vector_store.similarity_search("What is LangChain?", k=2)
+```
+
+### Using as a Retriever
+
+CosVectors can be converted to a LangChain Retriever for direct use in RAG chains:
+
+```python
+retriever = vector_store.as_retriever(
+    search_type="similarity",
+    search_kwargs={"k": 3},
+)
+
+docs = retriever.invoke("Retrieval-Augmented Generation")
+```
+
+**RAG chain example:**
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+template = """Answer the question based on the following context:
+{context}
+
+Question: {question}
+"""
+prompt = ChatPromptTemplate.from_template(template)
+llm = ChatOpenAI()
+
+rag_chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+)
+
+answer = rag_chain.invoke("What is RAG?")
+print(answer.content)
+```
+
+### Environment Variables
+
+Avoid hardcoding credentials by using environment variables:
+
+```bash
+export COS_SECRET_ID="your-secret-id"
+export COS_SECRET_KEY="your-secret-key"
+export COS_REGION="ap-beijing"
+```
+
+Then `from_texts` can omit those parameters:
+
+```python
+vector_store = CosVectors.from_texts(
+    texts=["hello", "world"],
+    embedding=embeddings,
+    bucket="my-vector-bucket",
+    index="my-index",
+)
+```
+
+## Resources
+
+- [Tencent Cloud COS Documentation](https://cloud.tencent.com/document/product/436)
+- [langchain-cos-vectors PyPI](https://pypi.org/project/langchain-cos-vectors/)
+- [Tencent Cloud Console](https://console.cloud.tencent.com)
