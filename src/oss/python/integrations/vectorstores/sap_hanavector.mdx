@@ -111,6 +111,15 @@ docs = [
 db.add_documents(docs)
 ```
 
+Add documents with map merge insertion
+
+> Note `use_map_merge` is only accepted as a keyword argument and is only allowed for `HanaInternalEmbeddings` instances.
+
+```python
+# a use_map_merge flag can be supplied for faster insertion
+db.add_documents(docs, use_map_merge=True)
+```
+
 ### Delete items from vector store
 
 ```python
@@ -225,21 +234,21 @@ The default index name will be: "\<TABLE_NAME>_idx"
 In addition to the basic value-based filtering capabilities, it is possible to use more advanced filtering.
 The table below shows the available filter operators.
 
-| Operator | Semantic                 |
-|----------|-------------------------|
-| `$eq`    | Equality (==)           |
-| `$ne`    | Inequality (!=)         |
-| `$lt`    | Less than (&lt;)           |
-| `$lte`   | Less than or equal (&lt;=) |
-| `$gt`    | Greater than (>)        |
-| `$gte`   | Greater than or equal (>=) |
-| `$in`    | Contained in a set of given values  (in)    |
-| `$nin`   | Not contained in a set of given values  (not in)  |
-| `$between` | Between the range of two boundary values |
-| `$like`  | Text equality based on the "LIKE" semantics in SQL (using "%" as wildcard)  |
-| `$contains` | Filters documents containing a specific keyword |
-| `$and`   | Logical "and", supporting two or more operands |
-| `$or`    | Logical "or", supporting two or more operands |
+| Operator | Semantic                 | Supported data types for Operands |
+|----------|-------------------------|-----------------------------------|
+| `$eq`    | Equality (==)           | int, float, str, bool, date object, None      |
+| `$ne`    | Inequality (!=)         | int, float, str, bool, date object, None      |
+| `$lt`    | Less than (&lt;)           | int, float, str, date object         |
+| `$lte`   | Less than or equal (&lt;=) | int, float, str, date object         |
+| `$gt`    | Greater than (>)        | int, float, str, date object         |
+| `$gte`   | Greater than or equal (>=) | int, float, str, date object         |
+| `$in`    | Contained in a set of given values  (in)    | list of same values of type (int, float, str, bool, date object) |
+| `$nin`   | Not contained in a set of given values  (not in)  | list of same values of type (int, float, str, bool, date object) |
+| `$between` | Between the range of two boundary values | list of 2 values of (int, float, str, date object) |
+| `$like`  | Text equality based on the "LIKE" semantics in SQL (using "%" as wildcard)  | str |
+| `$contains` | Filters documents containing a specific keyword | non-empty str |
+| `$and`   | Logical "and", supporting two or more operands | list(filters) |
+| `$or`    | Logical "or", supporting two or more operands | list(filters) |
 
 ```python
 # Prepare some test documents
@@ -438,6 +447,220 @@ For guides on how to use this vector store for retrieval-augmented generation (R
 - [Tutorials](/oss/langchain/rag)
 - [How-to: Question and answer with RAG](https://python.langchain.com/docs/how_to/#qa-with-rag)
 - [Retrieval conceptual docs](https://python.langchain.com/docs/concepts/retrieval)
+
+## Reranking results
+
+Results of a similarity search can be reranked by passing a `rerank_config` dictionary to the `similarity_search` methods. The reranking is performed using SAP HANA's `CROSS_ENCODE` function with Cross Encoding models.
+
+The `rerank_config` dictionary supports the following fields:
+
+- **`query`** *(str, required)* — The query text to use for reranking. If not provided, the original similarity search query will be used.
+
+- **`model_id`** *(str, required)* — The model ID for the cross-encoding model to use for reranking.
+
+- **`top_n`** *(int, optional)* — The number of top results to return after reranking. Defaults to 3.
+
+- **`rank_fields`** *(list[str], optional)* — List of metadata fields to include in reranking. When specified, these fields are concatenated with the content for scoring.
+
+> **Note:** Ensure NLP is enabled in your SAP HANA Cloud instance to use reranking functionality. For more details, see [SAP HANA Database Additional Features](https://help.sap.com/docs/hana-cloud/sap-hana-cloud-administration-guide/sap-hana-database-additional-features?version=hanacloud).
+
+```python
+# Prepare sample documents with metadata
+docs = [
+    Document(
+        page_content="Python is a programming language",
+        metadata={"category": "programming", "difficulty": "beginner"},
+    ),
+    Document(
+        page_content="Machine learning uses algorithms to learn patterns",
+        metadata={"category": "AI", "difficulty": "intermediate"},
+    ),
+    Document(
+        page_content="Neural networks are inspired by the human brain",
+        metadata={"category": "AI", "difficulty": "advanced"},
+    ),
+]
+
+db = HanaDB(
+    connection=connection,
+    embedding=embeddings,
+    table_name="LANGCHAIN_DEMO_RERANKING",
+)
+
+# Delete existing entries and add new documents
+db.delete(filter={})
+db.add_documents(docs)
+```
+
+### Basic reranking
+
+Perform a similarity search with reranking using the `rerank_config` parameter:
+
+```python
+# Basic reranking - rerank similarity search results using a cross-encoding model
+rerank_config = {
+    "model_id": os.environ.get("HANA_DB_RERANK_MODEL_ID"),  # e.g., "SAP_CER.20250701"
+    "top_n": 2,
+}
+
+results = db.similarity_search(
+    "AI technology",
+    k=3,
+    rerank_config=rerank_config
+)
+
+print("Reranked results:")
+for doc in results:
+    print("-" * 80)
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}")
+```
+
+```text
+Reranked results:
+--------------------------------------------------------------------------------
+Content: Machine learning uses algorithms to learn patterns
+Metadata: {'category': 'AI', 'difficulty': 'intermediate'}
+--------------------------------------------------------------------------------
+Content: Python is a programming language
+Metadata: {'category': 'programming', 'difficulty': 'beginner'}
+```
+
+### Reranking with metadata fields
+
+Use `rank_fields` to include metadata in the reranking process. This is useful when metadata contains relevant information that should influence the ranking:
+
+```python
+# Reranking with metadata fields included in the scoring
+rerank_config_with_fields = {
+    "query": "beginner AI concepts",
+    "model_id": os.environ.get("HANA_DB_RERANK_MODEL_ID"),
+    "top_n": 2,
+    "rank_fields": ["category", "difficulty"],  # Include these metadata fields in reranking
+}
+
+results = db.similarity_search(
+    "learning algorithms",
+    k=3,
+    rerank_config=rerank_config_with_fields
+)
+
+print("Reranked results with metadata fields:")
+for doc in results:
+    print("-" * 80)
+    print(f"Content: {doc.page_content}")
+    print(f"Metadata: {doc.metadata}")
+```
+
+```text
+Reranked results with metadata fields:
+--------------------------------------------------------------------------------
+Content: Neural networks are inspired by the human brain
+Metadata: {'category': 'AI', 'difficulty': 'advanced'}
+--------------------------------------------------------------------------------
+Content: Machine learning uses algorithms to learn patterns
+Metadata: {'category': 'AI', 'difficulty': 'intermediate'}
+```
+
+### Reranking with scores
+
+Use `similarity_search_with_score` to get the reranking scores along with the documents:
+
+```python
+# Get reranking scores with the results
+rerank_config = {
+    "model_id": os.environ.get("HANA_DB_RERANK_MODEL_ID"),
+    "top_n": 3,
+}
+
+results_with_scores = db.similarity_search_with_score(
+    "neural network architecture",
+    k=3,
+    rerank_config=rerank_config
+)
+
+print("Reranked results with scores:")
+for doc, score in results_with_scores:
+    print("-" * 80)
+    print(f"Score: {score:.4f}")
+    print(f"Content: {doc.page_content}")
+```
+
+```text
+Reranked results with scores:
+--------------------------------------------------------------------------------
+Score: 0.0435
+Content: Neural networks are inspired by the human brain
+--------------------------------------------------------------------------------
+Score: 0.0146
+Content: Python is a programming language
+--------------------------------------------------------------------------------
+Score: 0.0145
+Content: Machine learning uses algorithms to learn patterns
+```
+
+### Standalone reranking with HanaReranker
+
+For more control over the reranking process, you can use the `HanaReranker` class directly as a document compressor. This is useful when you want to rerank documents from any source, not just from a similarity search:
+
+```python
+from langchain_hana import HanaReranker
+
+# Create a standalone reranker
+reranker = HanaReranker(
+    connection=connection,
+    model_id=os.environ.get("HANA_DB_RERANK_MODEL_ID"),
+)
+
+# Documents to rerank (can come from any source)
+documents = [
+    Document(page_content="Python programming basics"),
+    Document(page_content="Advanced machine learning techniques"),
+    Document(page_content="Introduction to neural networks"),
+    Document(page_content="Deep learning applications"),
+    Document(page_content="Reinforcement learning strategies"),
+    Document(page_content="Natural language processing techniques"),
+]
+
+# Rerank documents based on a query using compress_documents (returns top min(5, len(documents)))
+# Reranking scores will be added to the metadata of each document under the key "relevance_score"
+reranked_docs = reranker.compress_documents(documents, query="AI and deep learning")
+
+print("Compressed documents:")
+for doc in reranked_docs:
+    print("-" * 80)
+    print(f"Content: {doc.page_content}")
+    print(f"Relevance score: {doc.metadata.get('relevance_score'):.4f}")
+
+# Or use the rerank method for more control over top_n
+results = reranker.rerank(documents, query="machine learning", top_n=2)
+print("\nTop 2 reranked results:")
+for idx, score, doc in results:
+    print(f"  [{idx}] Score: {score:.4f} - {doc.page_content}")
+```
+
+```text
+Compressed documents:
+--------------------------------------------------------------------------------
+Content: Deep learning applications
+Relevance score: 0.2188
+--------------------------------------------------------------------------------
+Content: Advanced machine learning techniques
+Relevance score: 0.0748
+--------------------------------------------------------------------------------
+Content: Introduction to neural networks
+Relevance score: 0.0079
+--------------------------------------------------------------------------------
+Content: Natural language processing techniques
+Relevance score: 0.0040
+--------------------------------------------------------------------------------
+Content: Reinforcement learning strategies
+Relevance score: 0.0036
+
+Top 2 reranked results:
+  [1] Score: 0.4351 - Advanced machine learning techniques
+  [3] Score: 0.0342 - Deep learning applications
+```
 
 ## Standard tables vs. "custom" tables with vector data
 
