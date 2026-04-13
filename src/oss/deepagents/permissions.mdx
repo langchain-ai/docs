@@ -56,23 +56,9 @@ Rules use first-match-wins evaluation: the first rule whose `operations` and `pa
 
 :::python
 
-### Deny all access
+### Isolate to a workspace directory
 
-```python
-agent = create_deep_agent(
-    model=model,
-    backend=backend,
-    permissions=[
-        FilesystemPermission(
-            operations=["read", "write"],
-            paths=["/**"],
-            mode="deny",
-        ),
-    ],
-)
-```
-
-### Sandbox to a workspace directory
+Allow reads and writes only under `/workspace/` and deny everything else:
 
 ```python
 agent = create_deep_agent(
@@ -109,6 +95,57 @@ agent = create_deep_agent(
             operations=["read", "write"],
             paths=["/workspace/**"],
             mode="allow",
+        ),
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+### Read-only memory
+
+Allow the agent to read memory files but prevent it from modifying them. This is useful for organization-wide policies or shared knowledge bases that should only be updated by application code. See [read-only vs writable memory](/oss/deepagents/memory#read-only-vs-writable-memory) for more context.
+
+```python
+agent = create_deep_agent(
+    model=model,
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/memories/": StoreBackend(
+                namespace=lambda rt: (rt.server_info.user.identity,),
+            ),
+            "/policies/": StoreBackend(
+                namespace=lambda rt: (rt.context.org_id,),
+            ),
+        },
+    ),
+    permissions=[
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/memories/**", "/policies/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+### Deny all access
+
+Block all reads and writes. This is a restrictive baseline you can layer more specific allow rules on top of:
+
+```python
+agent = create_deep_agent(
+    model=model,
+    backend=backend,
+    permissions=[
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/**"],
+            mode="deny",
         ),
     ],
 )
