@@ -1,0 +1,191 @@
+---
+title: "DNS-AID middleware integration"
+description: "Integrate with the DNS-AID middleware using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the DNS-AID [middleware](/oss/langchain/middleware/overview/). DNS-AID enables agents to discover and connect to other agents using DNS, based on the [DNS-AID protocol](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/) (SVCB records, RFC 9460).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | [JS support](https://reference.langchain.com/javascript/langchain-community) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `DnsAidMiddleware` | [`langchain-dns-aid`](https://pypi.org/project/langchain-dns-aid/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-dns-aid?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-dns-aid?style=flat-square&label=%20) |
+
+### Features
+
+- <Icon icon="radar" size={16}/> **Agent discovery**: Discover other AI agents at any domain via DNS SVCB records
+- <Icon icon="tower-broadcast" size={16}/> **Auto-publish**: Automatically register the agent in DNS on startup (`before_agent` hook)
+- <Icon icon="power-off" size={16}/> **Auto-unpublish**: Automatically remove DNS records on shutdown (`after_agent` hook), preventing stale entries
+- <Icon icon="wrench" size={16}/> **Agent tools**: Provides `dns_aid_discover`, `dns_aid_publish`, and `dns_aid_unpublish` tools the LLM can call at runtime
+- <Icon icon="shuffle" size={16}/> **Cross-provider**: Works with any LLM provider (OpenAI, Anthropic, AWS, etc.)
+
+---
+
+## Setup
+
+DNS-AID middleware does not require API keys for discovery. For publishing agents to DNS, you need access to a DNS backend (Route53, Cloudflare, etc.) configured via environment variables.
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-dns-aid
+    ```
+    ```python uv
+    uv add langchain-dns-aid
+    ```
+</CodeGroup>
+
+The `dns-aid` core library is installed automatically as a dependency.
+
+It's also helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+---
+
+## Instantiation
+
+Import and configure the middleware with your agent's DNS identity.
+
+```python Initialize middleware icon="arrows-shuffle"
+from langchain_dns_aid import DnsAidMiddleware
+
+middleware = DnsAidMiddleware(
+    agent_name="my-assistant",
+    domain="agents.example.com",
+    endpoint="assistant.example.com",
+    capabilities=["code-review", "documentation"],
+    backend_name="route53",
+)
+```
+
+### Configuration
+
+<ParamField path="agent_name" type="str | None" default="None">
+    Agent identifier in DNS label format (e.g., `"my-assistant"`). Required for auto-publish.
+</ParamField>
+
+<ParamField path="domain" type="str | None" default="None">
+    Domain to publish under (e.g., `"agents.example.com"`). Required for auto-publish.
+</ParamField>
+
+<ParamField path="protocol" type="str" default="mcp">
+    Protocol: `"mcp"`, `"a2a"`, or `"https"`.
+</ParamField>
+
+<ParamField path="endpoint" type="str" default='""'>
+    Hostname where the agent is reachable.
+</ParamField>
+
+<ParamField path="port" type="int" default="443">
+    Port number.
+</ParamField>
+
+<ParamField path="capabilities" type="list[str] | None" default="None">
+    List of agent capabilities (e.g., `["search", "summarize"]`).
+</ParamField>
+
+<ParamField path="backend_name" type="str | None" default="None">
+    DNS backend: `"route53"`, `"cloudflare"`, `"cloud-dns"`, `"ns1"`, `"infoblox"`, `"ddns"`, or `"mock"`.
+</ParamField>
+
+<ParamField path="auto_publish" type="bool" default="True">
+    Automatically publish the agent to DNS on startup.
+</ParamField>
+
+<ParamField path="auto_unpublish" type="bool" default="True">
+    Automatically unpublish the agent from DNS on shutdown.
+</ParamField>
+
+---
+
+## Use with an agent
+
+Pass the middleware to @[`create_agent`] to create an agent that registers itself in DNS on startup and can discover other agents at runtime.
+
+```python Agent with DNS-AID middleware icon="robot"
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="gpt-4o",
+    middleware=[
+        DnsAidMiddleware(
+            agent_name="research-assistant",
+            domain="agents.example.com",
+            endpoint="research.example.com",
+            capabilities=["search", "summarize"],
+            backend_name="route53",
+        ),
+    ],
+)
+
+# The agent auto-publishes to DNS, then handles the query.
+# It can discover and invoke other agents during execution.
+# On shutdown, it auto-unpublishes to prevent stale DNS records.
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Find agents that can help with data analysis"}]}
+)
+```
+
+<Tip>
+    Middleware runs in the [agent loop](/oss/langchain/middleware/overview#the-agent-loop). For custom behavior, see [custom middleware](/oss/langchain/middleware/custom).
+</Tip>
+
+---
+
+## Agent discovery
+
+The middleware registers a `dns_aid_discover` tool that the LLM can call to find other agents at any domain. Discovered agents are returned with their name, endpoint, capabilities, and protocol.
+
+```python Discovery-only mode icon="radar"
+# Use without auto-publish for discovery-only agents
+discovery_middleware = DnsAidMiddleware(
+    auto_publish=False,
+    auto_unpublish=False,
+)
+
+agent = create_agent(
+    model="gpt-4o",
+    middleware=[discovery_middleware],
+)
+
+# The agent can discover other agents but doesn't publish itself
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What agents are available at agents.example.com?"}]}
+)
+```
+
+---
+
+## Lifecycle hooks
+
+DNS-AID middleware leverages LangChain's lifecycle hooks to manage agent DNS presence automatically:
+
+| Hook | Action | Why it matters |
+|------|--------|---------------|
+| `before_agent` | Publishes agent to DNS via SVCB records | Agent is discoverable as soon as it starts |
+| `after_agent` | Removes agent's DNS records | No stale entries when agents stop or crash |
+
+This is a key advantage over tool-only integrations in other frameworks, where agents must explicitly call publish/unpublish and may leave stale DNS records on crashes.
+
+---
+
+## API reference
+
+For detailed documentation and source code, see the [langchain-dns-aid GitHub repository](https://github.com/IngmarVG-IB/langchain-dns-aid).
+
+## Related
+
+- [DNS-AID protocol specification](https://datatracker.ietf.org/doc/draft-mozleywilliams-dnsop-dnsaid/)
+- [dns-aid Python library](https://pypi.org/project/dns-aid/)
+- [Middleware overview](/oss/langchain/middleware/overview)
+- [Custom middleware](/oss/langchain/middleware/custom)
