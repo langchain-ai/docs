@@ -1,0 +1,239 @@
+---
+title: Deploy with the CLI
+description: Deploy a model-agnostic, open source agent to production with the Deep Agents CLI
+---
+
+Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith Deployment](/langsmith/deployment): a horizontally scalable server with 30+ endpoints including MCP, A2A, Agent Protocol, human-in-the-loop, and memory APIs. Built on open standards:
+
+- **Open source harness**: MIT licensed, available for [Python](https://github.com/langchain-ai/deepagents) and [TypeScript](https://github.com/langchain-ai/deepagentsjs)
+- **[AGENTS.md](https://agents.md/)**: open standard for agent instructions
+- **[Agent Skills](https://agentskills.io/)**: open standard for agent knowledge and actions
+- **Any model, any sandbox**: no provider lock-in
+- **Open protocols**: [MCP](https://modelcontextprotocol.io/docs/getting-started/intro), [A2A](https://a2a-protocol.org/latest/), [Agent Protocol](https://github.com/langchain-ai/agent-protocol)
+- **Self-hostable**: LangSmith Deployments can be self-hosted so memory stays in your infrastructure
+
+<Warning>
+    Deep Agents Deploy is currently in beta. APIs, configuration format, and behavior may change between releases. See the [releases page](https://github.com/langchain-ai/deepagents/releases) for detailed changelogs.
+</Warning>
+
+## Compare to Claude Managed Agents
+
+|  | Deep Agents Deploy | Claude Managed Agents |
+| --- | --- | --- |
+| Model support | OpenAI, Anthropic, Google, Bedrock, Azure, Fireworks, Baseten, OpenRouter, [many more](/oss/integrations/providers/overview) | Anthropic only |
+| Harness | Open source (MIT) | Proprietary, closed source |
+| Sandbox | LangSmith, Daytona, Modal, Runloop, or [custom](/oss/contributing/implement-langchain#sandboxes) | Built in |
+| MCP support | ✅ | ✅ |
+| Skill support | ✅ | ✅ |
+| AGENTS.md support | ✅ | ❌ |
+| Agent endpoints | MCP, A2A, Agent Protocol | Proprietary |
+| Self hosting | ✅ | ❌ |
+
+## What you're deploying
+
+`deepagents deploy` packages your agent configuration and deploys it as a [LangSmith Deployment](/langsmith/deployment). You configure your agent with a few parameters:
+
+| Parameter | Description |
+| --- | --- |
+| **`model`** | The LLM to use. Any provider works — see [supported models](/oss/deepagents/models#supported-models). |
+| **`AGENTS.md`** | The system prompt, loaded at the start of each session. |
+| **`skills`** | [Agent Skills](https://agentskills.io/) for specialized knowledge and actions. Skills are synced into the sandbox so the agent can execute them at runtime. See [skills docs](/oss/deepagents/skills). |
+| **`mcp.json`** | MCP tools (HTTP/SSE). See [MCP docs](/oss/langchain/mcp). |
+| **`sandbox`** | Optional execution environment. See [sandbox providers](#sandbox-providers). |
+
+## Install
+
+Install the CLI or run directly with `uvx`:
+
+<CodeGroup>
+    ```bash uv
+    uv tool install deepagents-cli
+    ```
+
+    ```bash uvx (no install)
+    uvx deepagents-cli deploy
+    ```
+</CodeGroup>
+
+## Usage
+
+```bash
+deepagents init [name] [--force]                                             # scaffold a new project
+deepagents dev  [--config deepagents.toml] [--port 2024] [--allow-blocking]  # bundle and run locally
+deepagents deploy [--config deepagents.toml] [--dry-run]                     # bundle and deploy
+```
+
+By default, `deepagents deploy` looks for `deepagents.toml` in the current directory. Pass `--config` to use a different path:
+
+```bash
+deepagents deploy --config path/to/deepagents.toml
+```
+
+### `deepagents init`
+
+Scaffold a new agent project:
+
+```bash
+deepagents init my-agent
+```
+
+This creates the following files:
+
+| File | Purpose |
+| --- | --- |
+| `deepagents.toml` | Agent config — name, model, optional sandbox |
+| `AGENTS.md` | System prompt loaded at session start |
+| `.env` | API key template (`ANTHROPIC_API_KEY`, `LANGSMITH_API_KEY`, etc.) |
+| `mcp.json` | MCP server configuration (empty by default) |
+| `skills/` | Directory for [Agent Skills](https://agentskills.io/), with an example `review` skill |
+
+After init, edit `AGENTS.md` with your agent's instructions and run `deepagents deploy`.
+
+## Project layout
+
+The deploy command uses a convention-based project layout. Place the following files alongside your `deepagents.toml` and they are automatically discovered:
+
+```txt
+my-agent/
+├── deepagents.toml
+├── AGENTS.md
+├── .env
+├── mcp.json
+└── skills/
+    ├── code-review/
+    │   └── SKILL.md
+    └── data-analysis/
+        └── SKILL.md
+```
+
+| File/directory | Purpose | Required |
+| --- | --- | --- |
+| `AGENTS.md` | [Memory](/oss/deepagents/memory) for the agent. Provides persistent context (project conventions, instructions, preferences) that is always loaded at startup. | Yes |
+| `skills/` | Directory of [skill](/oss/deepagents/skills) definitions. Each subdirectory should contain a `SKILL.md` file. | No |
+| `mcp.json` | [MCP](https://modelcontextprotocol.io/) server configuration. Only `http` and `sse` transports are supported in deployed contexts. | No |
+| `.env` | Environment variables (API keys, secrets). Placed alongside `deepagents.toml` at the project root. | No |
+
+<Warning>
+    `mcp.json` must only contain servers using `http` or `sse` transports. Servers using `stdio` transport are not supported in deployed environments because there is no local process to spawn.
+
+    Convert stdio servers to HTTP or SSE before deploying.
+</Warning>
+
+## Configuration file
+
+`deepagents.toml` configures the agent's identity and sandbox environment. Only the `[agent]` section is required. The `[sandbox]` section is optional and defaults to no sandbox.
+
+### `[agent]`
+
+(Required)
+
+Core agent identity. For more on model selection and provider configuration, see [supported models](/oss/deepagents/models#supported-models).
+
+<ResponseField name="name" type="string" required>
+    Name for the deployed agent. Used as the assistant identifier in LangSmith.
+</ResponseField>
+
+<ResponseField name="model" type="string" default="anthropic:claude-sonnet-4-6">
+    Model identifier in `provider:model` format. See [supported models](/oss/deepagents/models#supported-models).
+</ResponseField>
+
+```toml deepagents.toml
+[agent]
+name = "research-assistant"
+model = "anthropic:claude-sonnet-4-6"
+```
+
+<Note>
+    The `name` field is the only required value in the entire configuration file. Everything else has defaults.
+</Note>
+
+Skills, MCP servers, and model dependencies are auto-detected from the project layout — you don't declare them in `deepagents.toml`:
+
+- **Skills**: the bundler recursively scans `skills/`, skipping hidden dotfiles, and bundles the rest.
+- **MCP servers**: if `mcp.json` exists, it is included in the deployment and [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) is added as a dependency. Only HTTP/SSE transports are supported (stdio is rejected at bundle time).
+- **Model dependencies**: the `provider:` prefix in the `model` field determines the required `langchain-*` package (e.g., `anthropic` -> `langchain-anthropic`).
+- **Sandbox dependencies**: the `[sandbox].provider` value maps to its partner package (e.g., `daytona` -> `langchain-daytona`).
+
+### `[sandbox]`
+
+Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes).
+
+When omitted or set to `provider = "none"`, the sandbox is disabled. Sandboxes are for if you need code execution or skill script execution.
+
+<ResponseField name="provider" type="string" default="none">
+    Sandbox provider. Determines where the container runs. Supported values: `"none"`, `"daytona"`, `"modal"`, `"runloop"`, `"langsmith"` (private beta). See [sandbox integrations](/oss/integrations/sandboxes) for provider details.
+</ResponseField>
+
+<ResponseField name="template" type="string" default="deepagents-deploy">
+    Provider-specific template name for the sandbox environment.
+</ResponseField>
+
+<ResponseField name="image" type="string" default="python:3">
+    Base Docker image for the sandbox container.
+</ResponseField>
+
+<ResponseField name="scope" type="string" default="thread">
+    Sandbox lifecycle scope. `"thread"` creates one sandbox per conversation. `"assistant"` shares a single sandbox across all conversations for the same assistant.
+</ResponseField>
+
+**Scope behavior:**
+
+- `"thread"` (default): Each conversation gets its own sandbox. Different threads get different sandboxes, but the same thread reuses its sandbox across turns. Use this when each conversation should start with a clean environment.
+- `"assistant"`: All conversations share one sandbox. Files, installed packages, and other state persist across conversations. Use this when the agent maintains a long-lived workspace like a cloned repo.
+
+### `.env`
+
+Place a `.env` file alongside `deepagents.toml` with your API keys:
+
+```bash
+# Required — model provider keys
+ANTHROPIC_API_KEY=sk-...
+OPENAI_API_KEY=sk-...
+# ...etc.
+
+# Required for deploy and LangSmith sandbox
+LANGSMITH_API_KEY=lsv2_...
+
+# Optional — sandbox provider keys
+DAYTONA_API_KEY=...
+MODAL_TOKEN_ID=...
+MODAL_TOKEN_SECRET=...
+RUNLOOP_API_KEY=...
+```
+
+## Sandbox providers
+
+Set `[sandbox].provider` in `deepagents.toml` and add the required env vars to `.env`. For available providers, see [sandbox integrations](/oss/integrations/sandboxes). For lifecycle patterns and SDK usage, see [sandboxes](/oss/deepagents/sandboxes).
+
+## Deployment endpoints
+
+The deployed server exposes:
+
+- [**MCP**](https://modelcontextprotocol.io/docs/getting-started/intro): call your agent as a tool from other agents
+- [**A2A**](https://a2a-protocol.org/latest/): multi-agent orchestration via A2A protocol
+- [**Agent Protocol**](https://github.com/langchain-ai/agent-protocol): standard API for building UIs
+- [**Human-in-the-loop**](/oss/deepagents/human-in-the-loop): approval gates for sensitive actions
+- [**Memory**](/oss/deepagents/memory): short-term and long-term memory access
+
+## Examples
+
+A content writing agent that only needs a model and system prompt, with no code execution:
+
+```toml deepagents.toml
+[agent]
+name = "deepagents-deploy-content-writer"
+model = "anthropic:claude-sonnet-4-6"
+```
+
+A coding agent with a LangSmith sandbox for running code:
+
+```toml deepagents.toml
+[agent]
+name = "deepagents-deploy-coding-agent"
+model = "anthropic:claude-sonnet-4-6"
+
+[sandbox]
+provider = "langsmith"
+template = "coding-agent"
+image = "python:3.12"
+```
