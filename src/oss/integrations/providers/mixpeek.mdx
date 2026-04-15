@@ -1,0 +1,138 @@
+# Mixpeek
+
+>[Mixpeek](https://mixpeek.com) is a multimodal intelligence platform that lets AI agents
+>search across video, image, audio, and document content. It decomposes unstructured media
+>into searchable features (faces, objects, text, audio, embeddings) and serves them through
+>multi-stage retrieval pipelines.
+
+## Installation
+
+```bash
+pip install langchain-mixpeek
+```
+
+Get your API key at [mixpeek.com](https://mixpeek.com).
+
+## Retriever
+
+`MixpeekRetriever` implements LangChain's `BaseRetriever` interface, returning `Document` objects
+with content extracted from your configured field and metadata including `document_id`, `score`, and `namespace`.
+
+```python
+from langchain_mixpeek import MixpeekRetriever
+
+retriever = MixpeekRetriever(
+    api_key="mxp_...",
+    retriever_id="ret_abc123",
+    namespace="my-namespace",
+    top_k=5,
+    content_field="transcript_chunk",
+)
+docs = retriever.invoke("what happens at the 2 minute mark?")
+
+for doc in docs:
+    print(doc.page_content)
+    print(doc.metadata)  # includes document_id, score, namespace
+```
+
+### Async
+
+```python
+from langchain_mixpeek import AsyncMixpeekRetriever
+
+retriever = AsyncMixpeekRetriever(
+    api_key="mxp_...",
+    retriever_id="ret_abc123",
+    namespace="my-namespace",
+)
+docs = await retriever.ainvoke("find the red cup")
+```
+
+### In a RAG chain
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_anthropic import ChatAnthropic
+from langchain_mixpeek import MixpeekRetriever
+
+retriever = MixpeekRetriever(
+    api_key="mxp_...",
+    retriever_id="ret_abc123",
+    namespace="my-namespace",
+)
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer based on this context:\n\n{context}\n\nQuestion: {question}"
+)
+
+chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | ChatAnthropic(model="claude-sonnet-4-20250514")
+    | StrOutputParser()
+)
+
+chain.invoke("what was discussed about pricing?")
+```
+
+## Tool
+
+`MixpeekTool` implements LangChain's `BaseTool` interface, returning a JSON string
+of ranked results that agents can parse and reason over.
+
+```python
+from langchain_mixpeek import MixpeekTool
+
+tool = MixpeekTool(
+    api_key="mxp_...",
+    retriever_id="ret_abc123",
+    namespace="my-namespace",
+    top_k=5,
+)
+result = tool.invoke("find the red cup")  # returns JSON string
+```
+
+### As an agent tool
+
+```python
+from langgraph.prebuilt import create_react_agent
+from langchain_anthropic import ChatAnthropic
+from langchain_mixpeek import MixpeekTool
+
+tool = MixpeekTool(
+    api_key="mxp_...",
+    retriever_id="ret_abc123",
+    namespace="my-namespace",
+    name="video_search",
+    description="Search video content by topic, speaker, or visual elements.",
+    content_field="transcript_chunk",
+)
+
+agent = create_react_agent(
+    ChatAnthropic(model="claude-sonnet-4-20250514"),
+    [tool],
+    prompt="You are a video analyst. Search before answering.",
+)
+
+result = agent.invoke({"messages": [("human", "What was shown at the 5 minute mark?")]})
+```
+
+## Key parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | `str` | required | Mixpeek API key (`mxp_...`) |
+| `retriever_id` | `str` | required | Mixpeek retriever ID (`ret_...`) |
+| `namespace` | `str` | required | Namespace to search |
+| `top_k` | `int` | `10` (retriever) / `5` (tool) | Max results |
+| `content_field` | `str` | `"transcript_chunk"` | Field to use as page content |
+| `filters` | `dict` | `None` | Attribute filters (retriever only) |
+
+## Why Mixpeek
+
+Most retrieval tools only handle text. Mixpeek indexes video frames, audio segments,
+images, and documents through configurable feature extractors (face identity, object detection,
+OCR, audio fingerprinting, multimodal embeddings) and serves results through multi-stage
+retrieval pipelines with semantic search, reranking, filtering, and enrichment stages.
