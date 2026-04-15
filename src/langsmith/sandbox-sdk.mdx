@@ -487,6 +487,60 @@ async def main():
             token = await svc.get_token()
 ```
 
+## Trace sandbox activity
+
+Pass LangSmith tracing environment variables through the `env` parameter on `run()` to send traces from code running inside a sandbox. Call `flush()` before the process exits to ensure all traces are delivered.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+tracing_env = {
+    "LANGSMITH_API_KEY": "lsv2_pt_...",
+    "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
+    "LANGSMITH_TRACING": "true",
+    "LANGSMITH_PROJECT": "my-sandbox-traces",
+}
+
+with client.sandbox(template_name="my-template") as sandbox:
+    sandbox.run("pip install langsmith", timeout=120, env=tracing_env)
+    result = sandbox.run("python3 my_agent.py", env=tracing_env)
+    print(result.stdout)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/experimental/sandbox";
+
+const client = new SandboxClient();
+
+const tracingEnv = {
+  LANGSMITH_API_KEY: "lsv2_pt_...",
+  LANGSMITH_ENDPOINT: "https://api.smith.langchain.com",
+  LANGSMITH_TRACING: "true",
+  LANGSMITH_PROJECT: "my-sandbox-traces",
+};
+
+const sandbox = await client.createSandbox("my-template");
+try {
+  await sandbox.run("pip install langsmith", { timeout: 120, env: tracingEnv });
+  const result = await sandbox.run("python3 my_agent.py", { env: tracingEnv });
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+Inside the sandbox, any LangSmith-instrumented code (`@traceable`, LangChain, LangGraph) automatically picks up the tracing configuration from the injected environment variables.
+
+<Warning>
+Always call `flush()` before the sandbox process exits — `langsmith.Client().flush()` in Python or `await new Client().flush()` in TypeScript. Without it, traces may be lost because the container is destroyed when the command finishes.
+</Warning>
+
 ## Error handling
 
 Both SDKs provide typed exceptions for specific error handling:
