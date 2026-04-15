@@ -1,0 +1,50 @@
+---
+title: "LangChain Replay"
+description: "Record and replay LangChain/LangGraph agent decisions while tools execute against the real filesystem."
+---
+
+**langchain-replay** is a testing library that records LangChain/LangGraph agent decisions and replays them while tools execute against the real filesystem.
+
+Testing LLM agents is expensive and non-deterministic. HTTP-level cassette libraries record raw requests, but they never let tool code actually run. `langchain-replay` records the LLM's *decisions* (which tool to call, with what arguments, what text to return), then on replay yields those decisions while *actually executing the tools*. Tests exercise real tool code paths without paying for LLM calls.
+
+## Installation and setup
+
+```bash
+pip install langchain-replay
+```
+
+No API keys or external services are required. The library works entirely locally.
+
+## Usage
+
+Register your agent factory entry points, then wrap your test code in a context manager:
+
+```python
+import langchain.agents
+from langchain_replay import AgentFactoryRegistry, AutoRecordReplayContext
+from pathlib import Path
+
+registry = AgentFactoryRegistry()
+registry.register("langchain.agents.create_agent")
+
+ctx = AutoRecordReplayContext(Path("tests/recordings"), agent_registry=registry)
+
+async def test_my_agent():
+    with ctx.for_fixture("agents", "my_scenario"):
+        agent = langchain.agents.create_agent(model="claude-haiku-4-5-20251001", tools=[...])
+        result = await agent.ainvoke({"messages": [{"role": "user", "content": "..."}]})
+```
+
+The first run records `tests/recordings/agents/my_scenario/recording.jsonl`. Subsequent runs replay the LLM's decisions without any API calls, but tools still execute for real.
+
+An optional pytest plugin is available:
+
+```bash
+pip install "langchain-replay[pytest]"
+```
+
+## Links
+
+- [GitHub](https://github.com/sixty-north/langchain-replay)
+- [PyPI](https://pypi.org/project/langchain-replay/)
+- [Full documentation](https://github.com/sixty-north/langchain-replay#readme)
