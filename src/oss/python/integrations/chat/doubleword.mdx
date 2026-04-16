@@ -1,0 +1,164 @@
+---
+title: "ChatDoubleword integration"
+sidebarTitle: Doubleword
+description: "Integrate with the ChatDoubleword chat model using LangChain Python."
+---
+
+This will help you get started with Doubleword [chat models](/oss/langchain/models). [Doubleword](https://doubleword.ai/) is an AI model gateway and control layer that provides unified routing, management, and security for inference across multiple model providers.
+
+The `langchain-doubleword` package provides two chat model classes:
+
+- **`ChatDoubleword`**: Real-time chat completions via the Doubleword gateway.
+- **`ChatDoublewordBatch`**: Cost-optimized batched completions using Doubleword's batch API. Uses `autobatcher` to transparently collect concurrent calls into batch submissions.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS/TS Support | Downloads | Latest Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| `ChatDoubleword` | `langchain-doubleword` | beta | ❌ | <a href="https://pypi.org/project/langchain-doubleword/" target="_blank"><img src="https://static.pepy.tech/badge/langchain-doubleword/month" alt="Downloads per month" noZoom height="100" class="rounded" /></a> | <a href="https://pypi.org/project/langchain-doubleword/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-doubleword?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+
+## Setup
+
+To access models via Doubleword you'll need a Doubleword account and an API key. Visit the [Doubleword documentation](https://docs.doubleword.ai) to get started.
+
+### Installation
+
+The LangChain Doubleword integration lives in the `langchain-doubleword` package:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-doubleword
+    ```
+    ```bash uv
+    uv add langchain-doubleword
+    ```
+</CodeGroup>
+
+### Credentials
+
+Generate an API key from your Doubleword dashboard and set the `DOUBLEWORD_API_KEY` environment variable:
+
+```python
+import getpass
+import os
+
+if not os.getenv("DOUBLEWORD_API_KEY"):
+    os.environ["DOUBLEWORD_API_KEY"] = getpass.getpass("Enter your Doubleword API key: ")
+```
+
+You can also pass the key directly via the `api_key` parameter or configure it in `~/.dw/credentials.toml`.
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```python
+from langchain_doubleword import ChatDoubleword
+
+model = ChatDoubleword(
+    model="gpt-4o",
+    temperature=0,
+    max_tokens=1024,
+    max_retries=2,
+    # api_key="...",  # if not using DOUBLEWORD_API_KEY env var
+)
+```
+
+---
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = model.invoke(messages)
+ai_msg.content
+```
+
+```text
+"J'adore la programmation."
+```
+
+---
+
+## Streaming
+
+```python
+for chunk in model.stream("Write a short poem about the sea."):
+    print(chunk.text, end="", flush=True)
+```
+
+---
+
+## Tool calling
+
+Doubleword supports OpenAI-compatible tool calling. You can use `bind_tools` to pass Pydantic classes, dict schemas, LangChain tools, or functions.
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location"""
+
+    location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+
+model_with_tools = model.bind_tools([GetWeather])
+ai_msg = model_with_tools.invoke("What is the weather like in San Francisco?")
+ai_msg.tool_calls
+```
+
+```text
+[{'name': 'GetWeather',
+  'args': {'location': 'San Francisco, CA'},
+  'id': 'call_abc123',
+  'type': 'tool_call'}]
+```
+
+For more on binding tools and tool call outputs, head to the [tool calling](/oss/langchain/tools) docs.
+
+---
+
+## Batch processing
+
+`ChatDoublewordBatch` uses Doubleword's batch API to transparently collect concurrent calls into batch submissions at reduced cost. This is useful for high-throughput workloads where real-time responses are not required.
+
+```python
+from langchain_doubleword import ChatDoublewordBatch
+
+batch_model = ChatDoublewordBatch(
+    model="gpt-4o",
+    temperature=0,
+)
+
+# Calls are automatically batched behind the scenes
+result = batch_model.invoke("Summarize the theory of relativity in one sentence.")
+result.content
+```
+
+---
+
+## API reference
+
+For detailed documentation and source code, visit the [`langchain-doubleword` GitHub repository](https://github.com/doublewordai/langchain-doubleword).
