@@ -14,11 +14,13 @@ rss: true
 <Update label="2026-04-16" tags={["agent-server"]}>
 ## v0.8.0
 
-This minor release enables the redis queue. Previously, redis was used to wake up workers when runs were ready, but the full queue polling logic was through postgres. This change offloads the queue polling logic to redis, reducing the load on the database and improving performance. Runs are still stored in postgres and that is the source of truth for run state.
+This minor version moves run queue polling from Postgres to Redis, saving database load and improving performance.
 
-This is not a breaking change and no coding actions are required to upgrade. However, it is worth taking some precautions:
-- Due to the switch in queue polling logic, there may be a brief window immediately after upgrading where threads are executed non-chronologically. Runs will still be guaranteed to execute one at a time on a thread and in the order they were created, but threads themselves may not be executed in the order they were created.
-- **Self-hosted Only** Redis will now be receiving slightly more traffic than before. From internal testing, this is not drastically more, but is worth monitoring. (The flip side is you should see notably less postgres load)
+Under the hood, Agent Server uses a durable run queue to manage run execution. Workers poll the queue for new runs and execute them. Previously, the queue polling logic went through Postgres. This could result in long running queries especially under high load. With this update, the queue polling logic now goes through Redis and then fetches run details from Postgres. This makes the hot path for queue polling substantially faster and reduces the load on the database.
+
+This is not a breaking change and does not require code changes to upgrade, but there are a couple of things to be aware of:
+- In the deployment immediately after upgrading, the queue will shift over. There may be a brief window where threads are scheduled non-chronologically. Run execution order is still guaranteed within each thread.
+- **Self-hosted only:** Redis traffic may increase slightly. In internal testing, the increase was modest.
 </Update>
 
 <Update label="2026-04-10" tags={["agent-server"]}>
