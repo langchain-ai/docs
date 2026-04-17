@@ -1,0 +1,121 @@
+---
+title: "PQS (Prompt Quality Score) integration"
+description: "Score prompt quality before inference using PQS with LangChain Python."
+---
+
+> **What is PQS?** [PQS (Prompt Quality Score)](https://pqs.onchainintel.net) scores prompts on 8 quality dimensions *before* inference runs. It plugs into LangChain via a callback handler, so every prompt in a chain or agent gets scored automatically with zero changes to your existing code. Score low prompts get flagged (or blocked) before they burn tokens.
+
+## Installation
+
+```bash
+pip install prompt-quality-score
+```
+
+Get a free API key at [pqs.onchainintel.net](https://pqs.onchainintel.net) — no signup required to evaluate.
+
+## Scoring prompts with a LangChain callback
+
+The most idiomatic way to use PQS with LangChain is the callback handler. Add it to any LLM, chain, or agent — PQS scores every prompt automatically before inference.
+
+```python
+import os
+from pqs_sdk import PQSCallbackHandler
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
+handler = PQSCallbackHandler(
+    api_key=os.environ["PQS_API_KEY"],
+    vertical="software",     # optional; default: "general"
+    threshold=20,            # optional; warn if score < threshold (0-40)
+    verbose=True,            # optional; print scores to stdout
+    raise_on_fail=False,     # optional; raise if below threshold
+)
+
+llm = ChatOpenAI(model="gpt-4.1", callbacks=[handler])
+prompt = ChatPromptTemplate.from_template("{input}")
+chain = prompt | llm
+
+response = chain.invoke({"input": "Write a Python function to parse CSV files."})
+print(response.content)
+
+# Inspect scoring results after the call
+print(handler.last_score.score, handler.last_score.grade)
+print(handler.get_summary())
+```
+
+## Blocking low-quality prompts
+
+Set `raise_on_fail=True` to make the callback raise a `ValueError` when a prompt scores below the threshold. Useful as a pre-flight gate in production chains:
+
+```python
+handler = PQSCallbackHandler(
+    api_key=os.environ["PQS_API_KEY"],
+    vertical="software",
+    threshold=24,
+    raise_on_fail=True,
+)
+
+llm = ChatOpenAI(model="gpt-4.1", callbacks=[handler])
+# chain.invoke(...) will raise ValueError if the prompt scores < 24/40
+```
+
+## Direct client usage (no callback)
+
+For programmatic scoring outside a chain — for example, scoring prompts in a batch job or before persisting to a prompt registry — use `PQSClient` directly.
+
+```python
+import os
+from pqs_sdk import PQSClient
+
+client = PQSClient(api_key=os.environ["PQS_API_KEY"])
+
+result = client.score(
+    "Write a Python function to parse CSV files with error handling.",
+    vertical="software",
+)
+
+print(f"Score: {result.score}/40 (grade {result.grade}) — {result.summary}")
+print(f"Dimensions: {result.dimensions}")
+```
+
+## Environment variables
+
+```bash filename=".env"
+PQS_API_KEY="your-pqs-api-key"
+```
+
+## Verticals
+
+PQS supports 7 verticals with dimension weights tuned per domain:
+
+- `general` — balanced across all dimensions (default)
+- `software` — engineering, code generation, dev tooling
+- `content` — writing, copy, marketing
+- `business` — strategy, ops, analysis
+- `education` — explanations, tutorials, learning
+- `science` — research, empirical work, analysis
+- `crypto` — blockchain, DeFi, agentic payments
+
+## CrewAI and AG2
+
+The same SDK ships CrewAI tools and AG2 helpers:
+
+```python
+# CrewAI
+from pqs_sdk import PQSScoreTool, PQSOptimizeTool
+
+# AG2
+from pqs_sdk import register_pqs_tools, create_pqs_tool
+```
+
+## Other integration surfaces
+
+- **GitHub Action**: [PQS Check](https://github.com/marketplace/actions/pqs-check) — gate prompts in CI
+- **MCP server**: [pqs-mcp-server](https://www.npmjs.com/package/pqs-mcp-server) on npm
+- **REST API**: `POST https://pqs.onchainintel.net/api/score` with `x-api-key` header
+
+## References
+
+- [PQS website](https://pqs.onchainintel.net)
+- [PyPI package](https://pypi.org/project/prompt-quality-score/)
+- [GitHub](https://github.com/OnChainAIIntel)
