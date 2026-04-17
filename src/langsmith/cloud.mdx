@@ -167,15 +167,124 @@ The LangChain endpoints map to the following static IP addresses for traffic tha
 
 You may need to allowlist these to enable traffic from your private network to LangSmith SaaS endpoints (`api.smith.langchain.com`, `smith.langchain.com`, `beacon.langchain.com`, `eu.api.smith.langchain.com`, `eu.smith.langchain.com`, `eu.beacon.langchain.com`, `aws.api.smith.langchain.com`, `aws.smith.langchain.com`).
 
-### Private Service Connect (Enterprise)
+### Private connectivity (Enterprise)
 
 <Callout icon="lock" color="#4F46E5" iconType="regular">
-**Enterprise only.** Private Service Connect is available exclusively for Enterprise customers. Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) to enable this feature.
+**Enterprise only.** Private connectivity is available exclusively for Enterprise customers. Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) to enable this feature.
 </Callout>
+
+Enterprise customers can connect to LangSmith without exposing traffic to the public internet using **AWS PrivateLink** or **GCP Private Service Connect (PSC)**.
+
+#### AWS PrivateLink
+
+Customers on **AWS** can connect to LangSmith via [AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/), providing private connectivity from any VPC. Cross-region connectivity is supported natively.
+
+##### Endpoint service name
+
+| Region | Service Name |
+|--------|-------------|
+| US (`us-east-2`) | `com.amazonaws.vpce.us-east-2.vpce-svc-054f37092752bff6b` |
+
+##### Setup
+
+**1. Request access:** Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your AWS account ID. LangChain will add your account to the endpoint service's allowed principals list.
+
+**2. Create an Interface VPC Endpoint** in your AWS account. Attach a security group that allows **TCP 443 inbound** from your VPC CIDR (or from the instances that need to reach LangSmith):
+
+<CodeGroup>
+```bash AWS CLI
+aws ec2 create-vpc-endpoint \
+  --vpc-id <YOUR_VPC_ID> \
+  --service-name <SERVICE_NAME_FROM_TABLE_ABOVE> \
+  --vpc-endpoint-type Interface \
+  --subnet-ids <YOUR_SUBNET_IDS> \
+  --security-group-ids <YOUR_SECURITY_GROUP_ID> \
+  --region <YOUR_REGION>
+```
+
+```hcl Terraform
+resource "aws_vpc_endpoint" "langsmith" {
+  vpc_id              = "<YOUR_VPC_ID>"
+  service_name        = "<SERVICE_NAME_FROM_TABLE_ABOVE>"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = ["<YOUR_SUBNET_IDS>"]
+  security_group_ids  = ["<YOUR_SECURITY_GROUP_ID>"]
+}
+```
+</CodeGroup>
+
+**3. Wait for acceptance.** LangChain will accept the connection. The endpoint status will change from `pendingAcceptance` to `available`. Allow a few minutes after acceptance for the change to fully propagate before testing connectivity.
+
+##### Configure DNS
+
+Configure DNS so that `aws.api.smith.langchain.com` resolves to your VPC endpoint's private DNS name within your VPC. You can use any private DNS solution — Route 53 Private Hosted Zones, a corporate DNS resolver, or any DNS server reachable from your VPC.
+
+First, get your endpoint's DNS name:
+
+```bash
+aws ec2 describe-vpc-endpoints \
+  --vpc-endpoint-ids <YOUR_ENDPOINT_ID> \
+  --query 'VpcEndpoints[0].DnsEntries[0].DnsName' \
+  --output text --region <YOUR_REGION>
+```
+
+Then create a CNAME record for `aws.api.smith.langchain.com` pointing to that DNS name. Here's an example using Route 53:
+
+<CodeGroup>
+```bash AWS CLI
+aws route53 create-hosted-zone \
+  --name aws.api.smith.langchain.com \
+  --vpc VPCRegion=<YOUR_REGION>,VPCId=<YOUR_VPC_ID> \
+  --caller-reference langsmith-privatelink-$(date +%s) \
+  --hosted-zone-config PrivateZone=true
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id <HOSTED_ZONE_ID> \
+  --change-batch '{
+    "Changes": [{
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "aws.api.smith.langchain.com",
+        "Type": "CNAME",
+        "TTL": 300,
+        "ResourceRecords": [{"Value": "<ENDPOINT_DNS_NAME>"}]
+      }
+    }]
+  }'
+```
+
+```hcl Terraform
+resource "aws_route53_zone" "langsmith_privatelink" {
+  name = "aws.api.smith.langchain.com"
+
+  vpc {
+    vpc_id = "<YOUR_VPC_ID>"
+  }
+}
+
+resource "aws_route53_record" "langsmith_privatelink" {
+  zone_id = aws_route53_zone.langsmith_privatelink.zone_id
+  name    = "aws.api.smith.langchain.com"
+  type    = "CNAME"
+  ttl     = 300
+  records = [aws_vpc_endpoint.langsmith.dns_entry[0]["dns_name"]]
+}
+```
+</CodeGroup>
+
+##### Verify connectivity
+
+From an EC2 instance or container in your VPC:
+
+```bash
+curl https://aws.api.smith.langchain.com/ok
+```
+
+#### GCP Private Service Connect
 
 Enterprise customers on **GCP** can connect to LangSmith via [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect), providing private connectivity without exposing traffic to the public internet.
 
-#### Service attachment URIs
+##### Service attachment URIs
 
 Use the following service attachment URIs to create a PSC endpoint in your VPC:
 
@@ -184,7 +293,7 @@ Use the following service attachment URIs to create a PSC endpoint in your VPC:
 | US (`us-central1`) | `projects/langchain-prod/regions/us-central1/serviceAttachments/gateway-psc-publish` |
 | EU (`europe-west4`) | `projects/langchain-prod/regions/europe-west4/serviceAttachments/gateway-psc-publish` |
 
-#### PSC domains
+##### PSC domains
 
 After setup, use the following domains to connect to LangSmith over your PSC connection:
 
@@ -193,13 +302,13 @@ After setup, use the following domains to connect to LangSmith over your PSC con
 | US | `us-central1.p.api.smith.langchain.com` |
 | EU | `europe-west4.p.api.smith.langchain.com` |
 
-#### Setup
+##### Setup
 
 **Request access:** Contact your account representative or [sales@langchain.dev](mailto:sales@langchain.dev) with your GCP project ID. LangChain will add your project to the service attachment's allowed consumer list.
 
 After access is granted, create a PSC endpoint and configure DNS using either the gcloud CLI or Terraform.
 
-#### Create a PSC endpoint
+##### Create a PSC endpoint
 
 Create a forwarding rule in your VPC targeting the service attachment:
 
@@ -232,7 +341,7 @@ resource "google_compute_forwarding_rule" "langsmith_psc" {
 ```
 </CodeGroup>
 
-#### Configure DNS
+##### Configure DNS
 
 Create a private DNS zone in your VPC and add an A record pointing to the PSC endpoint IP:
 
@@ -276,7 +385,7 @@ resource "google_dns_record_set" "langsmith_psc" {
 ```
 </CodeGroup>
 
-#### Verify connectivity
+##### Verify connectivity
 
 From a VM in your VPC:
 
