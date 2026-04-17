@@ -183,7 +183,7 @@ Customers on **AWS** can connect to LangSmith via [AWS PrivateLink](https://docs
 
 | Region | Service Name |
 |--------|-------------|
-| US (`us-east-2`) | `<LANGSMITH_PRIVATELINK_SERVICE_NAME>` |
+| US (`us-east-2`) | `com.amazonaws.vpce.us-east-2.vpce-svc-054f37092752bff6b` |
 
 ##### Setup
 
@@ -217,24 +217,27 @@ resource "aws_vpc_endpoint" "langsmith" {
 
 ##### Configure DNS
 
-Create a Route 53 Private Hosted Zone so LangSmith API hostnames resolve to your endpoint's private IPs:
+Configure DNS so that `aws.api.smith.langchain.com` resolves to your VPC endpoint's private DNS name within your VPC. You can use any private DNS solution — Route 53 Private Hosted Zones, a corporate DNS resolver, or any DNS server reachable from your VPC.
+
+First, get your endpoint's DNS name:
+
+```bash
+aws ec2 describe-vpc-endpoints \
+  --vpc-endpoint-ids <YOUR_ENDPOINT_ID> \
+  --query 'VpcEndpoints[0].DnsEntries[0].DnsName' \
+  --output text --region <YOUR_REGION>
+```
+
+Then create a CNAME record for `aws.api.smith.langchain.com` pointing to that DNS name. Here's an example using Route 53:
 
 <CodeGroup>
 ```bash AWS CLI
-# Create a private hosted zone
 aws route53 create-hosted-zone \
   --name aws.api.smith.langchain.com \
   --vpc VPCRegion=<YOUR_REGION>,VPCId=<YOUR_VPC_ID> \
   --caller-reference langsmith-privatelink-$(date +%s) \
   --hosted-zone-config PrivateZone=true
 
-# Get the endpoint's DNS name
-ENDPOINT_DNS=$(aws ec2 describe-vpc-endpoints \
-  --vpc-endpoint-ids <YOUR_ENDPOINT_ID> \
-  --query 'VpcEndpoints[0].DnsEntries[0].DnsName' \
-  --output text)
-
-# Add a CNAME record
 aws route53 change-resource-record-sets \
   --hosted-zone-id <HOSTED_ZONE_ID> \
   --change-batch '{
@@ -244,7 +247,7 @@ aws route53 change-resource-record-sets \
         "Name": "aws.api.smith.langchain.com",
         "Type": "CNAME",
         "TTL": 300,
-        "ResourceRecords": [{"Value": "'$ENDPOINT_DNS'"}]
+        "ResourceRecords": [{"Value": "<ENDPOINT_DNS_NAME>"}]
       }
     }]
   }'
