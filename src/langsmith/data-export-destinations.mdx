@@ -4,10 +4,9 @@ description: Configure and manage S3-compatible export destinations for LangSmit
 ---
 
 <Note>
-**For self-hosted and EU region deployments**
+**For self-hosted, EU (GCP), and US (AWS) SaaS**
 
-Update the LangSmith URL appropriately for self-hosted installations or organizations in the EU region in the requests below.
-For the EU region, use `eu.api.smith.langchain.com`.
+Update the LangSmith URL in the requests below for self-hosted installs, EU (GCP) (`eu.api.smith.langchain.com`), or US (AWS) (`aws.api.smith.langchain.com`).
 </Note>
 
 A destination is a named configuration that tells LangSmith where to write exported trace data. You [create a destination](/langsmith/data-export#1-create-a-destination) once, then reference it by ID when [creating export jobs](/langsmith/data-export#2-create-an-export-job). LangSmith currently supports S3 and any S3-compatible bucket (such as GCS or MinIO) as a destination. Exported data is written in [Parquet](https://parquet.apache.org/docs/overview/) columnar format and contains equivalent fields to the [Run data format](/langsmith/run-data-format).
@@ -31,6 +30,10 @@ The following information is needed to configure a destination:
 - **Access Key**: The access key for the S3 bucket.
 - **Secret Key**: The secret key for the S3 bucket.
 - **Include Bucket in Prefix** (optional): Whether to include the bucket name as part of the path prefix. Defaults to `true`. Set to `false` when using virtual-hosted style endpoints where the bucket name is already in the endpoint URL.
+- **S3 Config Options** (`config_kwargs_s3`, optional): Advanced S3 addressing style and request settings passed to botocore. The most common use is setting `addressing_style` for S3-compatible services that require virtual-hosted or path-style requests:
+  - `"virtual"`: bucket name is part of the hostname (e.g. `bucket.endpoint/key`). Required for some S3-compatible services such as Volcengine TOS.
+  - `"path"`: bucket name is part of the URL path (e.g. `endpoint/bucket/key`).
+  - `"auto"` (default): boto3 decides based on the endpoint.
 
 We support any S3 compatible bucket. For non-AWS buckets such as GCS or MinIO, you will need to provide the endpoint URL.
 
@@ -199,6 +202,34 @@ curl --request POST \
 
 See [Google documentation](https://cloud.google.com/storage/docs/interoperability#xml_api) for more info
 
+### S3-compatible bucket with virtual-hosted style addressing
+
+Some S3-compatible services (such as Volcengine TOS) require virtual-hosted style addressing, where the bucket name is part of the hostname rather than the URL path. Use `config_kwargs_s3` with `addressing_style: "virtual"` to enable this:
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "destination_type": "s3",
+    "display_name": "My Volcengine TOS Destination",
+    "config": {
+      "bucket_name": "my_bucket",
+      "prefix": "data_exports",
+      "endpoint_url": "https://tos-s3-cn-beijing.volces.com",
+      "config_kwargs_s3": {
+        "addressing_style": "virtual"
+      }
+    },
+    "credentials": {
+      "access_key_id": "YOUR_ACCESS_KEY_ID",
+      "secret_access_key": "YOUR_SECRET_ACCESS_KEY"
+    }
+  }'
+```
+
 ### S3-compatible bucket with virtual-hosted style endpoint
 
 If your endpoint URL already includes the bucket name (virtual-hosted style), set `include_bucket_in_prefix` to `false` to avoid duplicating the bucket name in the path:
@@ -340,3 +371,4 @@ Here are some common errors:
 | Bucket is not valid                | The specified blob store bucket is not valid. This error is thrown when the bucket doesn't exist or there is not enough access to perform writes on the bucket.                                                                                                                                        |
 | Key ID you provided does not exist | The blob store credentials provided are not valid. This error occurs when the access key ID used for authentication is not a valid key.                                                                                                                                                                |
 | Invalid endpoint                   | The endpoint_url provided is invalid. This error is raised when the specified endpoint is an invalid endpoint. Only S3 compatible endpoints are supported, for example `https://storage.googleapis.com` for GCS, `https://play.min.io` for minio, etc. If using AWS, you should omit the endpoint_url. |
+| InvalidBucketName                  | The S3-compatible service rejected the request due to addressing style mismatch. Some services require virtual-hosted style addressing. Set `config_kwargs_s3: {"addressing_style": "virtual"}` in your destination config to resolve this. |
