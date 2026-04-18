@@ -5,9 +5,9 @@ icon: "server"
 description: Enable LangSmith Deployment, Fleet, Insights, and Polly on a self-hosted LangSmith instance.
 ---
 
-This guide walks you through enabling LangSmith Deployment, Fleet, Insights, and Polly on your [self-hosted LangSmith](/langsmith/self-hosted) instance.
+Use this guide to go beyond the base LangSmith platform and enable agent deployment, no-code agent creation, AI-powered analysis, and an embedded AI assistant on your [self-hosted LangSmith](/langsmith/self-hosted) instance.
 
-- **[LangSmith Deployment](/langsmith/deployment)** adds a [control plane](/langsmith/control-plane) and [data plane](/langsmith/data-plane) that let you deploy, scale, and manage agents and applications directly through the LangSmith UI. After enabling it, you'll have access to LangSmith [Observability](/langsmith/observability), [Evaluation](/langsmith/evaluation), and [Deployment](/langsmith/deployment).
+- **[LangSmith Deployment](/langsmith/deployment)** adds a [control plane](/langsmith/control-plane) and [data plane](/langsmith/data-plane) that let you deploy, scale, and manage agents and applications directly through the LangSmith UI.
 
     <Note>
     If you don't need the full UI-based setup, see the [Standalone Server](/langsmith/self-hosted#standalone-server) for a lightweight alternative.
@@ -26,8 +26,8 @@ These features require an [Enterprise](https://langchain.com/pricing) plan. [Get
 ## Prerequisites
 
 <Steps>
-  <Step title="Complete the Kubernetes installation guide">
-    Follow the [Kubernetes installation guide](/langsmith/kubernetes) before continuing.
+  <Step title="Install the base LangSmith platform">
+    Follow the [Kubernetes installation guide](/langsmith/kubernetes) to install the base LangSmith platform before continuing.
   </Step>
   <Step title="Install KEDA">
     Run the following commands to install `KEDA` on your cluster:
@@ -42,7 +42,7 @@ These features require an [Enterprise](https://langchain.com/pricing) plan. [Get
     </Info>
   </Step>
   <Step title="Configure an ingress">
-    Configure an ingress, gateway, or Istio for your LangSmith instance. All agents will be deployed as Kubernetes services behind this ingress. See [Set up an ingress](/langsmith/self-host-ingress). You must provide a `hostname` in your `values.yaml`.
+    Configure an ingress, gateway, or Istio for your LangSmith instance. All agents will be deployed as Kubernetes services behind this ingress. See [Set up an ingress](/langsmith/self-host-ingress). You must provide a `hostname` in your `langsmith_config.yaml`.
   </Step>
   <Step title="Verify cluster capacity">
     Ensure your cluster has available capacity for multiple deployments. A cluster autoscaler is recommended.
@@ -61,7 +61,7 @@ These features require an [Enterprise](https://langchain.com/pricing) plan. [Get
 
 ## Enable LangSmith Deployment
 
-Fleet, Insights, and Polly all require LangSmith Deployment to be enabled first. Enabling it provisions the following resources in your cluster:
+Fleet, Insights, and Polly require LangSmith Deployment to be enabled first. Enabling it provisions the following resources in your cluster:
 
 - `listener`: Listens to the [control plane](/langsmith/control-plane) for changes to your deployments and creates or updates downstream CRDs.
 - `LangGraphPlatform CRD`: Manages instances of LangSmith Deployment.
@@ -72,7 +72,7 @@ Fleet, Insights, and Polly all require LangSmith Deployment to be enabled first.
     As of v0.12.0, the `langgraphPlatform` option is deprecated. Use `config.deployment` for any version after v0.12.0.
     </Note>
 
-To enable LangSmith Deployment, update your Helm chart:
+To enable LangSmith Deployment, update your `langsmith_config.yaml`:
 
 <Steps>
   <Step title="Enable deployment in your config">
@@ -99,7 +99,7 @@ To enable LangSmith Deployment, update your Helm chart:
   </Step>
 
   <Step title="(Optional) Configure base agent templates">
-    Override the [base agent templates in `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml#L1428) if you need to customize how the operator creates agent Kubernetes resources. The most common use case is adding `imagePullSecrets` to authenticate with a private container registry — see [(Optional) Configure authentication for private registries](#optional-configure-authentication-for-private-registries) for details.
+    Override the [base agent templates in `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml#L1428) if you need to customize how the operator creates agent Kubernetes resources. The most common use case is adding `imagePullSecrets` to authenticate with a private container registry. See [(Optional) Configure authentication for private registries](#optional-configure-authentication-for-private-registries) for details.
   </Step>
 
   <Step title="Apply the changes">
@@ -232,8 +232,8 @@ If your [Agent Server deployments](/langsmith/agent-server) will use images from
                     failureThreshold: 6
     ```
   </Step>
-  <Step title="Apply during Helm installation or upgrade">
-    When you deploy or upgrade your LangSmith instance using Helm, this configuration is applied automatically. All user deployments created through the LangSmith UI inherit these registry credentials.
+  <Step title="Apply the changes">
+    Run `helm upgrade` to apply the changes. All user deployments created through the LangSmith UI will inherit these registry credentials.
   </Step>
 </Steps>
 
@@ -308,62 +308,106 @@ In this example, the Role and RoleBinding are defined in the same Kubernetes nam
 
 ## Enable Fleet, Insights, and Polly
 
-[Fleet](/langsmith/fleet/index), [Insights](/langsmith/insights), and [Polly](/langsmith/polly) each require the `agentBootstrap` job and a Fernet encryption key. You can enable all three in a single Helm configuration.
+<Info>
+Fleet requires [LangSmith Self-Hosted v0.13](https://changelog.langchain.com/announcements/langsmith-self-hosted-v0-13) or later.
+</Info>
+
+[Fleet](/langsmith/fleet/index), [Insights](/langsmith/insights), and [Polly](/langsmith/polly) share two requirements: the `agentBootstrap` component and a Fernet encryption key for each feature. You can enable all three in a single Helm configuration.
+
+### Components
+
+Enabling these features provisions the following components in your cluster:
+
+- `agentBootstrap`: Job that deploys the LangSmith Deployment agent required by Fleet, Insights, and Polly.
+- `agentBuilder`: The Fleet agent, consisting of:
+  - `toolServer`: Provides MCP tool execution for agents.
+  - `triggerServer`: Handles webhooks and scheduled triggers.
+  - `agent`: The main agent where all Fleet assistants are created.
+- `insightsAgent`: The main agent that handles Insights generation.
+- `polly` (agent): The main agent that powers Polly across LangSmith (observability, threads, prompt playground, experiments).
 
 ### Generate encryption keys
 
-Each feature uses its own encryption key. Generate one key per feature using Python:
+Each feature uses its own Fernet encryption key to encrypt feature-specific secrets such as credentials and tokens. Separate keys allow independent rotation and limit exposure if a key is compromised. Generate one key per feature using Python:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Run this command three times to generate separate keys for Fleet, Insights, and Polly.
-
-<Note>
-You can store each key in a predefined Kubernetes secret. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters) for the relevant parameters: `fleet_encryption_key`, `insights_encryption_key`, and `polly_encryption_key`.
-</Note>
+We recommend storing each key in a predefined Kubernetes secret rather than setting them directly in your config file. See [Use an existing secret](/langsmith/self-host-using-an-existing-secret#parameters) for the relevant parameters: `agent_builder_encryption_key`, `insights_encryption_key`, and `polly_encryption_key`.
 
 ### Enable features
 
-Add the following to your `values.yaml`:
+<Steps>
+  <Step title="Add the configuration to your langsmith_config.yaml">
+    <Tabs>
+      <Tab title="Using Kubernetes secrets (recommended)">
+        Reference your existing secret by name. The chart reads `agent_builder_encryption_key`, `insights_encryption_key`, and `polly_encryption_key` from it automatically.
 
-```yaml
-backend:
-  agentBootstrap:
-    enabled: true
+        ```yaml
+        backend:
+          agentBootstrap:
+            enabled: true
 
-config:
-  agentBuilder:
-    enabled: true
-    encryptionKey: "<fleet-encryption-key>"
-  insights:
-    enabled: true
-    encryptionKey: "<insights-encryption-key>"
-  polly:
-    enabled: true
-    encryptionKey: "<polly-encryption-key>"
+        config:
+          existingSecretName: "<your-secret-name>"
+          agentBuilder:
+            enabled: true
+          insights:
+            enabled: true
+          polly:
+            enabled: true
 
-agentBuilderToolServer:
-  enabled: true
+        agentBuilderToolServer:
+          enabled: true
 
-agentBuilderTriggerServer:
-  enabled: true
-```
+        agentBuilderTriggerServer:
+          enabled: true
+        ```
+      </Tab>
+      <Tab title="Using inline values">
+        Set the encryption keys directly in your config file. Avoid committing this file to version control.
 
-Run `helm upgrade` to apply the changes.
+        ```yaml
+        backend:
+          agentBootstrap:
+            enabled: true
 
-<Note>
-If you are using an Istio Gateway, you must use LangSmith version 0.13.38 or later and set the following on the agent bootstrap job:
+        config:
+          agentBuilder:
+            enabled: true
+            encryptionKey: "<fleet-encryption-key>"
+          insights:
+            enabled: true
+            encryptionKey: "<insights-encryption-key>"
+          polly:
+            enabled: true
+            encryptionKey: "<polly-encryption-key>"
 
-```yaml
-backend:
-  agentBootstrap:
-    extraEnv:
-      - name: CLIO_INCLUDE_PATH_SUFFIX
-        value: "false"
-```
-</Note>
+        agentBuilderToolServer:
+          enabled: true
+
+        agentBuilderTriggerServer:
+          enabled: true
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="(Optional) Configure for Istio Gateway">
+    If you are using an Istio Gateway, you must use LangSmith version 0.13.38 or later. Add the following to your `langsmith_config.yaml` before upgrading:
+
+    ```yaml
+    backend:
+      agentBootstrap:
+        extraEnv:
+          - name: CLIO_INCLUDE_PATH_SUFFIX
+            value: "false"
+    ```
+  </Step>
+  <Step title="Apply the changes">
+    Run `helm upgrade` to apply the changes.
+  </Step>
+</Steps>
 
 ### (Optional) Enable OAuth tools and triggers for Fleet
 
@@ -382,7 +426,7 @@ To enable OAuth-based tools such as Gmail, Slack, or GitHub in Fleet, configure 
 
 #### General configuration
 
-Add the following to your `values.yaml`. Include only the providers you need.
+Add the following to your `langsmith_config.yaml`. Include only the providers you need.
 
 ```yaml
 config:
@@ -445,7 +489,7 @@ To enable GitHub OAuth for Fleet, create a GitHub OAuth app and configure it wit
   </Step>
 
   <Step title="Deploy">
-    Add the following to your `values.yaml` and deploy:
+    Add the following to your `langsmith_config.yaml` and deploy:
 
     ```yaml
     config:
@@ -503,7 +547,7 @@ To enable Google OAuth for Fleet, create an OAuth client in GCP and configure it
   </Step>
 
   <Step title="Deploy">
-    Add the LangSmith OAuth provider ID to your `values.yaml` and deploy:
+    Add the LangSmith OAuth provider ID to your `langsmith_config.yaml` and deploy:
 
     ```yaml
     config:
@@ -584,7 +628,7 @@ To enable Microsoft OAuth for Fleet, create an Azure app registration, add the r
   </Step>
 
   <Step title="Deploy">
-    Add the following to your `values.yaml` and deploy:
+    Add the following to your `langsmith_config.yaml` and deploy:
 
     ```yaml
     config:
@@ -629,7 +673,7 @@ To enable Linear OAuth for Fleet, create a Linear OAuth app and configure it wit
   </Step>
 
   <Step title="Deploy">
-    Add the following to your `values.yaml` and deploy:
+    Add the following to your `langsmith_config.yaml` and deploy:
 
     ```yaml
     config:
@@ -678,7 +722,7 @@ To enable LinkedIn OAuth for Fleet, create a LinkedIn OAuth app and configure it
   </Step>
 
   <Step title="Deploy">
-    Add the following to your `values.yaml` and deploy:
+    Add the following to your `langsmith_config.yaml` and deploy:
 
     ```yaml
     config:
@@ -751,7 +795,7 @@ To enable Slack OAuth for Fleet, create a Slack app and configure it with the re
   </Step>
 
   <Step title="Deploy LangSmith">
-    Add the following to your `values.yaml` and deploy:
+    Add the following to your `langsmith_config.yaml` and deploy:
 
     ```yaml
     config:
@@ -790,7 +834,7 @@ To enable Slack OAuth for Fleet, create a Slack app and configure it with the re
 
 ### Disable Fleet
 
-To disable Fleet, set the following in your `values.yaml`:
+To disable Fleet, set the following in your `langsmith_config.yaml`:
 
 ```yaml
 config:
