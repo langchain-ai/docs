@@ -1,40 +1,272 @@
 ---
-title: "MoonshotChat integration"
-description: "Integrate with the MoonshotChat chat model using LangChain Python."
+title: "ChatMoonshot integration"
+description: "Integrate with the ChatMoonshot chat model using LangChain Python."
 ---
 
-[Moonshot](https://platform.moonshot.cn/) is a Chinese startup that provides LLM service for companies and individuals.
+This guide provides a quick overview for getting started with Moonshot AI [chat models](/oss/langchain/models). For the latest package details, examples, and source, see the [`langchain-moonshot` repository](https://github.com/ArcadiaLin/langchain-moonshot).
 
-This example goes over how to use LangChain to interact with Moonshot Inference for Chat.
+<Tip>
+    Feature support varies by Moonshot model. The examples below use `kimi-k2.5` for reasoning and tool calling, and `moonshot-v1-32k-vision-preview` for image input.
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| `ChatMoonshot` | [`langchain-moonshot`](https://github.com/ArcadiaLin/langchain-moonshot) | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-moonshot?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-moonshot?style=flat-square&label=%20) |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | [Video input](/oss/langchain/messages#multimodal) (`kimi-k2.5` only) | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ |
+
+## Setup
+
+To access Moonshot models, you'll need a Moonshot account, an API key, and the `langchain-moonshot` integration package.
+
+### Credentials
+
+Head to the [Moonshot console](https://platform.moonshot.ai/console/api-keys) to create an API key. Once you've done this, set the `MOONSHOT_API_KEY` environment variable.
+
+```python
+import getpass
+import os
+
+if not os.getenv("MOONSHOT_API_KEY"):
+    os.environ["MOONSHOT_API_KEY"] = getpass.getpass("Enter your Moonshot API key: ")
+```
+
+By default, the package uses Moonshot's international endpoint (`https://api.moonshot.ai/v1`). To use the China endpoint instead, set:
 
 ```python
 import os
 
-# Generate your api key from: https://platform.moonshot.cn/console/api-keys
-os.environ["MOONSHOT_API_KEY"] = "MOONSHOT_API_KEY"
+os.environ["MOONSHOT_API_BASE"] = "https://api.moonshot.cn/v1"
 ```
 
-```python
-from langchain_community.chat_models.moonshot import MoonshotChat
-from langchain.messages import HumanMessage, SystemMessage
-```
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
 
 ```python
-chat = MoonshotChat()
-# or use a specific model
-# Available models: https://platform.moonshot.cn/docs
-# chat = MoonshotChat(model="moonshot-v1-128k")
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
 ```
+
+### Installation
+
+The LangChain Moonshot integration lives in the `langchain-moonshot` package:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-moonshot
+    ```
+    ```bash uv
+    uv add langchain-moonshot
+    ```
+</CodeGroup>
+
+## Instantiation
+
+Now we can instantiate our model object and generate responses:
+
+```python
+from langchain_moonshot import ChatMoonshot
+
+llm = ChatMoonshot(
+    model="kimi-k2.5",
+    thinking=False,
+    temperature=0.6,
+    max_retries=2,
+    # prompt_cache_key="docs-example-cache",
+    # safety_identifier="docs-example-user",
+    # max_completion_tokens=1024,
+)
+```
+
+<Note>
+    For `kimi-k2.5`, if `temperature` is set, it must be `1.0` when `thinking=True` and `0.6` when `thinking=False`. Omitting `thinking` (or setting it to `None`) is treated as thinking-enabled for validation purposes. To use `temperature=0.6`, explicitly set `thinking=False`.
+</Note>
+
+## Invocation
 
 ```python
 messages = [
-    SystemMessage(
-        content="You are a helpful assistant that translates English to French."
-    ),
-    HumanMessage(
-        content="Translate this sentence from English to French. I love programming."
-    ),
+    ("system", "You are a concise bilingual assistant."),
+    ("human", "Summarize why Moonshot reasoning models are useful in two bullet points."),
 ]
 
-chat.invoke(messages)
+ai_msg = llm.invoke(messages)
+
+print(ai_msg.text)
+print(ai_msg.usage_metadata)
 ```
+
+
+## Reasoning output
+
+`ChatMoonshot` preserves Moonshot's `reasoning_content` field on both non-streaming and streaming responses.
+
+```python
+reasoning_llm = ChatMoonshot(
+    model="kimi-k2.5",
+    thinking=True,
+    temperature=1.0,
+)
+
+ai_msg = reasoning_llm.invoke(
+    "Explain in two bullet points why reasoning models are useful."
+)
+
+print(ai_msg.text)
+print(ai_msg.additional_kwargs.get("reasoning_content"))
+```
+
+## Streaming
+
+To recover usage metadata while streaming, set `stream_usage=True`:
+
+```python
+streaming_llm = ChatMoonshot(
+    model="kimi-k2.5",
+    thinking=True,
+    temperature=1.0,
+    stream_usage=True,
+)
+
+full = None
+for chunk in streaming_llm.stream("Explain streaming output in two short bullet points."):
+    if full is None:
+        full = chunk
+    else:
+        full += chunk
+
+    if chunk.text:
+        print(chunk.text, end="")
+
+    reasoning = chunk.additional_kwargs.get("reasoning_content")
+    if reasoning:
+        print(f"\n[reasoning] {reasoning}", end="")
+
+print()
+print(full.usage_metadata if full is not None else None)
+```
+
+## Tool calling
+
+Moonshot supports LangChain tool calling via `bind_tools`:
+
+```python
+from langchain.messages import ToolMessage
+from langchain.tools import tool
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two integers."""
+    return a * b
+
+
+llm_with_tools = ChatMoonshot(
+    model="kimi-k2.5",
+    thinking=False,
+    temperature=0.6,
+).bind_tools([add, multiply])
+
+messages = [
+    ("system", "Use the provided math tools before answering."),
+    ("human", "Add 17 and 25, multiply 12 by 13, then summarize the results."),
+]
+
+response = llm_with_tools.invoke(messages)
+print(response.tool_calls)
+
+if response.tool_calls:
+    tools_map = {"add": add, "multiply": multiply}
+    tool_results = []
+    for tool_call in response.tool_calls:
+        result = tools_map[tool_call["name"]].invoke(tool_call["args"])
+        tool_results.append(
+            ToolMessage(content=str(result), tool_call_id=tool_call["id"])
+        )
+
+    final_response = llm_with_tools.invoke([*messages, response, *tool_results])
+    print(final_response.text)
+```
+
+<Note>
+    For `kimi-k2.5` with `thinking=True`, `tool_choice` must be `"auto"` or `"none"`. Forced tool choice (specifying a function name) is not supported.
+</Note>
+
+## Structured output
+
+Moonshot supports structured output through LangChain's `with_structured_output(...)`. Moonshot does not expose a distinct `json_schema` steering path in this package, so `method="json_schema"` is intentionally downgraded to `function_calling`.
+
+```python
+from pydantic import BaseModel, Field
+
+
+class WeatherAnswer(BaseModel):
+    city: str = Field(description="City name")
+    summary: str = Field(description="One-sentence weather summary")
+
+
+structured_llm = ChatMoonshot(
+    model="kimi-k2.5",
+    thinking=False,
+    temperature=0.6,
+).with_structured_output(WeatherAnswer)
+
+result = structured_llm.invoke("Summarize today's weather in Shanghai.")
+print(result)
+```
+
+## Multimodal input
+
+Vision-capable Moonshot models accept OpenAI-style `image_url` content blocks:
+
+```python
+from langchain.messages import HumanMessage
+
+vision_llm = ChatMoonshot(
+    model="moonshot-v1-32k-vision-preview",
+)
+
+message = HumanMessage(
+    content=[
+        {"type": "text", "text": "Describe the image and mention one concrete detail."},
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,<your-base64-image>"},
+        },
+    ]
+)
+
+response = vision_llm.invoke([message])
+print(response.text)
+```
+
+## Moonshot-specific notes
+
+- `ChatMoonshot` is a standalone LangChain integration package for Moonshot AI chat models built on top of `langchain-openai`.
+- Moonshot-specific request controls exposed by the package include `thinking`, `prompt_cache_key`, `safety_identifier`, and `max_completion_tokens`.
+- `kimi-k2.5` is validated more strictly than generic OpenAI-compatible chat models.
+- For `kimi-k2.5`, `top_p` must remain `0.95`, `n` must remain `1`, and both `presence_penalty` and `frequency_penalty` must remain `0.0`.
+- When `thinking=True`, Moonshot builtin `$web_search` is rejected for `kimi-k2.5`.
+
+## Repository
+
+For the latest package code, README examples, release notes, and installation metadata, see:
+
+- [`langchain-moonshot` on GitHub](https://github.com/ArcadiaLin/langchain-moonshot)
+- [`langchain-moonshot` on PyPI](https://pypi.org/project/langchain-moonshot/)

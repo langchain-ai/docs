@@ -1,23 +1,42 @@
 ---
 title: Log retriever traces
 sidebarTitle: Log retriever traces
+description: Log retrieval steps in LangSmith traces for document-level visibility into your RAG pipeline.
 ---
 
 <Note>
-Nothing will break if you don't log retriever traces in the correct format and data will still be logged. However, the data will not be rendered in a way that is specific to retriever steps.
+These steps are optional. If you skip them, your retriever data will still be logged, but LangSmith will not render it with retriever-specific formatting.
 </Note>
 
-Many LLM applications require looking up documents from vector databases, knowledge graphs, or other types of indexes. Retriever traces are a way to log the documents that are retrieved by the retriever. LangSmith provides special rendering for retrieval steps in traces to make it easier to understand and diagnose retrieval issues. In order for retrieval steps to be rendered correctly, a few small steps need to be taken.
+Many LLM applications retrieve documents from vector databases, knowledge graphs, or other indexes as part of a retrieval-augmented generation (RAG) pipeline. LangSmith provides dedicated rendering for retriever steps, which makes it easier to inspect retrieved documents and diagnose retrieval issues.
 
-1. Annotate the retriever step with `run_type="retriever"`.
+To enable retriever-specific rendering, complete the following two steps.
 
-2. Return a list of Python dictionaries or TypeScript objects from the retriever step. Each dictionary should contain the following keys:
+## Set `run_type` to retriever
 
-   * `page_content`: The text of the document.
-   * `type`: This should always be "Document".
-   * `metadata`: A python dictionary or TypeScript object containing metadata about the document. This metadata will be displayed in the trace.
+Pass [`run_type="retriever"`](/langsmith/run-data-format) to the @[traceable] decorator (Python) or `traceable` wrapper (TypeScript). This tells LangSmith to treat the step as a retrieval run and apply retriever-specific rendering in the LangSmith UI.
 
-The following code snippets show how to log a retrieval steps in Python and TypeScript.
+```python
+from langsmith import traceable
+
+@traceable(run_type="retriever")
+def retrieve_docs(query):
+    ...
+```
+
+If you are using the [RunTree API](/langsmith/annotate-code#use-the-runtree-api) instead of `traceable`, pass `run_type="retriever"` when creating the `RunTree` object.
+
+## Return documents in the expected format
+
+Return a list of dictionaries (Python) or objects (TypeScript) from your retriever function. Each item in the list represents a retrieved document and must contain the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `page_content` | string | The text content of the retrieved document. |
+| `type` | string | Must always be `"Document"`. |
+| `metadata` | object | Key-value pairs with metadata about the document, such as source URL, chunk ID, or score. This metadata is displayed alongside the document in the trace. |
+
+The following examples show a complete retriever implementation with both requirements applied.
 
 <CodeGroup>
 
@@ -36,8 +55,8 @@ def _convert_docs(results):
 
 @traceable(run_type="retriever")
 def retrieve_docs(query):
-    # Foo retriever returning hardcoded dummy documents.
-    # In production, this could be a real vector datatabase or other document index.
+    # Returning hardcoded placeholder documents.
+    # In production, replace with a real vector database or document index.
     contents = ["Document contents 1", "Document contents 2", "Document contents 3"]
     return _convert_docs(contents)
 
@@ -62,21 +81,23 @@ function convertDocs(results: string[]): Document[] {
 }
 
 const retrieveDocs = traceable((query: string): Document[] => {
-    // Foo retriever returning hardcoded dummy documents.
-    // In production, this could be a real vector database or other document index.
+    // Returning hardcoded placeholder documents.
+    // In production, replace with a real vector database or document index.
     const contents = ["Document contents 1", "Document contents 2", "Document contents 3"];
     return convertDocs(contents);
-},{
+}, {
     name: "retrieveDocs",
     run_type: "retriever"
-} // Configuration for traceable
-);
+});
 
 await retrieveDocs("User query");
 ```
 
 </CodeGroup>
 
-The following image shows how a retriever step is rendered in a trace. The contents along with the metadata are displayed with each document.
+The UI displays each retrieved document with its contents and metadata.
 
-![Retriever trace](/langsmith/images/retriever-trace.png)
+## Related pages
+
+- [Annotate code for tracing](/langsmith/annotate-code): Overview of all tracing methods, including `traceable`, `RunTree`, and the REST API.
+- [Log LLM calls](/langsmith/log-llm-trace): Similar custom logging requirements for LLM steps.
