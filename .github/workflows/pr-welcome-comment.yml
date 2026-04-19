@@ -1,0 +1,159 @@
+# Post a welcome comment on new PRs telling the author who owns
+# the docs areas they're changing (derived from .github/OWNERS).
+#
+# NOTE: This uses `pull_request_target` so it has write access to
+# comment on PRs from forks. The script only reads OWNERS from
+# the base branch and lists changed files — no untrusted code is executed.
+
+name: PR Welcome Comment
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+jobs:
+  welcome-comment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    # Skip draft PRs — the comment will be posted when marked ready
+    if: ${{ !github.event.pull_request.draft }}
+
+    steps:
+      - name: Post welcome comment with owners
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+
+            // --- Fetch OWNERS from the base branch ---
+            let ownersContent;
+            try {
+              const { data } = await github.rest.repos.getContent({
+                owner, repo,
+                path: '.github/OWNERS',
+                ref: pr.base.ref
+              });
+              ownersContent = Buffer.from(data.content, 'base64').toString();
+            } catch (error) {
+              console.log('Could not read .github/OWNERS:', error.message);
+              return;
+            }
+
+            // --- Parse OWNERS rules (CODEOWNERS syntax) ---
+            const rules = [];
+            for (const line of ownersContent.split('\n')) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const parts = trimmed.split(/\s+/);
+              const pattern = parts[0];
+              const owners = parts.slice(1).filter(o => o.startsWith('@'));
+              if (owners.length > 0) rules.push({ pattern, owners });
+            }
+
+            // Last matching rule wins (same as GitHub CODEOWNERS behavior)
+            function findOwners(filepath) {
+              let matched = null;
+              for (const rule of rules) {
+                let pat = rule.pattern.startsWith('/') ? rule.pattern.slice(1) : rule.pattern;
+                let matches = false;
+                if (pat === '*') {
+                  matches = true;
+                } else if (pat.endsWith('/')) {
+                  matches = filepath.startsWith(pat);
+                } else if (pat.includes('*')) {
+                  const re = new RegExp(
+                    '^' + pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+                  );
+                  matches = re.test(filepath);
+                } else {
+                  matches = filepath === pat;
+                }
+                if (matches) matched = rule;
+              }
+              return matched ? matched.owners : [];
+            }
+
+            // --- Map file paths to human-readable product names ---
+            function getProductName(filepath) {
+              const map = [
+                ['src/langsmith/fleet/', 'LangSmith Fleet'],
+                ['src/langsmith/', 'LangSmith'],
+                ['src/oss/deepagents/', 'Deep Agents'],
+                ['src/oss/langgraph/', 'LangGraph'],
+                ['src/oss/langchain/', 'LangChain'],
+                ['src/oss/python/integrations/', 'Python integrations'],
+                ['src/oss/javascript/integrations/', 'JavaScript integrations'],
+                ['src/oss/', 'open source'],
+              ];
+              for (const [prefix, name] of map) {
+                if (filepath.startsWith(prefix)) return name;
+              }
+              return null;
+            }
+
+            // --- Get changed files ---
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100
+            });
+
+            // --- Group by product, merging owners across files ---
+            const productOwners = new Map();
+            let authorIsOwner = false;
+            for (const file of files) {
+              const owners = findOwners(file.filename);
+              const ownerNames = owners.map(o => o.replace(/^@/, ''));
+
+              if (ownerNames.some(o => o.toLowerCase() === author.toLowerCase())) {
+                authorIsOwner = true;
+              }
+
+              const product = getProductName(file.filename);
+              if (!product || owners.length === 0) continue;
+
+              // Skip areas where the author is already an owner
+              if (ownerNames.some(o => o.toLowerCase() === author.toLowerCase())) continue;
+
+              if (!productOwners.has(product)) {
+                productOwners.set(product, new Set());
+              }
+              for (const o of ownerNames) {
+                productOwners.get(product).add(o);
+              }
+            }
+
+            if (productOwners.size === 0) {
+              // Skip fallback if author owns any of the changed files
+              if (authorIsOwner || author.toLowerCase() === 'lnhsingh') return;
+              productOwners.set('General changes', new Set(['lnhsingh']));
+            }
+
+            // --- Format the comment ---
+            function formatOwners(ownerSet) {
+              const mentions = [...ownerSet].map(o => `\`@${o}\``);
+              if (mentions.length === 1) return mentions[0];
+              if (mentions.length === 2) return `${mentions[0]} or ${mentions[1]}`;
+              return mentions.slice(0, -1).join(', ') + `, or ${mentions[mentions.length - 1]}`;
+            }
+
+            const areas = [...productOwners.entries()];
+            const lines = areas.map(([product, owners]) =>
+              `- ${formatOwners(owners)} (${product})`
+            );
+            const body = [
+              `Thanks for opening a docs PR, @${author}! When it's ready for review, please add the relevant reviewers:\n`,
+              lines.join('\n')
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner, repo,
+              issue_number: pr.number,
+              body
+            });
+
+            console.log(`Posted welcome comment on PR #${pr.number}`);

@@ -1,0 +1,310 @@
+---
+title: Permissions
+description: Control filesystem access with declarative permission rules for Deep Agents
+---
+
+Control which files and directories an agent can read or write to using declarative permission rules. Pass a list of rules to `permissions=` and the agent's built-in filesystem tools respect them.
+
+Permissions only apply to the built-in filesystem tools (`ls`, `read_file`, `glob`, `grep`, `write_file`, `edit_file`). Custom tools and MCP tools that access the filesystem are not covered. Permissions also do not apply to [sandbox backends](/oss/deepagents/sandboxes), which support arbitrary command execution via the `execute` tool.
+
+<Tip>
+Use `permissions` when you need **path-based allow/deny rules** on the built-in filesystem tools. Use [backend policy hooks](/oss/deepagents/backends#add-policy-hooks) when you need custom validation logic (rate limiting, audit logging, content inspection) or need to control custom tools.
+</Tip>
+
+## Basic usage
+
+:::python
+
+Pass a list of @[`FilesystemPermission`] rules to @[`create_deep_agent`]. Rules are evaluated in declaration order. The first matching rule wins. If no rule matches, the operation is allowed.
+
+```python
+from deepagents import create_deep_agent, FilesystemPermission
+
+# Read-only agent: deny all writes
+agent = create_deep_agent(
+    model=model,
+    backend=backend,
+    permissions=[
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+:::
+
+## Rule structure
+
+:::python
+
+Each `FilesystemPermission` has three fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operations` | `list["read" \| "write"]` | Operations this rule applies to. `"read"` covers `ls`, `read_file`, `glob`, `grep`. `"write"` covers `write_file`, `edit_file`. |
+| `paths` | `list[str]` | Glob patterns for matching file paths (e.g., `["/workspace/**"]`). Supports `**` for recursive matching and `{a,b}` for alternation. |
+| `mode` | `"allow" \| "deny"` | Whether to allow or deny matching operations. Defaults to `"allow"`. |
+
+Rules use first-match-wins evaluation: the first rule whose `operations` and `paths` match the current call determines the outcome. If no rule matches, the call is **allowed** (permissive default).
+
+:::
+
+## Examples
+
+:::python
+
+### Isolate to a workspace directory
+
+Allow reads and writes only under `/workspace/` and deny everything else:
+
+```python
+agent = create_deep_agent(
+    model=model,
+    backend=backend,
+    permissions=[
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/workspace/**"],
+            mode="allow",
+        ),
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+### Protect specific files
+
+```python
+agent = create_deep_agent(
+    model=model,
+    backend=backend,
+    permissions=[
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/workspace/.env", "/workspace/examples/**"],
+            mode="deny",
+        ),
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/workspace/**"],
+            mode="allow",
+        ),
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+### Read-only memory
+
+Allow the agent to read memory files but prevent it from modifying them. This is useful for organization-wide policies or shared knowledge bases that should only be updated by application code. See [read-only vs writable memory](/oss/deepagents/memory#read-only-vs-writable-memory) for more context.
+
+```python
+agent = create_deep_agent(
+    model=model,
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/memories/": StoreBackend(
+                namespace=lambda rt: (rt.server_info.user.identity,),
+            ),
+            "/policies/": StoreBackend(
+                namespace=lambda rt: (rt.context.org_id,),
+            ),
+        },
+    ),
+    permissions=[
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/memories/**", "/policies/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+### Deny all access
+
+Block all reads and writes. This is a restrictive baseline you can layer more specific allow rules on top of:
+
+```python
+agent = create_deep_agent(
+    model=model,
+    backend=backend,
+    permissions=[
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+### Rule ordering
+
+Because of first-match-wins, rule order matters. Place more specific rules before broader ones:
+
+```python
+# Correct: deny .env, allow workspace, deny everything else
+permissions=[
+    FilesystemPermission(
+        operations=["read", "write"],
+        paths=["/workspace/.env"],
+        mode="deny",
+    ),
+    FilesystemPermission(
+        operations=["read", "write"],
+        paths=["/workspace/**"],
+        mode="allow",
+    ),
+    FilesystemPermission(
+        operations=["read", "write"],
+        paths=["/**"],
+        mode="deny",
+    ),
+]
+
+# Bug: /workspace/** matches .env first, so the deny never triggers
+permissions=[
+    FilesystemPermission(
+        operations=["read", "write"],
+        paths=["/workspace/**"],
+        mode="allow",
+    ),
+    FilesystemPermission(
+        operations=["read", "write"],
+        paths=["/workspace/.env"],
+        mode="deny",  # never reached
+    ),
+    FilesystemPermission(
+        operations=["read", "write"],
+        paths=["/**"],
+        mode="deny",
+    ),
+]
+```
+
+:::
+
+## Subagent permissions
+
+:::python
+
+[Subagents](/oss/deepagents/subagents) inherit the parent agent's permissions by default. To give a subagent different permissions, set the `permissions` field in its spec. This **replaces** the parent's rules entirely.
+
+```python
+agent = create_deep_agent(
+    model=model,
+    backend=backend,
+    permissions=[
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/workspace/**"],
+            mode="allow",
+        ),
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/**"],
+            mode="deny",
+        ),
+    ],
+    subagents=[
+        {
+            "name": "auditor",
+            "description": "Read-only code reviewer",
+            "system_prompt": "Review the code for issues.",
+            "permissions": [
+                FilesystemPermission(
+                    operations=["write"],
+                    paths=["/**"],
+                    mode="deny",
+                ),
+                FilesystemPermission(
+                    operations=["read"],
+                    paths=["/workspace/**"],
+                    mode="allow",
+                ),
+                FilesystemPermission(
+                    operations=["read"],
+                    paths=["/**"],
+                    mode="deny",
+                ),
+            ],
+        }
+    ],
+)
+```
+
+:::
+
+## Composite backends
+
+:::python
+
+When using a @[`CompositeBackend`] with a sandbox default, every permission path must be scoped under a known route prefix. Sandboxes support arbitrary command execution, so path-based restrictions alone cannot prevent filesystem access through shell commands. Scoping permissions to route-specific [backends](/oss/deepagents/backends) avoids this conflict.
+
+```python
+from deepagents.backends import CompositeBackend
+
+composite = CompositeBackend(
+    default=sandbox,
+    routes={"/memories/": memories_backend},
+)
+
+# Works: permissions are scoped to the /memories/ route
+agent = create_deep_agent(
+    model=model,
+    backend=composite,
+    permissions=[
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/memories/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+Permissions that include paths outside any route raise `NotImplementedError`:
+
+```python
+# Raises NotImplementedError: /workspace/** hits the sandbox default
+agent = create_deep_agent(
+    model=model,
+    backend=composite,
+    permissions=[
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/workspace/**"],
+            mode="deny",
+        ),
+    ],
+)
+
+# Also raises: /** covers both routes and the default
+agent = create_deep_agent(
+    model=model,
+    backend=composite,
+    permissions=[
+        FilesystemPermission(
+            operations=["read"],
+            paths=["/**"],
+            mode="deny",
+        ),
+    ],
+)
+```
+
+:::
+
