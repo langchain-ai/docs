@@ -1,0 +1,115 @@
+---
+title: "Kerq integrations"
+description: "Integrate with Kerq trust scoring using LangChain Python."
+---
+
+[Kerq](https://kerq.dev) is a trust scoring API for AI tools and MCP servers. It evaluates tools across seven metrics — including uptime, response time, error rate, and verification status — and returns a 0–100 trust score. Agents use Kerq to decide which tools are safe to call before adding them to their execution loop.
+
+## Installation and setup
+
+\`\`\`bash pip
+pip install langchain-kerq
+\`\`\`
+
+\`\`\`bash uv
+uv add langchain-kerq
+\`\`\`
+
+Get an API key from [kerq.dev](https://kerq.dev) and set it as an environment variable:
+
+\`\`\`bash
+export KERQ_API_KEY="your-api-key"
+\`\`\`
+
+## Usage
+
+### Preflight trust check
+
+Use `KerqTrustTool` to check a tool's score before including it in an agent's toolkit:
+
+\`\`\`python
+import os
+from langchain_kerq.tools import KerqTrustTool
+
+trust_tool = KerqTrustTool(api_key=os.environ["KERQ_API_KEY"])
+
+# Check trust score for a tool before using it
+result = trust_tool.invoke({"tool_id": "tavily-search"})
+# Returns: {"tool_id": "tavily-search", "score": 91, "verified": true, "uptime": 99.7, ...}
+
+if result["score"] >= 70:
+    print(f"Tool approved — score: {result['score']}")
+else:
+    print(f"Tool blocked — score too low: {result['score']}")
+\`\`\`
+
+### Automatic trust enforcement with KerqGuard
+
+`KerqGuard` is a LangChain callback handler that intercepts every tool call at runtime.
+Tools scoring below `min_score` (default: 70) are blocked before execution:
+
+\`\`\`python
+import os
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_kerq.callbacks import KerqGuard
+
+# Add KerqGuard as a callback — it checks trust scores and blocks low-scoring tools
+guard = KerqGuard(
+    api_key=os.environ["KERQ_API_KEY"],
+    min_score=70,  # Block tools scoring below 70
+)
+
+llm = ChatOpenAI(model="gpt-4o")
+tools = [TavilySearchResults()]
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    callbacks=[guard],  # Trust enforcement applied automatically
+    verbose=True,
+)
+
+result = agent_executor.invoke({"input": "What happened in AI this week?"})
+\`\`\`
+
+### Silent telemetry with KerqTelemetryHandler
+
+`KerqTelemetryHandler` reports tool call latency and status to Kerq on every execution
+without blocking. Useful for contributing to the trust scoring dataset:
+
+\`\`\`python
+from langchain_kerq.callbacks import KerqTelemetryHandler
+
+telemetry = KerqTelemetryHandler(api_key=os.environ["KERQ_API_KEY"])
+
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    callbacks=[telemetry],  # Fire-and-forget telemetry, never blocks execution
+)
+\`\`\`
+
+## Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `api_key` | `KERQ_API_KEY` env var | Your Kerq API key |
+| `min_score` | `70` | Minimum trust score for `KerqGuard` to allow tool execution |
+
+Tools with missing, unparseable, or null scores are treated as score 0 and blocked by
+`KerqGuard`. All API errors (network, 401, 429, 500) log a warning and never crash the agent.
+
+## Links
+
+- [kerq.dev](https://kerq.dev) — API keys, score index, documentation
+- [PyPI: langchain-kerq](https://pypi.org/project/langchain-kerq/)
