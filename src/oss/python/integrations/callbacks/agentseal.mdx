@@ -1,0 +1,128 @@
+---
+title: AgentSeal
+description: Logging and verifiable audit trails for LangChain applications.
+---
+
+## Overview
+
+AgentSeal is a logging and audit trail API for AI agents with verifiable integrity. It records every LLM call, tool invocation, and chain event to a cryptographic hash chain, producing tamper-evident logs that can be independently verified.
+
+## Why
+
+When AI agents take consequential actions — sending emails, making purchases, querying databases — you need an auditable record of what happened and why. Traditional application logs are mutable: anyone with access can alter them after the fact.
+
+AgentSeal solves this by writing each action to a hash chain. Every entry references the hash of the previous entry, so modifying or deleting any record breaks the chain. You can verify integrity at any time with a single API call.
+
+## How it works
+
+The `AgentSealCallbackHandler` hooks into LangChain's callback system and automatically records:
+
+- **LLM calls** — model name, prompt count, and output preview (`llm:start`, `llm:end`)
+- **Tool calls** — tool name, input, and output (`tool:<name>`, `tool:end`)
+- **Chain events** — chain name and inputs (`chain:<name>`)
+- **Errors** — LLM and tool errors with details (`llm:error`, `tool:error`)
+
+Each event is sent to the AgentSeal API, which appends it to a hash chain and returns the entry hash, sequence number, and chain position.
+
+## Prerequisites
+
+```shell
+pip install agentseal-sdk langchain langchain-openai
+```
+
+Sign up at [agentseal.io](https://agentseal.io) to get your API key.
+
+## Quick start
+
+```python
+from agentseal import Seal
+from agentseal.integrations.langchain import AgentSealCallbackHandler
+from langchain_openai import ChatOpenAI
+
+# Initialize the AgentSeal client
+seal = Seal(api_key="your-agentseal-api-key")
+
+# Create the callback handler
+handler = AgentSealCallbackHandler(seal=seal, agent="my-langchain-app")
+
+# Attach to your LLM
+llm = ChatOpenAI(
+    model="gpt-4o",
+    callbacks=[handler],
+)
+
+response = llm.invoke("What is the capital of France?")
+print(response.content)
+```
+
+Every LLM call, tool use, and chain execution is now recorded to your AgentSeal audit trail.
+
+## Using with agents
+
+The callback handler works with LangChain agents and chains, capturing the full execution trace including tool calls and reasoning steps.
+
+```python
+from agentseal import Seal
+from agentseal.integrations.langchain import AgentSealCallbackHandler
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+
+seal = Seal(api_key="your-agentseal-api-key")
+handler = AgentSealCallbackHandler(seal=seal, agent="support-agent")
+
+@tool
+def lookup_order(order_id: str) -> str:
+    """Look up an order by ID."""
+    return f"Order {order_id}: shipped, arrives tomorrow"
+
+llm = ChatOpenAI(model="gpt-4o", callbacks=[handler])
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful support agent."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_tool_calling_agent(llm, [lookup_order], prompt)
+executor = AgentExecutor(agent=agent, tools=[lookup_order], callbacks=[handler])
+
+result = executor.invoke({"input": "Where is order #12345?"})
+print(result["output"])
+```
+
+## Verifying the audit trail
+
+You can verify the integrity of the hash chain at any time:
+
+```python
+result = seal.verify(agent="support-agent")
+
+if result["valid"]:
+    print(f"Chain intact: {result['entries_verified']} entries verified")
+else:
+    print(f"Chain broken at sequence {result['broken_at_sequence']}: {result['reason']}")
+```
+
+## Querying recorded entries
+
+Retrieve recorded entries with optional filters:
+
+```python
+entries = seal.query(
+    agent="support-agent",
+    action_type="llm:start",
+    limit=10,
+)
+
+for entry in entries:
+    print(f"[{entry['sequence']}] {entry['action_type']}: {entry['action_params']}")
+```
+
+## Resources
+
+- [Website](https://agentseal.io)
+- [Documentation](https://agentseal.io/docs)
+- [GitHub](https://github.com/JoeyBrar/agentseal-sdk)
+- [PyPI](https://pypi.org/project/agentseal-sdk/)
