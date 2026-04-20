@@ -5,6 +5,8 @@ description: Learn how to extend your deep agent's capabilities with skills
 
 import SkillsUsageTabsPy from '/snippets/skills-usage-tabs-py.mdx';
 import SkillsUsageTabsJs from '/snippets/skills-usage-tabs-js.mdx';
+import SkillsSandboxPy from '/snippets/code-samples/skills-sandbox-py.mdx';
+import SkillsSandboxJs from '/snippets/code-samples/skills-sandbox-js.mdx';
 
 Skills are reusable agent capabilities that provide specialized workflows and domain knowledge.
 
@@ -323,115 +325,23 @@ When skills are configured, a "Skills System" section is injected into the agent
 
 ## Execute skill scripts in a sandbox
 
-Skills can include scripts alongside the `SKILL.md` file (for example, a Python or TypeScript file that performs a search or data transformation). The agent can _read_ these scripts from any backend, but to _execute_ them, the agent needs access to a shell — which only [sandbox backends](/oss/deepagents/sandboxes) provide.
+Skills can include scripts alongside the `SKILL.md` file, such as, for example, a Python file that performs a search or data transformation. The agent can _read_ these scripts from any backend, but to _execute_ them, the agent needs access to a shell — which only [sandbox backends](/oss/deepagents/sandboxes) provide.
 
-### Sync skills into the sandbox
-
-When you use a @[CompositeBackend] that routes skills to a @[StoreBackend] (for persistence) while using a sandbox as the default backend, skill files live in the store but the sandbox is where code runs. Use [custom middleware](/oss/langchain/middleware/custom) to upload skill scripts into the sandbox before the agent starts, so the agent can execute them with the `execute` tool.
+When you use a @[CompositeBackend] that routes skills to a @[StoreBackend] for persistence while using a sandbox as the default backend, skill files live in the store rather than in the sandbox is where code runs. For sandboxes to be able to use the scripts, you must use [custom middleware](/oss/langchain/middleware/custom) to upload skill scripts into the sandbox before the agent starts:
 
 :::python
-```python agent.py
-from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, StoreBackend
-from deepagents_daytona import DaytonaSandbox
-from langchain.agents.middleware import AgentMiddleware, AgentState
-from langgraph.runtime import Runtime
 
+<SkillsSandboxPy />
 
-def _safe_filename(key: str) -> str:
-    name = key.split("/")[-1]
-    if ".." in name or any(c in name for c in ("*", "?")):
-        raise ValueError(f"Invalid key: {key}")
-    return name
+The middleware's `before_agent` hook runs before each agent invocation, reading skill files from the store and uploading them into the sandbox filesystem. Once synced, the agent can execute scripts with the `execute` tool just like any other file in the sandbox.
 
-
-class SkillSyncMiddleware(AgentMiddleware):
-    """Upload skill scripts from the store into the sandbox before each run."""
-
-    def __init__(self, backend: CompositeBackend):
-        super().__init__()
-        self.backend = backend
-
-    async def abefore_agent(self, state: AgentState, runtime: Runtime) -> None:
-        user_id = runtime.server_info.user.identity
-        store = runtime.store
-        files = []
-        for item in await store.asearch(("skills", user_id)):
-            name = _safe_filename(item.key)
-            files.append((f"/skills/{name}", item.value["content"].encode()))
-        if files:
-            await self.backend.upload_files(files)
-
-
-backend = CompositeBackend(
-    default=DaytonaSandbox(sandbox=sandbox),
-    routes={
-        "/skills/": StoreBackend(
-            namespace=lambda rt: ("skills", rt.server_info.user.identity),  # [!code highlight]
-        ),
-    },
-)
-
-agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
-    backend=backend,
-    skills=["/skills/"],
-    middleware=[SkillSyncMiddleware(backend)],  # [!code highlight]
-)
-```
 :::
 
 :::js
-```typescript src/agent.ts
-import { createMiddleware } from "langchain";
-import { createDeepAgent, CompositeBackend, StoreBackend } from "deepagents";
-import { DaytonaSandbox } from "@langchain/daytona";
+<SkillsSandboxJs />
 
-function safeFilename(key: string): string {
-  const name = key.split("/").pop()!;
-  if (name.includes("..") || /[*?]/.test(name)) {
-    throw new Error(`Invalid key: ${key}`);
-  }
-  return name;
-}
-
-const createSkillSyncMiddleware = (backend: CompositeBackend) => {
-  return createMiddleware({
-    name: "SkillSyncMiddleware",
-    beforeAgent: async (state, runtime) => {
-      const userId = runtime.serverInfo.user.identity;
-      const store = runtime.store;
-      const encoder = new TextEncoder();
-      const files: [string, Uint8Array][] = [];
-      for (const item of await store.search(["skills", userId])) {
-        const name = safeFilename(item.key);
-        files.push([`/skills/${name}`, encoder.encode(item.value.content)]);
-      }
-      if (files.length > 0) {
-        await backend.uploadFiles(files);
-      }
-    },
-  });
-};
-
-const backend = new CompositeBackend(
-  await DaytonaSandbox.fromId(sandbox.id),
-  {
-    "/skills/": new StoreBackend({
-      namespace: (rt) => ["skills", rt.serverInfo.user.identity],  // [!code highlight]
-    }),
-  },
-);
-
-export const agent = createDeepAgent({
-  backend,
-  skills: ["/skills/"],
-  middleware: [createSkillSyncMiddleware(backend)],  // [!code highlight]
-});
-```
+The middleware's `beforeAgent` hook runs before each agent invocation, reading skill files from the store and uploading them into the sandbox filesystem. Once synced, the agent can execute scripts with the `execute` tool just like any other file in the sandbox.
 :::
-
-The middleware's `before_agent` hook runs before each agent invocation, reading skill files from the store and uploading them into the sandbox filesystem. Once synced, the agent can execute scripts with the `execute` tool just like any other file in the sandbox.
 
 For a more complete example that also syncs [memories](/oss/deepagents/memory) bidirectionally, see [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
 
