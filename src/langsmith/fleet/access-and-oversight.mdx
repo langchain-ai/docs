@@ -30,6 +30,101 @@ This is configurable per agent, so you can choose the right model for each use c
 
 For setup instructions, see [Agent identity](/langsmith/fleet/agent-identity).
 
+## Tool access control
+
+Fleet provides layered access control for tools, covering both **custom MCP servers** (user-added, workspace-scoped) and **built-in integrations** (platform-provided, such as Gmail, Slack, and GitHub):
+
+- **[Role-based access control (RBAC)](#rbac-role-based-permissions)**: Controls access at the role level.
+- **[Attribute-based access control (ABAC)](#attribute-based-access-control)**: Adds per-resource granularity on top of RBAC.
+- **[Workspace integration policy](#workspace-integration-policy)**: Provides an admin-controlled enable/disable gate for built-in integrations.
+
+<Note>
+Tool access control is an Enterprise feature. If you are interested in this feature, [contact our sales team](https://www.langchain.com/contact-sales).
+</Note>
+
+### Role-based permissions
+
+Role-based access control (RBAC) grants or denies access to all MCP servers and integrations in a workspace based on a user's role. Configure roles in **Settings > Roles**.
+
+The following permissions are available for MCP servers and integrations:
+
+| Permission | Description |
+|------------|-------------|
+| `mcp-servers:read` | Discover and list MCP servers and integrations |
+| `mcp-servers:invoke` | Execute tools from MCP servers and integrations, including OAuth connect/disconnect |
+| `mcp-servers:create` | Create new MCP server configurations |
+| `mcp-servers:update` | Modify MCP server configurations |
+| `mcp-servers:delete` | Remove MCP server configurations |
+
+<Note>
+A role with `mcp-servers:read` and `mcp-servers:invoke` can see and use all MCP servers and integrations in the workspace.
+</Note>
+
+For more on RBAC, see [Role-based access control](/langsmith/rbac).
+
+#### Create a role with tool permissions
+
+<Steps>
+  <Step title="Open role settings">
+    Navigate to **Settings > Roles** and click **Create role**.
+  </Step>
+  <Step title="Configure MCP Servers permissions">
+    Expand the **MCP Servers** section and select the permissions to include. For example, grant `Read` and `Invoke` for users who need to use tools but not manage server configurations.
+  </Step>
+  <Step title="Assign the role">
+    Assign the role to users in the workspace in **Settings > Members**.
+  </Step>
+</Steps>
+
+### Attribute-based access control
+
+Attribute-based access control (ABAC) adds resource-level granularity on top of RBAC. Admins can tag individual MCP servers or integrations and create policies that grant or restrict access based on those tags.
+
+ABAC operates on two resource types for tools:
+
+| Resource type | Applies to |
+|---------------|-----------|
+| `mcp_server` | Custom MCP servers added to the workspace |
+| `fleet_integration` | Built-in integrations (Gmail, Slack, GitHub, etc.) |
+
+<Note>
+A role with no `mcp-servers:*` RBAC permissions can still be granted access to specific tagged resources (e.g. only Notion and Gmail) via an ABAC allow policy. Conversely, a role with broad RBAC access can be restricted from specific resources via an ABAC deny policy.
+</Note>
+
+For details on policy structure, operators, and managing policies via the API, see [Attribute-based access control](/langsmith/abac).
+
+### Workspace integration policy
+
+Built-in integrations have an additional control layer: a workspace-level enable/disable toggle managed from **Settings > Integrations > Access control**. This acts as an admin-controlled baseline that runs before per-user RBAC and ABAC.
+
+If an integration is disabled at the workspace level, no user can access it regardless of their role or ABAC policies.
+
+<Note>
+The Access control page is only visible to admin users (requires `workspaces:manage` permission).
+</Note>
+
+### Policy evaluation order
+
+The three layers evaluate in sequence. The evaluation order differs slightly between custom MCP servers and built-in integrations:
+
+**Custom MCP servers:**
+
+```
+ABAC deny → RBAC → ABAC allow
+```
+
+**Built-in integrations:**
+
+```
+Workspace policy gate → ABAC deny → RBAC → ABAC allow
+```
+
+At each step:
+1. **Workspace policy gate** (integrations only): If the integration is disabled, access is denied. No further evaluation.
+2. **ABAC deny**: If a deny policy matches, access is denied. Deny always wins.
+3. **RBAC**: If the user's role grants the required permission, access is allowed (unless step 4 is needed).
+4. **ABAC allow**: If RBAC does not grant access, an allow policy can still grant it for specific tagged resources.
+
 ## Observability and audit trail
 
 Agent actions in Fleet are captured in a structured [LangSmith trace](/langsmith/observability), including tool calls, decisions, and outputs. You can inspect, search, and export traces.
