@@ -166,6 +166,7 @@ The agent will use its built-in tools, skills, and memory to help you with tasks
         Use these commands within the CLI session:
 
         - `/model` - Switch models or open the interactive model selector. See [Switch models](#switch-models) for details
+        - `/agents` - Hot-swap between pre-configured agents without relaunching. See [Switch agents](#switch-agents) for details
         - `/remember [context]` - Review conversation and update memory and skills. Optionally pass additional context
         - `/skill:<name> [args]` - Directly invoke a skill by name. The skill's `SKILL.md` instructions are injected into the prompt along with any arguments you provide
         - `/skill-creator [args]` - Guide for creating effective agent skills
@@ -243,6 +244,16 @@ When you combine piped input with `-n` or `-m`, the piped content appears first,
 Shell execution is disabled by default in non-interactive mode. Use `-S`/`--shell-allow-list` to enable specific commands (e.g., `-S "pytest,git,make"`), `recommended` for safe defaults, or `all` to permit any command.
 
 <AccordionGroup>
+    <Accordion title="Cap turn count with `--max-turns`" icon="gauge">
+        Long-running or misbehaving agents in CI/CD pipelines can loop indefinitely. `--max-turns N` gives operators a hard upper bound without having to touch SDK internals:
+
+        ```bash
+        deepagents -n "fix the failing tests" --max-turns 10
+        ```
+
+        `N` must be a positive integer, and overrides the internal safety default that otherwise caps runaway loops. Exits with code 124 (matching GNU `timeout`) when the budget is exceeded, so CI can distinguish a budget hit from a generic failure. Requires `-n` or piped stdin; otherwise exits with code 2.
+    </Accordion>
+
     <Accordion title="Clean output and buffering" icon="buffer">
         Use `-q` for clean output suitable for piping into other commands, and `--no-stream` to buffer the full response (instead of streaming) before writing to stdout:
 
@@ -309,6 +320,10 @@ For full details on switching models, setting a default, and adding custom model
         These are session-only overrides and take the highest priority, overriding values from config file `params`. `--model-params` cannot be combined with `--default`.
     </Accordion>
 </AccordionGroup>
+
+## Switch agents
+
+Run `/agents` to open the agent selector and hot-swap between agents in `~/.deepagents/` without relaunching. Switching resets the conversation thread and refreshes skill discovery. The choice is persisted, so the next bare `deepagents` launch resumes the same agent. `-a`/`--agent` always overrides; `-r`/`--resume` restores the thread's original agent.
 
 ## Configuration
 
@@ -817,7 +832,7 @@ deepagents -y
     <Accordion title="Command-line options" icon="flag">
         | Option                 | Description                                                 |
         |------------------------|-------------------------------------------------------------|
-        | `-a`, `--agent NAME`   | Use named agent with separate memory (default: `agent`)     |
+        | `-a`, `--agent NAME`   | Use named agent with separate memory. Overrides `[agents].recent` in `config.toml`. Default: `agent` (or the most recently used agent if `[agents].recent` is set) |
         | `-M`, `--model MODEL`  | Use a specific model (`provider:model`)                    |
         | `--model-params JSON`  | Extra kwargs to pass to the model as a JSON string (e.g., `'{"temperature": 0.7}'`) |
         | `--default-model [MODEL]` | Set the default model |
@@ -826,6 +841,7 @@ deepagents -y
         | `-m`, `--message TEXT` | Initial prompt to auto-submit when the session starts (interactive mode) |
         | `--skill NAME`         | Invoke a skill at startup |
         | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
+        | `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Cap turn count with `--max-turns`](#non-interactive-mode-and-piping) |
         | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
         | `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
         | `--stdin`              | Read input from stdin explicitly instead of auto-detection. Errors clearly when stdin is unavailable or is a TTY |
