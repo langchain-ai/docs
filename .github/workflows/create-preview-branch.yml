@@ -314,7 +314,9 @@ jobs:
           fi
 
           deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
-          last_status=""
+          final_status=""
+          final_summary=""
+          final_preview_url=""
 
           while true; do
             now=$(date +%s)
@@ -328,53 +330,63 @@ jobs:
               -H "Authorization: Bearer ${MINTLIFY_API_KEY}" \
               -H "Content-Type: application/json")"
 
-            STATUS_RESPONSE="$resp" python - <<'PY'
-          import json
-          import os
-          import sys
+            parsed="$(STATUS_RESPONSE="$resp" python - <<'PY'
+import json
+import os
+import sys
 
-          resp = os.environ.get("STATUS_RESPONSE", "")
-          try:
-            data = json.loads(resp) if resp else {}
-          except Exception:
-            print("Failed to parse Mintlify status response as JSON.", file=sys.stderr)
-            print(resp, file=sys.stderr)
-            sys.exit(1)
+resp = os.environ.get("STATUS_RESPONSE", "")
+try:
+  data = json.loads(resp) if resp else {}
+except Exception:
+  print("PARSE_ERROR\t\t", end="")
+  sys.exit(0)
 
-          status = data.get("status", "")
-          summary = data.get("summary", "")
-          preview_url = data.get("previewUrl", "") or data.get("preview_url", "")
+status = data.get("status", "") or ""
+summary = data.get("summary", "") or ""
+preview_url = data.get("previewUrl", "") or data.get("preview_url", "") or ""
 
-          out = os.environ["GITHUB_OUTPUT"]
-          with open(out, "a", encoding="utf-8") as f:
-            f.write(f"status={status}\n")
-            f.write(f"summary={summary}\n")
-            if preview_url:
-              f.write(f"preview_url={preview_url}\n")
+def clean(s: str) -> str:
+  return s.replace("\t", " ").replace("\n", " ").replace("\r", " ").strip()
 
-          print(status)
-          PY
+print(f"{clean(status)}\t{clean(summary)}\t{clean(preview_url)}", end="")
+PY
+            )"
 
-            current_status="$(tail -n 1 <<<"$(echo "$resp" | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status",""))' 2>/dev/null || true)')" || true
-            # The python above writes step outputs; we also log the status for visibility.
+            current_status="$(cut -f1 <<<"$parsed")"
+            current_summary="$(cut -f2 <<<"$parsed")"
+            current_preview_url="$(cut -f3 <<<"$parsed")"
+
             echo "Mintlify status: ${current_status:-unknown}"
 
-            # Use the parsed status from the step outputs when available
-            parsed_status="${{ steps.wait.outputs.status }}"
-            if [ -n "${parsed_status:-}" ]; then
-              last_status="$parsed_status"
+            if [ -n "${current_status:-}" ] && [ "${current_status}" != "PARSE_ERROR" ]; then
+              final_status="$current_status"
+              final_summary="$current_summary"
+              if [ -n "${current_preview_url:-}" ]; then
+                final_preview_url="$current_preview_url"
+              fi
             fi
 
-            if [ "${last_status:-}" = "success" ]; then
-              exit 0
+            if [ "${final_status:-}" = "success" ]; then
+              break
             fi
-            if [ "${last_status:-}" = "failure" ]; then
+            if [ "${final_status:-}" = "failure" ]; then
               echo "Mintlify preview failed (status_id=${STATUS_ID})."
-              exit 1
+              break
             fi
 
             sleep "$POLL_SECONDS"
           done
+
+          echo "status=${final_status}" >> "$GITHUB_OUTPUT"
+          echo "summary=${final_summary}" >> "$GITHUB_OUTPUT"
+          if [ -n "${final_preview_url:-}" ]; then
+            echo "preview_url=${final_preview_url}" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "${final_status:-}" = "failure" ]; then
+            exit 1
+          fi
 
       - name: Comment on PR
         uses: actions/github-script@v8
