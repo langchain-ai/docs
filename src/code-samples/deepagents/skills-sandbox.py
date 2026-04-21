@@ -1,10 +1,5 @@
 # :snippet-start: skills-sandbox-py
 import asyncio
-
-# :remove-start:
-from dataclasses import dataclass
-
-# :remove-end:
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +17,9 @@ from langchain_daytona import DaytonaSandbox
 from langgraph.runtime import Runtime
 from langgraph.store.memory import InMemoryStore
 
+# Identical skill bundles for every user: one shared store namespace.
+SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+
 
 def _store_value_to_bytes(value: dict[str, Any]) -> bytes:
     raw = value["content"]
@@ -32,36 +30,18 @@ def _store_value_to_bytes(value: dict[str, Any]) -> bytes:
     return bytes(raw)
 
 
-# :remove-start:
-@dataclass
-class AppContext:
-    """Per-invocation context; use the same ``user_id`` you seed into the store."""
-
-    user_id: str
-
-
-# :remove-end:
-class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, AppContext, Any]):
-    """Upload skill files from the store into the sandbox before each agent run."""
+class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+    """Copy shared skill files from the store into the sandbox before each agent run."""
 
     def __init__(self, backend: CompositeBackend) -> None:
         super().__init__()
         self.backend = backend
 
-    async def abefore_agent(
-        self, state: AgentState, runtime: Runtime[AppContext]
-    ) -> None:
-        # In local/SDK runs, `server_info` may be unset; use the invocation context.
-        if runtime.server_info is not None:
-            user_id = runtime.server_info.user.identity
-        # :remove-start:
-        else:
-            user_id = runtime.context.user_id
-        # :remove-end:
+    async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
         store = runtime.store
 
         files: list[tuple[str, bytes]] = []
-        for item in await store.asearch(("skills", user_id)):
+        for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
             key = str(item.key)
             if ".." in key or any(c in key for c in ("*", "?")):
                 msg = f"Invalid key: {key}"
@@ -74,14 +54,14 @@ class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, AppContext, Any]):
             await self.backend.aupload_files(files)
 
 
-async def seed_skill_store(store: InMemoryStore, user_id: str) -> None:
-    namespace = ("skills", user_id)
+async def seed_skill_store(store: InMemoryStore) -> None:
+    """Load canonical skill files from disk into the shared store namespace (run once at deploy)."""
     skills_dir = Path(__file__).resolve().parent / "skills"
     for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
         rel = file_path.relative_to(skills_dir).as_posix()
         key = f"/{rel}"
         await store.aput(
-            namespace,
+            SKILLS_SHARED_NAMESPACE,
             key,
             create_file_data(file_path.read_text(encoding="utf-8")),
         )
@@ -89,7 +69,7 @@ async def seed_skill_store(store: InMemoryStore, user_id: str) -> None:
 
 async def main() -> None:
     store = InMemoryStore()
-    await seed_skill_store(store, "demo-user")
+    await seed_skill_store(store)
 
     daytona = Daytona()
     sandbox = daytona.create()
@@ -100,14 +80,7 @@ async def main() -> None:
         routes={
             "/skills/": StoreBackend(
                 store=store,
-                namespace=lambda rt: (
-                    "skills",
-                    rt.server_info.user.identity
-                    if rt.server_info
-                    # :remove-start:
-                    else rt.context.user_id,
-                    # :remove-end:
-                ),
+                namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
             ),
         },
     )
@@ -118,7 +91,6 @@ async def main() -> None:
             backend=backend,
             skills=["/skills/"],
             store=store,
-            context_schema=AppContext,
             middleware=[SkillSandboxSyncMiddleware(backend)],
         )
 
@@ -134,9 +106,6 @@ async def main() -> None:
                     ),
                 ],
             },
-            # :remove-start:
-            context=AppContext(user_id="demo-user"),
-            # :remove-end:
             config={"configurable": {"thread_id": "skills-sandbox-demo"}},
         )
 

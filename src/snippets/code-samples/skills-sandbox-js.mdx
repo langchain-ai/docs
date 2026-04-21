@@ -11,10 +11,11 @@ import {
   StoreBackend,
 } from "deepagents";
 import { InMemoryStore } from "@langchain/langgraph";
-import { z } from "zod";
 
 import { DaytonaSandbox } from "@langchain/daytona";
 
+/** Identical skill bundles for every user: one shared store namespace. */
+const SKILLS_SHARED_NAMESPACE = ["skills", "builtin"] as const;
 
 function createFileData(content: string): FileData {
   const now = new Date().toISOString();
@@ -59,7 +60,8 @@ async function walkFiles(dir: string): Promise<string[]> {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
-async function seedSkillStore(store: InMemoryStore, userId: string) {
+/** Load canonical skill files from disk into the shared store namespace (run once at deploy). */
+async function seedSkillStore(store: InMemoryStore) {
   const moduleDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
   const skillsDir = resolve(moduleDir, "skills");
   const filePaths = await walkFiles(skillsDir);
@@ -70,14 +72,11 @@ async function seedSkillStore(store: InMemoryStore, userId: string) {
     // so store keys should look like "/<skillname>/SKILL.md".
     const key = `/${posix.normalize(rel.split("\\").join("/"))}`;
     const content = await readFile(filePath, "utf8");
-    await store.put(["skills", userId], key, createFileData(content));
+    await store.put([...SKILLS_SHARED_NAMESPACE], key, createFileData(content));
   }
 }
 
-const contextSchema = z.object({
-  userId: z.string(),
-});
-
+/** Copy shared skill files from the store into the sandbox before each agent run. */
 function createSkillSandboxSyncMiddleware(backend: CompositeBackend) {
   return createMiddleware({
     name: "SkillSandboxSyncMiddleware",
@@ -90,12 +89,9 @@ function createSkillSandboxSyncMiddleware(backend: CompositeBackend) {
         );
       }
 
-      const userId =
-        (runtime as any).serverInfo?.user?.identity ??
-        (runtime as any).context?.userId ??
       const files: Array<[string, Uint8Array]> = [];
 
-      for (const item of await store.search(["skills", userId])) {
+      for (const item of await store.search([...SKILLS_SHARED_NAMESPACE])) {
         const normalized = normalizeSkillsStoreKey(String(item.key));
         const data = item.value as FileData;
         // CompositeBackend routes paths and batches uploads to the right backend.
@@ -111,7 +107,7 @@ function createSkillSandboxSyncMiddleware(backend: CompositeBackend) {
 
 async function main() {
   const store = new InMemoryStore();
-  await seedSkillStore(store, "demo-user");
+  await seedSkillStore(store);
 
   const sandbox = await DaytonaSandbox.create({
     language: "python",
@@ -121,12 +117,7 @@ async function main() {
   const backend = new CompositeBackend(sandbox, {
     "/skills/": new StoreBackend({
       store,
-      namespace: (rt) => [
-        "skills",
-        rt.serverInfo?.user?.identity ??
-          // When `serverInfo` is unset (local / SDK runs), match `contextSchema.userId`.
-          (rt.context as { userId: string } | undefined)?.userId ??
-      ],
+      namespace: () => [...SKILLS_SHARED_NAMESPACE],
     } as any),
   });
 
@@ -136,7 +127,6 @@ async function main() {
       backend,
       skills: ["/skills/"],
       store,
-      contextSchema,
       middleware: [createSkillSandboxSyncMiddleware(backend)],
     });
 
