@@ -1,0 +1,206 @@
+---
+name: Trigger Mintlify Preview Deployment
+
+on:
+  workflow_run:
+    workflows: ["Create Preview Branch"]
+    types: [completed]
+  workflow_dispatch:
+
+# Avoid duplicate preview triggers for the same PR.
+concurrency:
+  group: mintlify-preview-${{ github.event.workflow_run.id || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  trigger-preview:
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Download preview branch metadata artifact
+        id: download
+        if: github.event_name == 'workflow_run'
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const runId = context.payload.workflow_run.id;
+            let artifacts;
+            try {
+              artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runId,
+              });
+            } catch (e) {
+              core.setFailed(`Failed to list artifacts for workflow_run ${runId}: ${e.message}`);
+              return;
+            }
+
+            const match = artifacts.data.artifacts.find(a => a.name === 'preview-branch-metadata');
+            if (!match) {
+              core.setFailed('Missing required artifact: preview-branch-metadata');
+              return;
+            }
+
+            const download = await github.rest.actions.downloadArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: match.id,
+              archive_format: 'zip',
+            });
+
+            const fs = require('fs');
+            fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/preview-branch-metadata.zip`, Buffer.from(download.data));
+            core.setOutput('found', 'true');
+
+      - name: Extract artifact
+        if: github.event_name == 'workflow_run'
+        run: unzip preview-branch-metadata.zip
+
+      - name: Read preview branch + PR number
+        id: meta
+        if: github.event_name == 'workflow_run'
+        run: |
+          set -euo pipefail
+          PREVIEW_BRANCH="$(cat preview_branch.txt | tr -d '\n\r')"
+          PR_NUMBER="$(cat pr_number.txt | tr -d '\n\r')"
+          echo "preview_branch=$PREVIEW_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Set manual branch (workflow_dispatch)
+        id: meta-manual
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          echo "preview_branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "pr_number=" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Mintlify preview deployment (capture response)
+        id: call
+        env:
+          MINTLIFY_API_KEY: ${{ secrets.MINTLIFY_API_KEY }}
+          MINTLIFY_PROJECT_ID: ${{ secrets.MINTLIFY_PROJECT_ID }}
+          BRANCH: ${{ steps.meta.outputs.preview_branch || steps.meta-manual.outputs.preview_branch }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MINTLIFY_API_KEY:-}" ] || [ -z "${MINTLIFY_PROJECT_ID:-}" ]; then
+            echo "Missing required secrets."
+            echo "Set secrets.MINTLIFY_API_KEY (admin key starting with mint_) and secrets.MINTLIFY_PROJECT_ID."
+            exit 1
+          fi
+
+          if [ -z "${BRANCH:-}" ]; then
+            echo "Missing preview branch name."
+            exit 1
+          fi
+
+          echo "Triggering Mintlify preview for branch: ${BRANCH}"
+
+          response="$(curl -sS -X POST \
+            "https://api.mintlify.com/v1/project/preview/${MINTLIFY_PROJECT_ID}" \
+            -H "Authorization: Bearer ${MINTLIFY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            --data "{\"branch\":\"${BRANCH}\"}")"
+
+          echo "response<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$response" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Parse response
+        id: parse
+        env:
+          RESPONSE: ${{ steps.call.outputs.response }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          response = os.environ.get("RESPONSE", "")
+          try:
+            data = json.loads(response) if response else {}
+          except Exception:
+            print("Failed to parse Mintlify API response as JSON.", file=sys.stderr)
+            print(response, file=sys.stderr)
+            sys.exit(1)
+
+          status_id = data.get("statusId", "")
+          preview_url = data.get("previewUrl", "")
+          error = data.get("error", "")
+
+          if error and not (status_id or preview_url):
+            print(f"Mintlify API error: {error}", file=sys.stderr)
+            sys.exit(1)
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as f:
+            f.write(f"status_id={status_id}\n")
+            f.write(f"preview_url={preview_url}\n")
+          PY
+
+      - name: Comment preview link on PR
+        if: github.event_name == 'workflow_run' && steps.download.outputs.found == 'true' && steps.meta.outputs.pr_number != ''
+        uses: actions/github-script@v8
+        env:
+          PREVIEW_URL: ${{ steps.parse.outputs.preview_url }}
+          STATUS_ID: ${{ steps.parse.outputs.status_id }}
+          BRANCH: ${{ steps.meta.outputs.preview_branch }}
+          PR_NUMBER: ${{ steps.meta.outputs.pr_number }}
+        with:
+          script: |
+            const previewUrl = process.env.PREVIEW_URL || '';
+            const statusId = process.env.STATUS_ID || '';
+            const branch = process.env.BRANCH || '';
+            const prNumber = Number(process.env.PR_NUMBER);
+
+            const lines = [];
+            lines.push('## Mintlify preview');
+            lines.push('');
+            if (previewUrl) {
+              lines.push(`- **Preview URL**: ${previewUrl}`);
+            }
+            if (statusId) {
+              lines.push(`- **Status ID**: \`${statusId}\``);
+            }
+            if (branch) {
+              lines.push(`- **Branch**: \`${branch}\``);
+            }
+
+            const body = lines.join('\n');
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const existing = comments.data.find(c =>
+              c.user?.type === 'Bot' && (c.body || '').includes('## Mintlify preview')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+
