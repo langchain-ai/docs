@@ -203,6 +203,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use H5 or H6 headings
 - Overuse em dashes — prefer commas, colons, or separate sentences instead
+- Add spaces around em dashes — write `word—word` not `word — word` (Vale enforces this)
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
