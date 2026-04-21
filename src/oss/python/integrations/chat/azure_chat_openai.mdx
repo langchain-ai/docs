@@ -8,26 +8,24 @@ You can find information about Azure OpenAI's latest models and their costs, con
 <Info>
     **Azure OpenAI vs OpenAI**
 
-    Azure OpenAI refers to OpenAI models hosted on the [Microsoft Azure platform](https://azure.microsoft.com/en-us/products/ai-services/openai-service). OpenAI also provides its own model APIs. To access OpenAI services directly, use the [`ChatOpenAI` integration](/oss/integrations/chat/openai/).
+    Azure OpenAI refers to OpenAI models hosted on the [Microsoft Azure platform](https://azure.microsoft.com/en-us/products/ai-services/openai-service). Models hosted on Azure come with added enterprise features including support for keyless authentication with Entra ID.
 </Info>
 
 <Info>
-    **Azure OpenAI v1 API (recommended)**
+    **Use ChatOpenAI with v1 API (recommended)**
 
-    Azure OpenAI's [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python) (Generally Available as of August 2025) allows you to use `ChatOpenAI` directly with Azure endpoints. This removes the need for dated `api-version` parameters and provides native support for Microsoft Entra ID authentication with automatic token refresh.
+    Azure OpenAI's [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python) (Generally Available as of August 2025) allows you to use [ChatOpenAI](/oss/integrations/chat/openai/#using-with-azure-openai) directly with Azure endpoints. This removes the need for dated `api-version` parameters and provides native support for Microsoft Entra ID authentication with automatic token refresh.
 
-    We recommend using `ChatOpenAI` with the v1 API for new projects. See the [v1 API with ChatOpenAI](#v1-api-with-chatopenai) section below for examples.
+    We continue to support [AzureChatOpenAI](https://reference.langchain.com/python/langchain-openai/chat_models/azure/AzureChatOpenAI), which now shares the same underlying base implementation as [ChatOpenAI](https://reference.langchain.com/python/langchain-openai/chat_models/base/ChatOpenAI), which interfaces with OpenAI services directly.
 
-    `AzureChatOpenAI` is still supported for traditional Azure OpenAI API versions and scenarios requiring Azure-specific configurations. Note that `AzureChatOpenAI` uses the `AzureOpenAI` client under the hood, so it works with traditional API versions rather than the v1 API path.
+    This page serves as a quickstart for authenticating and connecting your Azure OpenAI Chat Models to LangChain.
 </Info>
 
-<Note>
-    @[`AzureChatOpenAI`] shares the same underlying base implementation as @[`ChatOpenAI`],
-    which interfaces with OpenAI services directly.
+<Tip>
+    **API Reference**
 
-    Visit the [`ChatOpenAI` docs](/oss/integrations/chat/openai/) for details on all available
-    features, or head to the @[`AzureChatOpenAI`] API reference.
-</Note>
+    For detailed documentation of all features and configuration options, head to the [AzureChatOpenAI API reference](https://reference.langchain.com/python/langchain-openai/chat_models/azure/AzureChatOpenAI). Visit the [ChatOpenAI docs](/oss/integrations/chat/openai/) for details on available features.
+</Tip>
 
 ## Overview
 
@@ -45,7 +43,7 @@ You can find information about Azure OpenAI's latest models and their costs, con
 
 ## Setup
 
-To access Azure OpenAI models you'll need to create an Azure account, create a deployment of an Azure OpenAI model, get the name and endpoint for your deployment, get an Azure OpenAI API key, and install the `langchain-openai` integration package.
+To access Azure OpenAI models you'll need to [create an Azure account](https://account.azure.com/signup), create a deployment of an Azure OpenAI model, get the name and endpoint for your deployment, and install the `langchain-openai` integration package.
 
 ### Installation
 
@@ -58,9 +56,30 @@ To access Azure OpenAI models you'll need to create an Azure account, create a d
     ```
 </CodeGroup>
 
-### Credentials
+## Credentials
 
-Head to the [Azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/chatgpt-quickstart?tabs=command-line%2Cpython-new&pivots=programming-language-python) to create your deployment and generate an API key. Once you've done this set the `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` environment variables:
+Both @[`ChatOpenAI`] and @[`AzureChatOpenAI`] support authenticating to Azure OpenAI with either **Microsoft Entra ID** (recommended) or an **API key**.
+
+### Microsoft Entra ID
+
+[Microsoft Entra ID](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/managed-identity) provides keyless authentication with automatic token refresh. Install the `azure-identity` package and create a token provider — the same provider works with both `ChatOpenAI` and `AzureChatOpenAI`:
+
+```bash
+pip install azure-identity
+```
+
+```python
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+token_provider = get_bearer_token_provider(
+    DefaultAzureCredential(),
+    "https://cognitiveservices.azure.com/.default",
+)
+```
+
+### API key
+
+Head to the [Azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/chatgpt-quickstart?tabs=command-line%2Cpython-new&pivots=programming-language-python) to create your deployment and generate an API key. Set the `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` environment variables:
 
 ```python
 import getpass
@@ -82,9 +101,51 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ## Instantiation
 
+### ChatOpenAI with v1 API
+
+Set `base_url` to your Azure endpoint with `/openai/v1/` appended.
+
+With Microsoft Entra ID — pass the token provider to `api_key`:
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-5-mini",  # your Azure deployment name
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key=token_provider,  # callable that handles token refresh
+)
+```
+
+With an API key:
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-5-mini",  # your Azure deployment name
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key="your-azure-api-key",
+)
+```
+
 ### AzureChatOpenAI
 
-Use @[`AzureChatOpenAI`] when working with traditional Azure OpenAI API versions that require `api_version`:
+Use @[`AzureChatOpenAI`] when working with traditional Azure OpenAI API versions that require `api_version`.
+
+With Microsoft Entra ID — pass the token provider to `azure_ad_token_provider`:
+
+```python
+from langchain_openai import AzureChatOpenAI
+
+llm = AzureChatOpenAI(
+    azure_deployment="gpt-5-mini",  # or your deployment
+    api_version="2025-04-01-preview",  # or your api version
+    azure_ad_token_provider=token_provider,
+)
+```
+
+With an API key (reads `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` from environment):
 
 ```python
 from langchain_openai import AzureChatOpenAI
@@ -99,46 +160,6 @@ llm = AzureChatOpenAI(
     # other params...
 )
 ```
-
-### v1 API with ChatOpenAI
-
-With the [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python) (GA as of August 2025), you can use @[`ChatOpenAI`] directly with Azure endpoints. This removes the need for `api_version` and provides a unified interface across OpenAI and Azure OpenAI.
-
-Set `base_url` to your Azure endpoint with `/openai/v1/` appended:
-
-```python
-from langchain_openai import ChatOpenAI
-
-llm = ChatOpenAI(
-    model="gpt-5-mini",  # your Azure deployment name
-    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
-    api_key="your-azure-api-key",
-)
-```
-
-### Microsoft Entra ID authentication
-
-The v1 API supports [Microsoft Entra ID](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/managed-identity) authentication with automatic token refresh. Pass a token provider callable to the `api_key` parameter:
-
-```python
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from langchain_openai import ChatOpenAI
-
-token_provider = get_bearer_token_provider(
-    DefaultAzureCredential(),
-    "https://cognitiveservices.azure.com/.default",
-)
-
-llm = ChatOpenAI(
-    model="gpt-5-mini",  # your Azure deployment name
-    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
-    api_key=token_provider,  # callable that handles token refresh
-)
-```
-
-<Note>
-    Entra ID authentication requires the `azure-identity` package: `pip install azure-identity`.
-</Note>
 
 ## Invocation
 
@@ -246,6 +267,70 @@ llm = ChatOpenAI(
     stream_usage=True,  # [!code highlight]
 )
 ```
+
+## Reasoning effort and summary
+
+Azure OpenAI [reasoning models](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/reasoning) (for example, `o4-mini`, `gpt-5`) spend extra tokens thinking through a request before producing their final answer. With `ChatOpenAI` on the v1 API, you can configure how much effort the model spends reasoning and optionally request a summary of its chain of thought.
+
+### Reasoning effort
+
+Set `reasoning_effort` to `"low"`, `"medium"`, or `"high"`. Higher settings let the model spend more tokens on reasoning, which typically improves quality for complex tasks at the cost of latency:
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-5-mini",  # your Azure reasoning model deployment
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key=token_provider,
+    reasoning_effort="medium",
+)
+
+response = llm.invoke("Tell me about the bitter lesson.")
+print(response.text)
+```
+
+<Note>
+    Reasoning models use tokens for internal reasoning (`reasoning_tokens` in `completion_tokens_details`). These tokens aren't returned in the message content but count toward the output token limit. If you see empty responses, increase `max_tokens` or leave it unset so the model has room for both reasoning and output.
+</Note>
+
+### Reasoning summary
+
+When using a reasoning model via the Responses API, you can request a summary of the model's chain of thought by passing a `reasoning` dict. Setting `reasoning` automatically routes `ChatOpenAI` to the Responses API:
+
+```python
+from langchain_openai import ChatOpenAI
+
+reasoning = {
+    "effort": "high",    # 'low', 'medium', or 'high'
+    "summary": "auto",   # 'auto', 'concise', or 'detailed'
+}
+
+llm = ChatOpenAI(
+    model="gpt-5-mini",  # your Azure reasoning model deployment
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key=token_provider,
+    reasoning=reasoning,
+)
+
+response = llm.invoke("What's the optimal strategy to win at poker?")
+
+# Final answer
+print(response.text)
+
+# Reasoning summary blocks
+for block in response.content_blocks:
+    if block["type"] == "reasoning":
+        print(block["reasoning"])
+```
+
+<Warning>
+    Attempting to extract raw reasoning tokens through methods other than the reasoning summary parameter isn't supported and may violate Azure's Acceptable Use Policy. Use the `summary` field to access model reasoning.
+</Warning>
+
+<Note>
+    Even when enabled, reasoning summaries aren't guaranteed for every step or request — this is expected behavior.
+</Note>
 
 ## Specifying model version (legacy API)
 
