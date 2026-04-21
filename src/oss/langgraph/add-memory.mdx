@@ -1387,7 +1387,7 @@ const items = await store.search(["user_123", "memories"], {
         }
         ```
       </Tab>
-      <Tab title="MongoDB">
+      <Tab title="MongoDB (manual embedding)">
         ```typescript
         import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
         import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
@@ -1421,6 +1421,71 @@ const items = await store.search(["user_123", "memories"], {
             { query: state.messages.at(-1)?.content, limit: 2 }
           );
           const memories = items.map(item => item.value.text).join("\n");
+          const memoriesText = memories ? `## Memories of user\n${memories}` : "";
+
+          const response = await model.invoke([
+            { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
+            ...state.messages,
+          ]);
+
+          return { messages: [response] };
+        };
+
+        const builder = new StateGraph(State)
+          .addNode("chat", chat)
+          .addEdge(START, "chat");
+        const graph = builder.compile({ store });
+
+        for await (const [message, metadata] of await graph.stream(
+          { messages: [{ role: "user", content: "I'm hungry" }] },
+          { streamMode: "messages" }
+        )) {
+          if (message.content) {
+            console.log(message.content);
+          }
+        }
+        ```
+      </Tab>
+      <Tab title="MongoDB (auto embedding)">
+        <Note>
+        Auto embedding requires MongoDB Atlas. MongoDB generates embeddings server-side via Voyage AI. See the [Automated Embedding documentation](https://www.mongodb.com/docs/atlas/atlas-vector-search/automated-embedding/) for more information.
+        </Note>
+
+        ```typescript
+        import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
+        import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+        import { ChatOpenAI } from "@langchain/openai";
+
+        const State = new StateSchema({
+          messages: MessagesValue,
+        });
+
+        const model = new ChatOpenAI({ model: "gpt-4o-mini" });
+
+        // Auto embedding: no embeddings instance needed.
+        // Configure the Voyage AI model and the field path MongoDB will read server-side.
+        const MONGODB_URI = "mongodb://user:password@localhost:27017";
+        const store = await MongoDBStore.fromConnString(MONGODB_URI, {
+          dbName: "langgraph",
+          collectionName: "store",
+          indexConfig: {
+            name: "store_vector_index",
+            path: "value.content",  // MongoDB reads this field and embeds it server-side
+            model: "voyage-4",      // Voyage AI model used by MongoDB Atlas
+          },
+        });
+
+        // Values must have the content field matching the configured path (value.content)
+        await store.put(["user_123", "memories"], "1", { content: "I love pizza" });
+        await store.put(["user_123", "memories"], "2", { content: "I am a plumber" });
+
+        const chat: GraphNode<typeof State> = async (state, runtime) => {
+          // MongoDB generates the query embedding server-side
+          const items = await runtime.store.search(
+            ["user_123", "memories"],
+            { query: state.messages.at(-1)?.content, limit: 2 }
+          );
+          const memories = items.map(item => item.value.content).join("\n");
           const memoriesText = memories ? `## Memories of user\n${memories}` : "";
 
           const response = await model.invoke([
