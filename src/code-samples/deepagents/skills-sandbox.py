@@ -46,7 +46,9 @@ class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
 
 
 async def seed_skill_store(store: InMemoryStore) -> None:
-    """Load canonical skill files from disk into the shared store namespace (run once at deploy)."""
+    """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+    You can retrieve skills from any source (local filesystem, remote URL, etc.).
+    """
     skills_dir = Path(__file__).resolve().parent / "skills"
     for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
         rel = file_path.relative_to(skills_dir).as_posix()

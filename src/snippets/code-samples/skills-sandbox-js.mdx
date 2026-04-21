@@ -48,7 +48,9 @@ async function walkFiles(dir: string): Promise<string[]> {
   return files.sort((a, b) => a.localeCompare(b));
 }
 
-/** Load canonical skill files from disk into the shared store namespace (run once at deploy). */
+/** Load canonical skill files from disk into the shared store namespace (run once at deploy).
+ *  You can retrieve skills from any source (local filesystem, remote URL, etc.).
+ */
 async function seedSkillStore(store: InMemoryStore) {
   const moduleDir = resolve(fileURLToPath(new URL(".", import.meta.url)));
   const skillsDir = resolve(moduleDir, "skills");
