@@ -15,8 +15,9 @@ import { z } from "zod";
 
 import { DaytonaSandbox } from "@langchain/daytona";
 
-const SKILLS_ROOT = "/tmp/skills";
+// :remove-start:
 const DEMO_USER_ID = "demo-user";
+// :remove-end:
 
 function createFileData(content: string): FileData {
   const now = new Date().toISOString();
@@ -27,13 +28,24 @@ function createFileData(content: string): FileData {
   };
 }
 
-function safeStoreKey(key: string): string {
-  // Store keys are absolute-ish paths inside a routed root (e.g. "/skill/dir/file").
-  // Reject traversal and glob patterns before using them as sandbox paths.
-  if (!key.startsWith("/") || key.includes("..") || /[*?]/.test(key)) {
+function normalizeSkillsStoreKey(key: string): string {
+  const k = String(key);
+  if (k.includes("..") || /[*?]/.test(k)) {
     throw new Error(`Invalid key: ${key}`);
   }
-  return key;
+  return k.startsWith("/") ? k : `/${k}`;
+}
+
+function storeValueToUint8Array(value: FileData): Uint8Array {
+  const encoder = new TextEncoder();
+  const raw = value.content;
+  if (Array.isArray(raw)) {
+    return encoder.encode(raw.join("\n"));
+  }
+  if (typeof raw === "string") {
+    return encoder.encode(raw);
+  }
+  return new Uint8Array();
 }
 
 async function walkFiles(dir: string): Promise<string[]> {
@@ -57,7 +69,7 @@ async function seedSkillStore(store: InMemoryStore, userId: string) {
   for (const filePath of filePaths) {
     const rel = relative(skillsDir, filePath);
     // StoreBackend keys are paths *relative to the routed backend root*.
-    // CompositeBackend strips the route prefix (`/tmp/skills/`) before delegating,
+    // CompositeBackend strips the route prefix (`/skills/`) before delegating,
     // so store keys should look like "/<skillname>/SKILL.md".
     const key = `/${posix.normalize(rel.split("\\").join("/"))}`;
     const content = await readFile(filePath, "utf8");
@@ -69,9 +81,7 @@ const contextSchema = z.object({
   userId: z.string(),
 });
 
-function createSkillSandboxSyncMiddleware(sandbox: any) {
-  const encoder = new TextEncoder();
-
+function createSkillSandboxSyncMiddleware(backend: CompositeBackend) {
   return createMiddleware({
     name: "SkillSandboxSyncMiddleware",
     beforeAgent: async (state, runtime) => {
@@ -86,21 +96,19 @@ function createSkillSandboxSyncMiddleware(sandbox: any) {
       const userId =
         (runtime as any).serverInfo?.user?.identity ??
         (runtime as any).context?.userId ??
+        // :remove-start:
         DEMO_USER_ID;
-
+      // :remove-end:
       const files: Array<[string, Uint8Array]> = [];
 
-      // Sync skills into the sandbox so scripts can be executed.
       for (const item of await store.search(["skills", userId])) {
-        const key = safeStoreKey(String(item.key));
+        const normalized = normalizeSkillsStoreKey(String(item.key));
         const data = item.value as FileData;
-        files.push([
-          `${SKILLS_ROOT}${key}`,
-          encoder.encode(data.content.join("\n")),
-        ]);
+        // CompositeBackend routes paths and batches uploads to the right backend.
+        files.push([`/skills${normalized}`, storeValueToUint8Array(data)]);
       }
 
-      if (files.length > 0) await sandbox.uploadFiles(files);
+      if (files.length > 0) await backend.uploadFiles(files);
 
       return state;
     },
@@ -109,7 +117,7 @@ function createSkillSandboxSyncMiddleware(sandbox: any) {
 
 async function main() {
   const store = new InMemoryStore();
-  await seedSkillStore(store, DEMO_USER_ID);
+  await seedSkillStore(store, "demo-user");
 
   const sandbox = await DaytonaSandbox.create({
     language: "python",
@@ -117,20 +125,28 @@ async function main() {
   });
 
   const backend = new CompositeBackend(sandbox, {
-    [`${SKILLS_ROOT}/`]: new StoreBackend(
-      { store: store as any, assistantId: undefined, state: {} } as any,
-      { namespace: ["skills", DEMO_USER_ID] } as any,
-    ),
+    "/skills/": new StoreBackend({
+      store,
+      namespace: (rt) => [
+        "skills",
+        rt.serverInfo?.user?.identity ??
+          // When `serverInfo` is unset (local / SDK runs), match `contextSchema.userId`.
+          (rt.context as { userId: string } | undefined)?.userId ??
+          // :remove-start:
+          DEMO_USER_ID,
+        // :remove-end:
+      ],
+    } as any),
   });
 
   try {
     const agent = await createDeepAgent({
       model: "anthropic:claude-sonnet-4-6",
       backend,
-      skills: [`${SKILLS_ROOT}/`],
+      skills: ["/skills/"],
       store,
       contextSchema,
-      middleware: [createSkillSandboxSyncMiddleware(sandbox)],
+      middleware: [createSkillSandboxSyncMiddleware(backend)],
     });
 
     // :remove-start:
@@ -145,7 +161,9 @@ async function main() {
         ],
       },
       {
+        // :remove-start:
         context: { userId: DEMO_USER_ID },
+        // :remove-end:
         configurable: { thread_id: "skills-sandbox-demo" },
       },
     );
