@@ -310,11 +310,19 @@ jobs:
               -H "Authorization: Bearer ${MINTLIFY_API_KEY}" \
               -H "Content-Type: application/json")"
 
-            parsed="$(STATUS_RESPONSE="$resp" python -c 'import json,os,sys; resp=os.environ.get("STATUS_RESPONSE",""); data=json.loads(resp) if resp else {}; clean=lambda s: (s or \"\").replace(\"\\t\",\" \").replace(\"\\n\",\" \").replace(\"\\r\",\" \").strip(); status=clean(data.get(\"status\",\"\")); summary=clean(data.get(\"summary\",\"\")); preview=clean(data.get(\"previewUrl\",\"\") or data.get(\"preview_url\",\"\")); print(f\"{status}\\t{summary}\\t{preview}\", end=\"\")' 2>/dev/null || printf \"PARSE_ERROR\\t\\t\")"
+            status="$(jq -r '.status // ""' <<<"$resp" 2>/dev/null || true)"
+            summary="$(jq -r '.summary // ""' <<<"$resp" 2>/dev/null || true)"
+            preview_url="$(jq -r '.previewUrl // .preview_url // ""' <<<"$resp" 2>/dev/null || true)"
 
-            current_status="$(cut -f1 <<<"$parsed")"
-            current_summary="$(cut -f2 <<<"$parsed")"
-            current_preview_url="$(cut -f3 <<<"$parsed")"
+            if [ -z "${status:-}" ] && [ -z "${summary:-}" ] && [ -z "${preview_url:-}" ]; then
+              echo "Failed to parse Mintlify status response as JSON."
+              echo "$resp"
+              status="PARSE_ERROR"
+            fi
+
+            current_status="$status"
+            current_summary="$summary"
+            current_preview_url="$preview_url"
 
             echo "Mintlify status: ${current_status:-unknown}"
 
