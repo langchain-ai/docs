@@ -297,12 +297,91 @@ jobs:
             f.write(f"preview_url={preview_url}\n")
           PY
 
+      - name: Wait for Mintlify preview to finish
+        id: wait
+        env:
+          MINTLIFY_API_KEY: ${{ secrets.MINTLIFY_API_KEY }}
+          STATUS_ID: ${{ steps.mintlify.outputs.status_id }}
+          # 15 minutes max, poll every 10 seconds
+          TIMEOUT_SECONDS: "900"
+          POLL_SECONDS: "10"
+        run: |
+          set -euo pipefail
+
+          if [ -z "${STATUS_ID:-}" ]; then
+            echo "No status_id returned from Mintlify; skipping wait."
+            exit 0
+          fi
+
+          deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
+          last_status=""
+
+          while true; do
+            now=$(date +%s)
+            if [ "$now" -ge "$deadline" ]; then
+              echo "Timed out waiting for Mintlify preview (status_id=${STATUS_ID})."
+              exit 1
+            fi
+
+            resp="$(curl -sS -X GET \
+              "https://api.mintlify.com/v1/project/update-status/${STATUS_ID}" \
+              -H "Authorization: Bearer ${MINTLIFY_API_KEY}" \
+              -H "Content-Type: application/json")"
+
+            STATUS_RESPONSE="$resp" python - <<'PY'
+          import json
+          import os
+          import sys
+
+          resp = os.environ.get("STATUS_RESPONSE", "")
+          try:
+            data = json.loads(resp) if resp else {}
+          except Exception:
+            print("Failed to parse Mintlify status response as JSON.", file=sys.stderr)
+            print(resp, file=sys.stderr)
+            sys.exit(1)
+
+          status = data.get("status", "")
+          summary = data.get("summary", "")
+          preview_url = data.get("previewUrl", "") or data.get("preview_url", "")
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as f:
+            f.write(f"status={status}\n")
+            f.write(f"summary={summary}\n")
+            if preview_url:
+              f.write(f"preview_url={preview_url}\n")
+
+          print(status)
+          PY
+
+            current_status="$(tail -n 1 <<<"$(echo "$resp" | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status",""))' 2>/dev/null || true)')" || true
+            # The python above writes step outputs; we also log the status for visibility.
+            echo "Mintlify status: ${current_status:-unknown}"
+
+            # Use the parsed status from the step outputs when available
+            parsed_status="${{ steps.wait.outputs.status }}"
+            if [ -n "${parsed_status:-}" ]; then
+              last_status="$parsed_status"
+            fi
+
+            if [ "${last_status:-}" = "success" ]; then
+              exit 0
+            fi
+            if [ "${last_status:-}" = "failure" ]; then
+              echo "Mintlify preview failed (status_id=${STATUS_ID})."
+              exit 1
+            fi
+
+            sleep "$POLL_SECONDS"
+          done
+
       - name: Comment on PR
         uses: actions/github-script@v8
         with:
           script: |
             const preview = `${{ needs.create-preview.outputs.preview_branch }}`;
-            const previewUrl = `${{ steps.mintlify.outputs.preview_url }}`;
+            const previewUrl = `${{ steps.wait.outputs.preview_url || steps.mintlify.outputs.preview_url }}`;
             const statusId = `${{ steps.mintlify.outputs.status_id }}`;
             const lines = [];
             lines.push(`Mintlify preview branch generated: \`${preview}\``);
