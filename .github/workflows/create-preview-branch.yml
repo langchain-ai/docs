@@ -270,32 +270,12 @@ jobs:
             -H "Content-Type: application/json" \
             --data "{\"branch\":\"${BRANCH}\"}")"
 
-          RESPONSE="$response" python - <<'PY'
-          import json
-          import os
-          import sys
-
-          response = os.environ.get("RESPONSE", "")
-          try:
-            data = json.loads(response) if response else {}
-          except Exception:
-            print("Failed to parse Mintlify API response as JSON.", file=sys.stderr)
-            print(response, file=sys.stderr)
-            sys.exit(1)
-
-          status_id = data.get("statusId", "")
-          preview_url = data.get("previewUrl", "")
-          error = data.get("error", "")
-
-          if error and not (status_id or preview_url):
-            print(f"Mintlify API error: {error}", file=sys.stderr)
-            sys.exit(1)
-
-          out = os.environ["GITHUB_OUTPUT"]
-          with open(out, "a", encoding="utf-8") as f:
-            f.write(f"status_id={status_id}\n")
-            f.write(f"preview_url={preview_url}\n")
-          PY
+          RESPONSE="$response" python -c 'import json,os,sys; resp=os.environ.get("RESPONSE","");
+          try: data=json.loads(resp) if resp else {}
+          except Exception: print("Failed to parse Mintlify API response as JSON.", file=sys.stderr); print(resp, file=sys.stderr); sys.exit(1)
+          status_id=(data.get("statusId","") or ""); preview_url=(data.get("previewUrl","") or ""); error=(data.get("error","") or "");
+          if error and not (status_id or preview_url): print(f"Mintlify API error: {error}", file=sys.stderr); sys.exit(1)
+          out=os.environ["GITHUB_OUTPUT"]; f=open(out,"a",encoding="utf-8"); f.write(f"status_id={status_id}\n"); f.write(f"preview_url={preview_url}\n"); f.close()'
 
       - name: Wait for Mintlify preview to finish
         id: wait
@@ -330,28 +310,12 @@ jobs:
               -H "Authorization: Bearer ${MINTLIFY_API_KEY}" \
               -H "Content-Type: application/json")"
 
-            parsed="$(STATUS_RESPONSE="$resp" python - <<'PY'
-            import json
-            import os
-            import sys
-
-            resp = os.environ.get("STATUS_RESPONSE", "")
-            try:
-              data = json.loads(resp) if resp else {}
-            except Exception:
-              print("PARSE_ERROR\t\t", end="")
-              sys.exit(0)
-
-            status = data.get("status", "") or ""
-            summary = data.get("summary", "") or ""
-            preview_url = data.get("previewUrl", "") or data.get("preview_url", "") or ""
-
-            def clean(s: str) -> str:
-              return s.replace("\t", " ").replace("\n", " ").replace("\r", " ").strip()
-
-            print(f"{clean(status)}\t{clean(summary)}\t{clean(preview_url)}", end="")
-            PY
-            )"
+            parsed="$(STATUS_RESPONSE="$resp" python -c 'import json,os,sys; resp=os.environ.get("STATUS_RESPONSE","");
+            try: data=json.loads(resp) if resp else {}
+            except Exception: print("PARSE_ERROR\t\t", end=""); sys.exit(0)
+            clean=lambda s: (s or "").replace("\t"," ").replace("\n"," ").replace("\r"," ").strip();
+            status=clean(data.get("status","")); summary=clean(data.get("summary","")); preview=clean(data.get("previewUrl","") or data.get("preview_url",""));
+            print(f"{status}\t{summary}\t{preview}", end="")')"
 
             current_status="$(cut -f1 <<<"$parsed")"
             current_summary="$(cut -f2 <<<"$parsed")"
