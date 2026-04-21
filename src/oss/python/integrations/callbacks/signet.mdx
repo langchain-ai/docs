@@ -1,0 +1,158 @@
+---
+title: Signet
+description: Cryptographic receipts for every agent tool call.
+---
+
+## Overview
+
+Signet's LangChain callback emits signed receipts for tool lifecycle events. For each tool call, it records a start receipt and then either an end or an error receipt. Any party with the signer's public key can verify those receipts offline.
+
+## Why
+
+For actions that change external state, such as writing files, sending payments, closing tickets, or dispatching emails, teams often need evidence of the tool call itself alongside the model transcript.
+
+Plain operator logs cover internal debugging well, but their integrity rests on trust in the operator. Third parties such as customers, auditors, or downstream services need evidence they can verify independently.
+
+Signet and transcript-level auditing solve different parts of the same problem. Transcript logs record model inputs and outputs. Signet records tool invocations and the related lifecycle events. Teams that need both can run both.
+
+Signet receipts:
+- bind a specific signer identity to a specific tool call with specific parameters
+- are appended to a hash-chained JSONL audit log, so removing or reordering records breaks chain verification
+
+## How it works
+
+The callback signs tool lifecycle events: `on_tool_start`, then either `on_tool_end` or `on_tool_error`. Each event becomes a receipt carrying the tool name, captured params, a timestamp, a nonce, and an Ed25519 signature. Receipts are appended to a local hash-chained JSONL audit log.
+
+Verification runs offline, either through the Python API or the standalone CLI (see the [Verification](#verification) section).
+
+<Info>
+Transcript logs capture model I/O; Signet captures tool invocation receipts and related lifecycle events. Teams that need both can run both.
+</Info>
+
+**Signed receipt fields:**
+- `action.tool`, the tool name for start receipts, or a lifecycle marker such as `_tool_end` or `_tool_error`
+- `action.params`, start receipts carry the captured tool inputs; end and error receipts carry lifecycle metadata such as `output_hash`, `error`, `error_type`, and `run_id`
+- `action.params_hash`, SHA-256 over the canonical JSON form of `params`
+- `signer.pubkey`, `signer.name`, `signer.owner`, Ed25519 identity and metadata
+- `ts`, `nonce`, signer-provided timestamp and nonce for freshness and replay detection
+- `sig`, Ed25519 signature over the canonical receipt
+
+The enclosing audit record adds `prev_hash` and `record_hash` outside the signed payload. Those fields are what audit-chain verification checks.
+
+<Info>
+`ts` and `nonce` are signed into the receipt, but enforcement depends on the verifier. Freshness requires checking `ts` against a skew window; replay protection requires the verifier to keep a nonce cache for that window.
+</Info>
+
+## Prerequisites
+
+```shell
+pip install signet-auth[langchain] langchain langchain-openai
+```
+
+<Info>
+By default, Signet stores keys and audit logs under `~/.signet/`. Set the `SIGNET_HOME` environment variable to use a different directory.
+</Info>
+
+## Example
+
+This example shows the callback attached to a deterministic tool invocation. No LLM is involved, so `handler.receipts` is guaranteed to contain a start and an end receipt for the one tool call. Once you see signing work here, attach the same handler to any `AgentExecutor`, `create_tool_calling_agent`, or LangGraph tool node via `config={"callbacks": [handler]}`.
+
+<Steps>
+  <Step title="Generate a signing identity (once)">
+    ```python
+    from signet_auth import SigningAgent
+
+    # Generates an Ed25519 keypair and writes it to ~/.signet/keys/demo-bot.key.
+    # Pass `passphrase=...` to encrypt the private key at rest.
+    SigningAgent.create("demo-bot", owner="demo")
+    ```
+
+    <Warning>
+    Without a passphrase, the private key is stored unencrypted. For production,
+    pass `passphrase=...` to `SigningAgent.create` and the subsequent `SigningAgent(...)` constructor.
+    </Warning>
+  </Step>
+  <Step title="Attach the callback and invoke a tool">
+    ```python
+    import ast
+    import operator as op
+
+    from langchain.tools import tool
+
+    from signet_auth import SigningAgent
+    from signet_auth.langchain import SignetCallbackHandler
+
+
+    @tool
+    def calculator(expression: str) -> str:
+        """Evaluate a mathematical expression, e.g. '2 + 2 * 3'."""
+        ops = {ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv}
+
+        def _eval(node):
+            if isinstance(node, ast.Constant):
+                return node.value
+            if isinstance(node, ast.BinOp):
+                return ops[type(node.op)](_eval(node.left), _eval(node.right))
+            raise ValueError(f"disallowed expression node: {type(node).__name__}")
+
+        return str(_eval(ast.parse(expression, mode="eval").body))
+
+
+    signer = SigningAgent("demo-bot")
+    handler = SignetCallbackHandler(signer, target="langchain://demo")
+
+    # Direct tool invocation — the callback records a start and an end receipt.
+    result = calculator.invoke(
+        {"expression": "142 * 37"},
+        config={"callbacks": [handler]},
+    )
+    print(result)  # "5254"
+    print(f"Receipts emitted: {len(handler.receipts)}")  # 2
+    ```
+  </Step>
+  <Step title="Inspect the receipts">
+    ```python
+    for r in handler.receipts:
+        print(r.id, r.action.tool, r.ts)
+    ```
+
+    Each tool call produces a start receipt followed by an end or error receipt. Every receipt in `handler.receipts` is also appended to the on-disk audit log (by default at `~/.signet/audit/`).
+  </Step>
+</Steps>
+
+<Info>
+When the callback is driven by an `AgentExecutor` or a LangGraph agent, receipts are recorded only when the underlying model actually chooses to call a tool. The direct `calculator.invoke(...)` form above is deterministic; agent-routed calls depend on model behavior.
+</Info>
+
+<Info>
+For async chains, swap `SignetCallbackHandler` for `AsyncSignetCallbackHandler` from the same module. The async handler satisfies LangChain's `AsyncCallbackHandler` interface for use with `ainvoke` and `astream`.
+</Info>
+
+## Verification
+
+Verification is offline. The Python package exposes audit-log verification directly:
+
+```python
+from signet_auth import SigningAgent
+
+agent = SigningAgent("demo-bot")
+agent.audit_verify_chain()       # checks prev_hash / record_hash links
+agent.audit_verify_signatures()  # checks signatures on this agent's records
+```
+
+Both methods read the audit log under `SIGNET_HOME` (default `~/.signet/audit/`) and return a structured result that flags any integrity or signature failures.
+
+The standalone `signet` CLI (Rust crate `signet-cli`, installed separately) offers the same checks for handing audit evidence to someone who does not have the Python package:
+
+```shell
+cargo install signet-cli
+signet verify --chain
+signet audit --verify
+```
+
+## Resources
+
+- [Signet on GitHub](https://github.com/Prismer-AI/signet)
+- [Full LangChain compliance example](https://github.com/Prismer-AI/signet/tree/main/examples/langchain-compliance)
+- [`signet-auth` on PyPI](https://pypi.org/project/signet-auth/)
+- [`signet-cli` on crates.io](https://crates.io/crates/signet-cli)
