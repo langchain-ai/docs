@@ -242,14 +242,75 @@ jobs:
     if: github.event_name == 'pull_request' && needs.create-preview.result == 'success'
 
     steps:
+      - name: Trigger Mintlify preview deployment
+        id: mintlify
+        env:
+          MINTLIFY_API_KEY: ${{ secrets.MINTLIFY_API_KEY }}
+          MINTLIFY_PROJECT_ID: ${{ secrets.MINTLIFY_PROJECT_ID }}
+          BRANCH: ${{ needs.create-preview.outputs.preview_branch }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${MINTLIFY_API_KEY:-}" ] || [ -z "${MINTLIFY_PROJECT_ID:-}" ]; then
+            echo "Missing required secrets."
+            echo "Set secrets.MINTLIFY_API_KEY (admin key starting with mint_) and secrets.MINTLIFY_PROJECT_ID."
+            exit 1
+          fi
+
+          if [ -z "${BRANCH:-}" ]; then
+            echo "Missing preview branch name from create-preview job."
+            exit 1
+          fi
+
+          echo "Triggering Mintlify preview for branch: ${BRANCH}"
+
+          response="$(curl -sS -X POST \
+            "https://api.mintlify.com/v1/project/preview/${MINTLIFY_PROJECT_ID}" \
+            -H "Authorization: Bearer ${MINTLIFY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            --data "{\"branch\":\"${BRANCH}\"}")"
+
+          RESPONSE="$response" python - <<'PY'
+          import json
+          import os
+          import sys
+
+          response = os.environ.get("RESPONSE", "")
+          try:
+            data = json.loads(response) if response else {}
+          except Exception:
+            print("Failed to parse Mintlify API response as JSON.", file=sys.stderr)
+            print(response, file=sys.stderr)
+            sys.exit(1)
+
+          status_id = data.get("statusId", "")
+          preview_url = data.get("previewUrl", "")
+          error = data.get("error", "")
+
+          if error and not (status_id or preview_url):
+            print(f"Mintlify API error: {error}", file=sys.stderr)
+            sys.exit(1)
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as f:
+            f.write(f"status_id={status_id}\n")
+            f.write(f"preview_url={preview_url}\n")
+          PY
+
       - name: Comment on PR
         uses: actions/github-script@v8
         with:
           script: |
             const preview = `${{ needs.create-preview.outputs.preview_branch }}`;
+            const previewUrl = `${{ steps.mintlify.outputs.preview_url }}`;
+            const statusId = `${{ steps.mintlify.outputs.status_id }}`;
+            const lines = [];
+            lines.push(`Mintlify preview branch generated: \`${preview}\``);
+            if (previewUrl) lines.push(`Preview URL: ${previewUrl}`);
+            if (statusId) lines.push(`Status ID: \`${statusId}\``);
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `Mintlify preview ID generated: ${preview}`
+              body: lines.join('\n')
             });
