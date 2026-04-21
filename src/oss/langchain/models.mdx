@@ -1682,3 +1682,304 @@ responseMessage.response_metadata.logprobs.content.slice(0, 5);
 ```
 :::
 
+### Token usage
+
+A number of model providers return token usage information as part of the invocation response. When available, this information will be included on the @[`AIMessage`] objects produced by the corresponding model. For more details, see the [messages](/oss/langchain/messages) guide.
+
+:::python
+<Note>
+    Some provider APIs, notably OpenAI and Azure OpenAI chat completions, require users opt-in to receiving token usage data in streaming contexts. See the [streaming usage metadata](/oss/integrations/chat/openai#streaming-usage-metadata) section of the integration guide for details.
+</Note>
+:::
+
+:::python
+You can track aggregate token counts across models in an application using either a callback or context manager, as shown below:
+
+<Tabs>
+    <Tab title="Callback handler">
+        ```python
+        from langchain.chat_models import init_chat_model
+        from langchain_core.callbacks import UsageMetadataCallbackHandler
+
+        model_1 = init_chat_model(model="gpt-5.4-mini")
+        model_2 = init_chat_model(model="claude-haiku-4-5-20251001")
+
+        callback = UsageMetadataCallbackHandler()
+        result_1 = model_1.invoke("Hello", config={"callbacks": [callback]})
+        result_2 = model_2.invoke("Hello", config={"callbacks": [callback]})
+        print(callback.usage_metadata)
+        ```
+        ```python
+        {
+            'gpt-5.4-mini': {
+                'input_tokens': 8,
+                'output_tokens': 10,
+                'total_tokens': 18,
+                'input_token_details': {'audio': 0, 'cache_read': 0},
+                'output_token_details': {'audio': 0, 'reasoning': 0}
+            },
+            'claude-haiku-4-5-20251001': {
+                'input_tokens': 8,
+                'output_tokens': 21,
+                'total_tokens': 29,
+                'input_token_details': {'cache_read': 0, 'cache_creation': 0}
+            }
+        }
+        ```
+    </Tab>
+    <Tab title="Context manager">
+        ```python
+        from langchain.chat_models import init_chat_model
+        from langchain_core.callbacks import get_usage_metadata_callback
+
+        model_1 = init_chat_model(model="gpt-5.4-mini")
+        model_2 = init_chat_model(model="claude-haiku-4-5-20251001")
+
+        with get_usage_metadata_callback() as cb:
+            model_1.invoke("Hello")
+            model_2.invoke("Hello")
+            print(cb.usage_metadata)
+        ```
+        ```python
+        {
+            'gpt-5.4-mini': {
+                'input_tokens': 8,
+                'output_tokens': 10,
+                'total_tokens': 18,
+                'input_token_details': {'audio': 0, 'cache_read': 0},
+                'output_token_details': {'audio': 0, 'reasoning': 0}
+            },
+            'claude-haiku-4-5-20251001': {
+                'input_tokens': 8,
+                'output_tokens': 21,
+                'total_tokens': 29,
+                'input_token_details': {'cache_read': 0, 'cache_creation': 0}
+            }
+        }
+        ```
+    </Tab>
+</Tabs>
+:::
+
+### Invocation config
+
+:::python
+When invoking a model, you can pass additional configuration through the `config` parameter using a @[`RunnableConfig`] dictionary. This provides run-time control over execution behavior, callbacks, and metadata tracking.
+:::
+
+:::js
+When invoking a model, you can pass additional configuration through the `config` parameter using a @[`RunnableConfig`] object. This provides run-time control over execution behavior, callbacks, and metadata tracking.
+:::
+
+Common configuration options include:
+
+:::python
+```python Invocation with config
+response = model.invoke(
+    "Tell me a joke",
+    config={
+        "run_name": "joke_generation",      # Custom name for this run
+        "tags": ["humor", "demo"],          # Tags for categorization
+        "metadata": {"user_id": "123"},     # Custom metadata
+        "callbacks": [my_callback_handler], # Callback handlers
+    }
+)
+```
+:::
+
+:::js
+```typescript Invocation with config
+const response = await model.invoke(
+    "Tell me a joke",
+    {
+        runName: "joke_generation",      // Custom name for this run
+        tags: ["humor", "demo"],          // Tags for categorization
+        metadata: {"user_id": "123"},     // Custom metadata
+        callbacks: [my_callback_handler], // Callback handlers
+    }
+)
+```
+:::
+
+These configuration values are particularly useful when:
+- Debugging with [LangSmith](/langsmith/home) tracing
+- Implementing custom logging or monitoring
+- Controlling resource usage in production
+- Tracking invocations across complex pipelines
+
+:::python
+<Accordion title="Key configuration attributes">
+    <ParamField body="run_name" type="string">
+        Identifies this specific invocation in logs and traces. Not inherited by sub-calls.
+    </ParamField>
+
+    <ParamField body="tags" type="string[]">
+        Labels inherited by all sub-calls for filtering and organization in debugging tools.
+    </ParamField>
+
+    <ParamField body="metadata" type="object">
+        Custom key-value pairs for tracking additional context, inherited by all sub-calls.
+    </ParamField>
+
+    <ParamField body="max_concurrency" type="number">
+        Controls the maximum number of parallel calls when using @[`batch()`][BaseChatModel.batch] or @[`batch_as_completed()`][BaseChatModel.batch_as_completed].
+    </ParamField>
+
+    <ParamField body="callbacks" type="array">
+        Handlers for monitoring and responding to events during execution.
+    </ParamField>
+
+    <ParamField body="recursion_limit" type="number">
+        Maximum recursion depth for chains to prevent infinite loops in complex pipelines.
+    </ParamField>
+</Accordion>
+:::
+
+:::js
+<Accordion title="Key configuration attributes">
+    <ParamField body="runName" type="string">
+        Identifies this specific invocation in logs and traces. Not inherited by sub-calls.
+    </ParamField>
+
+    <ParamField body="tags" type="string[]">
+        Labels inherited by all sub-calls for filtering and organization in debugging tools.
+    </ParamField>
+
+    <ParamField body="metadata" type="object">
+        Custom key-value pairs for tracking additional context, inherited by all sub-calls.
+    </ParamField>
+
+    <ParamField body="maxConcurrency" type="number">
+        Controls the maximum number of parallel calls when using `batch()`.
+    </ParamField>
+
+    <ParamField body="callbacks" type="CallbackHandler[]">
+        Handlers for monitoring and responding to events during execution.
+    </ParamField>
+
+    <ParamField body="recursion_limit" type="number">
+        Maximum recursion depth for chains to prevent infinite loops in complex pipelines.
+    </ParamField>
+</Accordion>
+:::
+
+<Tip>
+    See full @[`RunnableConfig`] reference for all supported attributes.
+</Tip>
+
+:::python
+### Configurable models
+
+You can also create a runtime-configurable model by specifying @[`configurable_fields`][BaseChatModel.configurable_fields]. If you don't specify a model value, then `'model'` and `'model_provider'` will be configurable by default.
+
+```python
+from langchain.chat_models import init_chat_model
+
+configurable_model = init_chat_model(temperature=0)
+
+configurable_model.invoke(
+    "what's your name",
+    config={"configurable": {"model": "gpt-5-nano"}},  # Run with GPT-5-Nano
+)
+configurable_model.invoke(
+    "what's your name",
+    config={"configurable": {"model": "claude-sonnet-4-6"}},  # Run with Claude
+)
+```
+
+<Accordion title="Configurable model with default values">
+    We can create a configurable model with default model values, specify which parameters are configurable, and add prefixes to configurable params:
+
+    ```python
+    first_model = init_chat_model(
+            model="gpt-5.4-mini",
+            temperature=0,
+            configurable_fields=("model", "model_provider", "temperature", "max_tokens"),
+            config_prefix="first",  # Useful when you have a chain with multiple models
+    )
+
+    first_model.invoke("what's your name")
+    ```
+
+    ```python
+    first_model.invoke(
+        "what's your name",
+        config={
+            "configurable": {
+                "first_model": "claude-sonnet-4-6",
+                "first_temperature": 0.5,
+                "first_max_tokens": 100,
+            }
+        },
+    )
+    ```
+
+    See the @[`init_chat_model`] reference for more details on `configurable_fields` and `config_prefix`.
+</Accordion>
+
+<Accordion title="Using a configurable model declaratively">
+    We can call declarative operations like `bind_tools`, `with_structured_output`, `with_configurable`, etc. on a configurable model and chain a configurable model in the same way that we would a regularly instantiated chat model object.
+
+    ```python
+    from pydantic import BaseModel, Field
+
+
+    class GetWeather(BaseModel):
+        """Get the current weather in a given location"""
+
+            location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+
+    class GetPopulation(BaseModel):
+        """Get the current population in a given location"""
+
+            location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+
+    model = init_chat_model(temperature=0)
+    model_with_tools = model.bind_tools([GetWeather, GetPopulation])
+
+    model_with_tools.invoke(
+        "what's bigger in 2024 LA or NYC", config={"configurable": {"model": "gpt-5.4-mini"}}
+    ).tool_calls
+    ```
+    ```
+    [
+        {
+            'name': 'GetPopulation',
+            'args': {'location': 'Los Angeles, CA'},
+            'id': 'call_Ga9m8FAArIyEjItHmztPYA22',
+            'type': 'tool_call'
+        },
+        {
+            'name': 'GetPopulation',
+            'args': {'location': 'New York, NY'},
+            'id': 'call_jh2dEvBaAHRaw5JUDthOs7rt',
+            'type': 'tool_call'
+        }
+    ]
+    ```
+    ```python
+    model_with_tools.invoke(
+        "what's bigger in 2024 LA or NYC",
+        config={"configurable": {"model": "claude-sonnet-4-6"}},
+    ).tool_calls
+    ```
+    ```
+    [
+        {
+            'name': 'GetPopulation',
+            'args': {'location': 'Los Angeles, CA'},
+            'id': 'toolu_01JMufPf4F4t2zLj7miFeqXp',
+            'type': 'tool_call'
+        },
+        {
+            'name': 'GetPopulation',
+            'args': {'location': 'New York City, NY'},
+            'id': 'toolu_01RQBHcE8kEEbYTuuS8WqY1u',
+            'type': 'tool_call'
+        }
+    ]
+    ```
+</Accordion>
+:::
