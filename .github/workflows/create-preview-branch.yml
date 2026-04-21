@@ -360,12 +360,84 @@ jobs:
         with:
           script: |
             const preview = `${{ needs.create-preview.outputs.preview_branch }}`;
-            const previewUrl = `${{ steps.wait.outputs.preview_url || steps.mintlify.outputs.preview_url }}`;
+            const previewUrlRaw = `${{ steps.wait.outputs.preview_url || steps.mintlify.outputs.preview_url }}`;
             const statusId = `${{ steps.mintlify.outputs.status_id }}`;
+
+            const COMMENT_MARKER = '<!-- mintlify-docs-preview -->';
+
+            /** Map src/... .mdx path to site path (no leading slash), or null */
+            function fileToSitePath(filename) {
+              if (!filename || (!filename.endsWith('.mdx') && !filename.endsWith('.md'))) return null;
+              if (!filename.startsWith('src/')) return null;
+              let p = filename.slice('src/'.length);
+              if (p.endsWith('.mdx')) p = p.slice(0, -'.mdx'.length);
+              else if (p.endsWith('.md')) p = p.slice(0, -'.md'.length);
+              const base = p.split('/').pop();
+              if (base === 'index') {
+                const dir = p.slice(0, Math.max(0, p.length - '/index'.length));
+                return dir;
+              }
+              return p;
+            }
+
+            function pageUrl(previewBase, filename) {
+              const sitePath = fileToSitePath(filename);
+              if (!sitePath || !previewBase) return null;
+              const base = previewBase.replace(/\/$/, '');
+              const hash = encodeURIComponent(filename.split('/').pop() || filename);
+              return `${base}/${sitePath}#${hash}`;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const mdFiles = files.filter(f =>
+              f.filename.endsWith('.mdx') || f.filename.endsWith('.md')
+            );
+
+            const ranked = [...mdFiles].sort((a, b) => {
+              const score = (x) =>
+                (x.changes ?? 0) ||
+                ((x.additions ?? 0) + (x.deletions ?? 0));
+              return score(b) - score(a);
+            });
+
+            const MAX_PAGES = 5;
+            const rankedRoutable = ranked.filter(f => fileToSitePath(f.filename));
+            const top = rankedRoutable.slice(0, MAX_PAGES);
+            const truncated = rankedRoutable.length > MAX_PAGES;
+
             const lines = [];
+            lines.push(COMMENT_MARKER);
             lines.push(`Mintlify preview branch generated: \`${preview}\``);
-            if (previewUrl) lines.push(`Preview URL: ${previewUrl}`);
-            if (statusId) lines.push(`Status ID: \`${statusId}\``);
+            if (previewUrlRaw) {
+              lines.push('');
+              lines.push(`Site preview: ${previewUrlRaw}`);
+            }
+            if (top.length && previewUrlRaw) {
+              lines.push('');
+              lines.push('Changed documentation pages (preview deep links):');
+              for (const f of top) {
+                const u = pageUrl(previewUrlRaw, f.filename);
+                if (u) lines.push(`- [\`${f.filename}\`](${u})`);
+                else lines.push(`- \`${f.filename}\` _(could not build preview URL)_`);
+              }
+              if (truncated) {
+                lines.push('');
+                lines.push(
+                  `_Only the top ${MAX_PAGES} changed markdown files by diff size are listed._`
+                );
+              }
+            }
+            if (statusId) {
+              lines.push('');
+              lines.push(`Status ID: \`${statusId}\``);
+            }
+
             const body = lines.join('\n');
 
             // Remove prior preview comments created by this workflow
@@ -379,6 +451,7 @@ jobs:
             const shouldDelete = (commentBody) => {
               if (!commentBody) return false;
               return (
+                commentBody.includes(COMMENT_MARKER) ||
                 commentBody.includes('Mintlify preview branch generated:') ||
                 commentBody.includes('Mintlify preview ID generated:') ||
                 commentBody.includes('## Mintlify preview')
