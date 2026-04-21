@@ -34,18 +34,6 @@ function normalizeSkillsStoreKey(key: string): string {
   return k.startsWith("/") ? k : `/${k}`;
 }
 
-function storeValueToUint8Array(value: FileData): Uint8Array {
-  const encoder = new TextEncoder();
-  const raw = value.content;
-  if (Array.isArray(raw)) {
-    return encoder.encode(raw.join("\n"));
-  }
-  if (typeof raw === "string") {
-    return encoder.encode(raw);
-  }
-  return new Uint8Array();
-}
-
 async function walkFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
@@ -89,13 +77,17 @@ function createSkillSandboxSyncMiddleware(backend: CompositeBackend) {
         );
       }
 
+      const encoder = new TextEncoder();
       const files: Array<[string, Uint8Array]> = [];
 
       for (const item of await store.search([...SKILLS_SHARED_NAMESPACE])) {
         const normalized = normalizeSkillsStoreKey(String(item.key));
         const data = item.value as FileData;
         // CompositeBackend routes paths and batches uploads to the right backend.
-        files.push([`/skills${normalized}`, storeValueToUint8Array(data)]);
+        files.push([
+          `/skills${normalized}`,
+          encoder.encode(data.content.join("\n")),
+        ]);
       }
 
       if (files.length > 0) await backend.uploadFiles(files);

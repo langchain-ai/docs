@@ -21,15 +21,6 @@ from langgraph.store.memory import InMemoryStore
 SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
 
 
-def _store_value_to_bytes(value: dict[str, Any]) -> bytes:
-    raw = value["content"]
-    if isinstance(raw, list):
-        return ("\n".join(raw)).encode("utf-8")
-    if isinstance(raw, str):
-        return raw.encode("utf-8")
-    return bytes(raw)
-
-
 class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
     """Copy shared skill files from the store into the sandbox before each agent run."""
 
@@ -48,7 +39,7 @@ class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
                 raise ValueError(msg)
             normalized = key if key.startswith("/") else f"/{key}"
             # CompositeBackend routes paths and batches uploads to the right backend.
-            files.append((f"/skills{normalized}", _store_value_to_bytes(item.value)))
+            files.append((f"/skills{normalized}", item.value["content"].encode()))
 
         if files:
             await self.backend.aupload_files(files)
