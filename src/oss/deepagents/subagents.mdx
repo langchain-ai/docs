@@ -6,7 +6,7 @@ description: Learn how to use subagents to delegate work and keep context clean
 import SubagentBasicPy from '/snippets/subagent-basic-py.mdx';
 import SubagentBasicJs from '/snippets/subagent-basic-js.mdx';
 
-Deep Agents can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
+A deep agent can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
 
 This page covers **synchronous** subagents, where the supervisor blocks until the subagent finishes. For long-running tasks, parallel workstreams, or cases where you need mid-flight steering and cancellation, see [Async subagents](/oss/deepagents/async-subagents).
 
@@ -55,11 +55,12 @@ For most use cases, define subagents as dictionaries matching the @[`SubAgent`] 
 | `name` | `str` | Required. Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
 | `description` | `str` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
 | `system_prompt` | `str` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
-| `tools` | `list[Callable]` | Required. Tools the subagent can use. Custom subagents specify their own. Keep this minimal and include only what's needed.<br></br>Does not inherit from main agent. |
+| `tools` | `list[Callable]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
 | `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.4'` (using the `'provider:model'` format) or a LangChain chat model object (`init_chat_model("gpt-5.4")` or `ChatOpenAI(model="gpt-5.4")`). |
 | `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from main agent. |
 | `interrupt_on` | `dict[str, bool]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Subagent value overrides main agent. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
 | `skills` | `list[str]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent @[`SkillsMiddleware`] instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
+| `response_format` | `ResponseFormat` | Optional. [Structured output](/oss/langchain/structured-output) schema for the subagent. When set, the parent receives the subagent's result as JSON instead of free-form text. Accepts Pydantic models, `ToolStrategy(...)`, `ProviderStrategy(...)`, or a raw schema type. See [Structured output](#structured-output). |
 | `permissions` | `list[FilesystemPermission]` | Optional. [Filesystem permission rules](/oss/deepagents/permissions) for the subagent. When set, **replaces** the parent agent's permissions entirely.<br></br>Inherits from main agent by default. |
 
 :::
@@ -71,17 +72,20 @@ For most use cases, define subagents as dictionaries matching the @[`SubAgent`] 
 | `name` | `str` | Required. Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
 | `description` | `str` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
 | `system_prompt` | `str` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
-| `tools` | `list[Callable]` | Required. Tools the subagent can use. Custom subagents specify their own. Keep this minimal and include only what's needed.<br></br>Does not inherit from main agent. |
+| `tools` | `list[Callable]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
 | `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.4'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5.4")` or `new ChatOpenAI({ model: "gpt-5.4" })`). |
 | `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from main agent. |
 | `interrupt_on` | `dict[str, bool]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Subagent value overrides main agent. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
 | `skills` | `list[str]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent @[`SkillsMiddleware`] instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
+| `responseFormat` | `ResponseFormat` | Optional. [Structured output](/oss/langchain/structured-output) schema for the subagent. When set, the parent receives the subagent's result as JSON instead of free-form text. Accepts Zod schemas, JSON schema objects, `toolStrategy(...)`, or `providerStrategy(...)`. See [Structured output](#structured-output). |
 
 :::
 
 
 <Tip>
     **CLI users:** You can also define subagents as `AGENTS.md` files on disk instead of in code. The `name`, `description`, and `model` fields map to YAML frontmatter, and the markdown body becomes the `system_prompt`. See [Custom subagents](/oss/deepagents/cli/overview#subagents) for the file format.
+
+    **Deploy users:** Define subagents as directories under `subagents/` with their own `deepagents.toml` and `AGENTS.md`. The bundler auto-discovers them. See [Deploy subagents](/oss/deepagents/deploy#subagents) for the full configuration reference.
 </Tip>
 
 ### CompiledSubAgent
@@ -216,32 +220,98 @@ agent = create_deep_agent(
 )
 ```
 
-As you prompt your deepagents, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
+As you prompt your deep agent, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
 In this case the subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in any associated agent run metadata:
 
 ![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
 
 ## Structured output
 
-All subagents support [structured output](/oss/langchain/structured-output) which you can use to validate the subagent's output.
+Subagents support [structured output](/oss/langchain/structured-output), so the parent agent receives predictable, parseable JSON instead of free-form text.
 
 :::python
-You can set a desired structured output schema by passing it as the `response_format` argument to the call to `create_agent()`.
-When the model generates the structured data, it’s captured and validated.
-The structured object itself is not returned to the parent agent.
-When using structured output with subagents, include the structured data in the `ToolMessage`.
-:::
-:::js
-You can set a desired structured output schema by passing it as the `responseFormat` argument to the call to `createAgent()`.
-When the model generates the structured data, it’s captured and validated. The structured object itself is not returned to the parent agent.
-When using structured output with subagents, include the structured data in the `ToolMessage`.
+Pass `response_format` on the subagent config. When the subagent finishes, its structured response is JSON-serialized and returned as the `ToolMessage` content to the parent agent. The schema accepts anything supported by @[`create_agent`]: Pydantic models, `ToolStrategy(...)`, `ProviderStrategy(...)`, or a raw schema type.
+
+```python
+from pydantic import BaseModel, Field
+
+from deepagents import create_deep_agent
+
+
+class ResearchFindings(BaseModel):
+    """Structured findings from a research task."""
+    summary: str = Field(description="Summary of findings")
+    confidence: float = Field(description="Confidence score from 0 to 1")
+    sources: list[str] = Field(description="List of source URLs")
+
+research_subagent = {
+    "name": "researcher",
+    "description": "Researches topics and returns structured findings",
+    "system_prompt": "Research the given topic thoroughly. Return your findings.",
+    "tools": [web_search],
+    "response_format": ResearchFindings,
+}
+
+agent = create_deep_agent(
+    model="claude-sonnet-4-6",
+    subagents=[research_subagent],
+)
+
+result = await agent.ainvoke(
+    {"messages": [{"role": "user", "content": "Research recent advances in quantum computing"}]}
+)
+
+# The parent's ToolMessage contains JSON-serialized structured data:
+# '{"summary": "...", "confidence": 0.87, "sources": ["https://..."]}'
+```
 :::
 
-For more information, see [response format](/oss/langchain/structured-output#response-format).
+:::js
+<Note>
+Structured output for subagents requires `deepagents` version 1.8.4 or newer.
+</Note>
+
+Pass `responseFormat` on the subagent config. When the subagent finishes, its structured response is JSON-serialized and returned as the `ToolMessage` content to the parent agent. The schema accepts anything supported by `createAgent`: Zod schemas, JSON schema objects, `toolStrategy(...)`, or `providerStrategy(...)`.
+
+```typescript
+import { z } from "zod";
+import { createDeepAgent } from "deepagents";
+
+const ResearchFindings = z.object({
+  summary: z.string().describe("Summary of findings"),
+  confidence: z.number().describe("Confidence score from 0 to 1"),
+  sources: z.array(z.string()).describe("List of source URLs"),
+});
+
+const researchSubagent = {
+  name: "researcher",
+  description: "Researches topics and returns structured findings",
+  systemPrompt: "Research the given topic thoroughly. Return your findings.",
+  tools: [webSearch],
+  responseFormat: ResearchFindings,
+};
+
+const agent = createDeepAgent({
+  model: "claude-sonnet-4-6",
+  subagents: [researchSubagent],
+});
+
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "Research recent advances in quantum computing" }],
+});
+
+// The parent's ToolMessage contains JSON-serialized structured data:
+// '{"summary": "...", "confidence": 0.87, "sources": ["https://..."]}'
+```
+:::
+
+Without `response_format`, the parent receives the subagent's last message text as-is. With it, the parent always gets valid JSON matching the schema, which is useful when the parent needs to process the result programmatically or pass it to downstream tools.
+
+For full details on schema types and strategies (tool calling vs. provider-native), see [Structured output](/oss/langchain/structured-output).
 
 ## The general-purpose subagent
 
-In addition to any user-defined subagents, Deep Agents have access to a `general-purpose` subagent at all times. This subagent:
+In addition to any user-defined subagents, every deep agent has access to a `general-purpose` subagent at all times. This subagent:
 
 - Has the same system prompt as the main agent
 - Has access to all the same tools

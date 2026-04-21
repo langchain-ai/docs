@@ -38,8 +38,10 @@ Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith
 | **`model`** | The LLM to use. Any provider works — see [supported models](/oss/deepagents/models#supported-models). |
 | **`AGENTS.md`** | The system prompt, loaded at the start of each session. |
 | **`skills`** | [Agent Skills](https://agentskills.io/) for specialized knowledge and actions. Skills are synced into the sandbox so the agent can execute them at runtime. See [skills docs](/oss/deepagents/skills). |
+| **``user/``** | Per-user writable memory. If a `AGENTS.md` template is present in the `user` folder, the agents seeds the template per user (if the folder is empty the agents creates an empty `AGENTS.md`). Writable at runtime. Preloaded into the agent's context via the memory middleware. |
 | **`mcp.json`** | MCP tools (HTTP/SSE). See [MCP docs](/oss/langchain/mcp). |
-| **`sandbox`** | Optional execution environment. See [sandbox providers](#sandbox-providers). |
+| **`subagents/`** | Specialized [subagents](/oss/deepagents/subagents) the main agent can delegate to. Each subdirectory contains its own `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. See [subagents](#subagents). |
+| **`sandbox`** | Optional execution environment. Thread-scoped sandboxes are provisioned per thread and will be re-created if the server restarts. Use `scope = "assistant"` if you need sandbox state that persists across threads. See [sandbox providers](#sandbox-providers). |
 
 ## Install
 
@@ -69,6 +71,8 @@ By default, `deepagents deploy` looks for `deepagents.toml` in the current direc
 deepagents deploy --config path/to/deepagents.toml
 ```
 
+`deepagents deploy` fully rebuils and creates a new revision on every invocation. Use `deepagents dev` for local iteration.
+
 ### `deepagents init`
 
 Scaffold a new agent project:
@@ -87,7 +91,7 @@ This creates the following files:
 | `mcp.json` | MCP server configuration (empty by default) |
 | `skills/` | Directory for [Agent Skills](https://agentskills.io/), with an example `review` skill |
 
-After init, edit `AGENTS.md` with your agent's instructions and run `deepagents deploy`.
+After init, edit `AGENTS.md` with your agent's instructions and run `deepagents deploy`. Optionally add a `user/` directory with per-user memory templates — see [User Memory](#user-memory).
 
 ## Project layout
 
@@ -99,17 +103,25 @@ my-agent/
 ├── AGENTS.md
 ├── .env
 ├── mcp.json
-└── skills/
-    ├── code-review/
-    │   └── SKILL.md
-    └── data-analysis/
-        └── SKILL.md
+├── skills/
+│   ├── code-review/
+│   │   └── SKILL.md
+│   └── data-analysis/
+│       └── SKILL.md
+├── subagents/
+│   └── researcher/
+│       ├── deepagents.toml
+│       └── AGENTS.md
+└── user/
+    └── AGENTS.md
 ```
 
 | File/directory | Purpose | Required |
 | --- | --- | --- |
-| `AGENTS.md` | [Memory](/oss/deepagents/memory) for the agent. Provides persistent context (project conventions, instructions, preferences) that is always loaded at startup. | Yes |
-| `skills/` | Directory of [skill](/oss/deepagents/skills) definitions. Each subdirectory should contain a `SKILL.md` file. | No |
+| `AGENTS.md` | [Memory](/oss/deepagents/memory) for the agent. Provides persistent context (project conventions, instructions, preferences) that is always loaded at startup. Read-only at runtime. | Yes |
+| `skills/` | Directory of [skill](/oss/deepagents/skills) definitions. Each subdirectory should contain a `SKILL.md` file. Read-only at runtime. | No |
+| `user/` | Per-user writable memory. If a `AGENTS.md` template is present in the `user` folder, the agents seeds the template per user (if the folder is empty the agents creates an empty `AGENTS.md`). Writable at runtime. Preloaded into the agent's context via the memory middleware. | No |
+| `subagents/` | [Subagents](#subagents) the main agent can delegate to. Each subdirectory must contain a `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. Auto-discovered at bundle time. | No |
 | `mcp.json` | [MCP](https://modelcontextprotocol.io/) server configuration. Only `http` and `sse` transports are supported in deployed contexts. | No |
 | `.env` | Environment variables (API keys, secrets). Placed alongside `deepagents.toml` at the project root. | No |
 
@@ -147,11 +159,13 @@ model = "google_genai:gemini-3.1-pro-preview"
     The `name` field is the only required value in the entire configuration file. Everything else has defaults.
 </Note>
 
-Skills, MCP servers, and model dependencies are auto-detected from the project layout — you don't declare them in `deepagents.toml`:
+Skills, user memories, subagents, MCP servers, and model dependencies are auto-detected from the project layout:
 
 - **Skills**: the bundler recursively scans `skills/`, skipping hidden dotfiles, and bundles the rest.
+- **User memory**: if `user/` exists, a single `AGENTS.md` is bundled as per-user memory (from `user/AGENTS.md` if present, otherwise empty). At runtime, each user gets their own copy (seeded on first access, never overwritten). The agent can read from and write to this file.
+- **Subagents**: if `subagents/` exists, the bundler scans for valid subdirectories (each must contain `deepagents.toml` and `AGENTS.md`). The main agent receives a `task` tool to delegate work to each subagent by name. See [subagents](#subagents).
 - **MCP servers**: if `mcp.json` exists, it is included in the deployment and [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) is added as a dependency. Only HTTP/SSE transports are supported (stdio is rejected at bundle time).
-- **Model dependencies**: the `provider:` prefix in the `model` field determines the required `langchain-*` package (e.g., `google_genai` -> `langchain-google-genai`).
+- **Model dependencies**: the `provider:` prefix in the `model` field determines the required `langchain-*` package (e.g., `google_genai` -> `langchain-google-genai`). This includes models specified in subagent configs.
 - **Sandbox dependencies**: the `[sandbox].provider` value maps to its partner package (e.g., `daytona` -> `langchain-daytona`).
 
 ### `[sandbox]`
@@ -217,12 +231,23 @@ The deployed server exposes:
 
 ## Examples
 
-A content writing agent that only needs a model and system prompt, with no code execution:
+A content writing agent with per-user preferences that the agent can update:
 
 ```toml deepagents.toml
 [agent]
 name = "deepagents-deploy-content-writer"
 model = "google_genai:gemini-3.1-pro-preview"
+```
+
+```txt
+my-content-writer/
+├── deepagents.toml
+├── AGENTS.md
+├── skills/
+│   ├── blog-post/SKILL.md
+│   └── social-media/SKILL.md
+└── user/
+    └── AGENTS.md          # writable — agent learns user preferences
 ```
 
 A coding agent with a LangSmith sandbox for running code:
@@ -237,3 +262,171 @@ provider = "langsmith"
 template = "coding-agent"
 image = "python:3.12"
 ```
+
+A GTM strategy agent that delegates research to a subagent:
+
+```txt
+my-gtm-agent/
+├── deepagents.toml
+├── AGENTS.md
+├── skills/
+│   └── competitor-analysis/
+│       └── SKILL.md
+└── subagents/
+    └── market-researcher/
+        ├── deepagents.toml
+        ├── AGENTS.md
+        └── skills/
+            └── analyze-market/
+                └── SKILL.md
+```
+
+## User Memory
+
+User memory gives each user their own writable `AGENTS.md` that persists across conversations. To enable it, create a `user/` directory at your project root:
+
+```txt
+user/
+└── AGENTS.md          # optional — seeded as empty if not provided
+```
+
+If the `user/` directory exists (even if empty), every user gets their own `AGENTS.md` at `/memories/user/AGENTS.md`. If you provide `user/AGENTS.md`, its contents are used as the initial template; otherwise an empty file is seeded.
+
+At runtime, user memory is scoped per user via custom auth (`runtime.server_info.user.identity`). The first time a user interacts with the agent, their namespace is seeded with the template. Subsequent interactions reuse the existing file — the agent's edits persist, and redeployments never overwrite user data.
+
+### How it works
+
+1. **Bundle time** — the bundler reads `user/AGENTS.md` (or uses an empty string) and includes it in the seed payload.
+2. **Runtime (first access)** — when the agent sees a `user_id` for the first time, it writes the `AGENTS.md` template to the store under that user's namespace. Existing entries are never overwritten.
+3. **Preloaded** — the user `AGENTS.md` is passed to the memory middleware, so the agent sees its contents in context at the start of every conversation.
+4. **Writable** — the agent can update it using the `edit_file` tool. The shared `AGENTS.md` file and skills folder are read-only.
+
+### Permissions
+
+| Path | Writable | Scope |
+| --- | --- | --- |
+| `/memories/AGENTS.md` | No | Shared (assistant-scoped) |
+| `/memories/skills/**` | No | Shared (assistant-scoped) |
+| `/memories/user/**` | Yes | Per-user (`user_id`-scoped) |
+| `/memories/subagents/<name>/**` | By subagent only | Per-subagent (isolated) |
+
+### User identity
+
+The `user_id` is resolved from custom auth via `runtime.user.identity`. The platform injects the authenticated user's identity automatically — no need to pass it through `configurable`. If no authenticated user is present, user memory features are gracefully skipped for that invocation.
+
+## Subagents
+
+Subagents let the main agent delegate specialized tasks to isolated child agents. Each subagent has its own system prompt, optional skills, and optional MCP tools. The main agent receives a `task` tool that dispatches work to subagents by name.
+
+For background on why subagents are useful and how they work at the SDK level, see [Subagents](/oss/deepagents/subagents).
+
+### Directory structure
+
+Create a `subagents/` directory at your project root. Each subdirectory is a subagent:
+
+```txt
+my-agent/
+├── deepagents.toml
+├── AGENTS.md
+└── subagents/
+    ├── researcher/
+    │   ├── deepagents.toml       # name, description, optional model override
+    │   ├── AGENTS.md             # subagent system prompt
+    │   ├── skills/               # optional — subagent-specific skills
+    │   │   └── analyze-market/
+    │   │       └── SKILL.md
+    │   └── mcp.json              # optional — HTTP/SSE MCP tools
+    └── writer/
+        ├── deepagents.toml
+        └── AGENTS.md
+```
+
+Each subagent subdirectory **must** contain:
+
+| File | Purpose |
+| --- | --- |
+| `deepagents.toml` | Subagent config with `[agent].name` and `[agent].description` |
+| `AGENTS.md` | System prompt for the subagent |
+
+Each subagent subdirectory **may** contain:
+
+| File | Purpose |
+| --- | --- |
+| `skills/` | Subagent-specific skills (with `SKILL.md` files) |
+| `mcp.json` | MCP server configuration (HTTP/SSE only; stdio is rejected) |
+
+### Subagent configuration
+
+<ResponseField name="name" type="string" required>
+    Unique identifier for the subagent. Must be unique across all subagents.
+</ResponseField>
+
+<ResponseField name="description" type="string" required>
+    What this subagent does. The main agent uses this to decide when to delegate. Must be non-empty.
+</ResponseField>
+
+<ResponseField name="model" type="string">
+    Model override in `provider:model` format. Omit to inherit the main agent's model.
+</ResponseField>
+
+```toml subagents/researcher/deepagents.toml
+[agent]
+name = "researcher"
+description = "Researches market trends, competitors, and target audiences"
+model = "anthropic:claude-haiku-4-5-20251001"
+```
+
+### Inheritance
+
+Subagents inherit some properties from the main agent by default:
+
+| Property | Inherited | Notes |
+| --- | --- | --- |
+| Model | Yes | Override with `model` in the subagent's `deepagents.toml` |
+| Tools | Yes | Override by adding `mcp.json` to the subagent directory |
+| Skills | No | Declare explicitly in the subagent's own `skills/` directory |
+
+### Memory isolation
+
+Each subagent gets a dedicated, isolated memory namespace at `/memories/subagents/<name>/`. The subagent's `AGENTS.md` and skills are seeded into this namespace at deploy time.
+
+| Path | Main agent | Subagent |
+| --- | --- | --- |
+| `/memories/AGENTS.md` | Read | No access |
+| `/memories/skills/**` | Read | No access |
+| `/memories/user/**` | Read + Write | No access |
+| `/memories/subagents/<name>/**` | Read | Read + Write |
+
+### Example
+
+A go-to-market agent that delegates research to a specialized subagent:
+
+```toml deepagents.toml
+[agent]
+name = "gtm-strategist"
+model = "anthropic:claude-sonnet-4-6"
+```
+
+```toml subagents/researcher/deepagents.toml
+[agent]
+name = "researcher"
+description = "Researches market trends, competitors, and target audiences to inform GTM strategy"
+model = "anthropic:claude-haiku-4-5-20251001"
+```
+
+```markdown subagents/researcher/AGENTS.md
+# Market Researcher
+
+You are a market research specialist. Your job is to gather and synthesize
+market data to support go-to-market decisions.
+
+## Focus Areas
+- Market sizing: TAM, SAM, SOM estimates
+- Competitor analysis: product positioning, pricing, market share
+- Audience segmentation: demographics, psychographics, buying behavior
+```
+
+## Limitations
+
+- **MCP: HTTP/SSE only.** Stdio transports are rejected at bundle time.
+- **No custom Python tools.** Use MCP servers to expose custom tool logic.
