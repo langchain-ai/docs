@@ -366,9 +366,37 @@ jobs:
             lines.push(`Mintlify preview branch generated: \`${preview}\``);
             if (previewUrl) lines.push(`Preview URL: ${previewUrl}`);
             if (statusId) lines.push(`Status ID: \`${statusId}\``);
+            const body = lines.join('\n');
+
+            // Remove prior preview comments created by this workflow
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const shouldDelete = (commentBody) => {
+              if (!commentBody) return false;
+              return (
+                commentBody.includes('Mintlify preview branch generated:') ||
+                commentBody.includes('Mintlify preview ID generated:') ||
+                commentBody.includes('## Mintlify preview')
+              );
+            };
+
+            const toDelete = comments.filter(c => c.user?.type === 'Bot' && shouldDelete(c.body));
+            for (const c of toDelete) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: c.id,
+              });
+            }
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: lines.join('\n')
+              body,
             });
