@@ -1,0 +1,442 @@
+---
+title: Manage contexts programmatically
+sidebarTitle: Manage contexts programmatically
+---
+
+You can use the LangSmith Python and TypeScript SDKs to manage **agent
+repos** and **skill repos** in the Context Hub programmatically: pull a
+context for use at runtime, push a new commit, list and search repos,
+check existence, and delete repos.
+
+## Install packages
+
+<CodeGroup>
+```bash pip
+pip install -U langsmith
+```
+
+```bash uv
+uv add langsmith
+```
+
+```bash TypeScript
+yarn add langsmith
+```
+</CodeGroup>
+
+## Configure environment variables
+
+If you already have `LANGSMITH_API_KEY` set for your workspace, you can
+skip this step. Otherwise, create one in **Settings > API Keys > Create
+API Key** in LangSmith.
+
+```bash
+export LANGSMITH_API_KEY="lsv2_..."
+```
+
+## Identifiers
+
+Most methods accept an `identifier` string that names a context repo.
+The accepted forms are:
+
+- `name` — resolves against the current workspace owner.
+- `owner/name` — fully qualified.
+- `owner/name:version` — pinned to a specific commit hash or tag.
+
+The optional `version` argument on pull methods overrides any version
+embedded in the identifier. If no version is provided, the latest commit
+is returned.
+
+## Schemas
+
+Contexts are made up of typed entries. An entry is either a file with
+inline content or a link to another agent or skill repo.
+
+<CodeGroup>
+```python Python
+from langsmith.schemas import (
+    AgentContext,
+    AgentEntry,
+    Entry,
+    FileEntry,
+    SkillContext,
+    SkillEntry,
+)
+
+# A file with inline content.
+file = FileEntry(content="You are a helpful assistant.")
+
+# A link to another agent repo (optionally pinned to a commit).
+agent_link = AgentEntry(repo_handle="email-assistant")
+
+# A link to a skill repo (optionally pinned to a commit).
+skill_link = SkillEntry(repo_handle="deep-research")
+```
+
+```typescript TypeScript
+import type {
+  AgentContext,
+  AgentEntry,
+  Entry,
+  FileEntry,
+  SkillContext,
+  SkillEntry,
+} from "langsmith/schemas";
+
+const file: FileEntry = {
+  type: "file",
+  content: "You are a helpful assistant.",
+};
+
+const agentLink: AgentEntry = {
+  type: "agent",
+  repo_handle: "email-assistant",
+};
+
+const skillLink: SkillEntry = {
+  type: "skill",
+  repo_handle: "deep-research",
+};
+```
+</CodeGroup>
+
+`AgentContext` and `SkillContext` are the response shapes returned when
+you pull a repo. Both contain:
+
+| Field         | Type                  | Description                                           |
+| ------------- | --------------------- | ----------------------------------------------------- |
+| `owner`       | `string`              | The handle of the repo owner.                         |
+| `repo`        | `string`              | The repo name.                                        |
+| `commit_id`   | `UUID` / `string`     | The unique ID of the commit.                          |
+| `commit_hash` | `string`              | The content-addressable commit hash.                  |
+| `files`       | `dict[str, Entry]`    | The files in the commit, keyed by their path.         |
+
+## Push an agent
+
+Create a new agent repo or commit a new version of an existing one. If
+the repo doesn't exist yet, it is created with the metadata you provide
+(`description`, `readme`, `tags`, `is_public`); if it already exists,
+those fields are patched only when explicitly passed.
+
+The method returns a URL pointing to the new commit in the LangSmith UI.
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+from langsmith.schemas import FileEntry
+
+client = Client()
+
+url = client.context.push_agent(
+    "email-assistant",
+    files={
+        "AGENTS.md": FileEntry(
+            content="You are an email triage assistant.",
+        ),
+        "tools.json": FileEntry(content='{"tools": []}'),
+    },
+    description="Triages and drafts replies to incoming email.",
+    tags=["email", "productivity"],
+    is_public=False,
+)
+print(url)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+const url = await client.pushAgent("email-assistant", {
+  files: {
+    "AGENTS.md": {
+      type: "file",
+      content: "You are an email triage assistant.",
+    },
+    "tools.json": { type: "file", content: '{"tools": []}' },
+  },
+  description: "Triages and drafts replies to incoming email.",
+  tags: ["email", "productivity"],
+  isPublic: false,
+});
+console.log(url);
+```
+</CodeGroup>
+
+### Parameters
+
+| Parameter                          | Type                                        | Description                                                                                  |
+| ---------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `identifier`                       | `string`                                    | The agent's identifier.                                                                      |
+| `files`                            | `dict[str, Entry \| None]`                  | Map of file path to `Entry`. Pass `None` / `null` to delete a path in this commit.           |
+| `parent_commit` / `parentCommit`   | `string` (optional)                         | Parent commit hash for optimistic concurrency. Must be 8–64 hex characters when provided.    |
+| `description`                      | `string` (optional)                         | Repo description; set on creation or patched on update.                                      |
+| `readme`                           | `string` (optional)                         | Repo readme content.                                                                         |
+| `tags`                             | `string[]` (optional)                       | Repo tags.                                                                                   |
+| `is_public` / `isPublic`           | `boolean` (optional)                        | Whether the repo is publicly discoverable.                                                   |
+
+## Push a skill
+
+Identical surface to `push_agent`, but commits to a skill repo. Use
+this for reusable capabilities that other agents can depend on.
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+from langsmith.schemas import FileEntry
+
+client = Client()
+
+url = client.context.push_skill(
+    "deep-research",
+    files={
+        "SKILL.md": FileEntry(content="Conduct deep multi-step research."),
+    },
+    description="Multi-step web research with citations.",
+    tags=["research"],
+)
+print(url)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+const url = await client.pushSkill("deep-research", {
+  files: {
+    "SKILL.md": {
+      type: "file",
+      content: "Conduct deep multi-step research.",
+    },
+  },
+  description: "Multi-step web research with citations.",
+  tags: ["research"],
+});
+console.log(url);
+```
+</CodeGroup>
+
+## Pull an agent
+
+Pull a snapshot of an agent repo. By default the latest commit is
+returned; pass a commit hash or tag via `version` (or embed it in the
+identifier as `owner/name:version`) to pull a specific version.
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+
+client = Client()
+
+agent = client.context.pull_agent("email-assistant")
+print(agent.commit_hash)
+print(list(agent.files))
+
+# Pull a specific commit.
+pinned = client.context.pull_agent("email-assistant", version="7ca95573")
+
+# Pull a tagged commit (for example, the production tag).
+prod = client.context.pull_agent("email-assistant:production")
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+const agent = await client.pullAgent("email-assistant");
+console.log(agent.commit_hash);
+console.log(Object.keys(agent.files));
+
+// Pull a specific commit.
+const pinned = await client.pullAgent("email-assistant", {
+  version: "7ca95573",
+});
+
+// Pull a tagged commit.
+const prod = await client.pullAgent("email-assistant:production");
+```
+</CodeGroup>
+
+### Parameters
+
+| Parameter    | Type                | Description                                                                       |
+| ------------ | ------------------- | --------------------------------------------------------------------------------- |
+| `identifier` | `string`            | The agent's identifier. May include an inline version: `owner/name:version`.      |
+| `version`    | `string` (optional) | Commit hash or tag to pull. Overrides any version embedded in the identifier.     |
+
+Returns an `AgentContext`.
+
+## Pull a skill
+
+Same shape as `pull_agent`, returning a `SkillContext`.
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+
+client = Client()
+
+skill = client.context.pull_skill("deep-research")
+print(skill.files["SKILL.md"].content)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+const skill = await client.pullSkill("deep-research");
+const skillFile = skill.files["SKILL.md"];
+if (skillFile.type === "file") {
+  console.log(skillFile.content);
+}
+```
+</CodeGroup>
+
+## Check whether a repo exists
+
+Use these methods to check whether an agent or skill repo exists in your
+workspace before pushing or pulling.
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+
+client = Client()
+
+if client.context.agent_exists("email-assistant"):
+    print("agent already exists")
+
+if not client.context.skill_exists("deep-research"):
+    print("skill not found")
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+if (await client.agentExists("email-assistant")) {
+  console.log("agent already exists");
+}
+
+if (!(await client.skillExists("deep-research"))) {
+  console.log("skill not found");
+}
+```
+</CodeGroup>
+
+## List agents and skills
+
+List repos of either type, with optional filters for visibility,
+archived state, and a search query.
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+
+client = Client()
+
+# Python returns a paginated response.
+result = client.context.list_agents(limit=20, query="email")
+for repo in result.repos:
+    print(repo.repo_handle)
+
+skills = client.context.list_skills(is_public=True)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+// TypeScript yields one repo at a time, auto-paginating.
+for await (const repo of client.listAgents({ query: "email" })) {
+  console.log(repo.repo_handle);
+}
+
+for await (const skill of client.listSkills({ isPublic: true })) {
+  console.log(skill.repo_handle);
+}
+```
+</CodeGroup>
+
+### Parameters
+
+| Parameter                | Type                  | Description                                                  |
+| ------------------------ | --------------------- | ------------------------------------------------------------ |
+| `limit`                  | `int` (Python only)   | Maximum number of repos to return per page. Defaults to 100. |
+| `offset`                 | `int` (Python only)   | Number of repos to skip. Defaults to 0.                      |
+| `is_public` / `isPublic` | `boolean` (optional)  | Filter to only public (or only private) repos.               |
+| `is_archived` / `isArchived` | `boolean` (optional) | Filter by archived state. Defaults to `False`.            |
+| `query`                  | `string` (optional)   | Search query matched as a prefix against the repo handle.    |
+
+<Note>
+Python's `list_agents` / `list_skills` return a `ListPromptsResponse` with explicit
+`limit` and `offset` for manual pagination. TypeScript's `listAgents` / `listSkills`
+return an `AsyncIterableIterator` that handles pagination automatically as you
+consume it.
+</Note>
+
+## Delete an agent or skill
+
+Delete a repo and all its owned child file repos. This operation cannot
+be undone.
+
+<CodeGroup>
+```python Python
+from langsmith import Client
+
+client = Client()
+
+client.context.delete_agent("email-assistant")
+client.context.delete_skill("deep-research")
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+
+const client = new Client();
+
+await client.deleteAgent("email-assistant");
+await client.deleteSkill("deep-research");
+```
+</CodeGroup>
+
+## Async usage (Python)
+
+Every method on `client.context` has an async equivalent on
+`AsyncClient.context`. The signatures and return types are identical;
+only the call site differs.
+
+```python Python
+from langsmith import AsyncClient
+
+client = AsyncClient()
+
+agent = await client.context.pull_agent("email-assistant")
+url = await client.context.push_agent(
+    "email-assistant",
+    files={"AGENTS.md": FileEntry(content="...")},
+)
+```
+
+The TypeScript SDK is async by default; there is no separate async
+client.
+
+## Errors
+
+| Error                                  | When it's raised                                                                       |
+| -------------------------------------- | -------------------------------------------------------------------------------------- |
+| `LangSmithUserError`                   | Invalid `repo_handle`, malformed `parent_commit`, or other client-side validation.     |
+| `LangSmithNotFoundError`               | Pulling a repo or commit that does not exist.                                          |
+| `LangSmithConflictError`               | Concurrent commit collision when `parent_commit` does not match the latest commit.     |
+| `HTTPError`                            | Any other server-side failure during the request.                                      |
+
+<Note>
+TypeScript surfaces these as standard `Error` instances. Use the
+provided `isLangSmithNotFoundError` / `isLangSmithConflictError`
+helpers to discriminate.
+</Note>
