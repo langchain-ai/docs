@@ -8,7 +8,7 @@ import SandboxPreview from "/snippets/langsmith/sandbox-preview-warning.mdx";
 
 <SandboxPreview />
 
-A **snapshot** is a filesystem bundle backed by a Docker image. It is the required input to every sandbox: `createSandbox` / `create_sandbox` always takes a snapshot ID. Build a snapshot once, then boot as many sandboxes from it as you need.
+A **snapshot** is a filesystem bundle backed by a Docker image. It is the required input to every sandbox: `createSandbox` / `create_sandbox` always takes a snapshot, either by ID (`snapshot_id` / `snapshotId`) or by name (`snapshot_name` / `snapshotName`). Build a snapshot once, then boot as many sandboxes from it as you need.
 
 You can also capture a snapshot from a running sandbox — install packages, write data files, or configure state, then snapshot the result and reuse it as a new starting point.
 
@@ -133,6 +133,24 @@ try {
 Capture preserves the **persistent filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept. Running processes, open sockets, in-memory state, and anything under `/tmp` (which is a tmpfs) are **not** carried over — boot the new sandbox and start the processes you need again.
 </Note>
 
+<Tip>
+You can boot a sandbox from a snapshot by **name** instead of ID — handy when you know the human-readable label you captured with:
+
+<CodeGroup>
+
+```python Python
+sb = client.create_sandbox(snapshot_name="ml-ready")
+```
+
+```ts TypeScript
+const sb = await client.createSandbox(undefined, { snapshotName: "ml-ready" });
+```
+
+</CodeGroup>
+
+Pass exactly one of `snapshot_id` / `snapshot_name` (or `snapshotId` / `snapshotName` in TypeScript).
+</Tip>
+
 ### Tune capture timing
 
 `capture_snapshot` blocks until the new snapshot is ready. Raise the `timeout` kwarg (default 60s) if your filesystem is large or your storage backend is slow.
@@ -178,6 +196,23 @@ await client.deleteSnapshot(snapshot.id);
 ```
 
 </CodeGroup>
+
+<Note>
+`list_snapshots` / `listSnapshots` paginates server-side (default page size 50, max 500) and accepts optional filters: `name_contains` / `nameContains` (case-insensitive substring on name), `limit` (1–500), and `offset` (≥ 0). Page through results by advancing `offset`.
+
+<CodeGroup>
+
+```python Python
+page = client.list_snapshots(name_contains="ml", limit=100)
+```
+
+```ts TypeScript
+const page = await client.listSnapshots({ nameContains: "ml", limit: 100 });
+```
+
+</CodeGroup>
+
+</Note>
 
 ## Stop and start snapshot-backed sandboxes
 
