@@ -16,6 +16,7 @@ const getWeather = tool(
 
 const agent = createAgent({
   model: new ChatAnthropic({
+    // KEEP MODEL
     model: "claude-sonnet-4-6",
     thinking: { type: "enabled", budget_tokens: 5000 },
   }),
