@@ -7,8 +7,10 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { StateGraph, StateSchema, START } from "@langchain/langgraph";
 import * as z from "zod";
 
+// KEEP MODEL
 const streamModel = new ChatAnthropic({ model: "claude-3-haiku-20240307" });
 const internalModel = new ChatAnthropic({
+  // KEEP MODEL
   model: "claude-3-haiku-20240307",
 }).withConfig({
   tags: ["nostream"],

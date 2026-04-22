@@ -9,11 +9,16 @@ seven provider/model options as /oss/deepagents/quickstart (Google, OpenAI, Anth
 OpenRouter, Fireworks, Baseten, Ollama). Both `provider:model-id` and bare model names
 (for example `claude-sonnet-4-5-20250929`) are recognized.
 
-Snippets are left as a single fenced block when the model is already a non-Google
-quickstart tab line, the bare name for one of those tabs (for example `claude-sonnet-4-6`),
-or other known non-Deep-Agents cases (for example `gemini-2.5-flash-image` for the
-Google Genai client API). The first model= / model: in the file that is not skipped
-is the one that triggers expansion.
+Snippets are left as a single fenced block when no model argument is found, or when all
+model arguments are marked to keep.
+
+To keep a specific model line:
+
+- In Python, put `# KEEP MODEL` on the line immediately before the `model="..."` line.
+- In TypeScript, put `// KEEP MODEL` on the line immediately before the `model: "..."` line.
+
+The marker line is stripped during processing and that model occurrence is not
+replaced/expanded.
 
 Run as part of `make code-snippets` after Bluehawk extraction.
 """
@@ -68,19 +73,8 @@ def _model_id_from_ts_tab_token(tab_token: str) -> str:
     return m.group(1)
 
 
-# If the snippet already uses one of these model IDs (non-Google quickstart tab),
-# do not expand: the author chose that tab line verbatim.
-DEEPAGENTS_PY_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset(
-    _model_id_from_py_tab_token(token)
-    for title, token in DEEPAGENTS_QUICKSTART_PY_MODEL_TABS
-    if title != "Google"
-)
-
-DEEPAGENTS_TS_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset(
-    _model_id_from_ts_tab_token(token)
-    for title, token in DEEPAGENTS_QUICKSTART_TS_MODEL_TABS
-    if title != "Google"
-)
+DEEPAGENTS_PY_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset()
+DEEPAGENTS_TS_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset()
 
 
 def _id_after_first_colon(tab_id: str) -> str:
@@ -90,31 +84,8 @@ def _id_after_first_colon(tab_id: str) -> str:
     return tab_id.split(":", 1)[1]
 
 
-# Bare names that are not Deep Agents init lines (google.genai client, legacy tutorials).
-DEEPAGENTS_PY_EXTRA_BARE_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset(
-    {
-        "gemini-2.5-flash-image",
-        "claude-3-haiku-20240307",
-    }
-)
-DEEPAGENTS_TS_EXTRA_BARE_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset(
-    {
-        "gemini-2.5-flash-image",
-        "claude-3-haiku-20240307",
-    }
-)
-
-
-def _should_skip_expand_py(model_id: str) -> bool:
-    if ":" in model_id:
-        return model_id in DEEPAGENTS_PY_SKIP_EXPAND_MODEL_IDS
-    return model_id in DEEPAGENTS_PY_EXTRA_BARE_SKIP_EXPAND_MODEL_IDS
-
-
-def _should_skip_expand_ts(model_id: str) -> bool:
-    if ":" in model_id:
-        return model_id in DEEPAGENTS_TS_SKIP_EXPAND_MODEL_IDS
-    return model_id in DEEPAGENTS_TS_EXTRA_BARE_SKIP_EXPAND_MODEL_IDS
+KEEP_MODEL_MARKER_PY = "# KEEP MODEL"
+KEEP_MODEL_MARKER_TS = "// KEEP MODEL"
 
 
 def _codegroup_fence(tab_title: str, fence_lang: str, code: str) -> str:
@@ -129,16 +100,21 @@ def _codegroup_fence(tab_title: str, fence_lang: str, code: str) -> str:
     )
 
 
+def _replace_span(text: str, start: int, end: int, replacement: str) -> str:
+    return text[:start] + replacement + text[end:]
+
+
 def _expand_to_deepagents_codegroup(
     content: str,
     *,
-    canonical: str,
+    canonical_span: tuple[int, int],
     tab_definitions: list[tuple[str, str]],
     fence_lang: str,
 ) -> str:
     """Wrap `content` in a CodeGroup, one tab per quickstart model variant."""
+    start, end = canonical_span
     parts = [
-        _codegroup_fence(title, fence_lang, content.replace(canonical, model_token))
+        _codegroup_fence(title, fence_lang, _replace_span(content, start, end, model_token))
         for title, model_token in tab_definitions
     ]
     return "<CodeGroup>\n" + "\n\n".join(parts) + "\n</CodeGroup>\n"
@@ -149,35 +125,61 @@ def maybe_expand_deepagents_quickstart_codegroup(
     *,
     language: str,
     fence_lang: str,
-) -> str | None:
-    """If content uses a quickstart-expandable model= line, return CodeGroup MDX."""
+) -> tuple[str | None, str]:
+    """Return (expanded_mdx_or_none, content_with_keep_markers_stripped)."""
+    model_re: re.Pattern[str]
+    tab_definitions: list[tuple[str, str]]
+    keep_marker: str
     if language == "python":
-        for m in DEEPAGENTS_PY_MODEL_KWARG_RE.finditer(content):
-            if not _should_skip_expand_py(m.group(1)):
-                return _expand_to_deepagents_codegroup(
-                    content,
-                    canonical=m.group(0),
-                    tab_definitions=DEEPAGENTS_QUICKSTART_PY_MODEL_TABS,
-                    fence_lang=fence_lang,
-                )
-        return None
-    if language == "ts":
-        for m in DEEPAGENTS_TS_MODEL_KWARG_RE.finditer(content):
-            if not _should_skip_expand_ts(m.group(1)):
-                return _expand_to_deepagents_codegroup(
-                    content,
-                    canonical=m.group(0),
-                    tab_definitions=DEEPAGENTS_QUICKSTART_TS_MODEL_TABS,
-                    fence_lang=fence_lang,
-                )
-        return None
-    return None
+        model_re = DEEPAGENTS_PY_MODEL_KWARG_RE
+        tab_definitions = DEEPAGENTS_QUICKSTART_PY_MODEL_TABS
+        keep_marker = KEEP_MODEL_MARKER_PY
+    elif language == "ts":
+        model_re = DEEPAGENTS_TS_MODEL_KWARG_RE
+        tab_definitions = DEEPAGENTS_QUICKSTART_TS_MODEL_TABS
+        keep_marker = KEEP_MODEL_MARKER_TS
+    else:
+        return None, content
+
+    # Strip marker lines while recording which model occurrence to expand.
+    out_lines: list[str] = []
+    keep_next_model = False
+    canonical_span: tuple[int, int] | None = None
+
+    for line in content.splitlines(keepends=True):
+        if line.strip() == keep_marker:
+            keep_next_model = True
+            continue
+
+        out_offset = sum(len(l) for l in out_lines)
+        m = model_re.search(line)
+        if m is not None:
+            if keep_next_model:
+                keep_next_model = False
+            elif canonical_span is None:
+                canonical_span = (out_offset + m.start(), out_offset + m.end())
+
+        out_lines.append(line)
+
+    stripped = "".join(out_lines)
+    if canonical_span is None:
+        return None, stripped
+
+    return (
+        _expand_to_deepagents_codegroup(
+            stripped,
+            canonical_span=canonical_span,
+            tab_definitions=tab_definitions,
+            fence_lang=fence_lang,
+        ),
+        stripped,
+    )
 
 
 def format_snippet_mdx(content: str, *, language: str, fence_lang: str) -> str:
     """Return final MDX body for a snippet file."""
     content = content.rstrip() + "\n"
-    expanded = maybe_expand_deepagents_quickstart_codegroup(
+    expanded, content = maybe_expand_deepagents_quickstart_codegroup(
         content, language=language, fence_lang=fence_lang
     )
     if expanded is not None:

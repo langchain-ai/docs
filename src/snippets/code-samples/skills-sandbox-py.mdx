@@ -1,92 +1,652 @@
-```python
-import asyncio
-from pathlib import Path
-from typing import Any
-
-from daytona import Daytona
-from deepagents import create_deep_agent
-from deepagents.backends import CompositeBackend, StoreBackend
-from deepagents.backends.utils import create_file_data
-from langchain.agents.middleware import AgentMiddleware, AgentState
-
-from langchain_daytona import DaytonaSandbox
-from langgraph.runtime import Runtime
-from langgraph.store.memory import InMemoryStore
-
-# Identical skill bundles for every user: one shared store namespace.
-SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
-
-
-class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
-    """Copy shared skill files from the store into the sandbox before each agent run."""
-
-    def __init__(self, backend: CompositeBackend) -> None:
-        super().__init__()
-        self.backend = backend
-
-    async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
-        store = runtime.store
-
-        files: list[tuple[str, bytes]] = []
-        for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
-            key = str(item.key)
-            if ".." in key or any(c in key for c in ("*", "?")):
-                msg = f"Invalid key: {key}"
-                raise ValueError(msg)
-            normalized = key if key.startswith("/") else f"/{key}"
-            # CompositeBackend routes paths and batches uploads to the right backend.
-            files.append((f"/skills{normalized}", item.value["content"].encode()))
-
-        if files:
-            await self.backend.aupload_files(files)
-
-
-async def seed_skill_store(store: InMemoryStore) -> None:
-    """Load canonical skill files from disk into the shared store namespace (run once at deploy).
-    You can retrieve skills from any source (local filesystem, remote URL, etc.).
-    """
-    skills_dir = Path(__file__).resolve().parent / "skills"
-    for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
-        rel = file_path.relative_to(skills_dir).as_posix()
-        key = f"/{rel}"
-        await store.aput(
-            SKILLS_SHARED_NAMESPACE,
-            key,
-            create_file_data(file_path.read_text(encoding="utf-8")),
+<CodeGroup>
+    ```python Google
+    import asyncio
+    from pathlib import Path
+    from typing import Any
+    
+    from daytona import Daytona
+    from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend, StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents.middleware import AgentMiddleware, AgentState
+    
+    from langchain_daytona import DaytonaSandbox
+    from langgraph.runtime import Runtime
+    from langgraph.store.memory import InMemoryStore
+    
+    # Identical skill bundles for every user: one shared store namespace.
+    SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+    
+    
+    class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+        """Copy shared skill files from the store into the sandbox before each agent run."""
+    
+        def __init__(self, backend: CompositeBackend) -> None:
+            super().__init__()
+            self.backend = backend
+    
+        async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
+            store = runtime.store
+    
+            files: list[tuple[str, bytes]] = []
+            for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
+                key = str(item.key)
+                if ".." in key or any(c in key for c in ("*", "?")):
+                    msg = f"Invalid key: {key}"
+                    raise ValueError(msg)
+                normalized = key if key.startswith("/") else f"/{key}"
+                # CompositeBackend routes paths and batches uploads to the right backend.
+                files.append((f"/skills{normalized}", item.value["content"].encode()))
+    
+            if files:
+                await self.backend.aupload_files(files)
+    
+    
+    async def seed_skill_store(store: InMemoryStore) -> None:
+        """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+        You can retrieve skills from any source (local filesystem, remote URL, etc.).
+        """
+        skills_dir = Path(__file__).resolve().parent / "skills"
+        for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+            rel = file_path.relative_to(skills_dir).as_posix()
+            key = f"/{rel}"
+            await store.aput(
+                SKILLS_SHARED_NAMESPACE,
+                key,
+                create_file_data(file_path.read_text(encoding="utf-8")),
+            )
+    
+    
+    async def main() -> None:
+        store = InMemoryStore()
+        await seed_skill_store(store)
+    
+        daytona = Daytona()
+        sandbox = daytona.create()
+        sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    
+        backend = CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/skills/": StoreBackend(
+                    store=store,
+                    namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
+                ),
+            },
         )
-
-
-async def main() -> None:
-    store = InMemoryStore()
-    await seed_skill_store(store)
-
-    daytona = Daytona()
-    sandbox = daytona.create()
-    sandbox_backend = DaytonaSandbox(sandbox=sandbox)
-
-    backend = CompositeBackend(
-        default=sandbox_backend,
-        routes={
-            "/skills/": StoreBackend(
+    
+        try:
+            agent = create_deep_agent(
+                model="google_genai:gemini-3.1-pro-preview",
+                backend=backend,
+                skills=["/skills/"],
                 store=store,
-                namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
-            ),
-        },
-    )
+                middleware=[SkillSandboxSyncMiddleware(backend)],
+            )
+    
+        finally:
+            sandbox.stop()
+    
+    
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
 
-    try:
-        agent = create_deep_agent(
-            model="anthropic:claude-sonnet-4-6",
-            backend=backend,
-            skills=["/skills/"],
-            store=store,
-            middleware=[SkillSandboxSyncMiddleware(backend)],
+    ```python OpenAI
+    import asyncio
+    from pathlib import Path
+    from typing import Any
+    
+    from daytona import Daytona
+    from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend, StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents.middleware import AgentMiddleware, AgentState
+    
+    from langchain_daytona import DaytonaSandbox
+    from langgraph.runtime import Runtime
+    from langgraph.store.memory import InMemoryStore
+    
+    # Identical skill bundles for every user: one shared store namespace.
+    SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+    
+    
+    class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+        """Copy shared skill files from the store into the sandbox before each agent run."""
+    
+        def __init__(self, backend: CompositeBackend) -> None:
+            super().__init__()
+            self.backend = backend
+    
+        async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
+            store = runtime.store
+    
+            files: list[tuple[str, bytes]] = []
+            for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
+                key = str(item.key)
+                if ".." in key or any(c in key for c in ("*", "?")):
+                    msg = f"Invalid key: {key}"
+                    raise ValueError(msg)
+                normalized = key if key.startswith("/") else f"/{key}"
+                # CompositeBackend routes paths and batches uploads to the right backend.
+                files.append((f"/skills{normalized}", item.value["content"].encode()))
+    
+            if files:
+                await self.backend.aupload_files(files)
+    
+    
+    async def seed_skill_store(store: InMemoryStore) -> None:
+        """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+        You can retrieve skills from any source (local filesystem, remote URL, etc.).
+        """
+        skills_dir = Path(__file__).resolve().parent / "skills"
+        for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+            rel = file_path.relative_to(skills_dir).as_posix()
+            key = f"/{rel}"
+            await store.aput(
+                SKILLS_SHARED_NAMESPACE,
+                key,
+                create_file_data(file_path.read_text(encoding="utf-8")),
+            )
+    
+    
+    async def main() -> None:
+        store = InMemoryStore()
+        await seed_skill_store(store)
+    
+        daytona = Daytona()
+        sandbox = daytona.create()
+        sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    
+        backend = CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/skills/": StoreBackend(
+                    store=store,
+                    namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
+                ),
+            },
         )
+    
+        try:
+            agent = create_deep_agent(
+                model="openai:gpt-5.4",
+                backend=backend,
+                skills=["/skills/"],
+                store=store,
+                middleware=[SkillSandboxSyncMiddleware(backend)],
+            )
+    
+        finally:
+            sandbox.stop()
+    
+    
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
 
-    finally:
-        sandbox.stop()
+    ```python Anthropic
+    import asyncio
+    from pathlib import Path
+    from typing import Any
+    
+    from daytona import Daytona
+    from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend, StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents.middleware import AgentMiddleware, AgentState
+    
+    from langchain_daytona import DaytonaSandbox
+    from langgraph.runtime import Runtime
+    from langgraph.store.memory import InMemoryStore
+    
+    # Identical skill bundles for every user: one shared store namespace.
+    SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+    
+    
+    class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+        """Copy shared skill files from the store into the sandbox before each agent run."""
+    
+        def __init__(self, backend: CompositeBackend) -> None:
+            super().__init__()
+            self.backend = backend
+    
+        async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
+            store = runtime.store
+    
+            files: list[tuple[str, bytes]] = []
+            for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
+                key = str(item.key)
+                if ".." in key or any(c in key for c in ("*", "?")):
+                    msg = f"Invalid key: {key}"
+                    raise ValueError(msg)
+                normalized = key if key.startswith("/") else f"/{key}"
+                # CompositeBackend routes paths and batches uploads to the right backend.
+                files.append((f"/skills{normalized}", item.value["content"].encode()))
+    
+            if files:
+                await self.backend.aupload_files(files)
+    
+    
+    async def seed_skill_store(store: InMemoryStore) -> None:
+        """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+        You can retrieve skills from any source (local filesystem, remote URL, etc.).
+        """
+        skills_dir = Path(__file__).resolve().parent / "skills"
+        for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+            rel = file_path.relative_to(skills_dir).as_posix()
+            key = f"/{rel}"
+            await store.aput(
+                SKILLS_SHARED_NAMESPACE,
+                key,
+                create_file_data(file_path.read_text(encoding="utf-8")),
+            )
+    
+    
+    async def main() -> None:
+        store = InMemoryStore()
+        await seed_skill_store(store)
+    
+        daytona = Daytona()
+        sandbox = daytona.create()
+        sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    
+        backend = CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/skills/": StoreBackend(
+                    store=store,
+                    namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
+                ),
+            },
+        )
+    
+        try:
+            agent = create_deep_agent(
+                model="anthropic:claude-sonnet-4-6",
+                backend=backend,
+                skills=["/skills/"],
+                store=store,
+                middleware=[SkillSandboxSyncMiddleware(backend)],
+            )
+    
+        finally:
+            sandbox.stop()
+    
+    
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
 
+    ```python OpenRouter
+    import asyncio
+    from pathlib import Path
+    from typing import Any
+    
+    from daytona import Daytona
+    from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend, StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents.middleware import AgentMiddleware, AgentState
+    
+    from langchain_daytona import DaytonaSandbox
+    from langgraph.runtime import Runtime
+    from langgraph.store.memory import InMemoryStore
+    
+    # Identical skill bundles for every user: one shared store namespace.
+    SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+    
+    
+    class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+        """Copy shared skill files from the store into the sandbox before each agent run."""
+    
+        def __init__(self, backend: CompositeBackend) -> None:
+            super().__init__()
+            self.backend = backend
+    
+        async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
+            store = runtime.store
+    
+            files: list[tuple[str, bytes]] = []
+            for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
+                key = str(item.key)
+                if ".." in key or any(c in key for c in ("*", "?")):
+                    msg = f"Invalid key: {key}"
+                    raise ValueError(msg)
+                normalized = key if key.startswith("/") else f"/{key}"
+                # CompositeBackend routes paths and batches uploads to the right backend.
+                files.append((f"/skills{normalized}", item.value["content"].encode()))
+    
+            if files:
+                await self.backend.aupload_files(files)
+    
+    
+    async def seed_skill_store(store: InMemoryStore) -> None:
+        """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+        You can retrieve skills from any source (local filesystem, remote URL, etc.).
+        """
+        skills_dir = Path(__file__).resolve().parent / "skills"
+        for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+            rel = file_path.relative_to(skills_dir).as_posix()
+            key = f"/{rel}"
+            await store.aput(
+                SKILLS_SHARED_NAMESPACE,
+                key,
+                create_file_data(file_path.read_text(encoding="utf-8")),
+            )
+    
+    
+    async def main() -> None:
+        store = InMemoryStore()
+        await seed_skill_store(store)
+    
+        daytona = Daytona()
+        sandbox = daytona.create()
+        sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    
+        backend = CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/skills/": StoreBackend(
+                    store=store,
+                    namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
+                ),
+            },
+        )
+    
+        try:
+            agent = create_deep_agent(
+                model="openrouter:anthropic/claude-sonnet-4-6",
+                backend=backend,
+                skills=["/skills/"],
+                store=store,
+                middleware=[SkillSandboxSyncMiddleware(backend)],
+            )
+    
+        finally:
+            sandbox.stop()
+    
+    
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
 
-if __name__ == "__main__":
-    asyncio.run(main())
-```
+    ```python Fireworks
+    import asyncio
+    from pathlib import Path
+    from typing import Any
+    
+    from daytona import Daytona
+    from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend, StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents.middleware import AgentMiddleware, AgentState
+    
+    from langchain_daytona import DaytonaSandbox
+    from langgraph.runtime import Runtime
+    from langgraph.store.memory import InMemoryStore
+    
+    # Identical skill bundles for every user: one shared store namespace.
+    SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+    
+    
+    class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+        """Copy shared skill files from the store into the sandbox before each agent run."""
+    
+        def __init__(self, backend: CompositeBackend) -> None:
+            super().__init__()
+            self.backend = backend
+    
+        async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
+            store = runtime.store
+    
+            files: list[tuple[str, bytes]] = []
+            for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
+                key = str(item.key)
+                if ".." in key or any(c in key for c in ("*", "?")):
+                    msg = f"Invalid key: {key}"
+                    raise ValueError(msg)
+                normalized = key if key.startswith("/") else f"/{key}"
+                # CompositeBackend routes paths and batches uploads to the right backend.
+                files.append((f"/skills{normalized}", item.value["content"].encode()))
+    
+            if files:
+                await self.backend.aupload_files(files)
+    
+    
+    async def seed_skill_store(store: InMemoryStore) -> None:
+        """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+        You can retrieve skills from any source (local filesystem, remote URL, etc.).
+        """
+        skills_dir = Path(__file__).resolve().parent / "skills"
+        for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+            rel = file_path.relative_to(skills_dir).as_posix()
+            key = f"/{rel}"
+            await store.aput(
+                SKILLS_SHARED_NAMESPACE,
+                key,
+                create_file_data(file_path.read_text(encoding="utf-8")),
+            )
+    
+    
+    async def main() -> None:
+        store = InMemoryStore()
+        await seed_skill_store(store)
+    
+        daytona = Daytona()
+        sandbox = daytona.create()
+        sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    
+        backend = CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/skills/": StoreBackend(
+                    store=store,
+                    namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
+                ),
+            },
+        )
+    
+        try:
+            agent = create_deep_agent(
+                model="fireworks:accounts/fireworks/models/qwen3p5-397b-a17b",
+                backend=backend,
+                skills=["/skills/"],
+                store=store,
+                middleware=[SkillSandboxSyncMiddleware(backend)],
+            )
+    
+        finally:
+            sandbox.stop()
+    
+    
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+
+    ```python Baseten
+    import asyncio
+    from pathlib import Path
+    from typing import Any
+    
+    from daytona import Daytona
+    from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend, StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents.middleware import AgentMiddleware, AgentState
+    
+    from langchain_daytona import DaytonaSandbox
+    from langgraph.runtime import Runtime
+    from langgraph.store.memory import InMemoryStore
+    
+    # Identical skill bundles for every user: one shared store namespace.
+    SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+    
+    
+    class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+        """Copy shared skill files from the store into the sandbox before each agent run."""
+    
+        def __init__(self, backend: CompositeBackend) -> None:
+            super().__init__()
+            self.backend = backend
+    
+        async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
+            store = runtime.store
+    
+            files: list[tuple[str, bytes]] = []
+            for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
+                key = str(item.key)
+                if ".." in key or any(c in key for c in ("*", "?")):
+                    msg = f"Invalid key: {key}"
+                    raise ValueError(msg)
+                normalized = key if key.startswith("/") else f"/{key}"
+                # CompositeBackend routes paths and batches uploads to the right backend.
+                files.append((f"/skills{normalized}", item.value["content"].encode()))
+    
+            if files:
+                await self.backend.aupload_files(files)
+    
+    
+    async def seed_skill_store(store: InMemoryStore) -> None:
+        """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+        You can retrieve skills from any source (local filesystem, remote URL, etc.).
+        """
+        skills_dir = Path(__file__).resolve().parent / "skills"
+        for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+            rel = file_path.relative_to(skills_dir).as_posix()
+            key = f"/{rel}"
+            await store.aput(
+                SKILLS_SHARED_NAMESPACE,
+                key,
+                create_file_data(file_path.read_text(encoding="utf-8")),
+            )
+    
+    
+    async def main() -> None:
+        store = InMemoryStore()
+        await seed_skill_store(store)
+    
+        daytona = Daytona()
+        sandbox = daytona.create()
+        sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    
+        backend = CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/skills/": StoreBackend(
+                    store=store,
+                    namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
+                ),
+            },
+        )
+    
+        try:
+            agent = create_deep_agent(
+                model="baseten:zai-org/GLM-5",
+                backend=backend,
+                skills=["/skills/"],
+                store=store,
+                middleware=[SkillSandboxSyncMiddleware(backend)],
+            )
+    
+        finally:
+            sandbox.stop()
+    
+    
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+
+    ```python Ollama
+    import asyncio
+    from pathlib import Path
+    from typing import Any
+    
+    from daytona import Daytona
+    from deepagents import create_deep_agent
+    from deepagents.backends import CompositeBackend, StoreBackend
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents.middleware import AgentMiddleware, AgentState
+    
+    from langchain_daytona import DaytonaSandbox
+    from langgraph.runtime import Runtime
+    from langgraph.store.memory import InMemoryStore
+    
+    # Identical skill bundles for every user: one shared store namespace.
+    SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
+    
+    
+    class SkillSandboxSyncMiddleware(AgentMiddleware[AgentState, Any, Any]):
+        """Copy shared skill files from the store into the sandbox before each agent run."""
+    
+        def __init__(self, backend: CompositeBackend) -> None:
+            super().__init__()
+            self.backend = backend
+    
+        async def abefore_agent(self, state: AgentState, runtime: Runtime[Any]) -> None:
+            store = runtime.store
+    
+            files: list[tuple[str, bytes]] = []
+            for item in await store.asearch(SKILLS_SHARED_NAMESPACE):
+                key = str(item.key)
+                if ".." in key or any(c in key for c in ("*", "?")):
+                    msg = f"Invalid key: {key}"
+                    raise ValueError(msg)
+                normalized = key if key.startswith("/") else f"/{key}"
+                # CompositeBackend routes paths and batches uploads to the right backend.
+                files.append((f"/skills{normalized}", item.value["content"].encode()))
+    
+            if files:
+                await self.backend.aupload_files(files)
+    
+    
+    async def seed_skill_store(store: InMemoryStore) -> None:
+        """Load canonical skill files from disk into the shared store namespace (run once at deploy).
+        You can retrieve skills from any source (local filesystem, remote URL, etc.).
+        """
+        skills_dir = Path(__file__).resolve().parent / "skills"
+        for file_path in sorted(p for p in skills_dir.rglob("*") if p.is_file()):
+            rel = file_path.relative_to(skills_dir).as_posix()
+            key = f"/{rel}"
+            await store.aput(
+                SKILLS_SHARED_NAMESPACE,
+                key,
+                create_file_data(file_path.read_text(encoding="utf-8")),
+            )
+    
+    
+    async def main() -> None:
+        store = InMemoryStore()
+        await seed_skill_store(store)
+    
+        daytona = Daytona()
+        sandbox = daytona.create()
+        sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    
+        backend = CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/skills/": StoreBackend(
+                    store=store,
+                    namespace=lambda _rt: SKILLS_SHARED_NAMESPACE,
+                ),
+            },
+        )
+    
+        try:
+            agent = create_deep_agent(
+                model="ollama:devstral-2",
+                backend=backend,
+                skills=["/skills/"],
+                store=store,
+                middleware=[SkillSandboxSyncMiddleware(backend)],
+            )
+    
+        finally:
+            sandbox.stop()
+    
+    
+    if __name__ == "__main__":
+        asyncio.run(main())
+    ```
+</CodeGroup>

@@ -6,7 +6,9 @@ from typing import Any, TypedDict
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import START, StateGraph
 
+# KEEP MODEL
 stream_model = ChatAnthropic(model_name="claude-3-haiku-20240307")
+# KEEP MODEL
 internal_model = ChatAnthropic(model_name="claude-3-haiku-20240307").with_config(
     {"tags": ["nostream"]}
 )
