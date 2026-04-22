@@ -195,6 +195,40 @@ When omitted or set to `provider = "none"`, the sandbox is disabled. Sandboxes a
 - `"thread"` (default): Each conversation gets its own sandbox. Different threads get different sandboxes, but the same thread reuses its sandbox across turns. Use this when each conversation should start with a clean environment.
 - `"assistant"`: All conversations share one sandbox. Files, installed packages, and other state persist across conversations. Use this when the agent maintains a long-lived workspace like a cloned repo.
 
+### `[auth]`
+
+Optionally, add an `[auth]` section to enable user authentication on the deployed agent. When present, the bundler generates an `auth.py` file that validates Bearer tokens, scopes all resources per authenticated user, and wires everything into the deployment automatically.
+
+<ResponseField name="provider" type="string" required>
+    Auth provider. Supported values: `"supabase"`, `"clerk"`.
+</ResponseField>
+
+```toml deepagents.toml
+[agent]
+name = "my-agent"
+model = "google-genai:gemini-3.1-pro-preview"
+
+# Optional — remove to deploy without auth
+[auth]
+provider = "supabase"   # supabase | clerk
+```
+
+The required environment variables depend on the provider:
+
+| Provider | Required env vars |
+| --- | --- |
+| `supabase` | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_DEFAULT_KEY` |
+| `clerk` | `CLERK_SECRET_KEY` |
+
+Add these to your `.env` alongside your other credentials. The bundler validates that all required vars are present at deploy time and fails fast with a clear error if any are missing.
+
+**Runtime behavior:**
+
+- Unauthenticated requests return `401`.
+- On success, the authenticated user's identity is injected into `config.configurable.langgraph_auth_user_id`.
+- All resources (threads, runs, store) are automatically scoped per user via `metadata.owner`.
+- LangSmith Studio bypasses auth for local development.
+
 ### `.env`
 
 Place a `.env` file alongside `deepagents.toml` with your API keys:
@@ -213,7 +247,48 @@ DAYTONA_API_KEY=...
 MODAL_TOKEN_ID=...
 MODAL_TOKEN_SECRET=...
 RUNLOOP_API_KEY=...
+
+# Required if [auth] provider = "supabase"
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_PUBLISHABLE_DEFAULT_KEY=eyJhbGc...
+
+# Required if [auth] provider = "clerk"
+CLERK_SECRET_KEY=sk_test_...
 ```
+
+## Authentication
+
+When `[auth]` is configured in `deepagents.toml`, pass the token from your auth provider in the `Authorization` header:
+
+<Tabs>
+    <Tab title="curl">
+        ```bash
+        curl -X POST https://your-deployment-url/threads \
+          -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{"metadata": {}}'
+        ```
+    </Tab>
+    <Tab title="Python (langgraph-sdk)">
+        ```python
+        from langgraph_sdk import get_client
+
+        client = get_client(
+            url="https://your-deployment-url",
+            headers={"Authorization": "Bearer YOUR_ACCESS_TOKEN"},
+        )
+
+        thread = await client.threads.create()
+        ```
+    </Tab>
+</Tabs>
+
+| Provider | Where to get the token |
+| --- | --- |
+| Supabase | Supabase session `access_token` from `supabase.auth.getSession()` |
+| Clerk | Clerk session token from `getToken()` |
+
+Each user's threads and memory are isolated automatically—User B cannot see User A's threads.
 
 ## Sandbox providers
 

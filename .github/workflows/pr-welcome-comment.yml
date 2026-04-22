@@ -31,6 +31,22 @@ jobs:
             const pr = context.payload.pull_request;
             const author = pr.user.login;
 
+            // --- Auto-assign reviewers for bot-generated PRs ---
+            const botPatterns = [
+              '[LangGraph Server Changelog Bot]',
+              '[Self-Hosted Changelog Bot]'
+            ];
+            if (botPatterns.some(p => pr.title.includes(p))) {
+              const reviewers = ['lnhsingh', 'katmayb'];
+              await github.rest.pulls.requestReviewers({
+                owner, repo,
+                pull_number: pr.number,
+                reviewers
+              });
+              console.log(`Auto-assigned reviewers ${reviewers.join(', ')} on bot PR #${pr.number}`);
+              return;
+            }
+
             // --- Fetch OWNERS from the base branch ---
             let ownersContent;
             try {
@@ -131,6 +147,23 @@ jobs:
               // Skip fallback if author owns any of the changed files
               if (authorIsOwner || author.toLowerCase() === 'lnhsingh') return;
               productOwners.set('General changes', new Set(['lnhsingh']));
+            }
+
+            // --- Auto-assign reviewers for bot authors ---
+            const botAuthors = ['open-swe'];
+            if (botAuthors.includes(author.toLowerCase())) {
+              const reviewers = [...new Set(
+                [...productOwners.values()].flatMap(s => [...s])
+              )];
+              if (reviewers.length > 0) {
+                await github.rest.pulls.requestReviewers({
+                  owner, repo,
+                  pull_number: pr.number,
+                  reviewers
+                });
+                console.log(`Auto-assigned reviewers ${reviewers.join(', ')} on bot PR #${pr.number}`);
+              }
+              return;
             }
 
             // --- Format the comment ---
