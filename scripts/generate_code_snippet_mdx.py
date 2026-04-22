@@ -114,7 +114,9 @@ def _expand_to_deepagents_codegroup(
     """Wrap `content` in a CodeGroup, one tab per quickstart model variant."""
     start, end = canonical_span
     parts = [
-        _codegroup_fence(title, fence_lang, _replace_span(content, start, end, model_token))
+        _codegroup_fence(
+            title, fence_lang, _replace_span(content, start, end, model_token)
+        )
         for title, model_token in tab_definitions
     ]
     return "<CodeGroup>\n" + "\n\n".join(parts) + "\n</CodeGroup>\n"

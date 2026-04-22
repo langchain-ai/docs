@@ -7,9 +7,9 @@ from langchain_anthropic import ChatAnthropic
 from langgraph.graph import START, StateGraph
 
 # KEEP MODEL
-stream_model = ChatAnthropic(model_name="claude-3-haiku-20240307")
+stream_model = ChatAnthropic(model_name="claude-haiku-4-5-20251001")
 # KEEP MODEL
-internal_model = ChatAnthropic(model_name="claude-3-haiku-20240307").with_config(
+internal_model = ChatAnthropic(model_name="claude-haiku-4-5-20251001").with_config(
     {"tags": ["nostream"]}
 )
 

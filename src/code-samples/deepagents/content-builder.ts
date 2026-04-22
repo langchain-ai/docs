@@ -125,7 +125,7 @@ function createContentWriter() {
   };
 
   return createDeepAgent({
-    model: "google_genai:gemini-3.1-pro-preview",
+    model: "anthropic:claude-sonnet-4-6",
     memory: ["./AGENTS.md"],
     skills: ["./skills/"],
     tools: [generateCover, generateSocialImage],
