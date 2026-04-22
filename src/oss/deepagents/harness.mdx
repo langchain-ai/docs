@@ -185,3 +185,47 @@ These files often contain general coding style, preferences, conventions, and gu
 - Always available to the agent, ensuring consistent behavior
 
 For configuration details and examples, see [Memory](/oss/deepagents/customization#memory).
+
+## Harness profiles
+
+<Info>
+    `HarnessProfile` is a public beta API and may be updated in future releases.
+</Info>
+
+**Harness profiles** let you shape how the harness behaves once a model is selected so the agent is guided toward the optimal behavior for your application.
+
+Use harness profiles to augment the runtime experience of an agent, for example by:
+
+- Appending to the base `deepagents` system prompt
+- Overriding individual tool descriptions
+- Excluding specific harness-level tools
+- Adding extra middleware for specific models or providers
+- Disabling, renaming, or re-prompting the general purpose subagent
+
+Register a profile under a provider name like `"openai"` for provider-wide defaults, or under a fully qualified `provider:model` key like `"openai:gpt-5.4"` for per-model overrides. Registrations are additive: re-registering under an existing key merges on top of the prior registration (chaining `pre_init`, unioning `excluded_tools`, merging middleware by type, and preserving unset fields).
+
+```python
+from deepagents import (
+    GeneralPurposeSubagentProfile,
+    HarnessProfile,
+    register_harness_profile,
+)
+
+# Illustrative example showing some of the capabilities of harness profiles:
+# Applied by `create_deep_agent` when the selected model resolves to
+# `openai:gpt-5.4`. Appends a system-prompt suffix, hides the `execute` tool,
+# and skips the auto-added `general-purpose` subagent (which also drops the
+# `task` tool when no other subagents are configured).
+register_harness_profile(
+    "openai:gpt-5.4",
+    HarnessProfile(
+        system_prompt_suffix="Respond in under 100 words.",
+        excluded_tools={"execute"},
+        general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
+    ),
+)
+```
+
+When you pass a preconfigured chat model instance (@[`BaseChatModel`] subclass) instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order: `provider:identifier` -> identifier-only (only when the identifier already contains `:`) -> provider-only fallback.
+
+Harness profiles are complementary to [Provider profiles](/oss/deepagents/models#provider-profiles): provider profiles shape how the model is built, while harness profiles shape how the harness works once that model is in use.
