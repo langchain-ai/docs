@@ -7,7 +7,7 @@ description: Package per-provider and per-model defaults that Deep Agents applie
     Harness and provider profiles are public beta APIs and may be updated in future releases.
 </Note>
 
-**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `create_deep_agent` call site.
+**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `create_deep_agent` call site. Use `HarnessProfile` when building profiles in Python; use `HarnessProfileConfig` when [loading or saving YAML/JSON files](#load-profiles-from-config-files). Deep Agents ships built-in harness profiles for OpenAI and Anthropic (Claude) models.
 
 **Provider profiles** are a narrower companion API for *model-construction* kwargs, which don't affect the harness. Most callers don't need them; reach for one when you want `init_chat_model` defaults, credential checks, or runtime-derived kwargs to travel with the provider choice (for example, when packaging a provider integration).
 
@@ -42,8 +42,13 @@ register_harness_profile(
 ```
 
 <Warning>
-    `excluded_middleware` cannot remove scaffolding Deep Agents relies on. Listing `FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission middleware raises `ValueError` when `create_deep_agent` resolves the profile.
+    `excluded_middleware` cannot remove scaffolding Deep Agents relies on. Listing `FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission middleware raises a `ValueError`.
 </Warning>
+
+Entries in `excluded_middleware` accept two forms:
+
+- A middleware *class* (matched by exact type), or a plain string that matches `AgentMiddleware.name`. Use plain strings for built-ins and public aliases such as `"SummarizationMiddleware"`.
+- An `module:Class` import ref (for example, `"my_pkg.middleware:TelemetryMiddleware"`) to target an exact middleware class from a config file. Import refs resolve lazily, so use them only for trusted local configuration — loading one imports Python code.
 
 <Accordion
     title="Lookup order for preconfigured model instances"
@@ -97,9 +102,47 @@ register_provider_profile(
 )
 ```
 
+## Load profiles from config files
+
+For YAML/JSON-backed workflows, use `HarnessProfileConfig`. It mirrors the declarative subset of `HarnessProfile` (prompt text, tool-description overrides, excluded tools and middleware, general-purpose subagent edits) and owns `to_dict` / `from_dict`. Runtime-only state — middleware instances, factories, and class-form `excluded_middleware` entries — stays on `HarnessProfile`.
+
+`register_harness_profile` accepts either type, so config-backed callers don't need a manual conversion step:
+
+```yaml
+# openai.yaml
+base_system_prompt: You are helpful.
+system_prompt_suffix: Respond briefly.
+excluded_tools:
+  - execute
+  - grep
+excluded_middleware:
+  - SummarizationMiddleware
+  - my_pkg.middleware:TelemetryMiddleware
+general_purpose_subagent:
+  enabled: false
+```
+
+```python
+import yaml
+from deepagents import HarnessProfileConfig, register_harness_profile
+
+with open("openai.yaml") as f:
+    register_harness_profile(
+        "openai",
+        HarnessProfileConfig.from_dict(yaml.safe_load(f)),
+    )
+```
+
+To go the other direction, `HarnessProfileConfig.from_harness_profile(...)` exports a runtime profile back to the declarative shape when it only uses serializable features:
+
+- Class-form `excluded_middleware` entries serialize as a public alias (when the class exposes one via `serialized_name: ClassVar[str]`) or as a `module:Class` import ref.
+- Non-empty `extra_middleware` and middleware classes declared in `__main__` or inside a function scope cannot be serialized — export raises `ValueError`.
+
 ## Ship a profile as a plugin
 
-Distributable profiles can register themselves via `importlib.metadata` entry points instead of requiring callers to run `register_*_profile` by hand. Declare an entry point in the distribution's own `pyproject.toml` under the appropriate group:
+Distributable profiles can register themselves via `importlib.metadata` entry points instead of requiring callers to run `register_*_profile` by hand. Load order is **built-ins first, then entry-point plugins, then any direct `register_*_profile` calls in user code**; all three paths funnel through the same additive registration, so later registrations layer on top of earlier ones under the same key.
+
+Declare an entry point in the distribution's own `pyproject.toml` under the appropriate group:
 
 ```toml
 [project.entry-points."deepagents.harness_profiles"]
