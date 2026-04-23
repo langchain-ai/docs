@@ -55,11 +55,8 @@ const result = await agent.invoke(
 <Tab title="StoreBackend">
 
 ```typescript
-import { createDeepAgent, StoreBackend } from "deepagents";
-import {
-  InMemoryStore,
-  MemorySaver,
-} from "@langchain/langgraph";
+import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
+import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
 const store = new InMemoryStore();
@@ -69,10 +66,22 @@ const skillUrl =
 
 const response = await fetch(skillUrl);
 const skillContent = await response.text();
-const backend = new StoreBackend({ state: {}, store });
-await backend.uploadFiles([
-  ["/skills/langgraph-docs/SKILL.md", new TextEncoder().encode(skillContent)],
-]);
+
+const storeNamespace = ["filesystem"] as const;
+const now = new Date().toISOString();
+// uploadFiles() is not valid before invoke: it needs LangGraph getStore(). Use store.put to seed.
+const skillValue: FileData = {
+  content: skillContent,
+  mimeType: "text/markdown",
+  created_at: now,
+  modified_at: now,
+};
+await store.put(
+  [...storeNamespace],
+  "/skills/langgraph-docs/SKILL.md",
+  skillValue,
+);
+const backend = new StoreBackend({ namespace: [...storeNamespace] });
 
 const agent = await createDeepAgent({
   backend: backend,
