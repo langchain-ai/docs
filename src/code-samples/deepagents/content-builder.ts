@@ -43,6 +43,7 @@ const generateCover = tool(
       const { GoogleGenerativeAI } = await import("@google/generative-ai");
       const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY ?? "");
       const model = genai.getGenerativeModel({
+        // KEEP MODEL
         model: "gemini-2.5-flash-image",
       });
       const result = await model.generateContent(prompt);
@@ -78,6 +79,7 @@ const generateSocialImage = tool(
       const { GoogleGenerativeAI } = await import("@google/generative-ai");
       const genai = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY ?? "");
       const model = genai.getGenerativeModel({
+        // KEEP MODEL
         model: "gemini-2.5-flash-image",
       });
       const result = await model.generateContent(prompt);
@@ -100,9 +102,7 @@ const generateSocialImage = tool(
       prompt: z
         .string()
         .describe("Detailed description of the image to generate."),
-      platform: z
-        .string()
-        .describe('Either "linkedin" or "tweets"'),
+      platform: z.string().describe('Either "linkedin" or "tweets"'),
       slug: z
         .string()
         .describe("Post slug. Image saves to <platform>/<slug>/image.png"),
@@ -125,6 +125,7 @@ function createContentWriter() {
   };
 
   return createDeepAgent({
+    model: "anthropic:claude-sonnet-4-6",
     memory: ["./AGENTS.md"],
     skills: ["./skills/"],
     tools: [generateCover, generateSocialImage],
