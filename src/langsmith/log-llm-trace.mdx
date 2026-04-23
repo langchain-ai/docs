@@ -3,7 +3,7 @@ title: Log LLM calls
 sidebarTitle: Log LLM calls
 ---
 
-When you call an LLM directly, outside of LangChain or a [supported integration](/langsmith/integrations), you need to provide specific metadata so that LangSmith can display token counts, calculate costs, and let you open the run in the [Playground](/langsmith/prompt-engineering-concepts#playground) with the correct provider and model.
+When you call an LLM directly, outside of [LangChain](/oss/langchain/overview) or a LangSmith [supported integration](/langsmith/integrations), you need to provide specific metadata so that LangSmith can display token counts, calculate costs, and let you open the [run](/langsmith/observability-concepts#runs) in the [Playground](/langsmith/prompt-engineering-concepts#playground) with the correct provider and model.
 
 There are four requirements for a fully functional LLM trace:
 
@@ -357,10 +357,7 @@ If you're using a custom input or output format, you can convert it to a LangSmi
 
 Here's a boilerplate example of how to use `process_inputs` and `process_outputs` to convert a custom I/O format into a LangSmith compatible format:
 
-<Expandable title="the code">
-<CodeGroup>
-
-```python Python
+```python expandable
 class OriginalInputs(BaseModel):
     """Your app's custom request shape"""
 
@@ -388,20 +385,18 @@ def chat_model(inputs: dict) -> dict:
     """
 
 ```
-</CodeGroup>
-</Expandable>
 
 
 ## Identify a custom model in traces
 
-When using a custom model, it is recommended to also provide the following `metadata` fields to identify the model when viewing traces and when filtering.
+When using a custom model, it is recommended to also provide the following `metadata` fields to identify the model when viewing traces and when [filtering](/langsmith/filter-traces-in-application).
 
-* `ls_provider`: The provider of the model, e.g. "openai", "anthropic", etc.
-* `ls_model_name`: The name of the model, e.g. "gpt-5.4-mini", "claude-3-opus-20240229", etc.
+- `ls_provider`: The provider of the model, e.g., `"openai"`, `"anthropic"`.
+- `ls_model_name`: The name of the model, e.g., `"gpt-5.4-mini"`, `"claude-3-opus-20240229"`.
 
 <CodeGroup>
 
-```python Python
+```python Python wrap
 from langsmith import traceable
 
 inputs = [
@@ -429,7 +424,7 @@ def chat_model(messages: list):
 chat_model(inputs)
 ```
 
-```typescript TypeScript
+```typescript TypeScript wrap
 import { traceable } from "langsmith/traceable";
 
 const messages = [
@@ -486,24 +481,9 @@ await chatModel({ messages });
 
 </CodeGroup>
 
-This code will log the following trace:
+If you implement a custom streaming `chat_model`, you can "reduce" the outputs into the same format as the non-streaming version. This is only supported in Python:
 
-<div style={{ textAlign: 'center' }}>
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/chat-model-light.png"
-    alt="LangSmith UI showing an LLM call trace called ChatOpenAI with a system and human input followed by an AI Output."
-/>
-
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/chat-model-dark.png"
-    alt="LangSmith UI showing an LLM call trace called ChatOpenAI with a system and human input followed by an AI Output."
-/>
-</div>
-If you implement a custom streaming chat_model, you can "reduce" the outputs into the same format as the non-streaming version. This is currently only supported in Python.
-
-```python
+```python expandable wrap
 def _reduce_chunks(chunks: list):
     all_text = "".join([chunk["choices"][0]["message"]["content"] for chunk in chunks])
     return {"choices": [{"message": {"content": all_text, "role": "assistant"}}]}
@@ -537,21 +517,16 @@ list(
 ```
 
 <Check>
-If `ls_model_name` is not present in `extra.metadata`, other fields might be used from the `extra.metadata` for estimating token counts. The following fields are used in the order of precedence:
-
-1. `metadata.ls_model_name`
-2. `inputs.model`
-3. `inputs.model_name`
+Setting `ls_model_name` in your `metadata` is required for LangSmith to identify the model and calculate costs for custom LLM traces. Without it, token counts may still be recorded but costs won't be estimated.
 </Check>
 
 To learn more about how to use the `metadata` fields, refer to the [Add metadata and tags](/langsmith/add-metadata-tags) guide.
 
-
 ## Provide token and cost information
 
-Token counts enable cost calculation and are displayed in the trace UI. There are two ways to provide them:
+Token counts enable cost calculation, which LangSmith displays in the [Tracing Projects UI](https://smith.langchain.com/projects). There are two ways to provide them:
 
-- **Set `usage_metadata` on the run tree**: call `get_current_run_tree()` / `getCurrentRunTree()` inside your `@traceable` function and set the `usage_metadata` field. This does not change your function's return value.
+- **Set `usage_metadata` on the run tree**: call [`get_current_run_tree()` / `getCurrentRunTree()`](/langsmith/access-current-span) inside your [`@traceable`](/langsmith/annotate-code#use-%40traceable-%2F-traceable) function and set the `usage_metadata` field. This does not change your function's return value.
 - **Return `usage_metadata` in the output**: include `usage_metadata` as a top-level key in the dictionary your function returns.
 
 ### Supported `usage_metadata` fields
@@ -564,12 +539,11 @@ Token counts enable cost calculation and are displayed in the trace UI. There ar
 | `input_token_details` | `object` | Breakdown: `cache_read`, `cache_creation`, `audio`, `text`, `image` |
 | `output_token_details` | `object` | Breakdown: `reasoning`, `audio`, `text`, `image` |
 
-To send costs directly (for non-linear pricing), you can also include `input_cost`, `output_cost`, and `total_cost` fields. See [Cost tracking](/langsmith/cost-tracking) for details on configuring model pricing and viewing costs in the UI.
+To send costs directly (for non-linear pricing), you can also include `input_cost`, `output_cost`, and `total_cost` fields. For details on configuring model pricing and viewing costs in the UI, refer to the [Cost tracking](/langsmith/cost-tracking) page.
 
 ## Time-to-first-token
 
-If you are using `traceable` or one of our SDK wrappers, LangSmith will automatically populate time-to-first-token for streaming LLM runs.
-However, if you are using the `RunTree` API directly, you will need to add a `new_token` event to the run tree in order to properly populate time-to-first-token.
+If you are using `traceable` or one of the SDK wrappers, LangSmith will automatically populate time-to-first-token for streaming LLM runs. However, if you are using the [`RunTree` API](/langsmith/annotate-code#use-the-runtree-api) directly, you will need to add a `new_token` event to the run tree in order to properly populate time-to-first-token.
 
 Here's an example:
 
@@ -618,3 +592,11 @@ await runTree.patchRun();
 ```
 
 </CodeGroup>
+
+## Related
+
+- [Custom instrumentation](/langsmith/annotate-code): core `@traceable` and `RunTree` patterns.
+- [Access the current run (span) within a traced function](/langsmith/access-current-span): using `get_current_run_tree()` to set `usage_metadata` and other fields at runtime.
+- [Trace OpenAI applications](/langsmith/trace-openai): automatic token and cost tracking when using the OpenAI wrapper.
+- [Trace Anthropic applications](/langsmith/trace-anthropic): automatic token and cost tracking when using the Anthropic wrapper.
+- [Integrations overview](/langsmith/integrations): full list of providers and frameworks with built-in LangSmith support.
