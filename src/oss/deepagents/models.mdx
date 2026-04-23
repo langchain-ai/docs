@@ -107,7 +107,7 @@ To configure model-specific parameters, use @[`init_chat_model`] or instantiate 
 - `pre_init` — side effects to run before construction (for example, credential validation for a clearer error than the SDK would give)
 - `init_kwargs_factory` — kwargs derived from runtime state (for example, headers pulled from environment variables)
 
-Register a profile under a provider name like `"openai"` for provider-wide defaults, or under a fully qualified `provider:model` key like `"openai:gpt-5.4"` for per-model overrides. Registrations are additive: re-registering under an existing key merges on top of the prior registration.
+Register a profile under a provider name like `"openai"` for provider-wide defaults, or under a fully qualified `provider:model` key like `"openai:gpt-5.4"` for per-model overrides. Registrations are additive: re-registering under an existing key merges on top of the prior registration. `init_kwargs` dicts merge key-wise (your value wins on a shared key), `pre_init` callables chain (existing runs first, then the new one), and `init_kwargs_factory` callables chain with their outputs merged every time `resolve_model` runs.
 
 ```python
 from deepagents import ProviderProfile, register_provider_profile
@@ -121,6 +121,27 @@ register_provider_profile(
 ```
 
 This is useful when you want model selection to carry the right defaults automatically, without repeating setup code everywhere you create an agent. If you pass a preconfigured chat model instance directly, that instance's settings take precedence — `ProviderProfile` is only consulted when the harness constructs the model from a string spec. For harness behavior after model creation, see [Harness profiles](/oss/deepagents/harness#harness-profiles).
+
+<Accordion title="Ship a provider profile as a plugin">
+    Distributable profiles can register themselves via `importlib.metadata` entry points instead of requiring callers to run `register_provider_profile` by hand. Declare an entry point in the distribution's own `pyproject.toml` under the `deepagents.provider_profiles` group:
+
+    ```toml
+    [project.entry-points."deepagents.provider_profiles"]
+    my_provider = "my_pkg.profiles:register"
+    ```
+
+    The target resolves to a zero-arg callable that performs the registrations when `deepagents.profiles` is imported:
+
+    ```python
+    from deepagents import ProviderProfile, register_provider_profile
+
+    def register() -> None:
+        register_provider_profile(
+            "my_provider",
+            ProviderProfile(init_kwargs={"temperature": 0}),
+        )
+    ```
+</Accordion>
 
 ## Select a model at runtime
 
