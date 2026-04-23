@@ -265,6 +265,14 @@ another-file.mdx                 ← no indented lines = all its links were filt
 
 To run locally: `make broken-links`
 
+## Pre-commit linting
+
+Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
+
+Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"` (or pass space-separated paths). Run with no `FILES` arg to lint all of `src/`.
+
+Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+
 ## Pull requests
 
 - Explain the "why" of changes
