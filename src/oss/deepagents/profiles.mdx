@@ -1,0 +1,141 @@
+---
+title: Profiles
+description: Package per-provider and per-model defaults that Deep Agents applies when a model is selected
+---
+
+<Note>
+    Harness and provider profiles are public beta APIs and may be updated in future releases.
+</Note>
+
+**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `create_deep_agent` call site.
+
+**Provider profiles** are a narrower companion API for *model-construction* kwargs, which don't affect the harness. Most callers don't need them; reach for one when you want `init_chat_model` defaults, credential checks, or runtime-derived kwargs to travel with the provider choice (for example, when packaging a provider integration).
+
+## Harness profiles
+
+A `HarnessProfile` describes prompt-assembly, tool-visibility, middleware, and default-subagent adjustments that `create_deep_agent` applies after the chat model has been constructed:
+
+- `base_system_prompt` — replace the base Deep Agents system prompt
+- `system_prompt_suffix` — append text to the base system prompt
+- `tool_description_overrides` — override individual tool descriptions
+- `excluded_tools` — remove specific harness-level tools from the tool set
+- `excluded_middleware` — strip specific middleware classes from the stack
+- `extra_middleware` — append middleware to every stack this profile applies to
+- `general_purpose_subagent` — disable, rename, or re-prompt the general-purpose subagent
+
+```python
+from deepagents import (
+    GeneralPurposeSubagentProfile,
+    HarnessProfile,
+    register_harness_profile,
+)
+
+register_harness_profile(
+    "openai:gpt-5.4",
+    HarnessProfile(
+        system_prompt_suffix="Respond in under 100 words.",
+        excluded_tools={"execute"},
+        excluded_middleware={"SummarizationMiddleware"},
+        general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
+    ),
+)
+```
+
+<Warning>
+    `excluded_middleware` cannot remove scaffolding Deep Agents relies on. Listing `FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission middleware raises `ValueError` when `create_deep_agent` resolves the profile.
+</Warning>
+
+<Accordion
+    title="Lookup order for preconfigured model instances"
+>
+    When you pass a preconfigured chat model instance instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order:
+
+    1. Exact `provider:identifier` match
+    2. Identifier-only (only when the identifier already contains `:`)
+    3. Provider-only fallback
+</Accordion>
+
+
+## Registration keys
+
+Both profile types use the same key format:
+
+- **Provider-level** — a bare provider name like `"openai"` applies to every model from that provider.
+- **Model-level** — a fully qualified `provider:model` key like `"openai:gpt-5.4"` applies only to that specific model.
+
+When both a provider-level and a model-level profile exist, they are merged at resolution time. Unset model-level fields inherit from the provider-level profile; explicit model-level values override them.
+
+Re-registering under an existing key merges the new profile on top of the prior one — it does not replace it. See [Merge semantics](#merge-semantics) for the per-field rules.
+
+## Merge semantics
+
+| Field | Merge behavior |
+| --- | --- |
+| `base_system_prompt`, `system_prompt_suffix` | New value wins when set; otherwise inherits |
+| `tool_description_overrides` | Mappings merge per key; new value wins on a shared key |
+| `excluded_tools`, `excluded_middleware` | Sets union |
+| `extra_middleware` | Merged by concrete class: new instance replaces existing at its position, novel classes append |
+| `general_purpose_subagent` | Merged field-wise (unset fields inherit) |
+| `init_kwargs` (provider) | Dicts merge key-wise; new value wins on a shared key |
+| `pre_init` (provider) | Callables chain: existing runs first, then the new one |
+| `init_kwargs_factory` (provider) | Factories chain with their outputs merged every `resolve_model` call |
+
+## Provider profiles
+
+A `ProviderProfile` declares how Deep Agents should construct a chat model for a given provider or specific model spec. It applies only when the harness turns a `provider:model` string into a client via @[`init_chat_model`] (not when you pass a preconfigured instance):
+
+- `init_kwargs` — static initialization arguments forwarded to `init_chat_model`
+- `pre_init` — side effects to run before construction (for example, credential validation)
+- `init_kwargs_factory` — kwargs derived from runtime state (for example, headers pulled from environment variables)
+
+```python
+from deepagents import ProviderProfile, register_provider_profile
+
+register_provider_profile(
+    "openai",
+    ProviderProfile(init_kwargs={"temperature": 0}),
+)
+```
+
+## Ship a profile as a plugin
+
+Distributable profiles can register themselves via `importlib.metadata` entry points instead of requiring callers to run `register_*_profile` by hand. Declare an entry point in the distribution's own `pyproject.toml` under the appropriate group:
+
+```toml
+[project.entry-points."deepagents.harness_profiles"]
+my_provider = "my_pkg.profiles:register_harness"
+
+[project.entry-points."deepagents.provider_profiles"]
+my_provider = "my_pkg.profiles:register_provider"
+```
+
+Each target resolves to a zero-arg callable that performs the registrations when `deepagents.profiles` is imported:
+
+```python
+from deepagents import (
+    HarnessProfile,
+    ProviderProfile,
+    register_harness_profile,
+    register_provider_profile,
+)
+
+
+def register_harness() -> None:
+    register_harness_profile(
+        "my_provider",
+        HarnessProfile(system_prompt_suffix="Batch independent tool calls in parallel."),
+    )
+
+
+def register_provider() -> None:
+    register_provider_profile(
+        "my_provider",
+        ProviderProfile(init_kwargs={"temperature": 0}),
+    )
+```
+
+## Related
+
+- [Harness](/oss/deepagents/harness) — overview of harness capabilities
+- [Models](/oss/deepagents/models) — configure model providers and parameters
+- [Customization](/oss/deepagents/customization) — full `create_deep_agent` configuration surface

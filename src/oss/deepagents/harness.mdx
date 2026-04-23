@@ -12,6 +12,7 @@ An agent harness is a combination of several different capabilities that make bu
 - [Context and token management](#context-management)
 - [Code execution](#code-execution)
 - [Human-in-the-loop](#human-in-the-loop)
+- [Harness profiles](#harness-profiles)
 
 Alongside these capabilities, Deep Agents use [Skills](#skills) and [Memory](#memory) for additional context and instructions.
 
@@ -188,73 +189,16 @@ For configuration details and examples, see [Memory](/oss/deepagents/customizati
 
 ## Harness profiles
 
-<Info>
-    `HarnessProfile` is a public beta API and may be updated in future releases.
-</Info>
+The harness can apply a declarative configuration bundle (a `HarnessProfile`) whenever a given provider or model is selected. Profiles tune runtime behavior after the model is built, without requiring per-agent setup code.
 
-**Harness profiles** let you shape how the harness behaves once a model is selected so the agent is guided toward the optimal behavior for your application.
+**How it works:**
+- Register a profile under a provider name (`"openai"`) or a `provider:model` key (`"openai:gpt-5.4"`)
+- `create_deep_agent` looks up and applies the profile when resolving the model
+- Provider-level and model-level profiles merge at resolution time
 
-Use harness profiles to augment the runtime experience of an agent, for example by:
+**Why it's useful:**
+- Package per-provider or per-model defaults (system-prompt tweaks, tool overrides, middleware) in one place
+- Keep the `create_deep_agent` call site unchanged when switching models
+- Ship reusable profiles as plugins via entry points
 
-- Appending to the base `deepagents` system prompt (`system_prompt_suffix`), or replacing it outright (`base_system_prompt`)
-- Overriding individual tool descriptions (`tool_description_overrides`)
-- Excluding specific harness-level tools (`excluded_tools`)
-- Excluding specific middleware classes entirely (`excluded_middleware`)
-- Adding extra middleware for specific models or providers (`extra_middleware`)
-- Disabling, renaming, or re-prompting the general-purpose subagent (`general_purpose_subagent`)
-
-Register a profile under a provider name like `"openai"` for provider-wide defaults, or under a fully qualified `provider:model` key like `"openai:gpt-5.4"` for per-model overrides. Registrations are additive: re-registering under an existing key merges on top of the prior registration (unioning `excluded_tools` and `excluded_middleware`, merging middleware by type, merging `general_purpose_subagent` field-wise, and preserving any fields the new registration leaves unset).
-
-```python
-from deepagents import (
-    GeneralPurposeSubagentProfile,
-    HarnessProfile,
-    register_harness_profile,
-)
-from deepagents.middleware.summarization import SummarizationMiddleware
-
-# Illustrative example showing some of the capabilities of harness profiles:
-# Applied by `create_deep_agent` when the selected model resolves to
-# `openai:gpt-5.4`. Appends a system-prompt suffix, hides the `execute` tool,
-# drops conversation summarization, and skips the auto-added `general-purpose`
-# subagent (which also drops the `task` tool when no other subagents are
-# configured).
-register_harness_profile(
-    "openai:gpt-5.4",
-    HarnessProfile(
-        system_prompt_suffix="Respond in under 100 words.",
-        excluded_tools={"execute"},
-        excluded_middleware=frozenset({SummarizationMiddleware}),
-        general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
-    ),
-)
-```
-
-<Warning>
-    `excluded_middleware` cannot remove scaffolding that deep agents rely on. Listing `FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission middleware raises `ValueError` when `create_deep_agent` resolves the profile.
-</Warning>
-
-When you pass a preconfigured chat model instance (@[`BaseChatModel`] subclass) instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order: `provider:identifier` -> identifier-only (only when the identifier already contains `:`) -> provider-only fallback.
-
-Harness profiles are complementary to [Provider profiles](/oss/deepagents/models#provider-profiles): provider profiles shape how the model is built, while harness profiles shape how the harness works once that model is in use.
-
-<Accordion title="Ship a harness profile as a plugin">
-    Distributable harness profiles can register themselves via `importlib.metadata` entry points instead of requiring callers to run `register_harness_profile` by hand. Declare an entry point in the distribution's own `pyproject.toml` under the `deepagents.harness_profiles` group:
-
-    ```toml
-    [project.entry-points."deepagents.harness_profiles"]
-    gemini = "my_pkg.profiles:register"
-    ```
-
-    The target resolves to a zero-arg callable that performs the registrations when `deepagents.profiles` is imported:
-
-    ```python
-    from deepagents import HarnessProfile, register_harness_profile
-
-    def register() -> None:
-        register_harness_profile(
-            "google_genai",
-            HarnessProfile(system_prompt_suffix="Batch independent tool calls in parallel."),
-        )
-    ```
-</Accordion>
+For the full field list, merge semantics, and plugin packaging, see [Profiles](/oss/deepagents/profiles).
