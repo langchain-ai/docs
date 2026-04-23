@@ -199,10 +199,11 @@ Use harness profiles to augment the runtime experience of an agent, for example 
 - Appending to the base `deepagents` system prompt (`system_prompt_suffix`), or replacing it outright (`base_system_prompt`)
 - Overriding individual tool descriptions (`tool_description_overrides`)
 - Excluding specific harness-level tools (`excluded_tools`)
+- Excluding specific middleware classes entirely (`excluded_middleware`)
 - Adding extra middleware for specific models or providers (`extra_middleware`)
 - Disabling, renaming, or re-prompting the general-purpose subagent (`general_purpose_subagent`)
 
-Register a profile under a provider name like `"openai"` for provider-wide defaults, or under a fully qualified `provider:model` key like `"openai:gpt-5.4"` for per-model overrides. Registrations are additive: re-registering under an existing key merges on top of the prior registration (unioning `excluded_tools`, merging middleware by type, merging `general_purpose_subagent` field-wise, and preserving any fields the new registration leaves unset).
+Register a profile under a provider name like `"openai"` for provider-wide defaults, or under a fully qualified `provider:model` key like `"openai:gpt-5.4"` for per-model overrides. Registrations are additive: re-registering under an existing key merges on top of the prior registration (unioning `excluded_tools` and `excluded_middleware`, merging middleware by type, merging `general_purpose_subagent` field-wise, and preserving any fields the new registration leaves unset).
 
 ```python
 from deepagents import (
@@ -210,21 +211,28 @@ from deepagents import (
     HarnessProfile,
     register_harness_profile,
 )
+from deepagents.middleware.summarization import SummarizationMiddleware
 
 # Illustrative example showing some of the capabilities of harness profiles:
 # Applied by `create_deep_agent` when the selected model resolves to
 # `openai:gpt-5.4`. Appends a system-prompt suffix, hides the `execute` tool,
-# and skips the auto-added `general-purpose` subagent (which also drops the
-# `task` tool when no other subagents are configured).
+# drops conversation summarization, and skips the auto-added `general-purpose`
+# subagent (which also drops the `task` tool when no other subagents are
+# configured).
 register_harness_profile(
     "openai:gpt-5.4",
     HarnessProfile(
         system_prompt_suffix="Respond in under 100 words.",
         excluded_tools={"execute"},
+        excluded_middleware=frozenset({SummarizationMiddleware}),
         general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
     ),
 )
 ```
+
+<Warning>
+    `excluded_middleware` cannot remove scaffolding that deep agents rely on. Listing `FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission middleware raises `ValueError` when `create_deep_agent` resolves the profile.
+</Warning>
 
 When you pass a preconfigured chat model instance (@[`BaseChatModel`] subclass) instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order: `provider:identifier` -> identifier-only (only when the identifier already contains `:`) -> provider-only fallback.
 
