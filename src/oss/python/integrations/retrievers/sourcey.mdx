@@ -1,0 +1,105 @@
+---
+title: "Sourcey integration"
+description: "Integrate with the Sourcey retriever using LangChain Python."
+---
+
+> [Sourcey](https://sourcey.com) publishes static documentation sites that
+> already contain the retrieval artefacts LangChain needs.
+> `SourceyRetriever` searches `search-index.json`, hydrates content from
+> `llms-full.txt`, and returns `Document` objects with canonical page URLs in
+> `metadata["source"]`.
+
+## Setup
+
+Install the partner package:
+
+```bash
+pip install -qU langchain-sourcey
+```
+
+No API key is required.
+
+## Instantiation
+
+`site_url` should point at the root of a published Sourcey docs build.
+
+```python
+from langchain_sourcey import SourceyRetriever
+
+retriever = SourceyRetriever(
+    site_url="https://sourcey.com/docs",
+    top_k=3,
+)
+```
+
+## Usage
+
+```python
+docs = retriever.invoke("mcp integration")
+
+for doc in docs:
+    print(doc.metadata["title"])
+    print(doc.metadata["source"])
+```
+
+## Use in a chain
+
+Install a chat model integration. This example uses OpenAI:
+
+```bash
+pip install -qU langchain-openai
+```
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+from langchain_sourcey import SourceyRetriever
+
+retriever = SourceyRetriever(site_url="https://sourcey.com/docs", top_k=3)
+
+prompt = ChatPromptTemplate.from_template(
+    """Answer the question using the documentation context below.
+
+{context}
+
+Question: {question}"""
+)
+
+chain = (
+    RunnablePassthrough.assign(context=(lambda x: x["question"]) | retriever)
+    | prompt
+    | ChatOpenAI(model="gpt-4.1-mini")
+    | StrOutputParser()
+)
+
+chain.invoke({"question": "How does Sourcey document MCP servers?"})
+```
+
+## Returned metadata
+
+Each `Document` includes metadata fields useful for citation and debugging:
+
+- `source`: canonical page URL used for citations
+- `matched_url`: original matched URL, including anchors when relevant
+- `matched_title`: matched search entry title
+- `title`: hydrated page title
+- `path`: Sourcey output path
+- `anchor`: matched fragment, if any
+- `tab`: Sourcey tab label
+- `category`: Sourcey search category
+- `site_url`: docs root used for retrieval
+- `score`: retriever ranking score
+
+## Sourcey site requirements
+
+For best results, the published Sourcey site should:
+
+- publish `search-index.json`
+- publish `llms-full.txt`
+- set `siteUrl` in `sourcey.config.ts` so returned citations are canonical
+
+If `llms-full.txt` is not available, `SourceyRetriever` falls back to
+extracting text from the matched HTML page.
