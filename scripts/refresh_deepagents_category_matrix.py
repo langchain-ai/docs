@@ -10,12 +10,19 @@ wins, so the table shows the most recent result for that pair.
   export GITHUB_TOKEN=ghp_...  # read access to Actions artifacts for langchain-ai/deepagents
   python3 -m pip install requests
   python scripts/refresh_deepagents_category_matrix.py
-  python scripts/refresh_deepagents_category_matrix.py --write
+  python scripts/refresh_deepagents_category_matrix.py --write  # overwrites the snippet; models.mdx includes it
 
-With no `GITHUB_TOKEN`, the script only writes a short <Note> (no **correctness** numbers).
+With no `GITHUB_TOKEN` or if CI did not return scores, the table still has headers and a single
+status row.
 
-The table uses a fixed set of seven eval categories (see `FIXED_CATEGORY_COLUMNS` in the script)
-plus **Average** and **Model**; rows are sorted by mean score.
+`--write` overwrites the snippet with **the markdown table only** (no intro; document prose lives in
+`models.mdx`).
+
+The table uses a fixed set of six eval categories (see `FIXED_CATEGORY_COLUMNS` in the script)
+plus a **Model** column; rows are ordered by **provider** (google_genai, openai, anthropic, then
+other `provider:model` ids alphabetically by provider and model). The **highest** score in each
+category column is shown in **bold** (tied scores are all bolded). Models with **fewer than four**
+of the six category scores are **omitted** (see `MIN_FILLED_CATEGORIES` in the script).
 """
 
 from __future__ import annotations
@@ -36,21 +43,20 @@ from typing import Any, Optional, Tuple
 CellData = Tuple[str, Optional[str]]
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SCRIPT_DIR.parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 from gh_artifact_download import download_artifact_bytes as _download_artifact_bytes
 
+# Written by --write. models.mdx imports and renders it.
+DEFAULT_SNIPPET_RELPATH = "src/snippets/deepagents-eval-category-matrix.mdx"
+DEFAULT_SNIPPET_PATH = _REPO_ROOT / DEFAULT_SNIPPET_RELPATH
+
 OWNER = "langchain-ai"
 REPO = "deepagents"
 WORKFLOW_ID = 240654164
-DEFAULT_MDX = "src/oss/deepagents/models.mdx"
-BEGIN = "<!-- eval-category-matrix:begin (generated) -->"
-END = "<!-- eval-category-matrix:end -->"
 
-# Fixed seven eval categories: API `category_scores` id -> table header. Order: average, then each column.
-# These match [categories.json in deepagents](
-#   https://github.com/langchain-ai/deepagents/blob/main/libs/evals/deepagents_evals/categories.json
-# ).
+# Fixed six eval categories (excludes `unit_test`): `category_scores` id -> table header.
 FIXED_CATEGORY_COLUMNS: list[Tuple[str, str]] = [
     ("file_operations", "File Ops"),
     ("retrieval", "Retrieval"),
@@ -58,10 +64,53 @@ FIXED_CATEGORY_COLUMNS: list[Tuple[str, str]] = [
     ("memory", "Memory"),
     ("conversation", "Conversation"),
     ("summarization", "Summarization"),
-    ("unit_test", "Unit Test"),
 ]
 FIXED_CATEGORY_KEYS: list[str] = [a for a, _ in FIXED_CATEGORY_COLUMNS]
 FIXED_HEADER_LABELS: list[str] = [b for _, b in FIXED_CATEGORY_COLUMNS]
+
+# Minimum number of the six fixed categories with a non-missing score; sparser rows are not shown.
+MIN_FILLED_CATEGORIES: int = 4
+
+# `provider:model` keys: primary provider order, then all other provider ids A–Z, then model id.
+TIER1_PROVIDERS: tuple[str, str, str] = ("google_genai", "openai", "anthropic")
+
+
+def _parse_provider_id(model_key: str) -> str:
+    if ":" in model_key:
+        return str(model_key.split(":", 1)[0]).strip()
+    return ""
+
+
+def _model_key_sort_key(model_key: str) -> tuple:
+    prov = _parse_provider_id(model_key)
+    mkl = model_key.lower()
+    if prov in TIER1_PROVIDERS:
+        return (0, TIER1_PROVIDERS.index(prov), mkl)
+    if prov:
+        return (1, prov.lower(), mkl)
+    return (2, "", mkl)
+
+
+def _column_maxima(
+    merged: dict[str, dict[str, CellData]], cat_keys: list[str]
+) -> dict[str, float | None]:
+    """Largest 0..100 value per column, or None if the column is all non-numeric."""
+    out: dict[str, float | None] = {}
+    for c in cat_keys:
+        vals: list[float] = []
+        for rowd in merged.values():
+            x = _parse_pct_to_0_100(rowd.get(c, ("—", None))[0])
+            if x is not None:
+                vals.append(x)
+        out[c] = max(vals) if vals else None
+    return out
+
+
+def _is_best_in_column(pct: str, col_max: float | None) -> bool:
+    v = _parse_pct_to_0_100(pct)
+    if v is None or col_max is None:
+        return False
+    return v == col_max
 
 
 def _token() -> str | None:
@@ -187,7 +236,7 @@ def _fmt_pct(raw: object) -> str:
 
 
 def _parse_pct_to_0_100(pct: str) -> float | None:
-    """Parse a table cell like `87%` to a 0..100 float for averaging and sorting."""
+    """Parse a table cell like `87%` to a 0..100 float (sorting, column max, bolding)."""
     if not pct or pct == "—":
         return None
     t = str(pct).strip().rstrip("%")
@@ -200,45 +249,31 @@ def _parse_pct_to_0_100(pct: str) -> float | None:
     return n
 
 
-def _row_mean_0_100(row: dict[str, CellData], cat_keys: list[str]) -> float | None:
-    """Mean of available category scores in 0..100, or None if no numeric cells."""
-    got: list[float] = []
-    for k in cat_keys:
-        cell = row.get(k, ("—", None))
-        x = _parse_pct_to_0_100(cell[0])
-        if x is not None:
-            got.append(x)
-    if not got:
-        return None
-    return sum(got) / len(got)
-
-
-def _row_mean_display(m: float) -> str:
-    return f"{round(m)}%"
-
-
-def _table_row_sort_key(
-    mkey: str, row: dict[str, CellData], cat_keys: list[str]
-) -> tuple[int, float, str]:
-    """Lower sort key is better: data rows with higher means first, then by name."""
-    m = _row_mean_0_100(row, cat_keys)
-    if m is None:
-        return (1, 0.0, mkey)
-    return (0, -m, mkey)
+def _filled_category_count(rowd: dict[str, CellData], cat_keys: list[str]) -> int:
+    """How many of the fixed columns have a parseable 0..100% score (including 0%)."""
+    n = 0
+    for c in cat_keys:
+        if _parse_pct_to_0_100(rowd.get(c, ("—", None))[0]) is not None:
+            n += 1
+    return n
 
 
 def _escape_md_cell(s: str) -> str:
     return s.replace("|", r"\|")
 
 
-def _format_stat_cell(cell: CellData) -> str:
-    """Format `NN%` and optionally link to the source workflow run."""
+def _format_stat_cell(cell: CellData, *, bold: bool = False) -> str:
+    """Format `NN%` and optionally link to the source workflow run; bold the cell when True."""
     pct, run_url = cell
     if not run_url or not pct or pct == "—":
-        return _escape_md_cell(pct) if pct else "—"
-    # Avoid breaking the markdown link label: escape ] if present
-    label = pct.replace("]", r"\]")
-    return f"[{label}]({run_url})"
+        inner = _escape_md_cell(pct) if pct else "—"
+    else:
+        # Avoid breaking the markdown link label: escape ] if present
+        label = pct.replace("]", r"\]")
+        inner = f"[{label}]({run_url})"
+    if bold and inner and inner != "—":
+        return f"**{inner}**"
+    return inner
 
 
 def _run_html_url(r: dict[str, Any], rid: int) -> str:
@@ -284,7 +319,7 @@ def _merge_rows(
             continue
         try:
             data = _download_artifact_bytes(dl, token)
-        except SystemExit:  # missing `requests` in gh_artifact_download
+        except SystemExit:
             raise
         except Exception as e:  # noqa: BLE001
             if first_err is None:
@@ -319,117 +354,100 @@ def _merge_rows(
     return out, n_fetch
 
 
-def _markdown(
+def _table_with_status_row(
+    status_first_cell: str, cat_keys: list[str], display_headers: list[str]
+) -> str:
+    """A full-width status message in the Model column; other columns are em dashes."""
+    if len(cat_keys) != len(display_headers):
+        raise ValueError("cat_keys and display_headers must be the same length")
+    headers: list[str] = [
+        "Model",
+        *[_escape_md_cell(h) for h in display_headers],
+    ]
+    ncols = len(headers)
+    tlines: list[str] = [
+        "| " + " | ".join(headers) + " |",
+        "| :--- |" + " ---: |" * (ncols - 1),
+        f"| {status_first_cell} | " + " | ".join(["—"] * (ncols - 1)) + " |",
+    ]
+    return "\n".join(tlines) + "\n"
+
+
+def _table_markdown(
     token: str | None,
     merged: dict[str, dict[str, CellData]],
     cat_keys: list[str],
     display_headers: list[str],
     n_fetched: int,
+    n_models_unfiltered: int = 0,
 ) -> str:
+    """Markdown for the data table only (for the generated snippet; no intro or callouts)."""
     if len(cat_keys) != len(display_headers):
         raise ValueError("cat_keys and display_headers must be the same length")
-    intro = (
-        f"**Per-category correctness** from the `category_scores` field in "
-        f"[Evals - GHA](https://github.com/{OWNER}/{REPO}/actions/workflows/evals.yml) "
-        "`evals_summary.json` (inside the `evals-summary` artifact). For each `provider:model` and "
-        "[eval category](https://github.com/langchain-ai/deepagents/blob/main/libs/evals/EVAL_CATALOG.md), "
-        "this table takes the first value seen while walking successful runs from **newest to oldest** "
-        "(`GITHUB_TOKEN` and `--per-page` are tunable). Each category cell links to the **workflow run** "
-        "for that score. The **Average** column is the mean of the listed category scores (missing categories "
-        "excluded from the mean). **Rows are sorted** by that average, highest first, then by model name. **Compare** "
-        "only the same "
-        f"[eval tier](https://github.com/{OWNER}/{REPO}/blob/main/.github/workflows/evals.yml#L135-L144) and "
-        "[run inputs](https://github.com/langchain-ai/deepagents/blob/main/.github/workflows/evals.yml) "
-        f"as you would when diffing one [Evals - GHA](https://github.com/{OWNER}/{REPO}/actions/workflows/evals.yml) run against another. "
-    )
-
-    lines: list[str] = [intro, ""]
-    if not token:
-        lines.append(
-            "<Note>Generate this table: set `GITHUB_TOKEN` (artifact read for the Deep Agents repository) and run "
-            "`python scripts/refresh_deepagents_category_matrix.py --write` at the documentation root. "
-            "The table includes seven eval categories in a fixed order, plus a leading **Average** of those scores, "
-            "and rows are sorted by average. "
-            "</Note>"
-        )
-        lines.append("")
-    elif n_fetched == 0 and merged == {}:
-        lines.append(
-            "<Note>Could not load any `evals-summary` zips. Run `python3 -m pip install requests`. "
-            "A **403** when **listing** workflow artifacts for "
-            f"`{OWNER}/{REPO}` is usually **SAML / SSO** for the **langchain-ai** org: in **Settings** → **Developer settings** → **Personal access tokens**, open this token, use **Configure SSO**, and **Authorize** for that org. Or run `gh auth login` and use the token from `gh auth token` as `GITHUB_TOKEN`. The token also needs **Actions: Read** on the repository. See [SSO and personal access tokens](https://docs.github.com/en/enterprise-cloud@latest/authentication/authenticating-with-saml-single-sign-on/authorizing-a-personal-access-token-for-use-with-saml-single-sign-on) and [Managing personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens). "
-            "For details, look at the script’s stderr when you run it. Try a larger `--per-page` if the scan missed runs. "
-            "</Note>"
-        )
-        lines.append("")
-
     if merged:
         headers: list[str] = [
-            "Average",
             "Model",
             *[_escape_md_cell(h) for h in display_headers],
         ]
         ncols = len(headers)
         tlines: list[str] = [
             "| " + " | ".join(headers) + " |",
-            "| ---: | :--- |" + " ---: |" * (ncols - 2),
+            "| :--- |" + " ---: |" * (ncols - 1),
         ]
-        sorted_rows = sorted(
-            merged.items(),
-            key=lambda it: _table_row_sort_key(it[0], it[1], cat_keys),
-        )
+        col_max = _column_maxima(merged, cat_keys)
+        sorted_rows = sorted(merged.items(), key=lambda it: _model_key_sort_key(it[0]))
         for mkey, rowd in sorted_rows:
-            mfloat = _row_mean_0_100(rowd, cat_keys)
-            avg_cell = (
-                _escape_md_cell(_row_mean_display(mfloat)) if mfloat is not None else "—"
-            )
-            rest = [_format_stat_cell(rowd.get(c, ("—", None))) for c in cat_keys]
-            body: list[str] = [avg_cell, _escape_md_cell(mkey)] + rest
+            rest = [
+                _format_stat_cell(
+                    rowd.get(c, ("—", None)),
+                    bold=_is_best_in_column(
+                        rowd.get(c, ("—", None))[0], col_max.get(c)
+                    ),
+                )
+                for c in cat_keys
+            ]
+            body: list[str] = [_escape_md_cell(mkey)] + rest
             tlines.append("| " + " | ".join(body) + " |")
-        lines.extend(tlines)
-        lines.append("")
-        if token and n_fetched:
-            lines.append(
-                "<Note>Regenerate after new CI: `python scripts/refresh_deepagents_category_matrix.py --write`</Note>"
-            )
-    elif token and n_fetched > 0 and not merged:
-        lines.append(
-            "_No per-category `category_scores` in the `evals_summary` entries we read._\n"
+        return "\n".join(tlines) + "\n"
+
+    if not token and cat_keys:
+        return _table_with_status_row(
+            "_Set `GITHUB_TOKEN` and run `python scripts/refresh_deepagents_category_matrix.py --write` to load scores from CI._",
+            cat_keys,
+            display_headers,
         )
-    elif not token and not merged and cat_keys:
-        heads2: list[str] = [
-            "Average",
-            "Model",
-            *[_escape_md_cell(h) for h in display_headers],
-        ]
-        n2 = len(heads2)
-        tlines2: list[str] = [
-            "| " + " | ".join(heads2) + " |",
-            "| ---: | :--- |" + " ---: |" * (n2 - 2),
-            "| _Run the script in the Note_ | "
-            + " | ".join(["—"] * (n2 - 1))
-            + " |",
-        ]
-        lines.extend(tlines2)
-        lines.append("")
-    return "\n".join(x.rstrip() for x in lines) + "\n"
+    if (
+        token
+        and n_fetched > 0
+        and n_models_unfiltered > 0
+    ):
+        return _table_with_status_row(
+            "_No models have scores in at least four of the six category columns._",
+            cat_keys,
+            display_headers,
+        )
+    if token and n_fetched > 0:
+        return _table_with_status_row(
+            "_No per-category `category_scores` in the `evals_summary` entries we read._",
+            cat_keys,
+            display_headers,
+        )
+    if token and n_fetched == 0:
+        return _table_with_status_row(
+            "_No `evals-summary` artifacts were loaded. Install `requests`, set `GITHUB_TOKEN` with **Actions: Read** on the repo, use `gh auth token` if the org uses SSO, and see the script’s stderr. Try a larger `--per-page` if needed._",
+            cat_keys,
+            display_headers,
+        )
+    return _table_with_status_row(
+        "_No data._", cat_keys, display_headers
+    )
 
 
-def _replace_mdx(mdx_path: str, new_inner: str) -> None:
-    p = Path(mdx_path)
-    text = p.read_text(encoding="utf-8")
-    if BEGIN not in text or END not in text:
-        sys.exit(
-            f"Add these markers in {mdx_path} to enable --write:\n{BEGIN}\n{END}\n"
-        )
-    a = text.find(BEGIN)
-    b = text.find(END)
-    if a == -1 or b == -1 or b < a:
-        sys.exit("Invalid marker order.")
-    b_end = b + len(END)
-    block = f"{BEGIN}\n{new_inner.rstrip()}\n{END}"
-    p.write_text(text[:a] + block + text[b_end:], encoding="utf-8")
-    print(f"Wrote {mdx_path}", file=sys.stderr)
+def _write_snippet(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out = body.rstrip() + "\n"
+    path.write_text(out, encoding="utf-8")
+    print(f"Wrote {path}", file=sys.stderr)
 
 
 def build_fragment(per_page: int) -> str:
@@ -439,30 +457,49 @@ def build_fragment(per_page: int) -> str:
     if tok:
         runs = _fetch_runs(int(per_page))
         merged, n_fetched = _merge_rows(runs, tok)
-    return _markdown(
+    n_models_unfiltered = len(merged)
+    merged = {
+        k: v
+        for k, v in merged.items()
+        if _filled_category_count(v, FIXED_CATEGORY_KEYS) >= MIN_FILLED_CATEGORIES
+    }
+    return _table_markdown(
         token=tok,
         merged=merged,
         cat_keys=FIXED_CATEGORY_KEYS,
         display_headers=FIXED_HEADER_LABELS,
         n_fetched=n_fetched,
+        n_models_unfiltered=n_models_unfiltered,
     )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Regenerate the model × eval-category table in models.mdx"
+        description="Regenerate the eval-category matrix snippet (included from models.mdx)"
     )
-    ap.add_argument("--per-page", type=int, default=100, help="Number of latest completed runs to scan (newer first in API).")
     ap.add_argument(
-        "--write", action="store_true", help=f"Patch {DEFAULT_MDX} between {BEGIN[:20]}... markers"
+        "--per-page", type=int, default=100, help="Number of latest completed runs to scan (newer first in API)."
     )
-    ap.add_argument("--file", default=DEFAULT_MDX, help="Path to the MDX file to patch")
+    ap.add_argument(
+        "--write",
+        action="store_true",
+        help=f"Overwrite the snippet (default: {DEFAULT_SNIPPET_RELPATH}) with generated MDX",
+    )
+    ap.add_argument(
+        "--file",
+        type=Path,
+        default=DEFAULT_SNIPPET_PATH,
+        help="Output snippet path (default: repo / src/snippets/deepagents-eval-category-matrix.mdx).",
+    )
     args = ap.parse_args()
     frag = build_fragment(int(args.per_page))
     if not args.write:
         sys.stdout.write(frag)
         return 0
-    _replace_mdx(args.file, frag)
+    out_path = args.file
+    if not out_path.is_absolute():
+        out_path = (_REPO_ROOT / out_path).resolve()
+    _write_snippet(out_path, frag)
     return 0
 
 
