@@ -53,6 +53,7 @@ def generate_cover(prompt: str, slug: str) -> str:
 
         client = genai.Client()
         response = client.models.generate_content(
+            # KEEP MODEL
             model="gemini-2.5-flash-image",
             contents=[prompt],
         )
@@ -84,6 +85,7 @@ def generate_social_image(prompt: str, platform: str, slug: str) -> str:
 
         client = genai.Client()
         response = client.models.generate_content(
+            # KEEP MODEL
             model="gemini-2.5-flash-image",
             contents=[prompt],
         )

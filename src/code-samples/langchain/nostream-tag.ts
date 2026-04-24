@@ -7,9 +7,11 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { StateGraph, StateSchema, START } from "@langchain/langgraph";
 import * as z from "zod";
 
-const streamModel = new ChatAnthropic({ model: "claude-3-haiku-20240307" });
+// KEEP MODEL
+const streamModel = new ChatAnthropic({ model: "claude-haiku-4-5-20251001" });
 const internalModel = new ChatAnthropic({
-  model: "claude-3-haiku-20240307",
+  // KEEP MODEL
+  model: "claude-haiku-4-5-20251001",
 }).withConfig({
   tags: ["nostream"],
 });
@@ -42,7 +44,10 @@ const graph = new StateGraph(State)
   .addEdge("writeAnswer", "internal_notes")
   .compile();
 
-const stream = await graph.stream({ topic: "AI" }, { streamMode: "messages" });
+const stream = await graph.stream(
+  { topic: "AI", answer: "", notes: "" },
+  { streamMode: "messages" },
+);
 // :snippet-end:
 
 // :remove-start:
