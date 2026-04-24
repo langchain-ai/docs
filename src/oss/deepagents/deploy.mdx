@@ -42,6 +42,7 @@ Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith
 | **`mcp.json`** | MCP tools (HTTP/SSE). See [MCP docs](/oss/langchain/mcp). |
 | **`subagents/`** | Specialized [subagents](/oss/deepagents/subagents) the main agent can delegate to. Each subdirectory contains its own `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. See [subagents](#subagents). |
 | **`sandbox`** | Optional execution environment. Thread-scoped sandboxes are provisioned per thread and will be re-created if the server restarts. Use `scope = "assistant"` if you need sandbox state that persists across threads. See [sandbox providers](#sandbox-providers). |
+| **`frontend`** | Optional pre-built React chat UI shipped alongside the agent on the same deployment. Flip one flag to get an authenticated chat experience with real-time todos, files, and subagent activity panels. See [`[frontend]`](#frontend). |
 
 ## Install
 
@@ -229,6 +230,55 @@ Add these to your `.env` alongside your other credentials. The bundler validates
 - All resources (threads, runs, store) are automatically scoped per user via `metadata.owner`.
 - LangSmith Studio bypasses auth for local development.
 
+### `[frontend]`
+
+Optionally enable `[frontend]` to ship a pre-built React chat UI alongside your agent on the same deployment. The frontend is mounted at `/app` on your deployment URL; your LangGraph API stays at the root (`/threads`, `/runs`, `/assistants`). Requires `[auth]` — the UI uses your chosen provider's JWT to talk to the agent.
+
+<ResponseField name="enabled" type="boolean" default="false">
+    If `true`, bundle the default chat UI into the deployment.
+</ResponseField>
+
+<ResponseField name="app_name" type="string" default="[agent].name">
+    Display name shown in the UI header and browser tab.
+</ResponseField>
+
+```toml deepagents.toml
+[agent]
+name = "my-agent"
+model = "anthropic:claude-sonnet-4-6"
+
+[auth]
+provider = "supabase"   # or "clerk"
+
+[frontend]
+enabled = true
+app_name = "My Agent"
+```
+
+**What you get:**
+
+- Authenticated chat with streaming responses
+- Thread picker with auto-generated titles from the first user message
+- Real-time todos, files, and subagent activity panels that reflect your deep agent's live graph state
+- Light/dark theme toggle that follows OS preference on first load and persists after
+- Sign-in / sign-up / sign-out flows — Clerk ships its full widget (social logins, password reset); Supabase ships email/password with a built-in password reset flow
+
+**Environment variables:**
+
+The frontend reuses most of what `[auth]` already requires. Only Clerk needs one additional browser-facing key.
+
+| Provider | Additional var |
+| --- | --- |
+| `supabase` | None — reuses `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_DEFAULT_KEY` from `[auth]` |
+| `clerk` | `CLERK_PUBLISHABLE_KEY` (browser-facing publishable key; distinct from `CLERK_SECRET_KEY`) |
+
+**Post-deploy setup:**
+
+After deploying, add your deployment URL to your auth provider's dashboard so auth redirects land back in the app. This is a one-time step per deployment URL.
+
+- **Clerk:** Dashboard → your application → **Domains** → add your deployment host (e.g. `smoke-clerk-abc.us.langgraph.app`). Clerk development instances auto-whitelist localhost; production deployment URLs need explicit whitelisting.
+- **Supabase:** Dashboard → **Authentication** → **URL Configuration** → add `https://<your-deployment>/app/**` to **Redirect URLs**. Without this, password-reset and email-confirmation links won't route back to your app.
+
 ### `.env`
 
 Place a `.env` file alongside `deepagents.toml` with your API keys:
@@ -254,6 +304,9 @@ SUPABASE_PUBLISHABLE_DEFAULT_KEY=eyJhbGc...
 
 # Required if [auth] provider = "clerk"
 CLERK_SECRET_KEY=sk_test_...
+
+# Required if [frontend].enabled = true AND [auth] provider = "clerk"
+CLERK_PUBLISHABLE_KEY=pk_test_...
 ```
 
 ## Authentication
