@@ -14,9 +14,8 @@ wins, so the table shows the most recent result for that pair.
 
 With no `GITHUB_TOKEN`, the script only writes a short <Note> (no **correctness** numbers).
 
-Column labels follow [categories.json in deepagents](
-https://github.com/langchain-ai/deepagents/blob/main/libs/evals/deepagents_evals/categories.json
-).
+The table uses a fixed set of seven eval categories (see `FIXED_CATEGORY_COLUMNS` in the script)
+plus **Average** and **Model**; rows are sorted by mean score.
 """
 
 from __future__ import annotations
@@ -44,13 +43,25 @@ from gh_artifact_download import download_artifact_bytes as _download_artifact_b
 OWNER = "langchain-ai"
 REPO = "deepagents"
 WORKFLOW_ID = 240654164
-CATEGORIES_URL = (
-    f"https://raw.githubusercontent.com/{OWNER}/{REPO}/main/"
-    "libs/evals/deepagents_evals/categories.json"
-)
 DEFAULT_MDX = "src/oss/deepagents/models.mdx"
 BEGIN = "<!-- eval-category-matrix:begin (generated) -->"
 END = "<!-- eval-category-matrix:end -->"
+
+# Fixed seven eval categories: API `category_scores` id -> table header. Order: average, then each column.
+# These match [categories.json in deepagents](
+#   https://github.com/langchain-ai/deepagents/blob/main/libs/evals/deepagents_evals/categories.json
+# ).
+FIXED_CATEGORY_COLUMNS: list[Tuple[str, str]] = [
+    ("file_operations", "File Ops"),
+    ("retrieval", "Retrieval"),
+    ("tool_use", "Tool Use"),
+    ("memory", "Memory"),
+    ("conversation", "Conversation"),
+    ("summarization", "Summarization"),
+    ("unit_test", "Unit Test"),
+]
+FIXED_CATEGORY_KEYS: list[str] = [a for a, _ in FIXED_CATEGORY_COLUMNS]
+FIXED_HEADER_LABELS: list[str] = [b for _, b in FIXED_CATEGORY_COLUMNS]
 
 
 def _token() -> str | None:
@@ -154,19 +165,6 @@ def _extract_evals_summary(zip_data: bytes) -> list[dict[str, object]] | None:
     return None
 
 
-def _load_category_meta() -> tuple[list[str], dict[str, str], list[str]]:
-    with urllib.request.urlopen(CATEGORIES_URL) as r:
-        raw = json.loads(r.read().decode("utf-8"))
-    order = [str(c) for c in raw.get("categories", [])]
-    labels: dict[str, str] = {
-        str(k): str(v) for k, v in (raw.get("labels") or {}).items()
-    }
-    radar = [str(c) for c in raw.get("radar_categories", [])]
-    if not radar:
-        radar = [c for c in order if c != "unit_test"]
-    return order, labels, radar
-
-
 def _fmt_pct(raw: object) -> str:
     if raw is None or raw == "—":
         return "—"
@@ -186,6 +184,47 @@ def _fmt_pct(raw: object) -> str:
             return "—"
         return f"{round(v):d}%"
     return f"{round(100.0 * v):d}%"
+
+
+def _parse_pct_to_0_100(pct: str) -> float | None:
+    """Parse a table cell like `87%` to a 0..100 float for averaging and sorting."""
+    if not pct or pct == "—":
+        return None
+    t = str(pct).strip().rstrip("%")
+    try:
+        n = float(t)
+    except (TypeError, ValueError):
+        return None
+    if n < 0 or n > 100.0 + 1e-6:
+        return None
+    return n
+
+
+def _row_mean_0_100(row: dict[str, CellData], cat_keys: list[str]) -> float | None:
+    """Mean of available category scores in 0..100, or None if no numeric cells."""
+    got: list[float] = []
+    for k in cat_keys:
+        cell = row.get(k, ("—", None))
+        x = _parse_pct_to_0_100(cell[0])
+        if x is not None:
+            got.append(x)
+    if not got:
+        return None
+    return sum(got) / len(got)
+
+
+def _row_mean_display(m: float) -> str:
+    return f"{round(m)}%"
+
+
+def _table_row_sort_key(
+    mkey: str, row: dict[str, CellData], cat_keys: list[str]
+) -> tuple[int, float, str]:
+    """Lower sort key is better: data rows with higher means first, then by name."""
+    m = _row_mean_0_100(row, cat_keys)
+    if m is None:
+        return (1, 0.0, mkey)
+    return (0, -m, mkey)
 
 
 def _escape_md_cell(s: str) -> str:
@@ -280,31 +319,25 @@ def _merge_rows(
     return out, n_fetch
 
 
-def _column_order(merged: dict[str, dict[str, CellData]], default_order: list[str]) -> list[str]:
-    have: set[str] = set()
-    for _m, row in merged.items():
-        have.update(row.keys())
-    # stable: categories.json order, then any extra keys
-    out: list[str] = [c for c in default_order if c in have]
-    extra = sorted(have - set(out))
-    return out + extra
-
-
 def _markdown(
     token: str | None,
     merged: dict[str, dict[str, CellData]],
-    cat_order: list[str],
-    labels: dict[str, str],
+    cat_keys: list[str],
+    display_headers: list[str],
     n_fetched: int,
 ) -> str:
+    if len(cat_keys) != len(display_headers):
+        raise ValueError("cat_keys and display_headers must be the same length")
     intro = (
         f"**Per-category correctness** from the `category_scores` field in "
         f"[Evals - GHA](https://github.com/{OWNER}/{REPO}/actions/workflows/evals.yml) "
         "`evals_summary.json` (inside the `evals-summary` artifact). For each `provider:model` and "
         "[eval category](https://github.com/langchain-ai/deepagents/blob/main/libs/evals/EVAL_CATALOG.md), "
         "this table takes the first value seen while walking successful runs from **newest to oldest** "
-        "(`GITHUB_TOKEN` and `--per-page` are tunable). Each value links to the **workflow run** whose "
-        "`evals_summary` that score came from. **Compare only the same** "
+        "(`GITHUB_TOKEN` and `--per-page` are tunable). Each category cell links to the **workflow run** "
+        "for that score. The **Average** column is the mean of the listed category scores (missing categories "
+        "excluded from the mean). **Rows are sorted** by that average, highest first, then by model name. **Compare** "
+        "only the same "
         f"[eval tier](https://github.com/{OWNER}/{REPO}/blob/main/.github/workflows/evals.yml#L135-L144) and "
         "[run inputs](https://github.com/langchain-ai/deepagents/blob/main/.github/workflows/evals.yml) "
         f"as you would when diffing one [Evals - GHA](https://github.com/{OWNER}/{REPO}/actions/workflows/evals.yml) run against another. "
@@ -315,7 +348,8 @@ def _markdown(
         lines.append(
             "<Note>Generate this table: set `GITHUB_TOKEN` (artifact read for the Deep Agents repository) and run "
             "`python scripts/refresh_deepagents_category_matrix.py --write` at the documentation root. "
-            "Column titles follow the `labels` map in [categories.json](https://github.com/langchain-ai/deepagents/blob/main/libs/evals/deepagents_evals/categories.json) in the Deep Agents repo. "
+            "The table includes seven eval categories in a fixed order, plus a leading **Average** of those scores, "
+            "and rows are sorted by average. "
             "</Note>"
         )
         lines.append("")
@@ -330,16 +364,27 @@ def _markdown(
         lines.append("")
 
     if merged:
-        headers: list[str] = ["Model"] + [labels.get(c, c) for c in cat_order]
-        tlines: list[str] = [
-            "| " + " | ".join(_escape_md_cell(x) for x in headers) + " |",
-            "| :--- |" + " ---: |" * (len(headers) - 1),
+        headers: list[str] = [
+            "Average",
+            "Model",
+            *[_escape_md_cell(h) for h in display_headers],
         ]
-        for mkey in sorted(merged, key=str.lower):
-            rowd = merged[mkey]
-            body: list[str] = [_escape_md_cell(mkey)]
-            for c in cat_order:
-                body.append(_format_stat_cell(rowd.get(c, ("—", None))))
+        ncols = len(headers)
+        tlines: list[str] = [
+            "| " + " | ".join(headers) + " |",
+            "| ---: | :--- |" + " ---: |" * (ncols - 2),
+        ]
+        sorted_rows = sorted(
+            merged.items(),
+            key=lambda it: _table_row_sort_key(it[0], it[1], cat_keys),
+        )
+        for mkey, rowd in sorted_rows:
+            mfloat = _row_mean_0_100(rowd, cat_keys)
+            avg_cell = (
+                _escape_md_cell(_row_mean_display(mfloat)) if mfloat is not None else "—"
+            )
+            rest = [_format_stat_cell(rowd.get(c, ("—", None))) for c in cat_keys]
+            body: list[str] = [avg_cell, _escape_md_cell(mkey)] + rest
             tlines.append("| " + " | ".join(body) + " |")
         lines.extend(tlines)
         lines.append("")
@@ -351,13 +396,19 @@ def _markdown(
         lines.append(
             "_No per-category `category_scores` in the `evals_summary` entries we read._\n"
         )
-    elif not token and not merged and cat_order:
-        headers2: list[str] = ["Model"] + [labels.get(c, c) for c in cat_order]
-        pad = " | ".join(["—"] * len(cat_order))
+    elif not token and not merged and cat_keys:
+        heads2: list[str] = [
+            "Average",
+            "Model",
+            *[_escape_md_cell(h) for h in display_headers],
+        ]
+        n2 = len(heads2)
         tlines2: list[str] = [
-            "| " + " | ".join(_escape_md_cell(x) for x in headers2) + " |",
-            "| :--- |" + " ---: |" * (len(headers2) - 1),
-            "| _Run the script in the Note to fill this table_ | " + pad + " |",
+            "| " + " | ".join(heads2) + " |",
+            "| ---: | :--- |" + " ---: |" * (n2 - 2),
+            "| _Run the script in the Note_ | "
+            + " | ".join(["—"] * (n2 - 1))
+            + " |",
         ]
         lines.extend(tlines2)
         lines.append("")
@@ -383,15 +434,17 @@ def _replace_mdx(mdx_path: str, new_inner: str) -> None:
 
 def build_fragment(per_page: int) -> str:
     tok = _token()
-    order, labels, radar = _load_category_meta()
     n_fetched = 0
     merged: dict[str, dict[str, CellData]] = {}
     if tok:
         runs = _fetch_runs(int(per_page))
         merged, n_fetched = _merge_rows(runs, tok)
-    col_order = _column_order(merged, order) if merged else radar
     return _markdown(
-        token=tok, merged=merged, cat_order=col_order, labels=labels, n_fetched=n_fetched
+        token=tok,
+        merged=merged,
+        cat_keys=FIXED_CATEGORY_KEYS,
+        display_headers=FIXED_HEADER_LABELS,
+        n_fetched=n_fetched,
     )
 
 
