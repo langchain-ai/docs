@@ -148,7 +148,7 @@ def _extract_js_param_names_from_create_params(html: str) -> list[str]:
 
 def _render_js_config_snippet(param_names: list[str]) -> str:
     """
-    Render a docs-friendly 'createDeepAgent({ ... })' snippet that focuses on the
+    Render a docs-friendly createDeepAgent config object snippet that focuses on the
     parameter surface, not the full generic function signature.
     """
     # Follow the order from the API reference ("## Properties") to avoid docs drift.
@@ -181,10 +181,10 @@ def _render_js_config_snippet(param_names: list[str]) -> str:
     }
 
     lines = ["const agent = createDeepAgent({"]
-    for key in ordered:
+    for i, key in enumerate(ordered):
         hint = type_hints.get(key, "unknown")
-        lines.append(f"  {key}?: {hint},")
-    lines.append("  ...")
+        suffix = "," if i < len(ordered) - 1 else ""
+        lines.append(f"  {key}?: {hint}{suffix}")
     lines.append("});")
     return "```typescript\n" + "\n".join(lines) + "\n```\n"
 
@@ -233,6 +233,10 @@ def _extract_signature_codeblock(
     code = code.rstrip()
     if fence_language == "typescript":
         code = _ts_pretty_signature(code)
+    elif fence_language == "python":
+        # API reference often renders a trailing comma after the last param; the
+        # docs prefer omitting it for a cleaner closing paren line.
+        code = re.sub(r",(\n\s*)\) ->", r"\1) ->", code, count=1)
     return f"```{fence_language}\n{code}\n```\n"
 
 
