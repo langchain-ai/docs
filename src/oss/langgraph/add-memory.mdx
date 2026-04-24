@@ -63,6 +63,17 @@ with PostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight
 
 :::js
 <Tabs>
+  <Tab title="Postgres">
+    ```typescript
+    import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+
+    const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+    const checkpointer = PostgresSaver.fromConnString(DB_URI);
+
+    const builder = new StateGraph(...);
+    const graph = builder.compile({ checkpointer });
+    ```
+  </Tab>
   <Tab title="MongoDB">
     ```typescript
     import { MongoClient } from "mongodb";
@@ -70,17 +81,6 @@ with PostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight
 
     const client = new MongoClient("mongodb://user:password@localhost:27017");
     const checkpointer = new MongoDBSaver({ client });
-
-    const builder = new StateGraph(...);
-    const graph = builder.compile({ checkpointer });
-    ```
-  </Tab>
-  <Tab title="Postgres">
-    ```typescript
-    import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
-
-    const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
-    const checkpointer = PostgresSaver.fromConnString(DB_URI);
 
     const builder = new StateGraph(...);
     const graph = builder.compile({ checkpointer });
@@ -453,7 +453,7 @@ with PostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight
               stream_mode="values"
           ):
               chunk["messages"][-1].pretty_print()
-```
+      ```
         </Tab>
         <Tab title="Async">
       ```python
@@ -705,6 +705,17 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
 
 :::js
 <Tabs>
+  <Tab title="Postgres">
+    ```typescript
+    import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
+
+    const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+    const store = PostgresStore.fromConnString(DB_URI);
+
+    const builder = new StateGraph(...);
+    const graph = builder.compile({ store });
+    ```
+  </Tab>
   <Tab title="MongoDB">
     ```typescript
     import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
@@ -719,103 +730,8 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
     const graph = builder.compile({ store });
     ```
   </Tab>
-  <Tab title="Postgres">
-    ```typescript
-    import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
-
-    const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
-    const store = PostgresStore.fromConnString(DB_URI);
-
-    const builder = new StateGraph(...);
-    const graph = builder.compile({ store });
-    ```
-  </Tab>
 </Tabs>
 :::
-
-<Accordion title="Example: using MongoDB store">
-  :::js
-  ```
-  npm install @langchain/langgraph-checkpoint-mongodb
-  ```
-
-  <Tip>
-  `MongoDBStore.fromConnString` calls `start()` automatically, which creates the required indexes. For vector search, allow a moment for the Atlas Search index to become `READY` before querying.
-  </Tip>
-
-  ```typescript
-  import { ChatAnthropic } from "@langchain/anthropic";
-  import { MemorySaver } from "@langchain/langgraph";
-  import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
-  import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
-  import { OpenAIEmbeddings } from "@langchain/openai";
-  import { v4 as uuidv4 } from "uuid";
-
-  const State = new StateSchema({
-    messages: MessagesValue,
-  });
-
-  const model = new ChatAnthropic({ model: "claude-sonnet-4-5-20251001" });
-
-  const callModel: GraphNode<typeof State> = async (state, runtime) => {
-    const userId = runtime.context?.userId;
-    const namespace = ["memories", userId];
-    const memories = await runtime.store?.search(namespace, { query: state.messages.at(-1)?.content });
-    const info = memories?.map(d => d.value.data).join("\n") || "";
-    const systemMsg = `You are a helpful assistant talking to the user. User info: ${info}`;
-
-    // Store new memories if the user asks the model to remember
-    const lastMessage = state.messages.at(-1);
-    if (lastMessage?.content?.toLowerCase().includes("remember")) {
-      const memory = "User name is Bob";
-      await runtime.store?.put(namespace, uuidv4(), { data: memory });
-    }
-
-    const response = await model.invoke([
-      { role: "system", content: systemMsg },
-      ...state.messages
-    ]);
-    return { messages: [response] };
-  };
-
-  const MONGODB_URI = "mongodb://user:password@localhost:27017";
-
-  // Manual embedding: supply an EmbeddingsInterface and dims to enable vector search.
-  // Omit embeddings and indexConfig to use field-based search only.
-  const store = await MongoDBStore.fromConnString(MONGODB_URI, {
-    dbName: "langgraph",
-    collectionName: "store",
-    embeddings: new OpenAIEmbeddings({ model: "text-embedding-3-small" }),
-    indexConfig: {
-      name: "store_vector_index",
-      dims: 1536,
-    },
-  });
-
-  const checkpointer = new MemorySaver();
-
-  const builder = new StateGraph(State)
-    .addNode("call_model", callModel)
-    .addEdge(START, "call_model");
-
-  const graph = builder.compile({ checkpointer, store });
-
-  for await (const chunk of await graph.stream(
-    { messages: [{ role: "user", content: "Hi! Remember: my name is Bob" }] },
-    { configurable: { thread_id: "1" }, context: { userId: "1" }, streamMode: "values" }
-  )) {
-    console.log(chunk.messages.at(-1)?.content);
-  }
-
-  for await (const chunk of await graph.stream(
-    { messages: [{ role: "user", content: "what is my name?" }] },
-    { configurable: { thread_id: "2" }, context: { userId: "1" }, streamMode: "values" }
-  )) {
-    console.log(chunk.messages.at(-1)?.content);
-  }
-  ```
-  :::
-</Accordion>
 
 <Accordion title="Example: using Postgres store">
   :::python
@@ -1055,6 +971,90 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
   :::
 </Accordion>
 
+<Accordion title="Example: using MongoDB store">
+  :::js
+  ```
+  npm install @langchain/langgraph-checkpoint-mongodb
+  ```
+
+  <Tip>
+  `MongoDBStore.fromConnString` calls `start()` automatically, which creates the required indexes. For vector search, allow a moment for the Atlas Search index to become `READY` before querying.
+  </Tip>
+
+  ```typescript
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import { MemorySaver } from "@langchain/langgraph";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
+  import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+  import { OpenAIEmbeddings } from "@langchain/openai";
+  import { v4 as uuidv4 } from "uuid";
+
+  const State = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  const model = new ChatAnthropic({ model: "claude-sonnet-4-5-20251001" });
+
+  const callModel: GraphNode<typeof State> = async (state, runtime) => {
+    const userId = runtime.context?.userId;
+    const namespace = ["memories", userId];
+    const memories = await runtime.store?.search(namespace, { query: state.messages.at(-1)?.content });
+    const info = memories?.map(d => d.value.data).join("\n") || "";
+    const systemMsg = `You are a helpful assistant talking to the user. User info: ${info}`;
+
+    // Store new memories if the user asks the model to remember
+    const lastMessage = state.messages.at(-1);
+    if (lastMessage?.content?.toLowerCase().includes("remember")) {
+      const memory = "User name is Bob";
+      await runtime.store?.put(namespace, uuidv4(), { data: memory });
+    }
+
+    const response = await model.invoke([
+      { role: "system", content: systemMsg },
+      ...state.messages
+    ]);
+    return { messages: [response] };
+  };
+
+  const MONGODB_URI = "mongodb://user:password@localhost:27017";
+
+  // Manual embedding: supply an EmbeddingsInterface and dims to enable vector search.
+  // Omit embeddings and indexConfig to use field-based search only.
+  const store = await MongoDBStore.fromConnString(MONGODB_URI, {
+    dbName: "langgraph",
+    collectionName: "store",
+    embeddings: new OpenAIEmbeddings({ model: "text-embedding-3-small" }),
+    indexConfig: {
+      name: "store_vector_index",
+      dims: 1536,
+    },
+  });
+
+  const checkpointer = new MemorySaver();
+
+  const builder = new StateGraph(State)
+    .addNode("call_model", callModel)
+    .addEdge(START, "call_model");
+
+  const graph = builder.compile({ checkpointer, store });
+
+  for await (const chunk of await graph.stream(
+    { messages: [{ role: "user", content: "Hi! Remember: my name is Bob" }] },
+    { configurable: { thread_id: "1" }, context: { userId: "1" }, streamMode: "values" }
+  )) {
+    console.log(chunk.messages.at(-1)?.content);
+  }
+
+  for await (const chunk of await graph.stream(
+    { messages: [{ role: "user", content: "what is my name?" }] },
+    { configurable: { thread_id: "2" }, context: { userId: "1" }, streamMode: "values" }
+  )) {
+    console.log(chunk.messages.at(-1)?.content);
+  }
+  ```
+  :::
+</Accordion>
+
 :::python
 <Accordion title="Example: using Redis store">
 
@@ -1272,7 +1272,7 @@ const items = await store.search(["user_123", "memories"], {
 
 :::js
 <Tip>
-`InMemoryStore` is suitable for development. For production, use a persistent store like `MongoDBStore`, `PostgresStore`, or `RedisStore`.
+`InMemoryStore` is suitable for development. For production, use a persistent store like `PostgresStore`, `MongoDBStore`, or `RedisStore`.
 </Tip>
 :::
 
@@ -1341,7 +1341,7 @@ const items = await store.search(["user_123", "memories"], {
           messages: MessagesValue,
         });
 
-    const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
+        const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 
         // Create store with semantic search enabled
         const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
