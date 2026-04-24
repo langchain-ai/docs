@@ -13,24 +13,43 @@ When you open a trace in the [LangSmith UI](https://smith.langchain.com), two vi
 The Messages view is the **default view** for traces under 20 MB.
 
 <Note>
-LangSmith does not display the Messages view for traces larger than 20 MB. On [self-hosted](/langsmith/self-hosted) deployments, this limit is configurable via environment variable.
+LangSmith does not display the Messages view for traces larger than 20 MB. On [self-hosted](/langsmith/self-hosted) deployments, this limit is configurable via the `MESSAGE_VIEW_MAX_BYTES` environment variable. Set to `0` to disable the limit.
 </Note>
 
 Use the Messages view to understand what happened in an agent interaction quickly: what the user asked, how the assistant responded, and which tools the agent invoked.
 
-### Customize the Messages view
+### Supported integrations
 
-You can control how runs appear in the Messages view using metadata keys on individual runs.
+The Messages view appears automatically when LangSmith detects a supported integration. No configuration is required — detection is based on metadata that each SDK sets automatically.
 
-- `ls_agent_type`: Accepts `agent`, `subagent`, or `middleware`. Used to filter middleware runs from the Messages view and to control how subagent details are displayed.
+Supported integrations include:
 
-- `ls_message_view_exclude`: Set to `true` to exclude a run and all runs in its subtree from the Messages view.
+- LangChain
+- Anthropic SDK
+- Claude Agent SDK / Claude Code
+- OpenAI Chat Completions
+- OpenAI Responses API / Agents SDK
+- Google Gemini
+- Vercel AI SDK
 
-    ```python
-    @traceable(metadata={"ls_message_view_exclude": True})
-    def my_run():
-        ...
-    ```
+If your integration is not listed, the Messages view may still appear if LangSmith can infer the message format from the payload structure. You can also override detection manually using the `ls_message_format` metadata key described in [Customize the Messages view](#customize-the-messages-view).
+
+### What the Messages view shows
+
+Each LLM call in the trace appears as a group of messages. The metadata row above each group shows:
+
+- **Model name**
+- **Token usage** (total tokens for the call)
+- **Cost** (total cost for the call)
+- An **LLM call** link to the corresponding run in the Details view (shown only when the AI message has visible text)
+
+Tool calls appear below the assistant message that triggered them. Each tool call card includes a **Tool invocation** link to its run in the Details view.
+
+When an agent makes the same tool call multiple times in a row (single-tool groups), those calls are coalesced into a collapsible row showing the count and tool name. Expand it to see each individual call. When an agent calls multiple different tools in parallel, those are kept as a grouped block and are not coalesced.
+
+Sub-agent interactions show a preview link to the nested trace.
+
+Collapsed and expanded message state is preserved when you switch between the Messages and Details tabs.
 
 ### Provider-specific behavior
 
@@ -41,6 +60,25 @@ The messages shown in the Messages view depend on the integration:
 | Anthropic / Claude SDK | Messages from the current trace only |
 | DeepAgents / OpenAI | Messages from the current trace and ancestor traces |
 
+### Customize the Messages view
+
+You can control how runs appear in the Messages view using metadata keys on individual runs.
+
+- `ls_agent_type`: Accepts `agent`, `subagent`, or `middleware`. Used to filter middleware runs from the Messages view and to control how subagent details are displayed.
+
+- `ls_message_format`: Overrides automatic format detection. Accepted values:
+  - `"langchain"` — parse as LangChain message format
+  - `"anthropic"` — parse as Anthropic message format
+  - `"responses"` — parse as OpenAI Responses API format
+
+- `ls_message_view_exclude`: Set to `true` to exclude a run and all runs in its subtree from the Messages view.
+
+    ```python
+    @traceable(metadata={"ls_message_view_exclude": True})
+    def my_run():
+        ...
+    ```
+
 ## Details view
 
 Use the Details view to debug execution: inspect a specific LLM call, review tool inputs and outputs, or identify where an error occurred.
@@ -48,6 +86,8 @@ Use the Details view to debug execution: inspect a specific LLM call, review too
 ### Customize the Details view
 
 Setting `run_type="llm"` on a run causes the Details view to render token counts and latency for that run. See [Log an LLM trace](/langsmith/log-llm-trace) for the full message format specification.
+
+Tool messages are auto-expanded when a run's `run_type` is `tool`.
 
 ### Actions
 
