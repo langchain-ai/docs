@@ -1,0 +1,57 @@
+# Link check for docs using Playwright.
+# Crawls docs.langchain.com and verifies all links. Creates a Linear ticket if broken links are found.
+#
+# Required secrets:
+#   LINEAR_API_KEY - Linear API key from https://linear.app/settings/api
+#   LINEAR_TEAM_KEY - Team key for the created issue (e.g. ENG)
+
+name: "🔗 Docs Link Check"
+
+on:
+  pull_request:
+    branches: [main]
+  # schedule:
+  #   # Run every Monday at 00:00 UTC
+  #   - cron: "0 0 * * 1"
+  # workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-links:
+    name: "Check docs links"
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: "📋 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "Configure Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: "Install Playwright browser"
+        run: cd scripts/check-links-playwright && npm ci && npx playwright install chromium --with-deps
+
+      - name: "Run link check"
+        id: check-links
+        run: make check-links-playwright
+        continue-on-error: true
+
+      - name: "Create Linear ticket on broken links"
+        if: steps.check-links.outcome == 'failure'
+        uses: ctriolo/action-create-linear-issue@v0.7
+        with:
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-team-key: ${{ secrets.LINEAR_TEAM_KEY }}
+          linear-issue-title: "[Docs] Broken links detected on docs.langchain.com"
+          linear-issue-description: |
+            The Playwright link checker found broken links while crawling docs.langchain.com.
+
+            **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            See the workflow logs for details.
+          linear-attachment-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          linear-attachment-title: "GitHub Actions run"
