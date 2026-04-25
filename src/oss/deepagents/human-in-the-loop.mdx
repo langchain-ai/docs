@@ -191,6 +191,145 @@ console.log(result.messages[result.messages.length - 1].content);
 ```
 :::
 
+## Handle interrupts with streaming
+
+For real-time UIs, use `.stream()` instead of `.invoke()` to display tokens and tool call progress while handling HITL interrupts. Interrupts appear as `__interrupt__` entries in the `updates` stream. After the stream completes, collect human decisions and resume by streaming again with `Command(resume=...)`.
+
+<Note>
+When streaming, the resume payload is keyed by **interrupt ID** (from each interrupt object), not just a flat `{"decisions": [...]}` like with `.invoke()`. This allows multiple independent interrupts to be resolved in a single resume.
+</Note>
+
+:::python
+```python
+from langchain_core.utils.uuid import uuid7
+from langgraph.types import Command
+
+config = {"configurable": {"thread_id": str(uuid7())}}
+stream_input = {"messages": [{"role": "user", "content": "Delete the file temp.txt"}]}
+
+while True:
+    pending_interrupts = {}
+
+    for chunk in agent.stream(  # [!code highlight]
+        stream_input,
+        stream_mode=["messages", "updates"],  # [!code highlight]
+        subgraphs=True,
+        config=config,
+        version="v2",
+    ):
+        if chunk["type"] == "messages":
+            token, metadata = chunk["data"]
+            # Display tokens in real time
+            if token.content and not chunk["ns"]:
+                print(token.content, end="", flush=True)
+
+        elif chunk["type"] == "updates" and isinstance(chunk["data"], dict):
+            if "__interrupt__" in chunk["data"]:  # [!code highlight]
+                for interrupt_obj in chunk["data"]["__interrupt__"]:  # [!code highlight]
+                    pending_interrupts[interrupt_obj.id] = interrupt_obj.value  # [!code highlight]
+
+    # If no interrupts occurred, the agent finished
+    if not pending_interrupts:
+        break
+
+    # Collect human decisions for each interrupt
+    resume_payload = {}
+    for interrupt_id, interrupt_value in pending_interrupts.items():
+        action_requests = interrupt_value["action_requests"]
+        review_configs = interrupt_value["review_configs"]
+        config_map = {cfg["action_name"]: cfg for cfg in review_configs}
+
+        for action in action_requests:
+            review = config_map[action["name"]]
+            print(f"\nTool: {action['name']}")
+            print(f"Arguments: {action['args']}")
+            print(f"Allowed: {review['allowed_decisions']}")
+
+        # Collect one decision per action_request, in order
+        decisions = [{"type": "approve"} for _ in action_requests]
+        resume_payload[interrupt_id] = {"decisions": decisions}  # [!code highlight]
+
+    # Resume the stream with collected decisions
+    stream_input = Command(resume=resume_payload)  # [!code highlight]
+
+print()
+```
+:::
+
+:::js
+```typescript
+import { v7 as uuid7 } from "uuid";
+import { Command } from "@langchain/langgraph";
+
+const config = { configurable: { thread_id: uuid7() } };
+let streamInput: Record<string, any> | Command = {
+  messages: [{ role: "user", content: "Delete the file temp.txt" }],
+};
+
+while (true) {
+  const pendingInterrupts = new Map<string, any>();
+
+  for await (const chunk of await agent.stream(  // [!code highlight]
+    streamInput,
+    {
+      streamMode: ["messages", "updates"],  // [!code highlight]
+      subgraphs: true,
+      ...config,
+    }
+  )) {
+    const [namespace, mode, data] = chunk;
+
+    if (mode === "messages") {
+      const [token] = data;
+      // Display tokens in real time
+      if (token.text && namespace.length === 0) {
+        process.stdout.write(token.text);
+      }
+    }
+
+    if (mode === "updates" && data?.__interrupt__) {  // [!code highlight]
+      for (const interruptObj of data.__interrupt__) {  // [!code highlight]
+        pendingInterrupts.set(interruptObj.id, interruptObj.value);  // [!code highlight]
+      }
+    }
+  }
+
+  // If no interrupts occurred, the agent finished
+  if (pendingInterrupts.size === 0) break;
+
+  // Collect human decisions for each interrupt
+  const resumePayload: Record<string, any> = {};
+  for (const [interruptId, interruptValue] of pendingInterrupts) {
+    const actionRequests = interruptValue.actionRequests;
+    const reviewConfigs = interruptValue.reviewConfigs;
+    const configMap = Object.fromEntries(
+      reviewConfigs.map((cfg: any) => [cfg.actionName, cfg])
+    );
+
+    for (const action of actionRequests) {
+      const review = configMap[action.name];
+      console.log(`\nTool: ${action.name}`);
+      console.log(`Arguments: ${JSON.stringify(action.args)}`);
+      console.log(`Allowed: ${review.allowedDecisions}`);
+    }
+
+    // Collect one decision per actionRequest, in order
+    const decisions = actionRequests.map(() => ({ type: "approve" }));
+    resumePayload[interruptId] = { decisions };  // [!code highlight]
+  }
+
+  // Resume the stream with collected decisions
+  streamInput = new Command({ resume: resumePayload });  // [!code highlight]
+}
+
+process.stdout.write("\n");
+```
+:::
+
+<Tip>
+Combine `"messages"` and `"updates"` stream modes to show real-time LLM tokens to the user while still catching HITL interrupts. The `"messages"` mode streams tokens; the `"updates"` mode delivers interrupt payloads.
+</Tip>
+
 ## Multiple tool calls
 
 When the agent calls multiple tools that require approval, all interrupts are batched together in a single interrupt. You must provide decisions for each one in order.
