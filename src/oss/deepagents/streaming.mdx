@@ -888,6 +888,43 @@ for (const [id, sub] of activeSubagents) {
 ```
 :::
 
+### Handle human-in-the-loop interrupts
+
+When [`interrupt_on`](/oss/deepagents/human-in-the-loop) is configured, the `updates` stream may contain `__interrupt__` entries that pause execution for human approval. Detect them by checking for the `__interrupt__` key in update chunks:
+
+:::python
+```python
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "Delete temp.txt"}]},
+    stream_mode=["messages", "updates"],
+    subgraphs=True,
+    config=config,
+    version="v2",
+):
+    if chunk["type"] == "updates" and isinstance(chunk["data"], dict):
+        if "__interrupt__" in chunk["data"]:  # [!code highlight]
+            for interrupt_obj in chunk["data"]["__interrupt__"]:
+                print(f"Approval needed: {interrupt_obj.value}")
+```
+:::
+
+:::js
+```typescript
+for await (const [namespace, mode, data] of await agent.stream(
+  { messages: [{ role: "user", content: "Delete temp.txt" }] },
+  { streamMode: ["messages", "updates"], subgraphs: true, ...config }
+)) {
+  if (mode === "updates" && data?.__interrupt__) {  // [!code highlight]
+    for (const interruptObj of data.__interrupt__) {
+      console.log("Approval needed:", interruptObj.value);
+    }
+  }
+}
+```
+:::
+
+See [Human-in-the-loop: Handle interrupts with streaming](/oss/deepagents/human-in-the-loop#handle-interrupts-with-streaming) for the complete stream-resume loop pattern.
+
 :::python
 ## v2 streaming format
 
@@ -931,6 +968,7 @@ See the [LangGraph streaming docs](/oss/langgraph/streaming#stream-output-format
 
 ## Related
 
+- [Human-in-the-loop](/oss/deepagents/human-in-the-loop)—Configure approval workflows for sensitive tool operations
 - [Subagents](/oss/deepagents/subagents)—Configure and use subagents with Deep Agents
 - [Frontend streaming](/oss/deepagents/streaming/frontend)—Build React UIs with `useStream` for Deep Agents
 - [LangChain streaming overview](/oss/langchain/streaming/overview)—General streaming concepts with LangChain agents
