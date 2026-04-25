@@ -15,6 +15,14 @@ This page covers **long-term memory**: memory that persists across conversations
 2. **Agent reads memory.** The agent can load memory files into the system prompt at startup, or read them on demand during the conversation. For example, [skills](/oss/deepagents/skills) use on-demand loading: the agent reads only skill descriptions at startup, then reads the full skill file only when it matches a task. This keeps context lean until a capability is needed.
 3. **Agent updates memory (optional).** When the agent learns new information, it can use its built-in `edit_file` tool to update memory files. Updates can happen during the conversation (the default) or in the background between conversations via [background consolidation](#background-consolidation). Changes are persisted and available in the next conversation. Not all memory is writable: developer-defined [skills](/oss/deepagents/skills) and [organization policies](#organization-level-memory) are typically read-only. See [read-only vs writable memory](#read-only-vs-writable-memory) for details.
 
+### Anthropic prompt caching with memory
+
+When you pass **`memory`**, @[`create_deep_agent`] / `createDeepAgent` attach @[`MemoryMiddleware`] with **`add_cache_control=True`**. On each model call, if the **runtime** model is @[`ChatAnthropic`] from `langchain_anthropic` and the system message has content blocks, that middleware can set **`cache_control: {"type": "ephemeral"}`** on the **last** system content block—the block that ends with the injected memory text. That forms a **second** [Anthropic prompt caching](/oss/integrations/chat/anthropic#prompt-caching) breakpoint alongside @[`AnthropicPromptCachingMiddleware`] on the relatively static system prefix, so edits to memory files invalidate a shorter suffix instead of disrupting the whole cached prefix. The middleware stack orders Anthropic prompt caching **before** memory so those static prefixes stay stable.
+
+This path **no-ops** on non-Anthropic models (safe to enable from the factory). It does **not** apply to Bedrock or Vertex **Claude** clients that are not instances of **`ChatAnthropic`**. It is unrelated to LangGraph graph **`cache`** (node `cache_policy` and **`BaseCache`**, see [Node caching](/oss/langgraph/graph-api#node-caching)), **`checkpointer`**, or **`store`**.
+
+If you construct @[`MemoryMiddleware`] yourself, **`add_cache_control`** defaults to **`False`**; the built-in **`memory=`** path on **`create_deep_agent`** sets it to **`True`**.
+
 The two most common patterns are [agent-scoped memory](#agent-scoped-memory) (shared across all users) and [user-scoped memory](#user-scoped-memory) (isolated per user).
 
 ## Scoped memory
