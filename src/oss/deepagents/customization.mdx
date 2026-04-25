@@ -243,20 +243,40 @@ const agent = createDeepAgent({
 
 ## Middleware
 
-By default, Deep Agents have access to the following [middleware](/oss/langchain/middleware/overview):
+Deep Agents assemble a fixed [middleware](/oss/langchain/middleware/overview) stack in `create_deep_agent` / `createDeepAgent`. **Order matters** when you add custom middleware, debug Anthropic prompt caching, or reason about which tools exist at each step.
 
-- @[`TodoListMiddleware`]: Tracks and manages todo lists for organizing agent tasks and work
-- @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories
-- @[`SubAgentMiddleware`]: Spawns and coordinates subagents for delegating tasks to specialized agents
-- @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long
-- @[`AnthropicPromptCachingMiddleware`]: Automatic reduction of redundant token processing when using Anthropic models
-- @[`PatchToolCallsMiddleware`]: Automatic message history fixes when tool calls are interrupted or cancelled before receiving results
+### Default stack (main agent)
 
-If you are using memory, skills, or human-in-the-loop, the following middleware is also included:
+From first to last:
 
-- @[`MemoryMiddleware`]: Persists and retrieves conversation context across sessions when the `memory` argument is provided
-- @[`SkillsMiddleware`]: Enables custom skills when the `skills` argument is provided
-- `HumanInTheLoopMiddleware`: Pauses for human approval or input at specified points when the `interruptOn` argument is provided
+1. @[`TodoListMiddleware`]: Tracks and manages todo lists for organizing agent tasks and work.
+2. @[`SkillsMiddleware`]: Only when you pass `skills` / `Skills`. Injected **immediately after** the todo middleware and **before** filesystem middleware so skill metadata is available before file tools run.
+3. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories.
+4. @[`SubAgentMiddleware`]: Spawns and coordinates subagents for delegating tasks to specialized agents.
+5. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[create_summarization_middleware] / @[createSummarizationMiddleware]).
+6. @[`PatchToolCallsMiddleware`]: Automatic message history fixes when tool calls are interrupted or cancelled before receiving results. Runs **before** Anthropic prompt caching and the tail stack below.
+7. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents (`graph_id` specs).
+8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
+9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
+10. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
+11. @[`AnthropicPromptCachingMiddleware`]: Always registered; it no-ops on non-Anthropic models (`unsupported_model_behavior="ignore"`). Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+12. @[`MemoryMiddleware`]: Only when you pass `memory` / `Memory`.
+
+<Note>
+`MemoryMiddleware` is placed **after** profile extras and Anthropic prompt caching so updates to injected memory are less likely to invalidate the Anthropic cache prefix. The same ordering concern is called out in the `create_deep_agent` implementation comments.
+</Note>
+
+13. `HumanInTheLoopMiddleware`: Only when you pass `interrupt_on` / `interruptOn`. Pauses for human approval or input at configured tool calls.
+14. **Filesystem permissions enforcement**: Only when you pass `permissions` / `permissions`. Always **last** on the stack so it can evaluate every tool the agent might call.
+
+### Default stack (synchronous subagents)
+
+The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `create_deep_agent` / `createDeepAgent` builds in code. It matches the main agent in broad shape (todo list, filesystem, summarization, Patch, profile extras, Anthropic caching, optional permissions) but differs in two ways readers should remember:
+
+- **Skills run after** @[`PatchToolCallsMiddleware`] on these inner agents (on the main agent, skills run **before** filesystem middleware when `skills` / `Skills` is set).
+- There is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
+
+When a declarative subagent sets `interrupt_on` / `interruptOn`, `HumanInTheLoopMiddleware` is appended for that subagent. See [Human-in-the-loop](/oss/deepagents/human-in-the-loop) for configuration. `CompiledSubAgent` runnables use whatever middleware you defined on the compiled graph.
 
 ### Pre-built middleware
 
