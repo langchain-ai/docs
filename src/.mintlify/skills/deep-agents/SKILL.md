@@ -10,7 +10,7 @@ metadata:
 
 # Deep Agents
 
-Deep Agents is the easiest way to start building agents powered by LLMs — with built-in capabilities for task planning, file systems for context management, subagent delegation, and long-term memory. It is an "agent harness" built on [LangChain](https://docs.langchain.com/oss/langchain/overview) core building blocks and the [LangGraph](https://docs.langchain.com/oss/langgraph/overview) runtime.
+Deep Agents is the easiest way to start building agents powered by LLMs—with built-in capabilities for task planning, file systems for context management, subagent delegation, and long-term memory. It is an "agent harness" built on [LangChain](https://docs.langchain.com/oss/langchain/overview) core building blocks and the [LangGraph](https://docs.langchain.com/oss/langgraph/overview) runtime.
 
 ## When to use
 
@@ -24,9 +24,9 @@ Use Deep Agents when you need to:
 
 ## When NOT to use
 
-- For simple tool-calling agents without planning or subagents, use [LangChain](https://docs.langchain.com/oss/langchain/overview) agents instead — lighter weight
+- For simple tool-calling agents without planning or subagents, use [LangChain](https://docs.langchain.com/oss/langchain/overview) agents instead—lighter weight
 - For custom graph-based orchestration with explicit control flow, use [LangGraph](https://docs.langchain.com/oss/langgraph/overview) directly
-- Deep Agents is the **highest-level abstraction** — it trades flexibility for convenience
+- Deep Agents is the **highest-level abstraction**—it trades flexibility for convenience
 
 ## Install
 
@@ -84,14 +84,14 @@ deepagents
 
 ## Key documentation
 
-- [Overview](https://docs.langchain.com/oss/deepagents/overview) — What Deep Agents is and how it compares to LangChain and LangGraph
-- [Quickstart](https://docs.langchain.com/oss/deepagents/quickstart) — Build your first deep agent
-- [Customization](https://docs.langchain.com/oss/deepagents/customization) — Configure models, tools, and behavior
-- [Context engineering](https://docs.langchain.com/oss/deepagents/context-engineering) — Manage context for complex tasks
-- [Subagents](https://docs.langchain.com/oss/deepagents/subagents) — Delegate work to child agents
-- [Sandboxes](https://docs.langchain.com/oss/deepagents/sandboxes) — Run code in isolated environments
-- [CLI](https://docs.langchain.com/oss/deepagents/cli/overview) — Terminal agent interface
-- [Deploy](https://docs.langchain.com/oss/deepagents/deploy) — Deploy to production
+- [Overview](https://docs.langchain.com/oss/deepagents/overview)—What Deep Agents is and how it compares to LangChain and LangGraph
+- [Quickstart](https://docs.langchain.com/oss/deepagents/quickstart)—Build your first deep agent
+- [Customization](https://docs.langchain.com/oss/deepagents/customization)—Configure models, tools, and behavior
+- [Context engineering](https://docs.langchain.com/oss/deepagents/context-engineering)—Manage context for complex tasks
+- [Subagents](https://docs.langchain.com/oss/deepagents/subagents)—Delegate work to child agents
+- [Sandboxes](https://docs.langchain.com/oss/deepagents/sandboxes)—Run code in isolated environments
+- [CLI](https://docs.langchain.com/oss/deepagents/cli/overview)—Terminal agent interface
+- [Deploy](https://docs.langchain.com/oss/deepagents/deploy)—Deploy to production
 
 ## API reference
 
@@ -100,6 +100,6 @@ For SDK class and method details, use the [LangChain API Reference](https://refe
 
 ## Related skills
 
-- **langchain** — Core building blocks that Deep Agents is built on
-- **langgraph** — Runtime that powers Deep Agents' durable execution
-- **langsmith** — Trace, evaluate, and deploy your deep agents
+- **langchain**—Core building blocks that Deep Agents is built on
+- **langgraph**—Runtime that powers Deep Agents' durable execution
+- **langsmith**—Trace, evaluate, and deploy your deep agents

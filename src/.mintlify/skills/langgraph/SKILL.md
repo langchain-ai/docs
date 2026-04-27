@@ -24,9 +24,9 @@ Use LangGraph when you need to:
 
 ## When NOT to use
 
-- For a simple tool-calling agent, use [LangChain](https://docs.langchain.com/oss/langchain/overview) agents instead — less boilerplate for common patterns
+- For a simple tool-calling agent, use [LangChain](https://docs.langchain.com/oss/langchain/overview) agents instead—less boilerplate for common patterns
 - For a batteries-included agent with planning and subagents, use [Deep Agents](https://docs.langchain.com/oss/deepagents/overview) instead
-- LangGraph is the **orchestration layer** — use it when you need fine-grained control over agent behavior
+- LangGraph is the **orchestration layer**—use it when you need fine-grained control over agent behavior
 
 ## Install
 
@@ -96,13 +96,13 @@ def human_approval(state: MessagesState):
 
 ## Key documentation
 
-- [Overview](https://docs.langchain.com/oss/langgraph/overview) — What LangGraph is and when to use it
-- [Quickstart](https://docs.langchain.com/oss/langgraph/quickstart) — Build your first graph
-- [Persistence](https://docs.langchain.com/oss/langgraph/persistence) — Add memory and durable execution
-- [Interrupts](https://docs.langchain.com/oss/langgraph/interrupts) — Human-in-the-loop patterns
-- [Streaming](https://docs.langchain.com/oss/langgraph/streaming) — Stream intermediate results
-- [Graph API](https://docs.langchain.com/oss/langgraph/graph-api) — Define nodes, edges, and state
-- [Deploy](https://docs.langchain.com/oss/langgraph/deploy) — Deploy to production with LangSmith
+- [Overview](https://docs.langchain.com/oss/langgraph/overview)—What LangGraph is and when to use it
+- [Quickstart](https://docs.langchain.com/oss/langgraph/quickstart)—Build your first graph
+- [Persistence](https://docs.langchain.com/oss/langgraph/persistence)—Add memory and durable execution
+- [Interrupts](https://docs.langchain.com/oss/langgraph/interrupts)—Human-in-the-loop patterns
+- [Streaming](https://docs.langchain.com/oss/langgraph/streaming)—Stream intermediate results
+- [Graph API](https://docs.langchain.com/oss/langgraph/graph-api)—Define nodes, edges, and state
+- [Deploy](https://docs.langchain.com/oss/langgraph/deploy)—Deploy to production with LangSmith
 
 ## API reference
 
@@ -112,6 +112,6 @@ For SDK class and method details, use the [LangChain API Reference](https://refe
 
 ## Related skills
 
-- **langchain** — Core building blocks for models, tools, and simple agents
-- **deep-agents** — High-level agent harness built on LangGraph
-- **langsmith** — Trace, evaluate, and deploy your LangGraph agents
+- **langchain**—Core building blocks for models, tools, and simple agents
+- **deep-agents**—High-level agent harness built on LangGraph
+- **langsmith**—Trace, evaluate, and deploy your LangGraph agents

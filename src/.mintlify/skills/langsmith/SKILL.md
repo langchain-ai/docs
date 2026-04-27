@@ -52,7 +52,7 @@ from langsmith import traceable
 
 @traceable
 def my_function(query: str) -> str:
-    # Your LLM logic here — all calls inside are traced automatically
+    # Your LLM logic here—all calls inside are traced automatically
     return "result"
 ```
 
@@ -68,13 +68,13 @@ def my_function(query: str) -> str:
 
 ## Key documentation
 
-- [Overview](https://docs.langchain.com/langsmith/home) — Get started with LangSmith
-- [Observability quickstart](https://docs.langchain.com/langsmith/observability-quickstart) — Add tracing in minutes
-- [Evaluation quickstart](https://docs.langchain.com/langsmith/evaluation-quickstart) — Run your first evaluation
-- [Prompt engineering quickstart](https://docs.langchain.com/langsmith/prompt-engineering-quickstart) — Iterate on prompts
-- [Deployment quickstart](https://docs.langchain.com/langsmith/deployment-quickstart) — Deploy an agent
-- [Integrations](https://docs.langchain.com/langsmith/integrations) — Connect your framework or provider
-- [Create account & API key](https://docs.langchain.com/langsmith/create-account-api-key) — Account setup
+- [Overview](https://docs.langchain.com/langsmith/home)—Get started with LangSmith
+- [Observability quickstart](https://docs.langchain.com/langsmith/observability-quickstart)—Add tracing in minutes
+- [Evaluation quickstart](https://docs.langchain.com/langsmith/evaluation-quickstart)—Run your first evaluation
+- [Prompt engineering quickstart](https://docs.langchain.com/langsmith/prompt-engineering-quickstart)—Iterate on prompts
+- [Deployment quickstart](https://docs.langchain.com/langsmith/deployment-quickstart)—Deploy an agent
+- [Integrations](https://docs.langchain.com/langsmith/integrations)—Connect your framework or provider
+- [Create account & API key](https://docs.langchain.com/langsmith/create-account-api-key)—Account setup
 
 ## API reference
 
@@ -84,6 +84,6 @@ For SDK class and method details, use the [LangChain API Reference](https://refe
 
 ## Related skills
 
-- **langchain** — Build agents with prebuilt architecture and model integrations
-- **langgraph** — Orchestrate stateful, durable agent workflows
-- **deep-agents** — Batteries-included agent harness with planning and subagents
+- **langchain**—Build agents with prebuilt architecture and model integrations
+- **langgraph**—Orchestrate stateful, durable agent workflows
+- **deep-agents**—Batteries-included agent harness with planning and subagents

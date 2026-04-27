@@ -93,20 +93,20 @@ def search(query: str) -> str:
 
 ## Gotchas
 
-1. **Snake_case tool names** — Tool function names must be valid Python identifiers. Use `get_weather`, not `get-weather`.
-2. **Reserved parameters** — Do not name tool parameters `type`, `name`, or `description` as these conflict with the tool schema.
-3. **Provider packages** — Models live in separate packages (e.g., `langchain-openai`). The base `langchain` package does not include providers.
-4. **Model string format** — Use `"provider:model-name"` format with `init_chat_model()` (e.g., `"openai:gpt-5.4"`).
+1. **Snake_case tool names**—Tool function names must be valid Python identifiers. Use `get_weather`, not `get-weather`.
+2. **Reserved parameters**—Do not name tool parameters `type`, `name`, or `description` as these conflict with the tool schema.
+3. **Provider packages**—Models live in separate packages (e.g., `langchain-openai`). The base `langchain` package does not include providers.
+4. **Model string format**—Use `"provider:model-name"` format with `init_chat_model()` (e.g., `"openai:gpt-5.4"`).
 
 ## Key documentation
 
-- [Overview](https://docs.langchain.com/oss/langchain/overview) — What LangChain is and how to get started
-- [Quickstart](https://docs.langchain.com/oss/langchain/quickstart) — Build your first agent
-- [Agents](https://docs.langchain.com/oss/langchain/agents) — Prebuilt agent architecture
-- [Models](https://docs.langchain.com/oss/langchain/models) — Chat models and provider integrations
-- [Tools](https://docs.langchain.com/oss/langchain/tools) — Define and use tools
-- [Structured output](https://docs.langchain.com/oss/langchain/structured-output) — Parse LLM responses into typed objects
-- [MCP integration](https://docs.langchain.com/oss/langchain/mcp) — Use Model Context Protocol servers as tools
+- [Overview](https://docs.langchain.com/oss/langchain/overview)—What LangChain is and how to get started
+- [Quickstart](https://docs.langchain.com/oss/langchain/quickstart)—Build your first agent
+- [Agents](https://docs.langchain.com/oss/langchain/agents)—Prebuilt agent architecture
+- [Models](https://docs.langchain.com/oss/langchain/models)—Chat models and provider integrations
+- [Tools](https://docs.langchain.com/oss/langchain/tools)—Define and use tools
+- [Structured output](https://docs.langchain.com/oss/langchain/structured-output)—Parse LLM responses into typed objects
+- [MCP integration](https://docs.langchain.com/oss/langchain/mcp)—Use Model Context Protocol servers as tools
 
 ## API reference
 
@@ -116,6 +116,6 @@ For SDK class and method details, use the [LangChain API Reference](https://refe
 
 ## Related skills
 
-- **langgraph** — Low-level orchestration for stateful, durable agent workflows
-- **deep-agents** — Batteries-included agent harness built on LangChain
-- **langsmith** — Trace, evaluate, and deploy your LangChain agents
+- **langgraph**—Low-level orchestration for stateful, durable agent workflows
+- **deep-agents**—Batteries-included agent harness built on LangChain
+- **langsmith**—Trace, evaluate, and deploy your LangChain agents
