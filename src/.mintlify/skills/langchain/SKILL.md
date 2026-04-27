@@ -83,7 +83,7 @@ model = init_chat_model("google_genai:gemini-2.5-flash-lite")
 ### Define a tool
 
 ```python
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 @tool
 def search(query: str) -> str:
