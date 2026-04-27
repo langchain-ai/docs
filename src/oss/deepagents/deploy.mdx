@@ -42,7 +42,7 @@ Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith
 | **`mcp.json`** | MCP tools (HTTP/SSE). See [MCP docs](/oss/langchain/mcp). |
 | **`subagents/`** | Specialized [subagents](/oss/deepagents/subagents) the main agent can delegate to. Each subdirectory contains its own `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. See [subagents](#subagents). |
 | **`sandbox`** | Optional execution environment. Thread-scoped sandboxes are provisioned per thread and will be re-created if the server restarts. Use `scope = "assistant"` if you need sandbox state that persists across threads. See [sandbox providers](#sandbox-providers). |
-| **`frontend`** | Optional pre-built React chat UI shipped alongside the agent on the same deployment. Flip one flag to get an authenticated chat experience with real-time todos, files, and subagent activity panels. See [`[frontend]`](#frontend). |
+| **`frontend`** | Optional pre-built React chat UI shipped alongside the agent on the same deployment. Configurable for per-user auth or anonymous mode, with real-time todos, files, and subagent activity panels. See [`[frontend]`](#frontend). |
 
 ## Install
 
@@ -232,7 +232,7 @@ Add these to your `.env` alongside your other credentials. The bundler validates
 
 ### `[frontend]`
 
-Optionally enable `[frontend]` to ship a pre-built React chat UI alongside your agent on the same deployment. The frontend is mounted at `/app` on your deployment URL; your LangGraph API stays at the root (`/threads`, `/runs`, `/assistants`). Requires `[auth]` — the UI uses your chosen provider's JWT to talk to the agent.
+Optionally enable `[frontend]` to ship a pre-built React chat UI alongside your agent on the same deployment. The frontend is mounted at `/app` on your deployment URL; your LangGraph API stays at the root (`/threads`, `/runs`, `/assistants`). Every frontend uses one of three authentication providers — Clerk, Supabase, or anonymous (see [Authentication providers](#authentication-providers) below).
 
 <ResponseField name="enabled" type="boolean" default="false">
     If `true`, bundle the default chat UI into the deployment.
@@ -255,13 +255,21 @@ enabled = true
 app_name = "My Agent"
 ```
 
+**Authentication providers:**
+
+The frontend always uses one of three authentication providers. Configure Clerk or Supabase via the `[auth]` section; for anonymous mode, omit the `[auth]` section entirely.
+
+- **Clerk** (`[auth] provider = "clerk"`) — per-user real authentication. Each user signs in; threads and memory are scoped per user.
+- **Supabase** (`[auth] provider = "supabase"`) — per-user real authentication. Same per-user scoping as Clerk.
+- **Anonymous** (omit `[auth]`) — the API is open: anyone with the deploy URL can use the agent. The frontend assigns each browser a UUID cookie and filters the thread picker by it (UX-only scoping, not security). The CLI requires an interactive `y/N` confirmation before pushing.
+
 **What you get:**
 
-- Authenticated chat with streaming responses
+- Streaming chat with the agent
 - Thread picker with auto-generated titles from the first user message
 - Real-time todos, files, and subagent activity panels that reflect your deep agent's live graph state
 - Light/dark theme toggle that follows OS preference on first load and persists after
-- Sign-in / sign-up / sign-out flows — Clerk ships its full widget (social logins, password reset); Supabase ships email/password with a built-in password reset flow
+- (Clerk / Supabase only) Sign-in / sign-up / sign-out flows — Clerk ships its full widget (social logins, password reset); Supabase ships email/password with a built-in password reset flow
 
 **Environment variables:**
 
@@ -311,7 +319,13 @@ CLERK_PUBLISHABLE_KEY=pk_test_...
 
 ## Authentication
 
-When `[auth]` is configured in `deepagents.toml`, pass the token from your auth provider in the `Authorization` header:
+Three authentication patterns are possible depending on `[auth]` and `[frontend]`:
+
+- **With `[auth]`** (Clerk or Supabase): per-user real authentication. Pass the user's auth-provider token in the `Authorization` header.
+- **Without `[auth]`, no `[frontend]`**: the deploy is protected by LangSmith Cloud's default `x-api-key` requirement. Pass your LangSmith API key in the `x-api-key` header.
+- **Without `[auth]`, with `[frontend].enabled = true`** (anonymous frontend): the API is open to anyone with the deploy URL. No header required.
+
+When `[auth]` is configured, pass the token from your auth provider in the `Authorization` header:
 
 <Tabs>
     <Tab title="curl">
@@ -407,6 +421,18 @@ my-gtm-agent/
         └── skills/
             └── analyze-market/
                 └── SKILL.md
+```
+
+A lightweight internal-demo agent with the bundled UI in anonymous mode (no auth setup):
+
+```toml deepagents.toml
+[agent]
+name = "internal-demo"
+model = "anthropic:claude-sonnet-4-6"
+
+[frontend]
+enabled = true
+# no [auth] — anonymous mode, API open to anyone with the URL
 ```
 
 ## User Memory
