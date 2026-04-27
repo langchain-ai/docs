@@ -53,6 +53,7 @@ def generate_cover(prompt: str, slug: str) -> str:
 
         client = genai.Client()
         response = client.models.generate_content(
+            # KEEP MODEL
             model="gemini-2.5-flash-image",
             contents=[prompt],
         )
@@ -84,6 +85,7 @@ def generate_social_image(prompt: str, platform: str, slug: str) -> str:
 
         client = genai.Client()
         response = client.models.generate_content(
+            # KEEP MODEL
             model="gemini-2.5-flash-image",
             contents=[prompt],
         )
@@ -104,7 +106,7 @@ def generate_social_image(prompt: str, platform: str, slug: str) -> str:
 def load_subagents(config_path: Path) -> list:
     """Load subagent definitions from YAML and wire up tools.
 
-    Unlike `memory` and `skills`, Deep Agents does not load subagents from files by default.
+    Unlike `memory` and `skills`, deep agents do not load subagents from files by default.
     This helper externalizes configuration so you can edit YAML without changing Python code.
     """
     available_tools = {

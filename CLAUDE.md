@@ -1,3 +1,5 @@
+> **Keep in sync:** `AGENTS.md` and `CLAUDE.md` contain identical guidelines. If you update one, update the other.
+
 # LangChain Documentation Guidelines
 
 Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored docs only—not `**/reference/**` directories or build artifacts.
@@ -203,6 +205,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use H5 or H6 headings
 - Overuse em dashes — prefer commas, colons, or separate sentences instead
+- Do not add spaces around em dashes — write `word—word` not `word — word` (Vale enforces this)
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
@@ -261,6 +264,14 @@ another-file.mdx                 ← no indented lines = all its links were filt
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
 To run locally: `make broken-links`
+
+## Pre-commit linting
+
+Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
+
+Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"` (or pass space-separated paths). Run with no `FILES` arg to lint all of `src/`.
+
+Also run `make broken-links` when adding or renaming links, pages, or nav entries.
 
 ## Pull requests
 

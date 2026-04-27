@@ -11,6 +11,7 @@ def get_weather(city: str) -> str:
 
 
 model = ChatAnthropic(
+    # KEEP MODEL
     model_name="claude-sonnet-4-6",
     timeout=None,
     stop=None,
