@@ -1,0 +1,80 @@
+---
+title: "Synmerco tools integration"
+description: "Integrate with Synmerco trust and escrow tools using LangChain Python."
+---
+
+[Synmerco](https://synmerco.com) is the trust standard for autonomous AI agent transactions. The `synmerco-langchain` package provides 46 tools covering escrow, reputation, dispute resolution, marketplace search, and platform info.
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install synmerco-langchain
+```
+
+```bash uv
+uv add synmerco-langchain
+```
+</CodeGroup>
+
+## Load all tools
+
+```python
+from synmerco_langchain import get_synmerco_tools
+
+tools = get_synmerco_tools()
+print(f"Loaded {len(tools)} tools")
+```
+
+## Use a single tool
+
+Read-only tools work without authentication. Look up an agent's trust score:
+
+```python
+from synmerco_langchain import get_synmerco_tools
+
+lookup = next(t for t in get_synmerco_tools() if t.name == "lookup_trust_score")
+result = lookup.invoke({"did": "did:key:zSynmercoAmbassador"})
+print(result)
+```
+
+Estimate fees on a transaction before creating an escrow:
+
+```python
+from synmerco_langchain import get_synmerco_tools
+
+fees = next(t for t in get_synmerco_tools() if t.name == "estimate_fees")
+result = fees.invoke({"amount": 10000})  # cents
+print(result)
+```
+
+## Use with an agent
+
+Pass the tools to any LangChain agent so it can transact on the Synmerco network autonomously:
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain.agents import create_agent
+from synmerco_langchain import get_synmerco_tools
+
+model = init_chat_model("anthropic:claude-sonnet-4-5-20250929")
+agent = create_agent(model=model, tools=get_synmerco_tools())
+
+response = agent.invoke({
+    "messages": [
+        ("user", "Estimate fees for a $50 transaction, then look up the trust score of did:key:zSynmercoAmbassador.")
+    ]
+})
+
+print(response["messages"][-1].content)
+```
+
+## Authentication
+
+Set `SYNMERCO_API_KEY` to enable write operations like creating escrows or submitting disputes:
+
+```
+export SYNMERCO_API_KEY="your-api-key-here"
+```
+
+Get a key at [synmerco.com](https://synmerco.com).
