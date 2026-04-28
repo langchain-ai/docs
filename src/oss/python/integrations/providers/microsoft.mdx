@@ -400,18 +400,18 @@ from langchain_community.document_loaders.onenote import OneNoteLoader
 
 <CodeGroup>
     ```bash pip
-    pip install langchain-azure-ai
+    pip install langchain-azure-cosmosdb
     ```
 
     ```bash uv
-    uv add langchain-azure-ai
+    uv add langchain-azure-cosmosdb
     ```
 </CodeGroup>
 
-Configure your Azure Cosmos DB connection:
+Configure your Azure Cosmos DB connection (sync or async, with access key or Microsoft Entra ID):
 
 ```python
-from langchain_azure_ai.chat_message_histories import CosmosDBChatMessageHistory
+from langchain_azure_cosmosdb import CosmosDBChatMessageHistory
 
 history = CosmosDBChatMessageHistory(
     cosmos_endpoint="https://<your-account>.documents.azure.com:443/",
@@ -419,9 +419,54 @@ history = CosmosDBChatMessageHistory(
     cosmos_container="<your-container>",
     session_id="<session-id>",
     user_id="<user-id>",
-    credential="<your-credential>"  # or use connection_string
+    credential="<your-key-or-token-credential>",
+    ttl=3600,  # optional: messages expire after 1 hour
 )
+history.prepare_cosmos()
+
+history.add_user_message("Hello!")
+history.add_ai_message("Hi there!")
 ```
+
+For async usage, import `AsyncCosmosDBChatMessageHistory` from the same package.
+
+### Azure cosmos DB semantic cache
+
+>[`AzureCosmosDBNoSqlSemanticCache`](https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-cosmosdb) caches LLM responses in Azure Cosmos DB for NoSQL using vector similarity, returning cached results when a semantically similar prompt is seen again.
+
+<CodeGroup>
+    ```bash pip
+    pip install langchain-azure-cosmosdb
+    ```
+
+    ```bash uv
+    uv add langchain-azure-cosmosdb
+    ```
+</CodeGroup>
+
+```python
+from azure.cosmos import CosmosClient, PartitionKey
+from langchain_core.globals import set_llm_cache
+from langchain_azure_cosmosdb import AzureCosmosDBNoSqlSemanticCache
+
+cosmos_client = CosmosClient("<endpoint>", "<key>")
+
+cache = AzureCosmosDBNoSqlSemanticCache(
+    cosmos_client=cosmos_client,
+    embedding=embedding,
+    vector_embedding_policy=vector_embedding_policy,
+    indexing_policy=indexing_policy,
+    cosmos_container_properties={"partition_key": PartitionKey(path="/id")},
+    cosmos_database_properties={"id": "cache-db"},
+    vector_search_fields={"text_field": "text", "embedding_field": "embedding"},
+    database_name="cache-db",
+    container_name="cache-container",
+)
+
+set_llm_cache(cache)
+```
+
+For async usage, import `AsyncAzureCosmosDBNoSqlSemanticCache`.
 
 ## Vector stores
 
@@ -479,15 +524,15 @@ efficiency of vector-based operations.
 
 See [detail configuration instructions](/oss/integrations/vectorstores/azure_cosmos_db_no_sql).
 
-We need to install `langchain-azure-ai` and `azure-cosmos` python packages.
+We need to install `langchain-azure-cosmosdb` and `azure-cosmos` python packages.
 
 <CodeGroup>
     ```bash pip
-    pip install langchain-azure-ai azure-cosmos
+    pip install langchain-azure-cosmosdb azure-cosmos
     ```
 
     ```bash uv
-    uv add langchain-azure-ai azure-cosmos
+    uv add langchain-azure-cosmosdb azure-cosmos
     ```
 </CodeGroup>
 
@@ -501,7 +546,7 @@ in every Azure region and can automatically replicate data closer to users. It h
 See a [usage example](/oss/integrations/vectorstores/azure_cosmos_db_no_sql).
 
 ```python
-from langchain_azure_ai.vectorstores import AzureCosmosDBNoSqlVectorSearch
+from langchain_azure_cosmosdb import AzureCosmosDBNoSqlVectorSearch
 ```
 
 ### Azure Database for PostgreSQL
