@@ -182,3 +182,133 @@ await client.createSandbox(snapshotId, {
 ```
 
 </CodeGroup>
+
+## Dynamic credentials with callbacks
+
+Static rules pull credentials from your workspace secrets at sandbox creation time. For credentials that need to be resolved per-request—short-lived OAuth tokens, per-user-scoped tokens, tokens minted by your own auth service—use a **callback** instead. The proxy POSTs to a URL you provide, your endpoint returns the headers to inject, and the proxy caches the result.
+
+Callbacks are configured alongside rules under `proxy_config`:
+
+| Field | Description |
+|-------|-------------|
+| `match_hosts` | Hosts to intercept (same syntax as rules; supports globs like `*.github.com`). |
+| `url` | Your callback endpoint. Must be an `http://` or `https://` URL reachable from the proxy. |
+| `request_headers` | Headers attached to the proxy → callback request, e.g., an HMAC or shared secret your endpoint uses to verify the request. Only `plaintext` and `opaque` types are permitted (no `workspace_secret`). |
+| `ttl_seconds` | How long resolved headers are cached before re-invoking the callback. Must be between 60 and 3600. |
+
+**Static rules win.** If any rule in `rules` matches the host, the callback is skipped for that host. Within rules, first-match-wins; the same applies between callbacks if multiple match.
+
+### Callback contract
+
+The proxy makes the following request whenever it needs to resolve credentials for a matched host on a cache miss:
+
+```
+POST <callback.url>
+Content-Type: application/json
+<request_headers from your config, attached verbatim>
+
+{"host": "api.example.com", "port": 443}
+```
+
+Your endpoint must respond `2xx` with a JSON body:
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer <token>",
+    "X-Org-Id": "..."
+  }
+}
+```
+
+The proxy injects every header in the response into the sandbox's outbound request and caches the response for `ttl_seconds`. Any non-2xx response, transport error, or malformed JSON fails closed: the sandbox's request is rejected with `502 callback resolution failed` (no headers injected, response not cached).
+
+### Example
+
+Use a callback when your OAuth tokens are minted on demand by your own service:
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "snapshot_id": "<snapshot-uuid>",
+    "name": "callback-sandbox",
+    "wait_for_ready": true,
+    "proxy_config": {
+      "callbacks": [
+        {
+          "match_hosts": ["api.github.com", "*.githubusercontent.com"],
+          "url": "https://auth.your-app.example.com/sandbox-credentials",
+          "request_headers": [
+            {
+              "name": "X-Integrator-Secret",
+              "type": "opaque",
+              "value": "<shared-secret-your-endpoint-verifies>"
+            }
+          ],
+          "ttl_seconds": 300
+        }
+      ]
+    }
+  }'
+```
+
+### Configure via SDK
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+client.create_sandbox(
+    snapshot_id=SNAPSHOT_ID,
+    name="callback-sandbox",
+    proxy_config={
+        "callbacks": [
+            {
+                "match_hosts": ["api.github.com", "*.githubusercontent.com"],
+                "url": "https://auth.your-app.example.com/sandbox-credentials",
+                "request_headers": [
+                    {
+                        "name": "X-Integrator-Secret",
+                        "type": "opaque",
+                        "value": "<shared-secret-your-endpoint-verifies>",
+                    }
+                ],
+                "ttl_seconds": 300,
+            }
+        ]
+    },
+)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/experimental/sandbox";
+
+const client = new SandboxClient();
+
+await client.createSandbox(snapshotId, {
+  name: "callback-sandbox",
+  proxyConfig: {
+    callbacks: [
+      {
+        matchHosts: ["api.github.com", "*.githubusercontent.com"],
+        url: "https://auth.your-app.example.com/sandbox-credentials",
+        requestHeaders: [
+          {
+            name: "X-Integrator-Secret",
+            type: "opaque",
+            value: "<shared-secret-your-endpoint-verifies>",
+          },
+        ],
+        ttlSeconds: 300,
+      },
+    ],
+  },
+});
+```
+
+</CodeGroup>
