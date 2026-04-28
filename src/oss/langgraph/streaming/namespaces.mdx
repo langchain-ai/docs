@@ -1,0 +1,300 @@
+---
+title: Namespaces
+description: Subscribe to specific graph, subgraph, and task events with channels, namespaces, and depth.
+---
+
+import { EventSelectionGraph } from "/snippets/event-selection-graph.jsx";
+
+Use namespaces when you need a stream for a specific part of a graph instead of the entire run. Selection combines:
+
+- `channels`: what kind of events to receive, such as `messages`, `updates`, `lifecycle`, or `tasks`. See [core channels](/oss/langgraph/streaming/protocol#core-channels).
+- `namespaces`: where events must come from in the graph or task tree.
+- `depth`: how far below the selected namespace to include descendants.
+- `since`: the last sequence number observed, used for replay and reconnect.
+
+```json
+{
+  "channels": ["messages", "updates", "lifecycle"],
+  "namespaces": [["researcher"]],
+  "depth": 1,
+  "since": 123
+}
+```
+
+## Understand namespaces
+
+Every protocol event includes a namespace:
+
+```ts
+type Namespace = string[];
+```
+
+A namespace is a path from the root graph to the graph, node, or task scope that emitted the event. The root graph is the empty path:
+
+```json
+[]
+```
+
+`[]` is the root namespace for the top-level graph run. It is not the namespace of `__start__`, and it is not the namespace of the first node after `__start__`. `__start__` and `__end__` are graph control-flow markers and do not become namespace segments.
+
+Each child execution adds one segment:
+
+```json
+["researcher:6f4d"]
+```
+
+Nested child executions add more segments:
+
+```json
+["researcher:6f4d", "validator:91ac", "processor:02be"]
+```
+
+The suffix after `:` is runtime identity. It distinguishes multiple invocations of the same node or task. Use the stable name before `:` for most subscriptions. Use the full `name:id` segment only after you have observed it and want one exact runtime invocation. Node names cannot contain `:` or `|` because those characters are reserved for namespace encoding.
+
+<EventSelectionGraph />
+
+For the example above, the default root selection shows `{"namespaces": [[]], "depth": 0}`. This gets only root-scope events, such as root lifecycle events. Use `{"namespaces": [[]], "depth": 1}` to include the root and direct child node or subgraph executions. Omit `depth` to include every descendant, because `[]` is a prefix of every namespace.
+
+Use stable names when you want all invocations of a graph or task. Add runtime IDs only when you want one exact invocation discovered from emitted events.
+
+## Match namespaces
+
+`namespaces` is a list of alternative namespace prefixes. It is double wrapped:
+
+```json
+{
+  "namespaces": [["researcher", "validator"]]
+}
+```
+
+The outer array is the list of alternatives. The inner array is one namespace path.
+
+An event is delivered when all of these are true:
+
+1. The event channel matches one of the requested `channels`.
+2. The event namespace starts with at least one prefix in `namespaces`.
+3. If `depth` is set, the event is no more than `depth` segments below the matched prefix.
+
+If `namespaces` is omitted or empty, namespace matching is a wildcard.
+
+If `depth` is omitted, all descendants under the matched prefix are included.
+
+## Match stable names or exact runtime IDs
+
+Namespace segment matching has one special rule:
+
+```text
+filter segment without ":"  -> compares against the emitted segment before ":"
+filter segment with ":"     -> exact segment match
+```
+
+This filter:
+
+```json
+{
+  "namespaces": [["researcher"]]
+}
+```
+
+matches all of these emitted namespaces:
+
+```json
+["researcher:6f4d"]
+["researcher:91ac"]
+["researcher"]
+```
+
+This filter:
+
+```json
+{
+  "namespaces": [["researcher:6f4d"]]
+}
+```
+
+matches only this exact runtime invocation and its descendants:
+
+```json
+["researcher:6f4d"]
+["researcher:6f4d", "validator:91ac"]
+```
+
+It does not match another invocation of the same node:
+
+```json
+["researcher:91ac"]
+```
+
+## Limit descendants with depth
+
+`depth` is relative to the prefix that matched, not absolute namespace depth.
+
+For this emitted namespace:
+
+```json
+["researcher:6f4d", "validator:91ac", "processor:02be"]
+```
+
+These filters all match:
+
+```json
+{
+  "namespaces": [["researcher", "validator", "processor"]],
+  "depth": 0
+}
+```
+
+```json
+{
+  "namespaces": [["researcher", "validator"]],
+  "depth": 1
+}
+```
+
+```json
+{
+  "namespaces": [["researcher"]],
+  "depth": 2
+}
+```
+
+```json
+{
+  "namespaces": [[]],
+  "depth": 3
+}
+```
+
+Use `depth: 0` when you want only the selected graph or task level. Omit `depth` when you want the selected level and all descendants.
+
+## Select alternative branches
+
+Use multiple inner arrays for alternatives:
+
+```json
+{
+  "channels": ["messages", "updates"],
+  "namespaces": [["researcher"], ["writer"]]
+}
+```
+
+This matches events whose namespace starts with `researcher` or starts with `writer`.
+
+Use a single inner array for a nested path:
+
+```json
+{
+  "channels": ["messages", "updates"],
+  "namespaces": [["researcher", "tools"]]
+}
+```
+
+This matches events whose namespace starts with `researcher` and then `tools`.
+
+Namespace selection is prefix-based. It cannot express "match a segment named `tools` at any depth." If the same child name appears under multiple parents, enumerate the known paths, such as `[["researcher", "tools"], ["reviewer", "tools"]]`, or subscribe more broadly and filter events on the client.
+
+## Subscribe with filters
+
+Remote streams use the same selection fields as the protocol.
+
+```json
+{
+  "channels": ["messages", "tools", "tasks", "lifecycle"],
+  "namespaces": [["researcher", "tools"]],
+  "depth": 0,
+  "since": 123
+}
+```
+
+In the TypeScript SDK, pass the same filter to `thread.subscribe(...)`:
+
+```ts
+const events = await thread.subscribe({
+  channels: ["messages", "tools", "tasks", "lifecycle"],
+  namespaces: [["researcher", "tools"]],
+  depth: 0,
+});
+
+for await (const event of events) {
+  console.log(event.method, event.params.namespace, event.params.data);
+}
+```
+
+## Recipes
+
+Target the entire run:
+
+```json
+{
+  "channels": ["messages", "updates", "lifecycle"]
+}
+```
+
+Target the root graph and direct child executions:
+
+```json
+{
+  "channels": ["messages", "updates", "lifecycle"],
+  "namespaces": [[]],
+  "depth": 1
+}
+```
+
+Target one graph or task by stable name:
+
+```json
+{
+  "channels": ["messages", "updates"],
+  "namespaces": [["researcher"]]
+}
+```
+
+Target one nested graph or task by stable path:
+
+```json
+{
+  "channels": ["messages", "updates"],
+  "namespaces": [["researcher", "validator"]]
+}
+```
+
+Target only the selected graph or task level:
+
+```json
+{
+  "channels": ["values", "updates", "lifecycle"],
+  "namespaces": [["researcher", "validator"]],
+  "depth": 0
+}
+```
+
+Target one exact runtime branch after discovering its namespace:
+
+```json
+{
+  "channels": ["messages", "updates", "lifecycle"],
+  "namespaces": [["researcher:6f4d", "validator:91ac"]]
+}
+```
+
+## Avoid common mistakes
+
+Do not treat alternatives as a path. This matches events whose namespace starts with `researcher` or starts with `validator`:
+
+```json
+{
+  "namespaces": [["researcher"], ["validator"]]
+}
+```
+
+This matches events whose namespace starts with `researcher` and then `validator`:
+
+```json
+{
+  "namespaces": [["researcher", "validator"]]
+}
+```
+
+Do not use `:<id>` when you want stable targeting. Runtime IDs change between runs and parallel calls.
+
+Do not treat `depth` as absolute. `depth: 1` with `namespaces: [["researcher"]]` means one segment below `researcher`, not absolute namespace depth 1.

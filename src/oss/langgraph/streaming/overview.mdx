@@ -5,42 +5,81 @@ description: Choose the right streaming API for local graphs, remote deployments
 
 LangGraph has two streaming features for different levels of control:
 
-- **Projection Streaming** is the recommended model for most application code, especially frontend application streaming. It exposes typed projections such as `run.messages`, `run.values`, `run.subgraphs`, `run.output`, and `run.extensions`.
-- **Mode Streaming** is a low-level streaming primitive based on Pregel stream modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, or `debug`. Use it when you need access to LangGraph internals or advanced stream mode output.
+- **Event Streaming** is the recommended model for most application code, especially frontend application streaming. It exposes typed projections such as `run.messages`, `run.values`, `run.subgraphs`, `run.output`, and `run.extensions`.
+- **Pregel Streaming** is a low-level streaming primitive based on Pregel stream modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, or `debug`. Use it when you need access to LangGraph internals or advanced stream mode output.
 
-Use Projection Streaming when you want ergonomic application-facing streams. Use Mode Streaming when you need lower-level access to the Pregel execution stream.
+Use Event Streaming when you want ergonomic application-facing streams. Use Pregel Streaming when you need lower-level access to the Pregel execution stream.
 
 ## Choose a streaming API
 
 | Need | Read |
 | ---- | ---- |
-| Access LangGraph internals or advanced stream modes | [Mode Streaming](/oss/langgraph/streaming) |
-| Build application or frontend streaming experiences | [Projection Streaming](/oss/langgraph/streaming/projection-streaming) |
+| Build application or frontend streaming experiences | [Event Streaming](/oss/langgraph/streaming/event-streaming) |
+| Access LangGraph internals or advanced stream modes | [Pregel Streaming](/oss/langgraph/streaming) |
+| Subscribe to specific graph, subgraph, or task events | [Namespaces](/oss/langgraph/streaming/namespaces) |
 | Compare local and remote streaming | [In-process vs remote](/oss/langgraph/streaming/in-process) |
 | Stream a deployed graph or agent | [Remote](/oss/langgraph/streaming/remote) |
 | Understand the wire protocol | [Protocol](/oss/langgraph/streaming/protocol) |
 | Add app-specific projections | [Custom transformers](/oss/langgraph/streaming/custom-transformers) |
-| Choose between `EventLog` and `StreamChannel` | [EventLog and StreamChannel](/oss/langgraph/streaming/event-log-and-stream-channel) |
+| Create local or remote custom stream projections | [StreamChannel](/oss/langgraph/streaming/streamchannel) |
 
 ## How the pieces fit together
 
-The streaming stack has five layers:
+The streaming stack has two main layers:
 
-1. The LangGraph Pregel engine emits data based on the configured stream mode.
-2. The protocol defines event envelopes, channels, namespaces, ordering, replay, and transport behavior.
-3. LangGraph produces protocol events from graph execution.
-4. Stream transformers build typed projections over those events.
-5. SDK and frontend clients consume the same events over remote transports.
+1. **Pregel Streaming** emits raw graph execution events from the Pregel engine.
+2. **Event Streaming** normalizes those events, runs them through stream transformers, and exposes typed projections.
+
+<div className="my-6 rounded-xl border bg-gray-50 p-4 dark:bg-gray-900">
+  <div className="mx-auto max-w-2xl space-y-2 text-sm">
+    <div className="rounded-lg border border-slate-300 bg-white p-3 text-center dark:border-slate-700 dark:bg-slate-950">
+      <div className="font-semibold text-slate-900 dark:text-slate-100">Pregel engine</div>
+      <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">Runs graph steps</div>
+    </div>
+    <div className="text-center text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">emits</div>
+    <div className="rounded-lg border border-orange-300 bg-orange-50 p-3 text-center dark:border-orange-800 dark:bg-orange-950">
+      <div className="font-semibold text-orange-900 dark:text-orange-100">Raw Pregel events</div>
+      <div className="mt-1 text-xs text-orange-700 dark:text-orange-300"><code>updates</code>, <code>values</code>, <code>messages</code>, <code>tasks</code></div>
+    </div>
+    <div className="text-center text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">sent to</div>
+    <div className="rounded-lg border border-blue-300 bg-blue-50 p-3 text-center dark:border-blue-800 dark:bg-blue-950">
+      <div className="font-semibold text-blue-900 dark:text-blue-100">Event router</div>
+      <div className="mt-1 text-xs text-blue-700 dark:text-blue-300">Routes each event through the transformer pipeline</div>
+    </div>
+    <div className="text-center text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">cascades through</div>
+    <div className="rounded-lg border border-green-300 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950">
+      <div className="font-semibold text-green-900 dark:text-green-100">Stream transformers</div>
+      <div className="mt-2 grid gap-2 text-xs text-green-800 dark:text-green-200 sm:grid-cols-4">
+        <div className="rounded border border-green-200 bg-white px-2 py-1 dark:border-green-800 dark:bg-green-950">ValuesTransformer</div>
+        <div className="rounded border border-green-200 bg-white px-2 py-1 dark:border-green-800 dark:bg-green-950">MessagesTransformer</div>
+        <div className="px-2 py-1 text-center text-green-600 dark:text-green-300">...</div>
+        <div className="rounded border border-green-200 bg-white px-2 py-1 dark:border-green-800 dark:bg-green-950">Custom transformers</div>
+      </div>
+    </div>
+    <div className="text-center text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">produces</div>
+    <div className="rounded-lg border border-purple-300 bg-purple-50 p-3 text-center dark:border-purple-800 dark:bg-purple-950">
+      <div className="font-semibold text-purple-900 dark:text-purple-100">Event Stream</div>
+      <div className="mt-1 text-xs text-purple-700 dark:text-purple-300">Projected events for application code</div>
+    </div>
+  </div>
+</div>
+
+The event router is the bridge between the two layers. It receives normalized Pregel events and passes each event through the registered stream transformers. Built-in transformers create standard projections such as `run.messages`, `run.values`, `run.subgraphs`, and `run.output`. Custom transformers can add application-specific projections under `run.extensions`.
+
+You can stream at either layer:
+
+- Use [Event Streaming](/oss/langgraph/streaming/event-streaming) when you want projected events and typed stream accessors for application code.
+- Use [Pregel Streaming](/oss/langgraph/streaming) when you want raw Pregel stream modes and are comfortable handling graph-runtime details directly.
 
 In-process streaming and remote streaming use the same event model. The difference is how the events are delivered:
 
 :::python
-- In process, Projection Streaming uses `graph.stream_v2()` to return a run object backed by Python iterables and projection properties.
+- In process, Event Streaming uses `graph.stream_events(..., version="v3")` to return a run object backed by Python iterables and projection properties.
 - Remotely, the Python SDK currently streams deployed runs through `client.runs.stream(...)`.
 :::
 
 :::js
-- In process, Projection Streaming uses `graph.stream_v2()` to return a run object backed by async iterables.
+- In process, Event Streaming uses `graph.streamEvents(..., { version: "v3" })` to return a run object backed by async iterables.
 - Remotely, `client.threads.stream(...)` returns a thread stream backed by SSE, WebSocket, or a custom transport.
 :::
 

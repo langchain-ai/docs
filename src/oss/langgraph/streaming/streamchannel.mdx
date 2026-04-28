@@ -1,0 +1,164 @@
+---
+title: StreamChannel
+description: Use StreamChannel for local and remote stream transformer projections.
+---
+
+`StreamChannel` is the projection primitive for custom streaming data. It gives in-process consumers an iterable stream, and it can also forward pushed values to remote SDK clients when the channel has a protocol name.
+
+:::js
+In TypeScript, choose local-only or wire-visible behavior when you create the channel:
+
+```ts
+const local = StreamChannel.local<T>();
+const remote = StreamChannel.remote<T>("timeline");
+```
+
+For a shorter form, `new StreamChannel<T>()` is equivalent to `StreamChannel.local<T>()`, and `new StreamChannel<T>("timeline")` is equivalent to `StreamChannel.remote<T>("timeline")`.
+:::
+
+## Decision Rule
+
+Use one `StreamChannel` whenever you need a streaming projection. The only decision is whether the stream should cross the wire.
+
+:::js
+| Need | Use |
+| ---- | --- |
+| Data should stay in process only | `StreamChannel.local<T>()` |
+| Data should be available in process and over the wire | `StreamChannel.remote<T>(name)` |
+| Simplified local form | `new StreamChannel<T>()` |
+| Simplified wire-visible form | `new StreamChannel<T>(name)` |
+:::
+
+:::python
+| Need | Use |
+| ---- | --- |
+| Data should stay in process only | `StreamChannel()` |
+| Data should be available in process and over the wire | `StreamChannel(name)` |
+:::
+
+Remote channel payloads must be serializable. Keep promises, async iterables, class instances, and other in-process handles local.
+
+## Local Channels
+
+Local channels are available through `run.extensions`, but they are not forwarded to remote clients.
+
+:::js
+```ts
+import { StreamChannel } from "@langchain/langgraph";
+
+const progressTransformer = () => {
+  const progress = StreamChannel.local<{ step: string }>();
+
+  return {
+    init: () => ({ progress }),
+    process(event) {
+      progress.push({ step: event.method });
+      return true;
+    },
+  };
+};
+```
+:::
+
+:::python
+```py
+from langgraph.stream import StreamChannel, StreamTransformer
+
+
+class ProgressTransformer(StreamTransformer):
+    def __init__(self, scope: tuple[str, ...] = ()) -> None:
+        super().__init__(scope)
+        self.progress = StreamChannel[dict[str, str]]()
+
+    def init(self) -> dict:
+        return {"progress": self.progress}
+
+    def process(self, event):
+        self.progress.push({"step": event["method"]})
+        return True
+
+```
+:::
+
+## Wire-visible channels
+
+Wire-visible channels are available in process through `run.extensions`, and the stream handler also forwards each `push()` as a protocol event using the channel name. Remote SDK clients consume them through `thread.extensions.<name>` or a `custom:<name>` subscription.
+
+:::js
+```ts
+import { StreamChannel } from "@langchain/langgraph";
+
+const toolActivityTransformer = () => {
+  const activity = StreamChannel.remote<{
+    name: string;
+    status: "started" | "finished" | "error";
+  }>("toolActivity");
+
+  return {
+    init: () => ({ toolActivity: activity }),
+    process(event) {
+      if (event.method === "tools") {
+        const data = event.params.data as { tool_name?: string; event?: string };
+        if (data.tool_name && data.event) {
+          activity.push({
+            name: data.tool_name,
+            status: data.event === "tool-error" ? "error" : "started",
+          });
+        }
+      }
+      return true;
+    },
+  };
+};
+```
+:::
+
+:::python
+```py
+from typing import TypedDict
+
+from langgraph.stream import ProtocolEvent, StreamChannel, StreamTransformer
+
+
+class ToolActivity(TypedDict):
+    name: str
+    status: str
+
+
+class ToolActivityTransformer(StreamTransformer):
+    required_stream_modes = ("tools",)
+
+    def __init__(self, scope: tuple[str, ...] = ()) -> None:
+        super().__init__(scope)
+        self.activity = StreamChannel[ToolActivity]("tool_activity")
+
+    def init(self) -> dict:
+        return {"tool_activity": self.activity}
+
+    def process(self, event: ProtocolEvent) -> bool:
+        if event["method"] != "tools":
+            return True
+
+        data = event["params"]["data"]
+        if isinstance(data, dict) and data.get("tool_name") and data.get("event"):
+            status = "error" if data["event"] == "tool-error" else "started"
+            self.activity.push({"name": data["tool_name"], "status": status})
+        return True
+```
+:::
+
+## Lifecycle
+
+`StreamChannel` lifecycle is managed by the stream handler when the channel is returned from a transformer's `init()` method. Transformers push data, but do not close or fail the channel directly.
+
+:::js
+Both local and wire-visible `StreamChannel`s are closed or failed by the stream handler.
+:::
+
+## Native and user transformers
+
+Native transformers are provided by LangGraph, LangChain, or Deep Agents. They project protocol events into first-class run stream getters such as `run.values`, `run.messages`, `run.tool_calls`, or `run.subagents`.
+
+User transformers are application-defined. They project data under `run.extensions` and, when backed by a wire-visible `StreamChannel`, also under `thread.extensions` for remote SDK clients.
+
+See [custom stream transformers](/oss/langgraph/streaming/custom-transformers) for an end-to-end example.

@@ -1,43 +1,41 @@
 ---
 title: Custom transformers
-description: Build application-specific projections for Projection Streaming and remote clients.
+description: Build application-specific projections for Event Streaming.
 ---
 
-Stream transformers are the projection layer in Projection Streaming. They observe protocol events, keep their own state, and expose derived views of a run such as messages, tool calls, subgraphs, tool activity, token totals, progress events, artifacts, or third-party protocol messages.
+Stream transformers are the projection layer in Event Streaming. They observe protocol events, keep their own state, and expose derived views of a run such as messages, tool calls, subgraphs, tool activity, token totals, progress events, artifacts, or third-party protocol messages.
 
 ## How transformers work
 
-Projection Streaming starts with Mode Streaming output from the LangGraph Pregel engine. The runtime normalizes those chunks into protocol events, then a `StreamMux` routes each event through a stack of stream transformers.
+Event Streaming starts with Pregel Streaming output from the LangGraph Pregel engine. The runtime normalizes those chunks into protocol events, then a stream handler routes each event through a stack of stream transformers.
 
 ```mermaid
 flowchart TD
     A[Pregel modes] --> B[Events]
-    B --> C[Native transformers]
+    B --> C[Built-in projections]
     C --> D[User transformers]
     D --> E[Run projections]
 ```
 
-The mux is the central dispatcher for one run. For every protocol event, it:
+The stream handler is the central dispatcher for one run. For every protocol event, it:
 
 1. Calls each registered transformer's `process(event)` hook in order.
-2. Wires `StreamChannel` pushes back onto the protocol event stream for remote clients.
-3. Stores the event in the run event log unless a transformer suppresses it.
+2. Wires named `StreamChannel` pushes back onto the protocol event stream.
+3. Stores the event in the run stream unless a transformer suppresses it.
 4. Calls `finalize()` or `fail()` on every transformer when the run ends.
 
-Transformers are observational. They do not call back into the graph runtime. Instead, they consume events and push derived values into `EventLog`, `StreamChannel`, promises, or other projection objects.
+Transformers are observational. They do not call back into the graph runtime. Instead, they consume events and push derived values into `StreamChannel`, promises, or other projection objects.
 
-## Native and user transformers
+## User transformers
 
-There are two kinds of stream transformers:
+:::python
+User transformers are the public extension point for Event Streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions["name"]`.
+:::
+:::js
+User transformers are the public extension point for Event Streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions.<name>`.
+:::
 
-| Transformer type | Who provides it | Where the projection appears |
-| ---------------- | --------------- | ---------------------------- |
-| Native transformers | LangGraph, LangChain, or Deep Agents | First-class getters such as `run.values`, `run.messages`, `run.tool_calls`, or `run.subagents` |
-| User transformers | Application or third-party code | `run.extensions.<name>` or `run.extensions["name"]` |
-
-Native and user transformers use the same contract and run in the same mux pipeline. Product layers add native transformers first: LangGraph adds graph projections, LangChain agents add tool-call projections, and Deep Agents add subagent projections. User transformers are stacked on top through compile-time or call-time registration.
-
-Use a user transformer when the built-in projections do not match the shape your application needs.
+Use a user transformer when the built-in projections do not match the shape your application needs. For example, a transformer can publish tool activity, token totals, progress events, artifacts, or messages for another protocol.
 
 ## Transformer shape
 
@@ -74,14 +72,14 @@ interface StreamTransformer<TProjection = unknown> {
 ```
 :::
 
-- `init()` creates the projection object. User transformer projections appear under `run.extensions`; native transformer projections can be promoted to first-class run getters.
+- `init()` creates the projection object. User transformer projections appear under `run.extensions`.
 - `process()` observes each protocol event. Return `false` only when you intentionally want to suppress the original event.
 - `finalize()` closes or resolves non-channel projections after a successful run.
 - `fail()` propagates errors to non-channel projections.
 
 ## Streaming projection
 
-Use `StreamChannel` when remote clients should be able to consume the projection:
+Use a named `StreamChannel` when a projection should be available both in process and over the wire:
 
 :::python
 ```py
@@ -122,7 +120,7 @@ class ToolActivityTransformer(StreamTransformer):
 import { StreamChannel } from "@langchain/langgraph";
 
 const toolActivityTransformer = () => {
-  const activity = new StreamChannel<{
+  const activity = StreamChannel.remote<{
     name: string;
     status: "started" | "finished" | "error";
   }>("toolActivity");
@@ -150,8 +148,9 @@ In process, use `run.extensions` to access the projection:
 
 :::python
 ```py
-run = graph.stream_v2(
+run = graph.stream_events(
     input,
+    version="v3",
     transformers=[ToolActivityTransformer],
 )
 
@@ -162,7 +161,8 @@ for item in run.extensions["tool_activity"]:
 
 :::js
 ```ts
-const run = await graph.stream_v2(input, {
+const run = await graph.streamEvents(input, {
+  version: "v3",
   transformers: [toolActivityTransformer],
 });
 
@@ -172,12 +172,12 @@ for await (const item of run.extensions.toolActivity) {
 ```
 :::
 
-For custom events emitted from graph nodes, back the projection with `EventLog`:
+For custom events emitted from graph nodes that should stay in process, use a local projection:
 
 :::python
 ```py
 from langgraph.config import get_stream_writer
-from langgraph.stream import EventLog, ProtocolEvent, StreamTransformer
+from langgraph.stream import ProtocolEvent, StreamChannel, StreamTransformer
 
 
 def node(state):
@@ -191,7 +191,7 @@ class CustomTransformer(StreamTransformer):
 
     def __init__(self, scope: tuple[str, ...] = ()) -> None:
         super().__init__(scope)
-        self.log = EventLog()
+        self.log = StreamChannel()
 
     def init(self) -> dict:
         return {"custom": self.log}
@@ -202,7 +202,7 @@ class CustomTransformer(StreamTransformer):
         return True
 
 
-run = graph.stream_v2(input, transformers=[CustomTransformer])
+run = graph.stream_events(input, version="v3", transformers=[CustomTransformer])
 
 for item in run.extensions["custom"]:
     print(item)
@@ -210,8 +210,28 @@ for item in run.extensions["custom"]:
 :::
 
 :::js
-Remote clients can consume the same projection through `thread.extensions`:
+```ts
+import { StreamChannel } from "@langchain/langgraph";
 
+const customTransformer = () => {
+  const custom = StreamChannel.local<unknown>();
+
+  return {
+    init: () => ({ custom }),
+    process(event) {
+      if (event.method === "custom") {
+        custom.push(event.params.data);
+      }
+      return true;
+    },
+  };
+};
+```
+:::
+
+Remote clients can consume named `StreamChannel` projections through `thread.extensions`:
+
+:::js
 ```ts
 const thread = client.threads.stream<Extensions>({
   assistantId: "simple-tool-with-metrics",
@@ -225,11 +245,11 @@ for await (const item of thread.extensions.toolActivity) {
 
 ## Final-value projection
 
-Use `EventLog`, promises, or other in-process objects when the projection is not intended for remote clients:
+Use local streams, promises, or other in-process objects when the projection should not cross the wire:
 
 :::python
 ```py
-from langgraph.stream import EventLog, ProtocolEvent, StreamTransformer
+from langgraph.stream import ProtocolEvent, StreamChannel, StreamTransformer
 
 
 class StatsTransformer(StreamTransformer):
@@ -238,7 +258,7 @@ class StatsTransformer(StreamTransformer):
     def __init__(self, scope: tuple[str, ...] = ()) -> None:
         super().__init__(scope)
         self.total_tokens = 0
-        self.total_tokens_log = EventLog[int]()
+        self.total_tokens_log = StreamChannel[int]()
 
     def init(self) -> dict:
         return {"total_tokens": self.total_tokens_log}
@@ -286,8 +306,9 @@ Pass transformers at call time for local experimentation:
 
 :::python
 ```py
-run = graph.stream_v2(
+run = graph.stream_events(
     input,
+    version="v3",
     transformers=[StatsTransformer, ToolActivityTransformer],
 )
 ```
@@ -295,7 +316,8 @@ run = graph.stream_v2(
 
 :::js
 ```ts
-const run = await graph.stream_v2(input, {
+const run = await graph.streamEvents(input, {
+  version: "v3",
   transformers: [statsTransformer, toolActivityTransformer],
 });
 ```
@@ -319,7 +341,7 @@ const graph = builder.compile({
 ```
 :::
 
-Compile-time transformers can run server-side and expose `StreamChannel` projections to SDK clients as `thread.extensions.<name>`.
+Compile-time transformers can run server-side and expose named `StreamChannel` projections to SDK clients as `thread.extensions.<name>`.
 
 :::python
 `create_agent` registers the built-in tool-call transformer for you, which is why agents expose `run.tool_calls`. On a plain `StateGraph`, opt in when you want the same projection:
@@ -327,7 +349,7 @@ Compile-time transformers can run server-side and expose `StreamChannel` project
 ```py
 from langgraph.prebuilt import ToolCallTransformer
 
-run = graph.stream_v2(input, transformers=[ToolCallTransformer])
+run = graph.stream_events(input, version="v3", transformers=[ToolCallTransformer])
 
 for tool_call in run.tool_calls:
     print(tool_call.tool_name, tool_call.input)
@@ -352,4 +374,4 @@ const thread = client.threads.stream<Extensions>({
 ```
 :::
 
-See [EventLog and StreamChannel](/oss/langgraph/streaming/event-log-and-stream-channel) for choosing the right projection primitive.
+See [StreamChannel](/oss/langgraph/streaming/streamchannel) for choosing local or remote projection visibility.
