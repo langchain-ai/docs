@@ -1,9 +1,10 @@
 ---
 title: Log traces to a specific project
 sidebarTitle: Log traces to a specific project
+description: Route LangSmith traces to a named project instead of the default project using environment variables or the SDK.
 ---
 
-This page covers how to control where LangSmith sends your traces—from static configuration to dynamic routing and multi-destination fan-out:
+This page covers how to control where LangSmith sends your traces:
 
 - [Set the destination project statically](#set-the-destination-project-statically)
 - [Set the destination project dynamically](#set-the-destination-project-dynamically)
@@ -12,9 +13,11 @@ This page covers how to control where LangSmith sends your traces—from static 
 
 ## Set the destination project statically
 
-As mentioned in the [Tracing Concepts](/langsmith/observability-concepts#projects) section, LangSmith uses the concept of a `Project` to group traces. If left unspecified, the project is set to `default`. You can set the `LANGSMITH_PROJECT` environment variable to configure a custom project name for an entire application run. This should be done before executing your application.
+LangSmith uses the concept of a [_project_](/langsmith/observability-concepts#projects) to group traces. If left unspecified, the project is set to `default`.
 
-```
+You can set the `LANGSMITH_PROJECT` environment variable to configure a custom project name for an entire application run. Set this before running your application:
+
+```bash
 export LANGSMITH_PROJECT=my-custom-project
 ```
 
@@ -22,19 +25,23 @@ export LANGSMITH_PROJECT=my-custom-project
 The `LANGSMITH_PROJECT` flag is only supported in JS SDK versions >= 0.2.16, use `LANGCHAIN_PROJECT` instead if you are using an older version.
 </Warning>
 
-If the project specified does not exist, it will be created automatically when the first trace is ingested.
+If the project specified does not exist, LangSmith will automatically create it when the first trace is ingested.
 
 ## Set the destination project dynamically
 
-You can also set the project name at program runtime in various ways, depending on how you are [annotating your code for tracing](/langsmith/annotate-code). This is useful when you want to log traces to different projects within the same application.
+You can also set the project name at program runtime in various ways, depending on how you are [annotating your code for tracing](/langsmith/annotate-code). This is useful when you want to log traces to different projects within the same application:
+
+- Pass the project name at decoration or configuration time.
+- Override it per individual call.
+- Set it when constructing a run directly.
 
 <Note>
-Setting the project name dynamically using one of the below methods overrides the project name set by the `LANGSMITH_PROJECT` environment variable.
+Setting the project name dynamically using one of the following methods overrides the project name set by the `LANGSMITH_PROJECT` environment variable.
 </Note>
 
 <CodeGroup>
 
-```python Python
+```python Python expandable wrap
 import openai
 from langsmith import traceable
 from langsmith.run_trees import RunTree
@@ -98,7 +105,7 @@ rt.end(outputs=chat_completion)
 rt.post()
 ```
 
-```typescript TypeScript
+```typescript TypeScript expandable wrap
 import OpenAI from "openai";
 import { traceable } from "langsmith/traceable";
 import { wrapOpenAI } from "langsmith/wrappers";
@@ -139,7 +146,7 @@ rt.end({outputs: chatCompletion});
 await rt.patchRun();
 ```
 
-```java Client
+```java Java expandable wrap
 import com.langchain.smith.otel.OtelConfig;
 import com.langchain.smith.otel.OtelSpanCreator;
 import com.langchain.smith.otel.OtelTraceExporter;
@@ -214,7 +221,10 @@ public class OtelLangSmithSimpleExample {
 
 ## Set the destination workspace dynamically
 
-If you need to dynamically route traces to different LangSmith [workspaces](/langsmith/administration-overview#workspaces) based on runtime configuration (e.g., routing different users or tenants to separate workspaces), Python users can use workspace-specific LangSmith clients with `tracing_context`, while TypeScript users can pass a custom client to `traceable` or use `LangChainTracer` with callbacks.
+If you need to route traces dynamically to different LangSmith [workspaces](/langsmith/administration-overview#workspaces) based on runtime configuration (e.g., routing different users or tenants to separate workspaces), the approach differs by language:
+
+- **Python**: use workspace-specific LangSmith clients with [`tracing_context`](/langsmith/annotate-code#use-the-trace-context-manager-python-only).
+- **TypeScript**: pass a custom client to [`traceable`](/langsmith/annotate-code#use-%40traceable-%2F-traceable), or use `LangChainTracer` with callbacks.
 
 This approach is useful for multi-tenant applications where you want to isolate traces by customer, environment, or team at the workspace level.
 
@@ -690,3 +700,119 @@ await myPipeline("What is LangSmith?");
 ```
 
 </CodeGroup>
+
+### Route between LangSmith and OpenTelemetry destinations
+
+You can decide at runtime whether a given invocation sends traces to LangSmith, to an OpenTelemetry (OTel) backend, or to both, without redeploying or modifying application logic. This is useful when you want to toggle between observability backends per environment, or even per request, making the decision at runtime.
+
+Set the tracing mode using the `tracing_mode` constructor argument or the `LANGSMITH_TRACING_MODE` environment variable. Both accept the same values; an explicit `tracing_mode` argument always takes precedence over the env var:
+
+- **`"langsmith"` (default)**: sends traces natively to LangSmith.
+- **`"otel"`**: exports traces as OpenTelemetry spans to a configured OTel backend.
+- **`"hybrid"` (Python only)**: sends to both LangSmith and an OTel backend from a single replica.
+
+<Note>
+If you are using the deprecated `otel_enabled` parameter on `Client` (Python only), migrate to `tracing_mode`: `Client(otel_enabled=True)` → `Client(tracing_mode="hybrid")`. The `otel_enabled` parameter will be removed in the next minor version.
+</Note>
+
+Pass a configured `Client` directly into a replica to apply the desired mode at runtime:
+
+<CodeGroup>
+
+```python Python expandable wrap
+from langsmith import Client, traceable, tracing_context
+from langsmith.run_trees import WriteReplica
+from langsmith.wrappers import wrap_openai
+import openai
+
+# Create clients with different tracing modes
+ls_client = Client()                            # tracing_mode="langsmith" (default)
+otel_client = Client(tracing_mode="otel")       # tracing_mode="otel"
+hybrid_client = Client(tracing_mode="hybrid")   # tracing_mode="hybrid" (both)
+
+openai_client = wrap_openai(openai.Client())
+
+@traceable()
+def joke():
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Tell me a short joke."}],
+    )
+    return response.choices[0].message.content
+
+# Mix tracing modes across replicas in a single invocation:
+# one replica sends via LangSmith's native format, another as OTel spans.
+with tracing_context(replicas=[
+    WriteReplica(client=ls_client),    # tracing_mode="langsmith"
+    WriteReplica(client=otel_client),  # tracing_mode="otel"
+]):
+    joke()
+
+# Alternatively, a single hybrid replica sends to both simultaneously.
+with tracing_context(replicas=[WriteReplica(client=hybrid_client)]):
+    joke()
+
+# Swap replica lists at runtime — e.g. based on a feature flag or environment.
+def get_replicas(send_to_otel: bool):
+    replicas = [WriteReplica(client=ls_client)]
+    if send_to_otel:
+        replicas.append(WriteReplica(client=otel_client))
+    return replicas
+
+with tracing_context(replicas=get_replicas(send_to_otel=True)):   # LangSmith + OTel
+    joke()
+
+with tracing_context(replicas=get_replicas(send_to_otel=False)):  # LangSmith only
+    joke()
+```
+
+```typescript TypeScript expandable wrap
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
+import OpenAI from "openai";
+
+// Note: tracingMode: "otel" requires OTel SDK initialization
+// (TracerProvider, SpanProcessor, etc.) before creating the client.
+// See the OpenTelemetry integration guide for setup details.
+
+// Create clients with different tracing modes
+const lsClient = new Client();                           // tracingMode: "langsmith" (default)
+const otelClient = new Client({ tracingMode: "otel" });  // tracingMode: "otel"
+
+const openaiClient = wrapOpenAI(new OpenAI());
+
+async function jokeImpl() {
+  const response = await openaiClient.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Tell me a short joke." }],
+  });
+  return response.choices[0].message.content;
+}
+
+// Mix tracing modes across replicas in a single traceable call:
+// the primary client sends via LangSmith, the replica sends as OTel spans.
+const joke = traceable(jokeImpl, {
+  name: "joke",
+  client: lsClient,                    // tracingMode: "langsmith" (default)
+  replicas: [{ client: otelClient }],  // tracingMode: "otel"
+});
+await joke();
+
+// Build replicas dynamically for runtime switching — e.g. based on a feature flag.
+function buildReplicas(sendToOtel: boolean) {
+  return sendToOtel ? [{ client: otelClient }] : [];
+}
+
+const sendToOtel = process.env.ROUTE_TO_OTEL === "true";
+const jokeDynamic = traceable(jokeImpl, {
+  name: "joke",
+  client: lsClient,
+  replicas: buildReplicas(sendToOtel),
+});
+await jokeDynamic();
+```
+
+</CodeGroup>
+
+The `tracing_mode` on each `Client` determines that replica's export path. In Python, `"hybrid"` mode handles both destinations within a single replica. In TypeScript, the "send to both" case uses two separate replicas, one for each client, because there is no `"hybrid"` mode. Since each replica resolves its own client independently, you can also mix modes within a single `tracing_context`, for example keeping one replica sending to LangSmith while forwarding the same trace to an OTel collector via a second replica.
