@@ -977,29 +977,23 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
   npm install @langchain/langgraph-checkpoint-mongodb
   ```
 
-  <Tip>
-  `MongoDBStore.fromConnString` calls `start()` automatically, which creates the required indexes. For vector search, allow a moment for the Atlas Search index to become `READY` before querying.
-  </Tip>
-
   ```typescript
   import { ChatAnthropic } from "@langchain/anthropic";
-  import { MemorySaver } from "@langchain/langgraph";
-  import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
+  import { MemorySaver, StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
   import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
-  import { OpenAIEmbeddings } from "@langchain/openai";
   import { v4 as uuidv4 } from "uuid";
 
   const State = new StateSchema({
     messages: MessagesValue,
   });
 
-  const model = new ChatAnthropic({ model: "claude-sonnet-4-5-20251001" });
+  const model = new ChatAnthropic({ model: "claude-sonnet-4-6" });
 
   const callModel: GraphNode<typeof State> = async (state, runtime) => {
     const userId = runtime.context?.userId;
     const namespace = ["memories", userId];
-    const memories = await runtime.store?.search(namespace, { query: state.messages.at(-1)?.content });
-    const info = memories?.map(d => d.value.data).join("\n") || "";
+    const memories = await runtime.store?.search(namespace);
+    const info = memories?.map(d => d.value.data).join("\n") || "n/a";
     const systemMsg = `You are a helpful assistant talking to the user. User info: ${info}`;
 
     // Store new memories if the user asks the model to remember
@@ -1018,16 +1012,9 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
 
   const MONGODB_URI = "mongodb://user:password@localhost:27017";
 
-  // Manual embedding: supply an EmbeddingsInterface and dims to enable vector search.
-  // Omit embeddings and indexConfig to use field-based search only.
   const store = await MongoDBStore.fromConnString(MONGODB_URI, {
     dbName: "langgraph",
     collectionName: "store",
-    embeddings: new OpenAIEmbeddings({ model: "text-embedding-3-small" }),
-    indexConfig: {
-      name: "store_vector_index",
-      dims: 1536,
-    },
   });
 
   const checkpointer = new MemorySaver();
