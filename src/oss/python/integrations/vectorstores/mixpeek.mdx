@@ -1,0 +1,217 @@
+---
+title: "Mixpeek integration"
+description: "Integrate with the Mixpeek multimodal vector store using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the Mixpeek [vector store](/oss/integrations/vectorstores#overview). For detailed documentation, head to the [Mixpeek LangChain docs](https://docs.mixpeek.com/agent-integrations/langchain).
+
+## Setup
+
+To access the Mixpeek vector store, you'll need a [Mixpeek](https://mixpeek.com) account and API key.
+
+### Credentials
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "MIXPEEK_API_KEY" not in os.environ:
+    os.environ["MIXPEEK_API_KEY"] = getpass.getpass("Enter your Mixpeek API key: ")
+```
+
+To enable automated <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-mixpeek
+    ```
+    ```python uv
+    uv add langchain-mixpeek
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+### Full config (search + ingest)
+
+```python Initialize vector store icon="database"
+from langchain_mixpeek import MixpeekVectorStore
+
+vector_store = MixpeekVectorStore(
+    api_key=os.environ["MIXPEEK_API_KEY"],
+    namespace="my-namespace",
+    bucket_id="bkt_abc123",
+    collection_id="col_def456",
+    retriever_id="ret_ghi789",
+)
+```
+
+### Search-only (minimal config)
+
+```python Search-only factory icon="magnifying-glass"
+vector_store = MixpeekVectorStore.from_retriever(
+    api_key=os.environ["MIXPEEK_API_KEY"],
+    namespace="my-namespace",
+    retriever_id="ret_abc123",
+)
+```
+
+---
+
+## Manage vector store
+
+### Add items
+
+Mixpeek supports 6 content types — not just text:
+
+```python Add text icon="font"
+vector_store.add_texts(["Product description...", "Another document..."])
+```
+
+```python Add images icon="image"
+vector_store.add_images(["https://example.com/photo.jpg"])
+```
+
+```python Add video icon="video"
+vector_store.add_videos(["https://example.com/clip.mp4"])
+```
+
+```python Add audio icon="headphones"
+vector_store.add_audio(["https://example.com/recording.mp3"])
+```
+
+```python Add PDF icon="file-pdf"
+vector_store.add_pdfs(["https://example.com/document.pdf"])
+```
+
+```python Add spreadsheet icon="table"
+vector_store.add_excel(["https://example.com/data.xlsx"])
+```
+
+### Trigger processing
+
+After adding content, trigger feature extraction (embedding, OCR, transcription, face detection):
+
+```python Process content icon="wand-magic-sparkles"
+vector_store.trigger_processing()
+```
+
+### Delete items
+
+```python Delete documents by IDs icon="trash"
+vector_store.delete(ids=["doc_abc123"])
+```
+
+---
+
+## Query vector store
+
+### Directly
+
+```python Similarity search icon="folders"
+results = vector_store.similarity_search(query="red cup on the table", k=5)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+With scores:
+
+```python Similarity search with scores icon="star-half"
+results = vector_store.similarity_search_with_score(query="red cup", k=5)
+for doc, score in results:
+    print(f"* [SIM={score:.3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### By turning into retriever
+
+```python Create retriever icon="robot"
+retriever = vector_store.as_retriever()
+retriever.invoke("find the red cup")
+```
+
+---
+
+## Convert to agent tools
+
+The vector store can be converted to agent-compatible interfaces:
+
+```python Bridge methods icon="arrows-split-up-and-left"
+# Single search tool
+tool = vector_store.as_tool()
+
+# Full 6-tool agent toolkit (search, ingest, process, classify, cluster, alert)
+toolkit = vector_store.as_toolkit()
+
+# LangChain retriever
+retriever = vector_store.as_retriever()
+```
+
+---
+
+## Platform features
+
+### Taxonomies (document classification)
+
+```python Taxonomy classification icon="tags"
+vector_store.create_taxonomy(name="product-categories", config={...})
+results = vector_store.execute_taxonomy("tax_abc123")
+```
+
+### Clusters (unsupervised grouping)
+
+```python Clustering icon="object-group"
+cluster = vector_store.create_cluster(
+    cluster_type="vector",
+    vector_config={"algorithm": "kmeans", "algorithm_params": {"n_clusters": 10}},
+)
+vector_store.execute_cluster(cluster["cluster_id"])
+groups = vector_store.get_cluster_groups(cluster["cluster_id"])
+```
+
+### Alerts (match notifications)
+
+```python Alerts icon="bell"
+vector_store.create_alert(
+    name="counterfeit-detection",
+    notification_config={
+        "channels": [
+            {"channel_type": "webhook", "config": {"url": "https://..."}},
+            {"channel_type": "slack", "channel_id": "#alerts"},
+        ],
+    },
+)
+```
+
+---
+
+## Usage for retrieval-augmented generation
+
+```python RAG chain icon="link"
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_anthropic import ChatAnthropic
+
+retriever = vector_store.as_retriever()
+llm = ChatAnthropic(model="claude-sonnet-4-20250514")
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer using this context:\n{context}\n\nQuestion: {question}"
+)
+
+chain = {"context": retriever, "question": lambda x: x} | prompt | llm
+response = chain.invoke("what happens at 2 minutes in the video?")
+```
+
+---
+
+## API reference
+
+For detailed documentation of all MixpeekVectorStore features and configurations, head to the [Mixpeek LangChain docs](https://docs.mixpeek.com/agent-integrations/langchain).

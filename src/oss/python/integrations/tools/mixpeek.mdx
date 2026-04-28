@@ -1,0 +1,185 @@
+---
+title: "Mixpeek integration"
+description: "Integrate with the Mixpeek multimodal toolkit using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the Mixpeek [tool](/oss/langchain/tools) and toolkit. For detailed documentation, head to the [Mixpeek LangChain docs](https://docs.mixpeek.com/agent-integrations/langchain).
+
+## Overview
+
+### Details
+
+| Class | Package |  Serializable | [JS support](https://www.npmjs.com/package/@mixpeek/langchain) | Downloads | Version |
+| :--- | :--- | :---: | :---: |  :---: | :---: |
+| [MixpeekTool](https://github.com/mixpeek/langchain-mixpeek) | [langchain-mixpeek](https://pypi.org/project/langchain-mixpeek/) | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-mixpeek?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-mixpeek?style=flat-square&label=%20) |
+
+### Features
+
+Mixpeek gives AI agents the ability to perceive and act on multimodal content:
+
+- **Search** video, images, audio, and documents by natural language
+- **Ingest** any file type (text, image, video, audio, PDF, Excel)
+- **Process** content with 15+ feature extractors (embedding, OCR, transcription, face detection)
+- **Classify** documents using taxonomy pipelines
+- **Cluster** similar documents (kmeans, dbscan, hdbscan)
+- **Alert** on matches via webhook, Slack, or email
+
+---
+
+## Setup
+
+To access Mixpeek tools, you'll need a [Mixpeek](https://mixpeek.com) account and API key.
+
+### Credentials
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "MIXPEEK_API_KEY" not in os.environ:
+    os.environ["MIXPEEK_API_KEY"] = getpass.getpass("Enter your Mixpeek API key: ")
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-mixpeek
+    ```
+    ```python uv
+    uv add langchain-mixpeek
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+### Single search tool
+
+```python Initialize tool instance icon="robot"
+from langchain_mixpeek import MixpeekTool
+
+tool = MixpeekTool(
+    api_key=os.environ["MIXPEEK_API_KEY"],
+    retriever_id="ret_abc123",
+    namespace="my-namespace",
+    name="search_video_archive",
+    description="Search video archive for specific scenes, faces, or moments.",
+)
+```
+
+### Full toolkit (6 tools)
+
+```python Initialize toolkit icon="toolbox"
+from langchain_mixpeek import MixpeekToolkit
+
+toolkit = MixpeekToolkit(
+    api_key=os.environ["MIXPEEK_API_KEY"],
+    namespace="my-namespace",
+    bucket_id="bkt_abc123",
+    collection_id="col_def456",
+    retriever_id="ret_ghi789",
+)
+
+tools = toolkit.get_tools()  # Returns 6 tools
+```
+
+Scope which tools your agent gets:
+
+```python Scoped tools icon="filter"
+# Search-only agent
+toolkit.get_tools(actions=["search"])
+
+# Search + upload agent
+toolkit.get_tools(actions=["search", "ingest", "process"])
+```
+
+| Tool | Capability |
+|------|-----------|
+| `mixpeek_search` | Search video, images, audio, documents by natural language |
+| `mixpeek_ingest` | Upload text, images, video, audio, PDFs, spreadsheets |
+| `mixpeek_process` | Trigger feature extraction (embedding, OCR, transcription, face detection) |
+| `mixpeek_classify` | Run taxonomy classification on documents |
+| `mixpeek_cluster` | Group similar documents |
+| `mixpeek_alert` | Monitor content with webhook, Slack, or email notifications |
+
+---
+
+## Invocation
+
+### Directly
+
+```python Call tool icon="rocket"
+tool.invoke("find frames with a red cup")
+```
+
+Returns a JSON string with search results including scores, document IDs, and content.
+
+### As a ToolCall
+
+```python ToolCall icon="briefcase"
+model_generated_tool_call = {
+    "args": {"query": "camo pattern jacket"},
+    "id": "1",
+    "name": tool.name,
+    "type": "tool_call",
+}
+tool.invoke(model_generated_tool_call)
+```
+
+### Within an agent
+
+```python Agent with toolkit icon="robot"
+from langchain_mixpeek import MixpeekToolkit
+from langgraph.prebuilt import create_react_agent
+from langchain_anthropic import ChatAnthropic
+
+toolkit = MixpeekToolkit(
+    api_key=os.environ["MIXPEEK_API_KEY"],
+    namespace="brand-protection",
+    bucket_id="bkt_abc123",
+    collection_id="col_def456",
+    retriever_id="ret_ghi789",
+)
+
+agent = create_react_agent(
+    ChatAnthropic(model="claude-sonnet-4-20250514"),
+    toolkit.get_tools(),
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Scan these product URLs for counterfeits"}]}
+)
+```
+
+---
+
+## Retriever-to-tool conversion
+
+Any `MixpeekRetriever` can become an agent tool in one line:
+
+```python One-line conversion icon="wand-magic-sparkles"
+from langchain_mixpeek import MixpeekRetriever
+
+retriever = MixpeekRetriever(
+    api_key=os.environ["MIXPEEK_API_KEY"],
+    retriever_id="ret_abc123",
+    namespace="my-namespace",
+)
+
+tool = retriever.as_tool()  # Ready for any agent
+```
+
+---
+
+## API reference
+
+For detailed documentation of all Mixpeek features and configurations, head to the [Mixpeek LangChain docs](https://docs.mixpeek.com/agent-integrations/langchain).
