@@ -1,0 +1,282 @@
+---
+title: "Actian VectorAI DB integration"
+description: "Integrate with the Actian VectorAI DB vector store using LangChain Python."
+---
+
+>Actian VectorAI DB enables portable, high-performance vector search for modern AI applications. Built for embedded, edge, on-premises, hybrid, and cloud environments, it delivers low-latency semantic retrieval while keeping data under your control. While it offers a simple, convenient API that supports all LangChain-core vector store methods, it simultaneously provides the flexibility to customize search parameters and utilize extended filtering for advanced use cases.
+
+
+This guide provides a quick overview for getting started with the ActianVectorAI [vector store](/oss/integrations/vectorstores#overview). For a detailed listing of all Actian VectorAI DB features, paramaters, and configurations, head to the [Actian VectorAI DB LangChain API reference](https://pypi.org/project/langchain-actian-vectorai/).
+
+---
+
+## Setup
+
+To install and run Actian VectorAI DB using Docker, please see the [Actian VectorAI DB installation instructions](https://docs.vectoraidb.actian.com/home/installation/instructions),
+and then install the `langchain-actian-vectorai` integration package.
+
+### Credentials
+
+You need no credentials to run the code in this page. However, optional API keys can be set up for read, write and admin authentication. For more details on authentication and API key management, please see the [Actian VectorAI DB access token documentation](https://docs.vectoraidb.actian.com/api-reference/access-tokens/create-access-token).
+
+### Installation
+
+The LangChain Actian VectorAI DB integration lives in the `langchain-actian-vectorai` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-actian-vectorai
+    ```
+    ```python uv
+    uv add langchain-actian-vectorai
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Now you can instantiate your model object and generate responses.
+Choose your preferred embedding model, and initialize the vector store with the right vector size for the embeddings. 
+
+```python Initialize your choice of embeddings icon="database"
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+```
+
+```python Initialize vector store icon="database"
+from langchain_actian_vectorai import ActianVectorAIVectorStore
+from actian_vectorai import VectorAIClient, Distance, VectorParams
+
+client = VectorAIClient(url="localhost:6574")
+client.connect()
+collection_name = "your_collection"
+
+client.collections.create(
+    collection_name,
+    vectors_config=VectorParams(size=384, distance=Distance.Cosine),
+)
+
+vector_store = ActianVectorAIVectorStore(
+    client=client,
+    collection_name=collection_name,
+    embedding=embeddings,
+)
+```
+
+---
+
+## Manage vector store
+
+### Add items
+
+Document ID can be provided by the user in UUID string format. If not provided, a UUID will be automatically generated.
+
+```python Add documents icon="folder-plus"
+from langchain_core.documents import Document
+from uuid import uuid4
+
+document_1 = Document(
+    page_content="The Moon is Earth's only natural satellite.", 
+    metadata={"source": "space-facts.com"},
+)
+document_2 = Document(
+    page_content="Mars is known as the Red Planet due to iron oxide on its surface.", 
+    metadata={"source": "space-facts.com"},
+)
+document_3 = Document(
+    page_content="Jupiter is the largest planet in our solar system.", 
+    metadata={"source": "space-facts.com"},
+)
+documents = [document_1, document_2, document_3]
+uuids = [str(uuid4()) for _ in range(len(documents))]
+
+vector_store.add_documents(documents=documents, ids=uuids)
+```
+
+### Update items
+
+Adding a document with an existing ID will update the document in place. This allows you to easily update documents without needing to delete and readd them.
+
+```python Update document by ID icon="pencil"
+updated_document = Document(
+    page_content="The Moon orbits Earth every 27.3 days and affects our tides.", 
+    metadata={"source": "space-facts.com/moon-details"},
+)
+
+vector_store.add_documents(documents=[updated_document], ids=[uuids[0]])
+```
+
+### Delete items
+
+```python Delete documents by IDs icon="trash"
+vector_store.delete(ids=[uuids[-1]])
+```
+
+---
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added, you can query it during the running of your chain or agent.
+
+### Directly
+
+Performing a simple similarity search can be done as follows:
+
+```python Similarity search icon="folders"
+results = vector_store.similarity_search(
+    query="Which planet is red?", 
+    k=1, 
+    filter={"source": "space-facts.com"},
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```python Similarity search with scores icon="star-half"
+results = vector_store.similarity_search_with_score(
+    query="Which planet is red?", 
+    k=1, 
+    filter={"source": "space-facts.com"},
+)
+for doc, score in results:
+    print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### By turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+```python Create retriever icon="robot"
+retriever = vector_store.as_retriever(
+    search_type="mmr", 
+    search_kwargs={"k": 1},
+)
+retriever.invoke("Tell me about the lunar surface.")
+```
+
+### Metadata filtering
+
+Actian VectorAI DB supports advanced filtering capabilities to help you narrow down search results based on specific criteria. You can use a variety of operators to create complex filters that suit your needs. Here are some examples of how to use metadata filtering in your similarity searches. For a full list of supported operators and filter syntax, please refer to the [Actian VectorAI DB LangChain API reference](https://pypi.org/project/langchain-actian-vectorai/).
+
+```python Metadata filtering icon="filter"
+# Arbitrary range with keyword bounds
+results = vector_store.similarity_search(
+    "item", k=3, filter={"price": {"$range": {"gte": 50, "lt": 200}}}
+)
+
+# Documents where topic is NOT "databases"
+results = vector_store.similarity_search(
+    "learning", k=3, filter={"topic": {"$ne": "databases"}}
+)
+
+# Nested logical operators
+results = vector_store.similarity_search(
+    "data", k=5,
+    filter={
+        "$and": [
+            {"$or": [{"topic": "ml"}, {"topic": "programming"}]},
+            {"year": {"$gte": 2023}},
+        ]
+    },
+)
+
+# $min_should — at least N of the listed conditions must match
+results = vector_store.similarity_search(
+    "data", k=5,
+    filter={
+        "$min_should": {
+            "conditions": [
+                {"topic": "ml"},
+                {"topic": "databases"},
+                {"topic": "programming"},
+            ],
+            "min_count": 2,
+        }
+    },
+)
+```
+
+### Relevance search 
+
+Actian VectorAI DB supports relevance search using Maximal Marginal Relevance (MMR) to help you find results that are not only similar to your query but also diverse from each other. 
+```python Relevance search icon="chart-bar"
+#enable MMR in retriever
+retriever = vector_store.as_retriever(
+    search_type="mmr",
+    search_kwargs={"k": 2, "fetch_k": 20, "lambda_mult": 0.5},
+)
+docs = retriever.invoke("red planet")
+
+#or call directly on vector store
+results = vector_store.max_marginal_relevance_search(
+    "red planet", 
+    k=2, 
+    fetch_k=20,
+    lambda_mult=0.5,
+    score_threshold=0.7
+)
+``` 
+
+## Customize vector store with optional parameters
+
+### Customize distance functions
+
+Actian VectorAI DB supports multiple distance metrics for similarity search, including Cosine, Euclidean (L2), and Dot product. You can specify the distance metric to use when performing a similarity search:
+
+```python Distance functions icon="ruler"
+# Create a collection with three named vector spaces
+client.collections.create(
+    "multimodal",
+    vectors_config={
+        "text": VectorParams(size=384, distance=Distance.Cosine),
+        "image": VectorParams(size=512, distance=Distance.Euclid),
+        "audio": VectorParams(size=256, distance=Distance.Dot),
+    },
+)
+```
+### Customize index types and optimizer parameters
+
+Actian VectorAI DB provides the flexibility to specify optional parameters to customize the indexing and search process.
+
+```python Indexing parameters icon="tags"
+from actian_vectorai import HnswConfigDiff, OptimizersConfigDiff, SearchParams
+
+#Initialize collection with custom HNSW index and optimizer parameters.
+vector_store = ActianVectorAIVectorStore.from_texts(
+    ["Earth is our vibrant home", "One central Sun", "Mars is a dusty red planet"],
+    embedding=embeddings,
+    collection_name="my_solar_system",
+    url="localhost:6574",
+    hnsw_config=HnswConfigDiff(ef_construct=100, m=16),
+    optimizers_config=OptimizersConfigDiff(indexing_threshold=500),
+)
+
+# Update HNSW index and optimizer parameters on an existing collection.
+vector_store.update_collection_config(
+    hnsw_config=HnswConfigDiff(ef_construct=200, m=32),
+    optimizers_config=OptimizersConfigDiff(indexing_threshold=1000),
+)
+
+# Search with custom HNSW ef (higher = more accurate, slower)
+results = vector_store.similarity_search(
+    "red planet", k=2,
+    search_params=SearchParams(hnsw_ef=256),
+)
+
+# Exact (brute-force) search — bypasses HNSW index for 100% recall
+results = vector_store.similarity_search(
+    "red planet", k=2,
+    search_params=SearchParams(exact=True),
+)
+```
+
+---
+
+
+## Product reference
+
+For more information on Actian VectorAI DB features and configurations, head to the [Actian VectorAI DB documentation](https://docs.vectoraidb.actian.com/home/getting-started/overview).
