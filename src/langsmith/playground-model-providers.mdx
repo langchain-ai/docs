@@ -88,6 +88,51 @@ For details on creating and managing model configurations, refer to the [Configu
 
 Before you use this model, ensure you have [AWS credentials or IAM role](https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html).
 
+### Authentication
+
+Amazon Bedrock supports two authentication methods. **IAM trusted entity is the recommended approach** because it avoids sharing long-lived AWS access keys with LangSmith.
+
+#### IAM trusted entity (recommended)
+
+With IAM trusted entity authentication, you create an IAM role in your AWS account and allow LangSmith to assume it. No access keys are stored in LangSmith. Instead, LangSmith uses [AWS STS](https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html) to assume the role on each request.
+
+To set this up:
+
+1. Create an IAM role in your AWS account with permissions to invoke Bedrock models (e.g., `bedrock:InvokeModel`).
+2. Add a trust policy that allows LangSmith's AWS account (`808407022534`) to assume the role, using your LangSmith workspace ID as the external ID:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::808407022534:root"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "<your-langsmith-workspace-id>"
+        }
+      }
+    }
+  ]
+}
+```
+
+<Tip>
+You can find your workspace ID in your [LangSmith workspace settings](https://smith.langchain.com/settings).
+</Tip>
+
+3. In the LangSmith Playground, expand the **IAM Trusted Entity** section under the Bedrock provider and enter the ARN of the role you created.
+
+For more details on trust policies, see the [AWS documentation](https://aws.amazon.com/blogs/security/how-to-use-trust-policies-with-iam-roles/).
+
+#### Access keys
+
+Alternatively, you can authenticate with AWS access keys (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`). Enter these in the Bedrock provider configuration in the Playground. This method is simpler to set up but less secure because it requires storing long-lived credentials.
+
 ### Available models
 
 AWS Bedrock provides access to foundation models from multiple providers:
@@ -105,7 +150,7 @@ For the current list of available models, refer to the [AWS Bedrock documentatio
 Parameters depend on the underlying model provider:
 
 #### For Anthropic models
-Uses Anthropic configuration (see Anthropic section above).
+Uses Anthropic configuration (see [Anthropic](#anthropic) section below).
 
 #### For Amazon Titan
 | Parameter | Range | Description |
@@ -117,7 +162,6 @@ Uses Anthropic configuration (see Anthropic section above).
 #### AWS-specific settings
 
 - **Region:** AWS region for model deployment.
-- **IAM Role:** Use role-based authentication instead of keys.
 
 ### Tool calling
 
