@@ -198,10 +198,10 @@ When omitted or set to `provider = "none"`, the sandbox is disabled. Sandboxes a
 
 ### `[auth]`
 
-Optionally, add an `[auth]` section to enable user authentication on the deployed agent. When present, the bundler generates an `auth.py` file that validates Bearer tokens, scopes all resources per authenticated user, and wires everything into the deployment automatically.
+Add an `[auth]` section to control authentication on the deployed agent. When present, the bundler generates an `auth.py` file wired into the deployment automatically. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Cloud's default `x-api-key` requirement applies).
 
 <ResponseField name="provider" type="string" required>
-    Auth provider. Supported values: `"supabase"`, `"clerk"`.
+    Auth provider. Supported values: `"supabase"`, `"clerk"`, `"anonymous"`.
 </ResponseField>
 
 ```toml deepagents.toml
@@ -209,9 +209,8 @@ Optionally, add an `[auth]` section to enable user authentication on the deploye
 name = "my-agent"
 model = "google-genai:gemini-3.1-pro-preview"
 
-# Optional — remove to deploy without auth
 [auth]
-provider = "supabase"   # supabase | clerk
+provider = "supabase"   # supabase | clerk | anonymous
 ```
 
 The required environment variables depend on the provider:
@@ -220,6 +219,7 @@ The required environment variables depend on the provider:
 | --- | --- |
 | `supabase` | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_DEFAULT_KEY` |
 | `clerk` | `CLERK_SECRET_KEY` |
+| `anonymous` | None |
 
 Add these to your `.env` alongside your other credentials. The bundler validates that all required vars are present at deploy time and fails fast with a clear error if any are missing.
 
@@ -271,11 +271,11 @@ prompts = [
 
 **Authentication providers:**
 
-The frontend always uses one of three authentication providers. Configure Clerk or Supabase via the `[auth]` section; for anonymous mode, omit the `[auth]` section entirely.
+`[auth]` is required when `[frontend].enabled = true`. Pick one of three providers:
 
 - **Clerk** (`[auth] provider = "clerk"`) — per-user real authentication. Each user signs in; threads and memory are scoped per user.
 - **Supabase** (`[auth] provider = "supabase"`) — per-user real authentication. Same per-user scoping as Clerk.
-- **Anonymous** (no `[auth]`) — the bundler ships a permissive auth handler that overrides LangSmith Cloud's default `x-api-key` requirement so the frontend can reach `/threads`, which means anyone with the deploy URL can call the API. The frontend assigns each browser a UUID cookie and filters the thread picker by it (UX-only scoping, not security). The CLI requires an interactive `y/N` confirmation before pushing. (Without `[frontend]`, no auth handler is generated and the LangSmith default applies — see [Authentication](#authentication).)
+- **Anonymous** (`[auth] provider = "anonymous"`) — the bundler ships a permissive auth handler that overrides LangSmith Cloud's default `x-api-key` requirement so the frontend can reach `/threads`, which means anyone with the deploy URL can call the API. The frontend assigns each browser a UUID cookie and filters the thread picker by it (UX-only scoping, not security). The CLI requires an interactive `y/N` confirmation before pushing.
 
 **What you get:**
 
@@ -333,13 +333,13 @@ CLERK_PUBLISHABLE_KEY=pk_test_...
 
 ## Authentication
 
-Three authentication patterns are possible depending on `[auth]` and `[frontend]`:
+The runtime auth posture depends on `[auth]`:
 
-- **With `[auth]`** (Clerk or Supabase): per-user real authentication. Pass the user's auth-provider token in the `Authorization` header.
-- **Without `[auth]`, no `[frontend]`**: the deploy is protected by LangSmith Cloud's default `x-api-key` requirement. Pass your LangSmith API key in the `x-api-key` header.
-- **Without `[auth]`, with `[frontend].enabled = true`** (anonymous frontend): the API is open to anyone with the deploy URL. No header required.
+- **`[auth] provider = "supabase"` or `"clerk"`** — per-user real authentication. Pass the user's auth-provider token in the `Authorization` header.
+- **`[auth] provider = "anonymous"`** — the bundler ships a permissive auth handler. The API is open to anyone with the deploy URL. No header required. (Required when shipping `[frontend]` without real per-user auth.)
+- **No `[auth]` section** — the deploy falls back to LangSmith Cloud's default `x-api-key` requirement. Pass your LangSmith API key in the `x-api-key` header. Only valid when `[frontend].enabled` is `false` or unset.
 
-When `[auth]` is configured, pass the token from your auth provider in the `Authorization` header:
+When `[auth]` is configured for `supabase` or `clerk`, pass the token from your auth provider in the `Authorization` header:
 
 <Tabs>
     <Tab title="curl">
@@ -437,16 +437,18 @@ my-gtm-agent/
                 └── SKILL.md
 ```
 
-A lightweight internal-demo agent with the bundled UI in anonymous mode (no auth setup):
+A lightweight internal-demo agent with the bundled UI in anonymous mode (no signup, no infrastructure):
 
 ```toml deepagents.toml
 [agent]
 name = "internal-demo"
 model = "anthropic:claude-sonnet-4-6"
 
+[auth]
+provider = "anonymous"   # API open to anyone with the URL — confirm at deploy time
+
 [frontend]
 enabled = true
-# no [auth] — anonymous mode, API open to anyone with the URL
 ```
 
 ## User Memory
