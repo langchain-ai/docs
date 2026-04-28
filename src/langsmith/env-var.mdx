@@ -8,6 +8,12 @@ The Agent Server supports specific environment variables for configuring a deplo
 
 Set `BG_JOB_ISOLATED_LOOPS` to `True` to execute background runs in an isolated event loop separate from the serving API event loop.
 
+<Warning>
+Enabling this flag does not remove the underlying problem. It moves synchronous blocking work off the serving API's event loop so health checks stop failing, but the blocking code continues to run on the background loop and **will** continue to cause issues in production, like degraded throughput, tail-latency spikes, starved workers, or connection pool exhaustion (see the pool-size caveat below), and poor scaling under load.
+
+To properly resolve those issues, use native async drivers and async code throughout your agent. That means async HTTP clients like `httpx` or `aiohttp` (though we recommend caching the clients to avoid CPU overhead loading the SSL context), async database drivers like `asyncpg` or `psycopg[async]`, and async model SDK's. For unavoidable synchronous libraries, wrap the specific call in `asyncio.to_thread(...)` or `loop.run_in_executor(...)` instead of enabling this flag for the whole deployment.
+</Warning>
+
 This environment variable should be set to `True` if the implementation of a graph/node contains synchronous code. In this situation, the synchronous code will block the serving API event loop, which may cause the API to be unavailable. A symptom of an unavailable API is continuous application restarts due to failing health checks.
 
 <Warning>
