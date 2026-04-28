@@ -1,0 +1,297 @@
+---
+title: Protocol
+description: Understand protocol events, channels, namespaces, transports, ordering, and replay.
+---
+
+The streaming protocol is the shared event and command model used by Projection Streaming and remote SDK streaming. It is thread-centric: threads are the durable routing key for events, commands, state, checkpoints, and run history.
+
+The protocol separates two concerns:
+
+1. Event shape: messages, tools, state updates, lifecycle, custom data, and other runtime activity.
+2. Delivery: filtering, transport, replay, and command routing across a graph or agent tree.
+
+It is designed for multiple transports, filtered subscriptions, reconnects, and concurrent clients observing the same thread with different filters.
+
+## Event envelope
+
+Server-to-client events use one envelope:
+
+:::python
+```py
+from typing import Any, Literal, TypedDict
+
+
+class ProtocolEventParams(TypedDict, total=False):
+    namespace: list[str]
+    timestamp: int
+    node: str
+    data: Any
+
+
+class ProtocolEvent(TypedDict, total=False):
+    type: Literal["event"]
+    event_id: str
+    seq: int
+    method: str
+    params: ProtocolEventParams
+```
+:::
+
+:::js
+```ts
+interface ProtocolEvent {
+  type: "event";
+  eventId?: string;
+  seq: number;
+  method: string;
+  params: {
+    namespace: string[];
+    timestamp: number;
+    node?: string;
+    data: unknown;
+  };
+}
+```
+:::
+
+- `eventId` maps to transport-specific event identifiers such as the SSE `id:` field.
+- `seq` is a monotonic sequence number for ordering, replay, and deduplication.
+- `method` identifies the channel, such as `messages`, `tools`, `values`, `lifecycle`, or `custom:<name>`.
+- `namespace` identifies where the event originated in the graph or agent tree.
+- `data` is the channel-specific payload.
+
+## Commands and responses
+
+Client-to-server messages are commands. Commands carry an `id`, a `method`, and method-specific `params`:
+
+```json
+{
+  "id": 1,
+  "method": "run.input",
+  "params": {
+    "assistantId": "agent",
+    "input": {
+      "messages": [{ "role": "user", "content": "Hello" }]
+    }
+  }
+}
+```
+
+Server responses include the original command `id`. Successful responses include a typed `result` and may include metadata such as the sequence number through which the command has been applied:
+
+```json
+{
+  "type": "success",
+  "id": 1,
+  "result": {
+    "runId": "run_123"
+  },
+  "meta": {
+    "appliedThroughSeq": 42
+  }
+}
+```
+
+Errors include an error code and message:
+
+```json
+{
+  "type": "error",
+  "id": 1,
+  "error": "invalid_argument",
+  "message": "assistantId is required"
+}
+```
+
+Events are unsolicited server pushes. They can arrive independently of command responses.
+
+## Threads, runs, and input
+
+A thread is the durable identity for stream routing, state, checkpoints, and run history. A server may create a thread lazily when it receives the first `run.input` command for a thread that does not exist yet.
+
+`run.input` is the main execution input command:
+
+- If no run is active, it starts a run.
+- If the run is interrupted, it resumes the run with the provided value.
+- If a run is active, it injects input into the running graph.
+
+Human-in-the-loop control uses the input channel and input commands:
+
+- `input.requested` asks the client for a response to an interrupt.
+- `input.respond` sends a response correlated by `interruptId`.
+- `input.inject` sends unsolicited user or system input into a namespace.
+
+## Core channels
+
+| Channel | Purpose |
+| ------- | ------- |
+| `values` | Full graph state snapshots. |
+| `updates` | Per-node state deltas. |
+| `messages` | Content-block-centric chat model output. |
+| `tools` | Tool call start, streamed output, finish, and error events. |
+| `lifecycle` | Run, subgraph, and subagent status changes. |
+| `checkpoints` | Lightweight checkpoint envelopes for branching and time travel. |
+| `input` | Human-in-the-loop input requests and responses. |
+| `tasks` | Pregel task creation and result events. |
+| `custom` | User-defined payloads from graph code. |
+| `custom:<name>` | Application-defined stream transformer output. |
+
+The protocol channels describe runtime concerns, not products. LangChain agents and Deep Agents build higher-level projections from the same channels.
+
+## Message lifecycle
+
+The `messages` channel models output as content blocks:
+
+```text
+message-start
+content-block-start
+content-block-delta
+content-block-finish
+message-finish
+```
+
+This makes token streaming, reasoning blocks, tool-call blocks, and multimodal content explicit without requiring provider-specific formats in application code.
+
+Content blocks have explicit boundaries. A block starts, emits zero or more deltas, and finishes before the next block in the same message starts. That keeps client-side assembly deterministic.
+
+Tool call arguments stream as chunks and finalize as parsed tool calls:
+
+```json
+{
+  "event": "content-block-delta",
+  "index": 1,
+  "content": {
+    "type": "tool_call_chunk",
+    "id": "call_123",
+    "name": "search",
+    "args": "{\"query\":"
+  }
+}
+```
+
+```json
+{
+  "event": "content-block-finish",
+  "index": 1,
+  "content": {
+    "type": "tool_call",
+    "id": "call_123",
+    "name": "search",
+    "args": {
+      "query": "weather"
+    }
+  }
+}
+```
+
+`message-finish` may include token usage for AI-authored messages. Unrecoverable model-call failures are emitted as message error events.
+
+## Tool lifecycle
+
+The `tools` channel exposes tool execution lifecycle events:
+
+```text
+tool-started
+tool-output-delta
+tool-finished
+tool-error
+```
+
+Tool events are correlated by tool call ID. Clients can connect a tool execution back to a tool call content block by matching the tool call block ID with the tool lifecycle event's tool call ID.
+
+## Lifecycle events
+
+The `lifecycle` channel tracks root run, subgraph, and subagent status:
+
+- `started`
+- `running`
+- `completed`
+- `failed`
+- `interrupted`
+
+Lifecycle events include the event `namespace`, optional graph name, optional error, optional checkpoint, and optional cause. The cause explains why a child namespace started, for example because a parent tool call spawned a child graph, a graph used fan-out send, or an edge transitioned into a child graph.
+
+Consumers should tolerate unknown lifecycle causes so the protocol can add new cause variants without breaking existing clients.
+
+## Namespace tree
+
+Namespaces identify where events originate:
+
+```text
+[]                         root graph
+["researcher"]             child graph or subagent
+["researcher", "tools:1"]  nested tool or task scope
+```
+
+Clients can filter by namespace and depth. Higher-level projections such as `run.subgraphs`, `thread.subgraphs`, and `thread.subagents` are built by observing lifecycle events and joining them with related tool and message events.
+
+## State and checkpoints
+
+The `values` channel carries full graph state snapshots. When a subscription is created, the first replayed `values` event can provide the current full state so the client has a stable baseline before applying deltas from other channels.
+
+The `updates` channel carries per-node or per-step state deltas. Clients that need complete state should subscribe to `values` for a baseline and use `updates` for incremental changes.
+
+The `checkpoints` channel emits lightweight checkpoint envelopes for branching and time-travel interfaces. Each envelope can include a checkpoint ID, parent checkpoint ID, superstep, and source.
+
+State commands complement streaming:
+
+- `state.get` reads current state values for a namespace.
+- `state.listCheckpoints` lists checkpoint summaries.
+- `state.fork` starts a run from a checkpoint.
+
+Streams provide live observation; state commands provide explicit reads and time-travel operations.
+
+## Transport profiles
+
+The protocol supports three delivery profiles:
+
+| Profile | Use |
+| ------- | --- |
+| In process | Direct async iterables from Projection Streaming. |
+| SSE plus HTTP | Server-to-client events over SSE, commands over HTTP. |
+| WebSocket | Bidirectional commands and events on one connection. |
+
+All profiles share sequence numbers, namespaces, channel filters, and event shapes.
+
+### SSE plus HTTP
+
+SSE uses connection-scoped subscriptions. A client opens an event stream with filters such as channels, namespaces, depth, and sequence number:
+
+```json
+{
+  "channels": ["messages", "updates", "lifecycle"],
+  "namespaces": [[]],
+  "depth": 2,
+  "since": 123
+}
+```
+
+Closing the SSE connection unsubscribes from that stream. A client can open multiple event streams for the same thread, for example one low-latency message stream and another stream for state or checkpoint updates.
+
+### WebSocket
+
+WebSocket uses in-band commands over one full-duplex connection:
+
+- `subscription.subscribe` creates a filtered subscription.
+- `subscription.unsubscribe` removes a subscription.
+- `subscription.reconnect` restores subscriptions and requests missed events.
+
+Subscriptions persist across run boundaries and are removed explicitly or when the WebSocket closes.
+
+## Replay and reconnect
+
+Remote clients reconnect by resubscribing with the last observed sequence number. Servers can keep a ring buffer of recent events per thread, replay matching buffered events after the requested point, and then switch to live delivery.
+
+If the requested event is no longer buffered, the server should report that events were missed so the client can resync through state commands. SDK clients handle replay and deduplication internally.
+
+## Extensibility
+
+Protocol records are designed for forward compatibility. Consumers should ignore unknown fields and default unknown tagged variants to a safe fallback instead of failing closed.
+
+Content blocks are especially extensible. New block types can flow through the same message lifecycle without changing the transport or channel model.
+
+## Relationship to Agent Protocol
+
+The streaming protocol will be defined in the [Agent Protocol](https://github.com/langchain-ai/agent-protocol) repository. Agent Protocol already defines production agent concepts such as runs, threads, stores, stateless runs, and stream endpoints. The Projection Streaming protocol adds the event model and channel semantics needed for hierarchical, multimodal, reconnectable agent streams.
+
+The generated protocol primitives can be consumed from [`langchain-protocol`](https://pypi.org/project/langchain-protocol/) on PyPI and [`@langchain/protocol`](https://www.npmjs.com/package/@langchain/protocol) on npm.

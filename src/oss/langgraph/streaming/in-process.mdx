@@ -1,0 +1,121 @@
+---
+title: In-process vs remote
+description: Compare local Projection Streaming runs with remote streaming over the LangGraph SDK.
+---
+
+LangGraph uses the same streaming event model in process and over the wire. The API surface changes because local code can hold rich objects directly, while remote clients receive serialized protocol events.
+
+## In-process streaming
+
+Use in-process streaming when your code runs in the same process as the graph:
+
+:::python
+```py
+run = graph.stream_v2({
+    "messages": [{"role": "user", "content": "What is 42 * 17?"}],
+})
+
+for message in run.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
+
+output = run.output
+```
+:::
+
+:::js
+```ts
+const run = await graph.stream_v2({
+  messages: [{ role: "user", content: "What is 42 * 17?" }],
+});
+
+for await (const message of run.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
+}
+
+const output = await run.output;
+```
+:::
+
+:::python
+In-process streams can expose rich Python objects such as iterators, properties, and class instances. Native projections such as `run.messages` and `run.subgraphs` are built with stream transformers over the graph's event flow.
+:::
+
+:::js
+In-process streams can expose rich objects such as promises, async iterables, and class instances. Native projections such as `run.messages` and `run.subgraphs` are built with stream transformers over the graph's event flow.
+:::
+
+## Remote streaming
+
+Use remote streaming when the graph or agent runs behind a LangGraph API server:
+
+:::python
+```py
+from langgraph_sdk import get_client
+
+client = get_client(url="http://localhost:2024")
+thread = await client.threads.create()
+
+async for chunk in client.runs.stream(
+    thread["thread_id"],
+    "my-agent",
+    input={"messages": [{"role": "user", "content": "hello"}]},
+    stream_mode="messages-tuple",
+):
+    if chunk.event == "messages":
+        message_chunk, metadata = chunk.data
+        print(message_chunk.content, end="", flush=True)
+```
+:::
+
+:::js
+```ts
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "http://localhost:2024" });
+const thread = client.threads.stream({ assistantId: "my-agent" });
+
+await thread.run.input({
+  input: { messages: [{ role: "user", content: "hello" }] },
+});
+
+for await (const message of thread.messages) {
+  console.log(await message.text);
+}
+
+await thread.close();
+```
+:::
+
+:::python
+The Python SDK currently exposes remote streaming through `client.runs.stream(...)` and related run APIs.
+:::
+
+:::js
+Remote streams use the same logical channels, such as `messages`, `values`, `tools`, `lifecycle`, and `custom:<name>`. The SDK opens subscriptions lazily when a projection is first accessed.
+:::
+
+## What is the same
+
+- Both surfaces are organized around messages, state values, subgraphs, output, and custom extensions.
+- Both support multiple independent consumers over the same run.
+- Both use namespaces to describe where an event came from in a graph tree.
+- Both can expose custom transformer data when the data is serializable.
+
+## What is different
+
+| Concern | In process | Remote |
+| ------- | ---------- | ------ |
+| Entry point | `graph.stream_v2(...)` | `client.threads.stream(...)` |
+| Transport | Direct async iterables | SSE, WebSocket, or custom adapter |
+| Projection source | Runtime objects | Serialized protocol events |
+| Custom streaming data | `EventLog` or `StreamChannel` | `StreamChannel` via `custom:<name>` |
+| Reconnect and replay | Not needed | Handled by sequence numbers and SDK buffers |
+
+## Choose a surface
+
+Use in-process streaming for backend orchestration, tests, local scripts, and runtime integrations. Use remote streaming for deployed graphs, browser clients, frontend frameworks, and services that need reconnectable streams.
+
+For the remote API, see [remote streaming](/oss/langgraph/streaming/remote). For custom projections, see [EventLog and StreamChannel](/oss/langgraph/streaming/event-log-and-stream-channel).

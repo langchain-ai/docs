@@ -1,0 +1,302 @@
+---
+title: Projection Streaming
+description: Stream LangGraph runs with typed projections for messages, state, subgraphs, output, and extensions.
+---
+
+Projection Streaming is the recommended in-process streaming model for most LangGraph application code. It returns a run stream object that can be consumed in multiple ways at the same time.
+
+:::python
+```py
+run = graph.stream_v2({
+    "messages": [{"role": "user", "content": "What is 42 * 17?"}],
+})
+
+for message in run.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
+
+final_state = run.output
+```
+:::
+
+:::js
+```ts
+const run = await graph.stream_v2({
+  messages: [{ role: "user", content: "What is 42 * 17?" }],
+});
+
+for await (const message of run.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
+}
+
+const finalState = await run.output;
+```
+:::
+
+## What Projection Streaming Provides
+
+The run stream exposes typed projections over one underlying event flow:
+
+| Projection | Use |
+| ---------- | --- |
+| `run` | Iterate every protocol event. |
+| `run.messages` | Stream chat model messages and token deltas. |
+| `run.values` | Iterate state snapshots and await the final value. |
+| `run.output` | Await the final output. |
+| `run.subgraphs` | Discover and observe nested graph executions. |
+| `run.interrupts` | Inspect human-in-the-loop interrupt payloads. |
+| `run.interrupted` | Check whether the run paused for human input. |
+| `run.extensions` | Consume custom stream transformer projections. |
+
+Multiple consumers can read these projections concurrently. Reading `run.messages` does not consume events needed by `run.values`, `run.subgraphs`, or `run.output`.
+
+## Stream all protocol events
+
+Use the run object itself when you want the raw protocol event stream:
+
+:::python
+```py
+run = graph.stream_v2({
+    "messages": [{"role": "user", "content": "What is 42 * 17?"}],
+})
+
+for event in run:
+    namespace = event["params"]["namespace"]
+    print(namespace, event["method"], event["params"]["data"])
+```
+:::
+
+:::js
+```ts
+const run = await graph.stream_v2({
+  messages: [{ role: "user", content: "What is 42 * 17?" }],
+});
+
+for await (const event of run) {
+  const namespace = event.params.namespace;
+  console.log(namespace, event.method, event.params.data);
+}
+```
+:::
+
+Each event has a channel-like `method`, a `seq` number, and `params` containing `namespace`, `timestamp`, optional `node`, and channel-specific `data`.
+
+:::python
+For `method == "messages"`, `event["params"]["data"]` contains content-block lifecycle events such as `message-start`, `content-block-delta`, and `message-finish`.
+
+```py
+for event in run:
+    if event["method"] != "messages":
+        continue
+
+    data = event["params"]["data"]
+    if data.get("event") != "content-block-delta":
+        continue
+
+    block = data.get("content_block") or {}
+    if block.get("type") == "text":
+        print(block.get("text", ""), end="", flush=True)
+    elif block.get("type") == "reasoning":
+        print(f"[thinking]{block.get('reasoning', '')}", end="", flush=True)
+```
+:::
+
+## Stream messages
+
+Use `run.messages` for chat model output:
+
+:::python
+```py
+run = graph.stream_v2(input)
+
+for message in run.messages:
+    text = str(message.text)
+    usage = message.output.usage_metadata
+
+    print(text)
+    print(usage)
+```
+:::
+
+:::js
+```ts
+const run = await graph.stream_v2(input);
+
+for await (const message of run.messages) {
+  const text = await message.text;
+  const usage = await message.usage;
+
+  console.log(text);
+  console.log(usage);
+}
+```
+:::
+
+:::python
+`message.text` is iterable in synchronous code. Iterate it for token-by-token output, or call `str(message.text)` for the complete text.
+
+`message.reasoning` exposes reasoning deltas, and `message.tool_calls` exposes tool-call argument chunks. If you need text, reasoning, and tool-call chunks in exact arrival order, iterate the message stream's raw events instead of each projection separately.
+:::
+
+:::js
+`message.text` is both an async iterable and a promise-like value. Iterate it for token-by-token output, or await it for the complete text.
+:::
+
+## Stream subgraphs
+
+Use `run.subgraphs` to observe nested graph work without parsing namespace strings:
+
+:::python
+```py
+run = graph.stream_v2(input)
+
+for subgraph in run.subgraphs:
+    print(subgraph.name, subgraph.path)
+
+    for message in subgraph.messages:
+        print(str(message.text))
+```
+:::
+
+:::js
+```ts
+const run = await graph.stream_v2(input);
+
+for await (const subgraph of run.subgraphs) {
+  console.log(subgraph.name, subgraph.path);
+
+  for await (const message of subgraph.messages) {
+    console.log(await message.text);
+  }
+}
+```
+:::
+
+For product-specific subagent streams, see [Deep Agents streaming](/oss/deepagents/streaming-projections).
+
+## Stream state
+
+Use `run.values` to stream full state snapshots after each step:
+
+:::python
+```py
+run = graph.stream_v2(input)
+
+for snapshot in run.values:
+    print(snapshot)
+
+final_state = run.output
+```
+:::
+
+:::js
+```ts
+const run = await graph.stream_v2(input);
+
+for await (const snapshot of run.values) {
+  console.log(snapshot);
+}
+
+const finalState = await run.output;
+```
+:::
+
+## Stream multiple projections
+
+:::python
+Use `run.interleave(...)` to round-robin across multiple projections in synchronous Python code:
+
+```py
+for name, item in run.interleave("values", "messages", "subgraphs"):
+    if name == "values":
+        print(f"[state] keys={list(item)}")
+    elif name == "messages":
+        print(f"[llm] node={item.node}")
+    elif name == "subgraphs":
+        print(f"[subgraph] path={item.path}")
+```
+:::
+
+:::js
+Use concurrent consumers when you need multiple projections in JavaScript:
+
+```ts
+await Promise.all([
+  (async () => {
+    for await (const message of run.messages) {
+      console.log(await message.text);
+    }
+  })(),
+  (async () => {
+    for await (const subgraph of run.subgraphs) {
+      console.log(subgraph.path);
+    }
+  })(),
+]);
+```
+:::
+
+## Add custom projections
+
+Custom stream transformers can add application-specific projections under `run.extensions`:
+
+:::python
+```py
+run = graph.stream_v2(
+    input,
+    transformers=[stats_transformer, tool_activity_transformer],
+)
+
+for activity in run.extensions["tool_activity"]:
+    print(activity)
+
+for total_tokens in run.extensions["total_tokens"]:
+    print(total_tokens)
+```
+:::
+
+:::js
+```ts
+const run = await graph.stream_v2(input, {
+  transformers: [statsTransformer, toolActivityTransformer],
+});
+
+for await (const activity of run.extensions.toolActivity) {
+  console.log(activity);
+}
+
+console.log(await run.extensions.totalTokens);
+```
+:::
+
+See [custom stream transformers](/oss/langgraph/streaming/custom-transformers) for the transformer contract.
+
+## Resume after an interrupt
+
+When a graph pauses for human input, inspect `run.interrupted` and `run.interrupts`, then resume by calling `stream_v2()` again with `Command`.
+
+:::python
+```py
+from langgraph.types import Command
+
+run = graph.stream_v2(input, config=thread_config)
+
+for message in run.messages:
+    print(str(message.text))
+
+if run.interrupted:
+    print(run.interrupts)
+
+run = graph.stream_v2(
+    Command(resume={"decisions": [{"type": "approve"}]}),
+    config=thread_config,
+)
+final_state = run.output
+```
+:::
+
+## Relationship to Mode Streaming
+
+Projection Streaming and Mode Streaming serve different levels of the stack. Use [Mode Streaming](/oss/langgraph/streaming) when you need low-level Pregel stream modes or access to LangGraph internals. Use Projection Streaming (`stream_v2()`) when application code benefits from typed projections.

@@ -1,0 +1,159 @@
+---
+title: EventLog and StreamChannel
+description: Choose the right primitive for in-process and remote stream transformer projections.
+---
+
+`EventLog` and `StreamChannel` both back stream transformer projections. The difference is protocol forwarding.
+
+:::python
+In Python, projections are single-consumer by default. Use `tee()` or `atee()` when you need fan-out.
+:::
+
+:::js
+In TypeScript, projections support independent cursors for multiple consumers.
+:::
+
+## Decision rule
+
+Use `StreamChannel` when pushed data should appear on the wire. Use `EventLog` for everything else.
+
+| Need | Use |
+| ---- | --- |
+| Remote SDK clients need to consume the data | `StreamChannel` |
+| Data is only for in-process consumers | `EventLog` |
+| Data contains promises, async iterables, or class instances | `EventLog` |
+| Data is plain serializable JSON | `StreamChannel` if remote visibility is useful |
+| Building a native LangChain or Deep Agents projection | Usually `EventLog` |
+
+## EventLog
+
+`EventLog` is an append-only log for in-process projections:
+
+:::python
+```py
+from langgraph.stream import EventLog
+from langgraph.stream import StreamTransformer
+
+
+class EventsTransformer(StreamTransformer):
+    def __init__(self, scope: tuple[str, ...] = ()) -> None:
+        super().__init__(scope)
+        self.events = EventLog[str]()
+
+    def init(self) -> dict:
+        return {"events": self.events}
+
+    def process(self, event):
+        self.events.push(event["method"])
+        return True
+
+    def finalize(self):
+        self.events.close()
+```
+:::
+
+:::js
+```ts
+import { EventLog } from "@langchain/langgraph";
+
+const log = new EventLog<string>();
+
+log.push("started");
+log.push("finished");
+log.close();
+
+for await (const item of log.toAsyncIterable()) {
+  console.log(item);
+}
+```
+:::
+
+:::python
+An `EventLog` accepts one direct subscriber. Use `log.tee(n)` for multiple synchronous consumers or `log.atee(n)` for multiple asynchronous consumers.
+:::
+
+:::js
+Each iterator gets its own cursor. Two `for await` loops over the same log both see every item.
+:::
+
+Use `EventLog` when projection values cannot or should not be serialized, for example:
+
+- `ToolCallStream` objects with `output_deltas`, `output`, `completed`, and `error` state.
+- `SubagentRunStream` objects with nested async iterables.
+- Internal projections that are only meaningful in the current process.
+
+## StreamChannel
+
+`StreamChannel` wraps an event log and adds a protocol channel name:
+
+:::python
+```py
+from langgraph.stream import StreamChannel
+
+channel = StreamChannel[dict[str, str]]("tool_activity")
+
+channel.push({"status": "started"})
+```
+:::
+
+:::js
+```ts
+import { StreamChannel } from "@langchain/langgraph";
+
+const channel = new StreamChannel<{ status: string }>("toolActivity");
+
+channel.push({ status: "started" });
+```
+:::
+
+When a `StreamChannel` is returned from a transformer's `init()` method and wired by the stream mux, every `push()` is also forwarded as a protocol event. Remote SDK clients consume it through `thread.extensions.<name>` or a `custom:<name>` subscription.
+
+## Lifecycle
+
+`EventLog` lifecycle is manual:
+
+:::python
+```py
+class EventsTransformer(StreamTransformer):
+    def __init__(self, scope: tuple[str, ...] = ()) -> None:
+        super().__init__(scope)
+        self.events = EventLog[str]()
+
+    def init(self) -> dict:
+        return {"events": self.events}
+
+    def process(self, event):
+        self.events.push(event["method"])
+        return True
+
+    def finalize(self):
+        self.events.close()
+
+    def fail(self, err):
+        self.events.fail(err)
+```
+:::
+
+:::js
+```ts
+return {
+  init: () => ({ events: log.toAsyncIterable() }),
+  process(event) {
+    log.push(event.method);
+    return true;
+  },
+  finalize: () => log.close(),
+  fail: (err) => log.fail(err),
+};
+```
+:::
+
+`StreamChannel` lifecycle is managed by the stream mux. Transformers push data, but do not close or fail the channel directly.
+
+## Native and extension transformers
+
+Native transformers are provided by LangChain products. They project protocol events into first-class run stream getters such as `run.toolCalls` or `run.subagents`. These usually use `EventLog` because the projected objects are rich in-process handles.
+
+Extension transformers are user-defined. They project data under `run.extensions` and, when backed by `StreamChannel`, under `thread.extensions` for remote SDK clients.
+
+See [custom stream transformers](/oss/langgraph/streaming/custom-transformers) for an end-to-end example.
