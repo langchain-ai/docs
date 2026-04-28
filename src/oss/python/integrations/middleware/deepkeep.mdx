@@ -1,0 +1,166 @@
+---
+title: "DeepKeep AI Firewall integration"
+description: "Integrate with the DeepKeep AI Firewall middleware using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the [DeepKeep AI Firewall](https://deepkeep.ai) middleware. For a detailed listing of all features, parameters, and configurations, head to the [langchain-deepkeep API reference](https://pypi.org/project/langchain-deepkeep/).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | [JS support](https://reference.langchain.com/javascript/langchain-community) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [`DeepKeepFirewall`](https://pypi.org/project/langchain-deepkeep/) | [`langchain-deepkeep`](https://pypi.org/project/langchain-deepkeep/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-deepkeep?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-deepkeep?style=flat-square&label=%20) |
+
+### Features
+
+- <Icon icon="shield-lock" size={16}/> **Input moderation** — screens user messages against your firewall's guardrails before they reach the LLM.
+- <Icon icon="shield-lock" size={16}/> **Output moderation** — screens LLM responses before they are returned to the user.
+- <Icon icon="arrows-shuffle" size={16}/> **LCEL-compatible** — works with the `|` operator; compose freely with any `Runnable`.
+- <Icon icon="clock" size={16}/> **Automatic retries** — respects `Retry-After` headers with exponential backoff on rate limits and firewall warmup (HTTP 429).
+- <Icon icon="terminal" size={16}/> **Async support** — full `ainvoke` support and an `async_create()` factory for non-blocking startup.
+
+---
+
+## Setup
+
+To use DeepKeep, you will need a [DeepKeep account](https://deepkeep.ai), an API key, and at least one firewall configured in your environment.
+
+### Credentials
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "DEEPKEEP_API_KEY" not in os.environ:
+    os.environ["DEEPKEEP_API_KEY"] = getpass.getpass("Enter your DeepKeep API key: ")
+```
+
+It's also helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-deepkeep
+    ```
+    ```python uv
+    uv add langchain-deepkeep
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Use `DeepKeepFirewall` to wrap any chain with both input and output moderation in a single step:
+
+```python Wrap a chain icon="shield-lock"
+import os
+from langchain_deepkeep import DeepKeepFirewall
+
+firewall = DeepKeepFirewall(
+    chain=llm | parser,                          # any Runnable
+    api_key=os.environ["DEEPKEEP_API_KEY"],
+    subdomain="acme",                            # your DeepKeep environment subdomain
+    firewall_id="fw-xxx",                        # from the DeepKeep dashboard
+)
+```
+
+For async startup (avoids a blocking HTTP call at initialization):
+
+```python Async factory icon="arrows-shuffle"
+firewall = await DeepKeepFirewall.async_create(
+    chain=llm | parser,
+    api_key=os.environ["DEEPKEEP_API_KEY"],
+    subdomain="acme",
+    firewall_id="fw-xxx",
+)
+```
+
+---
+
+## Use with a chain
+
+`DeepKeepFirewall` wraps any `Runnable`. Both the user message and the LLM response are checked before being passed along:
+
+```python Full chain example icon="robot"
+from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+from langchain_deepkeep import DeepKeepFirewall, ContentBlockedError
+
+llm = ChatOpenAI(model="gpt-4o")
+
+chain = DeepKeepFirewall(
+    chain=llm | StrOutputParser(),
+    api_key=os.environ["DEEPKEEP_API_KEY"],
+    subdomain="acme",
+    firewall_id="fw-xxx",
+)
+
+try:
+    result = chain.invoke("Tell me something interesting.")
+    print(result)
+except ContentBlockedError as e:
+    print(f"Blocked: {e}")
+```
+
+<Tip>
+    Pass `check_output=False` to disable output moderation and only screen user input.
+</Tip>
+
+---
+
+## Compose with `|`
+
+Use `DeepKeepGuardrails` for fine-grained control. Set `mode="input"` or `mode="output"` and compose with `|`:
+
+```python LCEL composition icon="arrows-shuffle"
+from langchain_deepkeep import DeepKeepGuardrails
+
+input_guard = DeepKeepGuardrails(
+    api_key=os.environ["DEEPKEEP_API_KEY"],
+    subdomain="acme",
+    firewall_id="fw-xxx",
+    mode="input",
+)
+output_guard = DeepKeepGuardrails(
+    api_key=os.environ["DEEPKEEP_API_KEY"],
+    subdomain="acme",
+    firewall_id="fw-xxx",
+    mode="output",
+    conversation_id=input_guard.conversation_id,  # share the same conversation
+)
+
+chain = input_guard | llm | StrOutputParser() | output_guard
+result = chain.invoke("What is the capital of France?")
+```
+
+---
+
+## Error handling
+
+```python Handle blocked content icon="shield-lock"
+from langchain_deepkeep import ContentBlockedError, DeepKeepAPIError
+
+try:
+    result = chain.invoke(user_message)
+except ContentBlockedError as e:
+    # Content violated a firewall policy
+    return str(e)
+except DeepKeepAPIError as e:
+    # Unexpected API error; e.status_code holds the HTTP status (None for network errors)
+    raise
+```
+
+---
+
+## API reference
+
+For detailed documentation of all DeepKeep features and configurations, head to the [langchain-deepkeep PyPI page](https://pypi.org/project/langchain-deepkeep/) and the [DeepKeep documentation](https://deepkeep.ai/docs).
