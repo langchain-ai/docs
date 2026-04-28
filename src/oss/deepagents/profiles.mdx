@@ -15,18 +15,6 @@ description: Package per-provider and per-model defaults that Deep Agents applie
 
 A `HarnessProfile` describes prompt-assembly, tool-visibility, middleware, and default-subagent adjustments that `create_deep_agent` applies after the chat model has been constructed:
 
-- `base_system_prompt` — replace the base Deep Agents system prompt (`CUSTOM` in the [prompt-assembly cheat sheet](/oss/deepagents/customization#prompt-assembly))
-- `system_prompt_suffix` — append text to the assembled base prompt (`SUFFIX` in the cheat sheet); applied to the main agent, declarative subagents, and the auto-added general-purpose subagent
-- `tool_description_overrides` — override individual tool descriptions
-- `excluded_tools` — remove specific harness-level tools from the tool set
-- `excluded_middleware` — strip specific middleware classes from the stack
-- `extra_middleware` — append middleware to every stack this profile applies to
-- `general_purpose_subagent` — disable, rename, or re-prompt the general-purpose subagent. When this field's `system_prompt` is set alongside `base_system_prompt`, the general-purpose-specific subagent prompt wins — see [General-purpose subagent prompt](/oss/deepagents/customization#general-purpose-subagent-prompt)
-
-<Note>
-    Caller-supplied `system_prompt=` always sits at the front of the assembled prompt, and `system_prompt_suffix` always sits at the end — regardless of which model is selected. The same overlay rules apply to subagents: each subagent re-runs profile resolution against its own model. See [Prompt assembly](/oss/deepagents/customization#prompt-assembly) for the full per-case breakdown (main agent, subagents, and the general-purpose subagent).
-</Note>
-
 ```python
 from deepagents import (
     GeneralPurposeSubagentProfile,
@@ -44,6 +32,38 @@ register_harness_profile(
     ),
 )
 ```
+
+<ResponseField name="base_system_prompt" type="string">
+    Replace the base Deep Agents system prompt (`CUSTOM` in the [prompt-assembly cheat sheet](/oss/deepagents/customization#prompt-assembly)).
+</ResponseField>
+
+<ResponseField name="system_prompt_suffix" type="string">
+    Append text to the assembled base prompt (`SUFFIX` in the [prompt-assembly cheat sheet](/oss/deepagents/customization#prompt-assembly)); applied to the main agent, declarative subagents, and the auto-added general-purpose subagent.
+</ResponseField>
+
+<ResponseField name="tool_description_overrides" type="Mapping[str, str]">
+    Override individual tool descriptions, keyed by tool name.
+</ResponseField>
+
+<ResponseField name="excluded_tools" type="frozenset[str]">
+    Remove specific harness-level tools from the tool set.
+</ResponseField>
+
+<ResponseField name="excluded_middleware" type="frozenset[type[AgentMiddleware] | str]">
+    Strip specific middleware classes from the stack. Accepts middleware classes or string names.
+</ResponseField>
+
+<ResponseField name="extra_middleware" type="Sequence[AgentMiddleware] | Callable[[], Sequence[AgentMiddleware]]">
+    Append middleware to every stack this profile applies to.
+</ResponseField>
+
+<ResponseField name="general_purpose_subagent" type="GeneralPurposeSubagentProfile">
+    Disable, rename, or re-prompt the general-purpose subagent. When this field's `system_prompt` is set alongside `base_system_prompt`, the general-purpose-specific subagent prompt wins—see [General-purpose subagent prompt](/oss/deepagents/customization#general-purpose-subagent-prompt).
+</ResponseField>
+
+<Note>
+    Caller-supplied `system_prompt=` always sits at the front of the assembled prompt, and `system_prompt_suffix` always sits at the end—regardless of which model is selected. The same overlay rules apply to subagents: each subagent re-runs profile resolution against its own model. See [Prompt assembly](/oss/deepagents/customization#prompt-assembly) for the full per-case breakdown (main agent, subagents, and the general-purpose subagent).
+</Note>
 
 <Warning>
     `excluded_middleware` cannot remove scaffolding Deep Agents relies on. Listing `FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission middleware raises a `ValueError`.
@@ -74,7 +94,11 @@ Both profile types use the same key format:
 
 When both a provider-level and a model-level profile exist, they are merged at resolution time. Unset model-level fields inherit from the provider-level profile; explicit model-level values override them.
 
-Re-registering under an existing key merges the new profile on top of the prior one — it does not replace it. See [Merge semantics](#merge-semantics) for the per-field rules.
+Re-registering under an existing key merges the new profile on top of the prior one—it does not replace it. See [Merge semantics](#merge-semantics) for the per-field rules.
+
+<Note>
+    There is no wildcard key that matches every provider. To apply the same overrides everywhere—say, dropping `TodoListMiddleware` regardless of which model is selected—register the profile under each provider key you use. Profiles are intended for adjustments that depend on the model being selected. Global adjustments that should apply regardless of model should be made on the `create_deep_agent` call site.
+</Note>
 
 ## Merge semantics
 
@@ -82,7 +106,7 @@ Re-registering under an existing key merges the new profile on top of the prior 
 | --- | --- |
 | `base_system_prompt`, `system_prompt_suffix` | New value wins when set; otherwise inherits |
 | `tool_description_overrides` | Mappings merge per key; new value wins on a shared key |
-| `excluded_tools`, `excluded_middleware` | Sets union |
+| `excluded_tools`, `excluded_middleware` | Set union |
 | `extra_middleware` | Merged by concrete class: new instance replaces existing at its position, novel classes append |
 | `general_purpose_subagent` | Merged field-wise (unset fields inherit) |
 | `init_kwargs` (provider) | Dicts merge key-wise; new value wins on a shared key |
@@ -93,10 +117,6 @@ Re-registering under an existing key merges the new profile on top of the prior 
 
 A `ProviderProfile` declares how Deep Agents should construct a chat model for a given provider or specific model spec. It applies only when you provide a `provider:model` string when creating the deep agent, not when you pass a preconfigured model with @[`init_chat_model`]:
 
-- `init_kwargs` — static initialization arguments forwarded to `init_chat_model`
-- `pre_init` — side effects to run before construction (for example, credential validation)
-- `init_kwargs_factory` — kwargs derived from runtime state (for example, headers pulled from environment variables)
-
 ```python
 from deepagents import ProviderProfile, register_provider_profile
 
@@ -105,6 +125,18 @@ register_provider_profile(
     ProviderProfile(init_kwargs={"temperature": 0}),
 )
 ```
+
+<ResponseField name="init_kwargs" type="Mapping[str, Any]">
+    Static initialization arguments forwarded to `init_chat_model`.
+</ResponseField>
+
+<ResponseField name="pre_init" type="Callable[[str], None]">
+    Side effects to run before construction (for example, credential validation).
+</ResponseField>
+
+<ResponseField name="init_kwargs_factory" type="Callable[[], dict[str, Any]]">
+    Kwargs derived from runtime state (for example, headers pulled from environment variables).
+</ResponseField>
 
 ## Load profiles from config files
 
