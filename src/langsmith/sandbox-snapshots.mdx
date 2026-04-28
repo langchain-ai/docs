@@ -1,0 +1,259 @@
+---
+title: Sandbox snapshots
+sidebarTitle: Snapshots
+description: Build and capture snapshots—the filesystem images every sandbox boots from.
+---
+
+import SandboxPreview from "/snippets/langsmith/sandbox-preview-warning.mdx";
+
+<SandboxPreview />
+
+A **snapshot** is a filesystem bundle backed by a Docker image. It is the required input to every sandbox: `createSandbox` / `create_sandbox` always takes a snapshot, either by ID (`snapshot_id` / `snapshotId`) or by name (`snapshot_name` / `snapshotName`). Build a snapshot once, then boot as many sandboxes from it as you need.
+
+You can also capture a snapshot from a running sandbox—install packages, write data files, or configure state, then snapshot the result and reuse it as a new starting point.
+
+![Sandboxes snapshots page](/images/langsmith/sandboxes/sb-snapshots.png)
+
+## Build a snapshot from a Docker image
+
+Build a snapshot by pointing at any Docker image. The call blocks until the snapshot is ready (default timeout is 60 seconds; bump it for large images).
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+snapshot = client.create_snapshot(
+    "python",
+    docker_image="python:3.12-slim",
+    fs_capacity_bytes=1 * 1024**3,  # 1 GiB
+)
+
+print(snapshot.id)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/experimental/sandbox";
+
+const client = new SandboxClient();
+
+const snapshot = await client.createSnapshot(
+  "python",
+  "python:3.12-slim",
+  1_073_741_824, // 1 GiB
+);
+
+console.log(snapshot.id);
+```
+
+</CodeGroup>
+
+### Private registries
+
+Pass registry credentials (or a pre-registered `registry_id` / `registryId`) to pull from a private registry.
+
+<CodeGroup>
+
+```python Python
+import os
+
+snapshot = client.create_snapshot(
+    "internal-python",
+    docker_image="registry.example.com/internal/python:3.12",
+    fs_capacity_bytes=2 * 1024**3,
+    registry_url="https://registry.example.com",
+    registry_username="me",
+    registry_password=os.environ["REGISTRY_PASSWORD"],
+    timeout=600,
+)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshot(
+  "internal-python",
+  "registry.example.com/internal/python:3.12",
+  2_147_483_648,
+  {
+    registryUrl: "https://registry.example.com",
+    registryUsername: "me",
+    registryPassword: process.env.REGISTRY_PASSWORD,
+    timeout: 600,
+  },
+);
+```
+
+</CodeGroup>
+
+## Capture a snapshot from a running sandbox
+
+Start a sandbox from an existing snapshot, install packages or prepare data, then capture the result as a new snapshot. The returned snapshot has its `source_sandbox_id` set to the sandbox it was captured from, and can be used as the `snapshot_id` for any later `create_sandbox` call.
+
+<CodeGroup>
+
+```python Python
+sb = client.create_sandbox(snapshot_id=base_snapshot_id, name="setup-box")
+sb.run("pip install numpy pandas scikit-learn", timeout=180)
+sb.write("/opt/config.yaml", "model: gpt-5\n")
+
+# Capture the current filesystem as a new snapshot
+snapshot = sb.capture_snapshot("ml-ready")
+print(snapshot.id, snapshot.source_sandbox_id)
+
+sb.delete()
+
+# Boot fresh sandboxes pre-loaded with those dependencies
+with client.sandbox(snapshot_id=snapshot.id) as sb:
+    sb.run("python -c 'import numpy; print(numpy.__version__)'")
+    assert sb.read("/opt/config.yaml") == b"model: gpt-5\n"
+```
+
+```ts TypeScript
+const running = await client.createSandbox(baseSnapshotId, { name: "setup-box" });
+await running.run("pip install numpy pandas scikit-learn", { timeout: 180 });
+await running.write("/opt/config.yaml", "model: gpt-5\n");
+
+const snapshot = await running.captureSnapshot("ml-ready");
+console.log(snapshot.id, snapshot.source_sandbox_id);
+
+await running.delete();
+
+const sandbox = await client.createSandbox(snapshot.id);
+try {
+  await sandbox.run("python -c 'import numpy; print(numpy.__version__)'");
+  const cfg = await sandbox.read("/opt/config.yaml");
+  console.log(new TextDecoder().decode(cfg));
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+<Note>
+Capture preserves the **persistent filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept. Running processes, open sockets, in-memory state, and anything under `/tmp` (which is a tmpfs) are **not** carried over — boot the new sandbox and start the processes you need again.
+</Note>
+
+<Tip>
+You can boot a sandbox from a snapshot by **name** instead of ID — handy when you know the human-readable label you captured with:
+
+<CodeGroup>
+
+```python Python
+sb = client.create_sandbox(snapshot_name="ml-ready")
+```
+
+```ts TypeScript
+const sb = await client.createSandbox(undefined, { snapshotName: "ml-ready" });
+```
+
+</CodeGroup>
+
+Pass exactly one of `snapshot_id` / `snapshot_name` (or `snapshotId` / `snapshotName` in TypeScript).
+</Tip>
+
+### Tune capture timing
+
+`capture_snapshot` blocks until the new snapshot is ready. Raise the `timeout` kwarg (default 60s) if your filesystem is large or your storage backend is slow.
+
+<CodeGroup>
+
+```python Python
+snapshot = sb.capture_snapshot("ml-ready-v2", timeout=600)
+```
+
+```ts TypeScript
+const snapshot = await sb.captureSnapshot("ml-ready-v2", { timeout: 600 });
+```
+
+</CodeGroup>
+
+## List, fetch, and delete snapshots
+
+<CodeGroup>
+
+```python Python
+# List all snapshots in the workspace
+snapshots = client.list_snapshots()
+for s in snapshots:
+    print(s.id, s.name, s.status)
+
+# Fetch a single snapshot by ID
+snapshot = client.get_snapshot("550e8400-e29b-41d4-a716-446655440000")
+
+# Delete a snapshot (fails if any sandbox still references it)
+client.delete_snapshot(snapshot.id)
+```
+
+```ts TypeScript
+const snapshots = await client.listSnapshots();
+for (const s of snapshots) {
+  console.log(s.id, s.name, s.status);
+}
+
+const snapshot = await client.getSnapshot("550e8400-e29b-41d4-a716-446655440000");
+
+await client.deleteSnapshot(snapshot.id);
+```
+
+</CodeGroup>
+
+<Note>
+`list_snapshots` / `listSnapshots` paginates server-side (default page size 50, max 500) and accepts optional filters: `name_contains` / `nameContains` (case-insensitive substring on name), `limit` (1–500), and `offset` (≥ 0). Page through results by advancing `offset`.
+
+<CodeGroup>
+
+```python Python
+page = client.list_snapshots(name_contains="ml", limit=100)
+```
+
+```ts TypeScript
+const page = await client.listSnapshots({ nameContains: "ml", limit: 100 });
+```
+
+</CodeGroup>
+
+</Note>
+
+## Stop and start sandboxes
+
+Sandboxes can be stopped and restarted without losing filesystem state. Files you wrote during the previous run are still there when the sandbox comes back up.
+
+<CodeGroup>
+
+```python Python
+sb = client.create_sandbox(snapshot_id=snapshot.id, name="my-vm")
+sb.run("echo 'hello' > /tmp/state.txt")
+
+# Stop the sandbox — preserves files on disk
+sb.stop()
+
+# Later: start it again (blocks until ready, default timeout=120s)
+sb.start()
+
+result = sb.run("cat /tmp/state.txt")
+assert result.stdout.strip() == "hello"
+```
+
+```ts TypeScript
+const sb = await client.createSandbox(snapshot.id, { name: "my-vm" });
+await sb.run("echo 'hello' > /tmp/state.txt");
+
+await sb.stop();
+
+await sb.start();
+
+const result = await sb.run("cat /tmp/state.txt");
+console.log(result.stdout.trim()); // "hello"
+```
+
+</CodeGroup>
+
+You can also stop and start by name via the client directly (`client.stop_sandbox(name)` / `client.start_sandbox(name)` in Python, `client.stopSandbox(name)` / `client.startSandbox(name)` in TypeScript).
+
+## Next steps
+
+- [Create sandboxes from snapshots with the SDK](/langsmith/sandbox-sdk)
+- [Expose HTTP services with Service URLs](/langsmith/sandbox-service-urls)
+- [Inject credentials via the Auth proxy](/langsmith/sandbox-auth-proxy)

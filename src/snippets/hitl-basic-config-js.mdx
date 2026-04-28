@@ -1,0 +1,61 @@
+```typescript
+import { tool } from "langchain";
+import { createDeepAgent } from "deepagents";
+import { MemorySaver } from "@langchain/langgraph";
+import { z } from "zod";
+
+const deleteFile = tool(
+  async ({ path }: { path: string }) => {
+    return `Deleted ${path}`;
+  },
+  {
+    name: "delete_file",
+    description: "Delete a file from the filesystem.",
+    schema: z.object({
+      path: z.string(),
+    }),
+  },
+);
+
+const readFile = tool(
+  async ({ path }: { path: string }) => {
+    return `Contents of ${path}`;
+  },
+  {
+    name: "read_file",
+    description: "Read a file from the filesystem.",
+    schema: z.object({
+      path: z.string(),
+    }),
+  },
+);
+
+const sendEmail = tool(
+  async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+    return `Sent email to ${to}`;
+  },
+  {
+    name: "send_email",
+    description: "Send an email.",
+    schema: z.object({
+      to: z.string(),
+      subject: z.string(),
+      body: z.string(),
+    }),
+  },
+);
+
+// Checkpointer is REQUIRED for human-in-the-loop
+const checkpointer = new MemorySaver();
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  tools: [deleteFile, readFile, sendEmail],
+  interruptOn: {
+    delete_file: true,  // Default: approve, edit, reject
+    read_file: false,   // No interrupts needed
+    send_email: { allowedDecisions: ["approve", "reject"] },  // No editing
+  },
+  checkpointer,  // Required!
+});
+```

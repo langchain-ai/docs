@@ -1,0 +1,251 @@
+---
+title: LangSmith CLI
+sidebarTitle: CLI
+icon: terminal-2
+description: Query and manage LangSmith projects, traces, runs, datasets, evaluators, experiments, and threads from the terminal
+---
+
+The LangSmith CLI is a command-line tool for querying and managing your LangSmith data. It's designed for both developers and AI coding agents and outputs JSON by default for scripting, with a `--format pretty` option for human-readable tables. Use it when you need scriptable access to your LangSmith data, such as bulk exports, automation, or giving a coding agent direct access to your [traces, runs, and datasets](/langsmith/observability-concepts).
+
+<Warning>
+The LangSmith CLI is in **alpha**. Commands, flags, and output schemas may change between releases. Report issues on [GitHub](https://github.com/langchain-ai/langsmith-cli/issues).
+</Warning>
+
+## Install
+
+<CodeGroup>
+```bash macOS / Linux (recommended)
+curl -fsSL https://cli.langsmith.com/install.sh | sh
+```
+
+```powershell Windows
+irm https://cli.langsmith.com/install.ps1 | iex
+```
+
+```bash GitHub Releases
+# Download the latest binary for your platform:
+# https://github.com/langchain-ai/langsmith-cli/releases
+```
+
+```bash Go install
+go install github.com/langchain-ai/langsmith-cli/cmd/langsmith@latest
+```
+</CodeGroup>
+
+To upgrade at any time:
+
+```bash
+langsmith self-update
+```
+
+Use the `--dry-run` flag to preview the update without installing.
+
+## Authenticate
+
+Set your [API key](/langsmith/create-account-api-key) as an environment variable:
+
+```bash
+export LANGSMITH_API_KEY="lsv2_..."
+```
+
+Optionally, set a default project for queries:
+
+```bash
+export LANGSMITH_PROJECT="my-default-project"
+```
+
+If you're using LangSmith [self-hosted](/langsmith/self-hosted) or [hybrid](/langsmith/hybrid), also set the endpoint:
+
+```bash
+export LANGSMITH_ENDPOINT="https://your-langsmith-instance.com"
+```
+
+Or, pass them as flags per command:
+
+```bash
+langsmith --api-key lsv2_... trace list --project my-app
+```
+
+## Quickstart
+
+The following commands cover the core resource types:
+
+```bash
+# List tracing projects
+langsmith project list
+
+# List recent traces in a project
+langsmith trace list --project my-app --limit 5
+
+# Get a specific trace with full detail
+langsmith trace get <trace-id> --project my-app --full
+
+# List LLM runs with token counts
+langsmith run list --project my-app --run-type llm --include-metadata
+
+# Datasets and experiments
+langsmith dataset list
+langsmith experiment list --dataset my-eval-set
+
+# Conversation threads
+langsmith thread list --project my-chatbot
+```
+
+## Output formats
+
+**Default**
+
+JSON to stdout — easy to pipe, script, or feed to an agent:
+
+  ```bash
+  langsmith trace list --project my-app
+  ```
+
+**Pretty tables**
+
+`--format pretty` for human-readable output:
+
+  ```bash
+  langsmith --format pretty trace list --project my-app
+  ```
+
+**Write to file**
+
+`-o <path>`:
+
+  ```bash
+  langsmith trace list --project my-app -o traces.json
+  ```
+
+## Commands
+
+Each command group targets a specific LangSmith resource. Most commands support `--limit`, `--offset`, and a shared set of [filter flags](#filter-flags).
+
+### List projects
+
+Returns up to 20 projects by default, sorted by most recent activity. Lists tracing projects only. (Use [`experiment list`](#view-experiments) to list evaluation experiments.)
+
+```bash
+langsmith project list
+langsmith project list --limit 50 --name-contains chatbot
+langsmith --format pretty project list
+```
+
+### Query traces
+
+Defaults to the last 7 days, newest first. Use `--since` or `--last-n-minutes` to change the time window.
+
+```bash
+langsmith trace list --project my-app --limit 50 --last-n-minutes 60
+langsmith trace list --project my-app --error                     # errors only
+langsmith trace list --project my-app --min-latency 5             # slow traces (>5s)
+langsmith trace list --project my-app --tags production           # filter by tag
+langsmith trace list --project my-app --full                      # all fields
+langsmith trace list --project my-app --show-hierarchy --limit 3  # include full run tree
+langsmith trace get <trace-id> --project my-app --full
+langsmith trace export ./traces --project my-app --limit 20 --full
+```
+
+### Query runs
+
+Defaults to 50 results (most other commands default to 20). The same 7-day time window applies. Use `--since` or `--last-n-minutes` to override.
+
+```bash
+langsmith run list --project my-app --run-type llm
+langsmith run list --project my-app --run-type tool --name search
+langsmith run list --project my-app --min-tokens 1000 --include-metadata
+langsmith run get <run-id> --full
+langsmith run export llm_calls.jsonl --project my-app --run-type llm --full
+```
+
+### Query threads
+
+`--project` is required for all thread commands.
+
+```bash
+langsmith thread list --project my-chatbot --last-n-minutes 120
+langsmith thread get <thread-id> --project my-chatbot --full
+```
+
+### Manage datasets
+
+`dataset export` exports the examples (rows) within a dataset, not the dataset metadata itself.
+
+```bash
+langsmith dataset list
+langsmith dataset list --name-contains eval
+langsmith dataset get my-dataset
+langsmith dataset create --name my-eval-set --description "QA pairs for v2"
+langsmith dataset delete my-old-dataset --yes
+langsmith dataset export my-dataset ./data.json --limit 500
+langsmith dataset upload data.json --name new-dataset
+```
+
+### Manage examples
+
+Use `--split` to assign examples to named splits (such as `test` or `train`) when creating or listing.
+
+```bash
+langsmith example list --dataset my-dataset --limit 50
+langsmith example list --dataset my-dataset --split test
+langsmith example create --dataset my-dataset \
+  --inputs '{"question": "What is LangSmith?"}' \
+  --outputs '{"answer": "A platform for LLM observability"}' \
+  --split test
+langsmith example delete <example-id> --yes
+```
+
+### Manage evaluators
+
+Evaluators can be offline (run against a dataset during experiments) or online (run against a live project). Use `--sampling-rate` to evaluate only a fraction of production runs, and `--replace` to overwrite an existing evaluator by name.
+
+```bash
+langsmith evaluator list
+langsmith evaluator upload evals.py --name accuracy \
+  --function check_accuracy --dataset my-eval-set
+langsmith evaluator upload evals.py --name latency-check \
+  --function check_latency --project my-app --sampling-rate 0.5
+langsmith evaluator upload evals.py --name accuracy \
+  --function check_accuracy_v2 --dataset my-eval-set --replace --yes
+langsmith evaluator delete accuracy --yes
+```
+
+### View experiments
+
+`experiment list` shows evaluation experiments, not tracing projects. (Use [`project list`](#list-projects) to list tracing projects.)
+
+```bash
+langsmith experiment list
+langsmith experiment list --dataset my-eval-set
+langsmith experiment get my-experiment-2024-01-15
+```
+
+## Filter flags
+
+Most `trace` and `run` commands share these filters:
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--project` | Project name | `--project my-app` |
+| `--limit, -n` | Max results | `-n 10` |
+| `--offset` | Pagination offset | `--offset 20` |
+| `--last-n-minutes` | Override the 7-day default | `--last-n-minutes 60` |
+| `--since` | After ISO timestamp | `--since 2024-01-15T00:00:00Z` |
+| `--error` / `--no-error` | Filter by error status | `--error` |
+| `--name` | Name search (case-insensitive) | `--name ChatOpenAI` |
+| `--run-type` | Run type (`llm` or `tool`) | `--run-type llm` |
+| `--min-latency` / `--max-latency` | Latency range in seconds | `--min-latency 2.5` |
+| `--min-tokens` | Minimum total tokens | `--min-tokens 1000` |
+| `--tags` | Tags, comma-separated (OR logic) | `--tags prod,v2` |
+| `--filter` | Raw LangSmith filter DSL | `--filter 'eq(status, "error")'` |
+| `--trace-ids` | Specific trace IDs | `--trace-ids abc123,def456` |
+
+**Detail flags** — control which fields are included in the response:
+
+| Flag | Adds |
+|------|------|
+| `--include-metadata` | Status, duration, tokens, costs |
+| `--include-io` | Inputs, outputs, error |
+| `--include-feedback` | Feedback stats |
+| `--full` | All of the above |
+| `--show-hierarchy` | Full run tree (traces only) |

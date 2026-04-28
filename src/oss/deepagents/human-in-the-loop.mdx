@@ -3,9 +3,10 @@ title: Human-in-the-loop
 description: Learn how to configure human approval for sensitive tool operations
 ---
 
-import HitlBasicConfig from '/snippets/hitl-basic-config.mdx';
+import HitlBasicConfigPy from '/snippets/hitl-basic-config-py.mdx';
+import HitlBasicConfigJs from '/snippets/hitl-basic-config-js.mdx';
 
-Some tool operations may be sensitive and require human approval before execution. Deep agents support human-in-the-loop workflows through LangGraph's interrupt capabilities. You can configure which tools require approval using the `interrupt_on` parameter.
+Some tool operations may be sensitive and require human approval before execution. Deep Agents support human-in-the-loop workflows through LangGraph's interrupt capabilities. You can configure which tools require approval using the `interrupt_on` parameter.
 
 ```mermaid
 graph LR
@@ -19,6 +20,16 @@ graph LR
 
     Execute --> Agent
     Cancel --> Agent
+
+    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
+    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef decision fill:#FEF3C7,stroke:#F59E0B,stroke-width:2px,color:#78350F
+    classDef alert fill:#FEE2E2,stroke:#DC2626,stroke-width:2px,color:#7F1D1D
+
+    class Agent trigger
+    class Check,Human decision
+    class Execute process
+    class Cancel alert
 ```
 
 ## Basic configuration
@@ -29,7 +40,13 @@ The `interrupt_on` parameter accepts a dictionary mapping tool names to interrup
 - **`False`**: Disable interrupts for this tool
 - **`{"allowed_decisions": [...]}`**: Custom configuration with specific allowed decisions
 
-<HitlBasicConfig />
+:::python
+<HitlBasicConfigPy />
+:::
+
+:::js
+<HitlBasicConfigJs />
+:::
 
 ## Decision types
 
@@ -77,23 +94,25 @@ When an interrupt is triggered, the agent pauses execution and returns control. 
 
 :::python
 ```python
-import uuid
+from langchain_core.utils.uuid import uuid7
 from langgraph.types import Command
 
 # Create config with thread_id for state persistence
-config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+config = {"configurable": {"thread_id": str(uuid7())}}
 
 # Invoke the agent
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "Delete the file temp.txt"}]
-}, config=config)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Delete the file temp.txt"}]},
+    config=config,
+    version="v2",  # [!code highlight]
+)
 
 # Check if execution was interrupted
-if result.get("__interrupt__"):
+if result.interrupts:  # [!code highlight]
     # Extract interrupt information
-    interrupts = result["__interrupt__"][0].value
-    action_requests = interrupts["action_requests"]
-    review_configs = interrupts["review_configs"]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_requests = interrupt_value["action_requests"]
+    review_configs = interrupt_value["review_configs"]
 
     # Create a lookup map from tool name to review config
     config_map = {cfg["action_name"]: cfg for cfg in review_configs}
@@ -113,21 +132,22 @@ if result.get("__interrupt__"):
     # Resume execution with decisions
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config  # Must use the same config!
+        config=config,  # Must use the same config!
+        version="v2",
     )
 
 # Process final result
-print(result["messages"][-1].content)
+print(result.value["messages"][-1].content)  # [!code highlight]
 ```
 :::
 
 :::js
 ```typescript
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuid7 } from "uuid";
 import { Command } from "@langchain/langgraph";
 
 // Create config with thread_id for state persistence
-const config = { configurable: { thread_id: uuidv4() } };
+const config = { configurable: { thread_id: uuid7() } };
 
 // Invoke the agent
 let result = await agent.invoke({
@@ -177,18 +197,20 @@ When the agent calls multiple tools that require approval, all interrupts are ba
 
 :::python
 ```python
-config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+config = {"configurable": {"thread_id": str(uuid7())}}
 
-result = agent.invoke({
-    "messages": [{
+result = agent.invoke(
+    {"messages": [{
         "role": "user",
         "content": "Delete temp.txt and send an email to admin@example.com"
-    }]
-}, config=config)
+    }]},
+    config=config,
+    version="v2",  # [!code highlight]
+)
 
-if result.get("__interrupt__"):
-    interrupts = result["__interrupt__"][0].value
-    action_requests = interrupts["action_requests"]
+if result.interrupts:  # [!code highlight]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_requests = interrupt_value["action_requests"]
 
     # Two tools need approval
     assert len(action_requests) == 2
@@ -201,14 +223,15 @@ if result.get("__interrupt__"):
 
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config
+        config=config,
+        version="v2",
     )
 ```
 :::
 
 :::js
 ```typescript
-const config = { configurable: { thread_id: uuidv4() } };
+const config = { configurable: { thread_id: uuid7() } };
 
 let result = await agent.invoke({
   messages: [{
@@ -244,9 +267,9 @@ When `"edit"` is in the allowed decisions, you can modify the tool arguments bef
 
 :::python
 ```python
-if result.get("__interrupt__"):
-    interrupts = result["__interrupt__"][0].value
-    action_request = interrupts["action_requests"][0]
+if result.interrupts:  # [!code highlight]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_request = interrupt_value["action_requests"][0]
 
     # Original args from the agent
     print(action_request["args"])  # {"to": "everyone@company.com", ...}
@@ -262,7 +285,8 @@ if result.get("__interrupt__"):
 
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config
+        config=config,
+        version="v2",
     )
 ```
 :::
@@ -304,6 +328,7 @@ Each subagent can have its own `interrupt_on` configuration that overrides the m
 :::python
 ```python
 agent = create_deep_agent(
+    model="google_genai:gemini-3.1-pro-preview",
     tools=[delete_file, read_file],
     interrupt_on={
         "delete_file": True,
@@ -349,7 +374,7 @@ const agent = createDeepAgent({
 ```
 :::
 
-When a subagent triggers an interrupt, the handling is the same – check for `__interrupt__` and resume with `Command`.
+When a subagent triggers an interrupt, the handling is the same—check for `interrupts` on the result and resume with `Command`.
 
 ### Interrupts within tool calls
 
@@ -388,7 +413,7 @@ def request_approval(action_description: str) -> str:
 def main():
     checkpointer = InMemorySaver()
     model = ChatAnthropic(
-        model_name="claude-sonnet-4-5-20250929",
+        model_name="claude-sonnet-4-6",
         max_tokens=4096,
     )
 
@@ -399,6 +424,7 @@ def main():
     )
 
     parent_agent = create_deep_agent(
+        model="google_genai:gemini-3.1-pro-preview",
         checkpointer=checkpointer,
         subagents=[
             CompiledSubAgent(
@@ -424,11 +450,12 @@ def main():
             ]
         },
         config=config,
+        version="v2",  # [!code highlight]
     )
 
     # Check for interrupt
-    if result.get("__interrupt__"):
-        interrupt_value = result["__interrupt__"][0].value
+    if result.interrupts:  # [!code highlight]
+        interrupt_value = result.interrupts[0].value  # [!code highlight]
         print(f"\nInterrupt received!")
         print(f"  Type: {interrupt_value.get('type')}")
         print(f"  Action: {interrupt_value.get('action')}")
@@ -438,12 +465,13 @@ def main():
         result2 = parent_agent.invoke(
             Command(resume={"approved": True}),
             config=config,
+            version="v2",  # [!code highlight]
         )
 
-        if "__interrupt__" not in result2:
+        if not result2.interrupts:  # [!code highlight]
             print("\nExecution completed!")
             # Find the tool response
-            tool_msgs = [m for m in result2.get("messages", []) if m.type == "tool"]
+            tool_msgs = [m for m in result2.value.get("messages", []) if m.type == "tool"]  # [!code highlight]
             if tool_msgs:
                 print(f"  Tool result: {tool_msgs[-1].content}")
         else:
@@ -620,6 +648,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 checkpointer = MemorySaver()
 agent = create_deep_agent(
+    model="google_genai:gemini-3.1-pro-preview",
     tools=[...],
     interrupt_on={...},
     checkpointer=checkpointer  # Required for HITL
@@ -635,10 +664,10 @@ When resuming, you must use the same config with the same `thread_id`:
 ```python
 # First call
 config = {"configurable": {"thread_id": "my-thread"}}
-result = agent.invoke(input, config=config)
+result = agent.invoke(input, config=config, version="v2")
 
 # Resume (use same config)
-result = agent.invoke(Command(resume={...}), config=config)
+result = agent.invoke(Command(resume={...}), config=config, version="v2")
 ```
 :::
 
@@ -648,9 +677,9 @@ The decisions list must match the order of `action_requests`:
 
 :::python
 ```python
-if result.get("__interrupt__"):
-    interrupts = result["__interrupt__"][0].value
-    action_requests = interrupts["action_requests"]
+if result.interrupts:  # [!code highlight]
+    interrupt_value = result.interrupts[0].value  # [!code highlight]
+    action_requests = interrupt_value["action_requests"]
 
     # Create one decision per action, in order
     decisions = []
@@ -660,7 +689,8 @@ if result.get("__interrupt__"):
 
     result = agent.invoke(
         Command(resume={"decisions": decisions}),
-        config=config
+        config=config,
+        version="v2",
     )
 ```
 :::

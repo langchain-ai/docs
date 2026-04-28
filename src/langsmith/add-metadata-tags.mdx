@@ -32,7 +32,7 @@ messages = [
         metadata={"my-key": "my-value"}
     )
     def call_openai(
-        messages: list[dict], model: str = "gpt-4.1-mini"
+        messages: list[dict], model: str = "gpt-5.4-mini"
     ) -> str:
         # You can also dynamically set metadata on the parent run:
         rt = ls.get_current_run_tree()
@@ -50,7 +50,14 @@ messages = [
         langsmith_extra={"tags": ["my-other-tag"], "metadata": {"my-other-key": "my-value"}}
     )
 
-    # Alternatively, you can use the context manager
+    # or you can dynamically set default metadata for runs in the given scope
+    # tracing_context doesn't create a span itself, but it does initialze the
+    # context for child spans that are created.
+    with ls.tracing_context(metadata={"default-key": "default-value"}):
+        call_openai(messages)
+
+    # Alternatively, you can use the trace context manager
+    # This creates a new span with the given metadata and tags
     with ls.trace(
         name="OpenAI Call Trace",
         run_type="llm",
@@ -59,7 +66,7 @@ messages = [
         metadata={"my-key": "my-value"},
     ) as rt:
         chat_completion = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-5.4-mini",
             messages=messages,
         )
         rt.metadata["some-conditional-key"] = "some-val"
@@ -70,7 +77,7 @@ patched_client = wrap_openai(
     client, tracing_extra={"metadata": {"my-key": "my-value"}, "tags": ["a-tag"]}
 )
 chat_completion = patched_client.chat.completions.create(
-    model="gpt-4.1-mini",
+    model="gpt-5.4-mini",
     messages=messages,
     langsmith_extra={
         "tags": ["my-other-tag"],
@@ -93,7 +100,7 @@ import { wrapOpenAI } from "langsmith/wrappers";
     const traceableCallOpenAI = traceable(
         async (messages: OpenAI.Chat.ChatCompletionMessageParam[]) => {
             const completion = await client.chat.completions.create({
-                model: "gpt-4.1-mini",
+                model: "gpt-5.4-mini",
                 messages,
             });
             const runTree = getCurrentRunTree();
@@ -117,3 +124,7 @@ await traceableCallOpenAI(messages);
 ```
 
 </CodeGroup>
+
+<Tip>
+**LangSmith Deployments**: To add metadata dynamically per invocation in Agent Server deployments, we recommend using `tracing_context` in a [factory function](/langsmith/graph-rebuild). See [Customize tracing in deployed agents](/langsmith/conditional-tracing#customize-tracing-in-deployed-agents) for examples.
+</Tip>

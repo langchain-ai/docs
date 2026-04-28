@@ -116,7 +116,7 @@ def get_pr_diff() -> str:
     try:
         # Verify we're in a git repository
         git_dir_check = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],  # noqa: S607
+            ["git", "rev-parse", "--git-dir"],
             capture_output=True,
             text=True,
             check=True,
@@ -127,7 +127,7 @@ def get_pr_diff() -> str:
             raise subprocess.CalledProcessError(1, "git rev-parse --git-dir")  # noqa: TRY301
 
         merge_base_cmd = ["git", "merge-base", "HEAD", "origin/main"]
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             merge_base_cmd, capture_output=True, text=True, check=True, timeout=30
         )
         base_sha = result.stdout.strip()
@@ -143,7 +143,7 @@ def get_pr_diff() -> str:
         # Get the diff from base to HEAD
         diff_cmd = ["git", "diff", base_sha, "HEAD"]
 
-        return subprocess.run(  # noqa: S603
+        return subprocess.run(
             diff_cmd, capture_output=True, text=True, check=True, timeout=60
         ).stdout
 
@@ -220,8 +220,8 @@ def check_import_line(line: str, mapping_dict: dict[str, str]) -> list[dict[str,
 
     # Match different import patterns
     patterns = [
-        r"from\s+(langchain_core(?:\.\S+)?)\s+import\s+(.+)",  # Matches both `from langchain_core import ...` and `from langchain_core.module import ...`  # noqa: E501
-        r"import\s+(langchain_core(?:\.\S+)?)",  # Matches both `import langchain_core` and `import langchain_core.module`  # noqa: E501
+        r"from\s+(langchain_core(?:\.\S+)?)\s+import\s+(.+)",  # Matches both `from langchain_core import ...` and `from langchain_core.module import ...`
+        r"import\s+(langchain_core(?:\.\S+)?)",  # Matches both `import langchain_core` and `import langchain_core.module`
     ]
 
     for i, pattern in enumerate(patterns):

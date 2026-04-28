@@ -1,15 +1,23 @@
 ---
 title: Log traces to a specific project
 sidebarTitle: Log traces to a specific project
+description: Route LangSmith traces to a named project instead of the default project using environment variables or the SDK.
 ---
 
-You can change the destination project of your traces both statically through environment variables and dynamically at runtime.
+This page covers how to control where LangSmith sends your traces:
+
+- [Set the destination project statically](#set-the-destination-project-statically)
+- [Set the destination project dynamically](#set-the-destination-project-dynamically)
+- [Set the destination workspace dynamically](#set-the-destination-workspace-dynamically)
+- [Write traces to multiple destinations with replicas](#write-traces-to-multiple-destinations-with-replicas)
 
 ## Set the destination project statically
 
-As mentioned in the [Tracing Concepts](/langsmith/observability-concepts#projects) section, LangSmith uses the concept of a `Project` to group traces. If left unspecified, the project is set to `default`. You can set the `LANGSMITH_PROJECT` environment variable to configure a custom project name for an entire application run. This should be done before executing your application.
+LangSmith uses the concept of a [_project_](/langsmith/observability-concepts#projects) to group traces. If left unspecified, the project is set to `default`.
 
-```
+You can set the `LANGSMITH_PROJECT` environment variable to configure a custom project name for an entire application run. Set this before running your application:
+
+```bash
 export LANGSMITH_PROJECT=my-custom-project
 ```
 
@@ -17,19 +25,23 @@ export LANGSMITH_PROJECT=my-custom-project
 The `LANGSMITH_PROJECT` flag is only supported in JS SDK versions >= 0.2.16, use `LANGCHAIN_PROJECT` instead if you are using an older version.
 </Warning>
 
-If the project specified does not exist, it will be created automatically when the first trace is ingested.
+If the project specified does not exist, LangSmith will automatically create it when the first trace is ingested.
 
 ## Set the destination project dynamically
 
-You can also set the project name at program runtime in various ways, depending on how you are [annotating your code for tracing](/langsmith/annotate-code). This is useful when you want to log traces to different projects within the same application.
+You can also set the project name at program runtime in various ways, depending on how you are [annotating your code for tracing](/langsmith/annotate-code). This is useful when you want to log traces to different projects within the same application:
+
+- Pass the project name at decoration or configuration time.
+- Override it per individual call.
+- Set it when constructing a run directly.
 
 <Note>
-Setting the project name dynamically using one of the below methods overrides the project name set by the `LANGSMITH_PROJECT` environment variable.
+Setting the project name dynamically using one of the following methods overrides the project name set by the `LANGSMITH_PROJECT` environment variable.
 </Note>
 
 <CodeGroup>
 
-```python Python
+```python Python expandable wrap
 import openai
 from langsmith import traceable
 from langsmith.run_trees import RunTree
@@ -48,7 +60,7 @@ messages = [
   project_name="My Project"
 )
 def call_openai(
-  messages: list[dict], model: str = "gpt-4.1-mini"
+  messages: list[dict], model: str = "gpt-5.4-mini"
 ) -> str:
   return client.chat.completions.create(
       model=model,
@@ -71,7 +83,7 @@ call_openai(
 from langsmith import wrappers
 wrapped_client = wrappers.wrap_openai(client)
 wrapped_client.chat.completions.create(
-  model="gpt-4.1-mini",
+  model="gpt-5.4-mini",
   messages=messages,
   langsmith_extra={"project_name": "My Project"},
 )
@@ -85,7 +97,7 @@ rt = RunTree(
   project_name="My Project"
 )
 chat_completion = client.chat.completions.create(
-  model="gpt-4.1-mini",
+  model="gpt-5.4-mini",
   messages=messages,
 )
 # End and submit the run
@@ -93,7 +105,7 @@ rt.end(outputs=chat_completion)
 rt.post()
 ```
 
-```typescript TypeScript
+```typescript TypeScript expandable wrap
 import OpenAI from "openai";
 import { traceable } from "langsmith/traceable";
 import { wrapOpenAI } from "langsmith/wrappers";
@@ -118,7 +130,7 @@ const traceableCallOpenAI = traceable(async (messages: {role: string, content: s
 });
 
 // Call the traceable function
-await traceableCallOpenAI(messages, "gpt-4.1-mini");
+await traceableCallOpenAI(messages, "gpt-5.4-mini");
 
 // Create and use a RunTree object
 const rt = new RunTree({
@@ -134,7 +146,7 @@ rt.end({outputs: chatCompletion});
 await rt.patchRun();
 ```
 
-```java Client
+```java Java expandable wrap
 import com.langchain.smith.otel.OtelConfig;
 import com.langchain.smith.otel.OtelSpanCreator;
 import com.langchain.smith.otel.OtelTraceExporter;
@@ -209,7 +221,10 @@ public class OtelLangSmithSimpleExample {
 
 ## Set the destination workspace dynamically
 
-If you need to dynamically route traces to different LangSmith [workspaces](/langsmith/administration-overview#workspaces) based on runtime configuration (e.g., routing different users or tenants to separate workspaces), Python users can use workspace-specific LangSmith clients with `tracing_context`, while TypeScript users can pass a custom client to `traceable` or use `LangChainTracer` with callbacks.
+If you need to route traces dynamically to different LangSmith [workspaces](/langsmith/administration-overview#workspaces) based on runtime configuration (e.g., routing different users or tenants to separate workspaces), the approach differs by language:
+
+- **Python**: use workspace-specific LangSmith clients with [`tracing_context`](/langsmith/annotate-code#use-the-trace-context-manager-python-only).
+- **TypeScript**: pass a custom client to [`traceable`](/langsmith/annotate-code#use-%40traceable-%2F-traceable), or use `LangChainTracer` with callbacks.
 
 This approach is useful for multi-tenant applications where you want to isolate traces by customer, environment, or team at the workspace level.
 
@@ -350,7 +365,7 @@ await handleCustomerRequest("standard_user_456", { query: "Hi" });
 
 ### Override default workspace for LangSmith deployments
 
-When [deploying agents](/langsmith/deployments) to LangSmith, you can override the default workspace that traces are sent to by using a graph lifespan context manager. This is useful when you want to route traces from a deployed agent to different workspaces based on runtime configuration passed through the `config` parameter.
+When [deploying agents](/langsmith/deployment) to LangSmith, you can override the default workspace that traces are sent to by using a graph lifespan context manager. This is useful when you want to route traces from a deployed agent to different workspaces based on runtime configuration passed through the `config` parameter.
 
 <CodeGroup>
 
@@ -533,5 +548,155 @@ await invokeWithWorkspaceTracing("workspace_b", { response: "" });
 - This pattern works with any LangSmith-compatible tracing (LangChain, OpenAI, custom functions, etc.).
 
 <Note>
-When deploying with cross-workspace tracing, ensure your API key has the necessary permissions for all target workspaces. For LangSmith deployments, you must add an API key with cross-workspace access to your environment variables (e.g., `LS_CROSS_WORKSPACE_KEY`) to override the default service key generated by your deployment.
+When deploying with cross-workspace tracing, ensure your service key or PAT has the necessary permissions for all target workspaces. We recommend using a multi-workspace service key for production deployments. For LangSmith deployments, you must add a service key with cross-workspace access to your environment variables (e.g., `LS_CROSS_WORKSPACE_KEY`) to override the default service key generated by your deployment.
 </Note>
+
+## Write traces to multiple destinations with replicas
+
+Replicas let you send every trace to multiple projects or workspaces **at the same time**. Unlike the dynamic routing patterns where each trace goes to one destination, replicas duplicate the trace to all configured destinations in parallel.
+
+Replicas can be useful for:
+
+- Mirror production traces into a staging or personal project for debugging.
+- Write to multiple workspaces for multi-tenant isolation without changing any application code.
+- Send traces to the same server under different projects, with per-replica metadata overrides.
+
+### Configure replicas via environment variable
+
+Set the `LANGSMITH_RUNS_ENDPOINTS` environment variable to a JSON value. Two formats are supported:
+
+- **Object format**: maps each endpoint URL to its API key:
+
+    ```bash
+    export LANGSMITH_RUNS_ENDPOINTS='{
+    "https://api.smith.langchain.com": "ls__key_workspace_a",
+    "https://api.smith.langchain.com": "ls__key_workspace_b"
+    }'
+    ```
+
+- **Array format**: a list of replica objects, useful when you need multiple replicas pointing at the same URL or when you want to set a `project_name` per replica:
+
+    ```bash
+    export LANGSMITH_RUNS_ENDPOINTS='[
+    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key1", "project_name": "project-prod"},
+    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key2", "project_name": "project-staging"}
+    ]'
+    ```
+
+<Warning>
+You cannot use `LANGSMITH_RUNS_ENDPOINTS` alongside `LANGSMITH_ENDPOINT`. If you set both, LangSmith raises an error. Use only one to configure your endpoint.
+</Warning>
+
+### Configure replicas at runtime
+
+You can also pass replicas directly in code, which is useful when destinations vary per request or tenant.
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable, tracing_context
+from langsmith.run_trees import WriteReplica, ApiKeyAuth
+
+@traceable
+def my_pipeline(query: str) -> str:
+    # Your application logic here
+    return f"Answer to: {query}"
+
+replicas = [
+    WriteReplica(
+        api_url="https://api.smith.langchain.com",
+        auth=ApiKeyAuth(api_key="ls__key_workspace_a"),
+        project_name="project-prod",
+    ),
+    WriteReplica(
+        api_url="https://api.smith.langchain.com",
+        auth=ApiKeyAuth(api_key="ls__key_workspace_b"),
+        project_name="project-staging",
+        # Optionally override fields on the replicated run
+        updates={"metadata": {"environment": "staging"}},
+    ),
+]
+
+with tracing_context(replicas=replicas):
+    my_pipeline("What is LangSmith?")
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const myPipeline = traceable(
+  async (query: string): Promise<string> => {
+    // Your application logic here
+    return `Answer to: ${query}`;
+  },
+  {
+    name: "my_pipeline",
+    replicas: [
+      {
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "ls__key_workspace_a",
+        projectName: "project-prod",
+      },
+      {
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "ls__key_workspace_b",
+        projectName: "project-staging",
+        // Optionally override fields on the replicated run
+        updates: { metadata: { environment: "staging" } },
+      },
+    ],
+  }
+);
+
+await myPipeline("What is LangSmith?");
+```
+
+</CodeGroup>
+
+You can also use the `updates` field to merge additional fields (such as [metadata or tags](/langsmith/ls-metadata-parameters)) into a run for a specific replica only—the primary trace is unchanged. Replica errors are non-fatal: if a replica endpoint is unavailable, LangSmith logs the error without affecting the primary trace.
+
+<Warning>
+Auth does not propagate in distributed traces. When a trace spans multiple services, LangSmith forwards replica `project_name` and `updates` to downstream services automatically, but not API keys or credentials. Each service must configure its own credentials for replica destinations.
+</Warning>
+
+### Replicate within the same server (project-only replicas)
+
+If all your replicas use the same LangSmith server, you can omit `api_url` and `auth` and specify only a `project_name`. The SDK reuses the default client credentials:
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable, tracing_context
+from langsmith.run_trees import WriteReplica
+
+@traceable
+def my_pipeline(query: str) -> str:
+    return f"Answer to: {query}"
+
+with tracing_context(
+    replicas=[
+        WriteReplica(project_name="project-prod"),
+        WriteReplica(project_name="project-staging", updates={"metadata": {"env": "staging"}}),
+    ]
+):
+    my_pipeline("What is LangSmith?")
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const myPipeline = traceable(
+  async (query: string) => `Answer to: ${query}`,
+  {
+    name: "my_pipeline",
+    replicas: [
+      { projectName: "project-prod" },
+      { projectName: "project-staging", updates: { metadata: { env: "staging" } } },
+    ],
+  }
+);
+
+await myPipeline("What is LangSmith?");
+```
+
+</CodeGroup>
