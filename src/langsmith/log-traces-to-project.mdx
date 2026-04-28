@@ -725,10 +725,10 @@ from langsmith.run_trees import WriteReplica
 from langsmith.wrappers import wrap_openai
 import openai
 
-# Create clients for different export destinations
-ls_client = Client()                            # LangSmith only (default)
-otel_client = Client(tracing_mode="otel")       # OTel backend only
-hybrid_client = Client(tracing_mode="hybrid")   # Both LangSmith + OTel
+# Create clients with different tracing modes
+ls_client = Client()                            # tracing_mode="langsmith" (default)
+otel_client = Client(tracing_mode="otel")       # tracing_mode="otel"
+hybrid_client = Client(tracing_mode="hybrid")   # tracing_mode="hybrid" (both)
 
 openai_client = wrap_openai(openai.Client())
 
@@ -740,16 +740,29 @@ def joke():
     )
     return response.choices[0].message.content
 
-# Send this invocation to LangSmith only
-with tracing_context(replicas=[WriteReplica(client=ls_client)]):
+# Mix tracing modes across replicas in a single invocation:
+# one replica sends via LangSmith's native format, another as OTel spans.
+with tracing_context(replicas=[
+    WriteReplica(client=ls_client),    # tracing_mode="langsmith"
+    WriteReplica(client=otel_client),  # tracing_mode="otel"
+]):
     joke()
 
-# Send this invocation to an OTel backend only
-with tracing_context(replicas=[WriteReplica(client=otel_client)]):
-    joke()
-
-# Send this invocation to both LangSmith and OTel simultaneously
+# Alternatively, a single hybrid replica sends to both simultaneously.
 with tracing_context(replicas=[WriteReplica(client=hybrid_client)]):
+    joke()
+
+# Swap replica lists at runtime — e.g. based on a feature flag or environment.
+def get_replicas(send_to_otel: bool):
+    replicas = [WriteReplica(client=ls_client)]
+    if send_to_otel:
+        replicas.append(WriteReplica(client=otel_client))
+    return replicas
+
+with tracing_context(replicas=get_replicas(send_to_otel=True)):   # LangSmith + OTel
+    joke()
+
+with tracing_context(replicas=get_replicas(send_to_otel=False)):  # LangSmith only
     joke()
 ```
 
@@ -763,9 +776,9 @@ import OpenAI from "openai";
 // (TracerProvider, SpanProcessor, etc.) before creating the client.
 // See the OpenTelemetry integration guide for setup details.
 
-// Create clients for different export destinations
-const lsClient = new Client();                           // LangSmith only (default)
-const otelClient = new Client({ tracingMode: "otel" });  // OTel backend only
+// Create clients with different tracing modes
+const lsClient = new Client();                           // tracingMode: "langsmith" (default)
+const otelClient = new Client({ tracingMode: "otel" });  // tracingMode: "otel"
 
 const openaiClient = wrapOpenAI(new OpenAI());
 
@@ -777,28 +790,27 @@ async function jokeImpl() {
   return response.choices[0].message.content;
 }
 
-// Send to LangSmith only
-const jokeLsOnly = traceable(jokeImpl, {
-  name: "joke-ls-only",
+// Mix tracing modes across replicas in a single traceable call:
+// the primary client sends via LangSmith, the replica sends as OTel spans.
+const joke = traceable(jokeImpl, {
+  name: "joke",
+  client: lsClient,                    // tracingMode: "langsmith" (default)
+  replicas: [{ client: otelClient }],  // tracingMode: "otel"
+});
+await joke();
+
+// Build replicas dynamically for runtime switching — e.g. based on a feature flag.
+function buildReplicas(sendToOtel: boolean) {
+  return sendToOtel ? [{ client: otelClient }] : [];
+}
+
+const sendToOtel = process.env.ROUTE_TO_OTEL === "true";
+const jokeDynamic = traceable(jokeImpl, {
+  name: "joke",
   client: lsClient,
+  replicas: buildReplicas(sendToOtel),
 });
-
-// Send to an OTel backend only
-const jokeOtelOnly = traceable(jokeImpl, {
-  name: "joke-otel-only",
-  client: otelClient,
-});
-
-// Send to both LangSmith and OTel simultaneously using two replicas
-const jokeBoth = traceable(jokeImpl, {
-  name: "joke-both",
-  client: lsClient,
-  replicas: [{ client: otelClient }],
-});
-
-await jokeLsOnly();
-await jokeOtelOnly();
-await jokeBoth();
+await jokeDynamic();
 ```
 
 </CodeGroup>
