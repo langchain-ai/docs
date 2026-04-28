@@ -700,3 +700,119 @@ await myPipeline("What is LangSmith?");
 ```
 
 </CodeGroup>
+
+### Route between LangSmith and OpenTelemetry destinations
+
+You can decide at runtime whether a given invocation sends traces to LangSmith, to an OpenTelemetry (OTel) backend, or to both, without redeploying or modifying application logic. This is useful when you want to toggle between observability backends per environment, or even per request, making the decision at runtime.
+
+Set the tracing mode using the `tracing_mode` constructor argument or the `LANGSMITH_TRACING_MODE` environment variable. Both accept the same values; an explicit `tracing_mode` argument always takes precedence over the env var:
+
+- **`"langsmith"` (default)**: sends traces natively to LangSmith.
+- **`"otel"`**: exports traces as OpenTelemetry spans to a configured OTel backend.
+- **`"hybrid"` (Python only)**: sends to both LangSmith and an OTel backend from a single replica.
+
+<Note>
+If you are using the deprecated `otel_enabled` parameter on `Client` (Python only), migrate to `tracing_mode`: `Client(otel_enabled=True)` → `Client(tracing_mode="hybrid")`. The `otel_enabled` parameter will be removed in the next minor version.
+</Note>
+
+Pass a configured `Client` directly into a replica to apply the desired mode at runtime:
+
+<CodeGroup>
+
+```python Python expandable wrap
+from langsmith import Client, traceable, tracing_context
+from langsmith.run_trees import WriteReplica
+from langsmith.wrappers import wrap_openai
+import openai
+
+# Create clients with different tracing modes
+ls_client = Client()                            # tracing_mode="langsmith" (default)
+otel_client = Client(tracing_mode="otel")       # tracing_mode="otel"
+hybrid_client = Client(tracing_mode="hybrid")   # tracing_mode="hybrid" (both)
+
+openai_client = wrap_openai(openai.Client())
+
+@traceable()
+def joke():
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Tell me a short joke."}],
+    )
+    return response.choices[0].message.content
+
+# Mix tracing modes across replicas in a single invocation:
+# one replica sends via LangSmith's native format, another as OTel spans.
+with tracing_context(replicas=[
+    WriteReplica(client=ls_client),    # tracing_mode="langsmith"
+    WriteReplica(client=otel_client),  # tracing_mode="otel"
+]):
+    joke()
+
+# Alternatively, a single hybrid replica sends to both simultaneously.
+with tracing_context(replicas=[WriteReplica(client=hybrid_client)]):
+    joke()
+
+# Swap replica lists at runtime — e.g. based on a feature flag or environment.
+def get_replicas(send_to_otel: bool):
+    replicas = [WriteReplica(client=ls_client)]
+    if send_to_otel:
+        replicas.append(WriteReplica(client=otel_client))
+    return replicas
+
+with tracing_context(replicas=get_replicas(send_to_otel=True)):   # LangSmith + OTel
+    joke()
+
+with tracing_context(replicas=get_replicas(send_to_otel=False)):  # LangSmith only
+    joke()
+```
+
+```typescript TypeScript expandable wrap
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
+import OpenAI from "openai";
+
+// Note: tracingMode: "otel" requires OTel SDK initialization
+// (TracerProvider, SpanProcessor, etc.) before creating the client.
+// See the OpenTelemetry integration guide for setup details.
+
+// Create clients with different tracing modes
+const lsClient = new Client();                           // tracingMode: "langsmith" (default)
+const otelClient = new Client({ tracingMode: "otel" });  // tracingMode: "otel"
+
+const openaiClient = wrapOpenAI(new OpenAI());
+
+async function jokeImpl() {
+  const response = await openaiClient.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Tell me a short joke." }],
+  });
+  return response.choices[0].message.content;
+}
+
+// Mix tracing modes across replicas in a single traceable call:
+// the primary client sends via LangSmith, the replica sends as OTel spans.
+const joke = traceable(jokeImpl, {
+  name: "joke",
+  client: lsClient,                    // tracingMode: "langsmith" (default)
+  replicas: [{ client: otelClient }],  // tracingMode: "otel"
+});
+await joke();
+
+// Build replicas dynamically for runtime switching — e.g. based on a feature flag.
+function buildReplicas(sendToOtel: boolean) {
+  return sendToOtel ? [{ client: otelClient }] : [];
+}
+
+const sendToOtel = process.env.ROUTE_TO_OTEL === "true";
+const jokeDynamic = traceable(jokeImpl, {
+  name: "joke",
+  client: lsClient,
+  replicas: buildReplicas(sendToOtel),
+});
+await jokeDynamic();
+```
+
+</CodeGroup>
+
+The `tracing_mode` on each `Client` determines that replica's export path. In Python, `"hybrid"` mode handles both destinations within a single replica. In TypeScript, the "send to both" case uses two separate replicas, one for each client, because there is no `"hybrid"` mode. Since each replica resolves its own client independently, you can also mix modes within a single `tracing_context`, for example keeping one replica sending to LangSmith while forwarding the same trace to an OTel collector via a second replica.
