@@ -1,0 +1,117 @@
+---
+title: Trace TrueFoundry AI Gateway
+sidebarTitle: TrueFoundry
+description: Export OpenTelemetry traces from the TrueFoundry AI Gateway to LangSmith.
+---
+
+[TrueFoundry](https://www.truefoundry.com/) provides an enterprise-ready [AI Gateway](https://www.truefoundry.com/ai-gateway) that gives governance, observability, and a unified API for 250+ LLMs.
+
+This guide shows you how to configure the TrueFoundry AI Gateway to export OpenTelemetry traces to LangSmith so you can monitor LLM requests alongside the rest of your application traces.
+
+## Prerequisites
+
+Before integrating LangSmith with TrueFoundry, make sure you have:
+
+1. A [TrueFoundry account](https://www.truefoundry.com/register) with the [Gateway quick start](https://docs.truefoundry.com/gateway/quick-start) completed.
+2. A [LangSmith account](https://smith.langchain.com/).
+3. A workspace-scoped LangSmith API key (created in the steps below).
+
+## Understand the LangSmith hierarchy
+
+LangSmith organizes resources in three levels. Knowing where your API key is scoped and where your traces will land helps avoid empty dashboards:
+
+```text
+Organization   ← Top level (your LangSmith org)
+   └── Workspace   ← Mid level (e.g. "Personal", "Production")
+          └── Project   ← Where traces land (e.g. "default", "truefoundry")
+```
+
+- Every LangSmith account ships with a default workspace called **Personal**, so you usually do not need to create a new one.
+- Traces sent through the OTEL endpoint land in the workspace your API key is scoped to, and in the **`default`** project unless you override it with a header (see [Route traces to a specific project](#route-traces-to-a-specific-project)).
+- You can find your workspace ID in the URL bar after `/o/`, or under **Settings → Workspaces**.
+
+## Configure the integration
+
+The TrueFoundry AI Gateway exports OpenTelemetry traces to LangSmith over its native OTEL HTTP endpoint.
+
+<Steps>
+  <Step title="Create a workspace-scoped API key in LangSmith">
+    1. Log in to your [LangSmith dashboard](https://smith.langchain.com/).
+    2. Navigate to **Settings → API Keys** and click **Create API Key**.
+    3. Fill in the dialog:
+       - **Description**: any recognizable name, for example `tfy-api-key`.
+       - **Key Type**: select **Service Key** (tied to a service principal, recommended for automation and CI workflows).
+       - **Scope for Service Key**: choose **Specific Workspaces**, then pick the workspace you want traces to land in (for example, **Personal**).
+       - **Expiration Date**: pick a duration that matches your security policy (`Never`, `30d`, `90d`, `1 year`, or `Custom`).
+    4. Click **Create API Key** and copy the generated key. You will not be able to view it again.
+
+    ![LangSmith Create an API Key dialog with Service Key selected and scope set to Specific Workspaces](/images/2026-04-29_21.09.25.png)
+
+    <Tip>
+    You do not need to type the workspace ID anywhere. Selecting **Specific Workspaces** automatically scopes the key to the chosen workspace.
+    </Tip>
+  </Step>
+
+  <Step title="Configure OTEL export in TrueFoundry">
+    1. In the TrueFoundry dashboard, go to **AI Gateway → Controls → Settings**.
+    2. Scroll to the **OTEL Config** section and click the edit button.
+    3. Enable the **OTEL Traces Exporter Configuration** toggle.
+    4. Select **HTTP Configuration**.
+    5. Enter the LangSmith traces endpoint: `https://api.smith.langchain.com/otel/v1/traces`
+    6. Set **Encoding** to `Proto`.
+
+    ![TrueFoundry OTEL Traces Exporter Configuration with HTTP configuration and the LangSmith endpoint](/images/2026-04-29_21.10.38.png)
+  </Step>
+
+  <Step title="Configure headers">
+    Add the required header for LangSmith authentication:
+
+    | Header | Value |
+    |--------|-------|
+    | `x-api-key` | Your workspace-scoped LangSmith API key from Step 1 |
+
+    Click **Save** to apply your configuration.
+  </Step>
+
+  <Step title="Verify the integration">
+    1. Make some requests through the TrueFoundry AI Gateway.
+    2. Open the **Monitor** section in TrueFoundry to verify that traces are being generated.
+    3. Log in to your LangSmith dashboard and open the workspace you scoped the key to.
+    4. Open the **Projects** section and confirm that traces from TrueFoundry are appearing. By default they land in the **`default`** project.
+
+    ![LangSmith dashboard showing traces exported from TrueFoundry AI Gateway](/images/2026-04-29_21.09.55.png)
+
+    Click any row to inspect the request, response, latency, and token usage for that LLM call.
+
+    ![Detailed LangSmith trace view for a request routed through TrueFoundry AI Gateway](/images/2026-04-29_21.10.09.png)
+  </Step>
+</Steps>
+
+## Route traces to a specific project
+
+By default, traces land in the **`default`** project of the workspace your API key is scoped to. To send traces to a different project (for example, an existing `truefoundry` project), add a second header alongside `x-api-key` in the TrueFoundry OTEL config:
+
+| Header | Value |
+|--------|-------|
+| `x-api-key` | Your workspace-scoped LangSmith API key |
+| `Langsmith-Project` | The target project name (e.g. `truefoundry`) |
+
+<Note>
+If the project name does not exist yet in the selected workspace, LangSmith creates it on the first ingested trace.
+</Note>
+
+## Configuration reference
+
+LangSmith uses a single endpoint for OTEL trace ingestion:
+
+| Configuration | Value |
+|--------------|-------|
+| Traces endpoint | `https://api.smith.langchain.com/otel/v1/traces` |
+| Protocol | HTTP |
+| Encoding | Proto / JSON |
+
+## Next steps
+
+- [View traces in LangSmith](/langsmith/filter-traces-in-application)
+- [Add custom metadata](/langsmith/ls-metadata-parameters)
+- [Filter and sample traces](/langsmith/sample-traces)
