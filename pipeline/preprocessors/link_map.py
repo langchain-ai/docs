@@ -382,6 +382,7 @@ LINK_MAPS: list[LinkMap] = [
             "AssistantVersion": "langgraph-sdk/schema/AssistantVersion",
             "Thread": "langgraph-sdk/schema/Thread",
             "Run": "langsmith/schemas/Run",
+            "run_type": "langsmith/schemas/RunBase/run_type",
             "Cron": "langgraph-sdk/schema/Cron",
             "Config": "langgraph-cli/schemas/Config",
             "Checkpoint": "langgraph-sdk/schema/Checkpoint",
