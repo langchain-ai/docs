@@ -369,6 +369,10 @@ Once service-provider–initiated SSO is configured, users can sign in using a u
 
 ## Set up SCIM for your organization
 
+<Note>
+Looking for a lighter-weight alternative to SCIM that doesn't require IdP admin involvement to push groups? See [SSO Groups Sync](#sso-groups-sync-alternative) below—it reads group memberships directly from the SSO token at login time and reuses the same naming convention.
+</Note>
+
 System for Cross-domain Identity Management (SCIM) is an open standard that allows for the automation of user provisioning. Using SCIM, you can automatically provision and de-provision users in your LangSmith [organization and workspaces](/langsmith/administration-overview), keeping user access synchronized with your organization's identity provider.
 
 <Note>
@@ -733,3 +737,83 @@ Follow Okta's [Enable Group Push](https://help.okta.com/en-us/content/topics/use
 #### Other identity providers
 
 Other identity providers have not been tested but may function depending on their SCIM implementation.
+
+### SSO Groups Sync (alternative)
+
+<Note>
+SSO Groups Sync is available for organizations on the [Enterprise plan](https://www.langchain.com/pricing-langsmith) with SAML SSO (cloud) or OIDC (self-hosted) configured. [Contact sales](https://www.langchain.com/contact-sales) to learn more.
+</Note>
+
+SSO Groups Sync is a lighter-weight alternative to [SCIM](#set-up-scim-for-your-organization) for organizations that can't or prefer not to configure SCIM group push. Instead of pushing groups from your IdP to LangSmith on a separate sync interval, LangSmith reads group memberships directly from a configurable claim in the SSO token at login time and applies org-level and workspace-level role assignments using the same [naming convention](#group-naming-convention) as SCIM.
+
+This is a well-established pattern used by GitLab (SAML Group Links), Grafana (Team Sync), HashiCorp Vault (`groups_claim`), and Atlassian (JIT group assignment).
+
+#### When to use SSO Groups Sync vs. SCIM
+
+SSO Groups Sync and SCIM can technically coexist (each only manages identities tagged with its own provisioning method), but we recommend choosing **one mechanism per organization** — not both — to avoid confusing precedence behavior.
+
+| | SSO Groups Sync | SCIM |
+| --- | --- | --- |
+| **Sync trigger** | At each SSO login | Proactive push from IdP (~1 hour cadence) |
+| **IdP admin involvement** | Minimal — just include groups in the SSO token | Required — configure SCIM provisioning app |
+| **Deprovisioning** | Lags until next login | Near-real-time via IdP push |
+| **Naming convention** | Reuses [SCIM convention](#group-naming-convention) | [SCIM convention](#group-naming-convention) |
+| **Custom separator** | Reuses org-level [`scim_group_name_separator`](#configure-custom-separator) | [`scim_group_name_separator`](#configure-custom-separator) |
+
+Choose **SSO Groups Sync** when IdP admin involvement is minimal and reactive (login-time) sync is acceptable. Choose **SCIM** when proactive provisioning/deprovisioning and near-real-time group membership updates are required.
+
+#### Configuration
+
+1. In your IdP: add the user's group memberships to the SSO token claim (default claim name: `groups`). Group names must follow the [SCIM naming convention](#group-naming-convention).
+2. In LangSmith: go to **Settings** → **Members and roles** → **SSO Configuration** → **SSO Groups Sync** and configure the following:
+
+   | Setting | Description |
+   | --- | --- |
+   | **Enable SSO Groups Sync** | Automatically assign workspace roles based on group memberships in the SSO token. |
+   | **Groups claim field** (default `groups`) | The claim name in the SSO token that contains group memberships. |
+   | **Sync workspace/role assignments** | Update workspace memberships and roles from group names on each SSO login. |
+   | **Require matching group to sign in** | Block login if the SSO token contains no groups matching the naming convention. |
+
+You can also configure these settings via the API by sending a `PATCH` to the SSO settings endpoint:
+
+```bash
+curl -X PATCH $LANGCHAIN_ENDPOINT/api/v1/orgs/current/sso-settings/$SSO_PROVIDER_ID \
+  -H "X-Api-Key: $LANGCHAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sso_groups_enabled": true,
+    "sso_groups_claim_field": "groups",
+    "sso_groups_role_sync_enabled": true,
+    "sso_groups_required": false
+  }'
+```
+
+<Warning>
+Disabling SSO Groups Sync does not remove existing access. Users provisioned by SSO groups will retain their current access until their next login.
+</Warning>
+
+#### Group naming examples
+
+Group names follow the [SCIM naming convention](#group-naming-convention). The `<workspace_role>` segment accepts both built-in roles and [custom workspace roles](/langsmith/rbac#custom-roles) by name.
+
+| Intent | Example group name |
+| --- | --- |
+| Org admin (grants workspace admin in all workspaces) | `LS:Organization Admins` |
+| Workspace admin in `Production` | `LS:Organization User:Production:Admin` |
+| Workspace editor in `Engineering` | `LS:Organization User:Engineering:Editor` |
+| Workspace viewer in `Marketing` | `LS:Organization User:Marketing:Viewer` |
+| Custom role `Annotators` in `Production` | `LS:Organization User:Production:Annotators` |
+
+#### Behavior
+
+- **Naming convention** — Group names are parsed using the same convention as SCIM (`<optional_prefix>Organization Admin`, `<optional_prefix><org_role><separator><workspace_name><separator><workspace_role>`). The separator is configured per-org via [`scim_group_name_separator`](#configure-custom-separator) and is shared with SCIM.
+- **Malformed group names** — Group names that don't match the convention are skipped silently (logged) and don't block login for valid groups.
+- **Login gate** — When **Require matching group to sign in** is enabled and the SSO token contains zero matching groups, login is blocked with `error=no_matching_groups`.
+- **Precedence** — SCIM-sourced identities are never modified by SSO Groups Sync. Manually assigned and JIT-provisioned memberships are also untouched. SSO Groups Sync is fully authoritative for its own assignments and replaces them on each login based on the token's group membership.
+- **Org admin propagation** — If a user receives an org admin role from their groups, they are granted workspace admin in all workspaces (same as SCIM behavior).
+
+#### Tradeoffs
+
+- **Deprovisioning lag** — Unlike SCIM (proactive push), SSO Groups Sync only updates on login. A user removed from an group in the IdP retains their existing workspace access until their next LangSmith login. The **Require matching group to sign in** gate mitigates this by blocking the user entirely on next login.
+- **No retroactive sync** — Changing role mappings or enabling the feature does not update existing users until they log in again.
+- **Naming convention required** — Customers must name their IdP groups following the SCIM convention. If your IdP groups follow a different naming policy, SCIM with `description`-based mapping (see [Group attributes](#group-attributes)) may be a better fit.
