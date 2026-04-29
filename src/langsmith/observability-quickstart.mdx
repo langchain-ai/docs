@@ -44,6 +44,10 @@ This example uses OpenAI as the LLM provider. You can adapt it for your own prov
     npm install -D typescript tsx
     ```
 
+    ```kotlin Java/Kotlin (Gradle)
+    implementation("com.langchain.smith:langsmith-java:0.1.0-alpha.28")
+    ```
+
     </CodeGroup>
 
 1. Export your environment variables in your shell:
@@ -64,12 +68,12 @@ This example uses OpenAI as the LLM provider. You can adapt it for your own prov
 
 The following app uses two LangSmith tools to add tracing:
 
-- **`wrap_openai`**: wraps the OpenAI client so every LLM call is automatically logged as a nested span.
-- **`@traceable`**: wraps a function so its inputs, outputs, and any nested spans appear as a single trace in LangSmith.
+- **OpenAI wrapper**: wraps the OpenAI client so every LLM call is automatically logged as a nested span.
+- **Traceable wrapper**: wraps a function so its inputs, outputs, and any nested spans appear as a single trace in LangSmith. Use `@traceable` in Python, `traceable` in TypeScript and Kotlin, and `Tracing.traceFunction` in Java.
 
-The `assistant` function calls a tool (`get_context`) to retrieve relevant context, then passes that context to the model. Using `@traceable` on both functions captures the full pipeline in one trace, with the tool call and LLM call as nested spans.
+The `assistant` function calls a tool (`get_context`) to retrieve relevant context, then passes that context to the model. Using the traceable wrapper on both functions captures the full pipeline in one trace, with the tool call and LLM call as nested spans.
 
-Create a file called `app.py` (or `index.ts`) with the following code:
+Create a file called `app.py`, `index.ts`, `App.java`, or `App.kt` with the following code:
 
 <CodeGroup>
 
@@ -139,6 +143,106 @@ const assistant = traceable(async function assistant(question: string) { // capt
 })();
 ```
 
+```java Java
+import com.langchain.smith.tracing.RunType;
+import com.langchain.smith.tracing.TraceConfig;
+import com.langchain.smith.tracing.Tracing;
+import com.langchain.smith.wrappers.openai.OpenAITracing;
+import com.openai.client.OpenAIClient;
+import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.models.ChatModel;
+import com.openai.models.chat.completions.ChatCompletion;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.chat.completions.ChatCompletionMessageParam;
+import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
+import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
+import java.util.function.Function;
+
+public class App {
+    private static final OpenAIClient client = OpenAITracing.wrapOpenAI(OpenAIOkHttpClient.fromEnv());
+
+    private static final Function<String, String> getContext = Tracing.traceFunction(
+        question -> "LangSmith traces are stored for 14 days on the Developer plan.",
+        TraceConfig.builder().name("get_context").runType(RunType.TOOL).build());
+
+    private static final Function<String, String> assistant = Tracing.traceFunction(
+        question -> {
+            String context = getContext.apply(question);
+            ChatCompletion response = client.chat().completions().create(
+                ChatCompletionCreateParams.builder()
+                    .model(ChatModel.GPT_4_1_MINI)
+                    .addMessage(ChatCompletionMessageParam.ofSystem(
+                        ChatCompletionSystemMessageParam.builder()
+                            .content("Answer using the context below.\n\nContext: " + context)
+                            .build()))
+                    .addMessage(ChatCompletionMessageParam.ofUser(
+                        ChatCompletionUserMessageParam.builder()
+                            .content(question)
+                            .build()))
+                    .build());
+            return response.choices().get(0).message().content().orElse("");
+        },
+        TraceConfig.builder().name("assistant").build());
+
+    public static void main(String[] args) {
+        System.out.println(assistant.apply("How long are LangSmith traces stored?"));
+    }
+}
+```
+
+```kotlin Kotlin
+import com.langchain.smith.tracing.RunType
+import com.langchain.smith.tracing.TraceConfig
+import com.langchain.smith.tracing.traceable
+import com.langchain.smith.wrappers.openai.wrapOpenAI
+import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.models.ChatModel
+import com.openai.models.chat.completions.ChatCompletionCreateParams
+import com.openai.models.chat.completions.ChatCompletionMessageParam
+import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
+import com.openai.models.chat.completions.ChatCompletionUserMessageParam
+import kotlin.jvm.optionals.getOrNull
+
+val client = wrapOpenAI(OpenAIOkHttpClient.fromEnv())
+
+val getContext =
+    traceable(
+        { _: String -> "LangSmith traces are stored for 14 days on the Developer plan." },
+        TraceConfig.builder().name("get_context").runType(RunType.TOOL).build(),
+    )
+
+val assistant =
+    traceable(
+        { question: String ->
+            val context = getContext(question)
+            val response =
+                client.chat().completions().create(
+                    ChatCompletionCreateParams.builder()
+                        .model(ChatModel.GPT_4_1_MINI)
+                        .addMessage(
+                            ChatCompletionMessageParam.ofSystem(
+                                ChatCompletionSystemMessageParam.builder()
+                                    .content("Answer using the context below.\n\nContext: $context")
+                                    .build(),
+                            ),
+                        )
+                        .addMessage(
+                            ChatCompletionMessageParam.ofUser(
+                                ChatCompletionUserMessageParam.builder()
+                                    .content(question)
+                                    .build(),
+                            ),
+                        )
+                        .build(),
+                )
+            response.choices()[0].message().content().getOrNull().orEmpty()
+        },
+        TraceConfig.builder().name("assistant").build(),
+    )
+
+println(assistant("How long are LangSmith traces stored?"))
+```
+
 </CodeGroup>
 
 ## 3. Run the app
@@ -151,6 +255,10 @@ python app.py
 
 ```bash TypeScript
 npx tsx index.ts
+```
+
+```bash Java/Kotlin
+./gradlew run
 ```
 
 </CodeGroup>

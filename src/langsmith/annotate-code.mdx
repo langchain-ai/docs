@@ -36,7 +36,7 @@ Before tracing, set the following environment variables:
 
 ## Use `@traceable` / `traceable`
 
-Apply @[`@traceable`] (Python) or [`traceable`](https://reference.langchain.com/javascript/langsmith/traceable) (TypeScript) to any function to make it a traced run. LangSmith handles context propagation across nested calls automatically.
+Apply @[`@traceable`] (Python), [`traceable`](https://reference.langchain.com/javascript/langsmith/traceable) (TypeScript and Kotlin), or `Tracing.traceFunction` (Java) to any function to make it a traced run. LangSmith handles context propagation across nested calls automatically.
 
 The following example traces a simple pipeline: `run_pipeline` calls `format_prompt` to build the messages, `invoke_llm` to call the model, and `parse_output` to extract the result.
 
@@ -129,6 +129,125 @@ const runPipeline = traceable(
 );
 
 await runPipeline();
+```
+
+```java Java
+import com.langchain.smith.tracing.RunType;
+import com.langchain.smith.tracing.TraceConfig;
+import com.langchain.smith.tracing.Tracing;
+import com.openai.client.OpenAIClient;
+import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.models.ChatModel;
+import com.openai.models.chat.completions.ChatCompletion;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.chat.completions.ChatCompletionMessageParam;
+import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
+import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.Function;
+
+public class TraceablePipeline {
+    private static final OpenAIClient openai = OpenAIOkHttpClient.fromEnv();
+
+    private static final Function<String, List<ChatCompletionMessageParam>> formatPrompt =
+        Tracing.traceFunction(
+            subject -> Arrays.asList(
+                ChatCompletionMessageParam.ofSystem(
+                    ChatCompletionSystemMessageParam.builder()
+                        .content("You are a helpful assistant.")
+                        .build()),
+                ChatCompletionMessageParam.ofUser(
+                    ChatCompletionUserMessageParam.builder()
+                        .content("What's a good name for a store that sells " + subject + "?")
+                        .build())),
+            TraceConfig.builder().name("format_prompt").build());
+
+    private static final Function<List<ChatCompletionMessageParam>, ChatCompletion> invokeLlm =
+        Tracing.traceFunction(
+            messages -> openai.chat().completions().create(
+                ChatCompletionCreateParams.builder()
+                    .model(ChatModel.GPT_4_1_MINI)
+                    .messages(messages)
+                    .temperature(0.0)
+                    .build()),
+            TraceConfig.builder().name("invoke_llm").runType(RunType.LLM).build());
+
+    private static final Function<ChatCompletion, String> parseOutput = Tracing.traceFunction(
+        response -> response.choices().get(0).message().content().orElse(""),
+        TraceConfig.builder().name("parse_output").build());
+
+    private static final Function<String, String> runPipeline = Tracing.traceFunction(
+        subject -> parseOutput.apply(invokeLlm.apply(formatPrompt.apply(subject))),
+        TraceConfig.builder().name("run_pipeline").build());
+
+    public static void main(String[] args) {
+        runPipeline.apply("colorful socks");
+    }
+}
+```
+
+```kotlin Kotlin
+import com.langchain.smith.tracing.RunType
+import com.langchain.smith.tracing.TraceConfig
+import com.langchain.smith.tracing.traceable
+import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.models.ChatModel
+import com.openai.models.chat.completions.ChatCompletion
+import com.openai.models.chat.completions.ChatCompletionCreateParams
+import com.openai.models.chat.completions.ChatCompletionMessageParam
+import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
+import com.openai.models.chat.completions.ChatCompletionUserMessageParam
+import kotlin.jvm.optionals.getOrNull
+
+val openai = OpenAIOkHttpClient.fromEnv()
+
+val formatPrompt =
+    traceable(
+        { subject: String ->
+            listOf(
+                ChatCompletionMessageParam.ofSystem(
+                    ChatCompletionSystemMessageParam.builder()
+                        .content("You are a helpful assistant.")
+                        .build(),
+                ),
+                ChatCompletionMessageParam.ofUser(
+                    ChatCompletionUserMessageParam.builder()
+                        .content("What's a good name for a store that sells $subject?")
+                        .build(),
+                ),
+            )
+        },
+        TraceConfig.builder().name("format_prompt").build(),
+    )
+
+val invokeLlm =
+    traceable(
+        { messages: List<ChatCompletionMessageParam> ->
+            openai.chat().completions().create(
+                ChatCompletionCreateParams.builder()
+                    .model(ChatModel.GPT_4_1_MINI)
+                    .messages(messages)
+                    .temperature(0.0)
+                    .build(),
+            )
+        },
+        TraceConfig.builder().name("invoke_llm").runType(RunType.LLM).build(),
+    )
+
+val parseOutput =
+    traceable(
+        { response: ChatCompletion -> response.choices()[0].message().content().getOrNull().orEmpty() },
+        TraceConfig.builder().name("parse_output").build(),
+    )
+
+val runPipeline =
+    traceable(
+        { subject: String -> parseOutput(invokeLlm(formatPrompt(subject))) },
+        TraceConfig.builder().name("run_pipeline").build(),
+    )
+
+runPipeline("colorful socks")
 ```
 
 </CodeGroup>
