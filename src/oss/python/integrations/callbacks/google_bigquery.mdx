@@ -422,15 +422,24 @@ The `content_parts` column provides a structured view of the content, especially
   - If `gcs_bucket_name` is configured, large content is offloaded to GCS instead of being truncated, and a reference is stored in `content_parts.object_ref`.
 </Note>
 
+<Note>
+  **`content` always carries a `summary` key**
+
+  Every event row's `content` JSON object includes a `summary` string with
+  a human-readable preview of the payload (capped at `max_content_length`).
+  The `summary` is omitted from the per-event tables below to keep the
+  shapes readable, but it is always present on disk.
+</Note>
+
 ### LLM interactions
 
 These events track the raw requests sent to and responses received from the LLM.
 
-| Event Type | Content (JSON) Structure | Attributes (JSON) | Example Content (Simplified) |
-|---|---|---|---|
-| `LLM_REQUEST` | **Chat Model:** `{"messages": [{"content": "..."}]}` **Legacy Model:** `{"prompts": ["..."]}` | `{"tags": ["..."], "model": "...", "llm_config": {"temperature": 0.2, ...}, "tools": ["get_weather", ...]}` | `{"messages": [{"content": "What is the weather?"}]}` |
-| `LLM_RESPONSE` | `"The weather is sunny."` (stored as JSON string) | `{"usage": {"prompt_tokens": 100, "completion_tokens": 25, "total_tokens": 125}, "model_version": "gemini-2.5-flash-001", "usage_metadata": {"cached_content_token_count": 30, ...}, "cache_metadata": {...}}` | `"The weather is sunny."` |
-| `LLM_ERROR` | `null` | `{}` | `null` |
+| Event Type | Content (JSON) Structure | Attributes (JSON) |
+|---|---|---|
+| `LLM_REQUEST` | **Chat Model:** `{"messages": [<dumped messages>]}`<br/>**Legacy Model:** `{"prompt": [<prompts>]}` | `{"tags": ["..."], "model": "...", "llm_config": {"temperature": 0.2, ...}, "tools": ["get_weather", ...]}` |
+| `LLM_RESPONSE` | `{"response": "<generation text>", "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}}` (the `usage` sub-key is present when the underlying provider populates it) | `{"usage": {...}, "model_version": "gemini-2.5-flash-001", "usage_metadata": {"cached_content_token_count": 30, ...}, "cache_metadata": {...}}` |
+| `LLM_ERROR` | `{"data": null}` (the actual exception text lives in the `error_message` column) | `{}` |
 
 ### Sub-agent (LangGraph node) and invocation lifecycle
 
@@ -449,21 +458,23 @@ These events track the execution of tools by the agent. The tool name is
 also surfaced in `attributes.tool_name` and (for the auto-views) as a
 typed `tool_name` column.
 
-| Event Type | Content (JSON) Structure | Example |
-|---|---|---|
-| `TOOL_STARTING` | `{"tool": "<name>", "input": "<input string>"}` | `{"tool": "get_weather", "input": "city='Paris'"}` |
-| `TOOL_COMPLETED` | `{"tool": "<name>", "result": "<output string>"}` | `{"tool": "get_weather", "result": "25°C, Sunny"}` |
-| `TOOL_ERROR` | `null` (see `error_message` column) | — |
+| Event Type | Content (JSON) Structure |
+|---|---|
+| `TOOL_STARTING` | `{"tool": "<name>", "input": "<input string>"}` — e.g. `{"tool": "get_weather", "input": "city='Paris'"}` |
+| `TOOL_COMPLETED` | `{"tool": "<name>", "result": "<output string>"}` — e.g. `{"tool": "get_weather", "result": "25°C, Sunny"}` |
+| `TOOL_ERROR` | `{"data": null}` (the actual exception text lives in the `error_message` column) |
 
-### Chain Execution
+### Chain execution
 
-These events track the start and end of high-level chains/graphs.
+These events fire for non-graph LangChain `Runnable` lifecycles (graph
+invocations and LangGraph nodes use the `INVOCATION_*` / `AGENT_*` events
+listed above instead).
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `CHAIN_START` | `{"messages": [...]}` |
-| `CHAIN_END` | `{"output": "..."}` |
-| `CHAIN_ERROR` | `null` (See `error_message` column) |
+| `CHAIN_START` | `{"data": "<JSON-stringified inputs>"}` |
+| `CHAIN_END`  | `{"data": "<JSON-stringified outputs>"}` |
+| `CHAIN_ERROR` | `{"data": null}` (see `error_message` column) |
 
 ### Retriever usage
 
@@ -471,24 +482,26 @@ These events track the execution of retrievers.
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `RETRIEVER_START` | **Query String:** `"What is the capital of France?"` |
-| `RETRIEVER_END` | **Documents List:** `[{"page_content": "Paris is the capital...", "metadata": {"source": "wiki"}}]` |
+| `RETRIEVER_START` | `{"data": "<query string>"}` — e.g. `{"data": "What is the capital of France?"}` |
+| `RETRIEVER_END`   | `{"data": "<JSON-stringified list of documents>"}` |
 | `RETRIEVER_ERROR` | `null` (See `error_message` column) |
 
 ### Agent Actions
 
-These events track specific actions taken by the agent.
+These events come from legacy LangChain `AgentExecutor`-style agents
+(`on_agent_action` / `on_agent_finish`). The `data` field contains a
+JSON-serialized string of the action / finish payload.
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `AGENT_ACTION` | `{"tool": "Calculator", "input": "2 + 2"}` |
-| `AGENT_FINISH` | `{"output": "The answer is 4"}` |
+| `AGENT_ACTION` | `{"data": "{\"tool\": \"Calculator\", \"input\": \"2 + 2\"}"}` |
+| `AGENT_FINISH` | `{"data": "{\"output\": \"The answer is 4\"}"}` |
 
 ### Other Events
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `TEXT` | **Arbitrary Text:** `"Some logging text..."` |
+| `TEXT` | `{"data": "<text>"}` — e.g. `{"data": "Some logging text..."}` |
 
 ## Advanced analysis queries
 
