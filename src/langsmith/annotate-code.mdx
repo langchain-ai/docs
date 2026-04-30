@@ -4,11 +4,16 @@ sidebarTitle: Customize instrumentation
 description: Instrument your code directly to control which functions are traced and how they appear in LangSmith.
 ---
 
-Adding instrumentation directly to your code gives you precise control over which functions your application traces, what inputs and outputs are logged, and how your [trace](/langsmith/observability-concepts#traces) hierarchy is structured. This page covers three approaches:
+Adding [instrumentation](/langsmith/observability-concepts#manual-instrumentation) directly to your code gives you precise control over which functions your application traces, what inputs and outputs are logged, and how your [trace](/langsmith/observability-concepts#traces) hierarchy is structured. The three core instrumentation approaches are:
 
 - [`@traceable` decorator](#use-%40traceable-%2F-traceable): recommended for most cases
 - [`trace` context manager](#use-the-trace-context-manager-python-only): Python only
 - [`RunTree` API](#use-the-runtree-api): explicit, low-level control
+
+This page also covers:
+
+- [Specifying a custom run ID](#specify-a-custom-run-id), which is useful for attaching feedback immediately after a run or correlating with external systems.
+- [Ensuring all traces are submitted](#ensure-all-traces-are-submitted-before-exiting) before your process exits.
 
 For LangChain (Python or JS/TS), refer to the [LangChain-specific instructions](/langsmith/trace-with-langchain).
 
@@ -21,12 +26,13 @@ If you're using an LLM provider or agent framework with a built-in LangSmith int
 Before tracing, set the following environment variables:
 
 - `LANGSMITH_TRACING=true`: enables tracing. Set this to toggle tracing on and off without changing your code.
+
+    <Note>
+    `LANGSMITH_TRACING` controls the `@traceable` decorator and the `trace` context manager. To override this at runtime for `@traceable` without changing environment variables, use [`tracing_context(enabled=True/False)`](#use-the-trace-context-manager-python-only) (Python) or pass `tracingEnabled` directly to `traceable` (JS/TS). [`RunTree` objects](#use-the-runtree-api) are not affected by any of these controls; they always send data to LangSmith when posted.
+    </Note>
+
 - `LANGSMITH_API_KEY`: your [LangSmith API key](/langsmith/create-account-api-key).
 - By default, LangSmith logs traces to a project named `default`. To log to a different project, set `LANGSMITH_PROJECT`. For more details, refer to [Log traces to a specific project](/langsmith/log-traces-to-project).
-
-<Note>
-`LANGSMITH_TRACING` controls the `@traceable` decorator and the `trace` context manager. To override this at runtime for `@traceable` without changing environment variables, use `tracing_context(enabled=True/False)` (Python) or pass `tracingEnabled` directly to `traceable` (JS/TS). `RunTree` objects are not affected by any of these controls; they always send data to LangSmith when posted.
-</Note>
 
 ## Use `@traceable` / `traceable`
 
@@ -277,7 +283,7 @@ You can extend the utilities explained in the previous section to trace any code
 
 Trace any public method in a class:
 
-```python
+```python expandable
 from typing import Any, Callable, Type, TypeVar
 
 T = TypeVar("T")
@@ -324,52 +330,121 @@ class MyClass:
 MyClass(13).combine(29)
 ```
 
+## Specify a custom run ID
+
+By default, LangSmith assigns a random ID to each run. You can override this when you need to know the run ID ahead of time (for example, to attach [feedback](/langsmith/attach-user-feedback) immediately after a run), correlate LangSmith runs with IDs from an external system, or make runs idempotent using a deterministic ID.
+
+<Note>
+Use **UUID v7** for custom run IDs. UUIDv7 embeds a timestamp, which preserves correct time-ordering of runs in a trace. The LangSmith SDK exports a `uuid7` helper (Python v0.4.43+, JS v0.3.80+):
+
+- **Python**: `from langsmith import uuid7`
+- **JS/TS**: `import { uuid7 } from 'langsmith'`
+
+Any UUID v7 string is accepted — you can use the SDK helper or your own if your system already uses UUID v7 identifiers.
+</Note>
+
+Use one of the following:
+
+- `@traceable`: pass `run_id` inside `langsmith_extra` when calling a `@traceable` function (Python), or pass `id` in the config object passed to `traceable` (TypeScript):
+
+    <CodeGroup>
+
+    ```python Python
+    from langsmith import traceable, uuid7
+
+    @traceable
+    def my_pipeline(question: str) -> str:
+        return "answer"
+
+    run_id = uuid7()
+    my_pipeline("What is the capital of France?", langsmith_extra={"run_id": run_id})
+
+    # run_id can now be used to attach feedback, query the run, etc.
+    ```
+
+    ```typescript TypeScript
+    import { traceable } from "langsmith/traceable";
+    import { uuid7 } from "langsmith";
+
+    const runId = uuid7();
+
+    const myPipeline = traceable(
+    async (question: string) => {
+        return "answer";
+    },
+    { name: "my-pipeline", id: runId }
+    );
+
+    await myPipeline("What is the capital of France?");
+
+    // runId can now be used to attach feedback, query the run, etc.
+    ```
+
+    </CodeGroup>
+
+- `trace` context manager (Python only): Pass `run_id` directly to the @[trace] context manager constructor:
+
+    ```python Python
+    from langsmith import trace, uuid7
+
+    run_id = uuid7()
+
+    with trace("my-pipeline", run_id=run_id) as run:
+        result = "answer"
+        run.end(outputs={"result": result})
+
+    # run_id can now be used to attach feedback, query the run, etc.
+    ```
+
 ## Ensure all traces are submitted before exiting
 
-LangSmith performs tracing in a background thread to avoid obstructing your production application. This means that your process may end before all traces are successfully posted to LangSmith. Here are some options for ensuring all traces are submitted before exiting your application.
+LangSmith performs tracing in a background thread to avoid obstructing your production application. This means that your process may end before all traces are successfully posted to LangSmith. Refer to the following options:
 
-### Use the LangSmith SDK
+- If you are using LangChain, refer to the [LangChain tracing guide](/langsmith/trace-with-langchain#ensure-all-traces-are-submitted-before-exiting).
+- If you are using the [LangSmith SDK](/langsmith/reference) standalone, you can use the `flush` method before exit:
 
-If you are using the LangSmith SDK standalone, you can use the `flush` method before exit:
+    <CodeGroup>
 
-<CodeGroup>
+    ```python Python
+    from langsmith import Client
 
-```python Python
-from langsmith import Client
+    client = Client()
 
-client = Client()
+    @traceable(client=client)
+    async def my_traced_func():
+    # Your code here...
+    pass
 
-@traceable(client=client)
-async def my_traced_func():
-  # Your code here...
-  pass
+    try:
+    await my_traced_func()
+    finally:
+    await client.flush()
+    ```
 
-try:
-  await my_traced_func()
-finally:
-  await client.flush()
-```
+    ```typescript TypeScript
+    import { Client } from "langsmith";
 
-```typescript TypeScript
-import { Client } from "langsmith";
+    const langsmithClient = new Client({});
 
-const langsmithClient = new Client({});
+    const myTracedFunc = traceable(async () => {
+    // Your code here...
+    },{ client: langsmithClient });
 
-const myTracedFunc = traceable(async () => {
-  // Your code here...
-},{ client: langsmithClient });
+    try {
+    await myTracedFunc();
+    } finally {
+    await langsmithClient.flush();
+    }
+    ```
 
-try {
-  await myTracedFunc();
-} finally {
-  await langsmithClient.flush();
-}
-```
+    </CodeGroup>
 
-</CodeGroup>
+## Related
 
-### Use LangChain
-
-If you are using LangChain, refer to the [LangChain tracing guide](/langsmith/trace-with-langchain#ensure-all-traces-are-submitted-before-exiting).
-
-If you prefer a video tutorial, check out the [Tracing Basics video](https://academy.langchain.com/pages/intro-to-langsmith-preview) from the Introduction to LangSmith Course.
+- [Observability concepts](/langsmith/observability-concepts): background on runs, traces, and the LangSmith data model
+- [Run (span) data format](/langsmith/run-data-format): schema reference for run fields including `dotted_order`, `trace_id`, and `parent_run_id`
+- [Log user feedback using the SDK](/langsmith/attach-user-feedback): common use case for pre-specifying a run ID
+- [Access the current run (span) within a traced function](/langsmith/access-current-span): read or modify the active run from inside a trace
+- [Log traces to a specific project](/langsmith/log-traces-to-project): route traces to a named project instead of `default`
+- [Trace with API](/langsmith/trace-with-api): low-level REST API alternative to the SDK
+- [Tracing Basics video](https://academy.langchain.com/pages/intro-to-langsmith-preview) from the Introduction to LangSmith Course

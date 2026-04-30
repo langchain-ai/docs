@@ -5,6 +5,7 @@ description: Take your deep agent to production with persistent memory, sandboxe
 
 This guide covers considerations for taking a deep agent from a local prototype to a production deployment. It walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend.
 
+
 ## Overview
 
 Agents use information from memory and their execution environment to accomplish tasks.
@@ -23,6 +24,8 @@ This page covers:
 - **[Frontend](#frontend)**: connect your UI to a deployed agent
 
 ## LangSmith Deployments
+
+![`deepagents deploy` packages your agent configuration—memory, sandbox, skills, MCP servers—and ships it to a LangSmith Deployment](/oss/images/deepagents/production/deepagents-deploy-config.png)
 
 The fastest way to get a deep agent into production is [`deepagents deploy`](/oss/deepagents/deploy), which packages your agent configuration and deploys it as a LangSmith Deployment with one command. Alternatively, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
 
@@ -69,6 +72,8 @@ For the full set of configuration options (custom Docker steps, store indexing, 
 ### Multi-tenancy
 
 When your agent serves multiple users, you need to handle three concerns: verifying who each user is, controlling what they can access, and managing the credentials the agent uses to act on their behalf.
+
+![Three authentication layers compose: end-user auth, agent-acting-as-user auth, and team RBAC](/oss/images/deepagents/production/auth-layers.png)
 
 #### User identity and access control
 
@@ -159,6 +164,8 @@ When building for production:
 
 Deep Agents run on LangGraph, which provides [durable execution](/oss/langgraph/durable-execution) out of the box. The [persistence](/oss/langgraph/persistence) layer checkpoints state at each step, so a run interrupted by a failure, timeout, or [human-in-the-loop](/oss/langgraph/interrupts) pause resumes from its last recorded state without reprocessing previous steps. For long-running deep agents that spawn many subagents, this means a mid-run failure doesn't lose completed work.
 
+![Durable execution: when a worker crashes mid-run, another worker picks the run up from the latest checkpoint](/oss/images/deepagents/production/durable-execution.png)
+
 Checkpointing also enables:
 
 - **Indefinite [interrupts](/oss/langgraph/interrupts).** Human-in-the-loop workflows can pause for minutes or days and resume exactly where they left off.
@@ -172,6 +179,8 @@ Checkpointing also enables:
 ## Memory
 
 Without memory, every conversation starts from scratch. Memory lets your agent retain information across conversations (user preferences, learned instructions, past experiences) so it can personalize its behavior over time. For an overview of memory types, see the [memory concepts guide](/oss/concepts/memory).
+
+![Short-term memory is scoped to a single thread via checkpoints; long-term memory persists across threads via the store](/oss/images/deepagents/production/memory.png)
 
 ### Scoping
 
@@ -850,6 +859,8 @@ Sandboxes are isolated containers, so environment variables from your host aren'
 
 **Auth proxy (recommended).** The [sandbox auth proxy](/langsmith/sandbox-auth-proxy) intercepts outbound requests from the sandbox and injects authentication headers automatically. Sandbox code calls external APIs normally, and the proxy adds the correct credentials based on the destination host. This means API keys never appear in sandbox code, environment variables, or logs.
 
+![The sandbox auth proxy injects credentials into outbound requests so secrets never enter the sandbox](/oss/images/deepagents/production/sandbox-auth-proxy.png)
+
 ```json
 {
   "proxy_config": {
@@ -887,6 +898,8 @@ Agents in production run autonomously, which means they can loop indefinitely, h
 
 - **[Permissions](/oss/deepagents/permissions)**: declarative allow/deny rules that control which files and directories the agent can read or write. Use permissions to isolate the agent to a working directory, protect sensitive files, or enforce read-only memory.
 - **[Middleware](/oss/langchain/middleware/built-in)**: hooks that wrap model and tool calls for rate limiting, error handling, and data privacy.
+
+![Middleware hooks—before_model, wrap_model_call, wrap_tool_call, after_model—wrap the agent loop so policies run deterministically around every relevant step](/oss/images/deepagents/production/middleware-lifecycle.png)
 
 ### Rate limiting
 

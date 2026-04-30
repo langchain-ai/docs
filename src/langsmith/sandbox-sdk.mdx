@@ -38,6 +38,8 @@ npm install ws
 
 ## Create and run a sandbox
 
+Every sandbox boots from a **snapshot** — a filesystem image backed by a Docker image. Pick an existing snapshot or create a new one (see [Snapshots](/langsmith/sandbox-snapshots) for the full build / capture / CRUD flow); every example below uses a `snapshot_id` / `snapshotId` you already have.
+
 <CodeGroup>
 
 ```python Python
@@ -46,14 +48,11 @@ from langsmith.sandbox import SandboxClient
 # Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 client = SandboxClient()
 
-# Create a template (defines the container image)
-client.create_template(
-    name="python-sandbox",
-    image="python:3.12-slim",
-)
+# Pick an existing snapshot, or build one with client.create_snapshot(...)
+snapshot_id = "550e8400-e29b-41d4-a716-446655440000"
 
-# Create a sandbox from the template and run code
-with client.sandbox(template_name="python-sandbox") as sb:
+# Create a sandbox from the snapshot and run code
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     result = sb.run("python -c 'print(2 + 2)'")
     print(result.stdout)  # "4\n"
     print(result.success)  # True
@@ -65,13 +64,11 @@ import { SandboxClient } from "langsmith/experimental/sandbox";
 // Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 const client = new SandboxClient();
 
-// Create a template (defines the container image)
-await client.createTemplate("node-sandbox", {
-  image: "node:20-slim",
-});
+// Pick an existing snapshot, or build one with client.createSnapshot(...)
+const snapshotId = "550e8400-e29b-41d4-a716-446655440000";
 
-// Create a sandbox from the template and run code
-const sandbox = await client.createSandbox("node-sandbox");
+// Create a sandbox from the snapshot and run code
+const sandbox = await client.createSandbox(snapshotId);
 const result = await sandbox.run("node -e 'console.log(2 + 2)'");
 console.log(result.stdout); // "4\n"
 
@@ -88,7 +85,7 @@ Every `run()` call returns an `ExecutionResult` with `stdout`, `stderr`, `exit_c
 <CodeGroup>
 
 ```python Python
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     result = sb.run("echo 'Hello, World!'")
 
     print(result.stdout)     # "Hello, World!\n"
@@ -103,7 +100,7 @@ with client.sandbox(template_name="my-sandbox") as sb:
 ```
 
 ```ts TypeScript
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshotId);
 try {
   const result = await sandbox.run("echo 'Hello, World!'");
 
@@ -134,7 +131,7 @@ For long-running commands, stream output in real time using callbacks or a `Comm
 ```python Python
 import sys
 
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     result = sb.run(
         "make build",
         timeout=600,
@@ -162,7 +159,7 @@ Set `wait=False` to get a `CommandHandle` for full control over the output strea
 <CodeGroup>
 
 ```python Python
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle = sb.run("make build", timeout=600, wait=False)
 
     print(f"Command ID: {handle.command_id}")
@@ -203,7 +200,7 @@ console.log(`Exit code: ${result.exit_code}`);
 <CodeGroup>
 
 ```python Python
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle = sb.run(
         "python -c 'name = input(\"Name: \"); print(f\"Hello {name}\")'",
         timeout=30,
@@ -237,7 +234,7 @@ Kill a running command:
 <CodeGroup>
 
 ```python Python
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle = sb.run("python server.py", timeout=0, wait=False)
 
     for chunk in handle:
@@ -265,7 +262,7 @@ If a client disconnects, reconnect using the command ID:
 <CodeGroup>
 
 ```python Python
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     handle = sb.run("make build", timeout=600, wait=False)
     command_id = handle.command_id
 
@@ -296,7 +293,7 @@ Read and write files in the sandbox:
 <CodeGroup>
 
 ```python Python
-with client.sandbox(template_name="my-python") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     # Write a file
     sb.write("/app/script.py", "print('Hello from file!')")
 
@@ -313,7 +310,7 @@ with client.sandbox(template_name="my-python") as sb:
 ```
 
 ```ts TypeScript
-const sandbox = await client.createSandbox("my-python");
+const sandbox = await client.createSandbox(snapshotId);
 try {
   // Write a file (string content)
   await sandbox.write("/app/script.py", "print('Hello from file!')");
@@ -347,7 +344,7 @@ The sandbox daemon manages command session lifecycles with two timeout mechanism
 <CodeGroup>
 
 ```python Python
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     # Long-running task: 30-min idle timeout, 1-hour session TTL
     handle = sb.run(
         "python train.py",
@@ -368,7 +365,7 @@ with client.sandbox(template_name="my-sandbox") as sb:
 ```
 
 ```ts TypeScript
-const sandbox = await client.createSandbox("my-sandbox");
+const sandbox = await client.createSandbox(snapshotId);
 try {
   // Long-running task: 30-min idle timeout, 1-hour session TTL
   const handle = await sandbox.run("python train.py", {
@@ -399,7 +396,7 @@ Set `kill_on_disconnect=True` (Python) or `killOnDisconnect: true` (TypeScript) 
 Access an HTTP service running inside a sandbox via an authenticated URL. You can open it in a browser, call it from code, or share it with a teammate.
 
 ```python
-with client.sandbox(template_name="my-sandbox") as sb:
+with client.sandbox(snapshot_id=snapshot_id) as sb:
     sb.run("python -m http.server 8000", timeout=0, wait=False)
 
     svc = sb.service(port=8000)
@@ -421,8 +418,8 @@ Access any TCP service running inside a sandbox as if it were local. The tunnel 
 ```python
 import psycopg2
 
-# Template uses the official postgres:16 image
-sb = client.create_sandbox(template_name="my-postgres")
+# Snapshot built from the official postgres:16 image
+sb = client.create_sandbox(snapshot_id=postgres_snapshot_id)
 pg_handle = sb.run(
     "POSTGRES_HOST_AUTH_METHOD=trust docker-entrypoint.sh postgres",
     timeout=0,
@@ -464,9 +461,7 @@ from langsmith.sandbox import AsyncSandboxClient
 
 async def main():
     async with AsyncSandboxClient() as client:
-        await client.create_template(name="async-python", image="python:3.12-slim")
-
-        async with await client.sandbox(template_name="async-python") as sb:
+        async with await client.sandbox(snapshot_id=snapshot_id) as sb:
             result = await sb.run("python -c 'print(1 + 1)'")
             print(result.stdout)  # "2\n"
 
@@ -505,7 +500,7 @@ tracing_env = {
     "LANGSMITH_PROJECT": "my-sandbox-traces",
 }
 
-with client.sandbox(template_name="my-template") as sandbox:
+with client.sandbox(snapshot_id=snapshot_id) as sandbox:
     sandbox.run("pip install langsmith", timeout=120, env=tracing_env)
     result = sandbox.run("python3 my_agent.py", env=tracing_env)
     print(result.stdout)
@@ -523,7 +518,7 @@ const tracingEnv = {
   LANGSMITH_PROJECT: "my-sandbox-traces",
 };
 
-const sandbox = await client.createSandbox("my-template");
+const sandbox = await client.createSandbox(snapshotId);
 try {
   await sandbox.run("pip install langsmith", { timeout: 120, env: tracingEnv });
   const result = await sandbox.run("python3 my_agent.py", { env: tracingEnv });
@@ -560,7 +555,7 @@ from langsmith.sandbox import (
 )
 
 try:
-    with client.sandbox(template_name="my-sandbox") as sb:
+    with client.sandbox(snapshot_id=snapshot_id) as sb:
         result = sb.run("sleep 999", timeout=10)
 except CommandTimeoutError as e:
     print(f"Command timed out: {e}")
@@ -581,7 +576,7 @@ import {
 } from "langsmith/experimental/sandbox";
 
 try {
-  const sandbox = await client.createSandbox("nonexistent");
+  const sandbox = await client.createSandbox("not-a-real-snapshot");
   await sandbox.delete();
 } catch (e) {
   if (e instanceof LangSmithResourceNotFoundError) {

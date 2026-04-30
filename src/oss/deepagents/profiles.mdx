@@ -1,0 +1,220 @@
+---
+title: Profiles
+description: Package per-provider and per-model defaults that Deep Agents applies when a model is selected
+---
+
+<Note>
+    Harness and provider profiles are Python-only and require `deepagents>=0.5.4`. They are public beta APIs and may be updated in future releases.
+</Note>
+
+**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `create_deep_agent` call site. Use `HarnessProfile` when building profiles in Python; use `HarnessProfileConfig` when [loading or saving YAML/JSON files](#load-profiles-from-config-files). Deep Agents ships built-in harness profiles for OpenAI and Anthropic (Claude) models.
+
+**Provider profiles** are a narrower companion API for *model-construction* kwargs, which don't affect the harness. Most callers don't need them; reach for one when you want `init_chat_model` defaults, credential checks, or runtime-derived kwargs as defaults with your provider choice (for example, when packaging a provider integration).
+
+## Harness profiles
+
+A `HarnessProfile` describes prompt-assembly, tool-visibility, middleware, and default-subagent adjustments that `create_deep_agent` applies after the chat model has been constructed:
+
+```python
+from deepagents import (
+    GeneralPurposeSubagentProfile,
+    HarnessProfile,
+    register_harness_profile,
+)
+
+register_harness_profile(
+    "openai:gpt-5.4",
+    HarnessProfile(
+        system_prompt_suffix="Respond in under 100 words.",
+        excluded_tools={"execute"},
+        excluded_middleware={"SummarizationMiddleware"},
+        general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
+    ),
+)
+```
+
+<ResponseField name="base_system_prompt" type="string">
+    Replace the base Deep Agents system prompt (`CUSTOM` in [Prompt assembly](/oss/deepagents/customization#prompt-assembly)).
+</ResponseField>
+
+<ResponseField name="system_prompt_suffix" type="string">
+    Append text to the assembled base prompt (`SUFFIX` in [Prompt assembly](/oss/deepagents/customization#prompt-assembly)); applied to the main agent, declarative subagents, and the auto-added general-purpose subagent.
+</ResponseField>
+
+<ResponseField name="tool_description_overrides" type="Mapping[str, str]">
+    Override individual tool descriptions, keyed by tool name.
+</ResponseField>
+
+<ResponseField name="excluded_tools" type="frozenset[str]">
+    Remove specific harness-level tools from the tool set.
+</ResponseField>
+
+<ResponseField name="excluded_middleware" type="frozenset[type[AgentMiddleware] | str]">
+    Strip specific middleware classes from the stack. Accepts middleware classes or string names.
+</ResponseField>
+
+<ResponseField name="extra_middleware" type="Sequence[AgentMiddleware] | Callable[[], Sequence[AgentMiddleware]]">
+    Append middleware to every stack this profile applies to.
+</ResponseField>
+
+<ResponseField name="general_purpose_subagent" type="GeneralPurposeSubagentProfile">
+    Disable, rename, or re-prompt the general-purpose subagent. When this field's `system_prompt` is set alongside `base_system_prompt`, the general-purpose-specific subagent prompt wins—see [General-purpose subagent prompt](/oss/deepagents/customization#general-purpose-subagent-prompt).
+</ResponseField>
+
+<Note>
+    Caller-supplied `system_prompt=` always sits at the front of the assembled prompt, and `system_prompt_suffix` always sits at the end—regardless of which model is selected. The same overlay rules apply to subagents: each subagent re-runs profile resolution against its own model. See [Prompt assembly](/oss/deepagents/customization#prompt-assembly) for the full per-case breakdown (main agent, subagents, and the general-purpose subagent).
+</Note>
+
+<Warning>
+    `excluded_middleware` cannot remove scaffolding Deep Agents relies on. Listing `FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission middleware raises a `ValueError`.
+</Warning>
+
+Entries in `excluded_middleware` accept two forms:
+
+- A middleware *class* (matched by exact type), or a plain string that matches `AgentMiddleware.name`. Use plain strings for built-ins and public aliases such as `"SummarizationMiddleware"`.
+- An `module:Class` import ref (for example, `"my_pkg.middleware:TelemetryMiddleware"`) to target an exact middleware class from a config file. Import refs resolve lazily, so use them only for trusted local configuration — loading one imports Python code.
+
+<Accordion
+    title="Lookup order for preconfigured model instances"
+>
+    When you pass a preconfigured chat model instance instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order:
+
+    1. Exact `provider:identifier` match
+    2. Identifier-only (only when the identifier already contains `:`)
+    3. Provider-only fallback
+</Accordion>
+
+
+## Registration keys
+
+Both profile types use the same key format:
+
+- **Provider-level** — a bare provider name like `"openai"` applies to every model from that provider.
+- **Model-level** — a fully qualified `provider:model` key like `"openai:gpt-5.4"` applies only to that specific model.
+
+When both a provider-level and a model-level profile exist, they are merged at resolution time. Unset model-level fields inherit from the provider-level profile; explicit model-level values override them.
+
+Re-registering under an existing key merges the new profile on top of the prior one—it does not replace it. See [Merge semantics](#merge-semantics) for the per-field rules.
+
+<Note>
+    There is no wildcard key that matches every provider. To apply the same overrides everywhere—say, dropping `TodoListMiddleware` regardless of which model is selected—register the profile under each provider key you use. Profiles are intended for adjustments that depend on the model being selected. Global adjustments that should apply regardless of model should be made on the `create_deep_agent` call site.
+</Note>
+
+## Merge semantics
+
+| Field | Merge behavior |
+| --- | --- |
+| `base_system_prompt`, `system_prompt_suffix` | New value wins when set; otherwise inherits |
+| `tool_description_overrides` | Mappings merge per key; new value wins on a shared key |
+| `excluded_tools`, `excluded_middleware` | Set union |
+| `extra_middleware` | Merged by concrete class: new instance replaces existing at its position, novel classes append |
+| `general_purpose_subagent` | Merged field-wise (unset fields inherit) |
+| `init_kwargs` (provider) | Dicts merge key-wise; new value wins on a shared key |
+| `pre_init` (provider) | Callables chain: existing runs first, then the new one |
+| `init_kwargs_factory` (provider) | Factories chain with their outputs merged every `resolve_model` call |
+
+## Provider profiles
+
+A `ProviderProfile` declares how Deep Agents should construct a chat model for a given provider or specific model spec. It applies only when you provide a `provider:model` string when creating the deep agent, not when you pass a preconfigured model with @[`init_chat_model`]:
+
+```python
+from deepagents import ProviderProfile, register_provider_profile
+
+register_provider_profile(
+    "openai",
+    ProviderProfile(init_kwargs={"temperature": 0}),
+)
+```
+
+<ResponseField name="init_kwargs" type="Mapping[str, Any]">
+    Static initialization arguments forwarded to `init_chat_model`.
+</ResponseField>
+
+<ResponseField name="pre_init" type="Callable[[str], None]">
+    Side effects to run before construction (for example, credential validation).
+</ResponseField>
+
+<ResponseField name="init_kwargs_factory" type="Callable[[], dict[str, Any]]">
+    Kwargs derived from runtime state (for example, headers pulled from environment variables).
+</ResponseField>
+
+## Load profiles from config files
+
+For YAML/JSON-backed workflows, use `HarnessProfileConfig`. It mirrors the declarative subset of `HarnessProfile` (prompt text, tool-description overrides, excluded tools and middleware, general-purpose subagent edits) and owns `to_dict` / `from_dict`. Runtime-only state — middleware instances, factories, and class-form `excluded_middleware` entries — stays on `HarnessProfile`.
+
+`register_harness_profile` accepts either type, so config-backed callers don't need a manual conversion step:
+
+```yaml
+# openai.yaml
+base_system_prompt: You are helpful.
+system_prompt_suffix: Respond briefly.
+excluded_tools:
+  - execute
+  - grep
+excluded_middleware:
+  - SummarizationMiddleware
+  - my_pkg.middleware:TelemetryMiddleware
+general_purpose_subagent:
+  enabled: false
+```
+
+```python
+import yaml
+from deepagents import HarnessProfileConfig, register_harness_profile
+
+with open("openai.yaml") as f:
+    register_harness_profile(
+        "openai",
+        HarnessProfileConfig.from_dict(yaml.safe_load(f)),
+    )
+```
+
+To go the other direction, `HarnessProfileConfig.from_harness_profile(...)` exports a runtime profile back to the declarative shape when it only uses serializable features:
+
+- Class-form `excluded_middleware` entries serialize as a public alias (when the class exposes one via `serialized_name: ClassVar[str]`) or as a `module:Class` import ref.
+- Non-empty `extra_middleware` and middleware classes declared in `__main__` or inside a function scope cannot be serialized — export raises `ValueError`.
+
+## Ship a profile as a plugin
+
+Distributable profiles can register themselves via `importlib.metadata` entry points instead of requiring callers to run `register_*_profile` by hand. Load order is **built-ins first, then entry-point plugins, then any direct `register_*_profile` calls in user code**; all three paths funnel through the same additive registration, so later registrations layer on top of earlier ones under the same key.
+
+Declare an entry point in the distribution's own `pyproject.toml` under the appropriate group:
+
+```toml
+[project.entry-points."deepagents.harness_profiles"]
+my_provider = "my_pkg.profiles:register_harness"
+
+[project.entry-points."deepagents.provider_profiles"]
+my_provider = "my_pkg.profiles:register_provider"
+```
+
+Each target resolves to a zero-arg callable that performs the registrations when `deepagents.profiles` is imported:
+
+```python
+from deepagents import (
+    HarnessProfile,
+    ProviderProfile,
+    register_harness_profile,
+    register_provider_profile,
+)
+
+
+def register_harness() -> None:
+    register_harness_profile(
+        "my_provider",
+        HarnessProfile(system_prompt_suffix="Batch independent tool calls in parallel."),
+    )
+
+
+def register_provider() -> None:
+    register_provider_profile(
+        "my_provider",
+        ProviderProfile(init_kwargs={"temperature": 0}),
+    )
+```
+
+## Related
+
+- [Harness](/oss/deepagents/harness) — overview of harness capabilities
+- [Models](/oss/deepagents/models) — configure model providers and parameters
+- [Customization](/oss/deepagents/customization) — full `create_deep_agent` configuration surface
