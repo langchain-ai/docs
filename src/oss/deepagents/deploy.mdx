@@ -13,7 +13,7 @@ Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith
 - **Self-hostable**: LangSmith Deployments can be self-hosted so memory stays in your infrastructure
 
 <Warning>
-    Deep Agents Deploy is currently in beta. APIs, configuration format, and behavior may change between releases. See the [releases page](https://github.com/langchain-ai/deepagents/releases) for detailed changelogs.
+    Deep Agents Deploy is currently in beta and requires `deepagents-cli>=0.0.36`. APIs, configuration format, and behavior may change between releases. See the [releases page](https://github.com/langchain-ai/deepagents/releases) for detailed changelogs.
 </Warning>
 
 ## Compare to Claude Managed Agents
@@ -42,6 +42,7 @@ Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith
 | **`mcp.json`** | MCP tools (HTTP/SSE). See [MCP docs](/oss/langchain/mcp). |
 | **`subagents/`** | Specialized [subagents](/oss/deepagents/subagents) the main agent can delegate to. Each subdirectory contains its own `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. See [subagents](#subagents). |
 | **`sandbox`** | Optional execution environment. Thread-scoped sandboxes are provisioned per thread and will be re-created if the server restarts. Use `scope = "assistant"` if you need sandbox state that persists across threads. See [sandbox providers](#sandbox-providers). |
+| **`frontend`** | Optional prebuilt React chat UI shipped alongside the agent on the same deployment. Configurable for per-user auth or anonymous mode, with real-time todos, files, and subagent activity panels. See [`[frontend]`](#frontend). |
 
 ## Install
 
@@ -197,10 +198,10 @@ When omitted or set to `provider = "none"`, the sandbox is disabled. Sandboxes a
 
 ### `[auth]`
 
-Optionally, add an `[auth]` section to enable user authentication on the deployed agent. When present, the bundler generates an `auth.py` file that validates Bearer tokens, scopes all resources per authenticated user, and wires everything into the deployment automatically.
+Add an `[auth]` section to control authentication on the deployed agent. When present, the bundler generates an `auth.py` file wired into the deployment automatically. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Deployment's default `x-api-key` requirement applies).
 
 <ResponseField name="provider" type="string" required>
-    Auth provider. Supported values: `"supabase"`, `"clerk"`.
+    Auth provider. Supported values: `"supabase"`, `"clerk"`, `"anonymous"`.
 </ResponseField>
 
 ```toml deepagents.toml
@@ -208,9 +209,8 @@ Optionally, add an `[auth]` section to enable user authentication on the deploye
 name = "my-agent"
 model = "google-genai:gemini-3.1-pro-preview"
 
-# Optional — remove to deploy without auth
 [auth]
-provider = "supabase"   # supabase | clerk
+provider = "supabase"   # supabase | clerk | anonymous
 ```
 
 The required environment variables depend on the provider:
@@ -219,6 +219,7 @@ The required environment variables depend on the provider:
 | --- | --- |
 | `supabase` | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_DEFAULT_KEY` |
 | `clerk` | `CLERK_SECRET_KEY` |
+| `anonymous` | None |
 
 Add these to your `.env` alongside your other credentials. The bundler validates that all required vars are present at deploy time and fails fast with a clear error if any are missing.
 
@@ -228,6 +229,81 @@ Add these to your `.env` alongside your other credentials. The bundler validates
 - On success, the authenticated user's identity is injected into `config.configurable.langgraph_auth_user_id`.
 - All resources (threads, runs, store) are automatically scoped per user via `metadata.owner`.
 - LangSmith Studio bypasses auth for local development.
+
+### `[frontend]`
+
+<Note>
+    Frontend deployment requires `deepagents-cli>=0.0.43`.
+</Note>
+
+Optionally enable `[frontend]` to ship a prebuilt React chat UI alongside your agent on the same deployment. The frontend is mounted at `/app` on your deployment URL; your LangGraph API stays at the root (`/threads`, `/runs`, `/assistants`). Every frontend uses one of three authentication providers — Clerk, Supabase, or anonymous (see [Authentication providers](#authentication-providers) below).
+
+<ResponseField name="enabled" type="boolean" default="false">
+    If `true`, bundle the default chat UI into the deployment.
+</ResponseField>
+
+<ResponseField name="app_name" type="string" default="[agent].name">
+    Display name shown in the UI header and browser tab.
+</ResponseField>
+
+<ResponseField name="subtitle" type="string" default="Your deep agent, deployed.">
+    Subtitle shown under the app name in the header and on the empty-state hero. Use it to describe what the agent does.
+</ResponseField>
+
+<ResponseField name="prompts" type="string[]">
+    Suggestion chips shown on the empty-state when there are no messages. Defaults to a generic research-themed set; override to tailor the chips to your agent.
+</ResponseField>
+
+```toml deepagents.toml
+[agent]
+name = "my-agent"
+model = "anthropic:claude-sonnet-4-6"
+
+[auth]
+provider = "supabase"   # or "clerk"
+
+[frontend]
+enabled = true
+app_name = "My Agent"
+subtitle = "Your AI research assistant"
+prompts = [
+  "Summarize this paper",
+  "Find related work",
+  "Draft an outline",
+]
+```
+
+**Authentication providers:**
+
+`[auth]` is required when `[frontend].enabled = true`. Pick one of three providers:
+
+- **Clerk** (`[auth] provider = "clerk"`) — per-user real authentication. Each user signs in; threads and memory are scoped per user.
+- **Supabase** (`[auth] provider = "supabase"`) — per-user real authentication. Same per-user scoping as Clerk.
+- **Anonymous** (`[auth] provider = "anonymous"`) — the bundler ships a permissive auth handler that overrides LangSmith Deployment's default `x-api-key` requirement so the frontend can reach `/threads`, which means anyone with the deploy URL can call the API. The frontend assigns each browser a UUID cookie and filters the thread picker by it (UX-only scoping, not security). The CLI requires an interactive `y/N` confirmation before pushing.
+
+**What you get:**
+
+- Streaming chat with the agent
+- Thread picker with auto-generated titles from the first user message
+- Real-time todos, files, and subagent activity panels that reflect your deep agent's live graph state
+- Light/dark theme toggle that follows OS preference on first load and persists after
+- (Clerk / Supabase only) Sign-in / sign-up / sign-out flows — Clerk ships its full widget (social logins, password reset); Supabase ships email/password with a built-in password reset flow
+
+**Environment variables:**
+
+The frontend reuses most of what `[auth]` already requires. Only Clerk needs one additional browser-facing key.
+
+| Provider | Additional var |
+| --- | --- |
+| `supabase` | None — reuses `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_DEFAULT_KEY` from `[auth]` |
+| `clerk` | `CLERK_PUBLISHABLE_KEY` (browser-facing publishable key; distinct from `CLERK_SECRET_KEY`) |
+
+**Post-deploy setup:**
+
+After deploying, add your deployment URL to your auth provider's dashboard so auth redirects land back in the app. This is a one-time step per deployment URL.
+
+- **Clerk:** Dashboard → your application → **Domains** → add your deployment host (e.g. `clerk-abc.us.langgraph.app`). Clerk development instances auto-whitelist localhost; production deployment URLs need explicit whitelisting.
+- **Supabase:** Dashboard → **Authentication** → **URL Configuration** → add `https://<your-deployment>/app/**` to **Redirect URLs**. Without this, password-reset and email-confirmation links won't route back to your app.
 
 ### `.env`
 
@@ -254,11 +330,20 @@ SUPABASE_PUBLISHABLE_DEFAULT_KEY=eyJhbGc...
 
 # Required if [auth] provider = "clerk"
 CLERK_SECRET_KEY=sk_test_...
+
+# Required if [frontend].enabled = true AND [auth] provider = "clerk"
+CLERK_PUBLISHABLE_KEY=pk_test_...
 ```
 
 ## Authentication
 
-When `[auth]` is configured in `deepagents.toml`, pass the token from your auth provider in the `Authorization` header:
+The runtime auth posture depends on `[auth]`:
+
+- **`[auth] provider = "supabase"` or `"clerk"`** — per-user real authentication. Pass the user's auth-provider token in the `Authorization` header.
+- **`[auth] provider = "anonymous"`** — the bundler ships a permissive auth handler. The API is open to anyone with the deploy URL. No header required. (Required when shipping `[frontend]` without real per-user auth.)
+- **No `[auth]` section** — the deploy falls back to LangSmith Deployment's default `x-api-key` requirement. Pass your LangSmith API key in the `x-api-key` header. Only valid when `[frontend].enabled` is `false` or unset.
+
+When `[auth]` is configured for `supabase` or `clerk`, pass the token from your auth provider in the `Authorization` header:
 
 <Tabs>
     <Tab title="curl">
@@ -354,6 +439,20 @@ my-gtm-agent/
         └── skills/
             └── analyze-market/
                 └── SKILL.md
+```
+
+A lightweight internal-demo agent with the bundled UI in anonymous mode (no signup, no infrastructure):
+
+```toml deepagents.toml
+[agent]
+name = "internal-demo"
+model = "anthropic:claude-sonnet-4-6"
+
+[auth]
+provider = "anonymous"   # API open to anyone with the URL — confirm at deploy time
+
+[frontend]
+enabled = true
 ```
 
 ## User Memory

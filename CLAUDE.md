@@ -176,6 +176,29 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 
+### Version-added admonitions
+
+When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.`
+
+For language-specific requirements, wrap the note in the relevant `:::python` or `:::js` fence. Include separate notes when Python and TypeScript packages have different minimum versions.
+
+## Mermaid diagram styling
+
+Use these `classDef` colors (from LangChain brand palette) for all mermaid diagrams. See `.github/brand-guidelines.md` for the full brand color reference.
+
+| Role | classDef value |
+|------|---------------|
+| **process** (blue) | `fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710` |
+| **trigger** (green) | `fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900` |
+| **decision** (purple) | `fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F` |
+| **output** (plum) | `fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33` |
+| **alert** (peach) | `fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643` |
+| **neutral** (muted blue) | `fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68` |
+
+When using `%%{init}%%` theme variables, use: `lineColor:'#40668D'`, `primaryColor:'#E5F4FF'`, `primaryTextColor:'#030710'`, `primaryBorderColor:'#006DDD'`.
+
+Do not use Tailwind default colors, Material Design colors, or other off-brand palettes in mermaid diagrams.
+
 ## Style guide
 
 Follow [Google Developer Documentation Style Guide](https://developers.google.com/style).
