@@ -1,6 +1,6 @@
 ---
-title: MCP Tools
-sidebarTitle: MCP Tools
+title: MCP tools
+sidebarTitle: MCP tools
 description: Load additional tools from MCP (Model Context Protocol) servers
 ---
 
@@ -97,18 +97,6 @@ stdio servers are spawned as child processes. The CLI communicates with them ove
 }
 ```
 
-<ResponseField name="command" type="string" required>
-    The executable to run.
-</ResponseField>
-
-<ResponseField name="args" type="string[]">
-    Arguments passed to the command.
-</ResponseField>
-
-<ResponseField name="env" type="object">
-    Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
-</ResponseField>
-
 ### SSE and HTTP servers
 
 For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
@@ -125,32 +113,68 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
 }
 ```
 
-<ResponseField name="type" type="string" required>
-    Transport type: `"sse"` for Server-Sent Events or `"http"` for streamable HTTP.
-</ResponseField>
+### Field reference
 
-<ResponseField name="url" type="string" required>
-    The server endpoint URL.
-</ResponseField>
+<AccordionGroup>
+    <Accordion title="stdio (default)">
+        **Required:** `command`. **Optional:** `args`, `env`, plus the shared [tool-filter fields](#tool-filtering).
 
-<ResponseField name="headers" type="object">
-    HTTP headers sent with every request. Commonly used for authentication. Values support `${VAR}` references to parent-shell environment variables (resolved when the server activates).
-</ResponseField>
+        <ResponseField name="command" type="string" required>
+            The executable to run.
+        </ResponseField>
 
-<ResponseField name="auth" type='"oauth"'>
-    Set to `"oauth"` to drive an OAuth login flow with `deepagents mcp login` instead of supplying an `Authorization` header. Only valid for `http`/`sse` transports. Cannot be combined with an `Authorization` header. See [OAuth login](#oauth-login).
-</ResponseField>
+        <ResponseField name="args" type="string[]">
+            Arguments passed to the command.
+        </ResponseField>
 
-### Server types summary
+        <ResponseField name="env" type="object">
+            Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
+        </ResponseField>
+    </Accordion>
 
-| Type | Required fields | Optional fields |
-|------|-----------------|-----------------|
-| stdio (default) | `command` | `args`, `env` |
-| sse | `type: "sse"`, `url` | `headers`, `auth` |
-| http | `type: "http"`, `url` | `headers`, `auth` |
+    <Accordion title="sse">
+        **Required:** `type: "sse"`, `url`. **Optional:** `headers`, `auth`, plus the shared [tool-filter fields](#tool-filtering).
+
+        <ResponseField name="type" type='"sse"' required>
+            Transport type. Use `"sse"` for Server-Sent Events.
+        </ResponseField>
+
+        <ResponseField name="url" type="string" required>
+            The server endpoint URL.
+        </ResponseField>
+
+        <ResponseField name="headers" type="object">
+            HTTP headers sent with every request. Commonly used for authentication. Values support `${VAR}` references to parent-shell environment variables (resolved when the server activates).
+        </ResponseField>
+
+        <ResponseField name="auth" type='"oauth"'>
+            Set to `"oauth"` to drive an OAuth login flow with `deepagents mcp login` instead of supplying an `Authorization` header. Cannot be combined with an `Authorization` header. See [OAuth login](#oauth-login).
+        </ResponseField>
+    </Accordion>
+
+    <Accordion title="http">
+        **Required:** `type: "http"`, `url`. **Optional:** `headers`, `auth`, plus the shared [tool-filter fields](#tool-filtering).
+
+        <ResponseField name="type" type='"http"' required>
+            Transport type. Use `"http"` for streamable HTTP. `streamable_http` and `streamable-http` are accepted as aliases.
+        </ResponseField>
+
+        <ResponseField name="url" type="string" required>
+            The server endpoint URL.
+        </ResponseField>
+
+        <ResponseField name="headers" type="object">
+            HTTP headers sent with every request. Commonly used for authentication. Values support `${VAR}` references to parent-shell environment variables (resolved when the server activates).
+        </ResponseField>
+
+        <ResponseField name="auth" type='"oauth"'>
+            Set to `"oauth"` to drive an OAuth login flow with `deepagents mcp login` instead of supplying an `Authorization` header. Cannot be combined with an `Authorization` header. See [OAuth login](#oauth-login).
+        </ResponseField>
+    </Accordion>
+</AccordionGroup>
 
 <Note>
-    The `type` field can also be written as `transport` for compatibility with other MCP clients. `streamable_http` and `streamable-http` are accepted as aliases for `http` so configs copied from upstream MCP examples work without edits.
+    The `type` field can also be written as `transport` for compatibility with other MCP clients.
 </Note>
 
 <Note>
@@ -197,6 +221,57 @@ You can configure as many servers as you need. Tools from all servers are merged
   }
 }
 ```
+
+## Tool filtering
+
+Each server may narrow the tools it exposes to the agent with one of two optional fields:
+
+- `allowedTools`: keep only the listed tools; drop everything else.
+- `disabledTools`: drop the listed tools; keep everything else.
+
+Filtering applies to stdio, HTTP, and SSE servers alike. Both of the following are rejected at config load:
+
+- Setting `allowedTools` and `disabledTools` on the same server.
+- Setting either field to an empty list (would silently strip every tool, or be a no-op). Omit the field instead.
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "allowedTools": ["read_file", "list_directory"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "disabledTools": ["delete_repository", "delete_*_branch"]
+    }
+  }
+}
+```
+
+### Match rules
+
+Each entry is a literal tool name or an [`fnmatch`](https://docs.python.org/3/library/fnmatch.html)-style glob (any entry containing `*`, `?`, or `[` is treated as a pattern). Entries are matched against both the bare MCP tool name and the server-prefixed form (`{server}_{tool}`), so either form works:
+
+```json
+{
+  "allowedTools": ["read_file", "fs_list_*"]
+}
+```
+
+<Note>
+    Entries that match no loaded tool are logged as a warning, not an error — the underlying MCP server can evolve its tool list across versions without breaking your config.
+</Note>
+
+<ResponseField name="allowedTools" type="string[]">
+    Tool names or `fnmatch` glob patterns to keep. All other tools from this server are dropped. Mutually exclusive with `disabledTools`.
+</ResponseField>
+
+<ResponseField name="disabledTools" type="string[]">
+    Tool names or `fnmatch` glob patterns to drop. All other tools from this server are kept. Mutually exclusive with `allowedTools`.
+</ResponseField>
 
 ## OAuth login
 
