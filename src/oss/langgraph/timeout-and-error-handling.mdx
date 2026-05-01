@@ -1,22 +1,22 @@
 ---
-title: Timeouts, retries, and error handling
-sidebarTitle: Fault tolerance
-description: Configure per-node timeouts, retries, error handlers, and graceful shutdown in LangGraph.
+title: Fault tolerance
+description: Configure per-node timeouts, retries, and error handlers in LangGraph.
 ---
 
 :::python
 
-When a node fails—from a slow external API, a transient network error, or an unhandled exception—LangGraph gives you several composable mechanisms to respond:
+When a node fails—from a slow external API, a transient network error, or an unhandled exception—LangGraph gives you three composable mechanisms to respond:
 
 - [**Retries**](#retries) — automatically re-run failed attempts based on exception type and backoff settings
 - [**Timeouts**](#timeouts) — cap how long a single attempt may run
 - [**Error handling**](#error-handling) — run a recovery function after all retries are exhausted
-- [**Graceful shutdown**](#graceful-shutdown) — stop at the next superstep boundary and save a resumable checkpoint
 
-Retries, timeouts, and error handling compose in a fixed order: when a node attempt raises any exception (including @[`NodeTimeoutError`] from a timeout), the retry policy decides whether to retry. Only after retries are exhausted does the error handler run.
+These compose in a fixed order: when a node attempt raises any exception (including @[`NodeTimeoutError`] from a timeout), the retry policy decides whether to retry. Only after retries are exhausted does the error handler run.
+
+For stopping a run cleanly at a superstep boundary and resuming later, see [Graceful shutdown](/oss/langgraph/durable-execution#graceful-shutdown).
 
 <Note>
-Per-node timeouts, node-level error handlers, and graceful shutdown require `langgraph>=1.2`, currently in alpha.
+Per-node timeouts and node-level error handlers require `langgraph>=1.2`, currently in alpha.
 </Note>
 
 ```mermaid
@@ -424,90 +424,6 @@ Failure provenance is checkpointed. If the graph is interrupted or the process c
 
 If a node wraps a subgraph and the subgraph raises an unhandled exception, that exception surfaces to the parent node. If the parent node has an `error_handler`, the handler fires with the subgraph's exception in `error.error`.
 
-## Graceful shutdown
-
-<Note>
-Requires `langgraph>=1.2`, currently in alpha.
-</Note>
-
-Graceful shutdown lets you stop an in-flight graph run cooperatively—after the current superstep completes—and save a resumable checkpoint. This is useful for handling SIGTERM signals or any external supervisor that needs to reclaim resources without losing work.
-
-Create a @[`RunControl`] and pass it as `control=` to `invoke` or `stream`. Call `request_drain()` from any thread to signal that the run should stop:
-
-```python
-from langgraph.runtime import RunControl
-from langgraph.errors import GraphDrained
-
-control = RunControl()
-
-# In a signal handler or supervisor:
-# control.request_drain("sigterm")
-
-try:
-    result = graph.invoke(inputs, config, control=control)
-except GraphDrained as e:
-    # The graph stopped early and saved a checkpoint.
-    # Resume later with the same config.
-    print(f"Drained: {e.reason}")
-```
-
-### Semantics
-
-Drain is cooperative and operates between supersteps, never preempting work that is already running:
-
-| Scenario | Behavior |
-| -------- | -------- |
-| Node mid-execution | Runs to completion. Drain takes effect on the next superstep. |
-| Node with a retry policy currently retrying | Retry loop runs to exhaustion or success. Drain takes effect after. |
-| Graph finishes naturally on the same tick as drain | Returns normally. Inspect `control.drain_requested` to distinguish from a normal run. |
-| More supersteps remain | Raises `GraphDrained(reason)`. Checkpoint is saved and resumable. |
-| Subgraph requests drain | `GraphDrained` bubbles up through the parent and stops it at its own next superstep boundary. |
-
-### Resume after drain
-
-Resume a drained run with `invoke(None, config)` using the same `thread_id`:
-
-```python
-result = graph.invoke(None, config)
-```
-
-### Read drain state inside a node
-
-Access drain state through the `runtime` parameter to adjust node behavior before the superstep boundary is reached:
-
-```python
-from langgraph.runtime import Runtime
-
-async def my_node(state: State, runtime: Runtime) -> State:
-    if runtime.drain_requested:
-        # Skip expensive work and return a minimal result
-        return {"status": "skipped", "reason": runtime.drain_reason}
-    return {"status": await do_work()}
-```
-
-### SIGTERM hook pattern
-
-The recommended pattern for handling process shutdown:
-
-```python
-import signal
-from langgraph.runtime import RunControl
-from langgraph.errors import GraphDrained
-
-control = RunControl()
-signal.signal(signal.SIGTERM, lambda *_: control.request_drain("sigterm"))
-
-try:
-    result = graph.invoke(inputs, config, control=control)
-except GraphDrained as e:
-    log.info("graph drained: %s", e.reason)
-    # Resume on next startup with the same config
-```
-
-<Note>
-`request_drain()` does not cancel running asyncio tasks or kill threads. For a hard upper bound, pair drain with a graceful timeout and task cancellation.
-</Note>
-
 ## Functional API
 
 The same `timeout=` and `retry_policy=` parameters are available on `@task` and `@entrypoint` in the functional API:
@@ -534,10 +450,9 @@ The behavior is identical to `add_node`: `NodeTimeoutError` is raised on timeout
 
 ## Limitations
 
-- **Python only**: timeouts, error handlers, and graceful shutdown are not available in the JavaScript/TypeScript SDK. Retry policies work in both Python and TypeScript.
+- **Python only**: timeouts and error handlers are not available in the JavaScript/TypeScript SDK. Retry policies work in both Python and TypeScript.
 - **Timeouts are async-only**: sync nodes with a `timeout` are rejected at compile time.
 - **One handler per node**: each node can have at most one `error_handler`.
 - **Handler failures bubble up**: if the error handler itself raises, that exception propagates as if the node had no handler.
-- **Drain is not preemptive**: `request_drain()` stops the graph at the next superstep boundary. A node already running will complete (including its retry loop) before drain takes effect.
 
 :::
