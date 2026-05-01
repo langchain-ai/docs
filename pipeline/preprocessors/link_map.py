@@ -319,6 +319,7 @@ LINK_MAPS: list[LinkMap] = [
             "AsyncSqliteSaver": "langgraph/checkpoints/#langgraph.checkpoint.sqlite.aio.AsyncSqliteSaver",
             "BaseCheckpointSaver": "langgraph/checkpoints/#langgraph.checkpoint.base.BaseCheckpointSaver",
             "BinaryOperatorAggregate": "langgraph/channels/binop/BinaryOperatorAggregate",
+            "DeltaChannel": "langgraph/channels/delta/DeltaChannel",
             "CipherProtocol": "langgraph/checkpoints/#langgraph.checkpoint.serde.base.CipherProtocol",
             "EncryptedSerializer": "langgraph/checkpoints/#langgraph.checkpoint.serde.encrypted.EncryptedSerializer",
             "from_pycryptodome_aes": "langgraph/checkpoints/#langgraph.checkpoint.serde.encrypted.EncryptedSerializer.from_pycryptodome_aes",

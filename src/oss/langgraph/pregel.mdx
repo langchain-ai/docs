@@ -45,18 +45,158 @@ An **actor** is a `PregelNode`. It subscribes to channels, reads data from them,
 
 ## Channels
 
-Channels are used to communicate between actors (PregelNodes). Each channel has a value type, an update type, and an update function—which takes a sequence of updates and modifies the stored value. Channels can be used to send data from one chain to another, or to send data from a chain to itself in a future step. LangGraph provides a number of built-in channels:
+Channels are used to communicate between actors (PregelNodes). Each channel has a value type, an update type, and an update function—which takes a sequence of updates and modifies the stored value. Channels can be used to send data from one chain to another, or to send data from a chain to itself in a future step.
+
+### LastValue
+
+@[`LastValue`] is the default channel type. It stores the last value written to it, overwriting any previous value. Use it for input and output values, or for passing data from one step to the next.
 
 :::python
-* @[`LastValue`]: The default channel, stores the last value sent to the channel, useful for input and output values, or for sending data from one step to the next.
-* @[`Topic`]: A configurable PubSub Topic, useful for sending multiple values between **actors**, or for accumulating output. Can be configured to deduplicate values or to accumulate values over the course of multiple steps.
-* @[`BinaryOperatorAggregate`]: stores a persistent value, updated by applying a binary operator to the current value and each update sent to the channel, useful for computing aggregates over multiple steps; e.g.,`total = BinaryOperatorAggregate(int, operator.add)`
+```python
+from langgraph.channels import LastValue
+
+channel: LastValue[int] = LastValue(int)
+```
 :::
 
 :::js
-* @[`LastValue`]: The default channel, stores the last value sent to the channel, useful for input and output values, or for sending data from one step to the next.
-* @[`Topic`]: A configurable PubSub Topic, useful for sending multiple values between **actors**, or for accumulating output. Can be configured to deduplicate values or to accumulate values over the course of multiple steps.
-* @[`BinaryOperatorAggregate`]: stores a persistent value, updated by applying a binary operator to the current value and each update sent to the channel, useful for computing aggregates over multiple steps; e.g.,`total = BinaryOperatorAggregate(int, operator.add)`
+```typescript
+import { LastValue } from "@langchain/langgraph/channels";
+
+const channel = new LastValue<number>();
+```
+:::
+
+### Topic
+
+@[`Topic`] is a configurable PubSub channel useful for sending multiple values between actors or accumulating output across steps. It can be configured to deduplicate values or to accumulate all values written during a run.
+
+:::python
+```python
+from langgraph.channels import Topic
+
+# Accumulate all values written across steps
+channel: Topic[str] = Topic(str, accumulate=True)
+```
+:::
+
+:::js
+```typescript
+import { Topic } from "@langchain/langgraph/channels";
+
+// Accumulate all values written across steps
+const channel = new Topic<string>({ accumulate: true });
+```
+:::
+
+### BinaryOperatorAggregate
+
+@[`BinaryOperatorAggregate`] stores a persistent value that is updated by applying a binary operator to the current value and each new update. Use it to compute running aggregates across steps.
+
+:::python
+```python
+import operator
+from langgraph.channels import BinaryOperatorAggregate
+
+# Running total: each write adds to the current value
+total = BinaryOperatorAggregate(int, operator.add)
+```
+:::
+
+:::js
+```typescript
+import { BinaryOperatorAggregate } from "@langchain/langgraph/channels";
+
+// Running total: each write adds to the current value
+const total = new BinaryOperatorAggregate<number>({ operator: (a, b) => a + b });
+```
+:::
+
+:::python
+### DeltaChannel (beta)
+
+<Warning>
+`DeltaChannel` requires `langgraph>=1.2` and is currently in beta. The API may change in future releases.
+</Warning>
+
+@[`DeltaChannel`] stores only the incremental delta at each step rather than the full accumulated value. This is most useful for channels that are written frequently and accumulate large values over time—for example, a conversation message list in a long-running thread. Without delta storage, the full list is re-serialized into every checkpoint; with `DeltaChannel`, only the new messages written at each step are stored.
+
+<Tip>
+Consider `DeltaChannel` when a channel is both written to frequently and grows large over time. A good signal: if you notice checkpoint sizes growing linearly with thread length for a particular channel, `DeltaChannel` is likely a good fit.
+</Tip>
+
+Use `DeltaChannel` in an `Annotated` type annotation the same way you would use a plain reducer:
+
+```python
+from typing import Annotated, Sequence
+from typing_extensions import TypedDict
+from langgraph.channels import DeltaChannel
+
+
+def my_reducer(state: list[str], writes: Sequence[list[str]]) -> list[str]:
+    result = list(state)
+    for write in writes:
+        result.extend(write)
+    return result
+
+
+class State(TypedDict):
+    messages: Annotated[list[str], DeltaChannel(my_reducer)]
+```
+
+#### Bulk reducer requirement
+
+The `reducer` passed to `DeltaChannel` is a **bulk reducer**: it receives the current state and a *sequence* of all writes from the current step in a single call—not pairwise like a standard reducer. This differs from the per-key reducers used with `Annotated` in a `StateGraph`, where the reducer is called once per update.
+
+<Warning>
+The bulk reducer **must be associative** (batching-invariant):
+
+```
+reducer(reducer(state, [xs]), [ys]) == reducer(state, [xs, ys])
+```
+
+If your reducer is not associative, the reconstructed state may differ depending on how LangGraph batches writes across steps, producing inconsistent behavior.
+</Warning>
+
+Here are bulk reducers for the two most common cases:
+
+```python
+from typing import Any, Sequence
+
+
+# List: append all writes in order
+def list_reducer(state: list[Any], writes: Sequence[list[Any]]) -> list[Any]:
+    result = list(state)
+    for write in writes:
+        result.extend(write)
+    return result
+
+
+# Dict: merge all writes, last write wins on key conflicts
+def dict_reducer(
+    state: dict[str, Any], writes: Sequence[dict[str, Any]]
+) -> dict[str, Any]:
+    result = dict(state)
+    for write in writes:
+        result.update(write)
+    return result
+```
+
+Both are associative: applying batches one at a time produces the same result as applying them together.
+
+#### Use snapshot_frequency for bounded read latency
+
+Without snapshots, reading a `DeltaChannel` value requires replaying the full write history—O(N) for a thread with N steps. Setting `snapshot_frequency=K` writes a full snapshot every K pregel steps, bounding read depth to at most K steps:
+
+```python
+class State(TypedDict):
+    messages: Annotated[
+        list[str],
+        DeltaChannel(my_reducer, snapshot_frequency=5),
+    ]
+```
+
+Higher values of `snapshot_frequency` reduce storage overhead but increase read latency. Lower values bound latency more tightly at the cost of larger checkpoints. `None` (the default) skips snapshots entirely—appropriate when reads are rare or threads are short.
 :::
 
 ## Examples

@@ -7,11 +7,12 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
-2. **Never use markdown in frontmatter `description`** — breaks SEO
-3. **Never edit `reference/` directory** — auto-generated
-4. **Always update `src/docs.json`** when adding new pages
-5. **Use Tabler icons only** — not FontAwesome
-6. **Test code examples** before including them
+2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
+3. **Never use markdown in frontmatter `description`** — breaks SEO
+4. **Never edit `reference/` directory** — auto-generated
+5. **Always update `src/docs.json`** when adding new pages
+6. **Use Tabler icons only** — not FontAwesome
+7. **Test code examples** before including them
 
 ## Quick reference
 
@@ -30,7 +31,9 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Mintlify components | <https://mintlify.com/docs/components> |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
-## Repository structure
+## Project structure
+
+This project uses Mintlify for documentation. Key files: `src/docs.json` (navigation + site config), MDX files with YAML frontmatter for page metadata. When making multi-file docs changes, always update `src/docs.json` navigation and any redirect mappings. Custom CSS lives in `src/style.css`.
 
 ```txt
 docs/
@@ -205,6 +208,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 
 **Do:**
 
+- Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
 - Be concise — no hyperbolic or redundant language
 - Second-person imperative present tense ("Run the following code…")
@@ -232,6 +236,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
+- Apply bold to UI element names unless existing docs already do so
 
 ### Model references
 
@@ -269,7 +274,11 @@ Before writing or updating model references, verify current model IDs against th
 1. Create `src/snippets/<product>/<name>.mdx`
 2. Reference with `<Snippet file="<product>/<name>.mdx" />`
 
-## Debugging CI broken-links failures
+## Debugging
+
+When investigating a bug or unexpected behavior, always start by reading the relevant code and logs before forming a hypothesis. Do not assume something is working or ask the user to confirm — verify it yourself first.
+
+### CI broken-links failures
 
 `make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
 
@@ -295,6 +304,10 @@ Always run `make lint_prose` (Vale) before handing off or committing doc changes
 Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"` (or pass space-separated paths). Run with no `FILES` arg to lint all of `src/`.
 
 Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+
+## Changelog / Release notes
+
+When extracting data from PRs or changelogs, use the "Release Note:" section in PR bodies, not PR titles. Always verify the data source format before processing.
 
 ## Pull requests
 
