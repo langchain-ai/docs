@@ -6,14 +6,13 @@ description: Use StreamChannel for local and remote stream transformer projectio
 `StreamChannel` is the projection primitive for custom streaming data. It gives in-process consumers an iterable stream, and it can also forward pushed values to remote SDK clients when the channel has a protocol name.
 
 :::js
-In TypeScript, choose local-only or wire-visible behavior when you create the channel:
+In TypeScript, create an unnamed channel for local-only data, or pass a string name to also emit pushed values over the wire as `custom:<name>` events:
 
 ```ts
-const local = StreamChannel.local<T>();
-const remote = StreamChannel.remote<T>("timeline");
+const local = new StreamChannel<T>();
+const remote = new StreamChannel<T>("timeline");
 ```
 
-For a shorter form, `new StreamChannel<T>()` is equivalent to `StreamChannel.local<T>()`, and `new StreamChannel<T>("timeline")` is equivalent to `StreamChannel.remote<T>("timeline")`.
 :::
 
 ## Decision Rule
@@ -23,10 +22,8 @@ Use one `StreamChannel` whenever you need a streaming projection. The only decis
 :::js
 | Need | Use |
 | ---- | --- |
-| Data should stay in process only | `StreamChannel.local<T>()` |
-| Data should be available in process and over the wire | `StreamChannel.remote<T>(name)` |
-| Simplified local form | `new StreamChannel<T>()` |
-| Simplified wire-visible form | `new StreamChannel<T>(name)` |
+| Data should stay in process only | `new StreamChannel<T>()` |
+| Data should be available in process and over the wire | `new StreamChannel<T>(name)` |
 :::
 
 :::python
@@ -36,7 +33,7 @@ Use one `StreamChannel` whenever you need a streaming projection. The only decis
 | Data should be available in process and over the wire | `StreamChannel(name)` |
 :::
 
-Remote channel payloads must be serializable. Keep promises, async iterables, class instances, and other in-process handles local.
+Named channel payloads must be serializable because they are also emitted as `custom:<name>` protocol events. Keep promises, async iterables, class instances, and other in-process handles local.
 
 ## Local Channels
 
@@ -47,7 +44,7 @@ Local channels are available through `run.extensions`, but they are not forwarde
 import { StreamChannel } from "@langchain/langgraph";
 
 const progressTransformer = () => {
-  const progress = StreamChannel.local<{ step: string }>();
+  const progress = new StreamChannel<{ step: string }>();
 
   return {
     init: () => ({ progress }),
@@ -82,14 +79,14 @@ class ProgressTransformer(StreamTransformer):
 
 ## Wire-visible channels
 
-Wire-visible channels are available in process through `run.extensions`, and the stream handler also forwards each `push()` as a protocol event using the channel name. Remote SDK clients consume them through `thread.extensions.<name>` or a `custom:<name>` subscription.
+Wire-visible channels are available in process through `run.extensions`, and the stream handler also forwards each `push()` as a `custom:<name>` protocol event using the channel name. Remote SDK clients consume them through `thread.extensions.<name>` or a `custom:<name>` subscription.
 
 :::js
 ```ts
 import { StreamChannel } from "@langchain/langgraph";
 
 const toolActivityTransformer = () => {
-  const activity = StreamChannel.remote<{
+  const activity = new StreamChannel<{
     name: string;
     status: "started" | "finished" | "error";
   }>("toolActivity");
@@ -154,11 +151,3 @@ class ToolActivityTransformer(StreamTransformer):
 :::js
 Both local and wire-visible `StreamChannel`s are closed or failed by the stream handler.
 :::
-
-## Native and user transformers
-
-Native transformers are provided by LangGraph, LangChain, or Deep Agents. They project protocol events into first-class run stream getters such as `run.values`, `run.messages`, `run.tool_calls`, or `run.subagents`.
-
-User transformers are application-defined. They project data under `run.extensions` and, when backed by a wire-visible `StreamChannel`, also under `thread.extensions` for remote SDK clients.
-
-See [custom stream transformers](/oss/langgraph/streaming/custom-transformers) for an end-to-end example.
