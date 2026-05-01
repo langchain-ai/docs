@@ -627,7 +627,7 @@ In LangGraph, nodes are Python functions (either synchronous or asynchronous) th
 
 1. `state`—The [state](#state) of the graph
 2. `config`—A @[`RunnableConfig`] object that contains configuration information like `thread_id` and tracing information like `tags`
-3. `runtime`—A `Runtime` object that contains [runtime `context`](#runtime-context) and other information like `store`, `stream_writer`, `execution_info`, and `server_info`
+3. `runtime`—A `Runtime` object that contains [runtime `context`](#runtime-context) and other information like `store`, `stream_writer`, `execution_info`, `server_info`, `heartbeat` (for idle timeout refresh), and `control` (for [graceful shutdown](/oss/langgraph/durable-execution#graceful-shutdown))
 
 Similar to `NetworkX`, you add these nodes to a graph using the @[`add_node`] method:
 
@@ -872,6 +872,10 @@ Edges define how the logic is routed and how the graph decides to stop. This is 
 - Conditional Entry Point: Call a function to determine which node(s) to call first when user input arrives.
 
 A node can have multiple outgoing edges. If a node has multiple outgoing edges, **all** of those destination nodes will be executed in parallel as a part of the next superstep.
+
+<Warning>
+For each node, choose one routing mechanism: use normal edges for static routing, or use conditional edges / @[`Command`] for dynamic routing. Do not mix normal edges and dynamic routing from the same node, because both paths can execute and make graph behavior harder to reason about.
+</Warning>
 
 ### Normal edges
 
@@ -1133,7 +1137,7 @@ builder.addNode("myNode", myNode, {
 
 <Warning>
 
-@[`Command`] only adds dynamic edges—static edges defined with `add_edge` / `addEdge` still execute. For example, if `node_a` returns `Command(goto="my_other_node")` and you also have `graph.add_edge("node_a", "node_b")`, both `node_b` and `my_other_node` will run.
+@[`Command`] only adds dynamic edges—static edges defined with `add_edge` / `addEdge` still execute. For example, if `node_a` returns `Command(goto="my_other_node")` and you also have `graph.add_edge("node_a", "node_b")`, both `node_b` and `my_other_node` will run. For each node, use either @[`Command`] or static edges to route to the next nodes, not both.
 
 </Warning>
 
@@ -1289,7 +1293,7 @@ You can return @[`Command`] from tools to update graph state and control flow. U
 
 <Warning>
 
-When used inside tools, `goto` adds a dynamic edge—any static edges already defined on the node that called the tool will still execute.
+When used inside tools, `goto` adds a dynamic edge—any static edges already defined on the node that called the tool will still execute. For each node, use either tool-driven dynamic routing or static edges to route to the next nodes, not both.
 
 </Warning>
 
