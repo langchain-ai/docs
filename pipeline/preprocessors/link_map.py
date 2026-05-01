@@ -311,6 +311,7 @@ LINK_MAPS: list[LinkMap] = [
             "TimeoutPolicy": "langgraph/types/TimeoutPolicy",
             "NodeError": "langgraph/errors/NodeError",
             "NodeTimeoutError": "langgraph/errors/NodeTimeoutError",
+            "RunControl": "langgraph/runtime/RunControl",
             "interrupt": "langgraph/types/interrupt",
             "ToolNode": "langgraph/agents/#langgraph.prebuilt.tool_node.ToolNode",
             "tools_condition": "langgraph/agents/#langgraph.prebuilt.tool_node.tools_condition",
