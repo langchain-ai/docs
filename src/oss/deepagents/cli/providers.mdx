@@ -39,7 +39,7 @@ The CLI integrates automatically with the [following model providers](#provider-
 
     Some providers use other credentials (for example, Vertex AI uses `GOOGLE_CLOUD_PROJECT` plus ADC). See the table below for the required variable per provider. You can also scope credentials to the CLI with the [`DEEPAGENTS_CLI_` prefix](/oss/deepagents/cli/configuration#deepagents_cli_-prefix).
 
-### Provider reference
+## Provider reference
 
 :::js
 The Deep Agents CLI is built in Python, please use the [Python provider reference docs](https://docs.langchain.com/oss/python/deepagents/cli/providers#provider-reference).
@@ -117,21 +117,32 @@ uv tool install 'deepagents-cli[openrouter]'
 uv tool install 'deepagents-cli[litellm]'
 ```
 
-### Switching models
+## Switch models
 
 To switch models in the CLI, either:
 
 1. **Use the interactive model switcher** with the `/model` command. This displays available models sourced from each installed LangChain provider package's [model profiles](/oss/langchain/models#model-profiles).
 
     <Note>
-        Not all models appear here. If yours is missing, pass the model name directly (e.g. `/model gpt-5.4`). See [Which models appear in the switcher](#which-models-appear-in-the-switcher) for details.
+        Not all models appear here. If yours is missing, pass the model name directly (e.g. `/model gpt-5.5`). See [Which models appear in the switcher](#which-models-appear-in-the-switcher) for details.
     </Note>
-2. **Specify a model name directly** as an argument, e.g. `/model gpt-5.4`. You can use any model supported by the chosen provider, regardless of whether it appears in the list from option 1. The model name will be passed to the API request.
+2. **Specify a model name directly** as an argument, e.g. `/model gpt-5.5`. You can use any model supported by the chosen provider, regardless of whether it appears in the list from option 1. The model name will be passed to the API request.
 3. **Specify the model at launch** via `--model`, e.g.
 
     ```txt
-    deepagents --model openai:gpt-5.4
+    deepagents --model openai:gpt-5.5
     ```
+
+<Accordion title="Model resolution order" icon="list-numbers">
+    When the CLI launches, it resolves which model to use in the following order:
+
+    1. **`--model` flag** always wins when provided.
+    2. **`[models].default`** in `~/.deepagents/config.toml`—the user's intentional long-term preference.
+    3. **`[models].recent`** in `~/.deepagents/config.toml`—the last model switched to via `/model`. Written automatically; never overwrites `[models].default`.
+    4. **Environment auto-detection**: falls back to the first available startup credential, checked in order: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_CLOUD_PROJECT` (Vertex AI).
+
+    This startup fallback intentionally checks only those four credentials. Other supported providers (for example, Groq) are still available via `--model`, `/model`, and saved defaults (`[models].default` / `[models].recent`).
+</Accordion>
 
 ### Which models appear in the switcher
 
@@ -169,7 +180,7 @@ The `/model` selector dynamically builds its list from installed provider packag
     | Provider shows ? "credentials unknown" | Provider uses non-standard auth that the CLI can't verify | Credentials may still work—try switching to the model. If auth fails, check the provider's docs |
 </Accordion>
 
-### Setting a default model
+### Set a default model
 
 You can set a persistent default model that will be used for all future CLI launches:
 
@@ -201,18 +212,58 @@ To clear the default:
 
 Without a default, the CLI will default to the most recently used model.
 
-### Model resolution order
+### Model parameters
 
-When the CLI launches, it resolves which model to use in the following order:
+Pass extra constructor kwargs to the model—sampling controls, reasoning/thinking budgets, context window sizes, request timeouts, and anything else the underlying chat-model class accepts. Three places to set them, in priority order (highest first):
 
-1. **`--model` flag** always wins when provided.
-2. **`[models].default`** in `~/.deepagents/config.toml`—The user's intentional long-term preference.
-3. **`[models].recent`** in `~/.deepagents/config.toml`—The last model switched to via `/model`. Written automatically; never overwrites `[models].default`.
-4. **Environment auto-detection**: Falls back to the first available startup credential, checked in order: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_CLOUD_PROJECT` (Vertex AI).
+1. **One-off at launch with `--model-params`.** JSON string, session-only:
 
-This startup fallback intentionally checks only those four credentials. Other supported providers (for example, Groq) are still available via `--model`, `/model`, and saved defaults (`[models].default` / `[models].recent`).
+    ```bash
+    # OpenAI reasoning effort
+    deepagents --model openai:gpt-5.5 --model-params '{"reasoning": {"effort": "high"}}'
 
----
+    # Anthropic extended thinking
+    deepagents --model anthropic:claude-opus-4-7 --model-params '{"thinking": {"type": "enabled", "budget_tokens": 10000}, "max_tokens": 16000}'
+    ```
+
+2. **Mid-session via `/model --model-params`.** Same JSON syntax—swaps params (and optionally the model) without restarting:
+
+    ```txt
+    /model --model-params '{"temperature": 0.7}' anthropic:claude-opus-4-7
+    /model --model-params '{"num_ctx": 16384}'           # opens selector, applies params to choice
+    ```
+
+3. **Persistent in `config.toml`.** Provider-level defaults (with optional per-model sub-tables) that apply on every launch:
+
+    ```toml
+    [models.providers.anthropic.params]
+    thinking = { type = "enabled", budget_tokens = 10000 }
+    max_tokens = 16000
+
+    [models.providers.openai.params]
+    reasoning = { effort = "high", summary = "auto" }
+    output_version = "responses/v1"
+
+    [models.providers.ollama.params]
+    num_ctx = 16384
+    temperature = 0
+
+    # Per-model override—wins over provider-level keys
+    [models.providers.ollama.params."qwen3:4b"]
+    temperature = 0.5
+    ```
+
+CLI flags override config-file `params` and are session-only (mid-session changes are not persisted). Per-model sub-tables in `config.toml` override provider-level keys (shallow merge—see [Model constructor params](/oss/deepagents/cli/configuration#model-constructor-params) for full semantics). `--model-params` cannot be combined with `--default`.
+
+<Tip>
+    Any kwarg accepted by the underlying chat-model constructor is valid. Refer to the provider's reference docs for the full list—e.g. [`ChatAnthropic`](https://reference.langchain.com/python/langchain-anthropic/langchain_anthropic/chat_models/ChatAnthropic), [`ChatOpenAI`](https://reference.langchain.com/python/langchain-openai/langchain_openai/chat_models/base/ChatOpenAI), [`ChatOllama`](https://reference.langchain.com/python/langchain-ollama/langchain_ollama/chat_models/ChatOllama). Unknown kwargs are forwarded to the upstream API request, so newly released parameters work without a CLI update.
+</Tip>
+
+<Note>
+    Don't put credentials (`api_key`) in `params`—use [`api_key_env`](/oss/deepagents/cli/configuration#provider-configuration) to point at an environment variable instead.
+</Note>
+
+To override fields on the model's runtime *profile* (`max_input_tokens`, `tool_calling`, capability flags)—distinct from constructor params—see [Profile overrides](/oss/deepagents/cli/configuration#profile-overrides-advanced).
 
 ## Advanced configuration
 
