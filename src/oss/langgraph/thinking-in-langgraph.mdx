@@ -295,13 +295,16 @@ Different errors need different handling strategies:
 | Transient errors (network issues, rate limits) | System (automatic) | Retry policy | Temporary failures that usually resolve on retry |
 | LLM-recoverable errors (tool failures, parsing issues) | LLM | Store error in state and loop back | LLM can see the error and adjust its approach |
 | User-fixable errors (missing information, unclear instructions) | Human | Pause with `interrupt()` | Need user input to proceed |
+| Recoverable failure after retries | Developer (declarative) | `error_handler` | Run a compensation/recovery branch after retry exhaustion |
 | Unexpected errors | Developer | Let them bubble up | Unknown issues that need debugging |
 
 <Tabs>
     <Tab title="Transient errors" icon="rotate">
-        Add a retry policy to automatically retry network issues and rate limits:
+        Add a retry policy to automatically retry network issues and rate limits.
 
     :::python
+
+    Combine with `timeout=` to cap each attempt. See [Fault tolerance](/oss/langgraph/timeout-and-error-handling) for the full lifecycle.
 
     ```python
     from langgraph.types import RetryPolicy
@@ -464,6 +467,39 @@ Different errors need different handling strategies:
         throw error;  // Surface unexpected errors
       }
     }
+    ```
+
+    :::
+
+    </Tab>
+
+    <Tab title="Saga / compensation" icon="arrows-exchange">
+        After retries are exhausted, run a recovery function that updates state and routes to a compensation branch.
+
+    :::python
+
+    See [Fault tolerance](/oss/langgraph/timeout-and-error-handling#error-handling) for the full pattern.
+
+    <Note>
+    `error_handler` requires `langgraph>=1.2`, currently in alpha.
+    </Note>
+
+    ```python
+    from langgraph.errors import NodeError
+    from langgraph.types import Command, RetryPolicy
+
+    def payment_error_handler(state: State, error: NodeError) -> Command:
+        return Command(
+            update={"status": f"compensated: {error.error}"},
+            goto="finalize",
+        )
+
+    workflow.add_node(
+        "charge_payment",
+        charge_payment,
+        retry_policy=RetryPolicy(max_attempts=3, retry_on=ConnectionError),
+        error_handler=payment_error_handler,
+    )
     ```
 
     :::

@@ -1,0 +1,282 @@
+---
+title: Sandbox CLI
+description: Create, inspect, connect to, and tunnel into LangSmith sandboxes from the command line.
+---
+
+import SandboxPreview from "/snippets/langsmith/sandbox-preview-warning.mdx";
+
+<SandboxPreview />
+
+The [LangSmith CLI](/langsmith/langsmith-cli) includes experimental sandbox commands for creating snapshots, booting sandboxes, running commands, opening interactive shells, and tunneling TCP connections into a sandbox.
+
+Sandbox CLI commands require LangSmith CLI `v0.2.26` or later.
+
+## Install and authenticate
+
+Install or upgrade the LangSmith CLI:
+
+```bash
+curl -fsSL https://cli.langsmith.com/install.sh | sh
+langsmith self-update
+```
+
+Authenticate the CLI with your LangSmith API key:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+```
+
+If you use a [self-hosted](/langsmith/self-hosted) or [hybrid](/langmsith/hybrid) LangSmith deployment, also set the endpoint:
+
+```bash
+export LANGSMITH_ENDPOINT="https://your-langsmith-instance.com"
+```
+
+CLI output is JSON by default. Add `--format pretty` to list commands for human-readable tables:
+
+```bash
+langsmith --format pretty sandbox list
+```
+
+## End-to-end workflow
+
+Every sandbox boots from a snapshot. Build a snapshot from a Docker image, create a sandbox from that snapshot, then run commands inside it:
+
+```bash
+langsmith sandbox snapshot build python-slim \
+  --docker-image python:3.12-slim \
+  --capacity 4gb \
+  --wait
+
+langsmith sandbox create my-vm \
+  --snapshot-id <SNAPSHOT_ID> \
+  --vcpus 2 \
+  --memory 1gb \
+  --wait
+
+langsmith sandbox exec my-vm -- python --version
+```
+
+When you are done with a sandbox, delete it:
+
+```bash
+langsmith sandbox delete my-vm
+```
+
+## Manage snapshots
+
+Build snapshots from Docker images:
+
+```bash
+langsmith sandbox snapshot build my-snapshot \
+  --docker-image ubuntu:24.04 \
+  --capacity 8gb \
+  --wait
+```
+
+For private registries, pass registry credentials from environment variables:
+
+```bash
+langsmith sandbox snapshot build internal-python \
+  --docker-image registry.example.com/internal/python:3.12 \
+  --registry-url https://registry.example.com \
+  --registry-username "$REGISTRY_USERNAME" \
+  --registry-password "$REGISTRY_PASSWORD" \
+  --wait
+```
+
+Capture the filesystem from a running sandbox:
+
+```bash
+langsmith sandbox snapshot capture ml-ready \
+  --box my-vm \
+  --wait
+```
+
+List, inspect, wait for, and delete snapshots:
+
+```bash
+langsmith sandbox snapshot list
+langsmith sandbox snapshot get <SNAPSHOT_ID>
+langsmith sandbox snapshot wait <SNAPSHOT_ID>
+langsmith sandbox snapshot delete <SNAPSHOT_ID>
+```
+
+## Manage sandboxes
+
+Create a sandbox from a snapshot:
+
+```bash
+langsmith sandbox create my-vm \
+  --snapshot-id <SNAPSHOT_ID> \
+  --vcpus 4 \
+  --memory 1gb \
+  --rootfs-capacity 8gb \
+  --wait
+```
+
+List and inspect sandboxes:
+
+```bash
+langsmith sandbox list
+langsmith sandbox get my-vm
+langsmith sandbox wait my-vm
+```
+
+Stop and start a sandbox while preserving its filesystem:
+
+```bash
+langsmith sandbox stop my-vm
+langsmith sandbox start my-vm --wait
+```
+
+Update resources or proxy configuration:
+
+```bash
+langsmith sandbox update my-vm --vcpus 8 --memory 2gb
+langsmith sandbox update my-vm --proxy-config @proxy.json
+```
+
+Resource changes take effect the next time the sandbox starts. Proxy configuration changes take effect immediately.
+
+### Proxy configuration
+
+Use `--proxy-config @proxy.json` on `create` or `update` to configure the sandbox auth proxy. Prefer workspace secrets for credential injection instead of placing raw secrets in local files.
+
+```json
+{
+  "rules": [
+    {
+      "name": "openai",
+      "match_hosts": ["api.openai.com"],
+      "match_paths": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "type": "workspace_secret",
+          "value": "Bearer {OPENAI_API_KEY}"
+        }
+      ],
+      "enabled": true
+    }
+  ],
+  "access_control": {
+    "allow_list": ["api.openai.com"],
+    "deny_list": []
+  }
+}
+```
+
+For more on proxy rules, see [Sandbox auth proxy](/langsmith/sandbox-auth-proxy).
+
+## Run commands
+
+Use `sandbox exec` for one-off commands:
+
+```bash
+langsmith sandbox exec my-vm -- uname -a
+langsmith sandbox exec my-vm -- ls -la /
+langsmith sandbox exec my-vm -- cat /etc/os-release
+```
+
+Everything after `--` is sent to the sandbox as the command. The CLI prints stdout to stdout, stderr to stderr, and exits with the sandbox command's exit code.
+
+## Open an interactive console
+
+Use `sandbox console` for a PTY-backed interactive shell:
+
+```bash
+langsmith sandbox console my-vm
+langsmith sandbox console my-vm --shell /bin/sh
+```
+
+You can forward your local SSH agent into the console session:
+
+```bash
+langsmith sandbox console my-vm --forward-ssh-agent
+```
+
+`--forward-ssh-agent` requires `SSH_AUTH_SOCK` to be set locally. Interactive console sessions are not supported on Windows; use SSH access instead.
+
+## Tunnel TCP ports
+
+Use `sandbox tunnel` when you need a local TCP port that forwards to a service listening inside the sandbox. This is useful for databases, language servers, custom protocols, or local tools that expect `localhost`.
+
+Start a service in the sandbox, then tunnel to it:
+
+```bash
+langsmith sandbox exec my-vm -- sh -c 'cd /tmp && nohup python -m http.server 8000 > /tmp/http.log 2>&1 &'
+langsmith sandbox tunnel my-vm --remote-port 8000 --local-port 18000
+```
+
+Then connect locally:
+
+```bash
+curl http://127.0.0.1:18000
+```
+
+If you omit `--local-port`, the CLI uses the same value as `--remote-port`:
+
+```bash
+langsmith sandbox tunnel my-vm --remote-port 5432
+```
+
+The tunnel process stays in the foreground. Stop it with `Ctrl+C`.
+
+You can also tunnel by sandbox URL instead of name:
+
+```bash
+langsmith sandbox tunnel \
+  --url <SANDBOX_URL> \
+  --remote-port 5432
+```
+
+<Tip>
+For HTTP applications you want to open in a browser or share with teammates, use [Sandbox service URLs](/langsmith/sandbox-service-urls). Use tunnels for raw TCP protocols or local development tools.
+</Tip>
+
+## Set up SSH access
+
+Use `sandbox ssh-setup` to configure standard SSH tools such as `ssh`, `scp`, `rsync`, and `sftp` through a sandbox tunnel.
+
+```bash
+langsmith sandbox ssh-setup my-vm
+langsmith sandbox ssh-setup my-vm --identity ~/.ssh/id_ed25519.pub
+```
+
+The command uploads your SSH public key to the sandbox, fetches the sandbox host key when available, writes a `Host sandbox-<name>` block to `~/.ssh/config`, and writes sandbox host keys to `~/.ssh/known_hosts_sandboxes`.
+
+After setup, connect with:
+
+```bash
+ssh sandbox-my-vm
+```
+
+The sandbox image must run `sshd` on port `22`. If `sshd` is not running, `ssh-setup` warns and the SSH connection will not work until you start it inside the sandbox.
+
+<Warning>
+`ssh-setup` modifies local SSH configuration and writes a `ProxyCommand` that calls `langsmith sandbox tunnel`. Depending on how the CLI is authenticated, the generated block may contain credentials or references to credentials. Run it only on trusted machines and do not commit or share the generated SSH config block.
+</Warning>
+
+## Command reference
+
+| Command | Description |
+| --- | --- |
+| `langsmith sandbox snapshot list` | List snapshots. |
+| `langsmith sandbox snapshot build <name> --docker-image <image>` | Build a snapshot from a Docker image. |
+| `langsmith sandbox snapshot capture <name> --box <sandbox>` | Capture a snapshot from a running sandbox. |
+| `langsmith sandbox snapshot get <snapshot-id>` | Inspect a snapshot. |
+| `langsmith sandbox snapshot wait <snapshot-id>` | Wait for a snapshot to become ready. |
+| `langsmith sandbox snapshot delete <snapshot-id>` | Delete a snapshot. |
+| `langsmith sandbox create <name> --snapshot-id <snapshot-id>` | Create a sandbox from a snapshot. |
+| `langsmith sandbox list` | List sandboxes. |
+| `langsmith sandbox get <name>` | Inspect a sandbox. |
+| `langsmith sandbox update <name>` | Update sandbox resources or proxy config. |
+| `langsmith sandbox wait <name>` | Wait for a sandbox to become ready. |
+| `langsmith sandbox start <name>` | Start a stopped sandbox. |
+| `langsmith sandbox stop <name>` | Stop a running sandbox while preserving filesystem state. |
+| `langsmith sandbox delete <name>` | Delete a sandbox. |
+| `langsmith sandbox exec <name> -- <command>` | Run a one-off command inside a sandbox. |
+| `langsmith sandbox console <name>` | Open an interactive shell inside a sandbox. |
+| `langsmith sandbox tunnel <name> --remote-port <port>` | Forward a local TCP port to a sandbox port. |
+| `langsmith sandbox ssh-setup <name>` | Configure local SSH access through `sandbox tunnel --stdio`. |
