@@ -12,7 +12,7 @@ const addContextMiddleware = createMiddleware({
 });
 
 const agent = createAgent({
-  model: "gpt-4.1",
+  model: "gpt-5.4",
   systemPrompt: "You are a helpful assistant.",
   middleware: [addContextMiddleware],
 });
