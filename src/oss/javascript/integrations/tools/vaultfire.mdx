@@ -1,0 +1,156 @@
+---
+title: "Vaultfire integration"
+description: "Integrate with the Vaultfire on-chain trust tools using LangChain JavaScript."
+---
+
+[Vaultfire Protocol](https://github.com/Ghostkey316/ghostkey-316-vaultfire-init) provides on-chain identity, trust verification, and partnership bonds for AI agents. The `@vaultfire/langchain` package gives LangChain JavaScript agents direct access to the Vaultfire trust layer deployed on Base, Avalanche, Arbitrum, and Polygon.
+
+This page covers how to use the `@vaultfire/langchain` toolkit with LangChain.
+
+## Overview
+
+Vaultfire implements an on-chain trust layer aligned with the [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) AI agent identity standard. The integration provides 9 LangChain-compatible tools that let any agent:
+
+- **Verify trust** — Check an agent's on-chain identity, bonds, and Street Cred score (0–95) before interacting
+- **Read reputation** — Query on-chain feedback and verified ratings
+- **Discover agents** — Find trusted agents by capability via on-chain registry
+- **Register identity** — Create a permanent on-chain identity (ERC-8004)
+- **Create bonds** — Establish partnership bonds with mutual economic stakes
+
+### Integration details
+
+| Class | Package | Serializable | Version |
+| :--- | :--- | :---: | :---: |
+| `createVaultfireReadTools` / `createVaultfireWriteTools` | [`@vaultfire/langchain`](https://www.npmjs.com/package/@vaultfire/langchain) | ❌ | ![NPM - Version](https://img.shields.io/npm/v/@vaultfire/langchain?style=flat-square&label=%20&) |
+
+### Features
+
+- Read-only trust verification (no wallet required)
+- Live on-chain reads from 4 EVM mainnets: Base, Avalanche, Arbitrum, Polygon
+- Optional write tools for registration and bond creation (private key required)
+- Zod schemas on every tool — works with LangGraph, function calling, and structured output
+
+## Setup
+
+The integration lives in the `@vaultfire/langchain` package.
+
+<CodeGroup>
+```bash npm
+npm install @vaultfire/langchain @langchain/core
+```
+```bash yarn
+yarn add @vaultfire/langchain @langchain/core
+```
+```bash pnpm
+pnpm add @vaultfire/langchain @langchain/core
+```
+</CodeGroup>
+
+### Credentials
+
+Read-only tools work with **no API key**. They make direct RPC calls to public mainnet endpoints.
+
+If you want to use write tools (register an agent, create a bond), set a private key:
+
+```typescript
+process.env.VAULTFIRE_PRIVATE_KEY="0x..."
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability:
+
+```typescript
+process.env.LANGSMITH_TRACING="true"
+process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+## Instantiation
+
+### Read-only tools (safe for any agent)
+
+```typescript
+import { createVaultfireReadTools } from "@vaultfire/langchain"
+
+const tools = createVaultfireReadTools({ chain: "base" })
+// Returns: verify_agent, get_street_cred, get_bonds, get_reputation,
+//          discover_agents, get_agent_count
+```
+
+### Write tools (require private key)
+
+```typescript
+import { createVaultfireWriteTools } from "@vaultfire/langchain"
+
+const writeTools = createVaultfireWriteTools({
+  chain: "base",
+  privateKey: process.env.VAULTFIRE_PRIVATE_KEY!,
+})
+// Returns: register_agent, create_bond, submit_feedback
+```
+
+## Invocation
+
+### Verify an agent before interacting
+
+```typescript
+import { createVaultfireReadTools } from "@vaultfire/langchain"
+
+const [verifyAgent] = createVaultfireReadTools({ chain: "base" })
+  .filter(t => t.name === "verify_agent")
+
+const result = await verifyAgent.invoke({
+  address: "0xfA15...813C",
+})
+
+console.log(result)
+// {
+//   registered: true,
+//   agentName: "agent-fa15.vns",
+//   streetCred: 47,
+//   tier: "Silver",
+//   activeBonds: 3
+// }
+```
+
+### Use with an agent
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai"
+import { createReactAgent } from "@langchain/langgraph/prebuilt"
+import { createVaultfireReadTools } from "@vaultfire/langchain"
+
+const tools = createVaultfireReadTools({ chain: "base" })
+const llm = new ChatOpenAI({ model: "gpt-4o-mini" })
+
+const agent = createReactAgent({ llm, tools })
+
+const result = await agent.invoke({
+  messages: [
+    { role: "user", content: "Is agent 0xfA15...813C trustworthy? What's their Street Cred?" },
+  ],
+})
+
+console.log(result.messages.at(-1)?.content)
+```
+
+## Chaining
+
+The tools return structured JSON, so you can chain them with any LangChain runnable:
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai"
+import { createVaultfireReadTools } from "@vaultfire/langchain"
+
+const [discoverAgents] = createVaultfireReadTools({ chain: "base" })
+  .filter(t => t.name === "discover_agents")
+
+const llm = new ChatOpenAI({ model: "gpt-4o-mini" })
+
+const top = await discoverAgents.invoke({ minStreetCred: 50, limit: 5 })
+const summary = await llm.invoke(
+  `Summarize the trust profile of these agents: ${JSON.stringify(top)}`
+)
+```
+
+## API reference
+
+For full tool signatures, parameter schemas, and on-chain contract addresses (134 contracts across 4 chains), see the [`@vaultfire/langchain` README](https://www.npmjs.com/package/@vaultfire/langchain).
