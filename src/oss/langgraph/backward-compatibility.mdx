@@ -9,17 +9,17 @@ Unlike workflow engines that pin a run to the version of code it started with, L
 
 There are three categories of compatibility issues to watch for, in roughly the order you will encounter them:
 
-1. [Technical compatibility](#technical-compatibility): the most common; the new code must still load and execute against existing State.
-2. [Business compatibility](#business-compatibility): less common; existing runs should keep following the old business logic even though the code has changed.
-3. [Non-determinism](#non-determinism): only applies to the [Functional API](/oss/langgraph/functional-api).
+1. [Technical compatibility](#technical-compatibility): The most common; the new code must still load and execute against existing State.
+2. [Business compatibility](#business-compatibility): Less common; existing runs should keep following the old business logic even though the code has changed.
+3. [Non-determinism](#non-determinism): Only applies to the [Functional API](/oss/langgraph/functional-api).
 
 <Tip>
-For a short summary of which graph topology and State changes the runtime supports out of the box, see [Graph migrations](/oss/langgraph/graph-api#graph-migrations). The rest of this page covers the patterns you can apply when a change falls outside that supported set.
+For a short summary of which graph topology and state changes the runtime supports by default, see [Graph migrations](/oss/langgraph/graph-api#graph-migrations). The rest of this page covers the patterns you can apply when a change falls outside that supported set.
 </Tip>
 
 ## Technical compatibility
 
-Technical compatibility is the equivalent of an API breaking change in a microservice. The "API" here is the contract between your graph code and the data already persisted by the [checkpointer](/oss/langgraph/persistence#checkpointer-libraries) for existing threads. When a thread resumes, LangGraph deserializes the saved State, dispatches it to a node by name, and expects the node to return values that fit the State schema.
+Technical compatibility is the equivalent of an API breaking change in a microservice. The "API" here is the contract between your graph code and the data already persisted by the [checkpointer](/oss/langgraph/persistence#checkpointer-libraries) for existing threads. When a thread resumes, LangGraph deserializes the saved state, dispatches it to a node by name, and expects the node to return values that fit the state schema.
 
 Common technical breakages:
 
@@ -33,7 +33,7 @@ Edge topology itself is *not* persisted in the checkpoint. Adding, removing, or 
 
 :::python
 
-- Add new State fields as `NotRequired` (or `Optional[...] = None`) so old checkpoints still validate:
+- Add new state fields as `NotRequired` (or `Optional[...] = None`) so old checkpoints still validate:
 
   ```python
   from typing import NotRequired
@@ -44,16 +44,16 @@ Edge topology itself is *not* persisted in the checkpoint. Adding, removing, or 
       summary: NotRequired[str]  # [!code ++]
   ```
 
-- Treat removals as deprecations. Keep the field defined on the State for at least one drain cycle, even if no node reads it, so existing checkpoints continue to load.
-- Rename via *add-then-remove*. Add the new field or node alongside the old one, dual-write or route to both for a deprecation window, then remove the old one once you have confirmed no in-flight thread depends on it.
-- Keep node functions tolerant of unknown keys. `TypedDict` ignores extra keys at runtime, so leftover State from an older code version will not raise unless a node explicitly reads a missing key.
+- Treat removals as deprecations. Keep the field defined on the state for at least one drain cycle, even if no node reads it, so existing checkpoints continue to load.
+- Rename through *add-then-remove*. Add the new field or node alongside the old one, dual-write or route to both for a deprecation window, then remove the old one once you have confirmed no in-flight thread depends on it.
+- Keep node functions tolerant of unknown keys. `TypedDict` ignores extra keys at runtime, so leftover state from an older code version will not raise unless a node explicitly reads a missing key.
 - Use [time travel](/oss/langgraph/use-time-travel) and @[`graph.get_state`][get_state] to spot-check existing threads against the new code in a staging deployment before rolling out.
 
 :::
 
 :::js
 
-- Mark new State fields as optional (`z.string().optional()` or `.nullish()`) so old checkpoints still validate.
+- Mark new state fields as optional (`z.string().optional()` or `.nullish()`) so old checkpoints still validate.
 - Treat removals as deprecations: keep the field on the schema for at least one drain cycle so existing checkpoints continue to load.
 - Rename via add-then-remove: add the new field or node alongside the old one, dual-write or route to both for a deprecation window, then remove the old one once no in-flight thread depends on it.
 - Use [time travel](/oss/langgraph/use-time-travel) and @[`graph.getState`][get_state] to spot-check existing threads against the new code in a staging deployment before rolling out.
@@ -66,7 +66,7 @@ Before you remove a node, rename a State key, or otherwise make a change that ol
 
 **If you deploy to [LangSmith](/langsmith/deployment).** Use the Agent Server's thread search to filter by status. The `status` field accepts `idle`, `busy`, `interrupted`, and `error`, so you can bulk-query for `interrupted` or `busy` threads, optionally narrowed with metadata filters. See [Filter by thread status](/langsmith/use-threads#filter-by-thread-status) and [List threads](/langsmith/use-threads#list-threads).
 
-**Anywhere LangGraph runs.** Use [LangSmith tracing](/oss/langgraph/observability) to monitor which nodes are being entered and exited in production. This is the most reliable signal that a node or State field is no longer reachable in any active code path.
+**Anywhere LangGraph runs.** Use [LangSmith tracing](/oss/langgraph/observability) to monitor which nodes are being entered and exited in production. This is the most reliable signal that a node or state field is no longer reachable in any active code path.
 
 **When you already have a `thread_id`.** Inspect that single thread directly:
 
@@ -95,7 +95,7 @@ For example, suppose your graph runs `intake → triage → respond`, and you de
 - Threads that have already passed `triage` should continue straight to `respond` (the old flow).
 - New threads should run the full new flow.
 
-The recommended pattern is to record the relevant *behavioral version* on the State at thread start, then branch on it with a [conditional edge](/oss/langgraph/graph-api#conditional-edges):
+The recommended pattern is to record the relevant *behavioral version* on the state at thread start, then branch on it with a [conditional edge](/oss/langgraph/graph-api#conditional-edges):
 
 :::python
 
@@ -145,7 +145,7 @@ graph = builder.compile()
 
 :::
 
-Old threads that resume after `triage` read `flow_version` from their saved State (or fall through to the v1 default) and skip `policy_check`. New threads start at `intake`, are stamped with `flow_version=2`, and run the new path. Once all v1 threads have completed, you can remove the version flag and the conditional edge.
+Old threads that resume after `triage` read `flow_version` from their saved state (or fall through to the v1 default) and skip `policy_check`. New threads start at `intake`, are stamped with `flow_version=2`, and run the new path. Once all v1 threads have completed, you can remove the version flag and the conditional edge.
 
 This pattern only works if you set the version *at thread start*, before any branch that needs to be versioned. Setting it later means existing threads will not have it set when they need it.
 
