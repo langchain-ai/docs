@@ -4,33 +4,35 @@ sidebarTitle: Trace with API
 description: Learn how to trace LLM applications using the LangSmith REST API directly.
 ---
 
-This guide covers two approaches to tracing with the REST API: basic tracing using the `POST /runs` and `PATCH /runs` endpoints, and batch ingestion using `POST /runs/multipart` for higher throughput. For a full list of endpoints and request/response schemas, refer to the [API reference](https://api.smith.langchain.com/redoc).
+This guide covers two approaches to tracing with the [REST API](/langsmith/smith-api-ref): basic tracing using the `POST /runs` and `PATCH /runs` endpoints, and batch ingestion using `POST /runs/multipart` for higher throughput.
+
+For a full list of endpoints and request/response schemas, refer to the [API reference](https://api.smith.langchain.com/redoc).
 
 <Warning>
-We strongly recommend using the Python or TypeScript SDK to send traces to LangSmith instead of the REST API directly. The SDKs include batching and background sending optimizations that prevent tracing from affecting your application's performance.
+We strongly recommend using the [Python](/langsmith/smith-python-sdk) or [TypeScript](/langsmith/smith-js-ts-sdk) SDK to send traces to LangSmith instead of the REST API directly. The SDKs include batching and background sending optimizations that prevent tracing from affecting your application's performance.
+
+If you cannot use an SDK, note that sending traces synchronously may impact application performance.
 </Warning>
 
 <Note>
-We recommend using **UUID v7** for run IDs. UUIDv7 embeds a timestamp, which preserves correct time-ordering of runs in a trace. Use `uuid7()` from the LangSmith SDK to generate them, or see [Specify a custom run ID](/langsmith/custom-run-id) for more details.
+We recommend using **UUID v7** for run IDs. UUIDv7 embeds a timestamp, which preserves correct time-ordering of runs in a trace. Use `uuid7()` from the LangSmith SDK to generate them, or see [Specify a custom run ID](/langsmith/annotate-code#specify-a-custom-run-id) for more details.
 </Note>
-
-If you cannot use an SDK, note that sending traces synchronously may impact application performance.
 
 ## Basic tracing
 
 The simplest way to log runs is via the `POST /runs` and `PATCH /runs` endpoints. This approach requires minimal information to establish the trace hierarchy.
 
 <Note>
-When using the LangSmith REST API, provide your API key in the request headers as `"x-api-key"`.
+When using the LangSmith REST API, provide your [API key](/langsmith/create-account-api-key) in the request headers as `"x-api-key"`.
 
 If your API key is linked to multiple workspaces, specify the workspace in the header with `"x-tenant-id"`.
 
 In this approach, you do not need to set the `dotted_order` or `trace_id` fields—the system generates them automatically. Though simpler, it is slower and subject to lower rate limits than batch ingestion.
 </Note>
 
-The following example traces a chat completion with a parent chain run and a child LLM run:
+The following example traces a chat completion with a parent chain run and a child LLM run. Set [`parent_run_id`](/langsmith/run-data-format) on a child run to attach it to its parent:
 
-```python
+```python expandable wrap
 import openai
 import os
 import requests
@@ -111,11 +113,11 @@ For more information, refer to [Run (span) data format](/langsmith/run-data-form
 
 For faster ingestion and higher rate limits, use the [`POST /runs/multipart`](https://api.smith.langchain.com/redoc#tag/run/operation/multipart_ingest_runs_api_v1_runs_multipart_post) endpoint. This requires the [`requests-toolbelt`](https://pypi.org/project/requests-toolbelt/) and [`uuid-utils`](https://pypi.org/project/uuid-utils/) packages.
 
-This endpoint requires you to compute and set `dotted_order` and `trace_id`. The `dotted_order` is a string that encodes each run's timestamp and UUID, with parent and child entries joined by dots (e.g., `20240101T000000Z<parent-uuid>.20240101T000001Z<child-uuid>`). This tells LangSmith how runs relate to each other and in what order they occurred. The `trace_id` is the UUID of the root run in the trace.
+Unlike basic tracing, this endpoint requires you to compute and set [`dotted_order`](/langsmith/run-data-format#what-is-dotted_order) and [`trace_id`](/langsmith/run-data-format) yourself. `dotted_order` encodes each run's timestamp and UUID with parent and child entries joined by dots (e.g., `20240101T000000Z<parent-uuid>.20240101T000001Z<child-uuid>`), telling LangSmith how runs relate and in what order they occurred. `trace_id` is the UUID of the root run.
 
 The following example creates a parent run and a child run, sends them in a single batch request, then patches both with their outputs:
 
-```python
+```python expandable
 import json
 import os
 import uuid
@@ -307,3 +309,9 @@ batch_ingest_runs(api_url, api_key, patches=patches)
 # You can install them using pip:
 # pip install requests requests_toolbelt
 ```
+
+## Related
+
+- [Run (span) data format](/langsmith/run-data-format)
+- [Specify a custom run ID](/langsmith/annotate-code#specify-a-custom-run-id)
+- [Custom instrumentation](/langsmith/annotate-code)

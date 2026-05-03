@@ -106,12 +106,12 @@ The Deep Agents CLI has the following built-in capabilities:
 
         <CodeGroup>
             ```bash Script
-            curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/scripts/install.sh | bash
+            curl -LsSf https://langch.in/gh-da-cli | bash
             ```
 
             ```bash Optional extras
             # OpenAI, Anthropic, and Gemini are included by default
-            DEEPAGENTS_EXTRAS="ollama,groq" curl -LsSf https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/scripts/install.sh | bash
+            DEEPAGENTS_EXTRAS="ollama,groq" curl -LsSf https://langch.in/gh-da-cli | bash
             ```
 
             ```bash uv
@@ -285,41 +285,64 @@ Shell execution is disabled by default in non-interactive mode. Use `-S`/`--shel
     `-S all` (or `--shell-allow-list all`) lets the agent execute arbitrary shell commands with no human confirmation.
 </Warning>
 
+## Run a command at startup
+
+Use `--startup-cmd` to run a shell command once before the session accepts its first prompt. The output is shown to you at the top of the session, which is handy for checking `git status`, listing files, or verifying environment setup before typing the first prompt.
+
+```bash
+# Interactive: show git status before the first prompt
+deepagents --startup-cmd "git status"
+
+# Combine with an initial prompt — the command runs first, then the prompt is submitted
+deepagents --startup-cmd "ls -la" -m "Summarize what's in this directory"
+
+# Non-interactive: see env state before the task runs
+deepagents --startup-cmd "git diff --stat" -n "Review these changes"
+```
+
+The command runs before any `-m` prompt or `--skill` invocation is dispatched and respects your shell environment. Non-zero exits and timeouts emit a warning but do not abort the session. In non-interactive mode, the command has a 60-second timeout.
+
+<Note>
+    The output is **not** injected into the agent's message history — the LLM does not see it. To hand command output to the agent, pipe it in via stdin instead (e.g., `git diff | deepagents -n "Review these changes"`).
+</Note>
+
 ## Switch models
 
 You can switch models during a session without restarting the CLI using the `/model` command, or at launch with the `--model` flag:
 
 ```txt
 > /model anthropic:claude-opus-4-6
-> /model openai:gpt-5.4
+> /model openai:gpt-5.5
 ```
 
 ```bash
-deepagents --model openai:gpt-5.4
+deepagents --model openai:gpt-5.5
 ```
 
 Run `/model` to open an interactive model selector that displays available models grouped by provider.
 
 For full details on switching models, setting a default, and adding custom model providers, see [Model providers](/oss/deepagents/cli/providers).
 
-<AccordionGroup>
-    <Accordion title="Interactive model selector" icon="list">
-        The selector shows a detail footer for the highlighted model with context window size, input modalities (text, image, audio, PDF, video), and capabilities (reasoning, tool calling, structured output).
+### Model parameters
 
-        Values overridden by `--profile-override` or `config.toml` are marked with a yellow `*` prefix.
-    </Accordion>
+Override model invocation parameters (e.g. reasoning effort, thinking budget, max output tokens, etc.) by passing JSON to `--model-params` at launch or to `/model --model-params` mid-session:
 
-    <Accordion title="Model parameters" icon="adjustments">
-        Pass extra model constructor parameters when switching mid-session using `--model-params`:
+```bash
+deepagents --model openai:gpt-5.5 --model-params '{"reasoning": {"effort": "high"}}'
+```
+```bash
+deepagents --model anthropic:claude-opus-4-7 --model-params '{"thinking": {"type": "enabled", "budget_tokens": 10000}}'
+```
 
-        ```txt
-        > /model --model-params '{"temperature": 0.7}' anthropic:claude-sonnet-4-5
-        > /model --model-params '{"temperature": 0.7}'  # opens selector, applies params to chosen model
-        ```
+```txt
+# Mid-session — swap model and params in one step
+/model --model-params '{"temperature": 0.7}' anthropic:claude-opus-4-7
 
-        These are session-only overrides and take the highest priority, overriding values from config file `params`. `--model-params` cannot be combined with `--default`.
-    </Accordion>
-</AccordionGroup>
+# Or open the selector and apply params to whatever you pick
+/model --model-params '{"num_ctx": 16384}'
+```
+
+CLI flags are session-only. `--model-params` cannot be combined with `--default`. For persistent provider-level defaults, per-model overrides, and provider-specific examples, see [Model parameters](/oss/deepagents/cli/providers#model-parameters) on the providers page.
 
 ## Switch agents
 
@@ -569,7 +592,7 @@ Define custom [subagents](/oss/deepagents/subagents) as markdown files so the CL
 
 Project subagents override user subagents with the same name (see [precedence rules](/oss/deepagents/data-locations#subagents)).
 
-The frontmatter requires `name` and `description` (same as the [`SubAgent` dictionary spec](/oss/deepagents/subagents#subagent-dictionary-based)). The markdown body becomes the subagent's `system_prompt`. In addition to the base spec, `AGENTS.md` files support an optional `model` frontmatter field that overrides the main agent's model for this subagent. Uses the `provider:model-name` format (e.g., `anthropic:claude-opus-4-6`, `openai:gpt-5.4`). Omit to inherit the main agent's model.
+The frontmatter requires `name` and `description` (same as the [`SubAgent` dictionary spec](/oss/deepagents/subagents#subagent-dictionary-based)). The markdown body becomes the subagent's `system_prompt`. In addition to the base spec, `AGENTS.md` files support an optional `model` frontmatter field that overrides the main agent's model for this subagent. Uses the `provider:model-name` format (e.g., `anthropic:claude-opus-4-6`, `openai:gpt-5.5`). Omit to inherit the main agent's model.
 
 <Note>
     Other `SubAgent` fields (`tools`, `middleware`, `interrupt_on`, `skills`) are currently not configurable via `AGENTS.md` frontmatter — custom subagents defined this way inherit the main agent's tools. Use the SDK directly for full control.
@@ -613,7 +636,7 @@ The frontmatter requires `name` and `description` (same as the [`SubAgent` dicti
 
 ## Use MCP tools
 
-Extend the CLI with tools from external [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. Place a `.mcp.json` at your project root and the CLI discovers it automatically. See the [MCP tools guide](/oss/deepagents/cli/mcp-tools) for configuration format, auto-discovery, and troubleshooting.
+Extend the CLI with tools from external [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. Place a `.mcp.json` at your project root and the CLI discovers it automatically. Servers that require OAuth (Slack, GitHub, Linear, Notion, …) can be authenticated once with `deepagents mcp login <server>`; tokens are persisted to `~/.deepagents/mcp-tokens/` and refreshed automatically. See the [MCP tools guide](/oss/deepagents/cli/mcp-tools) for configuration format, OAuth login, auto-discovery, and troubleshooting.
 
 ## Use remote sandboxes
 
@@ -821,8 +844,8 @@ When configured, the CLI displays a status line with a link to the LangSmith pro
 deepagents --agent mybot
 
 # Use a specific model (provider:model format or auto-detect)
-deepagents --model anthropic:claude-sonnet-4-5
-deepagents --model gpt-4o
+deepagents --model anthropic:claude-opus-4-7
+deepagents --model gpt-5.5
 
 # Auto-approve tool usage (skip human-in-the-loop prompts)
 deepagents -y
@@ -840,6 +863,7 @@ deepagents -y
         | `-r`, `--resume [ID]`  | Resume a session: `-r` for most recent, `-r <ID>` for a specific thread |
         | `-m`, `--message TEXT` | Initial prompt to auto-submit when the session starts (interactive mode) |
         | `--skill NAME`         | Invoke a skill at startup |
+        | `--startup-cmd CMD`    | Shell command to run at startup, before the first prompt. Output is rendered in the transcript for your reference but is **not** added to the agent's message history. Non-zero exits and timeouts warn but do not abort; non-interactive mode applies a 60s timeout. See [Run a command at startup](#run-a-command-at-startup) |
         | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
         | `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Cap turn count with `--max-turns`](#non-interactive-mode-and-piping) |
         | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
@@ -874,6 +898,7 @@ deepagents -y
         | `deepagents skills delete NAME [--project] [-f]` | Delete a skill and its contents. Supports `--dry-run` |
         | `deepagents threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. `-n` is a short flag for `--limit`. Additional flags: `--sort {created,updated}`, `--branch TEXT` (filter by git branch), `-v`/`--verbose` (show all columns including branch, created time, and initial prompt), `-r`/`--relative` (relative timestamps) |
         | `deepagents threads delete ID`       | Delete a session. Supports `--dry-run` |
+        | `deepagents mcp login NAME [--config PATH]` | Run the OAuth login flow for an MCP server marked `auth: "oauth"`. See [MCP tools](/oss/deepagents/cli/mcp-tools#oauth-login) |
         | `deepagents deploy`                  | Deploy your agent to LangSmith. See [Deploy with the CLI](/oss/deepagents/deploy) |
 
         All management subcommands support `--json` for machine-readable output. See [command-line options](#command-line-options) for details.

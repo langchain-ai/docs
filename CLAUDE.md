@@ -1,3 +1,5 @@
+> **Keep in sync:** `AGENTS.md` and `CLAUDE.md` contain identical guidelines. If you update one, update the other.
+
 # LangChain Documentation Guidelines
 
 Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored docs only—not `**/reference/**` directories or build artifacts.
@@ -5,11 +7,12 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
-2. **Never use markdown in frontmatter `description`** — breaks SEO
-3. **Never edit `reference/` directory** — auto-generated
-4. **Always update `src/docs.json`** when adding new pages
-5. **Use Tabler icons only** — not FontAwesome
-6. **Test code examples** before including them
+2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
+3. **Never use markdown in frontmatter `description`** — breaks SEO
+4. **Never edit `reference/` directory** — auto-generated
+5. **Always update `src/docs.json`** when adding new pages
+6. **Use Tabler icons only** — not FontAwesome
+7. **Test code examples** before including them
 
 ## Quick reference
 
@@ -28,7 +31,9 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Mintlify components | <https://mintlify.com/docs/components> |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
-## Repository structure
+## Project structure
+
+This project uses Mintlify for documentation. Key files: `src/docs.json` (navigation + site config), MDX files with YAML frontmatter for page metadata. When making multi-file docs changes, always update `src/docs.json` navigation and any redirect mappings. Custom CSS lives in `src/style.css`.
 
 ```txt
 docs/
@@ -174,12 +179,36 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 
+### Version-added admonitions
+
+When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.`
+
+For language-specific requirements, wrap the note in the relevant `:::python` or `:::js` fence. Include separate notes when Python and TypeScript packages have different minimum versions.
+
+## Mermaid diagram styling
+
+Use these `classDef` colors (from LangChain brand palette) for all mermaid diagrams. See `.github/brand-guidelines.md` for the full brand color reference.
+
+| Role | classDef value |
+|------|---------------|
+| **process** (blue) | `fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710` |
+| **trigger** (green) | `fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900` |
+| **decision** (purple) | `fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F` |
+| **output** (plum) | `fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33` |
+| **alert** (peach) | `fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643` |
+| **neutral** (muted blue) | `fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68` |
+
+When using `%%{init}%%` theme variables, use: `lineColor:'#40668D'`, `primaryColor:'#E5F4FF'`, `primaryTextColor:'#030710'`, `primaryBorderColor:'#006DDD'`.
+
+Do not use Tailwind default colors, Material Design colors, or other off-brand palettes in mermaid diagrams.
+
 ## Style guide
 
 Follow [Google Developer Documentation Style Guide](https://developers.google.com/style).
 
 **Do:**
 
+- Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
 - Be concise — no hyperbolic or redundant language
 - Second-person imperative present tense ("Run the following code…")
@@ -203,9 +232,11 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use H5 or H6 headings
 - Overuse em dashes — prefer commas, colons, or separate sentences instead
+- Do not add spaces around em dashes — write `word—word` not `word — word` (Vale enforces this)
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
+- Apply bold to UI element names unless existing docs already do so
 
 ### Model references
 
@@ -243,7 +274,11 @@ Before writing or updating model references, verify current model IDs against th
 1. Create `src/snippets/<product>/<name>.mdx`
 2. Reference with `<Snippet file="<product>/<name>.mdx" />`
 
-## Debugging CI broken-links failures
+## Debugging
+
+When investigating a bug or unexpected behavior, always start by reading the relevant code and logs before forming a hypothesis. Do not assume something is working or ask the user to confirm — verify it yourself first.
+
+### CI broken-links failures
 
 `make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
 
@@ -261,6 +296,18 @@ another-file.mdx                 ← no indented lines = all its links were filt
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
 To run locally: `make broken-links`
+
+## Pre-commit linting
+
+Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
+
+Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"` (or pass space-separated paths). Run with no `FILES` arg to lint all of `src/`.
+
+Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+
+## Changelog / Release notes
+
+When extracting data from PRs or changelogs, use the "Release Note:" section in PR bodies, not PR titles. Always verify the data source format before processing.
 
 ## Pull requests
 

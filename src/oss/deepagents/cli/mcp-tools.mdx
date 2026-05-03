@@ -1,6 +1,6 @@
 ---
-title: MCP Tools
-sidebarTitle: MCP Tools
+title: MCP tools
+sidebarTitle: MCP tools
 description: Load additional tools from MCP (Model Context Protocol) servers
 ---
 
@@ -97,18 +97,6 @@ stdio servers are spawned as child processes. The CLI communicates with them ove
 }
 ```
 
-<ResponseField name="command" type="string" required>
-    The executable to run.
-</ResponseField>
-
-<ResponseField name="args" type="string[]">
-    Arguments passed to the command.
-</ResponseField>
-
-<ResponseField name="env" type="object">
-    Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
-</ResponseField>
-
 ### SSE and HTTP servers
 
 For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
@@ -125,29 +113,89 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
 }
 ```
 
-<ResponseField name="type" type="string" required>
-    Transport type: `"sse"` for Server-Sent Events or `"http"` for streamable HTTP.
-</ResponseField>
+### Field reference
 
-<ResponseField name="url" type="string" required>
-    The server endpoint URL.
-</ResponseField>
+<AccordionGroup>
+    <Accordion title="stdio (default)">
+        **Required:** `command`. **Optional:** `args`, `env`, plus the shared [tool-filter fields](#tool-filtering).
 
-<ResponseField name="headers" type="object">
-    HTTP headers sent with every request. Commonly used for authentication.
-</ResponseField>
+        <ResponseField name="command" type="string" required>
+            The executable to run.
+        </ResponseField>
 
-### Server types summary
+        <ResponseField name="args" type="string[]">
+            Arguments passed to the command.
+        </ResponseField>
 
-| Type | Required fields | Optional fields |
-|------|-----------------|-----------------|
-| stdio (default) | `command` | `args`, `env` |
-| sse | `type: "sse"`, `url` | `headers` |
-| http | `type: "http"`, `url` | `headers` |
+        <ResponseField name="env" type="object">
+            Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
+        </ResponseField>
+    </Accordion>
+
+    <Accordion title="sse">
+        **Required:** `type: "sse"`, `url`. **Optional:** `headers`, `auth`, plus the shared [tool-filter fields](#tool-filtering).
+
+        <ResponseField name="type" type='"sse"' required>
+            Transport type. Use `"sse"` for Server-Sent Events.
+        </ResponseField>
+
+        <ResponseField name="url" type="string" required>
+            The server endpoint URL.
+        </ResponseField>
+
+        <ResponseField name="headers" type="object">
+            HTTP headers sent with every request. Commonly used for authentication. Values support `${VAR}` references to parent-shell environment variables (resolved when the server activates).
+        </ResponseField>
+
+        <ResponseField name="auth" type='"oauth"'>
+            Set to `"oauth"` to drive an OAuth login flow with `deepagents mcp login` instead of supplying an `Authorization` header. Cannot be combined with an `Authorization` header. See [OAuth login](#oauth-login).
+        </ResponseField>
+    </Accordion>
+
+    <Accordion title="http">
+        **Required:** `type: "http"`, `url`. **Optional:** `headers`, `auth`, plus the shared [tool-filter fields](#tool-filtering).
+
+        <ResponseField name="type" type='"http"' required>
+            Transport type. Use `"http"` for streamable HTTP. `streamable_http` and `streamable-http` are accepted as aliases.
+        </ResponseField>
+
+        <ResponseField name="url" type="string" required>
+            The server endpoint URL.
+        </ResponseField>
+
+        <ResponseField name="headers" type="object">
+            HTTP headers sent with every request. Commonly used for authentication. Values support `${VAR}` references to parent-shell environment variables (resolved when the server activates).
+        </ResponseField>
+
+        <ResponseField name="auth" type='"oauth"'>
+            Set to `"oauth"` to drive an OAuth login flow with `deepagents mcp login` instead of supplying an `Authorization` header. Cannot be combined with an `Authorization` header. See [OAuth login](#oauth-login).
+        </ResponseField>
+    </Accordion>
+</AccordionGroup>
 
 <Note>
     The `type` field can also be written as `transport` for compatibility with other MCP clients.
 </Note>
+
+<Note>
+    Server names must match `[A-Za-z0-9_-]+`. Names are used as on-disk basenames for OAuth token files, so path separators and other shell metacharacters are rejected at config load.
+</Note>
+
+### Header environment variables
+
+Header values support `${VAR}` substitution from the parent shell, resolved at server activation rather than at config load. One unset variable only fails the server that needs it; the rest still come up.
+
+```json title=".mcp.json"
+{
+    "mcpServers": {
+        "internal-api": {
+            "type": "http",
+            "url": "https://api.example.com/mcp",
+            "headers": { "Authorization": "Bearer ${INTERNAL_API_TOKEN}" }
+        }
+    }
+}
+```
 
 ## Multiple servers
 
@@ -174,16 +222,144 @@ You can configure as many servers as you need. Tools from all servers are merged
 }
 ```
 
+## Tool filtering
+
+Each server may narrow the tools it exposes to the agent with one of two optional fields:
+
+- `allowedTools`: keep only the listed tools; drop everything else.
+- `disabledTools`: drop the listed tools; keep everything else.
+
+Filtering applies to stdio, HTTP, and SSE servers alike. Both of the following are rejected at config load:
+
+- Setting `allowedTools` and `disabledTools` on the same server.
+- Setting either field to an empty list (would silently strip every tool, or be a no-op). Omit the field instead.
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "allowedTools": ["read_file", "list_directory"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "disabledTools": ["delete_repository", "delete_*_branch"]
+    }
+  }
+}
+```
+
+### Match rules
+
+Each entry is a literal tool name or an [`fnmatch`](https://docs.python.org/3/library/fnmatch.html)-style glob (any entry containing `*`, `?`, or `[` is treated as a pattern). Entries are matched against both the bare MCP tool name and the server-prefixed form (`{server}_{tool}`), so either form works:
+
+```json
+{
+  "allowedTools": ["read_file", "fs_list_*"]
+}
+```
+
+<Note>
+    Entries that match no loaded tool are logged as a warning, not an error — the underlying MCP server can evolve its tool list across versions without breaking your config.
+</Note>
+
+<ResponseField name="allowedTools" type="string[]">
+    Tool names or `fnmatch` glob patterns to keep. All other tools from this server are dropped. Mutually exclusive with `disabledTools`.
+</ResponseField>
+
+<ResponseField name="disabledTools" type="string[]">
+    Tool names or `fnmatch` glob patterns to drop. All other tools from this server are kept. Mutually exclusive with `allowedTools`.
+</ResponseField>
+
+## OAuth login
+
+For remote MCP servers that require OAuth (Slack, GitHub, Notion, Linear, and other hosted MCP endpoints), set `"auth": "oauth"` on the server entry and run the login subcommand once. Tokens are persisted to disk and refreshed automatically.
+
+<Note>
+    OAuth login requires `deepagents-cli>=0.0.46`.
+</Note>
+
+### Configure the server
+
+```json title=".mcp.json"
+{
+    "mcpServers": {
+        "linear": {
+            "type": "http",
+            "url": "https://mcp.linear.app/mcp",
+            "auth": "oauth"
+        }
+    }
+}
+```
+
+`auth: "oauth"` is mutually exclusive with an `Authorization` header on the same entry, and cannot be set on a stdio server.
+
+### Run the login flow
+
+```bash
+deepagents mcp login linear
+```
+
+What happens depends on the server's host:
+
+- **Spec-compliant servers** (the default): the CLI performs Dynamic Client Registration, opens an Authorization Code + PKCE flow in your browser, and asks you to paste the redirected URL back into the terminal.
+- **Slack** (`slack.com`, `*.slack.com`): same paste-back flow, but with Slack's public client preseeded. You're prompted for an optional team ID (e.g., `T01234567`) so the app installs into the right workspace.
+- **GitHub** (`api.githubcopilot.com`): RFC 8628 Device Authorization Grant. The CLI prints a verification URL and a user code; you enter the code in your browser and the CLI polls for completion.
+
+By default, `deepagents mcp login` reads the same auto-discovered configs the CLI uses at runtime (subject to project-level trust gating). Pass `--config <path>` to use a specific file:
+
+```bash
+deepagents mcp login linear --config ./mcp-config.json
+```
+
+<Warning>
+    Project-level configs that haven't been trusted (see [Project-level trust](#project-level-trust)) are skipped during `mcp login` to prevent attacker-controlled `headers` entries from exfiltrating local secrets through `${VAR}` interpolation. Run `deepagents` in the project once to approve the config, or pass `--config <path>` explicitly.
+</Warning>
+
+### Token storage
+
+Tokens are written to:
+
+```text
+~/.deepagents/mcp-tokens/<server>-<sha256-16(url)>.json
+```
+
+The `<sha256-16(url)>` segment is the first 16 hex characters of the SHA-256 of the server URL. The directory is locked to mode `0700` and each token file is mode `0600`. Files include the OAuth access token, refresh token, and the dynamically registered client info, all in a schema-versioned payload that's written atomically (write-to-temp + `rename`).
+
+<Note>
+    Hashing the URL into the filename means the same server name pointing at different URLs (for example, dev vs. prod) gets independent token files and can't trample each other.
+</Note>
+
+### Re-authentication
+
+When refresh fails at runtime (the refresh token expired or was revoked), the CLI marks the server as `unauthenticated` instead of crashing the agent. The welcome banner shows the count of unauthenticated servers, and `/mcp` reports the reason per server. Re-run `deepagents mcp login <server>` to refresh credentials — your conversation continues without restarting.
+
+## Server status
+
+Each configured server lands in one of three states after startup:
+
+| Status | Meaning |
+|--------|---------|
+| `ok` | Connected; tools are loaded and available to the agent |
+| `unauthenticated` | OAuth login required or refresh failed — run `deepagents mcp login <server>` |
+| `error` | Pre-flight, discovery, or transport setup failed; an error message is attached |
+
+A single failing server no longer aborts startup. The agent runs with whichever servers came up cleanly, and the welcome banner surfaces counts of unauthenticated and errored servers next to the tool count. Open `/mcp` in an interactive session to see per-server status, transport, tool list, and the failure reason for non-`ok` entries. The viewer live-updates as servers connect and supports `tab`/`shift+tab` navigation.
+
 ## Project-level trust
 
-Project-level configs can contain stdio servers that execute local commands. To prevent untrusted repositories from running arbitrary code on CLI startup, the CLI enforces a **default-deny** policy for project-level stdio servers.
+Project-level configs can contain stdio servers that execute local commands and remote servers whose `headers` may interpolate `${VAR}` from your environment. To prevent untrusted repositories from running arbitrary code or exfiltrating local secrets on CLI startup, the CLI enforces a **default-deny** policy for project-level entries.
 
 ### How it works
 
-- **Interactive mode:** The CLI prompts for approval before launching project stdio servers, showing the exact commands. Approval is persisted using a SHA-256 content fingerprint—if the config changes, you are prompted again.
-- **Non-interactive mode (`-n`):** Project stdio servers are silently skipped unless `--trust-project-mcp` is passed.
-- **Remote servers (SSE/HTTP)** from project configs are always allowed since they do not execute local code.
+- **Interactive mode:** The CLI prompts for approval before activating project servers, showing each stdio command and remote URL. Approval is persisted using a SHA-256 content fingerprint—if the config changes, you are prompted again.
+- **Non-interactive mode (`-n`):** Project servers are silently skipped unless `--trust-project-mcp` is passed.
+- **Trust covers stdio and remote entries alike** — remote servers can SSRF into localhost or cloud-metadata endpoints during the pre-flight probe and exfiltrate `${VAR}` values via headers, so they're gated the same way as stdio.
 - **User-level configs** (`~/.deepagents/.mcp.json`) are always trusted—the same trust model as `config.toml` and `hooks.json`.
+- **`deepagents mcp login`** also honors project trust: an untrusted project-level config is skipped during login discovery so an attacker-controlled remote entry cannot pull secrets into the OAuth handshake.
 
 ### Flags
 
@@ -237,6 +413,18 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
 
     <Accordion title="Tools not appearing">
         The CLI prints the number of tools loaded at startup (e.g., `✓ Loaded 3 MCP tools`). If you see `0`, the server started successfully but didn't advertise any tools—check the server's own logs or documentation.
+    </Accordion>
+
+    <Accordion title="Server shows `unauthenticated` in /mcp">
+        Either you haven't run `deepagents mcp login <server>` yet, or the persisted refresh token expired or was revoked server-side. Run the login command again — your session keeps running and the server will re-attach once tokens are refreshed.
+    </Accordion>
+
+    <Accordion title="`Invalid MCP config at ...`">
+        A pre-flight validation rejected `--mcp-config` (or an auto-discovered `.mcp.json`). Common causes: an unsupported server name (must match `[A-Za-z0-9_-]+`), `auth: oauth` on a stdio server, both `command` and `url` set on the same entry, or a header value that isn't a string. Fix the highlighted reason and relaunch — the CLI no longer dumps a multi-page subprocess trace for config errors.
+    </Accordion>
+
+    <Accordion title="`${VAR}` header references fail">
+        Header interpolation runs at activation time, so an unset variable only fails the server that needs it. Export the variable in the parent shell or add it to `~/.deepagents/.env`. To debug, set `DEEPAGENTS_CLI_DEBUG=1` and inspect the per-session log path printed to stderr on shutdown.
     </Accordion>
 </AccordionGroup>
 

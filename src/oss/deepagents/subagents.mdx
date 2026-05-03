@@ -6,7 +6,7 @@ description: Learn how to use subagents to delegate work and keep context clean
 import SubagentBasicPy from '/snippets/subagent-basic-py.mdx';
 import SubagentBasicJs from '/snippets/subagent-basic-js.mdx';
 
-Deep Agents can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
+A deep agent can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
 
 This page covers **synchronous** subagents, where the supervisor blocks until the subagent finishes. For long-running tasks, parallel workstreams, or cases where you need mid-flight steering and cancellation, see [Async subagents](/oss/deepagents/async-subagents).
 
@@ -43,6 +43,29 @@ Subagents solve the **context bloat problem**. When agents use tools with large 
 ## Configuration
 
 `subagents` should be a list of dictionaries or @[`CompiledSubAgent`] objects. There are two types:
+
+### Default subagent
+
+Deep Agents automatically adds a synchronous `general-purpose` subagent unless you already provide a synchronous subagent with that name.
+
+- To replace it, pass your own subagent named `general-purpose`.
+- To rename or re-prompt the auto-added version, set `general_purpose_subagent=GeneralPurposeSubagentProfile(...)` on the active [harness profile](/oss/deepagents/profiles#harness-profiles).
+- To disable it, see [Running without subagents](#running-without-subagents) below.
+
+### Running without subagents
+
+To run an agent without the `task` tool, do two things:
+
+1. Set `general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)` on the active [harness profile](/oss/deepagents/profiles#harness-profiles).
+2. Pass no synchronous subagents via `subagents=` on `create_deep_agent`.
+
+Deep Agents only attaches `SubAgentMiddleware` (and the `task` tool) when at least one synchronous subagent exists. With neither the default nor a caller-provided one, the agent runs without delegation.
+
+Async subagents are unaffected — they flow through their own middleware and tools, described in [Async subagents](/oss/deepagents/async-subagents).
+
+<Tip>
+    Don't reach for `excluded_middleware` here — `SubAgentMiddleware` is required scaffolding and listing it raises `ValueError`. The `general_purpose_subagent.enabled = False` knob is the supported path.
+</Tip>
 
 ### SubAgent (Dictionary-based)
 
@@ -220,7 +243,7 @@ agent = create_deep_agent(
 )
 ```
 
-As you prompt your deepagents, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
+As you prompt your deep agent, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
 In this case the subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in any associated agent run metadata:
 
 ![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
@@ -230,6 +253,10 @@ In this case the subagent with the name `"research-agent"`, will have `{'lc_agen
 Subagents support [structured output](/oss/langchain/structured-output), so the parent agent receives predictable, parseable JSON instead of free-form text.
 
 :::python
+<Note>
+    Structured output for subagents requires `deepagents>=0.5.3`.
+</Note>
+
 Pass `response_format` on the subagent config. When the subagent finishes, its structured response is JSON-serialized and returned as the `ToolMessage` content to the parent agent. The schema accepts anything supported by @[`create_agent`]: Pydantic models, `ToolStrategy(...)`, `ProviderStrategy(...)`, or a raw schema type.
 
 ```python
@@ -268,7 +295,7 @@ result = await agent.ainvoke(
 
 :::js
 <Note>
-Structured output for subagents requires `deepagents` version 1.8.4 or newer.
+    Structured output for subagents requires `deepagents>=1.8.4`.
 </Note>
 
 Pass `responseFormat` on the subagent config. When the subagent finishes, its structured response is JSON-serialized and returned as the `ToolMessage` content to the parent agent. The schema accepts anything supported by `createAgent`: Zod schemas, JSON schema objects, `toolStrategy(...)`, or `providerStrategy(...)`.
@@ -311,7 +338,7 @@ For full details on schema types and strategies (tool calling vs. provider-nativ
 
 ## The general-purpose subagent
 
-In addition to any user-defined subagents, Deep Agents have access to a `general-purpose` subagent at all times. This subagent:
+In addition to any user-defined subagents, every deep agent has access to a `general-purpose` subagent at all times. This subagent:
 
 - Has the same system prompt as the main agent
 - Has access to all the same tools
@@ -367,6 +394,8 @@ const agent = await createDeepAgent({
 :::
 
 When you provide a subagent with the general-purpose name, the default general-purpose subagent is not added. Your spec fully replaces it.
+
+To remove the built-in general-purpose subagent entirely instead of replacing it, set the active harness profile's general-purpose subagent `enabled` flag to `False`.
 
 ### When to use it
 

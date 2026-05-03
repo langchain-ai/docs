@@ -3,38 +3,28 @@ title: "AzureChatOpenAI integration"
 description: "Integrate with the AzureChatOpenAI chat model using LangChain Python."
 ---
 
-You can find information about Azure OpenAI's latest models and their costs, context windows, and supported input types in the [Azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models).
+You can find information about Azure OpenAI's latest models and their costs, context windows, and supported input types in the [Azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models). For the full set of Microsoft integrations in LangChain (including tools like Azure AI Search, Azure Database for PostgreSQL, and the M365 suite), see the [Microsoft provider page](/oss/integrations/providers/microsoft).
 
 <Info>
     **Azure OpenAI vs OpenAI**
 
-    Azure OpenAI refers to OpenAI models hosted on the [Microsoft Azure platform](https://azure.microsoft.com/en-us/products/ai-services/openai-service). OpenAI also provides its own model APIs. To access OpenAI services directly, use the [`ChatOpenAI` integration](/oss/integrations/chat/openai/).
+    Azure OpenAI refers to OpenAI models hosted on the [Microsoft Azure platform](https://azure.microsoft.com/en-us/products/ai-services/openai-service). Models hosted on Azure come with added enterprise features including support for keyless authentication with Entra ID.
 </Info>
 
 <Info>
-    **Azure OpenAI v1 API**
+    **Use `ChatOpenAI` with v1 API (recommended)**
 
-    Azure OpenAI's [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python#next-generation-api-1) (Generally Available as of August 2025) allows you to use `ChatOpenAI` directly with Azure endpoints. This provides a unified interface and native support for Microsoft Entra ID authentication with automatic token refresh.
+    Azure OpenAI's [v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python) (Generally Available as of August 2025) allows you to use [`ChatOpenAI`](/oss/integrations/chat/openai/#using-with-azure-openai) directly with Azure endpoints. This removes the need for dated `api-version` parameters and provides native support for Microsoft Entra ID authentication with automatic token refresh.
 
-    See the [ChatOpenAI Azure section](/oss/integrations/chat/openai#using-with-azure-openai) for details on using `ChatOpenAI` with Azure's v1 API.
+    We continue to support @[`AzureChatOpenAI`], which now shares the same underlying base implementation as @[`ChatOpenAI`], which interfaces with OpenAI services directly.
 
-    `AzureChatOpenAI` is still currently supported for traditional Azure OpenAI API versions and scenarios requiring Azure-specific configurations, but we recommend using `ChatOpenAI` or the `AzureAIOpenAIApiChatModel` in [LangChain Azure AI](https://docs.langchain.com/oss/python/integrations/providers/azure_ai) going forward.
+    This page serves as a quickstart for authenticating and connecting your Azure OpenAI Chat Models to LangChain.
 </Info>
-
-<Note>
-    @[`AzureChatOpenAI`] shares the same underlying base implementation as @[`ChatOpenAI`],
-    which interfaces with OpenAI services directly.
-
-    This page serves as a quickstart for authenticating and connecting your Azure OpenAI service to a LangChain chat model.
-
-    Visit the [`ChatOpenAI` docs](/oss/integrations/chat/openai/) for details on available
-    features, or head to the @[`AzureChatOpenAI`] API reference.
-</Note>
 
 <Tip>
     **API Reference**
 
-    For detailed documentation of all features and configuration options, head to the @[`AzureChatOpenAI`] API reference.
+    For detailed documentation of all features and configuration options, head to the @[`AzureChatOpenAI`] API reference. Visit the [`ChatOpenAI` docs](/oss/integrations/chat/openai/) for details on available features.
 </Tip>
 
 ## Overview
@@ -53,7 +43,7 @@ You can find information about Azure OpenAI's latest models and their costs, con
 
 ## Setup
 
-To access @[`AzureChatOpenAI`] models you'll need to create an Azure account, create a deployment of an Azure OpenAI model, get the name and endpoint for your deployment, get an Azure OpenAI API key, and install the `langchain-openai` integration package.
+To access Azure OpenAI models you'll need to [create an Azure account](https://account.azure.com/signup), create a deployment of an Azure OpenAI model, get the name and endpoint for your deployment, and install the `langchain-openai` integration package.
 
 ### Installation
 
@@ -66,9 +56,30 @@ To access @[`AzureChatOpenAI`] models you'll need to create an Azure account, cr
     ```
 </CodeGroup>
 
-### Credentials
+## Credentials
 
-Head to the [Azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/chatgpt-quickstart?tabs=command-line%2Cpython-new&pivots=programming-language-python) to create your deployment and generate an API key. Once you've done this set the `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` environment variables:
+Both @[`ChatOpenAI`] and @[`AzureChatOpenAI`] support authenticating to Azure OpenAI with either **Microsoft Entra ID** (recommended) or an **API key**.
+
+### Microsoft Entra ID
+
+[Microsoft Entra ID](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/managed-identity) provides keyless authentication with automatic token refresh. Install the `azure-identity` package and create a token provider—the same provider works with both `ChatOpenAI` and `AzureChatOpenAI`:
+
+```bash
+pip install azure-identity
+```
+
+```python
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+token_provider = get_bearer_token_provider(
+    DefaultAzureCredential(),
+    "https://cognitiveservices.azure.com/.default",
+)
+```
+
+### API key
+
+Head to the [Azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/chatgpt-quickstart?tabs=command-line%2Cpython-new&pivots=programming-language-python) to create your deployment and generate an API key. Set the `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` environment variables:
 
 ```python
 import getpass
@@ -78,7 +89,7 @@ if "AZURE_OPENAI_API_KEY" not in os.environ:
     os.environ["AZURE_OPENAI_API_KEY"] = getpass.getpass(
         "Enter your AzureOpenAI API key: "
     )
-os.environ["AZURE_OPENAI_ENDPOINT"] = "https://YOUR-ENDPOINT.openai.azure.com/"
+os.environ["AZURE_OPENAI_ENDPOINT"] = "https://YOUR-RESOURCE-NAME.openai.azure.com/"
 ```
 
 To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
@@ -90,24 +101,73 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ## Instantiation
 
-Now we can instantiate our model object and generate chat completions.
+### ChatOpenAI with v1 API
 
-- Replace `azure_deployment` with the name of your deployment,
-- You can find the latest supported `api_version` here: [learn.microsoft.com/en-us/azure/ai-services/openai/reference](https://learn.microsoft.com/en-us/azure/ai-services/openai/reference).
+Set `base_url` to your Azure endpoint with `/openai/v1/` appended. With the v1 API you can call any model deployed in [Microsoft Foundry](https://learn.microsoft.com/en-us/azure/ai-foundry/) (including OpenAI, Llama, DeepSeek, Mistral, and Phi) through a single interface by pointing `model` at your deployment name.
 
-```python
-from langchain_openai import AzureChatOpenAI
+<Tabs>
+    <Tab title="Entra ID (recommended)">
+        Pass the token provider to `api_key`:
 
-llm = AzureChatOpenAI(
-    azure_deployment="gpt-35-turbo",  # or your deployment
-    api_version="2023-06-01-preview",  # or your api version
-    temperature=0,
-    max_tokens=None,
-    timeout=None,
-    max_retries=2,
-    # other params...
-)
-```
+        ```python
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model="gpt-5.4-mini",  # your Azure deployment name
+            base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+            api_key=token_provider,  # callable that handles token refresh
+        )
+        ```
+    </Tab>
+    <Tab title="API key">
+        ```python
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model="gpt-5.4-mini",  # your Azure deployment name
+            base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+            api_key="your-azure-api-key",
+        )
+        ```
+    </Tab>
+</Tabs>
+
+### AzureChatOpenAI
+
+Use @[`AzureChatOpenAI`] when working with traditional Azure OpenAI API versions that require `api_version`.
+
+<Tabs>
+    <Tab title="Entra ID (recommended)">
+        Pass the token provider to `azure_ad_token_provider`:
+
+        ```python
+        from langchain_openai import AzureChatOpenAI
+
+        llm = AzureChatOpenAI(
+            azure_deployment="gpt-5.4-mini",  # or your deployment
+            api_version="2025-04-01-preview",  # or your api version
+            azure_ad_token_provider=token_provider,
+        )
+        ```
+    </Tab>
+    <Tab title="API key">
+        Reads `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_ENDPOINT` from the environment:
+
+        ```python
+        from langchain_openai import AzureChatOpenAI
+
+        llm = AzureChatOpenAI(
+            azure_deployment="gpt-5.4-mini",  # or your deployment
+            api_version="2025-04-01-preview",  # or your api version
+            temperature=0,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+            # other params...
+        )
+        ```
+    </Tab>
+</Tabs>
 
 ## Invocation
 
@@ -120,70 +180,235 @@ messages = [
     ("human", "I love programming."),
 ]
 ai_msg = llm.invoke(messages)
-ai_msg
-```
-
-```text
-AIMessage(content="J'adore la programmation.", response_metadata={'token_usage': {'completion_tokens': 8, 'prompt_tokens': 31, 'total_tokens': 39}, 'model_name': 'gpt-35-turbo', 'system_fingerprint': None, 'prompt_filter_results': [{'prompt_index': 0, 'content_filter_results': {'hate': {'filtered': False, 'severity': 'safe'}, 'self_harm': {'filtered': False, 'severity': 'safe'}, 'sexual': {'filtered': False, 'severity': 'safe'}, 'violence': {'filtered': False, 'severity': 'safe'}}}], 'finish_reason': 'stop', 'logprobs': None, 'content_filter_results': {'hate': {'filtered': False, 'severity': 'safe'}, 'self_harm': {'filtered': False, 'severity': 'safe'}, 'sexual': {'filtered': False, 'severity': 'safe'}, 'violence': {'filtered': False, 'severity': 'safe'}}}, id='run-bea4b46c-e3e1-4495-9d3a-698370ad963d-0', usage_metadata={'input_tokens': 31, 'output_tokens': 8, 'total_tokens': 39})
-```
-
-```python
-print(ai_msg.content)
+print(ai_msg.text)
 ```
 
 ```text
 J'adore la programmation.
 ```
 
+## Tool calling
+
+Bind tools to the model using Pydantic classes, dict schemas, LangChain tools, or functions:
+
+```python
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location"""
+
+    location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+
+llm = ChatOpenAI(
+    model="gpt-5.4-mini",
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key="your-azure-api-key",
+)
+
+llm_with_tools = llm.bind_tools([GetWeather])
+
+ai_msg = llm_with_tools.invoke("What is the weather like in San Francisco?")
+ai_msg.tool_calls
+```
+
+```text
+[{'name': 'GetWeather',
+  'args': {'location': 'San Francisco, CA'},
+  'id': 'call_jUqhd8wzAIzInTJl72Rla8ht',
+  'type': 'tool_call'}]
+```
+
+For more on binding tools and tool call outputs, head to the [tool calling](/oss/langchain/tools) docs.
+
+## Build an agent
+
+Use @[`create_agent`] to build an agent with Azure OpenAI and tools:
+
+```python
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-5.4-mini",
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key="your-azure-api-key",
+)
+
+
+def get_weather(city: str) -> str:
+    """Get weather for a given city."""
+    return f"It's always sunny in {city}!"
+
+
+agent = create_agent(
+    model=llm,
+    tools=[get_weather],
+    system_prompt="You are a helpful assistant",
+)
+
+# Stream agent responses
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+    stream_mode="updates",
+):
+    for step, data in chunk.items():
+        print(f"step: {step}")
+        print(f"content: {data['messages'][-1].text}")
+```
+
 ## Streaming usage metadata
 
 OpenAI's Chat Completions API does not stream token usage statistics by default (see the [OpenAI API reference for stream options](https://platform.openai.com/docs/api-reference/completions/create#completions-create-stream_options)).
 
-To recover token counts when streaming with @[`ChatOpenAI`] or `AzureChatOpenAI`, set `stream_usage=True` as an initialization parameter or on invocation:
+To recover token counts when streaming, set `stream_usage=True` as an initialization parameter or on invocation:
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-5.4-mini",
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key="your-azure-api-key",
+    stream_usage=True,  # [!code highlight]
+)
+```
+
+## Responses API
+
+Azure OpenAI supports the [Responses API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses), which provides stateful conversations, built-in server-side tools (code interpreter, image generation, file search, and remote MCP), and structured reasoning summaries. @[`ChatOpenAI`] automatically routes to the Responses API when you set the `reasoning` parameter, or you can opt in explicitly with `use_responses_api=True`:
+
+<Tabs>
+    <Tab title="Entra ID (recommended)">
+        ```python
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model="gpt-5.4-mini",  # your Azure deployment name
+            base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+            api_key=token_provider,
+            use_responses_api=True,  # [!code highlight]
+        )
+
+        # Bind a built-in server-side tool
+        llm_with_tools = llm.bind_tools(  # [!code highlight]
+            [{"type": "code_interpreter", "container": {"type": "auto"}}]  # [!code highlight]
+        )  # [!code highlight]
+
+        response = llm_with_tools.invoke(
+            "Use the code interpreter to compute the 25th Fibonacci number."
+        )
+        print(response.text)
+        ```
+    </Tab>
+    <Tab title="API key">
+        ```python
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model="gpt-5.4-mini",  # your Azure deployment name
+            base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+            api_key="your-azure-api-key",
+            use_responses_api=True,  # [!code highlight]
+        )
+
+        # Bind a built-in server-side tool
+        llm_with_tools = llm.bind_tools(  # [!code highlight]
+            [{"type": "code_interpreter", "container": {"type": "auto"}}]  # [!code highlight]
+        )  # [!code highlight]
+
+        response = llm_with_tools.invoke(
+            "Use the code interpreter to compute the 25th Fibonacci number."
+        )
+        print(response.text)
+        ```
+    </Tab>
+</Tabs>
+
+For details on built-in tools and how to use them, see the [Azure OpenAI Responses API docs](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses).
+
+## Reasoning effort and summary
+
+Azure OpenAI [reasoning models](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/reasoning) (for example, `o4-mini`, `gpt-5`) spend extra tokens thinking through a request before producing their final answer. With `ChatOpenAI` on the v1 API, you can configure how much effort the model spends reasoning and optionally request a summary of its chain of thought.
+
+### Reasoning effort
+
+Set `reasoning_effort` to `"low"`, `"medium"`, or `"high"`. Higher settings let the model spend more tokens on reasoning, which typically improves quality for complex tasks at the cost of latency:
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-5.4-mini",  # your Azure reasoning model deployment
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key=token_provider,
+    reasoning_effort="medium",
+)
+
+response = llm.invoke("Tell me about the bitter lesson.")
+print(response.text)
+```
+
+<Note>
+    Reasoning models use tokens for internal reasoning (`reasoning_tokens` in `completion_tokens_details`). These tokens aren't returned in the message content but count toward the output token limit. If you see empty responses, increase `max_tokens` or leave it unset so the model has room for both reasoning and output.
+</Note>
+
+### Reasoning summary
+
+When using a reasoning model via the Responses API, you can request a summary of the model's chain of thought by passing a `reasoning` dict. Setting `reasoning` automatically routes `ChatOpenAI` to the Responses API:
+
+```python
+from langchain_openai import ChatOpenAI
+
+reasoning = {
+    "effort": "high",    # 'low', 'medium', or 'high'
+    "summary": "auto",   # 'auto', 'concise', or 'detailed'
+}
+
+llm = ChatOpenAI(
+    model="gpt-5.4-mini",  # your Azure reasoning model deployment
+    base_url="https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/",
+    api_key=token_provider,
+    reasoning=reasoning,
+)
+
+response = llm.invoke("What's the optimal strategy to win at poker?")
+
+# Final answer
+print(response.text)
+
+# Reasoning summary blocks
+for block in response.content_blocks:
+    if block["type"] == "reasoning":
+        print(block["reasoning"])
+```
+
+<Warning>
+    Attempting to extract raw reasoning tokens through methods other than the reasoning summary parameter isn't supported and may violate Azure's Acceptable Use Policy. Use the `summary` field to access model reasoning.
+</Warning>
+
+<Note>
+    Even when enabled, reasoning summaries aren't guaranteed for every step or request—this is expected behavior.
+</Note>
+
+## Specifying model version (legacy API)
+
+<Note>
+    This section applies only when using `AzureChatOpenAI` with traditional API versions. The v1 API does not require `api_version` parameters.
+</Note>
+
+When using `AzureChatOpenAI`, Azure OpenAI responses contain a `model_name` response metadata property. Unlike native OpenAI responses, it does not contain the specific version of the model (which is set on the deployment in Azure). Pass `model_version` to distinguish between different versions:
 
 ```python
 from langchain_openai import AzureChatOpenAI
 
-llm = AzureChatOpenAI(model="gpt-5.4-mini", stream_usage=True)  # [!code highlight]
-```
-
-## Specifying model version
-
-Azure OpenAI responses contain `model_name` response metadata property, which is name of the model used to generate the response. However unlike native OpenAI responses, it does not contain the specific version of the model, which is set on the deployment in Azure. e.g. it does not distinguish between `gpt-35-turbo-0125` and `gpt-35-turbo-0301`. This makes it tricky to know which version of the model was used to generate the response, which as result can lead to e.g. wrong total cost calculation with `OpenAICallbackHandler`.
-
-To solve this problem, you can pass `model_version` parameter to @[`AzureChatOpenAI`] class, which will be added to the model name in the llm output. This way you can easily distinguish between different versions of the model.
-
-```python
-pip install -qU langchain-community
-```
-
-```python
-from langchain_community.callbacks import get_openai_callback
-
-with get_openai_callback() as cb:
-    llm.invoke(messages)
-    print(
-        f"Total Cost (USD): ${format(cb.total_cost, '.6f')}"
-    )  # without specifying the model version, flat-rate 0.002 USD per 1k input and output tokens is used
-```
-
-```text
-Total Cost (USD): $0.000063
-```
-
-```python
-llm_0301 = AzureChatOpenAI(
-    azure_deployment="gpt-35-turbo",  # or your deployment
-    api_version="2023-06-01-preview",  # or your api version
+llm = AzureChatOpenAI(
+    azure_deployment="gpt-5.4-mini",  # or your deployment
+    api_version="2025-04-01-preview",  # or your api version
     model_version="0301",
 )
-with get_openai_callback() as cb:
-    llm_0301.invoke(messages)
-    print(f"Total Cost (USD): ${format(cb.total_cost, '.6f')}")
-```
-
-```text
-Total Cost (USD): $0.000074
 ```
 
 ---
