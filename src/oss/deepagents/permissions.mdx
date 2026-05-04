@@ -48,6 +48,29 @@ agent = create_deep_agent(
 
 :::
 
+:::js
+
+Pass a list of `FilesystemPermission` rules to `createDeepAgent`. Rules are evaluated in declaration order. The first matching rule wins. If no rule matches, the operation is allowed.
+
+```typescript
+import { createDeepAgent, type FilesystemPermission } from "deepagents";
+
+// Read-only agent: deny all writes
+const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    {
+      operations: ["write"],
+      paths: ["/**"],
+      mode: "deny",
+    },
+  ],
+});
+```
+
+:::
+
 ## Rule structure
 
 :::python
@@ -61,6 +84,22 @@ Each `FilesystemPermission` has three fields:
 | `mode` | `"allow" \| "deny"` | Whether to allow or deny matching operations. Defaults to `"allow"`. |
 
 Rules use first-match-wins evaluation: the first rule whose `operations` and `paths` match the current call determines the outcome. If no rule matches, the call is **allowed** (permissive default).
+
+:::
+
+:::js
+
+Each `FilesystemPermission` has three fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operations` | `("read" \| "write")[]` | Operations this rule applies to. `"read"` covers `ls`, `read_file`, `glob`, `grep`. `"write"` covers `write_file`, `edit_file`. |
+| `paths` | `string[]` | Glob patterns for matching file paths (e.g., `["/workspace/**"]`). Supports `**` for recursive matching and `{a,b}` for alternation. |
+| `mode` | `"allow" \| "deny"` | Whether to allow or deny matching operations. Defaults to `"allow"`. |
+
+Rules use first-match-wins evaluation: the first rule whose `operations` and `paths` match the current call determines the outcome. If no rule matches, the call is **allowed** (permissive default).
+
+Paths must be absolute (start with `/`) and cannot contain `..` or `~`. Invalid paths throw at agent construction time.
 
 :::
 
@@ -209,6 +248,156 @@ permissions=[
 
 :::
 
+:::js
+
+### Isolate to a workspace directory
+
+Allow reads and writes only under `/workspace/` and deny everything else:
+
+```typescript
+const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    {
+      operations: ["read", "write"],
+      paths: ["/workspace/**"],
+      mode: "allow",
+    },
+    {
+      operations: ["read", "write"],
+      paths: ["/**"],
+      mode: "deny",
+    },
+  ],
+});
+```
+
+### Protect specific files
+
+```typescript
+const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    {
+      operations: ["read", "write"],
+      paths: ["/workspace/.env", "/workspace/examples/**"],
+      mode: "deny",
+    },
+    {
+      operations: ["read", "write"],
+      paths: ["/workspace/**"],
+      mode: "allow",
+    },
+    {
+      operations: ["read", "write"],
+      paths: ["/**"],
+      mode: "deny",
+    },
+  ],
+});
+```
+
+### Read-only memory
+
+Allow the agent to read memory files but prevent it from modifying them. This is useful for organization-wide policies or shared knowledge bases that should only be updated by application code. See [read-only vs writable memory](/oss/deepagents/memory#read-only-vs-writable-memory) for more context.
+
+```typescript
+import {
+  createDeepAgent,
+  CompositeBackend,
+  StateBackend,
+  StoreBackend,
+} from "deepagents";
+
+const agent = createDeepAgent({
+  model,
+  backend: new CompositeBackend(
+    new StateBackend(),
+    {
+      "/memories/": new StoreBackend({
+        namespace: (rt) => [rt.serverInfo.user.identity],
+      }),
+      "/policies/": new StoreBackend({
+        namespace: (rt) => [rt.context.orgId],
+      }),
+    },
+  ),
+  permissions: [
+    {
+      operations: ["write"],
+      paths: ["/memories/**", "/policies/**"],
+      mode: "deny",
+    },
+  ],
+});
+```
+
+### Deny all access
+
+Block all reads and writes. This is a restrictive baseline you can layer more specific allow rules on top of:
+
+```typescript
+const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    {
+      operations: ["read", "write"],
+      paths: ["/**"],
+      mode: "deny",
+    },
+  ],
+});
+```
+
+### Rule ordering
+
+Because of first-match-wins, rule order matters. Place more specific rules before broader ones:
+
+```typescript
+// Correct: deny .env, allow workspace, deny everything else
+const permissions = [
+  {
+    operations: ["read", "write"],
+    paths: ["/workspace/.env"],
+    mode: "deny",
+  },
+  {
+    operations: ["read", "write"],
+    paths: ["/workspace/**"],
+    mode: "allow",
+  },
+  {
+    operations: ["read", "write"],
+    paths: ["/**"],
+    mode: "deny",
+  },
+];
+
+// Bug: /workspace/** matches .env first, so the deny never triggers
+const permissions = [
+  {
+    operations: ["read", "write"],
+    paths: ["/workspace/**"],
+    mode: "allow",
+  },
+  {
+    operations: ["read", "write"],
+    paths: ["/workspace/.env"],
+    mode: "deny", // never reached
+  },
+  {
+    operations: ["read", "write"],
+    paths: ["/**"],
+    mode: "deny",
+  },
+];
+```
+
+:::
+
 ## Subagent permissions
 
 :::python
@@ -257,6 +446,57 @@ agent = create_deep_agent(
     ],
 )
 ```
+
+:::
+
+:::js
+
+[Subagents](/oss/deepagents/subagents) inherit the parent agent's permissions by default. To give a subagent different permissions, set the `permissions` field in its spec. This **replaces** the parent's rules entirely.
+
+```typescript
+const agent = createDeepAgent({
+  model,
+  backend,
+  permissions: [
+    {
+      operations: ["read", "write"],
+      paths: ["/workspace/**"],
+      mode: "allow",
+    },
+    {
+      operations: ["read", "write"],
+      paths: ["/**"],
+      mode: "deny",
+    },
+  ],
+  subagents: [
+    {
+      name: "auditor",
+      description: "Read-only code reviewer",
+      systemPrompt: "Review the code for issues.",
+      permissions: [
+        {
+          operations: ["write"],
+          paths: ["/**"],
+          mode: "deny",
+        },
+        {
+          operations: ["read"],
+          paths: ["/workspace/**"],
+          mode: "allow",
+        },
+        {
+          operations: ["read"],
+          paths: ["/**"],
+          mode: "deny",
+        },
+      ],
+    },
+  ],
+});
+```
+
+To explicitly grant a subagent unrestricted access, set `permissions: []` — an empty array overrides the parent rules with no restrictions. Omitting `permissions` inherits from the parent.
 
 :::
 
@@ -316,6 +556,63 @@ agent = create_deep_agent(
         ),
     ],
 )
+```
+
+:::
+
+:::js
+
+When using a `CompositeBackend` with a sandbox default, every permission path must be scoped under a known route prefix. Sandboxes support arbitrary command execution, so path-based restrictions alone cannot prevent filesystem access through shell commands. Scoping permissions to route-specific [backends](/oss/deepagents/backends) avoids this conflict.
+
+```typescript
+import { createDeepAgent, CompositeBackend } from "deepagents";
+
+const composite = new CompositeBackend(sandbox, {
+  "/memories/": memoriesBackend,
+});
+
+// Works: permissions are scoped to the /memories/ route
+const agent = createDeepAgent({
+  model,
+  backend: composite,
+  permissions: [
+    {
+      operations: ["write"],
+      paths: ["/memories/**"],
+      mode: "deny",
+    },
+  ],
+});
+```
+
+Permissions that include paths outside any route throw at construction time:
+
+```typescript
+// Throws: /workspace/** hits the sandbox default
+const agent = createDeepAgent({
+  model,
+  backend: composite,
+  permissions: [
+    {
+      operations: ["write"],
+      paths: ["/workspace/**"],
+      mode: "deny",
+    },
+  ],
+});
+
+// Also throws: /** covers both routes and the default
+const agent = createDeepAgent({
+  model,
+  backend: composite,
+  permissions: [
+    {
+      operations: ["read"],
+      paths: ["/**"],
+      mode: "deny",
+    },
+  ],
+});
 ```
 
 :::
