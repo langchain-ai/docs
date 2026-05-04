@@ -1,6 +1,7 @@
-"""Generate MDX snippet files from Bluehawk-generated code snippet files.
+"""Generate MDX snippet files from extracted code snippet files.
 
 Reads .snippet.*.py and .snippet.*.ts files from src/code-samples-generated/
+(produced by ``scripts/extract_code_snippets.py``, Bluehawk-compatible layout).
 and creates corresponding MDX files in src/snippets/code-samples/ for use in docs.
 
 When a snippet uses a LangChain-style model argument (`model="…"` in Python or
@@ -20,7 +21,7 @@ To keep a specific model line:
 The marker line is stripped during processing and that model occurrence is not
 replaced/expanded.
 
-Run as part of `make code-snippets` after Bluehawk extraction.
+Run as part of `make code-snippets` after `extract_code_snippets.py`.
 """
 
 from __future__ import annotations
