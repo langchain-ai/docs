@@ -150,7 +150,7 @@ make code-snippets
 
 This command:
 
-1. Runs `npx --yes bluehawk snip -o src/code-samples-generated/ src/code-samples/`
+1. Runs `python scripts/extract_code_snippets.py` (line-based, Bluehawk-compatible; handles `/**` in TS strings)
 2. Runs `scripts/generate_code_snippet_mdx.py` to produce MDX snippets in `src/snippets/code-samples/`
 
 Output files:
