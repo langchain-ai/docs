@@ -1,9 +1,10 @@
 ---
 title: Going to production
-description: Take your Deep Agent to production with persistent memory, sandboxes, resilience middleware, and deployment options
+description: Take your deep agent to production with persistent memory, sandboxes, resilience middleware, and deployment options
 ---
 
-This guide covers considerations for taking a Deep Agent from a local prototype to a production deployment. It walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend.
+This guide covers considerations for taking a deep agent from a local prototype to a production deployment. It walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend.
+
 
 ## Overview
 
@@ -24,7 +25,9 @@ This page covers:
 
 ## LangSmith Deployments
 
-The fastest way to get a Deep Agent into production is [`deepagents deploy`](/oss/deepagents/deploy), which packages your agent configuration and deploys it as a LangSmith Deployment with one command. Alternatively, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
+![`deepagents deploy` packages your agent configuration—memory, sandbox, skills, MCP servers—and ships it to a LangSmith Deployment](/oss/images/deepagents/production/deepagents-deploy-config.png)
+
+The fastest way to get a deep agent into production is [`deepagents deploy`](/oss/deepagents/deploy), which packages your agent configuration and deploys it as a LangSmith Deployment with one command. Alternatively, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
 
 For the CLI-based approach, see [Deploy with the CLI](/oss/deepagents/deploy). For manual setup, see the [LangSmith Deployments quickstart](/langsmith/deployment-quickstart).
 
@@ -70,6 +73,8 @@ For the full set of configuration options (custom Docker steps, store indexing, 
 
 When your agent serves multiple users, you need to handle three concerns: verifying who each user is, controlling what they can access, and managing the credentials the agent uses to act on their behalf.
 
+![Three authentication layers compose: end-user auth, agent-acting-as-user auth, and team RBAC](/oss/images/deepagents/production/auth-layers.png)
+
 #### User identity and access control
 
 [LangSmith Deployments](/langsmith/deployment) supports [custom authentication](/langsmith/custom-auth) to establish user identity and [authorization handlers](/langsmith/auth) to control access to resources like threads, assistants, and store namespaces. Authorization handlers run after authentication succeeds and can:
@@ -78,7 +83,7 @@ When your agent serves multiple users, you need to handle three concerns: verify
 - Return filters so users only see their own resources
 - Deny access with HTTP 403 for unauthorized operations
 
-For a step-by-step tutorial, see [Make conversations private](/langsmith/resource-auth).
+For a step-by-step tutorial, see [Make conversations private](/langsmith/resource-auth). For a walkthrough, watch the [custom auth video](https://www.youtube.com/watch?v=DkNqgCz8cjE).
 
 How you [scope memory](#scoping) and [execution environments](#execution-environment) determines what data is shared between users. See the sections below for details.
 
@@ -159,6 +164,8 @@ When building for production:
 
 Deep Agents run on LangGraph, which provides [durable execution](/oss/langgraph/durable-execution) out of the box. The [persistence](/oss/langgraph/persistence) layer checkpoints state at each step, so a run interrupted by a failure, timeout, or [human-in-the-loop](/oss/langgraph/interrupts) pause resumes from its last recorded state without reprocessing previous steps. For long-running deep agents that spawn many subagents, this means a mid-run failure doesn't lose completed work.
 
+![Durable execution: when a worker crashes mid-run, another worker picks the run up from the latest checkpoint](/oss/images/deepagents/production/durable-execution.png)
+
 Checkpointing also enables:
 
 - **Indefinite [interrupts](/oss/langgraph/interrupts).** Human-in-the-loop workflows can pause for minutes or days and resume exactly where they left off.
@@ -172,6 +179,8 @@ Checkpointing also enables:
 ## Memory
 
 Without memory, every conversation starts from scratch. Memory lets your agent retain information across conversations (user preferences, learned instructions, past experiences) so it can personalize its behavior over time. For an overview of memory types, see the [memory concepts guide](/oss/concepts/memory).
+
+![Short-term memory is scoped to a single thread via checkpoints; long-term memory persists across threads via the store](/oss/images/deepagents/production/memory.png)
 
 ### Scoping
 
@@ -213,7 +222,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
 agent = create_deep_agent(
-    model="openai:gpt-5.4",
+    model="google_genai:gemini-3.1-pro-preview",
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
@@ -269,7 +278,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
 agent = create_deep_agent(
-    model="openai:gpt-5.4",
+    model="google_genai:gemini-3.1-pro-preview",
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
@@ -311,7 +320,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
 agent = create_deep_agent(
-    model="openai:gpt-5.4",
+    model="google_genai:gemini-3.1-pro-preview",
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
@@ -351,7 +360,7 @@ from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
 agent = create_deep_agent(
-    model="openai:gpt-5.4",
+    model="google_genai:gemini-3.1-pro-preview",
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
@@ -451,7 +460,7 @@ async def agent(config: RunnableConfig):
                 auto_delete_interval=3600,  # TTL: clean up when idle
             )
         )
-    return create_deep_agent(model="openai:gpt-5.4", backend=DaytonaSandbox(sandbox=sandbox))
+    return create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=DaytonaSandbox(sandbox=sandbox))
 ```
 :::
 
@@ -502,7 +511,7 @@ async def agent(config: RunnableConfig):
         sandbox = await client.create(
             CreateSandboxFromSnapshotParams(labels={"assistant_id": assistant_id})
         )
-    return create_deep_agent(model="openai:gpt-5.4", backend=DaytonaSandbox(sandbox=sandbox))
+    return create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=DaytonaSandbox(sandbox=sandbox))
 ```
 :::
 
@@ -759,7 +768,7 @@ backend = CompositeBackend(
 )
 
 agent = create_deep_agent(
-    model="openai:gpt-5.4",
+    model="google_genai:gemini-3.1-pro-preview",
     backend=backend,
     middleware=[SandboxSyncMiddleware(backend)],
 )
@@ -850,6 +859,8 @@ Sandboxes are isolated containers, so environment variables from your host aren'
 
 **Auth proxy (recommended).** The [sandbox auth proxy](/langsmith/sandbox-auth-proxy) intercepts outbound requests from the sandbox and injects authentication headers automatically. Sandbox code calls external APIs normally, and the proxy adds the correct credentials based on the destination host. This means API keys never appear in sandbox code, environment variables, or logs.
 
+![The sandbox auth proxy injects credentials into outbound requests so secrets never enter the sandbox](/oss/images/deepagents/production/sandbox-auth-proxy.png)
+
 ```json
 {
   "proxy_config": {
@@ -888,6 +899,8 @@ Agents in production run autonomously, which means they can loop indefinitely, h
 - **[Permissions](/oss/deepagents/permissions)**: declarative allow/deny rules that control which files and directories the agent can read or write. Use permissions to isolate the agent to a working directory, protect sensitive files, or enforce read-only memory.
 - **[Middleware](/oss/langchain/middleware/built-in)**: hooks that wrap model and tool calls for rate limiting, error handling, and data privacy.
 
+![Middleware hooks—before_model, wrap_model_call, wrap_tool_call, after_model—wrap the agent loop so policies run deterministically around every relevant step](/oss/images/deepagents/production/middleware-lifecycle.png)
+
 ### Rate limiting
 
 Rate limiting here refers to capping the agent's own LLM and tool usage within a run, not API gateway rate limiting for incoming requests.
@@ -900,7 +913,7 @@ from deepagents import create_deep_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
 
 agent = create_deep_agent(
-    model="claude-sonnet-4-6",
+    model="google_genai:gemini-3.1-pro-preview",
     middleware=[
         ModelCallLimitMiddleware(run_limit=50),
         ToolCallLimitMiddleware(run_limit=200),
@@ -914,7 +927,7 @@ agent = create_deep_agent(
 import { createAgent, modelCallLimitMiddleware, toolCallLimitMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "claude-sonnet-4-6",
+  model: "google_genai:gemini-3.1-pro-preview",
   middleware: [
     modelCallLimitMiddleware({ runLimit: 50 }),
     toolCallLimitMiddleware({ runLimit: 200 }),
@@ -941,12 +954,12 @@ from langchain.agents.middleware import (
 )
 
 agent = create_deep_agent(
-    model="claude-sonnet-4-6",
+    model="google_genai:gemini-3.1-pro-preview",
     middleware=[
         # Retry model calls on rate limits, timeouts, and 5xx errors
         ModelRetryMiddleware(max_retries=3, backoff_factor=2.0, initial_delay=1.0),
         # If the primary model is fully down, fall back to an alternative
-        ModelFallbackMiddleware("gpt-4.1"),
+        ModelFallbackMiddleware("gpt-5.4"),
         # Retry specific tools that hit external APIs (not all tools)
         ToolRetryMiddleware(
             max_retries=2,
@@ -968,12 +981,12 @@ import {
 } from "langchain";
 
 const agent = createAgent({
-  model: "claude-sonnet-4-6",
+  model: "google_genai:gemini-3.1-pro-preview",
   middleware: [
     // Retry model calls on rate limits, timeouts, and 5xx errors
     modelRetryMiddleware({ maxRetries: 3, backoffFactor: 2.0, initialDelayMs: 1000 }),
     // If the primary model is fully down, fall back to an alternative
-    modelFallbackMiddleware("gpt-4.1"),
+    modelFallbackMiddleware("gpt-5.4"),
     // Retry specific tools that hit external APIs (not all tools)
     toolRetryMiddleware({
       maxRetries: 2,
@@ -997,7 +1010,7 @@ from deepagents import create_deep_agent
 from langchain.agents.middleware import PIIMiddleware
 
 agent = create_deep_agent(
-    model="claude-sonnet-4-6",
+    model="google_genai:gemini-3.1-pro-preview",
     middleware=[
         PIIMiddleware("email", strategy="redact", apply_to_input=True),
         PIIMiddleware("credit_card", strategy="mask", apply_to_input=True),
@@ -1011,7 +1024,7 @@ agent = create_deep_agent(
 import { createAgent, piiMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "claude-sonnet-4-6",
+  model: "google_genai:gemini-3.1-pro-preview",
   middleware: [
     piiMiddleware("email", { strategy: "redact", applyToInput: true }),
     piiMiddleware("credit_card", { strategy: "mask", applyToInput: true }),

@@ -58,7 +58,11 @@ The state of a thread at a particular point in time is called a checkpoint. A ch
 
 #### Super-steps
 
-LangGraph created a checkpoint at each **super-step** boundary. A super-step is a single "tick" of the graph where all nodes scheduled for that step execute (potentially in parallel). For a sequential graph like `START -> A -> B -> END`, there are separate super-steps for the input, node A, and node B — producing a checkpoint after each one. Understanding super-step boundaries is important for [time travel](/oss/langgraph/use-time-travel), because you can only resume execution from a checkpoint (i.e., a super-step boundary).
+LangGraph creates a checkpoint at each **super-step** boundary. A super-step is a single "tick" of the graph where all nodes scheduled for that step execute (potentially in parallel). For a sequential graph like `START -> A -> B -> END`, there are separate super-steps for the input, node A, and node B — producing a checkpoint after each one. Understanding super-step boundaries is important for [time travel](/oss/langgraph/use-time-travel), because you can only resume execution from a checkpoint (i.e., a super-step boundary).
+
+In addition to super-step checkpoints, LangGraph also persists writes at the **node (task) level**. As each node within a super-step finishes, its outputs are written to the checkpointer's `checkpoint_writes` table as task entries linked to the in-progress checkpoint. These per-task writes are what enable [pending writes](#pending-writes) recovery: if another node in the same super-step fails, the successful nodes' writes are already durable and don't need to be re-run on resume. The full state snapshot is then committed once the super-step completes.
+
+LangGraph also persists writes from individual node executions within a super-step. These writes are stored as tasks and used for fault tolerance: if another node in the same super-step fails, successful node writes do not need to be recomputed when you resume. These task writes are not full `StateSnapshot` checkpoints, so time travel resumes from full checkpoints at super-step boundaries.
 
 Checkpoints are persisted and can be used to restore the state of a thread at a later time.
 
@@ -583,7 +587,7 @@ When using the LangGraph API, you don't need to implement or configure stores ma
 </Info>
 
 <Note>
-@[InMemoryStore] is suitable for development and testing. For production, use a persistent store like `PostgresStore` or `RedisStore`. All implementations extend @[BaseStore], which is the type annotation to use in node function signatures.
+@[InMemoryStore] is suitable for development and testing. For production, use a persistent store like `PostgresStore`, `MongoDBStore`, or `RedisStore`. All implementations extend @[BaseStore], which is the type annotation to use in node function signatures.
 </Note>
 
 ### Basic usage
@@ -1070,6 +1074,18 @@ When we use the LangSmith, either locally (e.g., in [Studio](/langsmith/studio))
 
 See the [deployment guide](/langsmith/semantic-search) for more details and configuration options.
 
+## Optimize checkpoint storage
+
+:::python
+By default, LangGraph checkpoints write the full value of every state channel at each super-step. For long-running threads with large accumulations—such as multi-turn conversations—this can produce significant storage growth over time.
+
+@[`DeltaChannel`] stores only incremental deltas instead of the full accumulated value, substantially reducing checkpoint size for append-heavy channels. See [DeltaChannel](/oss/langgraph/pregel#deltachannel-beta) for usage and the storage-vs-latency tradeoff.
+
+<Warning>
+`DeltaChannel` requires `langgraph>=1.2` and is currently in beta. The API may change in future releases.
+</Warning>
+:::
+
 ## Checkpointer libraries
 
 Under the hood, checkpointing is powered by checkpointer objects that conform to @[`BaseCheckpointSaver`] interface. LangGraph provides several checkpointer implementations, all implemented via standalone, installable libraries.
@@ -1082,14 +1098,14 @@ See [checkpointer integrations](/oss/integrations/checkpointers/index) for avail
 * `langgraph-checkpoint`: The base interface for checkpointer savers (@[`BaseCheckpointSaver`]) and serialization/deserialization interface (@[`SerializerProtocol`]). Includes in-memory checkpointer implementation (@[`InMemorySaver`]) for experimentation. LangGraph comes with `langgraph-checkpoint` included.
 * `langgraph-checkpoint-sqlite`: An implementation of LangGraph checkpointer that uses SQLite database (@[`SqliteSaver`] / @[`AsyncSqliteSaver`]). Ideal for experimentation and local workflows. Needs to be installed separately.
 * `langgraph-checkpoint-postgres`: An advanced checkpointer that uses Postgres database (@[`PostgresSaver`] / @[`AsyncPostgresSaver`]), used in LangSmith. Ideal for using in production. Needs to be installed separately.
-* `langgraph-checkpoint-cosmosdb`: An implementation of LangGraph checkpointer that uses Azure Cosmos DB (`CosmosDBSaver` / `AsyncCosmosDBSaver`). Ideal for using in production with Azure. Supports both sync and async operations. Needs to be installed separately.
+* `langchain-azure-cosmosdb`: An implementation of LangGraph checkpointer that uses Azure Cosmos DB for NoSQL (@[`CosmosDBSaverSync`] / @[`CosmosDBSaver`]). Ideal for using in production with Azure. Supports both sync and async operations, with Microsoft Entra ID authentication. Needs to be installed separately.
 :::
 
 :::js
 * `@langchain/langgraph-checkpoint`: The base interface for checkpointer savers (@[`BaseCheckpointSaver`]) and serialization/deserialization interface (@[`SerializerProtocol`]). Includes in-memory checkpointer implementation (@[`MemorySaver`]) for experimentation. LangGraph comes with `@langchain/langgraph-checkpoint` included.
 * `@langchain/langgraph-checkpoint-sqlite`: An implementation of LangGraph checkpointer that uses SQLite database (@[`SqliteSaver`]). Ideal for experimentation and local workflows. Needs to be installed separately.
 * `@langchain/langgraph-checkpoint-postgres`: An advanced checkpointer that uses Postgres database (@[`PostgresSaver`]), used in LangSmith. Ideal for using in production. Needs to be installed separately.
-* `@langchain/langgraph-checkpoint-mongodb`: An advanced checkpointer that uses MongoDB database (`MongoDBSaver`). Ideal for using in production. Needs to be installed separately.
+* `@langchain/langgraph-checkpoint-mongodb`: An advanced checkpointer (`MongoDBSaver`) and long-term memory store (`MongoDBStore`) backed by MongoDB. The store supports cross-thread persistence with optional integrated vector search. Ideal for production use. Needs to be installed separately.
 * `@langchain/langgraph-checkpoint-redis`: An advanced checkpointer that uses Redis database (`RedisSaver`). Ideal for using in production. Needs to be installed separately.
 :::
 
