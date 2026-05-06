@@ -43,13 +43,18 @@ def collect_files_to_test(
             if not path.exists():
                 print(f"Warning: {path} not found, skipping")
                 continue
-            if path.suffix not in (".py", ".ts"):
-                print(f"Warning: {path} not .py or .ts, skipping")
+            if path.suffix not in (".py", ".ts", ".java"):
+                print(f"Warning: {path} not .py, .ts, or .java, skipping")
                 continue
             if code_samples_dir.resolve() not in path.parents:
                 print(f"Warning: {path} not under src/code-samples/, skipping")
                 continue
-            lang = "python" if path.suffix == ".py" else "ts"
+            if path.suffix == ".py":
+                lang = "python"
+            elif path.suffix == ".ts":
+                lang = "ts"
+            else:
+                lang = "java"
             result.append((path, lang))
         return result
 
@@ -64,7 +69,16 @@ def collect_files_to_test(
         for p in code_samples_dir.rglob("*.ts")
         if is_valid_sample(p, code_samples_dir)
     )
-    return [(p, "python") for p in py_files] + [(p, "ts") for p in ts_files]
+    java_files = sorted(
+        p
+        for p in code_samples_dir.rglob("*.java")
+        if is_valid_sample(p, code_samples_dir)
+    )
+    return (
+        [(p, "python") for p in py_files]
+        + [(p, "ts") for p in ts_files]
+        + [(p, "java") for p in java_files]
+    )
 
 
 def main() -> int:
@@ -114,7 +128,7 @@ def main() -> int:
                 success = result.returncode == 0
                 stdout = result.stdout or ""
                 stderr = result.stderr or ""
-            else:
+            elif lang == "ts":
                 # TypeScript: run from code-samples dir so langchain resolve works
                 result = subprocess.run(
                     ["npx", "tsx", str(file_path.relative_to(code_samples_dir))],

@@ -12,11 +12,11 @@ metadata:
 
 ## Overview
 
-This skill documents the workflow for moving inline code samples from LangChain documentation into standalone, testable files that Bluehawk extracts into snippets for use in MDX via Mintlify.
+This skill documents the workflow for moving inline code samples from LangChain documentation into standalone, testable files that Bluehawk extracts into snippets for use in MDX using Mintlify.
 
 ## When to use
 
-- Migrating inline Python or TypeScript/JavaScript code blocks from MDX to external files
+- Migrating inline Python, TypeScript/JavaScript, or Java code blocks from MDX to external files
 - Creating runnable, testable code samples for documentation
 - Setting up Bluehawk snippet extraction and Mintlify snippet includes
 
@@ -39,7 +39,8 @@ src/
 │   ├── deepagents/
 │   │   └── example-skill.py
 │   └── langsmith/
-│       └── trace-example.py
+│       ├── trace-example.py
+│       └── trace-example.java
 ├── code-samples-generated/    # Bluehawk output (gitignored)
 │   ├── return-a-string.snippet.tool-return-values.py
 │   ├── return-a-string.snippet.tool-return-values.ts
@@ -51,15 +52,15 @@ src/
         └── ...
 ```
 
-**Multiple snippets in one file**: A single code sample file can contain multiple named snippets using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. This is useful for keeping related code samples together in one testable file.
+**More than one snippet in one file**: A single code sample file can contain more than one named snippet using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. This is useful for keeping related code samples together in one testable file.
 
 ## Step-by-step instructions
 
 ### 1. Create the code sample file
 
-Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `deepagents/`, or `langsmith/` (e.g. `src/code-samples/langchain/return-a-string.py` for LangChain docs).
+Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `deepagents/`, or `langsmith/` (for example, `src/code-samples/langchain/return-a-string.py` for LangChain docs).
 
-Use a descriptive filename, e.g. `return-a-string.py` or `return-a-string.ts`.
+Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`.
 
 ### 2. Add Bluehawk delineators
 
@@ -83,6 +84,17 @@ def get_weather(city: str) -> str:
 // :snippet-start: snippet-name-js
 import { tool } from "langchain";
 // ... tool definition ...
+// :snippet-end:
+```
+
+**Java:**
+```java
+// :snippet-start: snippet-name-java
+public class Example {
+  public static void main(String[] args) {
+    System.out.println("hello");
+  }
+}
 // :snippet-end:
 ```
 
@@ -131,6 +143,13 @@ make test-code-samples
 ```
 
 For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—do not run Bluehawk extraction until the samples pass.
+
+Java files (`.java`) under `src/code-samples/` are run using `jbang`. To keep CI green, Java samples must:
+
+- Print at least one line of output so it's obvious the sample ran
+- Exit successfully (code 0) when required API keys are not set, for example:
+  - `OPENAI_API_KEY` for LLM calls
+  - `LANGSMITH_API_KEY` for posting runs to LangSmith
 
 Check formatting with:
 
@@ -187,8 +206,8 @@ Replace the inline code blocks with the snippet components:
 
 | Element | Convention | Example |
 |--------|-------------|---------|
-| Code file | Descriptive, kebab-case | `return-a-string.py`, `return-a-string.ts` |
-| Snippet name | Kebab-case with language suffix: `-py` for Python, `-js` for JS/TS | `tool-return-values-py`, `tool-return-values-js` |
+| Code file | Descriptive, kebab-case | `return-a-string.py`, `return-a-string.ts`, `traceable-pipeline.java` |
+| Snippet name | Kebab-case with language suffix: `-py` for Python, `-js` for JS/TS, `-java` for Java | `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java` |
 | MDX snippet (Python) | `{snippet-name}.mdx` (snippet name ends in `-py`) | `tool-return-values-py.mdx` |
 | MDX snippet (JS) | `{snippet-name}.mdx` (snippet name ends in `-js`) | `tool-return-values-js.mdx` |
 | Component name | PascalCase | `ToolReturnValuesPy`, `ToolReturnValuesJs` |
