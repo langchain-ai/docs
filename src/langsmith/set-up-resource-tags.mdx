@@ -14,9 +14,10 @@ While [workspaces](/langsmith/administration-overview#workspaces) help separate 
 **Not to be confused with commit tags**: Resource tags are key-value pairs used to organize and filter workspace resources (projects, datasets, prompts, etc.). [Commit tags](/langsmith/manage-prompts#commit-tags) are labels that reference specific versions in a prompt's commit history. While both types of tags can use similar terminology (like `prod` or `staging`), resource tags help you *organize resources* across your workspace, while commit tags control *which version* of a prompt is used in your code.
 </Note>
 
-<Check>
-Before diving into this content, it might be helpful to read the [Conceptual guide on organizations and workspaces](/langsmith/administration-overview).
-</Check>
+You can manage resource tags through the [LangSmith UI](https://smith.langchain.com) or programmatically via the [REST API](https://api.smith.langchain.com/redoc):
+
+<Tabs>
+  <Tab title="UI" icon="browser">
 
 ## Create a tag
 
@@ -30,17 +31,17 @@ To create a tag:
 1. Here, you'll find the existing tag values, grouped by key. LangSmith creates the **Application** and **Environment** keys by default. You can use the **Application** key to filter resources shown in the UI.
 1. Select <Icon icon="tag" /> **New Tag** at the top of the page. You'll be prompted to enter a key and a value for the tag. Note that you can use an existing key or create a new one.
 
-<img
-    className="block dark:hidden"
-    src="/langsmith/images/create-tag-light.png"
-    alt="Create resource tag modal accessed from the Settings menu in the LangSmith UI."
-/>
+    <img
+        className="block dark:hidden"
+        src="/langsmith/images/create-tag-light.png"
+        alt="Create resource tag modal accessed from the Settings menu in the LangSmith UI."
+    />
 
-<img
-    className="hidden dark:block"
-    src="/langsmith/images/create-tag-dark.png"
-    alt="Create resource tag modal accessed from the Settings menu in the LangSmith UI."
-/>
+    <img
+        className="hidden dark:block"
+        src="/langsmith/images/create-tag-dark.png"
+        alt="Create resource tag modal accessed from the Settings menu in the LangSmith UI."
+    />
 
 ## Assign a tag to a resource
 
@@ -57,3 +58,142 @@ To un-assign a tag from a resource, click the <Icon icon="trash" /> trash icon n
 You can delete either a key or a value of a tag from the [**Settings** page > **Resource tags** page](https://smith.langchain.com/settings/workspaces/resource_tags). To delete a key, click the <Icon icon="trash" /> trash icon next to the key. To delete a value, click the <Icon icon="trash" /> trash icon next to the value.
 
 If you delete a key, LangSmith will delete all values associated with that key. When you delete a value, you will lose all associations between that value and resources.
+
+  </Tab>
+  <Tab title="API" icon="terminal">
+
+## Manage tags via API
+
+You can create, assign, and query resource tags programmatically using the LangSmith REST API. All tag endpoints live under `/api/v1/workspaces/current/` and require an [API key](/langsmith/create-account-api-key).
+
+### Set up
+
+Import the `requests` library and configure your API key and headers. All the following examples assume these variables are in scope:
+
+```python
+import os
+import requests
+
+LANGSMITH_API_URL = "https://api.smith.langchain.com"
+LANGSMITH_API_KEY = os.environ["LANGSMITH_API_KEY"]
+headers = {"x-api-key": LANGSMITH_API_KEY, "Content-Type": "application/json"}
+```
+
+### Create a tag key
+
+<Note>
+Creating tag keys requires the [`workspaces:manage`](/langsmith/organization-workspace-operations) permission.
+If you want to apply the default **Application** key, skip this step and list existing keys instead.
+</Note>
+
+```python
+response = requests.post(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/tag-keys",
+    headers=headers,
+    json={"key": "Environment", "description": "Deployment environment"},
+)
+response.raise_for_status()
+tag_key = response.json()
+tag_key_id = tag_key["id"]
+```
+
+### Create a tag value
+
+```python
+response = requests.post(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/tag-keys/{tag_key_id}/tag-values",
+    headers=headers,
+    json={"value": "production"},
+)
+response.raise_for_status()
+tag_value = response.json()
+tag_value_id = tag_value["id"]
+```
+
+### Assign a tag to a resource
+
+```python
+response = requests.post(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/taggings",
+    headers=headers,
+    json={
+        "tag_value_id": tag_value_id,
+        "resource_type": "project",
+        "resource_id": "<project-uuid>",
+    },
+)
+response.raise_for_status()
+tagging_id = response.json()["id"]
+```
+
+Valid `resource_type` values: `project`, `dataset`, `prompt`, `experiment`, `queue`,
+`deployment`, `dashboard`, `evaluator`, `mcp_server`, `fleet_integration`.
+
+<Note>
+**Permissions**: Assigning the **Application** tag only requires update access to the target resource,
+so editors can do this without `workspaces:manage`. Assigning any other tag key requires `workspaces:manage`.
+</Note>
+
+**Applying existing tags**: If the key and value already exist (for example, the default **Application** key), retrieve their IDs first and go straight to the assign step:
+
+```python
+tags = requests.get(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/tags",
+    headers=headers,
+).json()
+# tags is a list of {id, key, values: [{id, value}, ...]}
+```
+
+### Query tags
+
+```python
+# All tag keys and values in the workspace
+tags = requests.get(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/tags",
+    headers=headers,
+).json()
+
+# Tags on a specific resource
+resource_tags = requests.get(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/tags/resource",
+    headers=headers,
+    params={"resource_type": "project", "resource_id": "<project-uuid>"},
+).json()
+
+# All resources tagged with a specific value
+taggings = requests.get(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/taggings",
+    headers=headers,
+    params={"tag_value_id": tag_value_id},
+).json()
+```
+
+### Remove a tag from a resource
+
+```python
+requests.delete(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/taggings/{tagging_id}",
+    headers=headers,
+)
+```
+
+### Delete a tag key or value
+
+```python
+# Delete a value (removes all resource assignments for that value)
+requests.delete(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/tag-keys/{tag_key_id}/tag-values/{tag_value_id}",
+    headers=headers,
+)
+
+# Delete a key (also deletes all its values)
+requests.delete(
+    f"{LANGSMITH_API_URL}/api/v1/workspaces/current/tag-keys/{tag_key_id}",
+    headers=headers,
+)
+```
+
+For a full list of request/response fields, refer to the [API reference](https://api.smith.langchain.com/redoc).
+
+  </Tab>
+</Tabs>
