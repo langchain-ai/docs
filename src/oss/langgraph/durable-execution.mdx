@@ -282,3 +282,91 @@ Once you have enabled durable execution in your workflow, you can resume executi
 * If you're making a subgraph call inside a node, the starting point will be the **parent** node that called the subgraph that was halted.
   Inside the subgraph, the starting point will be the specific [**node**](/oss/langgraph/graph-api#nodes) where execution stopped.
 * If you're using the Functional API, the starting point is the beginning of the [**entrypoint**](/oss/langgraph/functional-api#entrypoint) where execution stopped.
+
+## Graceful shutdown
+
+:::python
+
+<Note>
+Requires `langgraph>=1.2`, currently in alpha.
+</Note>
+
+Graceful shutdown lets you stop an in-flight graph run cooperatively—after the current superstep completes—and save a resumable checkpoint. This is useful for handling SIGTERM signals or any external supervisor that needs to reclaim resources without losing work.
+
+Create a @[`RunControl`] and pass it as `control=` to `invoke` or `stream`. Call `request_drain()` from any thread to signal that the run should stop:
+
+```python
+from langgraph.runtime import RunControl
+from langgraph.errors import GraphDrained
+
+control = RunControl()
+
+# In a signal handler or supervisor:
+# control.request_drain("sigterm")
+
+try:
+    result = graph.invoke(inputs, config, control=control)
+except GraphDrained as e:
+    # The graph stopped early and saved a checkpoint.
+    # Resume later with the same config.
+    print(f"Drained: {e.reason}")
+```
+
+### Semantics
+
+Drain is cooperative and operates between supersteps, never preempting work that is already running:
+
+| Scenario | Behavior |
+| -------- | -------- |
+| Node mid-execution | Runs to completion. Drain takes effect on the next superstep. |
+| Node with a retry policy currently retrying | Retry loop runs to exhaustion or success. Drain takes effect after. |
+| Graph finishes naturally on the same tick as drain | Returns normally. Inspect `control.drain_requested` to distinguish from a normal run. |
+| More supersteps remain | Raises `GraphDrained(reason)`. Checkpoint is saved and resumable. |
+| Subgraph requests drain | `GraphDrained` bubbles up through the parent and stops it at its own next superstep boundary. |
+
+### Resume after drain
+
+Resume a drained run with `invoke(None, config)` using the same `thread_id`:
+
+```python
+result = graph.invoke(None, config)
+```
+
+### Read drain state inside a node
+
+Access drain state through the `runtime` parameter to adjust node behavior before the superstep boundary is reached:
+
+```python
+from langgraph.runtime import Runtime
+
+async def my_node(state: State, runtime: Runtime) -> State:
+    if runtime.drain_requested:
+        # Skip expensive work and return a minimal result
+        return {"status": "skipped", "reason": runtime.drain_reason}
+    return {"status": await do_work()}
+```
+
+### SIGTERM hook pattern
+
+The recommended pattern for handling process shutdown:
+
+```python
+import signal
+from langgraph.runtime import RunControl
+from langgraph.errors import GraphDrained
+
+control = RunControl()
+signal.signal(signal.SIGTERM, lambda *_: control.request_drain("sigterm"))
+
+try:
+    result = graph.invoke(inputs, config, control=control)
+except GraphDrained as e:
+    log.info("graph drained: %s", e.reason)
+    # Resume on next startup with the same config
+```
+
+<Note>
+`request_drain()` does not cancel running asyncio tasks or kill threads. For a hard upper bound, pair drain with a graceful timeout and task cancellation.
+</Note>
+
+:::

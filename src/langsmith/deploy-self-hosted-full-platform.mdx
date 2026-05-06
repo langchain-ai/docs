@@ -126,25 +126,24 @@ To enable LangSmith Deployment, update your [`langsmith_config.yaml`](/langsmith
 
 ## Enable Fleet, Insights, and Polly
 
-[Fleet](/langsmith/fleet/index), [Insights](/langsmith/insights), and [Polly](/langsmith/polly) require [LangSmith Deployment](#enable-langsmith-deployment) to be enabled first.
-
 <Info>
-Fleet requires [LangSmith Self-Hosted v0.13](https://changelog.langchain.com/announcements/langsmith-self-hosted-v0-13) or later.
+Fleet requires [LangSmith Self-Hosted v0.13](https://changelog.langchain.com/announcements/langsmith-self-hosted-v0-13) or later. The standalone deployment model described below requires v0.15 or later.
 </Info>
 
-These features share two requirements: the `agentBootstrap` component and a Fernet encryption key for each feature. You can enable all three features in a single Helm configuration.
+Each feature requires a Fernet encryption key. You can enable all three features in a single Helm configuration.
 
 ### Components
 
-Enabling these features provisions the following components in your cluster:
+Enabling these features provisions the following components in your cluster for each feature (Fleet, Insights, Polly):
 
-- `agentBootstrap`: Job that deploys the LangSmith Deployment agent required by Fleet, Insights, and Polly.
-- `agentBuilder`: The Fleet agent, consisting of:
-  - `toolServer`: Provides MCP tool execution for agents.
-  - `triggerServer`: Handles webhooks and scheduled triggers.
-  - `agent`: The main agent where all Fleet assistants are created.
-- `insightsAgent`: The main agent that handles Insights generation.
-- `polly` (agent): The main agent that powers Polly across LangSmith (observability, threads, prompt playground, experiments).
+- `api-server`: The main API server that handles requests for the feature.
+- `queue`: Background task processing queue.
+- `postgres`: Dedicated PostgreSQL instance for the feature's data. Can be replaced with an external PostgreSQL instance.
+- `redis`: Dedicated Redis instance for the feature's caching and pub/sub. Can be replaced with an external Redis instance.
+
+Fleet additionally provisions:
+- `toolServer`: Provides MCP tool execution for agents.
+- `triggerServer`: Handles webhooks and scheduled triggers.
 
 ### Generate encryption keys
 
@@ -165,18 +164,17 @@ We recommend storing each key in a predefined Kubernetes secret rather than sett
         Reference your existing secret by name. The chart reads `agent_builder_encryption_key`, `insights_encryption_key`, and `polly_encryption_key` from it automatically.
 
         ```yaml
-        backend:
-          agentBootstrap:
-            enabled: true
-
         config:
           existingSecretName: "<your-secret-name>"
-          agentBuilder:
-            enabled: true
-          insights:
-            enabled: true
-          polly:
-            enabled: true
+
+        fleet:
+          enabled: true
+
+        insights:
+          enabled: true
+
+        polly:
+          enabled: true
 
         agentBuilderToolServer:
           enabled: true
@@ -189,20 +187,17 @@ We recommend storing each key in a predefined Kubernetes secret rather than sett
         Set the encryption keys directly in your config file. Avoid committing this file to version control.
 
         ```yaml
-        backend:
-          agentBootstrap:
-            enabled: true
+        fleet:
+          enabled: true
+          encryptionKey: "<fleet-encryption-key>"
 
-        config:
-          agentBuilder:
-            enabled: true
-            encryptionKey: "<fleet-encryption-key>"
-          insights:
-            enabled: true
-            encryptionKey: "<insights-encryption-key>"
-          polly:
-            enabled: true
-            encryptionKey: "<polly-encryption-key>"
+        insights:
+          enabled: true
+          encryptionKey: "<insights-encryption-key>"
+
+        polly:
+          enabled: true
+          encryptionKey: "<polly-encryption-key>"
 
         agentBuilderToolServer:
           enabled: true
@@ -216,16 +211,21 @@ We recommend storing each key in a predefined Kubernetes secret rather than sett
     <Note>
     `agentBuilderToolServer` and `agentBuilderTriggerServer` are required for Fleet.
     </Note>
-  </Step>
-  <Step title="(Optional) Configure for Istio Gateway">
-    If you are using an Istio Gateway, you must use LangSmith version 0.13.38 or later. Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) before upgrading:
+
+    Each feature deploys its own dedicated PostgreSQL and Redis instances by default. To use external databases instead, configure the `postgres.external` and `redis.external` sections under each feature. For example:
 
     ```yaml
-    backend:
-      agentBootstrap:
-        extraEnv:
-          - name: CLIO_INCLUDE_PATH_SUFFIX
-            value: "false"
+    fleet:
+      enabled: true
+      encryptionKey: "<fleet-encryption-key>"
+      postgres:
+        external:
+          enabled: true
+          connectionUrl: "<fleet-postgres-connection-url>"
+      redis:
+        external:
+          enabled: true
+          connectionUrl: "<fleet-redis-connection-url>"
     ```
   </Step>
   <Step title="Apply the changes">
@@ -233,19 +233,7 @@ We recommend storing each key in a predefined Kubernetes secret rather than sett
     helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
     ```
 
-    Verify that the `agentBootstrap` Job completed successfully. Unlike Deployments, a failed Job produces no running pods and fails silently:
-
-    ```bash
-    kubectl get jobs -n <namespace>
-    ```
-
-    The `agentBootstrap` Job should show `1/1` in the `COMPLETIONS` column. If it shows `0/1`, inspect the Job logs (replace `<release-name>` with your Helm release name, typically `langsmith`):
-
-    ```bash
-    kubectl logs -n <namespace> -l job-name=<release-name>-agent-bootstrap
-    ```
-
-    Then verify the Fleet, Insights, and Polly pods are running:
+    Verify the Fleet, Insights, and Polly pods are running:
 
     ```bash
     kubectl get pods -n <namespace>
@@ -255,7 +243,7 @@ We recommend storing each key in a predefined Kubernetes secret rather than sett
 
 ### (Optional) Enable OAuth tools and triggers for Fleet
 
-To enable OAuth-based tools such as Gmail, Slack, or Linear in Fleet, configure the `oauthProviderOrgId` and add provider IDs for each integration you want to use. You can enable any combination of providers.
+To enable OAuth-based tools such as Gmail, Slack, or Linear in Fleet, configure the `providerOrgId` and add provider IDs for each integration you want to use. You can enable any combination of providers.
 
 #### Available providers
 
@@ -272,20 +260,19 @@ To enable OAuth-based tools such as Gmail, Slack, or Linear in Fleet, configure 
 Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts). Include only the providers you need.
 
 ```yaml
-config:
-  agentBuilder:
+fleet:
+  oauth:
     # Organization ID where OAuth providers are configured
-    oauthProviderOrgId: "<your-org-id>"
-    oauth:
-      # Add provider IDs for integrations you want to enable.
-      # Slack requires additional configuration.
-      slackOAuthProvider: "<provider-id>"
-      slackSigningSecret: "<signing-secret>"
-      slackBotId: "<bot-id>"
-      googleOAuthProvider: "<provider-id>"
-      linkedinOAuthProvider: "<provider-id>"
-      linearOAuthProvider: "<provider-id>"
-      microsoftOAuthProvider: "<provider-id>"
+    providerOrgId: "<your-org-id>"
+    # Add provider IDs for integrations you want to enable.
+    # Slack requires additional configuration.
+    slackOAuthProvider: "<provider-id>"
+    slackSigningSecret: "<signing-secret>"
+    slackBotId: "<bot-id>"
+    googleOAuthProvider: "<provider-id>"
+    linkedinOAuthProvider: "<provider-id>"
+    linearOAuthProvider: "<provider-id>"
+    microsoftOAuthProvider: "<provider-id>"
 ```
 
 <Warning>
@@ -332,11 +319,10 @@ To enable Google OAuth for Fleet, create an OAuth client in GCP and configure it
     Add the LangSmith OAuth provider ID to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) and deploy:
 
     ```yaml
-    config:
-      agentBuilder:
-        oauthProviderOrgId: "<your-org-id>"
-        oauth:
-          googleOAuthProvider: "<provider-id>"
+    fleet:
+      oauth:
+        providerOrgId: "<your-org-id>"
+        googleOAuthProvider: "<provider-id>"
     ```
 
     ```bash
@@ -417,11 +403,10 @@ To enable Microsoft OAuth for Fleet, create an Azure app registration, add the r
     Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) and deploy:
 
     ```yaml
-    config:
-      agentBuilder:
-        oauthProviderOrgId: "<your-org-id>"
-        oauth:
-          microsoftOAuthProvider: "<provider-id>"
+    fleet:
+      oauth:
+        providerOrgId: "<your-org-id>"
+        microsoftOAuthProvider: "<provider-id>"
     ```
 
     ```bash
@@ -466,11 +451,10 @@ To enable Linear OAuth for Fleet, create a Linear OAuth app and configure it wit
     Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) and deploy:
 
     ```yaml
-    config:
-      agentBuilder:
-        oauthProviderOrgId: "<your-org-id>"
-        oauth:
-          linearOAuthProvider: "<provider-id>"
+    fleet:
+      oauth:
+        providerOrgId: "<your-org-id>"
+        linearOAuthProvider: "<provider-id>"
     ```
 
     ```bash
@@ -515,11 +499,10 @@ To enable LinkedIn OAuth for Fleet, create a LinkedIn OAuth app and configure it
     Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) and deploy:
 
     ```yaml
-    config:
-      agentBuilder:
-        oauthProviderOrgId: "<your-org-id>"
-        oauth:
-          linkedinOAuthProvider: "<provider-id>"
+    fleet:
+      oauth:
+        providerOrgId: "<your-org-id>"
+        linkedinOAuthProvider: "<provider-id>"
     ```
 
     ```bash
@@ -592,13 +575,12 @@ To enable Slack OAuth for Fleet, create a Slack app and configure it with the re
     Add the following to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) and deploy:
 
     ```yaml
-    config:
-      agentBuilder:
-        oauthProviderOrgId: "<your-org-id>"
-        oauth:
-          slackOAuthProvider: "<provider-id>"
-          slackSigningSecret: "<signing-secret>"
-          slackBotId: "<bot-id>"
+    fleet:
+      oauth:
+        providerOrgId: "<your-org-id>"
+        slackOAuthProvider: "<provider-id>"
+        slackSigningSecret: "<signing-secret>"
+        slackBotId: "<bot-id>"
     ```
 
     ```bash
@@ -822,13 +804,14 @@ Setup involves creating a GitHub App, gathering its credentials, storing them as
 To disable any combination of Fleet, Insights, and Polly, set the corresponding flags to `false` in your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
 
 ```yaml
-config:
-  agentBuilder:
-    enabled: false
-  insights:
-    enabled: false
-  polly:
-    enabled: false
+fleet:
+  enabled: false
+
+insights:
+  enabled: false
+
+polly:
+  enabled: false
 ```
 
 ## Optional configuration
