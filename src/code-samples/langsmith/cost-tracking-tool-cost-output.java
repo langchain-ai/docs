@@ -2,6 +2,7 @@
 //DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
 
 // :snippet-start: cost-tracking-tool-cost-output-java
+// :codegroup-tab: Java
 import com.langchain.smith.client.LangsmithClient;
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
 import com.langchain.smith.tracing.RunType;

@@ -1,4 +1,4 @@
-```kotlin
+```kotlin Kotlin
 import com.langchain.smith.tracing.RunType
 import com.langchain.smith.tracing.TraceConfig
 import com.langchain.smith.tracing.traceable
@@ -11,61 +11,54 @@ import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam
 import kotlin.jvm.optionals.getOrNull
 
-fun main() {
-    if (System.getenv("OPENAI_API_KEY").isNullOrBlank()) {
-        println("[traceable-pipeline] Skipping (OPENAI_API_KEY is not set).")
-        return
-    }
+val openai = OpenAIOkHttpClient.fromEnv()
 
-    val openai = OpenAIOkHttpClient.fromEnv()
-
-    val formatPrompt =
-        traceable(
-            { subject: String ->
-                listOf(
-                    ChatCompletionMessageParam.ofSystem(
-                        ChatCompletionSystemMessageParam.builder()
-                            .content("You are a helpful assistant.")
-                            .build(),
-                    ),
-                    ChatCompletionMessageParam.ofUser(
-                        ChatCompletionUserMessageParam.builder()
-                            .content("What's a good name for a store that sells $subject?")
-                            .build(),
-                    ),
-                )
-            },
-            TraceConfig.builder().name("format_prompt").build(),
-        )
-
-    val invokeLlm =
-        traceable(
-            { messages: List<ChatCompletionMessageParam> ->
-                openai.chat().completions().create(
-                    ChatCompletionCreateParams.builder()
-                        .model(ChatModel.GPT_5_CHAT_LATEST)
-                        .messages(messages)
-                        .temperature(0.0)
+val formatPrompt =
+    traceable(
+        { subject: String ->
+            listOf(
+                ChatCompletionMessageParam.ofSystem(
+                    ChatCompletionSystemMessageParam.builder()
+                        .content("You are a helpful assistant.")
                         .build(),
-                )
-            },
-            TraceConfig.builder().name("invoke_llm").runType(RunType.LLM).build(),
-        )
+                ),
+                ChatCompletionMessageParam.ofUser(
+                    ChatCompletionUserMessageParam.builder()
+                        .content("What's a good name for a store that sells $subject?")
+                        .build(),
+                ),
+            )
+        },
+        TraceConfig.builder().name("format_prompt").build(),
+    )
 
-    val parseOutput =
-        traceable(
-            { response: ChatCompletion ->
-                response.choices()[0].message().content().getOrNull().orEmpty()
-            },
-            TraceConfig.builder().name("parse_output").build(),
-        )
+val invokeLlm =
+    traceable(
+        { messages: List<ChatCompletionMessageParam> ->
+            openai.chat().completions().create(
+                ChatCompletionCreateParams.builder()
+                    .model(ChatModel.GPT_5_CHAT_LATEST)
+                    .messages(messages)
+                    .temperature(0.0)
+                    .build(),
+            )
+        },
+        TraceConfig.builder().name("invoke_llm").runType(RunType.LLM).build(),
+    )
 
-    val runPipeline =
-        traceable(
-            { subject: String -> parseOutput(invokeLlm(formatPrompt(subject))) },
-            TraceConfig.builder().name("run_pipeline").build(),
-        )
+val parseOutput =
+    traceable(
+        { response: ChatCompletion ->
+            response.choices()[0].message().content().getOrNull().orEmpty()
+        },
+        TraceConfig.builder().name("parse_output").build(),
+    )
 
-    println(runPipeline("colorful socks"))
-}
+val runPipeline =
+    traceable(
+        { subject: String -> parseOutput(invokeLlm(formatPrompt(subject))) },
+        TraceConfig.builder().name("run_pipeline").build(),
+    )
+
+println(runPipeline("colorful socks"))
 ```

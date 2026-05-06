@@ -3,6 +3,7 @@
 //DEPS com.openai:openai-java:4.30.0
 
 // :snippet-start: observability-quickstart-app-java
+// :codegroup-tab: Java
 import com.langchain.smith.tracing.RunType;
 import com.langchain.smith.tracing.TraceConfig;
 import com.langchain.smith.tracing.Tracing;
@@ -53,10 +54,6 @@ class ObservabilityQuickstartApp {
           TraceConfig.builder().name("assistant").build());
 
   public static void main(String[] args) {
-    if (System.getenv("OPENAI_API_KEY") == null || System.getenv("OPENAI_API_KEY").isBlank()) {
-      System.out.println("[observability-quickstart-app] Skipping (OPENAI_API_KEY is not set).");
-      return;
-    }
     System.out.println(assistant.apply("How long are LangSmith traces stored?"));
   }
 }

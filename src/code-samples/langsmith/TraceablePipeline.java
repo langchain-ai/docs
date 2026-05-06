@@ -3,6 +3,7 @@
 //DEPS com.openai:openai-java:4.30.0
 
 // :snippet-start: traceable-pipeline-java
+// :codegroup-tab: Java
 import com.langchain.smith.tracing.RunType;
 import com.langchain.smith.tracing.TraceConfig;
 import com.langchain.smith.tracing.Tracing;
@@ -59,8 +60,7 @@ public class TraceablePipeline {
           TraceConfig.builder().name("run_pipeline").build());
 
   public static void main(String[] args) {
-    String out = runPipeline.apply("colorful socks");
-    System.out.println(out);
+    runPipeline.apply("colorful socks");
   }
 }
 

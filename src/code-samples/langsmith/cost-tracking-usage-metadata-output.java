@@ -2,6 +2,8 @@
 //DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
 
 // :snippet-start: cost-tracking-usage-metadata-output-java
+// :codegroup-tab: Java
+// :codegroup-fence-mods: expandable wrap
 import com.langchain.smith.client.LangsmithClient;
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
 import com.langchain.smith.tracing.RunType;

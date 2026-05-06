@@ -6,6 +6,8 @@ This tool only looks for comment-line markers, so glob patterns and other string
 
 Supported markers (same as this repo's Bluehawk usage):
 
+- Optional prefix lines inside a snippet body, consumed by ``generate_code_snippet_mdx.py`` (not shown in docs): ``# :codegroup-tab: <Title>`` or ``// :codegroup-tab: <Title>`` for Mintlify ``<CodeGroup>`` tab labels; optionally the next line ``:codegroup-fence-mods: expandable wrap`` for long blocks.
+
 - ``# :snippet-start: <id>`` / ``# :snippet-end:`` (Python)
 - ``// :snippet-start: <id>`` / ``// :snippet-end:`` (TypeScript, Java)
 - ``// :snippet-start: <id>`` / ``// :snippet-end:`` (Kotlin)
@@ -17,10 +19,19 @@ Output files match Bluehawk: ``<source-basename>.snippet.<snippet-id>.<ext>`` in
 
 Run from repo root: ``python scripts/extract_code_snippets.py``
 or via ``make code-snippets``.
+
+Optional environment variable:
+
+- ``CODE_SNIPPET_SOURCES``: space-separated repo-relative paths under ``src/code-samples/``
+  (``.py``, ``.ts``, ``.java``, ``.kt``). When set, only those files are extracted; existing
+  generated snippet files for those stems are replaced. Other stems in
+  ``src/code-samples-generated/`` are left unchanged. Use ``make code-snippets-langsmith``
+  for the LangSmith JVM subset.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import textwrap
@@ -151,6 +162,39 @@ def _normalize_newlines(s: str) -> str:
     return s
 
 
+def _delete_snippet_outputs_for_source(out_dir: Path, source_path: Path) -> None:
+    """Remove previously generated snippet files for one source file stem."""
+    stem = source_path.stem
+    ext = source_path.suffix.lstrip(".")
+    for p in out_dir.glob(f"{stem}.snippet.*.{ext}"):
+        if p.is_file():
+            p.unlink()
+
+
+def _resolve_partial_sources(repo_root: Path, code_samples: Path) -> list[Path] | None:
+    """If CODE_SNIPPET_SOURCES is set, return those paths; else None for full scan."""
+    raw = os.environ.get("CODE_SNIPPET_SOURCES", "").strip()
+    if not raw:
+        return None
+    code_samples_resolved = code_samples.resolve()
+    out: list[Path] = []
+    for part in raw.split():
+        path = (repo_root / part.strip()).resolve()
+        if not path.is_file():
+            msg = f"CODE_SNIPPET_SOURCES not found: {part}"
+            raise ValueError(msg)
+        try:
+            path.relative_to(code_samples_resolved)
+        except ValueError as e:
+            msg = f"CODE_SNIPPET_SOURCES must be under {code_samples}: {part}"
+            raise ValueError(msg) from e
+        if path.suffix not in (".py", ".ts", ".java", ".kt"):
+            msg = f"CODE_SNIPPET_SOURCES must be .py, .ts, .java, or .kt: {part}"
+            raise ValueError(msg)
+        out.append(path)
+    return out
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     code_samples = repo_root / "src" / "code-samples"
@@ -162,12 +206,24 @@ def main() -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for p in list(out_dir.iterdir()):
-        if p.suffix in (".py", ".ts", ".java", ".kt") and p.is_file():
-            p.unlink()
+    try:
+        partial_sources = _resolve_partial_sources(repo_root, code_samples)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    if partial_sources is None:
+        for p in list(out_dir.iterdir()):
+            if p.suffix in (".py", ".ts", ".java", ".kt") and p.is_file():
+                p.unlink()
+        paths_to_process = _iter_source_files(code_samples)
+    else:
+        for src in partial_sources:
+            _delete_snippet_outputs_for_source(out_dir, src)
+        paths_to_process = partial_sources
 
     written: list[Path] = []
-    for path in _iter_source_files(code_samples):
+    for path in paths_to_process:
         language = _language_for_path(path)
         try:
             text = path.read_text(encoding="utf-8")

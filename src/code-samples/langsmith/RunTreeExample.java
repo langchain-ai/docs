@@ -3,6 +3,7 @@
 //DEPS com.openai:openai-java:4.30.0
 
 // :snippet-start: run-tree-example-java
+// :codegroup-tab: Java
 import com.langchain.smith.client.LangsmithClient;
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
 import com.langchain.smith.tracing.RunTree;

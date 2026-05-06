@@ -3,6 +3,8 @@
 //DEPS com.openai:openai-java:4.30.0
 
 // :snippet-start: threads-chat-pipeline-java
+// :codegroup-tab: Java
+// :codegroup-fence-mods: expandable wrap
 import com.langchain.smith.client.LangsmithClient;
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
 import com.langchain.smith.tracing.TraceConfig;
@@ -29,10 +31,6 @@ import java.util.function.Function;
 class ThreadsChatPipeline {
   private static final String THREAD_ID = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11";
 
-  /**
-   * Lazily loads OpenAI + LangSmith clients so missing API keys in CI do not fail class
-   * initialization before {@link #main} can skip.
-   */
   private static final class OpenAiResources {
     private static final LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
     private static final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -153,6 +151,7 @@ final class ThreadsContinuationHarness {
 
   static void continueWhatIsMyName() {
     // :snippet-start: threads-continue-name-java
+    // :codegroup-tab: Java
     List<ChatCompletionMessageParam> messages =
         Collections.singletonList(
             ChatCompletionMessageParam.ofUser(
@@ -166,6 +165,7 @@ final class ThreadsContinuationHarness {
 
   static void continueFirstMessage() {
     // :snippet-start: threads-continue-first-message-java
+    // :codegroup-tab: Java
     List<ChatCompletionMessageParam> messages =
         Collections.singletonList(
             ChatCompletionMessageParam.ofUser(

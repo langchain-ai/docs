@@ -2,6 +2,7 @@
 //DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
 
 // :snippet-start: cost-tracking-tool-cost-run-java
+// :codegroup-tab: Java
 import com.langchain.smith.client.LangsmithClient;
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
 import com.langchain.smith.tracing.RunTree;
@@ -17,12 +18,13 @@ import java.util.function.Function;
 
 class CostTrackingToolCostRun {
   public static void main(String[] args) throws InterruptedException {
+    // :remove-start:
     if (System.getenv("LANGSMITH_API_KEY") == null
         || System.getenv("LANGSMITH_API_KEY").isBlank()) {
       System.out.println("[cost-tracking-tool-cost-run] Skipping (LANGSMITH_API_KEY is not set).");
       return;
     }
-
+    // :remove-end:
     LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
     ExecutorService executor = Executors.newSingleThreadExecutor();
 

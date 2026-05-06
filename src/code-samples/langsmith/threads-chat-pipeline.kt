@@ -5,6 +5,8 @@
 //DEPS com.openai:openai-java:4.30.0
 
 // :snippet-start: threads-chat-pipeline-kt
+// :codegroup-tab: Kotlin
+// :codegroup-fence-mods: expandable wrap
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.tracing.TraceConfig
 import com.langchain.smith.tracing.traceable
@@ -107,6 +109,7 @@ fun main() {
 
 fun continueWhatIsMyName() {
     // :snippet-start: threads-continue-name-kt
+    // :codegroup-tab: Kotlin
     val messages =
         listOf(
             ChatCompletionMessageParam.ofUser(
@@ -122,6 +125,7 @@ fun continueWhatIsMyName() {
 
 fun continueFirstMessage() {
     // :snippet-start: threads-continue-first-message-kt
+    // :codegroup-tab: Kotlin
     val messages =
         listOf(
             ChatCompletionMessageParam.ofUser(
