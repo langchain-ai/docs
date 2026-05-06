@@ -17,9 +17,12 @@ import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam
 import kotlin.jvm.optionals.getOrNull
 
-if (System.getenv("OPENAI_API_KEY").isNullOrBlank()) {
-    println("[traceable-pipeline] Skipping (OPENAI_API_KEY is not set).")
-} else {
+fun main() {
+    if (System.getenv("OPENAI_API_KEY").isNullOrBlank()) {
+        println("[traceable-pipeline] Skipping (OPENAI_API_KEY is not set).")
+        return
+    }
+
     val openai = OpenAIOkHttpClient.fromEnv()
 
     val formatPrompt =

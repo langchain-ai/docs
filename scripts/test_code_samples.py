@@ -156,6 +156,27 @@ def main() -> int:
                 # Some environments may have very new JDKs installed. Pin to a known-good
                 # runtime to avoid toolchain incompatibilities (for example, Kotlin compiler
                 # parsing errors on unsupported Java major versions).
+                env.setdefault("JBANG_DEFAULT_JAVA_VERSION", "21")
+                if not env.get("JAVA_HOME"):
+                    try:
+                        # Prefer a JBang-managed JDK so JBang itself and the Kotlin compiler
+                        # run under a compatible runtime (Java 21).
+                        jdk_home = subprocess.run(
+                            ["jbang", "jdk", "home", "21"],
+                            check=False,
+                            cwd=str(repo_root),
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                            env=env,
+                        )
+                        candidate = (jdk_home.stdout or "").strip()
+                        if jdk_home.returncode == 0 and candidate:
+                            env["JAVA_HOME"] = candidate
+                            env["PATH"] = str(Path(candidate) / "bin") + os.pathsep + env.get("PATH", "")
+                    except Exception:
+                        # If JDK discovery fails, fall back to whatever the environment provides.
+                        pass
                 result = subprocess.run(
                     ["jbang", "--java", "21", str(file_path)],
                     check=False,

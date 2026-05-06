@@ -3,6 +3,13 @@ title: Configure threads
 sidebarTitle: Threads
 ---
 
+import ThreadsChatPipelineJava from '/snippets/code-samples/threads-chat-pipeline-java.mdx';
+import ThreadsChatPipelineKt from '/snippets/code-samples/threads-chat-pipeline-kt.mdx';
+import ThreadsContinueNameJava from '/snippets/code-samples/threads-continue-name-java.mdx';
+import ThreadsContinueNameKt from '/snippets/code-samples/threads-continue-name-kt.mdx';
+import ThreadsContinueFirstMessageJava from '/snippets/code-samples/threads-continue-first-message-java.mdx';
+import ThreadsContinueFirstMessageKt from '/snippets/code-samples/threads-continue-first-message-kt.mdx';
+
 Many LLM applications have a chatbot-like interface in which the user and the LLM application engage in a multi-turn conversation. In order to track these conversations, you can use [_threads_](/langsmith/observability-concepts#threads) in LangSmith.
 
 ## Group traces into threads
@@ -191,206 +198,9 @@ const messages: Message[] = [{ role: "user", content: "Hi! My name is Sally" }];
 await chatPipeline({ messages, get_chat_history: false });
 ```
 
-```java Java expandable wrap
-import com.langchain.smith.client.LangsmithClient;
-import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
-import com.langchain.smith.tracing.TraceConfig;
-import com.langchain.smith.tracing.Tracing;
-import com.langchain.smith.wrappers.openai.OpenAITracing;
-import com.openai.client.OpenAIClient;
-import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.models.ChatModel;
-import com.openai.models.chat.completions.ChatCompletion;
-import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionMessageParam;
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
+<ThreadsChatPipelineJava />
 
-public class ThreadExample {
-    private static final String THREAD_ID = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11";
-    private static final LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
-    private static final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private static final Map<String, Object> threadMetadata = new HashMap<>();
-
-    static {
-        threadMetadata.put("thread_id", THREAD_ID);
-    }
-
-    private static final OpenAIClient openai = OpenAITracing.wrapOpenAI(
-        OpenAIOkHttpClient.fromEnv(),
-        TraceConfig.builder()
-            .client(langsmith)
-            .executor(executor)
-            .metadata(threadMetadata)
-            .build());
-    private static final List<ChatCompletionMessageParam> threadHistory = new ArrayList<>();
-
-    private static final Function<ChatRequest, Map<String, List<ChatCompletionMessageParam>>>
-        chatPipeline = Tracing.traceFunction(
-            request -> {
-                List<ChatCompletionMessageParam> allMessages = new ArrayList<>();
-                if (request.getChatHistory()) {
-                    allMessages.addAll(threadHistory);
-                }
-                allMessages.addAll(request.getMessages());
-
-                ChatCompletion chatCompletion = openai.chat().completions().create(
-                    ChatCompletionCreateParams.builder()
-                        .model(ChatModel.GPT_5_5)
-                        .messages(allMessages)
-                        .build());
-
-                String content = chatCompletion.choices().get(0).message().content().orElse("");
-                List<ChatCompletionMessageParam> fullConversation =
-                    new ArrayList<>(allMessages);
-                fullConversation.add(ChatCompletionMessageParam.ofAssistant(
-                    ChatCompletionAssistantMessageParam.builder().content(content).build()));
-                threadHistory.clear();
-                threadHistory.addAll(fullConversation);
-
-                return Collections.singletonMap("messages", fullConversation);
-            },
-            TraceConfig.builder()
-                .name("Chat Bot")
-                .client(langsmith)
-                .executor(executor)
-                .metadata(threadMetadata)
-                .build());
-
-    public static void main(String[] args) throws InterruptedException {
-        try {
-            List<ChatCompletionMessageParam> messages = Collections.singletonList(
-                ChatCompletionMessageParam.ofUser(
-                    ChatCompletionUserMessageParam.builder()
-                        .content("Hi, my name is Sally")
-                        .build()));
-            chatPipeline.apply(new ChatRequest(messages, false));
-        } finally {
-            executor.shutdown();
-            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException(
-                    "Timed out waiting for LangSmith traces to submit");
-            }
-        }
-    }
-
-    static class ChatRequest {
-        private final List<ChatCompletionMessageParam> messages;
-        private final boolean getChatHistory;
-
-        ChatRequest(List<ChatCompletionMessageParam> messages, boolean getChatHistory) {
-            this.messages = messages;
-            this.getChatHistory = getChatHistory;
-        }
-
-        List<ChatCompletionMessageParam> getMessages() {
-            return messages;
-        }
-
-        boolean getChatHistory() {
-            return getChatHistory;
-        }
-    }
-}
-```
-
-```kotlin Kotlin expandable wrap
-import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
-import com.langchain.smith.tracing.TraceConfig
-import com.langchain.smith.tracing.traceable
-import com.langchain.smith.wrappers.openai.wrapOpenAI
-import com.openai.client.okhttp.OpenAIOkHttpClient
-import com.openai.models.ChatModel
-import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam
-import com.openai.models.chat.completions.ChatCompletionCreateParams
-import com.openai.models.chat.completions.ChatCompletionMessageParam
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-
-val threadId = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11"
-val langsmith = LangsmithOkHttpClient.fromEnv()
-val executor = Executors.newSingleThreadExecutor()
-val threadMetadata = mapOf("thread_id" to threadId)
-val openai =
-    wrapOpenAI(
-        OpenAIOkHttpClient.fromEnv(),
-        TraceConfig.builder()
-            .client(langsmith)
-            .executor(executor)
-            .metadata(threadMetadata)
-            .build(),
-    )
-val threadHistory = mutableListOf<ChatCompletionMessageParam>()
-
-data class ChatRequest(
-    val messages: List<ChatCompletionMessageParam>,
-    val getChatHistory: Boolean = false,
-)
-
-val chatPipeline =
-    traceable(
-        { request: ChatRequest ->
-            val allMessages =
-                if (request.getChatHistory) {
-                    threadHistory + request.messages
-                } else {
-                    request.messages
-                }
-
-            val chatCompletion =
-                openai.chat().completions().create(
-                    ChatCompletionCreateParams.builder()
-                        .model(ChatModel.GPT_5_5)
-                        .messages(allMessages)
-                        .build(),
-                )
-
-            val content = chatCompletion.choices()[0].message().content().orElse("")
-            val fullConversation =
-                allMessages +
-                    ChatCompletionMessageParam.ofAssistant(
-                        ChatCompletionAssistantMessageParam.builder().content(content).build(),
-                    )
-            threadHistory.clear()
-            threadHistory.addAll(fullConversation)
-
-            mapOf("messages" to fullConversation)
-        },
-        TraceConfig.builder()
-            .name("Chat Bot")
-            .client(langsmith)
-            .executor(executor)
-            .metadata(threadMetadata)
-            .build(),
-    )
-
-try {
-    val messages =
-        listOf(
-            ChatCompletionMessageParam.ofUser(
-                ChatCompletionUserMessageParam.builder()
-                    .content("Hi, my name is Sally")
-                    .build(),
-            ),
-        )
-    chatPipeline(ChatRequest(messages))
-} finally {
-    executor.shutdown()
-    check(executor.awaitTermination(10, TimeUnit.SECONDS)) {
-        "Timed out waiting for LangSmith traces to submit"
-    }
-}
-```
+<ThreadsChatPipelineKt />
 
 
 </CodeGroup>
@@ -421,28 +231,9 @@ const messages: Message[] = [{ role: "user", content: "What is my name" }];
 await chatPipeline({ messages, get_chat_history: true });
 ```
 
-```java Java
-List<ChatCompletionMessageParam> messages = Collections.singletonList(
-    ChatCompletionMessageParam.ofUser(
-        ChatCompletionUserMessageParam.builder()
-            .content("What is my name")
-            .build()));
+<ThreadsContinueNameJava />
 
-chatPipeline.apply(new ChatRequest(messages, true));
-```
-
-```kotlin Kotlin
-val messages =
-    listOf(
-        ChatCompletionMessageParam.ofUser(
-            ChatCompletionUserMessageParam.builder()
-                .content("What is my name")
-                .build(),
-        ),
-    )
-
-chatPipeline(ChatRequest(messages, getChatHistory = true))
-```
+<ThreadsContinueNameKt />
 </CodeGroup>
 
 Keep the conversation going. Since past messages are included, the LLM will remember the conversation:
@@ -468,28 +259,9 @@ const messages: Message[] = [{ role: "user", content: "What was the first messag
 await chatPipeline({ messages, get_chat_history: true });
 ```
 
-```java Java
-List<ChatCompletionMessageParam> messages = Collections.singletonList(
-    ChatCompletionMessageParam.ofUser(
-        ChatCompletionUserMessageParam.builder()
-            .content("What was the first message I sent you?")
-            .build()));
+<ThreadsContinueFirstMessageJava />
 
-chatPipeline.apply(new ChatRequest(messages, true));
-```
-
-```kotlin Kotlin
-val messages =
-    listOf(
-        ChatCompletionMessageParam.ofUser(
-            ChatCompletionUserMessageParam.builder()
-                .content("What was the first message I sent you?")
-                .build(),
-        ),
-    )
-
-chatPipeline(ChatRequest(messages, getChatHistory = true))
-```
+<ThreadsContinueFirstMessageKt />
 
 </CodeGroup>
 

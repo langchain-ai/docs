@@ -19,11 +19,17 @@ import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-if (System.getenv("OPENAI_API_KEY").isNullOrBlank()) {
-    println("[run-tree-example] Skipping (OPENAI_API_KEY is not set).")
-} else if (System.getenv("LANGSMITH_API_KEY").isNullOrBlank()) {
-    println("[run-tree-example] Skipping (LANGSMITH_API_KEY is not set).")
-} else {
+fun main() {
+    if (System.getenv("OPENAI_API_KEY").isNullOrBlank()) {
+        println("[run-tree-example] Skipping (OPENAI_API_KEY is not set).")
+        return
+    }
+
+    if (System.getenv("LANGSMITH_API_KEY").isNullOrBlank()) {
+        println("[run-tree-example] Skipping (LANGSMITH_API_KEY is not set).")
+        return
+    }
+
     val langsmith = LangsmithOkHttpClient.fromEnv()
     val openai = OpenAIOkHttpClient.fromEnv()
     val executor = Executors.newSingleThreadExecutor()
