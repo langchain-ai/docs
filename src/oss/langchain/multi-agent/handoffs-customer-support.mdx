@@ -20,7 +20,7 @@ Unlike the [subagents pattern](/oss/langchain/multi-agent/subagents-personal-ass
 Here's the workflow we'll build:
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#4CAF50','primaryTextColor':'#fff','primaryBorderColor':'#2E7D32','lineColor':'#666','secondaryColor':'#FF9800','tertiaryColor':'#2196F3'}}}%%
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#E5F4FF','primaryTextColor':'#030710','primaryBorderColor':'#006DDD','lineColor':'#40668D','secondaryColor':'#F6FFDB','tertiaryColor':'#FDF3FF'}}}%%
 flowchart TD
     %% Start
     Start([💬 Customer reports<br>an issue]) --> Warranty{Is the device<br>under warranty?}
@@ -43,10 +43,10 @@ flowchart TD
     Escalate --> Close
 
     %% === Styling ===
-    classDef startEnd fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
-    classDef decisionNode fill:#2196F3,stroke:#1565C0,stroke-width:2px,color:#fff
-    classDef actionNode fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#fff
-    classDef escalateNode fill:#f44336,stroke:#c62828,stroke-width:2px,color:#fff
+    classDef startEnd fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef decisionNode fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef actionNode fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
+    classDef escalateNode fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643
 
     class Start,Close startEnd
     class Warranty,IssueType,OutOfWarranty decisionNode
@@ -158,6 +158,7 @@ class SupportState(AgentState):  # [!code highlight]
 
 :::js
 ```typescript
+import { StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 
 // Define the possible workflow steps
@@ -166,7 +167,7 @@ const WarrantyStatusSchema = z.enum(["in_warranty", "out_of_warranty"]);
 const IssueTypeSchema = z.enum(["hardware", "software"]);
 
 // State for customer support workflow
-const SupportStateSchema = z.object({  // [!code highlight]
+const SupportState = new StateSchema({  // [!code highlight]
   currentStep: SupportStepSchema.optional(),  // [!code highlight]
   warrantyStatus: WarrantyStatusSchema.optional(),
   issueType: IssueTypeSchema.optional(),
@@ -249,7 +250,7 @@ import { tool, ToolMessage, type ToolRuntime } from "langchain";
 import { Command } from "@langchain/langgraph";
 
 const recordWarrantyStatus = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({ // [!code highlight]
       update: { // [!code highlight]
         messages: [
@@ -274,7 +275,7 @@ const recordWarrantyStatus = tool(
 );
 
 const recordIssueType = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({ // [!code highlight]
       update: { // [!code highlight]
         messages: [
@@ -519,7 +520,7 @@ import { createMiddleware } from "langchain";
 
 const applyStepMiddleware = createMiddleware({
   name: "applyStep",
-  stateSchema: SupportStateSchema,
+  stateSchema: SupportState,
   wrapModelCall: async (request, handler) => {
     // Get current step (defaults to warranty_collector for first interaction)
     const currentStep = request.state.currentStep ?? "warranty_collector"; // [!code highlight]
@@ -605,7 +606,7 @@ const allTools = [
 
 // Initialize the model
 const model = new ChatOpenAI({
-  model: "gpt-5o-mini",
+  model: "gpt-5.4-mini",
   temperature: 0.7,
 });
 
@@ -613,7 +614,7 @@ const model = new ChatOpenAI({
 const agent = createAgent({
   model,
   tools: allTools,
-  stateSchema: SupportStateSchema,  // [!code highlight]
+  stateSchema: SupportState,  // [!code highlight]
   middleware: [applyStepMiddleware],  // [!code highlight]
   checkpointer: new MemorySaver(),  // [!code highlight]
 });
@@ -631,10 +632,10 @@ Test the complete workflow:
 :::python
 ```python
 from langchain.messages import HumanMessage
-import uuid
+from langchain_core.utils.uuid import uuid7
 
 # Configuration for this conversation thread
-thread_id = str(uuid.uuid4())
+thread_id = str(uuid7())
 config = {"configurable": {"thread_id": thread_id}}
 
 # Turn 1: Initial message - starts with warranty_collector step
@@ -680,10 +681,10 @@ for msg in result['messages']:
 :::js
 ```typescript
 import { HumanMessage } from "@langchain/core/messages";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuid7 } from "uuid";
 
 // Configuration for this conversation thread
-const threadId = uuidv4();
+const threadId = uuid7();
 const config = { configurable: { thread_id: threadId } };
 
 // Turn 1: Initial message - starts with warranty_collector step
@@ -838,7 +839,7 @@ agent = create_agent(
     middleware=[
         apply_step_config,
         SummarizationMiddleware(  # [!code highlight]
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             trigger=("tokens", 4000),
             keep=("messages", 10)
         )
@@ -856,11 +857,11 @@ import { MemorySaver } from "@langchain/langgraph";
 const agent = createAgent({
   model,
   tools: allTools,
-  stateSchema: SupportStateSchema,
+  stateSchema: SupportState,
   middleware: [
     applyStepMiddleware,
     new SummarizationMiddleware({  // [!code highlight]
-      model: "gpt-4o-mini",
+      model: "gpt-5.4-mini",
       trigger: { tokens: 4000 },
       keep: { messages: 10 },
     }),
@@ -1021,7 +1022,7 @@ A single agent dynamically changes its behavior based on the current_step state,
 creating a state machine for sequential information collection.
 """
 
-import uuid
+from langchain_core.utils.uuid import uuid7
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
@@ -1034,7 +1035,7 @@ from langchain.chat_models import init_chat_model
 from langchain.messages import HumanMessage, ToolMessage
 from langchain.tools import tool, ToolRuntime
 
-model = init_chat_model("anthropic:claude-3-5-sonnet-latest")
+model = init_chat_model("google_genai:gemini-3.1-pro-preview")
 
 
 # Define the possible workflow steps
@@ -1205,7 +1206,7 @@ agent = create_agent(
     middleware=[
         apply_step_config,
         SummarizationMiddleware(
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             trigger=("tokens", 4000),
             keep=("messages", 10)
         )
@@ -1219,7 +1220,7 @@ agent = create_agent(
 # ============================================================================
 
 if __name__ == "__main__":
-    thread_id = str(uuid.uuid4())
+    thread_id = str(uuid7())
     config = {"configurable": {"thread_id": thread_id}}
 
     result = agent.invoke(
@@ -1253,7 +1254,7 @@ import { createMiddleware, createAgent } from "langchain";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { tool, ToolMessage, type ToolRuntime, HumanMessage } from "langchain";
-import { Command, MemorySaver } from "@langchain/langgraph";
+import { Command, MemorySaver, StateSchema } from "@langchain/langgraph";
 import { ChatOpenAI } from "@langchain/openai";
 
 // Define the possible workflow steps
@@ -1266,15 +1267,14 @@ const WarrantyStatusSchema = z.enum(["in_warranty", "out_of_warranty"]);
 const IssueTypeSchema = z.enum(["hardware", "software"]);
 
 // State for customer support workflow
-const SupportStateSchema = z.object({
-
+const SupportState = new StateSchema({
   currentStep: SupportStepSchema.optional(),
   warrantyStatus: WarrantyStatusSchema.optional(),
   issueType: IssueTypeSchema.optional(),
 });
 
 const recordWarrantyStatus = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({
 
       update: {
@@ -1301,7 +1301,7 @@ const recordWarrantyStatus = tool(
 );
 
 const recordIssueType = tool(
-  async (input, config: ToolRuntime<typeof SupportStateSchema>) => {
+  async (input, config: ToolRuntime<typeof SupportState.State>) => {
     return new Command({
 
       update: {
@@ -1412,7 +1412,7 @@ const STEP_CONFIG = {
 
 const applyStepMiddleware = createMiddleware({
   name: "applyStep",
-  stateSchema: SupportStateSchema,
+  stateSchema: SupportState,
   wrapModelCall: async (request, handler) => {
     // Get current step (defaults to warranty_collector for first interaction)
     const currentStep = request.state.currentStep ?? "warranty_collector";
@@ -1451,7 +1451,7 @@ const allTools = [
 ];
 
 const model = new ChatOpenAI({
-  model: "gpt-5-mini",
+  model: "gpt-5.4-mini",
 });
 
 // Create the agent with step-based configuration

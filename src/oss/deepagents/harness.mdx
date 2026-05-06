@@ -1,81 +1,81 @@
 ---
-title: Agent harness capabilities
-sidebarTitle: Agent harness
+title: Harness capabilities
+sidebarTitle: Overview
 ---
 
-We think of `deepagents` as an ["agent harness"](/oss/concepts/products#agent-harnesses-like-the-deep-agents-sdk). It is the same core tool calling loop as other agent frameworks, but with built-in tools and capabilities.
+An agent harness is a combination of several different capabilities that make building long-running agents easier:
 
-```mermaid
-graph TB
-    Agent[Deep Agent] --> Tools[File System Tools]
-    Agent --> Todo[To-Do List]
-    Agent --> Sub[Subagents]
+- [Planning capabilities](#planning-capabilities)
+- [Virtual filesystem](#virtual-filesystem-access)
+- [Filesystem permissions](#filesystem-permissions)
+- [Task delegation (subagents)](#task-delegation-subagents)
+- [Context and token management](#context-management)
+- [Code execution](#code-execution)
+- [Human-in-the-loop](#human-in-the-loop)
+- [Harness profiles](#harness-profiles)
 
-    Tools --> Backend[Storage Backend]
-    Backend --> State[State]
-    Backend --> Disk[Filesystem]
-    Backend --> Store[Store]
+Alongside these capabilities, Deep Agents use [Skills](#skills) and [Memory](#memory) for additional context and instructions.
 
-    Sub --> |isolated work| Result[Final Result]
-    Result --> Agent
-```
+![The Deep Agents open harness: planning, virtual filesystem, permissions, subagents, context management, code execution, human-in-the-loop, skills, and memory](/oss/images/deepagents/production/open-harness.png)
 
-This page lists out the components that make up the agent harness.
+## Planning capabilities
 
-## File system access
+The harness provides a `write_todos` tool that agents can use to maintain a structured task list.
 
-The harness provides six tools for file system operations, making files first-class citizens in the agent's environment:
+**Features:**
+- Track multiple tasks with statuses (`'pending'`, `'in_progress'`, `'completed'`)
+- Persisted in agent state
+- Helps agent organize complex multi-step work
+- Useful for long-running tasks and planning
+
+## Virtual filesystem access
+
+The harness provides a configurable virtual filesystem which can be backed by different pluggable backends.
+The backends support the following file system operations:
 
 | Tool | Description |
-|---|---|
+| ---- | ----------- |
 | `ls` | List files in a directory with metadata (size, modified time) |
-| `read_file` | Read file contents with line numbers, supports offset/limit for large files |
+| `read_file` | Read file contents with line numbers, supports offset/limit for large files. Also supports returning multimodal content blocks for non-text files (images, video, audio, and documents). See supported extensions below. |
 | `write_file` | Create new files |
 | `edit_file` | Perform exact string replacements in files (with global replace mode) |
 | `glob` | Find files matching patterns (e.g., `**/*.py`) |
 | `grep` | Search file contents with multiple output modes (files only, content with context, or counts) |
+| `execute` | Run shell commands in the environment (available with [sandbox backends](/oss/deepagents/sandboxes) only) |
 
+<Accordion title="Supported multimodal file extensions">
 
-## Large tool result eviction
+| Type | Extensions |
+| ---- | ---------- |
+| [Image](/oss/langchain/messages#multimodal) | `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.heic`, `.heif` |
+| [Video](/oss/langchain/messages#multimodal) | `.mp4`, `.mpeg`, `.mov`, `.avi`, `.flv`, `.mpg`, `.webm`, `.wmv`, `.3gpp` |
+| [Audio](/oss/langchain/messages#multimodal) | `.wav`, `.mp3`, `.aiff`, `.aac`, `.ogg`, `.flac` |
+| [File](/oss/langchain/messages#multimodal) | `.pdf`, `.ppt`, `.pptx` |
 
-The [`FilesystemMiddleware`](/oss/deepagents/middleware) automatically evicts large tool results to the file system when they exceed a token threshold, preventing context window saturation.
+</Accordion>
+
+The virtual filesystem is used by several other harness capabilities such as skills, memory, code execution, and context management.
+You can also use the file system when building custom tools and middleware for Deep Agents.
+
+For more information, see [backends](/oss/deepagents/backends).
+
+## Filesystem permissions
+
+The harness supports declarative permission rules that control which files and directories the agent can read or write. Permissions apply to the built-in filesystem tools listed above and are evaluated in declaration order with first-match-wins semantics.
 
 **How it works:**
+- Pass a list of rules to `permissions=` when creating the agent
+- Each rule specifies `operations` (`"read"`, `"write"`), `paths` (glob patterns), and `mode` (`"allow"` or `"deny"`)
+- The first matching rule wins. If no rule matches, the operation is allowed.
 
-- Monitors tool call results for size (default threshold: 20,000 tokens, configurable via `tool_token_limit_before_evict`)
-- When exceeded, writes the result using the configured backend
-- Replaces the tool result with a truncated preview and file reference
-- Agent can read the full result from the file system as needed
+**Why it's useful:**
+- Restrict agents to specific directories (e.g., `/workspace/`)
+- Protect sensitive files (e.g., `.env`, credentials)
+- Give subagents narrower access than the parent agent
 
-## Pluggable storage backends
+Permissions do not apply to [sandbox backends](/oss/deepagents/sandboxes), which support arbitrary command execution via the `execute` tool. For custom validation logic, use [backend policy hooks](/oss/deepagents/backends#add-policy-hooks).
 
-The harness abstracts file system operations behind a protocol, allowing different storage strategies for different use cases.
-
-**Available backends:**
-
-1. **`StateBackend`** - Ephemeral in-memory storage
-    - Files live in the agent's state (checkpointed with conversation)
-    - Persists within a thread but not across threads
-    - Useful for temporary working files
-
-2. **`FilesystemBackend`** - Real filesystem access
-    - Read/write from actual disk
-    - Supports virtual mode (sandboxed to a root directory)
-    - Integrates with system tools (ripgrep for grep)
-    - Security features: path validation, size limits, symlink prevention
-
-3. **`StoreBackend`** - Persistent cross-conversation storage
-    - Uses LangGraph's BaseStore for durability
-    - Namespaced per `assistant_id`
-    - Files persist across conversations
-    - Useful for long-term memory or knowledge bases
-
-4. **`CompositeBackend`** - Route different paths to different backends
-    - Example: `/` → StateBackend, `/memories/` → StoreBackend
-    - Longest-prefix matching for routing
-    - Enables hybrid storage strategies
-
-See [backends](/oss/deepagents/backends) for configuration details and examples.
+For the full rule structure, examples, and subagent inheritance, see [Permissions](/oss/deepagents/permissions).
 
 ## Task delegation (subagents)
 
@@ -89,7 +89,7 @@ The harness allows the main agent to create ephemeral "subagents" for isolated m
 
 **How it works:**
 - Main agent has a `task` tool
-- When invoked, creates a fresh agent instance with its own context
+- When invoked, it creates a fresh agent instance with its own context
 - Subagent executes autonomously until completion
 - Returns a single final report to the main agent
 - Subagents are stateless (can't send multiple messages back)
@@ -104,51 +104,42 @@ The harness allows the main agent to create ephemeral "subagents" for isolated m
 - Example: code-reviewer, web-researcher, test-runner
 - Configure via `subagents` parameter
 
-## Conversation history summarization
+<Accordion title="Running without subagents (no `task` tool)" icon="ban">
+    To run an agent without the `task` tool, see [Running without subagents](/oss/deepagents/subagents#running-without-subagents). Don't try removing `SubAgentMiddleware` via `excluded_middleware`—that's intentionally rejected. Instead, disable the auto-added subagent via the [harness profile](#harness-profiles) and pass no synchronous subagents via `subagents=`. Async subagents are unaffected.
+</Accordion>
 
-The harness automatically compresses old conversation history when token usage becomes excessive.
+## Context management
 
-**Configuration:**
-- Triggers at 85% of the model's `max_input_tokens` from its [model profile](/oss/langchain/models#model-profiles)
-- Keeps 10% of tokens as recent context
-- Falls back to 170,000 tokens trigger / 6 messages kept if model profile is unavailable
-- Older messages are summarized by the model
+The harness manages context so deep agents can handle long-running tasks within token limits while retaining the information they need.
 
-**Why it's useful:**
-- Enables very long conversations without hitting context limits
-- Preserves recent context while compressing ancient history
-- Transparent to the agent (appears as a special system message)
-
-## Dangling tool call repair
-
-The harness fixes message history when tool calls are interrupted or cancelled before receiving results.
-
-**The problem:**
-- Agent requests tool call: "Please run X"
-- Tool call is interrupted (user cancels, error, etc.)
-- Agent sees `tool_call` in `AIMessage` but no corresponding `ToolMessage`
-- This creates an invalid message sequence
-
-**The solution:**
-- Detects `AIMessage` objects with `tool_calls` that have no results
-- Creates synthetic `ToolMessage` responses indicating the call was cancelled
-- Repairs the message history before agent execution
+**How it works:**
+- **Input context** — System prompt, memory, skills, and tool prompts shape what the agent knows at startup
+- **Compression** — Built-in offloading and summarization keep context within window limits as tasks progress
+- **Isolation** — Subagents quarantine heavy work and return only results (see [Task delegation](#task-delegation-subagents))
+- **Long-term memory** — Persistent storage across threads via the virtual filesystem
 
 **Why it's useful:**
-- Prevents agent confusion from incomplete message chains
-- Gracefully handles interruptions and errors
-- Maintains conversation coherence
+- Enables multi-step tasks that exceed a single context window
+- Keeps the most relevant information in scope without manual trimming
+- Reduces token usage through automatic summarization and offloading
 
-## To-do list tracking
+For configuration details, see [Context engineering](/oss/deepagents/context-engineering).
 
-The harness provides a `write_todos` tool that agents can use to maintain a structured task list.
+## Code execution
 
-**Features:**
-- Track multiple tasks with statuses (`'pending'`, `'in_progress'`, `'completed'`)
-- Persisted in agent state
-- Helps agent organize complex multi-step work
-- Useful for long-running tasks and planning
+When you use a [sandbox backend](/oss/deepagents/sandboxes), the harness exposes an `execute` tool that lets the agent run shell commands in an isolated environment. This enables the agent to install dependencies, run scripts, and execute code as part of its task.
 
+**How it works:**
+- Sandbox backends implement the `SandboxBackendProtocolV2` — when detected, the harness adds the `execute` tool to the agent's available tools
+- Without a sandbox backend, the agent only has filesystem tools (`read_file`, `write_file`, etc.) and cannot run commands
+- The `execute` tool returns combined stdout/stderr, exit code, and truncates large outputs (saving to a file for the agent to read incrementally)
+
+**Why it's useful:**
+- **Security** — Code runs in isolation, protecting your host system from the agent's operations
+- **Clean environments** — Use specific dependencies or OS configurations without local setup
+- **Reproducibility** — Consistent execution environments across teams
+
+For setup, providers, and file transfer APIs, see [Sandboxes](/oss/deepagents/sandboxes).
 
 ## Human-in-the-loop
 
@@ -157,38 +148,63 @@ The harness can pause agent execution at specified tool calls to allow human app
 **Configuration:**
 - Pass `interrupt_on` to `create_deep_agent` with a mapping of tool names to interrupt configurations
 - Example: `interrupt_on={"edit_file": True}` pauses before every edit
-- Can provide approval messages or modify tool inputs
+- You can provide approval messages or modify tool inputs when prompted
 
 **Why it's useful:**
 - Safety gates for destructive operations
 - User verification before expensive API calls
 - Interactive debugging and guidance
 
+## Skills
 
-## Prompt caching (Anthropic)
-
-The harness enables Anthropic's prompt caching feature to reduce redundant token processing.
-
-**How it works:**
-- Caches portions of the prompt that repeat across turns
-- Significantly reduces latency and cost for long system prompts
-- Automatically skipped for non-Anthropic models
-
-**Why it's useful:**
-- System prompts (especially with filesystem docs) can be 5k+ tokens
-- These repeat every turn without caching
-- Caching provides ~10x speedup and cost reduction
-
-## Streaming
-
-The harness has built-in streaming for real-time updates from agent execution.
+The harness supports skills that provide specialized workflows and domain knowledge to your deep agent.
 
 **How it works:**
-- Uses LangGraph's streaming system to surface updates
-- Streams from both the main agent and subagents
-- Tool calls, tool results, and LLM responses are streamed as they occur
+- Skills follow the [Agent Skills standard](https://agentskills.io/)
+- Each skill is a directory containing a `SKILL.md` file with instructions and metadata
+- Skills can include additional scripts, reference docs, templates, and other resources
+- Skills use progressive disclosure—they are only loaded when the agent determines they're useful for the current task
+- Agent reads frontmatter from each `SKILL.md` file at startup, then reviews full skill content when needed
 
 **Why it's useful:**
+- Reduces token usage by only loading relevant skills when needed
+- Bundles capabilities together into larger actions with additional context
+- Provides specialized expertise without cluttering the system prompt
+- Enables modular, reusable agent capabilities
 
-- Display output progressively
-- Review and debug agent and subagent work
+For more information, see [Skills](/oss/deepagents/skills).
+
+## Memory
+
+The harness supports persistent memory files that provide extra context to your deep agent across conversations.
+These files often contain general coding style, preferences, conventions, and guidelines that help the agent understand how to work with your codebase and follow your preferences.
+
+**How it works:**
+- Uses [`AGENTS.md` files](https://agents.md/) to provide persistent context
+- Memory files are always loaded (unlike skills, which use progressive disclosure)
+- Pass one or more file paths to the `memory` parameter when creating your agent
+- Files are stored in the agent's backend (StateBackend, StoreBackend, or FilesystemBackend)
+- The agent can update memory based on your interactions, feedback, and identified patterns
+
+**Why it's useful:**
+- Provides persistent context that doesn't need to be re-specified each conversation
+- Useful for storing user preferences, project guidelines, or domain knowledge
+- Always available to the agent, ensuring consistent behavior
+
+For configuration details and examples, see [Memory](/oss/deepagents/customization#memory).
+
+## Harness profiles
+
+The harness can apply a declarative configuration bundle (a `HarnessProfile`) whenever a given provider or model is selected. Profiles tune runtime behavior after the model is built, without requiring per-agent setup code.
+
+**How it works:**
+- Register a profile under a provider name (`"openai"`) or a `provider:model` key (`"openai:gpt-5.4"`)
+- `create_deep_agent` looks up and applies the profile when resolving the model
+- Provider-level and model-level profiles merge at resolution time
+
+**Why it's useful:**
+- Package per-provider or per-model defaults (system-prompt tweaks, tool overrides, middleware) in one place
+- Keep the `create_deep_agent` call site unchanged when switching models
+- Ship reusable profiles as plugins via entry points
+
+For the full field list, merge semantics, and plugin packaging, see [Profiles](/oss/deepagents/profiles).

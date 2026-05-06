@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -10,6 +11,8 @@ import yaml
 from tqdm import tqdm
 
 from pipeline.preprocessors import preprocess_markdown
+
+_IS_CI = os.environ.get("CI", "").lower() in ("true", "1")
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,13 @@ class DocumentationBuilder:
             ".yaml",
             ".css",
             ".js",
+            ".jsx",
+            ".tsx",
             ".txt",
+            ".woff2",
+            ".woff",
+            ".ttf",
+            ".html",
         }
 
         # Mapping of language codes to full names for URLs
@@ -75,7 +84,7 @@ class DocumentationBuilder:
         Displays:
             Progress bars showing build progress for each version.
         """
-        logger.info(
+        logger.debug(
             "Building versioned documentation from %s to %s",
             self.src_dir,
             self.build_dir,
@@ -87,20 +96,24 @@ class DocumentationBuilder:
         self.build_dir.mkdir(parents=True, exist_ok=True)
 
         # Build LangGraph versioned content (oss/ -> oss/python/ and oss/javascript/)
-        logger.info("Building LangGraph Python version...")
+        logger.debug("Building LangGraph Python version...")
         self._build_langgraph_version("oss/python", "python")
 
-        logger.info("Building LangGraph JavaScript version...")
+        logger.debug("Building LangGraph JavaScript version...")
         self._build_langgraph_version("oss/javascript", "js")
 
-        logger.info("Building LangSmith content...")
+        logger.debug("Building LangSmith content...")
         self._build_unversioned_content("langsmith", "langsmith")
 
         # Copy shared files (docs.json, images, etc.)
-        logger.info("Copying shared files...")
+        logger.debug("Copying shared files...")
         self._copy_shared_files()
 
-        logger.info("✅ New structure build complete")
+        # Copy snippet components from @langchain/docs-sandbox npm package
+        logger.debug("Copying npm snippet components...")
+        self._copy_npm_snippets()
+
+        logger.debug("New structure build complete")
 
     def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
         """Convert a YAML file to JSON format.
@@ -181,6 +194,10 @@ class DocumentationBuilder:
             # Only add links for files in the src/ directory
             relative_path = input_path.absolute().relative_to(self.src_dir.absolute())
 
+            # Do not add source links on the home page (root index.mdx)
+            if relative_path.parts == ("index.mdx",):
+                return content
+
             # Construct the GitHub URLs
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"
@@ -190,12 +207,15 @@ class DocumentationBuilder:
             # Create the callout section with Mintlify Callout component
             source_links_section = (
                 "\n\n---\n\n"
-                '<Callout icon="pen-to-square" iconType="regular">\n'
-                f"    [Edit this page on GitHub]({edit_url}) or [file an issue]({issue_url}).\n"
-                "</Callout>\n"
-                '<Tip icon="terminal" iconType="regular">\n'
+                '<div className="source-links">\n'
+                '<Callout icon="terminal-2">\n'
                 "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
-                "</Tip>\n"
+                "</Callout>\n"
+                '<Callout icon="edit">\n'
+                f"    [Edit this page on GitHub]({edit_url}) "
+                f"or [file an issue]({issue_url}).\n"
+                "</Callout>\n"
+                "</div>\n"
             )
 
             # Append to content
@@ -330,12 +350,12 @@ class DocumentationBuilder:
         # Build Python version
         python_output = self.build_dir / "oss" / "python" / oss_relative
         if self._build_single_file_to_path(file_path, python_output, "python"):
-            logger.info("Built Python version: oss/python/%s", oss_relative)
+            logger.debug("Built Python version: oss/python/%s", oss_relative)
 
         # Build JavaScript version
         js_output = self.build_dir / "oss" / "javascript" / oss_relative
         if self._build_single_file_to_path(file_path, js_output, "js"):
-            logger.info("Built JavaScript version: oss/javascript/%s", oss_relative)
+            logger.debug("Built JavaScript version: oss/javascript/%s", oss_relative)
 
     def _build_unversioned_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an unversioned file (langsmith).
@@ -346,7 +366,7 @@ class DocumentationBuilder:
         """
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, "python"):
-            logger.info("Built: %s", relative_path)
+            logger.debug("Built: %s", relative_path)
 
     def _build_shared_file(self, file_path: Path, relative_path: Path) -> None:
         """Build a shared file (images, docs.json, JS/CSS files).
@@ -357,7 +377,7 @@ class DocumentationBuilder:
         """
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, None):
-            logger.info("Built shared file: %s", relative_path)
+            logger.debug("Built shared file: %s", relative_path)
 
     def _build_simple_file(self, file_path: Path, relative_path: Path) -> None:
         """Build a simple file (root-level files).
@@ -368,7 +388,7 @@ class DocumentationBuilder:
         """
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, None):
-            logger.info("Built: %s", relative_path)
+            logger.debug("Built: %s", relative_path)
 
     def _build_single_file_to_path(
         self, file_path: Path, output_path: Path, target_language: str | None
@@ -483,8 +503,10 @@ class DocumentationBuilder:
             total=len(existing_files),
             desc="Building files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
         ) as pbar:
             for file_path in existing_files:
                 result = self._build_file_with_progress(file_path, pbar)
@@ -531,8 +553,10 @@ class DocumentationBuilder:
             total=len(all_files),
             desc=f"Building {output_dir} files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from oss/ directory
@@ -608,8 +632,10 @@ class DocumentationBuilder:
             total=len(all_files),
             desc=f"Building {output_dir} files",
             unit="file",
-            ncols=80,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
         ) as pbar:
             for file_path in all_files:
                 # Calculate relative path from source directory
@@ -734,34 +760,25 @@ class DocumentationBuilder:
         Returns:
             True if the file should be shared, False if it should be version-specific.
         """
-        # Shared files: docs.json, images directory, JavaScript files, snippets
         relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
 
-        # docs.json should be shared
         if file_path.name == "docs.json":
             return True
 
-        # index.mdx at root should be shared
-        if file_path.name == "index.mdx" and len(relative_path.parts) == 1:
+        # Root-level files that should be shared
+        if len(relative_path.parts) == 1 and file_path.name in {
+            "index.mdx",
+            "use-these-docs.mdx",
+            "playground.mdx",
+        }:
             return True
 
-        # use-these-docs.mdx at root should be shared
-        if file_path.name == "use-these-docs.mdx" and len(relative_path.parts) == 1:
+        # Directories whose contents should be shared
+        shared_dirs = {"images", "snippets", ".well-known", "fonts"}
+        if shared_dirs & set(relative_path.parts):
             return True
 
-        # Images directory should be shared
-        if "images" in relative_path.parts:
-            return True
-
-        # Snippets directory should be shared
-        if "snippets" in relative_path.parts:
-            return True
-
-        # .well-known directory should be shared (security.txt, etc.)
-        if ".well-known" in relative_path.parts:
-            return True
-
-        # JavaScript and CSS files should be shared (used for custom scripts/styles)
+        # JavaScript and CSS files should be shared (custom scripts/styles)
         return file_path.suffix.lower() in {".js", ".css"}
 
     def _copy_shared_files(self) -> None:
@@ -805,6 +822,57 @@ class DocumentationBuilder:
                     copied_count += 1
 
         logger.info("✅ Shared files copied: %d files", copied_count)
+
+    # Maps npm dist filenames to their output names in build/snippets/
+    _NPM_SNIPPET_FILES: dict[str, str] = {
+        "PatternEmbed.jsx": "pattern-embed.jsx",
+        "ExampleEmbed.jsx": "example-embed.jsx",
+    }
+
+    # Maps npm dist filenames to their output names in build/ (served at site root).
+    _NPM_BUILD_FILES: dict[str, str] = {
+        "ChatLangChainEmbed.js": "ChatLangChainEmbed.js",
+    }
+
+    def _copy_npm_snippets(self) -> None:
+        """Copy snippet components from the @langchain/docs-sandbox npm package.
+
+        Overwrites any source-tree versions already copied by _copy_shared_files
+        so the build always uses the latest published component.
+        """
+        pkg_dist = (
+            self.src_dir.parent
+            / "node_modules"
+            / "@langchain"
+            / "docs-sandbox"
+            / "dist"
+        )
+        if not pkg_dist.is_dir():
+            logger.warning(
+                "@langchain/docs-sandbox not installed — run `npm install` first"
+            )
+            return
+
+        snippets_dir = self.build_dir / "snippets"
+        snippets_dir.mkdir(parents=True, exist_ok=True)
+
+        for src_name, dest_name in self._NPM_SNIPPET_FILES.items():
+            src_file = pkg_dist / src_name
+            if not src_file.is_file():
+                logger.warning("Expected file not found in npm package: %s", src_file)
+                continue
+            dest_file = snippets_dir / dest_name
+            shutil.copy2(src_file, dest_file)
+            logger.debug("Copied npm snippet: %s → snippets/%s", src_name, dest_name)
+
+        for src_name, dest_name in self._NPM_BUILD_FILES.items():
+            src_file = pkg_dist / src_name
+            if not src_file.is_file():
+                logger.warning("Expected file not found in npm package: %s", src_file)
+                continue
+            dest_file = self.build_dir / dest_name
+            shutil.copy2(src_file, dest_file)
+            logger.info("Copied npm build file: %s → build/%s", src_name, dest_name)
 
     def _process_snippet_markdown_file(
         self, input_path: Path, output_path: Path

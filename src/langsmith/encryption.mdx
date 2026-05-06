@@ -1,16 +1,16 @@
 ---
-title: Add encryption at-rest
-sidebarTitle: Encryption at-rest
+title: Add encryption at rest
+sidebarTitle: Encryption at rest
 ---
 
-Agent Server supports encryption at-rest for checkpoint data and metadata. You can choose between basic encryption with a single key or custom encryption for advanced use cases.
+Agent Server supports encryption at rest for checkpoint data and metadata. You can choose between basic encryption with a single key or custom encryption for advanced use cases.
 
 ## Choosing an encryption method
 
 | Method | What's encrypted | Use case |
 |--------|------------------|----------|
-| **Basic encryption** | Checkpoint blobs, optionally JSON fields | Single static key, automatic AES encryption |
-| **Custom encryption** | Checkpoints, threads, runs, assistants, crons and stores | Per-tenant keys, KMS integration, selective field encryption |
+| **Basic encryption** | Checkpoint blobs, optionally JSON fields | Single static key, automatic AES encryption, selective field encryption |
+| **Custom encryption** | Checkpoints, threads, runs, assistants, crons and stores | Per-tenant keys, KMS integration |
 
 ## Basic encryption
 
@@ -43,7 +43,7 @@ These keys are encrypted wherever they appear in thread, assistant, run, cron, a
 Encrypted fields cannot be searched or filtered.
 </Warning>
 
-System fields cannot be encrypted: `langgraph_version`, `langgraph_api_version`, `langgraph_plan`, `langgraph_host`, `langgraph_api_url`, `langgraph_request_id`, `langgraph_auth_user_id`, `langgraph_auth_permissions`.
+System fields cannot be encrypted: `langgraph_version`, `langgraph_api_version`, `langgraph_plan`, `langgraph_host`, `langgraph_api_url`, `langgraph_request_id`, `langgraph_auth_user_id`, and `langgraph_auth_permissions`.
 
 ## Custom encryption
 
@@ -55,11 +55,14 @@ Requires Agent Server version 0.6.22+ and Python SDK version `langgraph-sdk>=0.3
 Agent Server versions 0.5.34–0.6.21 included a pre-release version of custom encryption. Data encrypted with these versions will be corrupted when upgrading to 0.6.22+. Do not use custom encryption on these versions.
 </Warning>
 
+<Warning>
+Only use custom encryption if basic encryption doesn't meet your needs. Custom encryption requires you to implement and maintain encryption handlers, and adds operational complexity. If you only need a single static key with optional selective field encryption, use [basic encryption](#basic-encryption) instead.
+</Warning>
+
 Use custom encryption when you need:
 
 - **Per-tenant key isolation** — different encryption keys for different customers
 - **KMS integration** — AWS KMS, Google Cloud KMS, or HashiCorp Vault for key management, rotation, and audit logging
-- **Selective field encryption** — encrypt sensitive metadata fields while keeping others searchable
 
 ### How it works
 
@@ -210,58 +213,29 @@ async def decrypt_json(ctx: EncryptionContext, data: dict) -> dict:
 **Performance consideration:** Per-key encryption means one encryption call per field. If your encryption involves round-trips to an external service (e.g., KMS), this can significantly impact latency. Consider caching data keys locally or using envelope encryption where you encrypt a local data key with KMS and use it for multiple fields.
 </Note>
 
-Common fields to leave **unencrypted** for search and filtering:
+User-defined fields for authorization (e.g., `tenant_id`, `owner`) should generally be left **unencrypted**, as should fields used for search and filtering. Additionally, **some system-managed fields will never be encrypted**:
 
-- User-defined fields for access control queries (e.g., `tenant_id`, `owner`)
-- `run_id`, `thread_id`, `graph_id`, `assistant_id`, `user_id`, `checkpoint_id` — system-populated identifiers
-- `source`, `step`, `parents`, `run_attempt` — system-populated execution state
-- `langgraph_version`, `langgraph_api_version`, `langgraph_plan`, `langgraph_host`, `langgraph_api_url`, `langgraph_request_id`, `langgraph_auth_user`, `langgraph_auth_user_id`, `langgraph_auth_permissions` — system-populated platform metadata
+- Resource identifiers (`thread_id`, `run_id`, `assistant_id`, `graph_id`, `checkpoint_id`, `task_id`)
+- Most fields beginning with `langgraph_` (except for `langgraph_auth_user`)
+- Required checkpoint metadata (`source`, `step`, `parents`, `run_attempt`)
+- Internal fields used for scheduling and orchestration (`__after_seconds__`, `__request_start_time_ms__`, most fields beginning with `__pregel`)
+- Run-level execution limits (`max_concurrency`, `recursion_limit`) specified in a run's `config`
+- Thread TTL updates (`ttl`) specified in a run's `config.configurable`
+
 
 #### What gets encrypted
 
-**JSON handlers** (`@encryption.encrypt.json` / `@encryption.decrypt.json`):
-
+**JSON handlers** (`@encryption.encrypt.json` / `@encryption.decrypt.json`) are applied recursively to the following fields:
 - `thread.metadata`, `thread.values`
 - `assistant.metadata`, `assistant.context`
 - `run.metadata`, `run.kwargs`
 - `cron.metadata`, `cron.payload`
 - `store.value`
 
-**Blob handlers** (`@encryption.encrypt.blob` / `@encryption.decrypt.blob`):
+[Some fields are excluded from encryption.](#what-gets-encrypted) Unless otherwise noted, these exclusions apply at every level of a nested JSON object, not just the root level.
 
-- Checkpoint blobs (graph execution state)
+**Blob handlers** (`@encryption.encrypt.blob` / `@encryption.decrypt.blob`) are applied to checkpoint blobs (graph execution state).
 
-#### Model-specific handlers
-
-Register different handlers for different model types using `@encryption.encrypt.json.assistant`, `@encryption.encrypt.json.run`, etc. Use `ctx.field` to vary behavior by field:
-
-```python
-from langgraph_sdk import Encryption, EncryptionContext
-
-encryption = Encryption()
-
-@encryption.encrypt.json
-async def default_encrypt(ctx: EncryptionContext, data: dict) -> dict:
-    return encrypt_with_skip_fields(data, SKIP_FIELDS)
-
-@encryption.encrypt.json.assistant
-async def encrypt_assistant(ctx: EncryptionContext, data: dict) -> dict:
-    if ctx.field == "context":
-        # Assistant context may contain API keys or system prompts—encrypt everything
-        return encrypt_with_skip_fields(data, skip_fields=set())
-    # Assistant metadata—skip system fields
-    return encrypt_with_skip_fields(data, SKIP_FIELDS)
-
-@encryption.decrypt.json
-async def default_decrypt(ctx: EncryptionContext, data: dict) -> dict:
-    return decrypt_encrypted_fields(data)
-
-@encryption.decrypt.json.assistant
-async def decrypt_assistant(ctx: EncryptionContext, data: dict) -> dict:
-    return decrypt_encrypted_fields(data)
-```
-
-Supported model types: `thread`, `assistant`, `run`, `cron`, `store`, `checkpoint`.
 
 #### Deriving context from authentication
 

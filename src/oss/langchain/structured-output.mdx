@@ -6,6 +6,10 @@ title: Structured output
 
 Structured output allows agents to return data in a specific, predictable format. Instead of parsing natural language responses, you get structured data in the form of JSON objects, [Pydantic models](https://docs.pydantic.dev/latest/concepts/models/#basic-model-usage), or dataclasses that your application can use directly.
 
+<Tip>
+This page covers structured output with agents using `create_agent`. To use structured output directly on a model (outside of agents), see [Models - Structured output](/oss/langchain/models#structured-output).
+</Tip>
+
 LangChain's @[`create_agent`] handles structured output automatically. The user sets their desired structured output schema, and when the model generates the structured data, it's captured, validated, and returned in the `'structured_response'` key of the agent's state.
 
 ```python
@@ -50,11 +54,16 @@ The structured response is returned in the `structured_response` key of the agen
 :::js
 Structured output allows agents to return data in a specific, predictable format. Instead of parsing natural language responses, you get typed structured data.
 
+<Tip>
+This page covers structured output with agents using `createAgent`. To use structured output directly on a model (outside of agents), see [Models - Structured output](/oss/langchain/models#structured-output).
+</Tip>
+
 LangChain's prebuilt ReAct agent `createAgent` handles structured output automatically. The user sets their desired structured output schema, and when the model generates the structured data, it's captured, validated, and returned in the `structuredResponse` key of the agent's state.
 
 ```ts
 type ResponseFormat = (
     | ZodSchema<StructuredResponseT> // a Zod schema
+    | StandardSchema<StructuredResponseT> // any Standard Schema library
     | Record<string, unknown> // a JSON Schema
 )
 
@@ -66,7 +75,7 @@ const agent = createAgent({
 
 ## Response format
 
-Controls how the agent returns structured data. You can provide either a Zod object or JSON schema. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
+Controls how the agent returns structured data. You can provide a Zod schema, any [Standard Schema](https://standardschema.dev/)-compatible schema, or a JSON Schema object. By default, the agent uses a tool calling strategy, in which the output is created by an additional tool call. Certain models support native structured output, in which case the agent will use that strategy instead.
 
 You can control the behavior by wrapping `ResponseFormat` in a `toolStrategy` or `providerStrategy` function call:
 
@@ -139,7 +148,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
         phone: str = Field(description="The phone number of the person")
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         response_format=ContactInfo  # Auto-selects ProviderStrategy
     )
 
@@ -164,7 +173,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
         phone: str # The phone number of the person
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ContactInfo  # Auto-selects ProviderStrategy
     )
@@ -189,7 +198,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
         phone: str # The phone number of the person
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ContactInfo  # Auto-selects ProviderStrategy
     )
@@ -218,7 +227,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
     }
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ProviderStrategy(contact_info_schema)
     )
@@ -235,13 +244,14 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
 :::js
 ```ts
 function providerStrategy<StructuredResponseT>(
-    schema: ZodSchema<StructuredResponseT> | JsonSchemaFormat
+    schema: ZodSchema<StructuredResponseT> | SerializableSchema | JsonSchemaFormat
 ): ProviderStrategy<StructuredResponseT>
 ```
 
 <ParamField path="schema" required>
     The schema defining the structured output format. Supports:
     - **Zod Schema**: A zod schema
+    - **Standard Schema**: Any schema implementing the [Standard Schema](https://standardschema.dev/) spec
     - **JSON Schema**: A JSON schema object
 </ParamField>
 
@@ -259,7 +269,34 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
     });
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-5.4",
+        tools: [],
+        responseFormat: providerStrategy(ContactInfo)
+    });
+
+    const result = await agent.invoke({
+        messages: [{"role": "user", "content": "Extract contact info from: John Doe, john@example.com, (555) 123-4567"}]
+    });
+
+    console.log(result.structuredResponse);
+    // { name: "John Doe", email: "john@example.com", phone: "(555) 123-4567" }
+    ```
+
+    ```ts Standard Schema
+    import * as v from "valibot";
+    import { toStandardJsonSchema } from "@valibot/to-json-schema";
+    import { createAgent, providerStrategy } from "langchain";
+
+    const ContactInfo = toStandardJsonSchema(
+        v.object({
+            name: v.pipe(v.string(), v.description("The name of the person")),
+            email: v.pipe(v.string(), v.description("The email address of the person")),
+            phone: v.pipe(v.string(), v.description("The phone number of the person")),
+        })
+    );
+
+    const agent = createAgent({
+        model: "gpt-5.4",
         tools: [],
         responseFormat: providerStrategy(ContactInfo)
     });
@@ -287,7 +324,7 @@ LangChain automatically uses `ProviderStrategy` when you pass a schema type dire
     }
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-5.4",
         tools: [],
         responseFormat: providerStrategy(contactInfoSchema)
     });
@@ -379,7 +416,7 @@ class ToolStrategy(Generic[SchemaT]):
         key_points: list[str] = Field(description="The key points of the review. Lowercase, 1-3 words each.")
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ToolStrategy(ProductReview)
     )
@@ -406,7 +443,7 @@ class ToolStrategy(Generic[SchemaT]):
         key_points: list[str]  # The key points of the review
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ToolStrategy(ProductReview)
     )
@@ -432,7 +469,7 @@ class ToolStrategy(Generic[SchemaT]):
         key_points: list[str]  # The key points of the review
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ToolStrategy(ProductReview)
     )
@@ -474,7 +511,7 @@ class ToolStrategy(Generic[SchemaT]):
     }
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ToolStrategy(product_review_schema)
     )
@@ -506,7 +543,7 @@ class ToolStrategy(Generic[SchemaT]):
         description: str = Field(description="Brief description of the complaint")
 
     agent = create_agent(
-        model="gpt-5",
+        model="gpt-5.4",
         tools=tools,
         response_format=ToolStrategy(Union[ProductReview, CustomerComplaint])
     )
@@ -537,7 +574,7 @@ class MeetingAction(BaseModel):
     priority: Literal["low", "medium", "high"] = Field(description="Priority level")
 
 agent = create_agent(
-    model="gpt-5",
+    model="gpt-5.4",
     tools=[],
     response_format=ToolStrategy(
         schema=MeetingAction,
@@ -582,7 +619,8 @@ function toolStrategy<StructuredResponseT>(
     responseFormat:
         | JsonSchemaFormat
         | ZodSchema<StructuredResponseT>
-        | (ZodSchema<StructuredResponseT> | JsonSchemaFormat)[]
+        | SerializableSchema
+        | (ZodSchema<StructuredResponseT> | SerializableSchema | JsonSchemaFormat)[]
     options?: ToolStrategyOptions
 ): ToolStrategy<StructuredResponseT>
 ```
@@ -590,6 +628,7 @@ function toolStrategy<StructuredResponseT>(
 <ParamField path="schema" required>
     The schema defining the structured output format. Supports:
     - **Zod Schema**: A zod schema
+    - **Standard Schema**: Any schema implementing the [Standard Schema](https://standardschema.dev/) spec
     - **JSON Schema**: A JSON schema object
 </ParamField>
 
@@ -618,13 +657,40 @@ function toolStrategy<StructuredResponseT>(
     });
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-5.4",
         tools: [],
         responseFormat: toolStrategy(ProductReview)
     })
 
     const result = await agent.invoke({
         "messages": [{"role": "user", "content": "Analyze this review: 'Great product: 5 out of 5 stars. Fast shipping, but expensive'"}]
+    })
+
+    console.log(result.structuredResponse);
+    // { "rating": 5, "sentiment": "positive", "keyPoints": ["fast shipping", "expensive"] }
+    ```
+
+    ```ts Standard Schema
+    import * as v from "valibot";
+    import { toStandardJsonSchema } from "@valibot/to-json-schema";
+    import { createAgent, toolStrategy } from "langchain";
+
+    const ProductReview = toStandardJsonSchema(
+        v.object({
+            rating: v.optional(v.pipe(v.number(), v.minValue(1), v.maxValue(5))),
+            sentiment: v.picklist(["positive", "negative"]),
+            keyPoints: v.pipe(v.array(v.string()), v.description("The key points of the review. Lowercase, 1-3 words each.")),
+        })
+    );
+
+    const agent = createAgent({
+        model: "gpt-5.4",
+        tools: [],
+        responseFormat: toolStrategy(ProductReview)
+    })
+
+    const result = await agent.invoke({
+        messages: [{"role": "user", "content": "Analyze this review: 'Great product: 5 out of 5 stars. Fast shipping, but expensive'"}]
     })
 
     console.log(result.structuredResponse);
@@ -659,7 +725,7 @@ function toolStrategy<StructuredResponseT>(
     }
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-5.4",
         tools: [],
         responseFormat: toolStrategy(productReviewSchema)
     });
@@ -689,7 +755,7 @@ function toolStrategy<StructuredResponseT>(
     });
 
     const agent = createAgent({
-        model: "gpt-5",
+        model: "gpt-5.4",
         tools: [],
         responseFormat: toolStrategy([ProductReview, CustomerComplaint])
     });
@@ -718,7 +784,7 @@ const MeetingAction = z.object({
 });
 
 const agent = createAgent({
-    model: "gpt-5",
+    model: "gpt-5.4",
     tools: [],
     responseFormat: toolStrategy(MeetingAction, {
         toolMessageContent: "Action item captured and added to meeting notes!"
@@ -783,7 +849,7 @@ class EventDetails(BaseModel):
     date: str = Field(description="Event date")
 
 agent = create_agent(
-    model="gpt-5",
+    model="gpt-5.4",
     tools=[],
     response_format=ToolStrategy(Union[ContactInfo, EventDetails])  # Default: handle_errors=True
 )
@@ -849,7 +915,7 @@ const EventDetails = z.object({
 });
 
 const agent = createAgent({
-    model: "gpt-5",
+    model: "gpt-5.4",
     tools: [],
     responseFormat: toolStrategy([ContactInfo, EventDetails]),
 });
@@ -898,7 +964,7 @@ class ProductRating(BaseModel):
     comment: str = Field(description="Review comment")
 
 agent = create_agent(
-    model="gpt-5",
+    model="gpt-5.4",
     tools=[],
     response_format=ToolStrategy(ProductRating),  # Default: handle_errors=True
     system_prompt="You are a helpful assistant that parses product reviews. Do not make any field or value up."
@@ -996,7 +1062,7 @@ def custom_error_handler(error: Exception) -> str:
 
 
 agent = create_agent(
-    model="gpt-5",
+    model="gpt-5.4",
     tools=[],
     response_format=ToolStrategy(
                         schema=Union[ContactInfo, EventDetails],
@@ -1064,7 +1130,7 @@ const ProductRating = z.object({
 });
 
 const agent = createAgent({
-    model: "gpt-5",
+    model: "gpt-5.4",
     tools: [],
     responseFormat: toolStrategy(ProductRating),
 });

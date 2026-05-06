@@ -34,7 +34,7 @@ MIN_DOWNLOADS = 100_000
 
 DOCS_DIR = Path(__file__).parents[2]
 PROVIDERS_PATH = Path() / "src" / "oss" / "python" / "integrations" / "providers"
-PACKAGE_YML = Path() / "reference" / "packages.yml"
+PACKAGE_YML = Path() / "packages.yml"
 
 # Load package registry
 with PACKAGE_YML.open() as f:
@@ -115,17 +115,23 @@ def _enrich_package(p: dict) -> dict | None:
         raise ValueError(msg)
 
     # Handling for package URLs
-    if p["type"] in ("monorepo", "langchain-org"):
+    ref_doc_name = p["name"].replace("-", "_")
+
+    if p.get("has_reference_docs") and p.get("integration") == "false":
+        msg = (
+            f"{p['name']}: has_reference_docs=true and integration=false "
+            "is not a supported combination"
+        )
+        raise ValueError(msg)
+
+    if p["type"] in ("monorepo", "langchain-org") or p.get("has_reference_docs"):
         if p.get("integration") == "false":
-            # I don't think we'll hit this case since we filter them out?
             p["package_url"] = f"https://reference.langchain.com/python/{p['name']}/"
         else:
-            # Integration
             p["package_url"] = (
-                "https://reference.langchain.com/python/integrations"
-                f"/{p['name'].replace('-', '_')}/"
+                f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
             )
-    else:  # Third-party
+    else:
         p["package_url"] = f"https://pypi.org/project/{p['name']}/"
 
     return p
@@ -184,24 +190,32 @@ def table() -> str:
 def doc() -> str:
     return f"""\
 ---
-title: LangChain integrations packages
-sidebarTitle: LangChain integrations
+title: "LangChain Python integrations"
+sidebarTitle: "LangChain integrations"
 mode: "wide"
+description: "Integrate with providers using LangChain Python."
 ---
 {{/* File generated automatically by pipeline/tools/partner_pkg_table.py */}}
 {{/* Do not manually edit */}}
 
 LangChain offers an extensive ecosystem with 1000+ integrations across chat & embedding models, tools & toolkits, document loaders, vector stores, and more.
 
-A **provider** is a third-party service or platform that LangChain integrates with to access AI capabilities like chat models, embeddings, and vector stores. These providers have standalone `langchain-provider` packages for improved versioning, dependency management, and testing.
+A **provider** is a company or platform that hosts AI models and exposes them through an API (e.g., OpenAI, Anthropic, Google). Many providers have a dedicated `langchain-<provider>` package that implements one or more of LangChain's standard interfaces—chat models, embedding models, vector stores, and more—giving you a consistent API regardless of the underlying provider. Install the package, pick a model name, and swap providers without changing your code.
 
 <Columns cols={{3}}>
     <Card title="Chat models" icon="message" href="/oss/integrations/chat" arrow />
-    <Card title="Embedding models" icon="layer-group" href="/oss/integrations/text_embedding" arrow />
-    <Card title="Tools and toolkits" icon="screwdriver-wrench" href="/oss/integrations/tools" arrow />
+    <Card title="Embedding models" icon="layers-difference" href="/oss/integrations/embeddings" arrow />
+    <Card title="Tools and toolkits" icon="tool" href="/oss/integrations/tools" arrow />
+    <Card title="Middleware" icon="arrows-shuffle" href="/oss/integrations/middleware" arrow />
+    <Card title="Checkpointers" icon="database" href="/oss/integrations/checkpointers" arrow />
+    <Card title="Sandboxes" icon="cube" href="/oss/integrations/sandboxes" arrow />
 </Columns>
 
 To see a full list of integrations by component type, refer to the categories in the sidebar.
+
+<Tip>
+    For a conceptual overview of how providers and models work in LangChain, including how to find model names, use new models immediately, and work with routers—see [Providers and models](/oss/concepts/providers-and-models).
+</Tip>
 
 ## Popular providers
 
@@ -209,12 +223,12 @@ To see a full list of integrations by component type, refer to the categories in
 
 ## All providers
 
-[See all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
+See [all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
 
 Community integrations can be found in [`langchain-community`](https://github.com/langchain-ai/langchain-community).
 
 <Info>
-    If you'd like to contribute an integration, see the [contributing guide](/oss/contributing).
+    Want to build your own integration? See [how to create a custom integration package](/oss/contributing/integrations-langchain).
 </Info>
 
 """  # noqa: E501

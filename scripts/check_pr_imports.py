@@ -116,7 +116,7 @@ def get_pr_diff() -> str:
     try:
         # Verify we're in a git repository
         git_dir_check = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],  # noqa: S607
+            ["git", "rev-parse", "--git-dir"],
             capture_output=True,
             text=True,
             check=True,
@@ -127,7 +127,7 @@ def get_pr_diff() -> str:
             raise subprocess.CalledProcessError(1, "git rev-parse --git-dir")  # noqa: TRY301
 
         merge_base_cmd = ["git", "merge-base", "HEAD", "origin/main"]
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             merge_base_cmd, capture_output=True, text=True, check=True, timeout=30
         )
         base_sha = result.stdout.strip()
@@ -143,7 +143,7 @@ def get_pr_diff() -> str:
         # Get the diff from base to HEAD
         diff_cmd = ["git", "diff", base_sha, "HEAD"]
 
-        return subprocess.run(  # noqa: S603
+        return subprocess.run(
             diff_cmd, capture_output=True, text=True, check=True, timeout=60
         ).stdout
 
@@ -220,8 +220,8 @@ def check_import_line(line: str, mapping_dict: dict[str, str]) -> list[dict[str,
 
     # Match different import patterns
     patterns = [
-        r"from\s+(langchain_core(?:\.\S+)?)\s+import\s+(.+)",  # Matches both `from langchain_core import ...` and `from langchain_core.module import ...`  # noqa: E501
-        r"import\s+(langchain_core(?:\.\S+)?)",  # Matches both `import langchain_core` and `import langchain_core.module`  # noqa: E501
+        r"from\s+(langchain_core(?:\.\S+)?)\s+import\s+(.+)",  # Matches both `from langchain_core import ...` and `from langchain_core.module import ...`
+        r"import\s+(langchain_core(?:\.\S+)?)",  # Matches both `import langchain_core` and `import langchain_core.module`
     ]
 
     for i, pattern in enumerate(patterns):
@@ -235,17 +235,30 @@ def check_import_line(line: str, mapping_dict: dict[str, str]) -> list[dict[str,
                 # Check if this module should be imported from langchain instead
                 if core_module in mapping_dict:
                     langchain_module = mapping_dict[core_module]
-                    suggested_line = f"from {langchain_module} import {imports}"
-                    issues.append(
-                        {
-                            "original": line,
-                            "suggested": suggested_line,
-                            "reason": (
-                                f"Import from {langchain_module} instead "
-                                f"of {core_module}"
-                            ),
-                        }
-                    )
+
+                    # Verify each imported symbol is actually re-exported
+                    import_list = [imp.strip() for imp in imports.split(",")]
+                    re_exported = []
+                    for imp in import_list:
+                        clean_imp = imp.split(" as ")[0].strip()
+                        if f"{core_module}.{clean_imp}" in mapping_dict:
+                            re_exported.append(imp.strip())
+
+                    if re_exported:
+                        re_exported_str = ", ".join(re_exported)
+                        suggested_line = (
+                            f"from {langchain_module} import {re_exported_str}"
+                        )
+                        issues.append(
+                            {
+                                "original": line,
+                                "suggested": suggested_line,
+                                "reason": (
+                                    f"Import from {langchain_module} instead "
+                                    f"of {core_module}"
+                                ),
+                            }
+                        )
                 else:
                     # Check individual imports - handles direct langchain_core imports
                     import_list = [imp.strip() for imp in imports.split(",")]

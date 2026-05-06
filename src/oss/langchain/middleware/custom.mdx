@@ -2,6 +2,16 @@
 title: Custom middleware
 ---
 
+import MiddlewareDynamicPromptDecoratorPy from '/snippets/code-samples/middleware-dynamic-prompt-decorator-py.mdx';
+import MiddlewareDynamicPromptClassPy from '/snippets/code-samples/middleware-dynamic-prompt-class-py.mdx';
+import MiddlewareDynamicPromptJs from '/snippets/code-samples/middleware-dynamic-prompt-js.mdx';
+import MiddlewareDynamicModelSelectionDecoratorPy from '/snippets/code-samples/middleware-dynamic-model-selection-decorator-py.mdx';
+import MiddlewareDynamicModelSelectionClassPy from '/snippets/code-samples/middleware-dynamic-model-selection-class-py.mdx';
+import MiddlewareDynamicModelSelectionJs from '/snippets/code-samples/middleware-dynamic-model-selection-js.mdx';
+import MiddlewareToolCallMonitoringDecoratorPy from '/snippets/code-samples/middleware-tool-call-monitoring-decorator-py.mdx';
+import MiddlewareToolCallMonitoringClassPy from '/snippets/code-samples/middleware-tool-call-monitoring-class-py.mdx';
+import MiddlewareToolCallMonitoringJs from '/snippets/code-samples/middleware-tool-call-monitoring-js.mdx';
+
 Build custom middleware by implementing hooks that run at specific points in the agent execution flow.
 
 ## Hooks
@@ -9,10 +19,10 @@ Build custom middleware by implementing hooks that run at specific points in the
 Middleware provides two styles of hooks to intercept agent execution:
 
 <CardGroup cols={2}>
-    <Card title="Node-style hooks" icon="share-nodes" href="#node-style-hooks">
+    <Card title="Node-style hooks" icon="share" href="#node-style-hooks">
         Run sequentially at specific execution points.
     </Card>
-    <Card title="Wrap-style hooks" icon="container-storage" href="#wrap-style-hooks">
+    <Card title="Wrap-style hooks" icon="container" href="#wrap-style-hooks">
         Run around each model or tool call.
     </Card>
 </CardGroup>
@@ -21,20 +31,43 @@ Middleware provides two styles of hooks to intercept agent execution:
 
 Run sequentially at specific execution points. Use for logging, validation, and state updates.
 
-**Available hooks:**
+Choose the hooks your middleware needs. You can choose between node-style hooks and wrap-style hooks.
+
+**Node-style hooks** run at specific execution points:
 
 :::python
-- `before_agent` - Before agent starts (once per invocation)
-- `before_model` - Before each model call
-- `after_model` - After each model response
-- `after_agent` - After agent completes (once per invocation)
+
+| Hook | When it runs |
+|------|-------------|
+| `before_agent` | Before agent starts (once per invocation) |
+| `before_model` | Before each model call |
+| `after_model` | After each model response |
+| `after_agent` | After agent completes (once per invocation) |
 :::
 
 :::js
-- `beforeAgent` - Before agent starts (once per invocation)
-- `beforeModel` - Before each model call
-- `afterModel` - After each model response
-- `afterAgent` - After agent completes (once per invocation)
+| Hook | When it runs |
+|------|-------------|
+| `beforeAgent` | Before agent starts (once per invocation) |
+| `beforeModel` | Before each model call |
+| `afterModel` | After each model response |
+| `afterAgent` | After agent completes (once per invocation) |
+:::
+
+**Wrap-style hooks** run around each call, giving you control over execution:
+
+:::python
+| Hook | When it runs |
+|------|-------------|
+| `wrap_model_call` | Around each model call |
+| `wrap_tool_call` | Around each tool call |
+:::
+
+:::js
+| Hook | When it runs |
+|------|-------------|
+| `wrapModelCall` | Around each model call |
+| `wrapToolCall` | Around each tool call |
 :::
 
 **Example:**
@@ -83,7 +116,7 @@ class MessageLimitMiddleware(AgentMiddleware):
 
     @hook_config(can_jump_to=["end"])
     def before_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
-        if len(state["messages"]) == self.max_messages:
+        if len(state["messages"]) >= self.max_messages:
             return {
                 "messages": [AIMessage("Conversation limit reached.")],
                 "jump_to": "end"
@@ -108,14 +141,17 @@ import { createMiddleware, AIMessage } from "langchain";
 const createMessageLimitMiddleware = (maxMessages: number = 50) => {
   return createMiddleware({
     name: "MessageLimitMiddleware",
-    beforeModel: (state) => {
-      if (state.messages.length === maxMessages) {
-        return {
-          messages: [new AIMessage("Conversation limit reached.")],
-          jumpTo: "end",
-        };
+    beforeModel: {
+      canJumpTo: ["end"],
+      hook: (state) => {
+        if (state.messages.length === maxMessages) {
+          return {
+            messages: [new AIMessage("Conversation limit reached.")],
+            jumpTo: "end",
+          };
+        }
+        return;
       }
-      return;
     },
     afterModel: (state) => {
       const lastMessage = state.messages[state.messages.length - 1];
@@ -231,6 +267,264 @@ const createRetryMiddleware = (maxRetries: number = 3) => {
 
 :::
 
+## State updates
+
+Both node-style and wrap-style hooks can update agent state. The mechanism differs:
+
+:::python
+- **Node-style hooks** (`before_agent`, `before_model`, `after_model`, `after_agent`): Return a dict directly. The dict is applied to the agent state using the graph's reducers.
+- **Wrap-style hooks** (`wrap_model_call`, `wrap_tool_call`): For model calls, return @[`ExtendedModelResponse`] with a @[`Command`] to inject state updates alongside the model response. For tool calls, return a @[`Command`] directly. Use these when you need to track or update state based on logic that runs during the model or tool call, such as summarization trigger points, usage metadata, or custom fields calculated from the request or response.
+:::
+
+:::js
+- **Node-style hooks** (`beforeAgent`, `beforeModel`, `afterModel`, `afterAgent`): Return a dict directly. The dict is applied to the agent state using the graph's reducers.
+- **Wrap-style hooks** (`wrapModelCall`, `wrapToolCall`): For model calls, return a @[`Command`] directly to inject state updates alongside the model response. For tool calls, return a @[`Command`] directly. Use these when you need to track or update state based on logic that runs during the model or tool call, such as summarization trigger points, usage metadata, or custom fields calculated from the request or response.
+:::
+
+### Node-style hooks
+
+Return a dict from a node-style hook to merge updates into agent state. The dict keys map to state fields.
+
+:::python
+
+```python
+from langchain.agents.middleware import after_model, AgentState
+from langgraph.runtime import Runtime
+from typing import Any
+from typing_extensions import NotRequired
+
+
+class TrackingState(AgentState):
+    model_call_count: NotRequired[int]
+
+
+@after_model(state_schema=TrackingState)
+def increment_after_model(state: TrackingState, runtime: Runtime) -> dict[str, Any] | None:
+    return {"model_call_count": state.get("model_call_count", 0) + 1}
+```
+
+:::
+
+:::js
+
+```typescript
+import { createMiddleware } from "langchain";
+import * as z from "zod";
+
+const trackingStateSchema = z.object({
+  modelCallCount: z.number().default(0),
+});
+
+const incrementAfterModel = createMiddleware({
+  name: "incrementAfterModel",
+  stateSchema: trackingStateSchema,
+  afterModel: (state) => {
+    return { modelCallCount: state.modelCallCount + 1 };
+  },
+});
+```
+
+:::
+
+### Wrap-style hooks
+
+:::python
+
+Return a @[`ExtendedModelResponse`] with a @[`Command`] from `wrap_model_call` to inject state updates from the model call layer:
+
+```python
+from typing import Callable
+from langchain.agents.middleware import (
+    wrap_model_call,
+    ModelRequest,
+    ModelResponse,
+    AgentState,
+    ExtendedModelResponse
+)
+from langgraph.types import Command
+from typing_extensions import NotRequired
+
+class UsageTrackingState(AgentState):
+    """Agent state with token usage tracking."""
+
+    last_model_call_tokens: NotRequired[int]
+
+
+@wrap_model_call(state_schema=UsageTrackingState)
+def track_usage(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse],
+) -> ExtendedModelResponse:
+    response = handler(request)
+    return ExtendedModelResponse(
+        model_response=response,
+        command=Command(update={"last_model_call_tokens": 150}),
+    )
+```
+
+:::
+
+:::js
+
+Return a @[`Command`] directly from `wrapModelCall` to inject state updates from the model call layer:
+
+```typescript
+import * as z from "zod";
+import { createMiddleware } from "langchain";
+import { Command } from "@langchain/langgraph";
+
+const usageTrackingStateSchema = z.object({
+  lastModelCallTokens: z.number().optional(),
+});
+
+const trackUsage = createMiddleware({
+  name: "trackUsage",
+  stateSchema: usageTrackingStateSchema,
+  wrapModelCall: async (request, handler) => {
+    const response = await handler(request);
+    return new Command({ update: { lastModelCallTokens: 150 } });
+  },
+});
+```
+
+:::
+
+The @[`Command`] flows through the graph's reducers, so updates are applied correctly and messages are additive rather than replacing existing state.
+
+#### Composition with multiple middleware
+
+:::python
+
+When multiple middleware layers return `ExtendedModelResponse`, their commands compose:
+
+- **Commands are applied through reducers:** Each `Command` becomes a separate state update. For messages, this means they are additive.
+- **Outer wins on conflicts:** For non-reducer state fields, commands are applied inner-first, then outer. The outermost middleware's value takes precedence on conflicting keys.
+- **Retry-safe:** If the outer middleware implements logic that can result in multiple calls to `handler()` again (for example, retry logic), commands from earlier calls are discarded.
+
+:::
+
+:::js
+
+When multiple middleware layers return responses, the framework passes on the last `AIMessage`s produced:
+
+- **AIMessage flows through:** Each middleware's `handler()` receives the `AIMessage` from the previous layer. When a middleware returns an `AIMessage`, that becomes the input to the next middleware's handler.
+- **Command without message updates is pass-through:** If a middleware returns a `Command` whose state update does not touch `messages`, the framework treats it as a no-op for message flow. The next middleware's handler receives the `AIMessage` from the middleware *before* the one that returned the Command.
+- **Reducer behavior and retry-safety:** Commands still apply through reducers (messages additive, outer wins on conflicts). Retry logic discards commands from earlier calls.
+
+:::
+
+:::python
+
+```python
+from typing import Annotated, Callable
+
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    AgentState,
+    ExtendedModelResponse,
+    ModelRequest,
+    ModelResponse,
+)
+from langchain.messages import SystemMessage
+from langgraph.types import Command
+from typing_extensions import NotRequired
+
+
+def _last_wins(_a: str, b: str) -> str:
+    """Reducer: last writer wins (outer overwrites inner)."""
+    return b
+
+
+class CustomMiddlewareState(AgentState):
+    """Agent state: trace_layer uses last-wins (outer wins), messages use additive reducer."""
+
+    # Non-reducer field with last-wins: both middleware write; outermost value wins
+    trace_layer: NotRequired[Annotated[str, _last_wins]]
+
+
+class OuterMiddleware(AgentMiddleware):
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ExtendedModelResponse:
+        response = handler(request)
+        return ExtendedModelResponse(
+            model_response=response,
+            command=Command(update={
+                "trace_layer": "outer",
+                "messages": [SystemMessage(content="[Outer ran]")],
+            }),
+        )
+
+
+class InnerMiddleware(AgentMiddleware):
+    """Adds trace_layer and message. Outer adds to same keys; trace_layer: outer wins, messages: additive."""
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ):
+        response = handler(request)
+        return ExtendedModelResponse(
+            model_response=response,
+            command=Command(update={
+                "trace_layer": "inner",
+                "messages": [SystemMessage(content="[Inner ran]")],
+            }),
+        )
+```
+
+:::
+
+:::js
+
+```typescript
+import * as z from "zod";
+import { createMiddleware } from "langchain";
+import { Command, StateSchema, ReducedValue } from "@langchain/langgraph";
+import { AIMessage, SystemMessage } from "@langchain/core/messages";
+
+/** Last-wins reducer: when both middleware write, outer overwrites inner. */
+const customMiddlewareStateSchema = new StateSchema({
+  traceLayer: new ReducedValue(
+    z.string().optional(),
+    { reducer: (a, b) => b },
+  ),
+});
+
+const outerMiddleware = createMiddleware({
+  name: "OuterMiddleware",
+  stateSchema: customMiddlewareStateSchema,
+  wrapModelCall: async (_request, handler) => {
+    await handler(_request);
+    return new Command({
+      update: {
+        traceLayer: "outer",
+        messages: [new SystemMessage({ content: "[Outer ran]" })],
+      },
+    });
+  },
+});
+
+const innerMiddleware = createMiddleware({
+  name: "InnerMiddleware",
+  stateSchema: customMiddlewareStateSchema,
+  wrapModelCall: async (_request, handler) => {
+    await handler(_request);
+    return new Command({
+      update: {
+        traceLayer: "inner",
+        messages: [new SystemMessage({ content: "[Inner ran]" })],
+      },
+    });
+  },
+});
+```
+
+:::
+
 ## Create middleware
 
 :::python
@@ -241,7 +535,7 @@ You can create middleware in two ways:
   <Card title="Decorator-based middleware" icon="at" href="#decorator-based-middleware">
     Quick and simple for single-hook middleware. Use decorators to wrap individual functions.
   </Card>
-  <Card title="Class-based middleware" icon="brackets-curly" href="#class-based-middleware">
+  <Card title="Class-based middleware" icon="braces" href="#class-based-middleware">
     More powerful for complex middleware with multiple hooks or configuration.
   </Card>
 </CardGroup>
@@ -299,7 +593,7 @@ def retry_model(
             print(f"Retry {attempt + 1}/3 after error: {e}")
 
 agent = create_agent(
-    model="gpt-4o",
+    model="gpt-5.4",
     middleware=[log_before_model, retry_model],
     tools=[...],
 )
@@ -335,8 +629,22 @@ class LoggingMiddleware(AgentMiddleware):
         print(f"Model returned: {state['messages'][-1].content}")
         return None
 
+    async def abefore_model(
+        self, state: AgentState, runtime: Runtime
+    ) -> dict[str, Any] | None:
+        # Async version of before_model
+        return None
+
+    async def aafter_model(
+        self, state: AgentState, runtime: Runtime
+    ) -> dict[str, Any] | None:
+        # Async version of after_model
+        print(f"Model returned: {state['messages'][-1].content}")
+        return None
+
+
 agent = create_agent(
-    model="gpt-4o",
+    model="gpt-5.4",
     middleware=[LoggingMiddleware()],
     tools=[...],
 )
@@ -375,7 +683,7 @@ const loggingMiddleware = createMiddleware({
 
 ## Custom state schema
 
-Middleware can extend the agent's state with custom properties. This enables middleware to:
+If your middleware needs to track state across hooks, middleware can extend the agent's state with custom properties. This enables middleware to:
 
 - **Track state across execution**: Maintain counters, flags, or other values that persist throughout the agent's execution lifecycle
 :::python
@@ -420,7 +728,7 @@ def increment_counter(state: CustomState, runtime: Runtime) -> dict[str, Any] | 
 
 
 agent = create_agent(
-    model="gpt-4o",
+    model="gpt-5.4",
     middleware=[check_call_limit, increment_counter],
     tools=[],
 )
@@ -464,7 +772,7 @@ class CallCounterMiddleware(AgentMiddleware[CustomState]):
 
 
 agent = create_agent(
-    model="gpt-4o",
+    model="gpt-5.4",
     middleware=[CallCounterMiddleware()],
     tools=[],
 )
@@ -486,19 +794,26 @@ result = agent.invoke({
 
 ```typescript
 import { createMiddleware, createAgent, HumanMessage } from "langchain";
+import { StateSchema } from "@langchain/langgraph";
 import * as z from "zod";
+
+const CustomState = new StateSchema({
+  modelCallCount: z.number().default(0),
+  userId: z.string().optional(),
+});
 
 const callCounterMiddleware = createMiddleware({
   name: "CallCounterMiddleware",
-  stateSchema: z.object({
-    modelCallCount: z.number().default(0),
-    userId: z.string().optional(),
-  }),
-  beforeModel: (state) => {
-    if (state.modelCallCount > 10) {
-      return { jumpTo: "end" };
-    }
-    return;
+  stateSchema: CustomState,
+  beforeModel: {
+    canJumpTo: ["end"],
+    hook: (state) => {
+      if (state.modelCallCount > 10) {
+        return { jumpTo: "end" };
+      }
+
+      return;
+    },
   },
   afterModel: (state) => {
     return { modelCallCount: state.modelCallCount + 1 };
@@ -506,7 +821,7 @@ const callCounterMiddleware = createMiddleware({
 });
 
 const agent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-5.4",
   tools: [...],
   middleware: [callCounterMiddleware],
 });
@@ -523,14 +838,19 @@ State fields can be either public or private. Fields that start with an undersco
 This is useful for storing internal middleware state that shouldn't be exposed to the caller, such as temporary tracking variables or internal flags:
 
 ```typescript
+import { StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
+
+const PrivateState = new StateSchema({
+  // Public field - included in invoke result
+  publicCounter: z.number().default(0),
+  // Private field - excluded from invoke result
+  _internalFlag: z.boolean().default(false),
+});
+
 const middleware = createMiddleware({
   name: "ExampleMiddleware",
-  stateSchema: z.object({
-    // Public field - included in invoke result
-    publicCounter: z.number().default(0),
-    // Private field - excluded from invoke result
-    _internalFlag: z.boolean().default(false),
-  }),
+  stateSchema: PrivateState,
   afterModel: (state) => {
     // Both fields are accessible during execution
     if (state._internalFlag) {
@@ -593,7 +913,7 @@ const userContextMiddleware = createMiddleware({
 });
 
 const agent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-5.4",
   middleware: [userContextMiddleware],
   tools: [],
   contextSchema,
@@ -629,7 +949,7 @@ When using multiple middleware, understand how they execute:
 :::python
 ```python
 agent = create_agent(
-    model="gpt-4o",
+    model="gpt-5.4",
     middleware=[middleware1, middleware2, middleware3],
     tools=[...],
 )
@@ -639,7 +959,7 @@ agent = create_agent(
 :::js
 ```typescript
 const agent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-5.4",
   middleware: [middleware1, middleware2, middleware3],
   tools: [...],
 });
@@ -748,7 +1068,7 @@ class BlockedContentMiddleware(AgentMiddleware):
 import { createAgent, createMiddleware, AIMessage } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-5.4",
   middleware: [
     createMiddleware({
       name: "BlockedContentMiddleware",
@@ -794,6 +1114,47 @@ console.log(result.messages.at(-1)?.content);
 
 ## Examples
 
+### Dynamic prompt
+
+Dynamically modify the system prompt at runtime to inject context, user-specific instructions, or other information before each model call. This is one of the most common middleware use cases.
+
+:::python
+
+Use the `system_message` field on `ModelRequest` to read and modify the system prompt. It contains a @[`SystemMessage`] object (even if the agent was created with a string `system_prompt`).
+
+<Tabs>
+<Tab title="Decorator">
+
+<MiddlewareDynamicPromptDecoratorPy />
+
+</Tab>
+
+<Tab title="Class">
+
+<MiddlewareDynamicPromptClassPy />
+
+</Tab>
+</Tabs>
+
+<Note>
+- `ModelRequest.system_message` is always a @[`SystemMessage`] object, even if the agent was created with `system_prompt="string"`
+- Use `SystemMessage.content_blocks` to access content as a list of blocks, regardless of whether the original content was a string or list
+- When modifying system messages, use `content_blocks` and append new blocks to preserve existing structure
+- You can pass @[`SystemMessage`] objects directly to `create_agent`'s `system_prompt` parameter for advanced use cases like cache control
+</Note>
+
+:::
+
+:::js
+
+Use the `systemMessage` field in `ModelRequest` to read and modify the system prompt. It contains a @[`SystemMessage`] object (even if the agent was created with a string @[`systemPrompt`]).
+
+<MiddlewareDynamicPromptJs />
+
+Use @[`SystemMessage.concat`] to preserve cache control metadata or structured content blocks created by other middleware.
+
+:::
+
 ### Dynamic model selection
 
 :::python
@@ -801,53 +1162,13 @@ console.log(result.messages.at(-1)?.content);
 <Tabs>
 <Tab title="Decorator">
 
-```python
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from langchain.chat_models import init_chat_model
-from typing import Callable
-
-
-complex_model = init_chat_model("gpt-4o")
-simple_model = init_chat_model("gpt-4o-mini")
-
-@wrap_model_call
-def dynamic_model(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse],
-) -> ModelResponse:
-    # Use different model based on conversation length
-    if len(request.messages) > 10:
-        model = complex_model
-    else:
-        model = simple_model
-    return handler(request.override(model=model))
-```
+<MiddlewareDynamicModelSelectionDecoratorPy />
 
 </Tab>
 
 <Tab title="Class">
 
-```python
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain.chat_models import init_chat_model
-from typing import Callable
-
-complex_model = init_chat_model("gpt-4o")
-simple_model = init_chat_model("gpt-4o-mini")
-
-class DynamicModelMiddleware(AgentMiddleware):
-    def wrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        # Use different model based on conversation length
-        if len(request.messages) > 10:
-            model = complex_model
-        else:
-            model = simple_model
-        return handler(request.override(model=model))
-```
+<MiddlewareDynamicModelSelectionClassPy />
 
 </Tab>
 </Tabs>
@@ -856,110 +1177,7 @@ class DynamicModelMiddleware(AgentMiddleware):
 
 :::js
 
-```typescript
-import { createMiddleware, initChatModel } from "langchain";
-
-const dynamicModelMiddleware = createMiddleware({
-  name: "DynamicModelMiddleware",
-  wrapModelCall: (request, handler) => {
-    const modifiedRequest = { ...request };
-    if (request.messages.length > 10) {
-      modifiedRequest.model = initChatModel("gpt-4o");
-    } else {
-      modifiedRequest.model = initChatModel("gpt-4o-mini");
-    }
-    return handler(modifiedRequest);
-  },
-});
-```
-
-:::
-
-### Tool call monitoring
-
-:::python
-
-<Tabs>
-<Tab title="Decorator">
-
-```python
-from langchain.agents.middleware import wrap_tool_call
-from langchain.tools.tool_node import ToolCallRequest
-from langchain.messages import ToolMessage
-from langgraph.types import Command
-from typing import Callable
-
-
-@wrap_tool_call
-def monitor_tool(
-    request: ToolCallRequest,
-    handler: Callable[[ToolCallRequest], ToolMessage | Command],
-) -> ToolMessage | Command:
-    print(f"Executing tool: {request.tool_call['name']}")
-    print(f"Arguments: {request.tool_call['args']}")
-    try:
-        result = handler(request)
-        print(f"Tool completed successfully")
-        return result
-    except Exception as e:
-        print(f"Tool failed: {e}")
-        raise
-```
-
-</Tab>
-
-<Tab title="Class">
-
-```python
-from langchain.tools.tool_node import ToolCallRequest
-from langchain.agents.middleware import AgentMiddleware
-from langchain.messages import ToolMessage
-from langgraph.types import Command
-from typing import Callable
-
-class ToolMonitoringMiddleware(AgentMiddleware):
-    def wrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolMessage | Command],
-    ) -> ToolMessage | Command:
-        print(f"Executing tool: {request.tool_call['name']}")
-        print(f"Arguments: {request.tool_call['args']}")
-        try:
-            result = handler(request)
-            print(f"Tool completed successfully")
-            return result
-        except Exception as e:
-            print(f"Tool failed: {e}")
-            raise
-```
-
-</Tab>
-</Tabs>
-
-:::
-
-:::js
-
-```typescript
-import { createMiddleware } from "langchain";
-
-const toolMonitoringMiddleware = createMiddleware({
-  name: "ToolMonitoringMiddleware",
-  wrapToolCall: (request, handler) => {
-    console.log(`Executing tool: ${request.toolCall.name}`);
-    console.log(`Arguments: ${JSON.stringify(request.toolCall.args)}`);
-    try {
-      const result = handler(request);
-      console.log("Tool completed successfully");
-      return result;
-    } catch (e) {
-      console.log(`Tool failed: ${e}`);
-      throw e;
-    }
-  },
-});
-```
+<MiddlewareDynamicModelSelectionJs />
 
 :::
 
@@ -994,7 +1212,7 @@ def select_tools(
     return handler(request.override(tools=relevant_tools))
 
 agent = create_agent(
-    model="gpt-4o",
+    model="gpt-5.4",
     tools=all_tools,  # All available tools need to be registered upfront
     middleware=[select_tools],
 )
@@ -1022,7 +1240,7 @@ class ToolSelectorMiddleware(AgentMiddleware):
         return handler(request.override(tools=relevant_tools))
 
 agent = create_agent(
-    model="gpt-4o",
+    model="gpt-5.4",
     tools=all_tools,  # All available tools need to be registered upfront
     middleware=[ToolSelectorMiddleware()],
 )
@@ -1049,7 +1267,7 @@ const toolSelectorMiddleware = createMiddleware({
 });
 
 const agent = createAgent({
-  model: "gpt-4o",
+  model: "gpt-5.4",
   tools: allTools,
   middleware: [toolSelectorMiddleware],
 });
@@ -1057,66 +1275,35 @@ const agent = createAgent({
 
 :::
 
-### Working with system messages
+### Tool call monitoring
 
 :::python
-
-Modify system messages in middleware using the `system_message` field on `ModelRequest`. The `system_message` field contains a @[`SystemMessage`] object (even if the agent was created with a string `system_prompt`).
-
-**Example: Adding context to system message**
 
 <Tabs>
 <Tab title="Decorator">
 
-```python
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from langchain.messages import SystemMessage
-from typing import Callable
-
-
-@wrap_model_call
-def add_context(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse],
-) -> ModelResponse:
-    # Always work with content blocks
-    new_content = list(request.system_message.content_blocks) + [
-        {"type": "text", "text": "Additional context."}
-    ]
-    new_system_message = SystemMessage(content=new_content)
-    return handler(request.override(system_message=new_system_message))
-```
+<MiddlewareToolCallMonitoringDecoratorPy />
 
 </Tab>
 
 <Tab title="Class">
 
-```python
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain.messages import SystemMessage
-from typing import Callable
-
-
-class ContextMiddleware(AgentMiddleware):
-    def wrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        # Always work with content blocks
-        new_content = list(request.system_message.content_blocks) + [
-            {"type": "text", "text": "Additional context."}
-        ]
-        new_system_message = SystemMessage(content=new_content)
-        return handler(request.override(system_message=new_system_message))
-```
+<MiddlewareToolCallMonitoringClassPy />
 
 </Tab>
 </Tabs>
 
-**Example: Working with cache control (Anthropic)**
+:::
 
-When working with Anthropic models, you can use structured content blocks with cache control directives to cache large system prompts:
+:::js
+
+<MiddlewareToolCallMonitoringJs />
+
+:::
+
+### Prompt caching (Anthropic)
+
+When working with Anthropic models, use structured content blocks with cache control directives to cache large system prompts:
 
 <Tabs>
 <Tab title="Decorator">
@@ -1227,13 +1414,14 @@ const myOtherMiddleware = createMiddleware({
 });
 
 const agent = createAgent({
-  model: "anthropic:claude-3-5-sonnet",
+  model: "google_genai:gemini-3.1-pro-preview",
   systemPrompt: "You are a helpful assistant.",
   middleware: [myMiddleware, myOtherMiddleware],
 });
 ```
 
 The resulting system message will be:
+
 ```typescript
 new SystemMessage({
   content: [
@@ -1256,4 +1444,4 @@ Use @[`SystemMessage.concat`] to preserve cache control metadata or structured c
 
 - [Middleware API reference](https://reference.langchain.com/python/langchain/middleware/)
 - [Built-in middleware](/oss/langchain/middleware/built-in)
-- [Testing agents](/oss/langchain/test)
+- [Testing agents](/oss/langchain/test/)

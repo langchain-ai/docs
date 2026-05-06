@@ -13,7 +13,7 @@ This tutorial shows how to use **progressive disclosure** - a context management
 **What you'll build:** A SQL query assistant with two skills (sales analytics and inventory management). The agent sees lightweight skill descriptions in its system prompt, then loads full database schemas and business logic through tool calls only when relevant to the user's query.
 
 <Note>
-For a more complete example of a SQL agent with query execution, error correction, and validation, see our [SQL Agent tutorial](/oss/langchain/sql-agent). This tutorial focuses on the progressive disclosure pattern which can be applied to any domain.
+For a complete example of a SQL agent with query execution, error correction, and validation, see our [SQL Agent tutorial](/oss/langchain/sql-agent). This tutorial focuses on the progressive disclosure pattern which can be applied to any domain.
 </Note>
 
 <Tip>
@@ -25,7 +25,7 @@ Progressive disclosure was popularized by Anthropic as a technique for building 
 Here's the flow when a user asks for a SQL query:
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#4CAF50','primaryTextColor':'#fff','primaryBorderColor':'#2E7D32','lineColor':'#666','secondaryColor':'#FF9800','tertiaryColor':'#2196F3','tertiaryBorderColor':'#1565C0','tertiaryTextColor':'#fff'}}}%%
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#E5F4FF','primaryTextColor':'#030710','primaryBorderColor':'#006DDD','lineColor':'#40668D','secondaryColor':'#F6FFDB','tertiaryColor':'#FDF3FF','tertiaryBorderColor':'#7E65AE','tertiaryTextColor':'#504B5F'}}}%%
 flowchart TD
     Start([💬 User: Write SQL query<br/>for high-value customers]) --> SystemPrompt[📋 Agent sees skill descriptions:<br/>• sales_analytics<br/>• inventory_management]
 
@@ -40,10 +40,10 @@ flowchart TD
     WriteQuery --> Response([✅ Returns valid SQL<br/>following business rules])
 
     %% Styling for light and dark modes
-    classDef startEnd fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
-    classDef process fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#fff
-    classDef decision fill:#2196F3,stroke:#1565C0,stroke-width:2px,color:#fff
-    classDef enrichment fill:#9C27B0,stroke:#6A1B9A,stroke-width:2px,color:#fff
+    classDef startEnd fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef process fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
+    classDef decision fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef enrichment fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
 
     class Start,Response startEnd
     class SystemPrompt,LoadSkill,WriteQuery process
@@ -625,7 +625,7 @@ const skillMiddleware = createMiddleware({  // [!code highlight]
 The middleware appends skill descriptions to the system prompt, making the agent aware of available skills without loading their full content. The `load_skill` tool is registered as a class variable, making it available to the agent.
 
 <Note>
-**Production consideration**: This tutorial loads the skill list in `__init__` for simplicity. In a production system, you may want to load skills in the `before_agent` hook instead, allowing them to be refreshed periodically to reflect up-to-date changes (e.g., when new skills are added or existing ones are modified). See the [before_agent hook documentation](/oss/langchain/middleware/custom#before_agent) for details.
+**Production consideration**: This tutorial loads the skill list in `__init__` for simplicity. In a production system, you may want to load skills in the `before_agent` hook instead, allowing them to be refreshed periodically to reflect up-to-date changes (e.g., when new skills are added or existing ones are modified). See the [before_agent hook documentation](/oss/langchain/middleware/custom#node-style-hooks) for details.
 </Note>
 
 ## 4. Create the agent with skill support
@@ -675,10 +675,10 @@ Test the agent with a question that requires skill-specific knowledge:
 
 :::python
 ```python
-import uuid
+from langchain_core.utils.uuid import uuid7
 
 # Configuration for this conversation thread
-thread_id = str(uuid.uuid4())
+thread_id = str(uuid7())
 config = {"configurable": {"thread_id": thread_id}}
 
 # Ask for a SQL query
@@ -829,9 +829,10 @@ class CustomState(AgentState):  # [!code highlight]
 
 :::js
 ```typescript
+import { StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 
-const CustomStateSchema = z.object({
+const CustomState = new StateSchema({
   skillsLoaded: z.array(z.string()).optional(),  // Track which skills have been loaded  // [!code highlight]
 });
 ```
@@ -898,7 +899,7 @@ import { Command } from "@langchain/langgraph";  // [!code highlight]
 import { z } from "zod";
 
 const loadSkill = tool(  // [!code highlight]
-  async ({ skillName }, runtime: ToolRuntime<typeof CustomStateSchema>) => {
+  async ({ skillName }, runtime: ToolRuntime<typeof CustomState.State>) => {
     // Find and return the requested skill
     const skill = SKILLS.find((s) => s.name === skillName);
 
@@ -987,7 +988,7 @@ def write_sql_query(  # [!code highlight]
 :::js
 ```typescript
 const writeSqlQuery = tool(  // [!code highlight]
-  async ({ query, vertical }, runtime: ToolRuntime<typeof CustomStateSchema>) => {
+  async ({ query, vertical }, runtime: ToolRuntime<typeof CustomState.State>) => {
     // Check if the required skill has been loaded
     const skillsLoaded = runtime.state.skillsLoaded ?? [];  // [!code highlight]
 
@@ -1042,7 +1043,7 @@ class SkillMiddleware(AgentMiddleware[CustomState]):  # [!code highlight]
 ```typescript
 const skillMiddleware = createMiddleware({  // [!code highlight]
   name: "skillMiddleware",
-  stateSchema: CustomStateSchema,  // [!code highlight]
+  stateSchema: CustomState,  // [!code highlight]
   tools: [loadSkill, writeSqlQuery],  // [!code highlight]
   // ... rest of the middleware implementation stays the same
 });
@@ -1090,7 +1091,7 @@ Here's a complete, runnable implementation combining all the pieces from this tu
 
 :::python
 ```python
-import uuid
+from langchain_core.utils.uuid import uuid7
 from typing import TypedDict, NotRequired
 from langchain.tools import tool
 from langchain.agents import create_agent
@@ -1313,7 +1314,7 @@ agent = create_agent(
 # Example usage
 if __name__ == "__main__":
     # Configuration for this conversation thread
-    thread_id = str(uuid.uuid4())
+    thread_id = str(uuid7())
     config = {"configurable": {"thread_id": thread_id}}
 
     # Ask for a SQL query
@@ -1554,7 +1555,7 @@ const skillMiddleware = createMiddleware({
 });
 
 const model = new ChatOpenAI({
-  model: "gpt-4o-mini",
+  model: "gpt-5.4-mini",
   temperature: 0,
 });
 
