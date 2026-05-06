@@ -268,6 +268,56 @@ Sandbox commands let you build snapshots, create sandboxes, execute commands, op
 
 See [Sandbox CLI](/langsmith/sandbox-cli) for the full sandbox command reference.
 
+### Call the LangSmith API directly
+
+The `api` command is an authenticated, scriptable wrapper around the raw LangSmith REST API — useful for endpoints the typed commands above don't cover, or for piping JSON into and out of shell scripts. It's modeled after `gh api` and `curl`: pass the path as the only positional argument, and use `-X` to set the HTTP method (defaults to `GET`). Auth headers (`x-api-key`, `x-tenant-id`) are injected automatically.
+
+```bash
+# GET (default method) — query string supported in the path
+langsmith api sessions?limit=5
+
+# Discover endpoints from the OpenAPI spec
+langsmith api ls --tag datasets
+langsmith api info GET sessions
+
+# Typed JSON fields with -F (numbers, booleans, null, objects, arrays parsed as JSON)
+# Method auto-promotes to POST when -F/-f/--input/--body is supplied
+langsmith api runs/query -F session_id=abc -F limit=10
+
+# String-typed fields with -f (always sent as a JSON string, even if numeric)
+langsmith api datasets -f name=my-dataset -f description="QA pairs"
+
+# Other HTTP methods via -X
+langsmith api sessions/abc-123 -X DELETE
+
+# Send a request body from a file or stdin
+langsmith api datasets --input create-dataset.json
+echo '{"name":"test"}' | langsmith api sessions --input -
+
+# Force GET with fields — fields go to the query string instead of a body
+langsmith api runs -X GET -F limit=5 -F session=abc
+
+# Inspect response status + headers
+langsmith api sessions --include
+
+# Add custom headers
+langsmith api sessions -H "Accept: text/csv"
+```
+
+Key flags:
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--method` | `-X` | `GET` | HTTP method |
+| `--field` | `-F` | — | Typed JSON field as `key=value`. Repeatable. Use `@<path>` or `@-` for file/stdin values. |
+| `--raw-field` | `-f` | — | String JSON field as `key=value`. Repeatable. |
+| `--input` | — | — | File to use as the request body (`-` for stdin) |
+| `--body` | — | — | Raw request body (JSON string, `@file`, or `@-` for stdin) |
+| `--header` | `-H` | — | Additional headers as `Key:Value`. Repeatable. |
+| `--include` | `-i` | `false` | Print response status line and headers before body |
+
+`--input` and `--body` are mutually exclusive. Subcommands `langsmith api ls` and `langsmith api info` browse and describe endpoints from the cached OpenAPI spec — pass `--refresh` to re-fetch.
+
 ## Filter flags
 
 Most `trace` and `run` commands share these filters:
