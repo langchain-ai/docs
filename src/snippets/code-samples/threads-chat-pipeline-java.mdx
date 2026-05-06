@@ -24,59 +24,77 @@ import java.util.function.Function;
 
 class ThreadsChatPipeline {
   private static final String THREAD_ID = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11";
-  private static final LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
-  private static final ExecutorService executor = Executors.newSingleThreadExecutor();
-  private static final Map<String, Object> threadMetadata = new HashMap<>();
 
-  static {
-    threadMetadata.put("thread_id", THREAD_ID);
+  /**
+   * Lazily loads OpenAI + LangSmith clients so missing API keys in CI do not fail class
+   * initialization before {@link #main} can skip.
+   */
+  private static final class OpenAiResources {
+    private static final LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
+    private static final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final Map<String, Object> threadMetadata = new HashMap<>();
+
+    static {
+      threadMetadata.put("thread_id", THREAD_ID);
+    }
+
+    private static final OpenAIClient openai =
+        OpenAITracing.wrapOpenAI(
+            OpenAIOkHttpClient.fromEnv(),
+            TraceConfig.builder()
+                .client(langsmith)
+                .executor(executor)
+                .metadata(threadMetadata)
+                .build());
+
+    private static final List<ChatCompletionMessageParam> threadHistory = new ArrayList<>();
+
+    static final Function<ChatRequest, Map<String, List<ChatCompletionMessageParam>>> CHAT_PIPELINE =
+        Tracing.traceFunction(
+            request -> {
+              List<ChatCompletionMessageParam> allMessages = new ArrayList<>();
+              if (request.getChatHistory()) {
+                allMessages.addAll(threadHistory);
+              }
+              allMessages.addAll(request.getMessages());
+
+              ChatCompletion chatCompletion =
+                  openai
+                      .chat()
+                      .completions()
+                      .create(
+                          ChatCompletionCreateParams.builder()
+                              .model(ChatModel.GPT_5_CHAT_LATEST)
+                              .messages(allMessages)
+                              .build());
+
+              String content = chatCompletion.choices().get(0).message().content().orElse("");
+              List<ChatCompletionMessageParam> fullConversation = new ArrayList<>(allMessages);
+              fullConversation.add(
+                  ChatCompletionMessageParam.ofAssistant(
+                      ChatCompletionAssistantMessageParam.builder().content(content).build()));
+              threadHistory.clear();
+              threadHistory.addAll(fullConversation);
+
+              return Collections.singletonMap("messages", fullConversation);
+            },
+            TraceConfig.builder()
+                .name("Chat Bot")
+                .client(langsmith)
+                .executor(executor)
+                .metadata(threadMetadata)
+                .build());
+
+    private OpenAiResources() {}
+
+    static ExecutorService executor() {
+      return executor;
+    }
   }
 
-  private static final OpenAIClient openai =
-      OpenAITracing.wrapOpenAI(
-          OpenAIOkHttpClient.fromEnv(),
-          TraceConfig.builder()
-              .client(langsmith)
-              .executor(executor)
-              .metadata(threadMetadata)
-              .build());
-  private static final List<ChatCompletionMessageParam> threadHistory = new ArrayList<>();
-
-  static final Function<ChatRequest, Map<String, List<ChatCompletionMessageParam>>> chatPipeline =
-      Tracing.traceFunction(
-          request -> {
-            List<ChatCompletionMessageParam> allMessages = new ArrayList<>();
-            if (request.getChatHistory()) {
-              allMessages.addAll(threadHistory);
-            }
-            allMessages.addAll(request.getMessages());
-
-            ChatCompletion chatCompletion =
-                openai
-                    .chat()
-                    .completions()
-                    .create(
-                        ChatCompletionCreateParams.builder()
-                            .model(ChatModel.GPT_5_CHAT_LATEST)
-                            .messages(allMessages)
-                            .build());
-
-            String content = chatCompletion.choices().get(0).message().content().orElse("");
-            List<ChatCompletionMessageParam> fullConversation = new ArrayList<>(allMessages);
-            fullConversation.add(
-                ChatCompletionMessageParam.ofAssistant(
-                    ChatCompletionAssistantMessageParam.builder().content(content).build()));
-            threadHistory.clear();
-            threadHistory.addAll(fullConversation);
-
-            return Collections.singletonMap("messages", fullConversation);
-          },
-          TraceConfig.builder()
-              .name("Chat Bot")
-              .client(langsmith)
-              .executor(executor)
-              .metadata(threadMetadata)
-              .build());
+  static Function<ChatRequest, Map<String, List<ChatCompletionMessageParam>>> chatPipeline() {
+    return OpenAiResources.CHAT_PIPELINE;
+  }
 
   public static void main(String[] args) throws InterruptedException {
     try {
@@ -86,10 +104,10 @@ class ThreadsChatPipeline {
                   ChatCompletionUserMessageParam.builder()
                       .content("Hi, my name is Sally")
                       .build()));
-      chatPipeline.apply(new ChatRequest(messages, false));
+      chatPipeline().apply(new ChatRequest(messages, false));
     } finally {
-      executor.shutdown();
-      if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+      OpenAiResources.executor().shutdown();
+      if (!OpenAiResources.executor().awaitTermination(10, TimeUnit.SECONDS)) {
         throw new IllegalStateException("Timed out waiting for LangSmith traces to submit");
       }
     }
