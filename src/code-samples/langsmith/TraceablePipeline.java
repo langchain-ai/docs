@@ -63,6 +63,4 @@ public class TraceablePipeline {
     runPipeline.apply("colorful socks");
   }
 }
-
 // :snippet-end:
-

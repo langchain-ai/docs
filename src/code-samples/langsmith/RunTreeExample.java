@@ -27,6 +27,16 @@ import java.util.concurrent.TimeUnit;
 
 public class RunTreeExample {
     public static void main(String[] args) throws InterruptedException {
+        // :remove-start:
+        if (System.getenv("LANGSMITH_API_KEY") == null
+                || System.getenv("LANGSMITH_API_KEY").isBlank()
+                || System.getenv("OPENAI_API_KEY") == null
+                || System.getenv("OPENAI_API_KEY").isBlank()) {
+            System.out.println(
+                    "[run-tree-example] Skipping (LANGSMITH_API_KEY and OPENAI_API_KEY required).");
+            return;
+        }
+        // :remove-end:
         LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
         OpenAIClient openai = OpenAIOkHttpClient.fromEnv();
         ExecutorService executor = Executors.newSingleThreadExecutor();

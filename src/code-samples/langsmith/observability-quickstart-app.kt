@@ -20,6 +20,12 @@ import kotlin.jvm.optionals.getOrNull
 
 // :remove-start:
 fun main() {
+if (System.getenv("LANGSMITH_API_KEY").isNullOrBlank()
+    || System.getenv("OPENAI_API_KEY").isNullOrBlank()
+) {
+    println("[observability-quickstart-app] Skipping (LANGSMITH_API_KEY and OPENAI_API_KEY required).")
+    return
+}
 // :remove-end:
 val client = wrapOpenAI(OpenAIOkHttpClient.fromEnv())
 
