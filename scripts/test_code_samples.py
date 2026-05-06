@@ -43,8 +43,8 @@ def collect_files_to_test(
             if not path.exists():
                 print(f"Warning: {path} not found, skipping")
                 continue
-            if path.suffix not in (".py", ".ts", ".java"):
-                print(f"Warning: {path} not .py, .ts, or .java, skipping")
+            if path.suffix not in (".py", ".ts", ".java", ".kt"):
+                print(f"Warning: {path} not .py, .ts, .java, or .kt, skipping")
                 continue
             if code_samples_dir.resolve() not in path.parents:
                 print(f"Warning: {path} not under src/code-samples/, skipping")
@@ -53,8 +53,10 @@ def collect_files_to_test(
                 lang = "python"
             elif path.suffix == ".ts":
                 lang = "ts"
-            else:
+            elif path.suffix == ".java":
                 lang = "java"
+            else:
+                lang = "kotlin"
             result.append((path, lang))
         return result
 
@@ -74,10 +76,16 @@ def collect_files_to_test(
         for p in code_samples_dir.rglob("*.java")
         if is_valid_sample(p, code_samples_dir)
     )
+    kt_files = sorted(
+        p
+        for p in code_samples_dir.rglob("*.kt")
+        if is_valid_sample(p, code_samples_dir)
+    )
     return (
         [(p, "python") for p in py_files]
         + [(p, "ts") for p in ts_files]
         + [(p, "java") for p in java_files]
+        + [(p, "kotlin") for p in kt_files]
     )
 
 
@@ -134,6 +142,24 @@ def main() -> int:
                     ["npx", "tsx", str(file_path.relative_to(code_samples_dir))],
                     check=False,
                     cwd=str(code_samples_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=TIMEOUT_SECONDS,
+                    env=env,
+                )
+                success = result.returncode == 0
+                stdout = result.stdout or ""
+                stderr = result.stderr or ""
+            else:
+                # Java/Kotlin via JBang (single-file scripts).
+                #
+                # Some environments may have very new JDKs installed. Pin to a known-good
+                # runtime to avoid toolchain incompatibilities (for example, Kotlin compiler
+                # parsing errors on unsupported Java major versions).
+                result = subprocess.run(
+                    ["jbang", "--java", "21", str(file_path)],
+                    check=False,
+                    cwd=str(repo_root),
                     capture_output=True,
                     text=True,
                     timeout=TIMEOUT_SECONDS,

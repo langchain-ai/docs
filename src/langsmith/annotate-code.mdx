@@ -6,6 +6,8 @@ description: Instrument your code directly to control which functions are traced
 
 import TraceablePipelineJava from '/snippets/code-samples/traceable-pipeline-java.mdx';
 import RunTreeExampleJava from '/snippets/code-samples/run-tree-example-java.mdx';
+import TraceablePipelineKt from '/snippets/code-samples/traceable-pipeline-kt.mdx';
+import RunTreeExampleKt from '/snippets/code-samples/run-tree-example-kt.mdx';
 
 Adding [instrumentation](/langsmith/observability-concepts#manual-instrumentation) directly to your code gives you precise control over which functions your application traces, what inputs and outputs are logged, and how your [trace](/langsmith/observability-concepts#traces) hierarchy is structured. The three core instrumentation approaches are:
 
@@ -136,68 +138,7 @@ await runPipeline();
 
 <TraceablePipelineJava />
 
-```kotlin Kotlin
-import com.langchain.smith.tracing.RunType
-import com.langchain.smith.tracing.TraceConfig
-import com.langchain.smith.tracing.traceable
-import com.openai.client.okhttp.OpenAIOkHttpClient
-import com.openai.models.ChatModel
-import com.openai.models.chat.completions.ChatCompletion
-import com.openai.models.chat.completions.ChatCompletionCreateParams
-import com.openai.models.chat.completions.ChatCompletionMessageParam
-import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam
-import kotlin.jvm.optionals.getOrNull
-
-val openai = OpenAIOkHttpClient.fromEnv()
-
-val formatPrompt =
-    traceable(
-        { subject: String ->
-            listOf(
-                ChatCompletionMessageParam.ofSystem(
-                    ChatCompletionSystemMessageParam.builder()
-                        .content("You are a helpful assistant.")
-                        .build(),
-                ),
-                ChatCompletionMessageParam.ofUser(
-                    ChatCompletionUserMessageParam.builder()
-                        .content("What's a good name for a store that sells $subject?")
-                        .build(),
-                ),
-            )
-        },
-        TraceConfig.builder().name("format_prompt").build(),
-    )
-
-val invokeLlm =
-    traceable(
-        { messages: List<ChatCompletionMessageParam> ->
-            openai.chat().completions().create(
-                ChatCompletionCreateParams.builder()
-                    .model(ChatModel.GPT_5_5)
-                    .messages(messages)
-                    .temperature(0.0)
-                    .build(),
-            )
-        },
-        TraceConfig.builder().name("invoke_llm").runType(RunType.LLM).build(),
-    )
-
-val parseOutput =
-    traceable(
-        { response: ChatCompletion -> response.choices()[0].message().content().getOrNull().orEmpty() },
-        TraceConfig.builder().name("parse_output").build(),
-    )
-
-val runPipeline =
-    traceable(
-        { subject: String -> parseOutput(invokeLlm(formatPrompt(subject))) },
-        TraceConfig.builder().name("run_pipeline").build(),
-    )
-
-runPipeline("colorful socks")
-```
+<TraceablePipelineKt />
 
 </CodeGroup>
 
@@ -345,90 +286,7 @@ await pipeline.patchRun();
 
 <RunTreeExampleJava />
 
-```kotlin Kotlin
-import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
-import com.langchain.smith.tracing.RunTree
-import com.langchain.smith.tracing.RunType
-import com.langchain.smith.tracing.TraceConfig
-import com.openai.client.okhttp.OpenAIOkHttpClient
-import com.openai.models.ChatModel
-import com.openai.models.chat.completions.ChatCompletionCreateParams
-import com.openai.models.chat.completions.ChatCompletionMessageParam
-import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam
-import java.time.Instant
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-
-val langsmith = LangsmithOkHttpClient.fromEnv()
-val openai = OpenAIOkHttpClient.fromEnv()
-val executor = Executors.newSingleThreadExecutor()
-
-try {
-    val question = "Can you summarize this morning's meetings?"
-    val runId = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11"
-
-    val pipeline =
-        RunTree.builder()
-            .id(runId)
-            .name("Chat Pipeline")
-            .runType(RunType.CHAIN)
-            .inputs(mapOf("question" to question))
-            .client(langsmith)
-            .executor(executor)
-            .build()
-    pipeline.postRun()
-
-    val context = "During this morning's meeting, we solved all world conflict."
-    val messages =
-        listOf(
-            ChatCompletionMessageParam.ofSystem(
-                ChatCompletionSystemMessageParam.builder()
-                    .content(
-                        "You are a helpful assistant. Please respond to the user's " +
-                            "request only based on the given context.",
-                    )
-                    .build(),
-            ),
-            ChatCompletionMessageParam.ofUser(
-                ChatCompletionUserMessageParam.builder()
-                    .content("Question: $question\nContext: $context")
-                    .build(),
-            ),
-        )
-
-    val childRun =
-        pipeline.createChild(
-            TraceConfig.builder().name("OpenAI Call").runType(RunType.LLM).build(),
-        )
-    childRun.inputs = mapOf("messages" to messages)
-    childRun.postRun()
-
-    val chatCompletion =
-        openai.chat().completions().create(
-            ChatCompletionCreateParams.builder()
-                .model(ChatModel.GPT_5_5)
-                .messages(messages)
-                .build(),
-        )
-
-    childRun.outputs = mapOf("response" to chatCompletion.toString())
-    childRun.endTime = Instant.now().toString()
-    childRun.patchRun()
-
-    pipeline.outputs =
-        mapOf(
-            "answer" to chatCompletion.choices()[0].message().content().orElse(""),
-        )
-    pipeline.endTime = Instant.now().toString()
-    pipeline.patchRun()
-} finally {
-    executor.shutdown()
-    check(executor.awaitTermination(10, TimeUnit.SECONDS)) {
-        "Timed out waiting for LangSmith traces to submit"
-    }
-}
-```
+<RunTreeExampleKt />
 
 </CodeGroup>
 

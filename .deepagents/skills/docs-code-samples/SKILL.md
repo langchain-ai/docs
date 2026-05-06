@@ -98,7 +98,7 @@ public class Example {
 // :snippet-end:
 ```
 
-Choose a unique `snippet-name` in kebab-case. All snippet names must include a language suffix: `-py` for Python files, `-js` for TypeScript/JavaScript files, and `-java` for Java files (for example, `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java`). This becomes the base of the output filename.
+Choose a unique `snippet-name` in kebab-case. All snippet names must include a language suffix: `-py` for Python files, `-js` for TypeScript/JavaScript files, `-java` for Java files, and `-kt` for Kotlin files (for example, `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java`, `traceable-pipeline-kt`). This becomes the base of the output filename.
 
 ### 3. Add runnable test code in remove blocks
 
@@ -206,8 +206,8 @@ Replace the inline code blocks with the snippet components:
 
 | Element | Convention | Example |
 |--------|-------------|---------|
-| Code file | Descriptive, kebab-case | `return-a-string.py`, `return-a-string.ts`, `traceable-pipeline.java` |
-| Snippet name | Kebab-case with language suffix: `-py` for Python, `-js` for JS/TS, `-java` for Java | `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java` |
+| Code file | Descriptive, kebab-case | `return-a-string.py`, `return-a-string.ts`, `traceable-pipeline.java`, `traceable-pipeline.kt` |
+| Snippet name | Kebab-case with language suffix: `-py` for Python, `-js` for JS/TS, `-java` for Java, `-kt` for Kotlin | `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java`, `traceable-pipeline-kt` |
 | MDX snippet (Python) | `{snippet-name}.mdx` (snippet name ends in `-py`) | `tool-return-values-py.mdx` |
 | MDX snippet (JS) | `{snippet-name}.mdx` (snippet name ends in `-js`) | `tool-return-values-js.mdx` |
 | Component name | PascalCase | `ToolReturnValuesPy`, `ToolReturnValuesJs` |

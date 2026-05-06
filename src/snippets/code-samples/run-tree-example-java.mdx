@@ -22,22 +22,11 @@ import java.util.concurrent.TimeUnit;
 
 public class RunTreeExample {
     public static void main(String[] args) throws InterruptedException {
-        if (System.getenv("OPENAI_API_KEY") == null || System.getenv("OPENAI_API_KEY").isBlank()) {
-            System.out.println("[RunTreeExample] Skipping (OPENAI_API_KEY is not set).");
-            return;
-        }
-
-        if (System.getenv("LANGSMITH_API_KEY") == null || System.getenv("LANGSMITH_API_KEY").isBlank()) {
-            System.out.println("[RunTreeExample] Skipping (LANGSMITH_API_KEY is not set).");
-            return;
-        }
-
         LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
         OpenAIClient openai = OpenAIOkHttpClient.fromEnv();
         ExecutorService executor = Executors.newSingleThreadExecutor();
 
         try {
-            System.out.println("[RunTreeExample] Starting…");
             String question = "Can you summarize this morning's meetings?";
             String runId = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11";
 
@@ -49,9 +38,7 @@ public class RunTreeExample {
                 .client(langsmith)
                 .executor(executor)
                 .build();
-            System.out.println("[RunTreeExample] Posting parent run to LangSmith…");
             pipeline.postRun();
-            System.out.println("[RunTreeExample] Parent run posted.");
 
             String context = "During this morning's meeting, we solved all world conflict.";
             List<ChatCompletionMessageParam> messages = Arrays.asList(
@@ -69,9 +56,7 @@ public class RunTreeExample {
             RunTree childRun = pipeline.createChild(
                 TraceConfig.builder().name("OpenAI Call").runType(RunType.LLM).build());
             childRun.setInputs(Collections.singletonMap("messages", messages));
-            System.out.println("[RunTreeExample] Posting child run to LangSmith…");
             childRun.postRun();
-            System.out.println("[RunTreeExample] Child run posted. Calling OpenAI…");
 
             ChatCompletion chatCompletion = openai.chat().completions().create(
                 ChatCompletionCreateParams.builder()
@@ -80,32 +65,22 @@ public class RunTreeExample {
                     .build());
 
             String answer = chatCompletion.choices().get(0).message().content().orElse("");
-            System.out.println("[RunTreeExample] OpenAI response received. Answer:");
             System.out.println(answer);
 
             childRun.setOutputs(Collections.singletonMap("response", chatCompletion.toString()));
             childRun.setEndTime(Instant.now().toString());
-            System.out.println("[RunTreeExample] Patching child run…");
             childRun.patchRun();
-            System.out.println("[RunTreeExample] Child run patched.");
 
             pipeline.setOutputs(Collections.singletonMap(
                 "answer", answer));
             pipeline.setEndTime(Instant.now().toString());
-            System.out.println("[RunTreeExample] Patching parent run…");
             pipeline.patchRun();
-            System.out.println("[RunTreeExample] Parent run patched.");
-        } catch (Exception e) {
-            System.err.println("[RunTreeExample] Failed: " + e.getClass().getName() + ": " + e.getMessage());
-            throw e;
         } finally {
-            System.out.println("[RunTreeExample] Shutting down trace executor…");
             executor.shutdown();
             if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
                 throw new IllegalStateException(
                     "Timed out waiting for LangSmith traces to submit");
             }
-            System.out.println("[RunTreeExample] Done.");
         }
     }
 }
