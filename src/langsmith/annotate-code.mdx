@@ -4,6 +4,9 @@ sidebarTitle: Customize instrumentation
 description: Instrument your code directly to control which functions are traced and how they appear in LangSmith.
 ---
 
+import TraceablePipelineJava from '/snippets/code-samples/traceable-pipeline-java.mdx';
+import RunTreeExampleJava from '/snippets/code-samples/run-tree-example-java.mdx';
+
 Adding [instrumentation](/langsmith/observability-concepts#manual-instrumentation) directly to your code gives you precise control over which functions your application traces, what inputs and outputs are logged, and how your [trace](/langsmith/observability-concepts#traces) hierarchy is structured. The three core instrumentation approaches are:
 
 - [`@traceable` decorator](#use-%40traceable-%2F-traceable): recommended for most cases
@@ -131,67 +134,7 @@ const runPipeline = traceable(
 await runPipeline();
 ```
 
-```java Java
-import com.langchain.smith.tracing.RunType;
-import com.langchain.smith.tracing.TraceConfig;
-import com.langchain.smith.tracing.Tracing;
-import com.openai.client.OpenAIClient;
-import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.models.ChatModel;
-import com.openai.models.chat.completions.ChatCompletion;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionMessageParam;
-import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
-import java.util.Arrays;
-import java.util.List;
-import java.util.function.Function;
-
-public class TraceablePipeline {
-  private static final OpenAIClient openai = OpenAIOkHttpClient.fromEnv();
-
-  private static final Function<String, List<ChatCompletionMessageParam>> formatPrompt =
-      Tracing.traceFunction(
-          subject ->
-              Arrays.asList(
-                  ChatCompletionMessageParam.ofSystem(
-                      ChatCompletionSystemMessageParam.builder()
-                          .content("You are a helpful assistant.")
-                          .build()),
-                  ChatCompletionMessageParam.ofUser(
-                      ChatCompletionUserMessageParam.builder()
-                          .content("What's a good name for a store that sells " + subject + "?")
-                          .build())),
-          TraceConfig.builder().name("format_prompt").build());
-
-  private static final Function<List<ChatCompletionMessageParam>, ChatCompletion> invokeLlm =
-      Tracing.traceFunction(
-          messages ->
-              openai.chat()
-                  .completions()
-                  .create(
-                      ChatCompletionCreateParams.builder()
-                          .model(ChatModel.GPT_5_CHAT_LATEST)
-                          .messages(messages)
-                          .temperature(0.0)
-                          .build()),
-          TraceConfig.builder().name("invoke_llm").runType(RunType.LLM).build());
-
-  private static final Function<ChatCompletion, String> parseOutput =
-      Tracing.traceFunction(
-          response -> response.choices().get(0).message().content().orElse(""),
-          TraceConfig.builder().name("parse_output").build());
-
-  private static final Function<String, String> runPipeline =
-      Tracing.traceFunction(
-          subject -> parseOutput.apply(invokeLlm.apply(formatPrompt.apply(subject))),
-          TraceConfig.builder().name("run_pipeline").build());
-
-  public static void main(String[] args) {
-    runPipeline.apply("colorful socks");
-  }
-}
-```
+<TraceablePipelineJava />
 
 ```kotlin Kotlin
 import com.langchain.smith.tracing.RunType
@@ -400,93 +343,7 @@ pipeline.end({ outputs: { answer: chatCompletion.choices[0].message.content } })
 await pipeline.patchRun();
 ```
 
-```java Java
-import com.langchain.smith.client.LangsmithClient;
-import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
-import com.langchain.smith.tracing.RunTree;
-import com.langchain.smith.tracing.RunType;
-import com.langchain.smith.tracing.TraceConfig;
-import com.openai.client.OpenAIClient;
-import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.models.ChatModel;
-import com.openai.models.chat.completions.ChatCompletion;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionMessageParam;
-import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
-import java.time.Instant;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
-public class RunTreeExample {
-    public static void main(String[] args) throws InterruptedException {
-        LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
-        OpenAIClient openai = OpenAIOkHttpClient.fromEnv();
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-
-        try {
-            String question = "Can you summarize this morning's meetings?";
-            String runId = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11";
-
-            RunTree pipeline = RunTree.builder()
-                .id(runId)
-                .name("Chat Pipeline")
-                .runType(RunType.CHAIN)
-                .inputs(Collections.singletonMap("question", question))
-                .client(langsmith)
-                .executor(executor)
-                .build();
-            pipeline.postRun();
-
-            String context = "During this morning's meeting, we solved all world conflict.";
-            List<ChatCompletionMessageParam> messages = Arrays.asList(
-                ChatCompletionMessageParam.ofSystem(
-                    ChatCompletionSystemMessageParam.builder()
-                        .content(
-                            "You are a helpful assistant. Please respond to the user's " +
-                                "request only based on the given context.")
-                        .build()),
-                ChatCompletionMessageParam.ofUser(
-                    ChatCompletionUserMessageParam.builder()
-                        .content("Question: " + question + "\nContext: " + context)
-                        .build()));
-
-            RunTree childRun = pipeline.createChild(
-                TraceConfig.builder().name("OpenAI Call").runType(RunType.LLM).build());
-            childRun.setInputs(Collections.singletonMap("messages", messages));
-            childRun.postRun();
-
-            ChatCompletion chatCompletion = openai.chat().completions().create(
-                ChatCompletionCreateParams.builder()
-                    .model(ChatModel.GPT_5_CHAT_LATEST)
-                    .messages(messages)
-                    .build());
-
-            String answer = chatCompletion.choices().get(0).message().content().orElse("");
-            System.out.println(answer);
-
-            childRun.setOutputs(Collections.singletonMap("response", chatCompletion.toString()));
-            childRun.setEndTime(Instant.now().toString());
-            childRun.patchRun();
-
-            pipeline.setOutputs(Collections.singletonMap(
-                "answer", answer));
-            pipeline.setEndTime(Instant.now().toString());
-            pipeline.patchRun();
-        } finally {
-            executor.shutdown();
-            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException(
-                    "Timed out waiting for LangSmith traces to submit");
-            }
-        }
-    }
-}
-```
+<RunTreeExampleJava />
 
 ```kotlin Kotlin
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient

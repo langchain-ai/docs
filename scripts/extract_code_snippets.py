@@ -7,9 +7,9 @@ This tool only looks for comment-line markers, so glob patterns and other string
 Supported markers (same as this repo's Bluehawk usage):
 
 - ``# :snippet-start: <id>`` / ``# :snippet-end:`` (Python)
-- ``// :snippet-start: <id>`` / ``// :snippet-end:`` (TypeScript)
+- ``// :snippet-start: <id>`` / ``// :snippet-end:`` (TypeScript, Java)
 - ``# :remove-start:`` / ``# :remove-end:`` inside Python snippet bodies
-- ``// :remove-start:`` / ``// :remove-end:`` inside TypeScript snippet bodies
+- ``// :remove-start:`` / ``// :remove-end:`` inside TypeScript/Java snippet bodies
 
 Output files match Bluehawk: ``<source-basename>.snippet.<snippet-id>.<ext>`` in
 ``src/code-samples-generated/``.
@@ -72,7 +72,7 @@ def extract_snippets(
     if language == "python":
         start_re, end_re = _RE_SNIP_START_PY, _RE_SNIP_END_PY
         rs, re_ = _RE_REMOVE_START_PY, _RE_REMOVE_END_PY
-    elif language in ("ts", "typescript", "javascript"):
+    elif language in ("ts", "typescript", "javascript", "java"):
         start_re, end_re = _RE_SNIP_START_TS, _RE_SNIP_END_TS
         rs, re_ = _RE_REMOVE_START_TS, _RE_REMOVE_END_TS
     else:
@@ -118,6 +118,10 @@ def _iter_source_files(root: Path) -> list[Path]:
         if "node_modules" in path.parts:
             continue
         out.append(path)
+    for path in sorted(root.rglob("*.java")):
+        if "node_modules" in path.parts:
+            continue
+        out.append(path)
     return out
 
 
@@ -126,7 +130,9 @@ def _language_for_path(path: Path) -> str:
         return "python"
     if path.suffix == ".ts":
         return "ts"
-    msg = f"expected .py or .ts, got {path.suffix!r}"
+    if path.suffix == ".java":
+        return "java"
+    msg = f"expected .py, .ts, or .java, got {path.suffix!r}"
     raise ValueError(msg)
 
 
@@ -150,7 +156,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for p in list(out_dir.iterdir()):
-        if p.suffix in (".py", ".ts") and p.is_file():
+        if p.suffix in (".py", ".ts", ".java") and p.is_file():
             p.unlink()
 
     written: list[Path] = []

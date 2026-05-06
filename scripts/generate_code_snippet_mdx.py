@@ -1,6 +1,6 @@
 """Generate MDX snippet files from extracted code snippet files.
 
-Reads .snippet.*.py and .snippet.*.ts files from src/code-samples-generated/
+Reads .snippet.*.py, .snippet.*.ts, and .snippet.*.java files from src/code-samples-generated/
 (produced by ``scripts/extract_code_snippets.py``, Bluehawk-compatible layout).
 and creates corresponding MDX files in src/snippets/code-samples/ for use in docs.
 
@@ -203,9 +203,10 @@ def main() -> None:
     snippet_configs = [
         ("*.snippet.*.py", "python", "python"),
         ("*.snippet.*.ts", "ts", "ts"),
+        ("*.snippet.*.java", "java", "java"),
     ]
 
-    lang_suffix = {"python": "-py", "ts": "-js"}
+    lang_suffix = {"python": "-py", "ts": "-js", "java": "-java"}
 
     for glob_pattern, language, fence_lang in snippet_configs:
         for snippet_file in generated_dir.glob(glob_pattern):

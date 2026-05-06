@@ -1,8 +1,8 @@
 ---
 name: docs-code-samples
-description: Use this skill when migrating inline code samples from LangChain docs (MDX files) into external, testable code files that are extracted with Bluehawk and used as Mintlify snippets. Applies when extracting code blocks from documentation, creating runnable code samples, using snippet delineators, or wiring Bluehawk output into MDX includes.
+description: Use this skill when migrating inline code samples from LangChain docs (MDX files) into external, testable code files that are extracted by this repo’s snippet scripts and used as Mintlify snippets. Applies when extracting code blocks from documentation, creating runnable code samples, using snippet delineators, or wiring snippet output into MDX includes.
 license: MIT
-compatibility: LangChain docs monorepo with Mintlify. Requires npm (for Bluehawk), Python, Make.
+compatibility: LangChain docs monorepo with Mintlify. Requires Python and Make (Node.js is also required for TypeScript samples).
 metadata:
   author: langchain
   version: "1.0"
@@ -12,13 +12,13 @@ metadata:
 
 ## Overview
 
-This skill documents the workflow for moving inline code samples from LangChain documentation into standalone, testable files that Bluehawk extracts into snippets for use in MDX using Mintlify.
+This skill documents the workflow for moving inline code samples from LangChain documentation into standalone, testable files that this repo extracts into snippets for use in MDX using Mintlify.
 
 ## When to use
 
 - Migrating inline Python, TypeScript/JavaScript, or Java code blocks from MDX to external files
 - Creating runnable, testable code samples for documentation
-- Setting up Bluehawk snippet extraction and Mintlify snippet includes
+- Setting up snippet extraction and Mintlify snippet includes
 
 ## Directory structure
 
@@ -32,7 +32,7 @@ Example:
 
 ```
 src/
-├── code-samples/              # Source: testable code with Bluehawk tags
+├── code-samples/              # Source: testable code with snippet tags
 │   ├── langchain/
 │   │   ├── return-a-string.py
 │   │   └── return-a-string.ts
@@ -41,7 +41,7 @@ src/
 │   └── langsmith/
 │       ├── trace-example.py
 │       └── trace-example.java
-├── code-samples-generated/    # Bluehawk output (gitignored)
+├── code-samples-generated/    # Snippet output (gitignored)
 │   ├── return-a-string.snippet.tool-return-values.py
 │   ├── return-a-string.snippet.tool-return-values.ts
 │   └── ...
@@ -62,7 +62,7 @@ Place the file under `src/code-samples/` in the folder for the product: `langcha
 
 Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`.
 
-### 2. Add Bluehawk delineators
+### 2. Add snippet delineators
 
 Wrap the code that should appear in the docs with snippet tags:
 
@@ -98,7 +98,7 @@ public class Example {
 // :snippet-end:
 ```
 
-Choose a unique `snippet-name` in kebab-case. **All snippet names must include a language suffix:** `-py` for Python files and `-js` for TypeScript/JavaScript files (e.g. `tool-return-values-py`, `tool-return-values-js`). This becomes the base of the output filename.
+Choose a unique `snippet-name` in kebab-case. All snippet names must include a language suffix: `-py` for Python files, `-js` for TypeScript/JavaScript files, and `-java` for Java files (for example, `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java`). This becomes the base of the output filename.
 
 ### 3. Add runnable test code in remove blocks
 
@@ -128,11 +128,11 @@ main();
 // :remove-end:
 ```
 
-Bluehawk strips `:remove-start:` / `:remove-end:` content when extracting snippets.
+The extraction script strips `:remove-start:` / `:remove-end:` content when extracting snippets.
 
 ### 4. Test the code sample
 
-Before running Bluehawk, verify the code sample runs correctly:
+Before extracting snippets, verify the code sample runs correctly:
 
 ```bash
 # Test the file(s) you added (faster)
@@ -142,7 +142,7 @@ make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 make test-code-samples
 ```
 
-For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—do not run Bluehawk extraction until the samples pass.
+For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—do not extract snippets until the samples pass.
 
 Java files (`.java`) under `src/code-samples/` are run using `jbang`. To keep CI green, Java samples must:
 
