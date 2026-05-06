@@ -1568,6 +1568,58 @@ By default, the retry policy retries on any exception except for the following:
 
 :::python
 
+## Configure node timeouts
+
+The `timeout=` parameter on @[`add_node`] caps how long a single async node attempt may run. Pass a number (seconds), a `timedelta`, or a @[`TimeoutPolicy`] for finer control over run and idle timeouts. When the limit is exceeded, LangGraph raises @[`NodeTimeoutError`] and lets the retry policy decide whether to retry.
+
+<Note>
+Per-node timeouts require `langgraph>=1.2`, currently in alpha.
+</Note>
+
+```python
+from langgraph.types import TimeoutPolicy
+
+builder.add_node(
+    "call_model",
+    call_model,
+    timeout=TimeoutPolicy(run_timeout=120, idle_timeout=30),
+)
+```
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#timeouts) for the full timeout lifecycle, idle-timeout refresh sources, and `runtime.heartbeat()`.
+
+## Handle node errors
+
+The `error_handler=` parameter on @[`add_node`] registers a function that runs after a node fails and all retries are exhausted. The handler receives the current state and a typed @[`NodeError`] with failure context, and can route to a recovery branch via @[`Command`]:
+
+<Note>
+Node-level error handlers require `langgraph>=1.2`, currently in alpha.
+</Note>
+
+```python
+from langgraph.errors import NodeError
+from langgraph.types import Command, RetryPolicy
+
+def payment_error_handler(state: State, error: NodeError) -> Command:
+    return Command(
+        update={"status": f"compensated: {error.error}"},
+        goto="finalize",
+    )
+
+builder.add_node(
+    "charge_payment",
+    charge_payment,
+    retry_policy=RetryPolicy(max_attempts=3, retry_on=ConnectionError),
+    error_handler=payment_error_handler,
+)
+```
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#error-handling) for compensation patterns and `Command` routing.
+
+:::
+
+:::python
+
 ### Access execution info inside a node
 
 You can access execution identity and retry information via `runtime.execution_info`. This surfaces thread, run, and checkpoint identifiers as well as retry state, without needing to read from `config` directly.
@@ -1672,6 +1724,28 @@ graph = builder.compile()
 
 <Note>
 Requires `deepagents>=0.5.0` (or `langgraph>=1.1.5`) for `runtime.execution_info` and `runtime.server_info`.
+</Note>
+
+### Access drain state inside a node
+
+When a [graceful shutdown](/oss/langgraph/durable-execution#graceful-shutdown) has been requested, `runtime.drain_requested` is `True`. Read this inside a node to skip expensive work before the next superstep boundary:
+
+```python
+from langgraph.runtime import Runtime
+
+def my_node(state: State, runtime: Runtime) -> State:
+    if runtime.drain_requested:  # [!code highlight]
+        return {"status": "skipped", "reason": runtime.drain_reason}
+    return {"status": do_work()}
+```
+
+| Property | Type | Description |
+| -------- | ---- | ----------- |
+| `drain_requested` | `bool` | `True` if `RunControl.request_drain()` has been called for this run. |
+| `drain_reason` | `str \| None` | The reason string passed to `request_drain()`, or `None` if drain was not requested. |
+
+<Note>
+Requires `langgraph>=1.2`, currently in alpha. See [Graceful shutdown](/oss/langgraph/durable-execution#graceful-shutdown) for the full `RunControl` API.
 </Note>
 
 :::

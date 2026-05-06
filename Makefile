@@ -142,11 +142,11 @@ check-openapi: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
 	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
-# Extract code snippets from src/code-samples using Bluehawk
+# Extract code snippets from src/code-samples (line-based, Bluehawk-compatible tags)
 code-snippets:
-	@echo "Extracting code snippets with Bluehawk..."
+	@echo "Extracting code snippets..."
 	@mkdir -p src/code-samples-generated
-	@npx --yes bluehawk snip -o src/code-samples-generated/ --ignore node_modules --ignore .DS_Store src/code-samples/
+	@PYTHONPATH=$(CURDIR) python scripts/extract_code_snippets.py
 	@PYTHONPATH=$(CURDIR) python scripts/generate_code_snippet_mdx.py
 
 # Run code samples. By default runs all; pass FILES to test specific paths.
@@ -175,7 +175,7 @@ help:
 	@echo "  make lint_prose         - Lint prose with Vale (terminology, style)"
 	@echo "  make test               - Run tests"
 	@echo "  make install            - Install dependencies"
-	@echo "  make code-snippets      - Extract code snippets with Bluehawk"
+	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
 	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"
