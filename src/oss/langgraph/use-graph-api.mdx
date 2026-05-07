@@ -1568,6 +1568,45 @@ By default, the retry policy retries on any exception except for the following:
 
 :::python
 
+## Set node timeouts
+
+Use the `timeout` parameter with @[`add_node`] to limit how long a single async node invocation can run. Provide the timeout in seconds or as a `datetime.timedelta`.
+
+```python
+import asyncio
+from typing_extensions import TypedDict
+
+from langgraph.errors import NodeTimeoutError
+from langgraph.graph import END, START, StateGraph
+
+
+class State(TypedDict):
+    value: str
+
+
+async def call_model(state: State) -> State:
+    await asyncio.sleep(2)
+    return {"value": "done"}
+
+
+builder = StateGraph(State)
+builder.add_node("model", call_model, timeout=1.0)
+builder.add_edge(START, "model")
+builder.add_edge("model", END)
+graph = builder.compile()
+
+try:
+    await graph.ainvoke({"value": "start"})
+except NodeTimeoutError:
+    print("Node timed out")
+```
+
+Node timeouts are supported only for async nodes. If you set `timeout` on a sync node, LangGraph raises an error when the graph is compiled because sync Python execution cannot be safely canceled in-process.
+
+When a node exceeds its timeout, LangGraph raises `NodeTimeoutError`, which subclasses Python's built-in `TimeoutError`. If the node has a `retry_policy` that retries `TimeoutError` or `NodeTimeoutError`, the timed-out attempt is retried. The timeout applies to each attempt independently, so the timer resets for every retry.
+
+Timed-out attempts do not commit their buffered writes. This prevents state updates or child-task scheduling from leaking out after the timeout boundary.
+
 ## Configure node timeouts
 
 The `timeout=` parameter on @[`add_node`] caps how long a single async node attempt may run. Pass a number (seconds), a `timedelta`, or a @[`TimeoutPolicy`] for finer control over run and idle timeouts. When the limit is exceeded, LangGraph raises @[`NodeTimeoutError`] and lets the retry policy decide whether to retry.

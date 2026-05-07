@@ -1,6 +1,6 @@
 """Generate MDX snippet files from extracted code snippet files.
 
-Reads .snippet.*.py and .snippet.*.ts files from src/code-samples-generated/
+Reads .snippet.*.py, .snippet.*.ts, .snippet.*.java, and .snippet.*.kt files from src/code-samples-generated/
 (produced by ``scripts/extract_code_snippets.py``, Bluehawk-compatible layout).
 and creates corresponding MDX files in src/snippets/code-samples/ for use in docs.
 
@@ -22,12 +22,26 @@ The marker line is stripped during processing and that model occurrence is not
 replaced/expanded.
 
 Run as part of `make code-snippets` after `extract_code_snippets.py`.
+
+Optional **CodeGroup tab label** (Mintlify `` ```lang TabTitle``` `` inside ``<CodeGroup>``):
+
+- Put as the **first line inside** the snippet body (after ``:snippet-start:``): ``# :codegroup-tab: Python`` or ``// :codegroup-tab: Java``. Stripped from emitted code.
+- Optional **fence modifiers** (for example long samples): the **next** line can be ``# :codegroup-fence-mods: expandable wrap`` or ``// :codegroup-fence-mods: expandable wrap``. Stripped from emitted code. Omit for short snippets.
+- The fence becomes e.g. `` ```java Java`` or, with fence-mods, `` ```java Java expandable wrap``.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+# Optional prefix lines in extracted snippet body; stripped from output. See module docstring.
+_CODEGROUP_TAB_MARKER_RE = re.compile(
+    r"^\s*(?:#|//)\s*:codegroup-tab:\s*(.+?)\s*$",
+)
+_CODEGROUP_FENCE_MODS_RE = re.compile(
+    r"^\s*(?:#|//)\s*:codegroup-fence-mods:\s*(.+?)\s*$",
+)
 
 # Python: keyword argument model="…" (init_chat_model / create_deep_agent / etc.).
 DEEPAGENTS_PY_MODEL_KWARG_RE = re.compile(r'\bmodel\s*=\s*"([^"]+)"')
@@ -87,6 +101,34 @@ def _id_after_first_colon(tab_id: str) -> str:
 
 KEEP_MODEL_MARKER_PY = "# KEEP MODEL"
 KEEP_MODEL_MARKER_TS = "// KEEP MODEL"
+
+
+def _strip_codegroup_markers(content: str) -> tuple[str | None, str | None, str]:
+    """Strip optional ``:codegroup-tab:`` and following ``:codegroup-fence-mods:`` lines.
+
+    Returns ``(tab_title, fence_mods, rest)``. If the first line is not a tab marker,
+    returns ``(None, None, original content)``.
+    """
+    if not content:
+        return None, None, content
+    lines = content.splitlines(keepends=True)
+    if not lines:
+        return None, None, content
+    first = lines[0].splitlines()[0] if lines[0] else ""
+    m = _CODEGROUP_TAB_MARKER_RE.match(first)
+    if not m:
+        return None, None, content
+    tab_title = m.group(1).strip()
+    i = 1
+    fence_mods: str | None = None
+    if i < len(lines):
+        second = lines[i].splitlines()[0] if lines[i] else ""
+        m2 = _CODEGROUP_FENCE_MODS_RE.match(second)
+        if m2:
+            fence_mods = m2.group(1).strip()
+            i += 1
+    rest = "".join(lines[i:])
+    return tab_title, fence_mods, rest
 
 
 def _codegroup_fence(tab_title: str, fence_lang: str, code: str) -> str:
@@ -182,12 +224,20 @@ def maybe_expand_deepagents_quickstart_codegroup(
 def format_snippet_mdx(content: str, *, language: str, fence_lang: str) -> str:
     """Return final MDX body for a snippet file."""
     content = content.rstrip() + "\n"
+    tab_title, fence_mods, content = _strip_codegroup_markers(content)
     expanded, content = maybe_expand_deepagents_quickstart_codegroup(
         content, language=language, fence_lang=fence_lang
     )
     if expanded is not None:
         return expanded
-    return f"```{fence_lang}\n{content.rstrip()}\n```\n"
+    if tab_title is not None:
+        parts = [fence_lang, tab_title]
+        if fence_mods:
+            parts.append(fence_mods)
+        fence_opener = " ".join(parts)
+    else:
+        fence_opener = fence_lang
+    return f"```{fence_opener}\n{content.rstrip()}\n```\n"
 
 
 def main() -> None:
@@ -203,9 +253,11 @@ def main() -> None:
     snippet_configs = [
         ("*.snippet.*.py", "python", "python"),
         ("*.snippet.*.ts", "ts", "ts"),
+        ("*.snippet.*.java", "java", "java"),
+        ("*.snippet.*.kt", "kotlin", "kotlin"),
     ]
 
-    lang_suffix = {"python": "-py", "ts": "-js"}
+    lang_suffix = {"python": "-py", "ts": "-js", "java": "-java", "kotlin": "-kt"}
 
     for glob_pattern, language, fence_lang in snippet_configs:
         for snippet_file in generated_dir.glob(glob_pattern):
