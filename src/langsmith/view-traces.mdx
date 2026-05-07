@@ -1,12 +1,14 @@
 ---
 title: View traces
-description: Inspect a trace in LangSmith using the Messages view or Details view.
+description: Inspect agent threads in LangSmith using the Messages view or Details view.
 ---
 
-When you open a trace in the [LangSmith UI](https://smith.langchain.com), two views are available at the top of the trace panel:
+When you open a trace in the [LangSmith UI](https://smith.langchain.com), LangSmith shows the full thread context around it. Threads are the primary unit of navigation: instead of treating each run as an isolated object, the UI keeps the surrounding conversation visible so you can understand where a run fits in the agent's broader execution.
 
-- [**Messages**](#messages-view): Renders a trace as a readable conversation, showing the sequence of messages exchanged between the user, assistant, and any tools called.
-- [**Details**](#details-view): Shows the complete technical record of a trace, including every run with its inputs, outputs, timing, token counts, and metadata.
+Two views are available at the top of the trace panel:
+
+- [**Messages**](#messages-view): Renders the agent thread as a scannable conversation of inputs, outputs, reasoning, tool calls, and subagent activity. Use this to scan the thread and find where to look.
+- [**Details**](#details-view): The debugging layer. Drill into a specific run to inspect inputs, outputs, timing, token counts, errors, and metadata. Use this to understand what happened at a specific point in execution.
 
 ## Messages view
 
@@ -16,55 +18,45 @@ The Messages view is the **default view** for traces under 20 MB.
 LangSmith does not display the Messages view for traces larger than 20 MB. On [self-hosted](/langsmith/self-hosted) deployments, this limit is configurable via the `MESSAGE_VIEW_MAX_BYTES` environment variable. Set to `0` to disable the limit.
 </Note>
 
-Use the Messages view to understand what happened in an agent interaction quickly: what the user asked, how the assistant responded, and which tools the agent invoked.
-
-### Supported integrations
-
-The Messages view appears automatically when LangSmith detects a supported integration. No configuration is required—detection is based on metadata that each SDK sets automatically.
-
-Supported integrations include:
-
-- LangChain
-- Anthropic SDK
-- Claude Agent SDK / Claude Code
-- OpenAI Chat Completions
-- OpenAI Responses API / Agents SDK
-- Google Gemini
-- Vercel AI SDK
-
-If your integration is not listed, the Messages view may still appear if LangSmith can infer the message format from the payload structure. You can also override detection manually using the `ls_message_format` metadata key described in [Customize the Messages view](#customize-the-messages-view).
+Use the Messages view to scan the full thread and identify unexpected behavior—a bad tool result, an unexpected subagent handoff, or a latency spike—before drilling into a specific run.
 
 ### What the Messages view shows
 
-Each LLM call in the trace appears as a group of messages. The metadata row for each group shows:
+Each turn in the thread renders as a single block containing the model's response, the tool calls it triggered, and the results those tools returned. You can scan the full thread and read the agent's behavior without opening a child run.
 
-- **Token usage** (total tokens for the call)
-- **Cost** (total cost for the call)
+The metadata row for each block shows:
+
+- **Token usage:** total tokens for the call
+- **Cost:** total cost for the call
 - **Model name**
 - An **LLM call** link to the corresponding run in the [Details view](#details-view) (shown only when the AI message has visible text)
 
-Tool calls appear with the assistant message that triggered them. Each tool call card includes a **LLM Call** link to its run in the [Details view](#details-view).
+**Reasoning** renders inline with the messages, collapsed by default. Expand a reasoning block to inspect the model's chain of thought for that turn.
 
-When an agent makes the same tool call multiple times in a row (single-tool groups), those calls are collapsed into a single row showing the count and tool name. Expand it to see each individual call. When an agent calls multiple different tools in parallel, those are kept as a grouped block and are not collapsed.
+**Subagents** appear as first-class actions in the conversation. Click into a subagent to open a drilled-down view of that subagent's messages. Click back to return to the parent thread.
 
-Sub-agent interactions show a preview link to the nested trace.
+**Tool calls** appear with the assistant message that triggered them. Each tool call card includes a link to its run in the [Details view](#details-view). When an agent makes the same tool call multiple times in a row (single-tool groups), those calls collapse into a single row showing the count and tool name—expand it to see each individual call. When an agent calls multiple different tools in parallel, those are kept as a grouped block and are not collapsed.
 
 Collapsed and expanded message state is preserved when you switch between the Messages and Details tabs.
-
-### Provider-specific behavior
-
-The messages shown in the Messages view depend on the integration:
-
-| **Integration** | **Messages shown** |
-|-------------|---------------|
-| Anthropic / Claude SDK | Messages from the current trace only |
-| Deep Agents / OpenAI | Messages from the current trace and ancestor traces |
 
 ### Customize the Messages view
 
 You can control how runs appear in the Messages view using metadata keys on individual runs.
 
-- `ls_agent_type`: Accepts `agent`, `subagent`, or `middleware`. Used to filter middleware runs from the Messages view and to control how subagent details are displayed.
+- `ls_agent_type`: Controls where messages from an agent-like run appear. Accepted values:
+
+  | Value | Messages view behavior |
+  |---|---|
+  | `"root"` | Messages from this run appear in the main Messages view. |
+  | `"subagent"` | Messages from this run appear as a subagent action in the conversation thread. |
+  | `"middleware"` | Messages from this run are hidden from the Messages view. |
+
+    ```python
+    @traceable(metadata={"ls_agent_type": "root"})
+    def my_agent():
+        ...
+    ```
+
 - `ls_message_format`: Overrides automatic format detection. Accepted values:
   - `"langchain"`: parse as LangChain message format
   - `"anthropic"`: parse as Anthropic message format
@@ -161,9 +153,31 @@ The span name (`toolUse.Name`) appears as the tool name in the tool call card in
 
 For a complete working example, see the [langsmith-go-messages-view-demo](https://github.com/langchain-ai/langsmith-go-messages-view-demo) repository.
 
+## Navigate between views
+
+A typical workflow looks like this:
+
+<Steps>
+  <Step title="Start in Messages view">
+    Open a trace. LangSmith starts in the Messages view, showing the full thread.
+  </Step>
+  <Step title="Find the problem">
+    Scan the thread to identify unexpected behavior—a bad tool result, an unexpected subagent handoff, or a latency spike.
+  </Step>
+  <Step title="Drill into the run">
+    Click the relevant message or tool call to open the Details view at the exact run that produced it.
+  </Step>
+  <Step title="Inspect the run">
+    Review inputs, outputs, timing, errors, and metadata for that run.
+  </Step>
+  <Step title="Return to the thread">
+    Toggle back to Messages view to continue scanning the conversation.
+  </Step>
+</Steps>
+
 ## Details view
 
-Use the Details view to debug execution: inspect a specific LLM call, review tool inputs and outputs, or identify where an error occurred.
+The Details view is the debugging layer. When you drill into a specific run, the surrounding thread context remains available so you can understand where that run fits in the broader conversation. Inspect inputs, outputs, metadata, timing, errors, and child runs without losing track of the thread.
 
 ### Customize the Details view
 
@@ -177,6 +191,6 @@ Setting `run_type="retriever"` on a run causes the Details view to render each r
 
 From the Details view, you can also:
 
-- **Compare traces**: Select two traces to open a side-by-side comparison. See [Manage a trace](/langsmith/manage-trace#compare-traces).
-- **Share a trace**: Generate a public link to the trace. See [Manage a trace](/langsmith/manage-trace#share-a-trace).
-- **View server logs**: Access server logs associated with a trace generated by a LangSmith deployment. See [Manage a trace](/langsmith/manage-trace#view-server-logs).
+- **Compare traces:** Select two traces to open a side-by-side comparison. See [Manage a trace](/langsmith/manage-trace#compare-traces).
+- **Share a trace:** Generate a public link to the trace. See [Manage a trace](/langsmith/manage-trace#share-a-trace).
+- **View server logs:** Access server logs associated with a trace generated by a LangSmith deployment. See [Manage a trace](/langsmith/manage-trace#view-server-logs).
