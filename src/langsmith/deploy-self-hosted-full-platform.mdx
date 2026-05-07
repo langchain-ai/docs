@@ -816,63 +816,6 @@ polly:
 
 ## Optional configuration
 
-### Configure additional data planes
-
-In addition to the data plane created above, you can create more data planes in different Kubernetes clusters or in the same cluster under a different namespace. There are different ways to achieve this, so implement the solution that works best for your use case.
-
-#### Prerequisites
-
-<Steps>
-  <Step title="Review cluster organization">
-    Read through the cluster organization guide in the [hybrid deployment documentation](/langsmith/hybrid#listeners) to understand how to organize this for your use case.
-  </Step>
-
-  <Step title="Verify hybrid prerequisites">
-    Verify the prerequisites in the [hybrid section](/langsmith/deploy-hybrid#prerequisites) for the new cluster. In step 5 of the [prerequisites](/langsmith/deploy-hybrid#prerequisites), configure egress to your [self-hosted LangSmith instance](/langsmith/self-host-usage#configuring-the-application-you-want-to-use-with-langsmith) instead of `https://api.host.langchain.com` and `https://api.smith.langchain.com`.
-  </Step>
-
-  <Step title="Enable the feature in Postgres">
-    Run the following against your LangSmith Postgres instance to enable this feature. Note the workspace ID for later steps.
-
-    ```sql
-    update organizations set config = config || '{"enable_lgp_listeners_page": true}' where id = '<org id here>';
-    update tenants set config = config || '{"langgraph_remote_reconciler_enabled": true}' where id = '<workspace id here>';
-    ```
-  </Step>
-</Steps>
-
-#### Deploy to a different cluster
-
-<Steps>
-  <Step title="Follow the hybrid setup guide">
-    Follow steps 2 to 6 in the [hybrid setup guide](/langsmith/deploy-hybrid#setup). Set `config.langsmithWorkspaceId` to the workspace ID from the previous step.
-  </Step>
-  <Step title="(Optional) Add more data planes to the same cluster">
-    To add more than one data plane to the same cluster, follow the instructions for [configuring additional data planes in the same cluster](/langsmith/deploy-hybrid#configuring-additional-data-planes-in-the-same-cluster).
-  </Step>
-</Steps>
-
-#### Deploy to a different namespace in the same cluster
-
-<Steps>
-  <Step title="Update your config">
-    In your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts), make the following modifications:
-    - Set `operator.watchNamespaces` to the current namespace your self-hosted LangSmith instance is running in. This prevents conflicts with the operator added by the new data plane.
-    - Use the [Gateway API](/langsmith/self-host-ingress#option-2%3A-gateway-api) or an [Istio Gateway](/langsmith/self-host-ingress#option-3%3A-istio-gateway). Adjust your `langsmith_config.yaml` accordingly.
-  </Step>
-  <Step title="Apply the changes">
-    ```bash
-    helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
-    ```
-  </Step>
-  <Step title="Follow the hybrid setup guide">
-    Follow steps 2 to 6 in the [hybrid setup guide](/langsmith/deploy-hybrid#setup). Set `config.langsmithWorkspaceId` to the workspace ID from the previous step. Set `config.watchNamespaces` to a different namespace than the one used by the existing data plane.
-  </Step>
-  <Step title="(Optional) Configure log access">
-    Configure access for the control plane to read Agent Server deployment logs from the new namespace. See [Read Agent Server logs from other namespaces](#read-agent-server-logs-from-other-namespaces).
-  </Step>
-</Steps>
-
 ### Configure authentication for private registries
 
 If your [Agent Server deployments](/langsmith/agent-server) will use images from private container registries (for example, AWS ECR, Azure ACR, or GCP Artifact Registry), configure image pull secrets. This configuration applies to all deployments automatically, allowing them to authenticate with your private registry.
