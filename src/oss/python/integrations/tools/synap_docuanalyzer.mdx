@@ -1,0 +1,115 @@
+---
+title: "Synap DocuAnalyzer integration"
+description: "Integrate Synap DocuAnalyzer document conversion with LangChain Python."
+---
+
+[Synap DocuAnalyzer](https://www.synapsoft.co.kr/docuanalyzer/) converts documents into structured text outputs for document AI and RAG workflows.
+
+The `langchain-synapsoft` package provides `SynapDocuAnalyzerTool` for agents that need to convert local documents during a run. The same package also includes `SynapDocuAnalyzerLoader` for loading converted pages as LangChain `Document` objects.
+
+## Installation
+
+Install the `langchain-synapsoft` package:
+
+```bash
+pip install -U langchain-synapsoft
+```
+
+## Credentials
+
+To use this integration, you need access to a live Synap DocuAnalyzer deployment and an API key provisioned by Synapsoft.
+
+```python
+import getpass
+import os
+
+if "SYNAP_DA_BASE_URL" not in os.environ:
+    os.environ["SYNAP_DA_BASE_URL"] = input("Synap DocuAnalyzer base URL: ")
+
+if "SYNAP_DA_API_KEY" not in os.environ:
+    os.environ["SYNAP_DA_API_KEY"] = getpass.getpass("Synap DocuAnalyzer API key: ")
+```
+
+## Instantiation
+
+Create a `SynapDocuAnalyzerTool`:
+
+```python
+import os
+
+from langchain_synapsoft import SynapDocuAnalyzerTool
+
+tool = SynapDocuAnalyzerTool(
+    base_url=os.environ["SYNAP_DA_BASE_URL"],
+    api_key=os.environ["SYNAP_DA_API_KEY"],
+)
+```
+
+By default, the tool returns Markdown in `single_document` mode.
+
+## Invocation
+
+Invoke the tool with a local file path:
+
+```python
+content = tool.invoke(
+    {
+        "file_path": "sample.pdf",
+        "output_type": "md",
+        "mode": "single_document",
+    }
+)
+
+print(content[:500])
+```
+
+You can request other output formats supported by your Synap DocuAnalyzer deployment:
+
+```python
+json_content = tool.invoke(
+    {
+        "file_path": "sample.pdf",
+        "output_type": "json",
+        "mode": "single_document",
+    }
+)
+```
+
+Use page mode when you want page markers in the returned string:
+
+```python
+page_content = tool.invoke(
+    {
+        "file_path": "sample.pdf",
+        "output_type": "md",
+        "mode": "page",
+    }
+)
+```
+
+## Use as a document loader
+
+The package also includes `SynapDocuAnalyzerLoader` for RAG pipelines that need LangChain `Document` objects:
+
+```python
+from langchain_synapsoft import SynapDocuAnalyzerLoader
+
+loader = SynapDocuAnalyzerLoader(
+    file_path="sample.pdf",
+    base_url=os.environ["SYNAP_DA_BASE_URL"],
+    api_key=os.environ["SYNAP_DA_API_KEY"],
+    output_type="md",
+    mode="page",
+)
+
+docs = loader.load()
+print(len(docs))
+print(docs[0].metadata)
+print(docs[0].page_content[:500])
+```
+
+The loader returns one `Document` per page by default. Use `mode="single_document"` to join all pages into one `Document`.
+
+## API reference
+
+For package details, see the [`langchain-synapsoft` PyPI page](https://pypi.org/project/langchain-synapsoft/) and the [`langchain-synapsoft` GitHub repository](https://github.com/synapsoft-DA/langchain-synapsoft).
