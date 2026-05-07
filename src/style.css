@@ -168,6 +168,22 @@ h1, h2, h3, h4 {
   font-weight: 600 !important;
 }
 
+/*
+ * Sidebar nav: prevent "open in new page" icon wrapper from stealing width.
+ * Mintlify emits a flex wrapper that sometimes includes `flex-1`, which can force titles to wrap.
+ */
+/* Exact class combo (escaped) + a broad fallback. */
+:where(.h-\\[1lh\\].flex.items-center.flex-1.justify-end),
+:where([class*="h-[1lh]"][class*="items-center"][class*="flex-1"][class*="justify-end"]) {
+  flex: 0 0 auto !important;
+  width: fit-content !important;
+}
+
+:where(.h-\\[1lh\\].flex.items-center.flex-1.justify-end) svg,
+:where([class*="h-[1lh]"][class*="items-center"][class*="flex-1"][class*="justify-end"]) svg {
+  flex-shrink: 0 !important;
+}
+
 /* Prose list styling */
 .prose, [class*="prose"] {
   --tw-prose-counters: currentColor !important;
@@ -177,10 +193,25 @@ h1, h2, h3, h4 {
   font-family: 'Inter', sans-serif !important;
 }
 
+/*
+ * Hosted Mintlify builds omit span[data-as="p"] around react-medium-image-zoom blocks in
+ * list items, so prose paragraph margins (about 2em) do not apply. Local mint dev wraps
+ * the zoom in span[data-as="p"]. Match hosted spacing to local by margining the sibling.
+ */
+.prose li > span[data-as="p"] + span[data-rmiz],
+[class*="prose"] li > span[data-as="p"] + span[data-rmiz],
+.mdx-content li > span[data-as="p"] + span[data-rmiz],
+article li > span[data-as="p"] + span[data-rmiz] {
+  display: block;
+  margin-top: 2em;
+  margin-bottom: 2em;
+}
+
 /* Inline code links inherit color from parent link */
 a code {
   color: inherit !important;
-  text-decoration: none !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
 }
 
 /* Ensure mermaid diagrams are centered */
@@ -196,10 +227,19 @@ a code {
 .dark .nodeLabel p {
   color: inherit !important;
 }
-/* Edge labels: light text for readability on dark backgrounds */
+/* Edge labels: brand-tinted light text for readability on dark backgrounds */
 .dark .edgeLabel,
+.dark .edgeLabel p,
+.dark .edgeLabel span {
+  color: #CCE9FF !important;
+}
+.dark span.edgeLabel,
 .dark .edgeLabel p {
-  color: #e8e8e8;
+  background-color: #030710 !important;
+}
+.dark .edgeLabel rect,
+.dark .edgeLabel .labelBkg {
+  fill: #030710 !important;
 }
 /* Sequence diagram actors, messages, labels, notes, and loops */
 .dark text.actor,
@@ -207,7 +247,7 @@ a code {
 .dark .labelText,
 .dark .loopText,
 .dark .noteText {
-  fill: #e8e8e8;
+  fill: #CCE9FF;
 }
 
 
@@ -231,7 +271,6 @@ a code {
 /* Improve banner link readability in light mode */
 #banner a {
   color: inherit !important;
-  text-decoration: none !important;
 }
 
 /* Compact first column for multi agent pattern comparison tables (no horizontal scroll) */
@@ -253,6 +292,53 @@ a code {
 .compact-first-col table th:first-child {
   width: 1% !important;
   white-space: nowrap !important;
+}
+
+/* Deep Agents model eval category matrix: compact table width. Do not set width/display on
+   [data-table-wrapper] — Mintlify uses flex, full-bleed calc width, and contain:inline-size; our
+   earlier max-content + block rule collapsed the layout. Override Mintlify’s min-w-full w-full and
+   [&_td]:min-w-[150px] on the table only. */
+.deepagents-eval-category-matrix {
+  display: block;
+  width: 100%;
+}
+
+.deepagents-eval-category-matrix table {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100%;
+  table-layout: auto !important;
+}
+
+.deepagents-eval-category-matrix table th,
+.deepagents-eval-category-matrix table td {
+  min-width: 0 !important;
+  box-sizing: border-box;
+}
+
+.deepagents-eval-category-matrix table th:not(:first-child),
+.deepagents-eval-category-matrix table td:not(:first-child) {
+  white-space: nowrap;
+  width: 1%;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  vertical-align: top;
+}
+
+/*
+ * Home page CardGroup: Mintlify outputs container-query classes (@…/columns-container) plus
+ * sm:grid-cols-[repeat(var(--cols),…)]. On hosted builds the named container can be missing or
+ * differ from local dev, so container rules may not apply and the viewport sm rule can leave
+ * four minmax columns on narrow viewports. Force column count from the viewport instead.
+ */
+.home-page .columns.card-group {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+@media (min-width: 640px) {
+  .home-page .columns.card-group {
+    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)) !important;
+  }
 }
 
 /* Hide source-links callouts on home page */
@@ -515,9 +601,6 @@ body:has(.home-page) .source-links,
 /* Style links in tables to match regular content links */
 .dark table a {
   color: #7FC8FF !important;
-  text-decoration: none !important;
-}
-.dark table a:hover {
   text-decoration: underline !important;
   text-decoration-color: #7FC8FF !important;
   text-underline-offset: 2px;
@@ -529,7 +612,105 @@ body:has(.home-page) .source-links,
 }
 
 /* Force vertical alignment to top for table cells on products page */
-.products-page table td.tdlist,
-.products-page table th.tdlist {
+table.products-page td.tdlist,
+table.products-page th.tdlist {
   vertical-align: top !important;
+}
+
+/*
+ * Horizontal overflow indicator for Mintlify tab lists (the "model switcher").
+ *
+ * Mintlify renders the Tabs component as a horizontally scrollable
+ * `<ul role="tablist" data-component-part="tabs-list">`. When there are
+ * more tabs than fit the content width, the list scrolls horizontally but
+ * the edge truncates cleanly on the word boundary with no affordance that
+ * more tabs exist.
+ *
+ * Apply a mask-image fade to the trailing edge so clipped content fades
+ * out instead of cutting off sharply. In browsers that support
+ * scroll-driven animations (Chromium 115+, Firefox 138+, Safari 26+), the
+ * mask is animated against the list's own scroll position so only the
+ * side(s) with hidden content are faded. In older browsers, the static
+ * right-edge fade alone still reads as "there's more here".
+ *
+ * When the tablist is not scrollable, the mask fades only the trailing
+ * sliver of the flex-gap region (which contains no tab content), so the
+ * visual effect is imperceptible.
+ */
+[data-component-part="tabs-list"] {
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      #000 0,
+      #000 calc(100% - 1.5rem),
+      transparent 100%
+    );
+  mask-image:
+    linear-gradient(
+      to right,
+      #000 0,
+      #000 calc(100% - 1.5rem),
+      transparent 100%
+    );
+}
+
+@supports (animation-timeline: scroll()) {
+  [data-component-part="tabs-list"] {
+    animation: tabs-overflow-mask linear both;
+    animation-timeline: scroll(self inline);
+  }
+
+  @keyframes tabs-overflow-mask {
+    0% {
+      -webkit-mask-image:
+        linear-gradient(
+          to right,
+          #000 0,
+          #000 calc(100% - 1.5rem),
+          transparent 100%
+        );
+      mask-image:
+        linear-gradient(
+          to right,
+          #000 0,
+          #000 calc(100% - 1.5rem),
+          transparent 100%
+        );
+    }
+    1%,
+    99% {
+      -webkit-mask-image:
+        linear-gradient(
+          to right,
+          transparent 0,
+          #000 1.5rem,
+          #000 calc(100% - 1.5rem),
+          transparent 100%
+        );
+      mask-image:
+        linear-gradient(
+          to right,
+          transparent 0,
+          #000 1.5rem,
+          #000 calc(100% - 1.5rem),
+          transparent 100%
+        );
+    }
+    100% {
+      -webkit-mask-image:
+        linear-gradient(
+          to right,
+          transparent 0,
+          #000 1.5rem,
+          #000 100%
+        );
+      mask-image:
+        linear-gradient(
+          to right,
+          transparent 0,
+          #000 1.5rem,
+          #000 100%
+        );
+    }
+  }
 }

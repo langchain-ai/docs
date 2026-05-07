@@ -1,0 +1,45 @@
+```python
+from typing import Any, TypedDict
+
+from langchain_anthropic import ChatAnthropic
+from langgraph.graph import START, StateGraph
+
+stream_model = ChatAnthropic(model_name="claude-haiku-4-5-20251001")
+internal_model = ChatAnthropic(model_name="claude-haiku-4-5-20251001").with_config(
+    {"tags": ["nostream"]}
+)
+
+
+class State(TypedDict):
+    topic: str
+    answer: str
+    notes: str
+
+
+def answer(state: State) -> dict[str, Any]:
+    r = stream_model.invoke(
+        [{"role": "user", "content": f"Reply briefly about {state['topic']}"}]
+    )
+    return {"answer": r.content}
+
+
+def internal_notes(state: State) -> dict[str, Any]:
+    # Tokens from this model are omitted from stream_mode="messages" because of nostream
+    r = internal_model.invoke(
+        [{"role": "user", "content": f"Private notes on {state['topic']}"}]
+    )
+    return {"notes": r.content}
+
+
+graph = (
+    StateGraph(State)
+    .add_node("write_answer", answer)
+    .add_node("internal_notes", internal_notes)
+    .add_edge(START, "write_answer")
+    .add_edge("write_answer", "internal_notes")
+    .compile()
+)
+
+initial_state: State = {"topic": "AI", "answer": "", "notes": ""}
+stream = graph.stream(initial_state, stream_mode="messages")
+```

@@ -133,7 +133,7 @@ def analyze_init_file(init_file: Path, package_path: Path) -> dict[str, Any]:
                 if node.module and node.module.startswith("langchain_core"):
                     for alias in node.names:
                         # The name as it appears in this module (alias or original)
-                        local_name = alias.asname if alias.asname else alias.name
+                        local_name = alias.asname or alias.name
 
                         # Store the import mapping
                         langchain_core_imports[local_name] = {

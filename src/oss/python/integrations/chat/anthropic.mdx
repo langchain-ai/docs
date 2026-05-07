@@ -14,7 +14,7 @@ You can find information about Anthropic's latest models, their costs, context w
 <Info>
     **AWS Bedrock and Google VertexAI**
 
-    Note that certain Anthropic models can also be accessed via AWS Bedrock and Google VertexAI. See the [`ChatBedrock`](/oss/integrations/chat/bedrock/) and [`ChatVertexAI`](/oss/integrations/chat/google_vertex_ai#anthropic-on-vertex-ai) integrations to use Anthropic models via these services.
+    Note that certain Anthropic models can also be accessed via AWS Bedrock and Google VertexAI. See the [`ChatBedrock`](/oss/integrations/chat/bedrock/) and [`ChatVertexAI`](/oss/integrations/chat/google_vertex_ai) integrations to use Anthropic models via these services.
 
     For Anthropic models on AWS Bedrock with the same API as `ChatAnthropic`, use [`ChatAnthropicBedrock`](/oss/integrations/chat/bedrock#chatanthropicbedrock) from `langchain-aws`.
 </Info>
@@ -86,6 +86,12 @@ model = ChatAnthropic(
 
 See the @[`ChatAnthropic`] API reference for details on all available instantiation parameters.
 
+<Note>
+    **Inference geography**
+
+    To control where model inference runs for [data residency](https://platform.claude.com/docs/en/build-with-claude/data-residency), pass `inference_geo` when you create @[`ChatAnthropic`]. See Anthropic documentation for supported values.
+</Note>
+
 {/* TODO: show use with a proxy or different base_url */}
 
 ## Invocation
@@ -105,7 +111,7 @@ See the @[`ChatAnthropic`] API reference for details on all available instantiat
                 "I love programming.",
             ),
         ]
-        model.invoke(messages)
+        ai_msg = model.invoke(messages)
         ```
 
 
@@ -154,10 +160,11 @@ See the @[`ChatAnthropic`] API reference for details on all available instantiat
         title="Async"
     >
         ```python
-        await model.ainvoke(messages)
+        ai_msg = await model.ainvoke(messages)
 
         # stream
-        async for chunk in (await model.astream(messages))
+        async for chunk in model.astream(messages):
+            print(chunk.text, end="")
 
         # batch
         await model.abatch([messages])
@@ -306,10 +313,7 @@ ai_msg.tool_calls
 ### Strict tool use
 
 <Info>
-    Strict tool use requires:
-
-    - Claude Sonnet 4.5 or Opus 4.1.
-    - `langchain-anthropic>=1.1.0`
+    Strict tool use requires `langchain-anthropic>=1.1.0`. See the [Claude docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use) for supported models.
 </Info>
 
 Anthropic supports opt-in [strict schema adherence to tool calls](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). This guarantees that tool names and arguments are validated and correctly typed through constrained decoding.
@@ -440,10 +444,11 @@ response = model_with_tools.invoke(
 The `extras` parameter also supports:
 - `defer_loading` (bool): Load tool on-demand for [tool search](#tool-search)
 - `cache_control` (dict): Enable [prompt caching](#caching-tools) for the tool
+- `eager_input_streaming` (bool): Enable [fine-grained tool streaming](#fine-grained-tool-streaming) for that tool
 
 ### Fine-grained tool streaming
 
-Anthropic supports [fine-grained tool streaming](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming), a beta feature that reduces latency when streaming tool calls with large parameters.
+Anthropic supports [fine-grained tool streaming](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming), which reduces latency when streaming tool calls with large parameters.
 
 Rather than buffering entire parameter values before transmission, fine-grained streaming sends parameter data as it becomes available. This can reduce the initial delay from 15 seconds to around 3 seconds for large tool parameters.
 
@@ -451,16 +456,15 @@ Rather than buffering entire parameter values before transmission, fine-grained 
     Fine-grained streaming may return invalid or partial JSON inputs, especially if the response reaches `max_tokens` before completing. Implement appropriate error handling for incomplete JSON data.
 </Warning>
 
-To enable fine-grained tool streaming, specify the `fine-grained-tool-streaming-2025-05-14` beta header when initializing the model:
+To enable fine-grained tool streaming for a tool that should stream tool parameters incrementally, set `extras={"eager_input_streaming": True}` on the tool. That value is passed through to the Anthropic API on the tool definition.
 
 ```python
 from langchain_anthropic import ChatAnthropic
+from langchain.tools import tool
 
-model = ChatAnthropic(
-    model="claude-sonnet-4-6",
-    betas=["fine-grained-tool-streaming-2025-05-14"],  # [!code highlight]
-)
+model = ChatAnthropic(model="claude-sonnet-4-6")
 
+@tool(extras={"eager_input_streaming": True})
 def write_document(title: str, content: str) -> str:
     """Write a document with the given title and content."""
     return f"Document '{title}' written successfully"
@@ -479,6 +483,18 @@ The streaming data arrives as `input_json_delta` blocks in `chunk.content`. You 
 ```python
 import json
 
+from langchain_anthropic import ChatAnthropic
+from langchain.tools import tool
+
+model = ChatAnthropic(model="claude-sonnet-4-6")
+
+@tool(extras={"eager_input_streaming": True})
+def write_document(title: str, content: str) -> str:
+    """Write a document with the given title and content."""
+    return f"Document '{title}' written successfully"
+
+model_with_tools = model.bind_tools([write_document])
+
 accumulated_json = ""
 
 for chunk in model_with_tools.stream("Write a document about AI"):
@@ -494,19 +510,14 @@ for chunk in model_with_tools.stream("Write a document about AI"):
                 pass
 ```
 
-```python
+```text
 Complete args: {'title': 'Artificial Intelligence: An Overview', 'content': '# Artificial Intelligence: An Overview...
 ```
 
 ### Programmatic tool calling
 
 <Info>
-    Programmatic tool calling requires:
-
-    - Claude Sonnet 4.5 or Opus 4.5.
-    - `langchain-anthropic>=1.3.0`
-
-    You must specify the `advanced-tool-use-2025-11-20` beta header to enable programmatic tool calling.
+    Programmatic tool calling requires `langchain-anthropic>=1.3.0`. See the [Claude docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling) for supported models.
 </Info>
 
 Tools can be configured to be callable from Claude's [code execution](#code-execution) environment, reducing latency and token consumption in contexts involving large data processing or multi-tool workflows.
@@ -539,8 +550,7 @@ tools = [
 ]
 
 model = ChatAnthropic(
-    model="claude-sonnet-4-5",
-    betas=["advanced-tool-use-2025-11-20"], # [!code highlight]
+    model="claude-sonnet-4-6",
     reuse_last_container=True,  # [!code highlight]
 )
 
@@ -800,10 +810,9 @@ For Claude Sonnet and earlier models, you will need to specify a token budget. F
 Certain Claude models support an [effort](https://platform.claude.com/docs/en/build-with-claude/effort) feature, which controls how many tokens Claude uses when responding. This is useful for balancing response quality against latency and cost.
 
 <Info>
-    **Model Support**
+    **Model support**
 
-    - Generally available: Claude Opus 4.6 and Claude Opus 4.5
-    - The `max` effort level is only supported by Claude Opus 4.6
+    Effort is generally available on Claude Opus 4.6 and Claude Opus 4.5. The `max` effort level is only supported on Claude Opus 4.6. The `xhigh` effort level is supported on Claude Opus 4.7. Anthropic may add or adjust model support over time—use the [Claude effort documentation](https://platform.claude.com/docs/en/build-with-claude/effort) as the source of truth.
 </Info>
 
 ```python
@@ -811,7 +820,7 @@ from langchain_anthropic import ChatAnthropic
 
 model = ChatAnthropic(
     model="claude-opus-4-5-20251101",
-    effort="medium",  # Options: "max", "high", "medium", "low" [!code highlight]
+    effort="medium",  # Options: "max", "xhigh", "high", "medium", "low" [!code highlight]
 )
 
 response = model.invoke("Analyze the trade-offs between microservices and monolithic architectures")
@@ -822,6 +831,26 @@ response = model.invoke("Analyze the trade-offs between microservices and monoli
 </Note>
 
 See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/effort) for detail on when to use different effort levels and to see supported models.
+
+## Task budgets
+
+Claude Opus 4.7 supports [task budgets](https://platform.claude.com/docs/en/build-with-claude/task-budgets), an advisory token target for an agentic loop (thinking, tool calls, tool results, and final output). The model sees a running countdown and uses it to prioritize work and finish gracefully. Unlike `max_tokens`, task budgets are not a hard cap.
+
+<Info>
+    Task budgets require `langchain-anthropic>=1.4.1` and are currently in beta.
+</Info>
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(
+    model="claude-opus-4-7",
+    output_config={  # [!code highlight]
+        "effort": "high",  # [!code highlight]
+        "task_budget": {"type": "tokens", "total": 128_000},  # [!code highlight]
+    },  # [!code highlight]
+)
+```
 
 ## Citations
 
@@ -1082,24 +1111,90 @@ response = model.invoke([message])
 
 Anthropic supports [caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) of elements of your prompts, including messages, tool definitions, tool results, images and documents. This allows you to re-use large documents, instructions, [few-shot documents](/langsmith/create-few-shot-evaluators), and other data to reduce latency and costs.
 
-To enable caching on an element of a prompt, mark its associated content block using the `cache_control` key. See examples below:
+There are two ways to enable prompt caching:
+
+- **[Automatic caching](#automatic-caching)**: Pass `cache_control` at invocation time. The system automatically applies the cache breakpoint to the last cacheable block and moves it forward as conversations grow. Best for multi-turn conversations.
+- **[Explicit cache breakpoints](#explicit-cache-breakpoints)**: Place `cache_control` directly on individual content blocks for fine-grained control over exactly what gets cached.
 
 <Warning>
     Only certain Claude models support prompt caching. See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#supported-models) for details.
 </Warning>
 
-### Messages
+### Automatic caching
+
+<Info>
+    Automatic caching requires `langchain-anthropic>=1.4.0`.
+</Info>
+
+Pass `cache_control` as an invocation parameter to automatically cache all content up to and including the last cacheable block. On subsequent requests with the same prefix, cached content is reused automatically. The cache breakpoint moves forward as conversations grow, so you don't need to manage individual `cache_control` markers.
+
+```python
+from langchain_anthropic import ChatAnthropic
+import requests
+
+model = ChatAnthropic(model="claude-sonnet-4-5")
+
+# Pull LangChain readme
+get_response = requests.get(
+    "https://raw.githubusercontent.com/langchain-ai/langchain/b476fdb54aa6e6f5f0b24a68c2f4a94e43b369f9/README.md"
+)
+readme = get_response.text
+
+messages = [
+    {
+        "role": "system",
+        "content": [
+            {
+                "type": "text",
+                "text": "You are a technology expert.",
+            },
+            {
+                "type": "text",
+                "text": f"{readme}"
+            },
+        ],
+    },
+    {
+        "role": "user",
+        "content": "What's LangChain, according to its README?",
+    },
+]
+
+response = model.invoke(
+    messages,
+    cache_control={"type": "ephemeral"},  # [!code highlight]
+)
+
+usage = response.usage_metadata["input_token_details"]
+print(f"Usage:\n{usage}")
+
+```
+
+For 1-hour caching, specify the `ttl` field:
+
+```python
+response = model.invoke(
+    messages,
+    cache_control={"type": "ephemeral", "ttl": "1h"},  # [!code highlight]
+)
+```
+
+### Explicit cache breakpoints
+
+For fine-grained control, mark individual content blocks with `cache_control`. This is useful when you need to cache different sections that change at different frequencies.
+
+#### Messages
 
 ```python expandable
 import requests
 from langchain_anthropic import ChatAnthropic
 
 
-model = ChatAnthropic(model="claude-sonnet-4-6")
+model = ChatAnthropic(model="claude-sonnet-4-5")
 
 # Pull LangChain readme
 get_response = requests.get(
-    "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
+    "https://raw.githubusercontent.com/langchain-ai/langchain/b476fdb54aa6e6f5f0b24a68c2f4a94e43b369f9/README.md"
 )
 readme = get_response.text
 
@@ -1136,34 +1231,22 @@ print(f"\nSecond:\n{usage_2}")
 
 ```python
 First invocation:
-{'cache_read': 0, 'cache_creation': 1458}
+{'cache_read': 0, 'cache_creation': 0, 'ephemeral_5m_input_tokens': 1569, 'ephemeral_1h_input_tokens': 0}
 
 Second:
-{'cache_read': 1458, 'cache_creation': 0}
-```
-
-Alternatively, you may enable prompt caching at invocation time. You may want to conditionally cache based on runtime conditions, such as the length of the context. This is useful for app-level decisions about what to cache.
-
-```python
-response = model.invoke(
-    messages,
-    cache_control={"type": "ephemeral"},  # [!code highlight]
-)
+{'cache_read': 1569, 'cache_creation': 0, 'ephemeral_5m_input_tokens': 0, 'ephemeral_1h_input_tokens': 0}
 ```
 
 <Tip>
-    **Extended caching**
+    **1-hour caching**
 
-    The cache lifetime is 5 minutes by default. If this is too short, you can apply one hour caching by enabling the `"extended-cache-ttl-2025-04-11"` beta header and specifying `"cache_control": {"type": "ephemeral", "ttl": "1h"}` on the message.
+    The cache lifetime is 5 minutes by default. For longer caching, specify `"ttl": "1h"` in the `cache_control` field. 1-hour cache writes cost 2x the base input token price (vs 1.25x for 5-minute).
 
     <Accordion
         title="Example"
     >
         ```python
-        model = ChatAnthropic(
-            model="claude-sonnet-4-6",
-            betas=["extended-cache-ttl-2025-04-11"],  # [!code highlight]
-        )
+        model = ChatAnthropic(model="claude-sonnet-4-6")
 
         messages = [
             {
@@ -1202,15 +1285,21 @@ response = model.invoke(
 
 </Tip>
 
-### Caching tools
+#### Caching tools
 
 ```python expandable
+import requests
+
 from langchain_anthropic import ChatAnthropic
 from langchain.tools import tool
 
 
 # For demonstration purposes, we artificially expand the
-# tool description.
+# tool description using the LangChain README text.
+get_response = requests.get(
+    "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
+)
+readme = get_response.text
 description = (
     "Get the weather at a location. "
     f"By the way, check out this readme: {readme}"
@@ -1244,7 +1333,7 @@ Second:
 {'cache_read': 1809, 'cache_creation': 0}
 ```
 
-### Incremental caching in conversational applications
+#### Incremental caching in conversational applications
 
 Prompt caching can be used in [multi-turn conversations](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#continuing-a-multi-turn-conversation) to maintain context from earlier messages without redundant processing.
 
@@ -1499,49 +1588,10 @@ See Anthropic's docs for details on [trigger configuration](https://platform.cla
 
 When a compaction event is triggered, `ChatAnthropic` will return [compaction blocks](https://platform.claude.com/docs/en/build-with-claude/compaction#working-with-compaction-blocks) representing the state of the prompt. These should be retained in the message history that is passed back to the model in multi-turn applications.
 
-## Extended context window
-
-Claude Sonnet 4.5 and Sonnet 4 support extending their context windows from 200k to 1 million tokens by using the `context-1m-2025-08-07` beta header, available for organizations in usage tier 4. Newer models (such as Claude Sonnet and Opus 4.6) support 1 million token context windows by default.
-
-To enable the extended context window, specify the `context-1m-2025-08-07` beta header:
-
-```python
-from langchain_anthropic import ChatAnthropic
-from langchain.messages import HumanMessage
-
-model = ChatAnthropic(
-    model="claude-sonnet-4-5",
-    betas=["context-1m-2025-08-07"],  # [!code highlight]
-)
-
-long_document = """
-This is a very long document that would benefit from the extended 1M
-context window...
-[imagine this continues for hundreds of thousands of tokens]
-"""
-
-messages = [
-    HumanMessage(f"""
-Please analyze this document and provide a summary:
-
-{long_document}
-
-What are the key themes and main conclusions?
-""")
-]
-
-response = model.invoke(messages)
-```
-
-See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/context-windows#1-m-token-context-window) for detail.
-
 ## Structured output
 
 <Info>
-    Structured output requires:
-
-    - Claude Sonnet 4.5 or Opus 4.1.
-    - `langchain-anthropic>=1.1.0`
+    Structured output requires `langchain-anthropic>=1.1.0`. See the [Claude docs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) for supported models.
 </Info>
 
 Anthropic supports a native [structured output feature](https://platform.claude.com/docs/en/build-with-claude/structured-outputs), which guarantees that its responses adhere to a given schema.
@@ -2031,7 +2081,7 @@ Claude supports client-side [computer use](https://platform.claude.com/docs/en/a
         while response.tool_calls:
             tool_messages = []
             for tool_call in response.tool_calls:
-                result = computer.invoke(tool_call["args"])
+                result = computer.invoke(tool_call)
                 tool_messages.append(
                     ToolMessage(content=str(result), tool_call_id=tool_call["id"])
                 )
@@ -2313,7 +2363,7 @@ Claude supports a client-side text editor tool can be used to view and modify te
         while response.tool_calls:
             tool_messages = []
             for tool_call in response.tool_calls:
-                result = str_replace_based_edit_tool.invoke(tool_call["args"])
+                result = str_replace_based_edit_tool.invoke(tool_call)
                 tool_messages.append(
                     ToolMessage(content=result, tool_call_id=tool_call["id"])
                 )
@@ -2631,7 +2681,7 @@ Claude supports a memory tool for client-side storage and retrieval of context a
         while response.tool_calls:
             tool_messages = []
             for tool_call in response.tool_calls:
-                result = memory.invoke(tool_call["args"])
+                result = memory.invoke(tool_call)
                 tool_messages.append(ToolMessage(content=result, tool_call_id=tool_call["id"]))
 
             messages = [*messages, response, *tool_messages]

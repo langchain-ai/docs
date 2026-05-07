@@ -6,7 +6,6 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import ClassVar
 
 import yaml
 from tqdm import tqdm
@@ -209,12 +208,12 @@ class DocumentationBuilder:
             source_links_section = (
                 "\n\n---\n\n"
                 '<div className="source-links">\n'
+                '<Callout icon="terminal-2">\n'
+                "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
+                "</Callout>\n"
                 '<Callout icon="edit">\n'
                 f"    [Edit this page on GitHub]({edit_url}) "
                 f"or [file an issue]({issue_url}).\n"
-                "</Callout>\n"
-                '<Callout icon="terminal-2">\n'
-                "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
                 "</Callout>\n"
                 "</div>\n"
             )
@@ -825,9 +824,14 @@ class DocumentationBuilder:
         logger.info("✅ Shared files copied: %d files", copied_count)
 
     # Maps npm dist filenames to their output names in build/snippets/
-    _NPM_SNIPPET_FILES: ClassVar[dict[str, str]] = {
+    _NPM_SNIPPET_FILES: dict[str, str] = {
         "PatternEmbed.jsx": "pattern-embed.jsx",
         "ExampleEmbed.jsx": "example-embed.jsx",
+    }
+
+    # Maps npm dist filenames to their output names in build/ (served at site root).
+    _NPM_BUILD_FILES: dict[str, str] = {
+        "ChatLangChainEmbed.js": "ChatLangChainEmbed.js",
     }
 
     def _copy_npm_snippets(self) -> None:
@@ -860,6 +864,15 @@ class DocumentationBuilder:
             dest_file = snippets_dir / dest_name
             shutil.copy2(src_file, dest_file)
             logger.debug("Copied npm snippet: %s → snippets/%s", src_name, dest_name)
+
+        for src_name, dest_name in self._NPM_BUILD_FILES.items():
+            src_file = pkg_dist / src_name
+            if not src_file.is_file():
+                logger.warning("Expected file not found in npm package: %s", src_file)
+                continue
+            dest_file = self.build_dir / dest_name
+            shutil.copy2(src_file, dest_file)
+            logger.info("Copied npm build file: %s → build/%s", src_name, dest_name)
 
     def _process_snippet_markdown_file(
         self, input_path: Path, output_path: Path

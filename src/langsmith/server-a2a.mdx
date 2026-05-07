@@ -1,6 +1,7 @@
 ---
 title: A2A endpoint in Agent Server
 sidebarTitle: A2A endpoint in Agent Server
+description: Use the A2A protocol to enable agent-to-agent communication with distributed tracing in LangSmith.
 ---
 
 [Agent2Agent (A2A)](https://a2a-protocol.org/latest/) is Google's protocol for enabling communication between conversational AI agents. [LangSmith implements A2A support](https://docs.langchain.com/langsmith/server-api-ref#tag/a2a/post/a2a/{assistant_id}), allowing your agents to communicate with other A2A-compatible agents through a standardized protocol.
@@ -251,6 +252,170 @@ if __name__ == "__main__":
 For complete working examples, see:
 - [Two LangGraph agents communicating](https://github.com/langchain-samples/A2A-langgraph) - Example of two LangGraph agents using the A2A protocol
 - [Google ADK agent with LangChain agent](https://github.com/langchain-samples/A2A-google-adk) - Example of a Google ADK agent interacting with a LangChain agent using the A2A protocol
+
+## Distributed tracing
+
+When multiple agents communicate over A2A, LangSmith can group all their [traces](/langsmith/observability-concepts#traces) into a single [thread](/langsmith/observability-concepts#threads), which gives you a unified view of the entire multi-agent conversation.
+
+### How contextId maps to thread_id
+
+The Agent Server A2A endpoint automatically converts the A2A `contextId` to `thread_id` for LangSmith tracing. This means every message in a conversation, across all participating agents, is grouped under the same thread in LangSmith without any extra configuration on your part.
+
+The flow works as follows:
+
+1. On the first message, the client omits `contextId`. The server generates one and returns it in the response.
+1. The client passes the `contextId` in all subsequent messages to maintain conversation continuity.
+1. Agent Server maps the `contextId` to `thread_id` in LangSmith [metadata](/langsmith/add-metadata-tags), so all turns appear in the same thread.
+
+### Tracing across multiple agents
+
+When agents from different frameworks communicate over A2A, you can unify their traces in LangSmith by sharing the same `thread_id` across all agents. Use the `contextId` returned by the first agent as the `thread_id` for all subsequent requests.
+
+The following code snippet demonstrates the key concepts. For a complete runnable implementation with two agents, refer to the [Google ADK + LangChain example](https://github.com/langchain-samples/A2A-google-adk/blob/main/test_agent_conversation.py).
+
+```python
+import asyncio
+import aiohttp
+import uuid
+
+
+async def send_message(session, url, text, context_id=None, task_id=None, thread_id=None):
+    """Send an A2A message and return (response_text, context_id, task_id)."""
+
+    # --- 1. Build the message ---
+    # On follow-up turns, include contextId and taskId inside the message object
+    # so the server associates them with the ongoing conversation.
+    message = {
+        "role": "user",
+        "parts": [{"kind": "text", "text": text}],
+        "messageId": str(uuid.uuid4()),
+    }
+    if context_id:
+        message["contextId"] = context_id
+    if task_id:
+        message["taskId"] = task_id
+
+    # --- 2. Set thread_id in metadata ---
+    # thread_id goes at the top level of the JSON-RPC payload, not inside params.
+    payload = {
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": "message/send",
+        "params": {"message": message},
+        "metadata": {"thread_id": thread_id},
+    }
+
+    async with session.post(url, json=payload, headers={"Accept": "application/json"}) as response:
+        if response.status != 200:
+            raise RuntimeError(f"HTTP {response.status}: {await response.text()}")
+        result = await response.json()
+
+    if "error" in result:
+        raise RuntimeError(result["error"].get("message", "Unknown error"))
+
+    result_obj = result.get("result", {})
+    returned_context_id = result_obj.get("contextId") or context_id
+    returned_task_id = result_obj.get("id")
+    text_out = next(
+        (
+            part.get("text", "")
+            for art in result_obj.get("artifacts", []) or []
+            for part in art.get("parts", []) or []
+            if part.get("kind") == "text"
+        ),
+        "(no text)",
+    )
+    return text_out, returned_context_id, returned_task_id
+
+
+async def run_conversation(agent_a_url, agent_b_url):
+    # --- 3. Share thread_id across agents ---
+    # Generate a shared thread_id upfront. Once the server returns a contextId,
+    # use that instead — this keeps the A2A context and LangSmith thread in sync.
+    thread_id = str(uuid.uuid4())
+    context_id = None
+    task_id = None
+    message = "Hello! Let's collaborate."
+
+    async with aiohttp.ClientSession() as session:
+        for _ in range(3):
+            message, context_id, task_id = await send_message(
+                session, agent_a_url, message,
+                context_id=context_id, task_id=task_id,
+                thread_id=context_id or thread_id,
+            )
+
+            # Passing the same thread_id to every agent groups all traces in LangSmith
+            message, context_id, task_id = await send_message(
+                session, agent_b_url, message,
+                context_id=context_id, task_id=task_id,
+                thread_id=context_id or thread_id,
+            )
+
+
+asyncio.run(run_conversation(
+    "http://localhost:2024/a2a/<agent_a_assistant_id>",
+    "http://localhost:2025/a2a/<agent_b_assistant_id>",
+))
+```
+
+**1. Build the message**: Include `contextId` and `taskId` inside the `message` object on follow-up turns so the server can associate them with the ongoing conversation. Omit them on the first message, because the server generates a `contextId` and returns it in the response.
+
+**2. Set thread_id in metadata**: Pass `thread_id` in the top-level `metadata` field of the JSON-RPC payload, not inside `params`.
+
+**3. Share thread_id across agents**: Generate a random `thread_id` before the first message. Once the server returns a `contextId`, use it as the `thread_id` for all subsequent requests, which keeps the A2A conversation context and the LangSmith thread in sync. Pass the same `thread_id` to every agent so all traces are grouped into one thread.
+
+### Receive thread_id in non-LangGraph agents
+
+The [previous section](#tracing-across-multiple-agents) covers the client side—propagating `thread_id` when sending messages. If one of your agents is not built on LangGraph, it also needs to extract and attach the `thread_id` on the receiving end so its traces land in the same LangSmith thread. Use `langsmith.integrations.otel.configure()` to set up automatic tracing, and extract the `thread_id` from incoming A2A request metadata to group traces in the same thread.
+
+```python
+from fastapi import FastAPI, Request
+from langsmith.integrations.otel import configure as configure_otel
+from opentelemetry import trace
+import json
+
+# --- 1. Configure OTel ---
+# Set up automatic tracing to LangSmith for your non-LangGraph agent.
+configure_otel(project_name="my-a2a-project")
+tracer = trace.get_tracer(__name__)
+
+app = FastAPI()
+
+@app.middleware("http")
+async def set_thread_id_middleware(request: Request, call_next):
+    thread_id = None
+    if request.method == "POST":
+        body_bytes = await request.body()
+        if body_bytes:
+            # --- 2. Extract thread_id from incoming A2A metadata ---
+            try:
+                body = json.loads(body_bytes)
+                thread_id = body.get("metadata", {}).get("thread_id")
+            except Exception:
+                pass
+            # Re-inject the body so downstream handlers can still read it
+            async def receive():
+                return {"type": "http.request", "body": body_bytes}
+            request._receive = receive
+
+    # --- 3. Attach thread_id to the trace ---
+    # langsmith.metadata.thread_id groups this trace with others in the same thread.
+    with tracer.start_as_current_span("agent") as span:
+        if thread_id:
+            span.set_attribute("langsmith.metadata.thread_id", thread_id)
+        return await call_next(request)
+```
+
+Register your agent routes on `app` after this middleware.
+
+<Note>
+Set `LANGSMITH_API_KEY` and optionally `LANGSMITH_PROJECT` in your environment to enable tracing. All agents in the conversation should use the same project so their traces are visible together.
+</Note>
+
+### View traces in LangSmith
+
+After running a multi-agent conversation, open the [LangSmith UI](https://smith.langchain.com) and navigate to **Threads**. All turns from all participating agents will appear under a single thread, identified by the shared `thread_id`.
 
 ## Disable A2A
 

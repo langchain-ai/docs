@@ -1,0 +1,230 @@
+---
+title: Event Streaming
+description: Stream real-time updates from LangChain agent runs with typed projections.
+---
+
+LangChain agents are built on LangGraph, so they support the same Event Streaming model with agent-focused projections for messages, tool calls, state, and custom updates.
+
+For most application and frontend use cases, use Event Streaming through `stream_events(..., version="v3")`. Event Streaming returns a run object with typed projections, so you can choose the view you need instead of parsing stream-mode tuples.
+
+<Tip>
+Check out the [streaming cookbook](https://github.com/langchain-ai/streaming-cookbook) for runnable examples and links to detailed reference documentation.
+</Tip>
+
+<Note>
+Interested in streaming Pregel modes such as `updates`, `messages`, or `custom` directly? See the [Streaming page](/oss/langchain/streaming).
+</Note>
+
+:::python
+```python
+from langchain.agents import create_agent
+
+
+def get_weather(city: str) -> str:
+    """Get weather for a city."""
+    return f"It's always sunny in {city}!"
+
+
+agent = create_agent(
+    model="gpt-5-nano",
+    tools=[get_weather],
+)
+
+run = agent.stream_events(
+    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+    version="v3",
+)
+
+for message in run.messages:
+    for delta in message.text:
+        print(delta, end="", flush=True)
+
+final_state = run.output
+```
+:::
+
+:::js
+```typescript
+import { createAgent, tool } from "langchain";
+import * as z from "zod";
+
+const getWeather = tool(
+  async ({ city }) => `It's always sunny in ${city}!`,
+  {
+    name: "get_weather",
+    description: "Get weather for a city.",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+const agent = createAgent({
+  model: "gpt-5-nano",
+  tools: [getWeather],
+});
+
+const run = await agent.streamEvents(
+  { messages: [{ role: "user", content: "What is the weather in SF?" }] },
+  { version: "v3" }
+);
+
+for await (const message of run.messages) {
+  for await (const delta of message.text) {
+    process.stdout.write(delta);
+  }
+}
+
+const finalState = await run.output;
+```
+:::
+
+## What you can stream
+
+| Projection | Use |
+| ---------- | --- |
+| `for event in run` | Raw protocol events when you need exact arrival order. |
+| `run.messages` | Model message streams, one per LLM call. |
+| `message.text` | Text deltas and final text for a message. |
+| `message.reasoning` | Reasoning deltas for models that expose reasoning content. |
+| `message.tool_calls` | Tool-call argument chunks and finalized tool calls. |
+| `message.output` | Final message object after the model call completes. |
+| `message.usage` | Token usage metadata when the provider returns it. |
+| `run.values` | Agent state snapshots. |
+| `run.output` | Final agent state. |
+| `run.extensions` | Custom transformer projections. |
+:::python
+| `run.tool_calls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
+:::
+:::js
+| `run.toolCalls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
+:::
+
+:::python
+`run.messages` yields `ChatModelStream` objects. Each message stream exposes `.text`, `.reasoning`, `.tool_calls`, and `.output`. Sync projections are iterable for live deltas and drainable for final values.
+:::
+
+:::js
+`run.messages` yields message streams. Each message stream exposes `.text`, `.reasoning`, `.toolCalls`, `.output`, and `.usage`. Async projections can be iterated for live deltas or awaited for final values.
+:::
+
+## Stream agent messages
+
+Use `run.messages` when you want model output from each LLM call.
+
+:::python
+```python
+run = agent.stream_events(input, version="v3")
+
+for message in run.messages:
+    print(f"[{message.node}] ", end="")
+    for delta in message.text:
+        print(delta, end="", flush=True)
+
+    full_message = message.output
+    usage = full_message.usage_metadata
+    if usage:
+        print(usage)
+```
+:::
+
+:::js
+```typescript
+const run = await agent.streamEvents(input, { version: "v3" });
+
+for await (const message of run.messages) {
+  process.stdout.write(`[${message.node}] `);
+  for await (const delta of message.text) {
+    process.stdout.write(delta);
+  }
+
+  const fullMessage = await message.output;
+  console.log(fullMessage.content);
+
+  const usage = await message.usage;
+  if (usage) {
+    console.log(usage);
+  }
+}
+```
+:::
+
+## Stream tool calls
+
+There are two useful tool-call projections:
+
+- `message.tool_calls` streams tool-call argument chunks while the model is producing the tool call.
+- `run.tool_calls` streams the lifecycle of tool execution after the tool call starts.
+
+:::python
+```python
+run = agent.stream_events(input, version="v3")
+
+for message in run.messages:
+    for chunk in message.tool_calls:
+        print(f"tool call chunk: {chunk}")
+
+    finalized = message.tool_calls.get()
+    if finalized:
+        print(f"finalized tool calls: {finalized}")
+
+for call in run.tool_calls:
+    print(f"{call.tool_name}({call.input})")
+    for delta in call.output_deltas:
+        print(delta, end="", flush=True)
+    print(call.output, call.error)
+```
+:::
+
+:::js
+```typescript
+const run = await agent.streamEvents(input, { version: "v3" });
+
+await Promise.all([
+  (async () => {
+    for await (const message of run.messages) {
+      for await (const chunk of message.toolCalls) {
+        console.log("tool call chunk", chunk);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of run.toolCalls) {
+      console.log(call.name, call.input);
+      console.log(await call.output, await call.error);
+    }
+  })(),
+]);
+```
+:::
+
+## Stream state and final output
+
+Use `run.values` for state snapshots and `run.output` for the final agent state.
+
+:::python
+```python
+run = agent.stream_events(input, version="v3")
+
+for snapshot in run.values:
+    print(snapshot)
+
+final_state = run.output
+```
+:::
+
+:::js
+```typescript
+const run = await agent.streamEvents(input, { version: "v3" });
+
+for await (const snapshot of run.values) {
+  console.log(snapshot);
+}
+
+const finalState = await run.output;
+```
+:::
+
+## Related
+
+- [Streaming cookbook](https://github.com/langchain-ai/streaming-cookbook) shows runnable Event Streaming examples.
+- [LangChain Streaming](/oss/langchain/streaming) covers lower-level Pregel stream modes.
+- [LangGraph Event Streaming](/oss/langgraph/streaming/event-streaming) explains the underlying graph streaming model.
