@@ -56,7 +56,9 @@ class TestAddUtmToCTALinks:
         assert "utm_source=docs" in result
 
     def test_agents_gets_utm(self) -> None:
-        result = add_utm_to_cta_links("[Fleet](https://smith.langchain.com/agents)\n", self.fp)
+        result = add_utm_to_cta_links(
+            "[Fleet](https://smith.langchain.com/agents)\n", self.fp
+        )
         assert "utm_source=docs" in result
 
     def test_existing_query_preserved(self) -> None:

@@ -45,7 +45,9 @@ def _add_utm(url: str, utm_content: str) -> str:
     """Append UTM query parameters, preserving existing params."""
     parsed = urlparse(url)
     sep = "&" if parsed.query else ""
-    new_query = parsed.query + sep + urlencode({**_UTM_BASE, "utm_content": utm_content})
+    new_query = (
+        parsed.query + sep + urlencode({**_UTM_BASE, "utm_content": utm_content})
+    )
     return urlunparse(parsed._replace(query=new_query))
 
 
