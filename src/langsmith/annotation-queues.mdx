@@ -174,6 +174,69 @@ Reservations, reviewer thresholds, and comments behave identically to those in s
 Consider routing runs that already have user feedback (e.g., thumbs-down) into a single-run queue for triage and a pairwise queue for head-to-head comparisons against a stronger baseline. This helps you identify regressions quickly. To learn more about how to capture user feedback from your LLM application, follow the guide on [attaching user feedback](/langsmith/attach-user-feedback).
 </Check>
 
+## Author assertions while reviewing
+
+When you're reviewing a run in a single-run queue, you can also use the queue to author **assertions** — short, free-form claims that describe what a correct response must (or must not) satisfy. Assertions are saved as part of a [dataset example](/langsmith/example-data-format), and you can then use any [offline evaluator](/langsmith/evaluation-concepts#offline-evaluation) to check whether new outputs from your application satisfy each one.
+
+Use assertions when:
+
+- The run's actual output is wrong, and you'd rather describe the *constraints on the right answer* than craft a corrected output by hand.
+- You want to capture acceptance criteria a reviewer can write in plain English while looking at the run, without leaving the review flow.
+
+<Note>
+Assertions are available on single-run queues. Pairwise queues are unchanged.
+</Note>
+
+### Add assertions
+
+1. Open a single-run queue and select a run.
+1. In the side panel, find the **Assertions** section below **Feedback**.
+1. Click **+ Add** to create an assertion row.
+1. Enter a **key** that summarizes the claim (for example, `must_cite_source`, `must_not_invent_url`) and a one-sentence **comment** describing the claim.
+
+    The key is free-form — pick whatever names are easiest for your reviewers and evaluators to read. The `must_` / `must_not_` prefixes are a convention, not a parsed format.
+
+1. Repeat for each criterion you want to capture.
+
+    {/* TODO(screenshot): Annotation queue side panel showing the Feedback section above and the Assertions section below, with two example assertion rows filled in (e.g. `must_cite_source` and `must_not_invent_url`). The "+ Add" button should be visible at the top of the Assertions section. */}
+    ![Annotation queue side panel with Feedback and Assertions sections, two assertion rows filled in.](/langsmith/images/annotation-queue-assertions-side-panel.png)
+
+As soon as you add at least one assertion, the **Outputs** panel switches to a read-only preview of the assertions you've staged. This preview is what gets saved to the dataset — the run's actual output is intentionally not included, since assertions describe *constraints on the correct answer* rather than augment the run's (often wrong) output.
+
+{/* TODO(screenshot): Run editor's Outputs panel rendered as readonly assertion blocks. Each block shows the assertion key as a badge in the header and the comment as the body. The section title should read "Reference outputs" rather than "Outputs". */}
+![Run editor Outputs panel showing readonly assertion preview blocks.](/langsmith/images/annotation-queue-assertions-output-preview.png)
+
+You can keep editing the run's **Inputs** at any time — for example, to refine the prompt before saving the example. The Outputs panel stays locked to the assertion preview as long as you have at least one assertion staged.
+
+### Save the example
+
+Click **Add to Dataset & Next** in the side panel footer (keyboard shortcut: <kbd>⌘ Enter</kbd> on macOS or <kbd>Ctrl Enter</kbd> elsewhere). The current run is added to the queue's [default dataset](#basic-details) (or, if no default is configured, you'll be prompted to pick one). You're then advanced to the next run in the queue.
+
+The saved example's `outputs` field has this shape:
+
+```json
+{
+  "assertions": [
+    {
+      "key": "must_cite_source",
+      "comment": "The response cites the source URL it's drawing from."
+    },
+    {
+      "key": "must_not_invent_url",
+      "comment": "The response does not include URLs that don't appear in the inputs."
+    }
+  ]
+}
+```
+
+The example's `inputs` field carries the run's inputs (or your edited version, if you changed them in the editor).
+
+{/* TODO(screenshot, optional): Dataset example detail view showing the saved example, with the outputs JSON expanded to display the assertions array. Could also be a smaller inline image showing just the JSON. Skippable if PM thinks the JSON block above is enough. */}
+
+### Evaluate against assertions
+
+Assertions are a structured payload in the example's outputs — they don't prescribe how you score them. Any [offline evaluator](/langsmith/evaluation-concepts#offline-evaluation) you write can read `example.outputs["assertions"]` and decide how to grade your application's output against each claim. The most common pattern is an [LLM-as-a-judge evaluator](/langsmith/llm-as-judge) that prompts a model to mark each assertion as satisfied or not, but you're free to combine that with code-based checks, partial-credit scoring, or any other approach.
+
 ## Video guide
 
 <iframe
