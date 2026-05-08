@@ -731,11 +731,43 @@ await main.invoke({ any_input: "foobar" }, config);
 :::
 
 :::python
-`@task` also supports `timeout=` for capping how long an attempt may run. See [Fault tolerance](/oss/langgraph/fault-tolerance#functional-api) for `TimeoutPolicy` usage with `@task` and `@entrypoint`.
 
-<Note>
-`@task` and `@entrypoint` timeout support requires `langgraph>=1.2`, currently in alpha.
-</Note>
+## Set task and entrypoint timeouts
+
+Use the `timeout` parameter with `@task` or `@entrypoint` to limit how long a single async attempt can run. Provide the timeout in seconds or as a `datetime.timedelta`.
+
+```python
+import asyncio
+
+from langgraph.errors import NodeTimeoutError
+from langgraph.func import entrypoint, task
+from langgraph.types import RetryPolicy
+
+
+@task(
+    timeout=1.0,
+    retry_policy=RetryPolicy(retry_on=NodeTimeoutError),
+)
+async def call_api(url: str) -> str:
+    await asyncio.sleep(2)
+    return f"result from {url}"
+
+
+@entrypoint(timeout=5.0)
+async def workflow(inputs: dict) -> str:
+    return await call_api(inputs["url"])
+
+
+try:
+    await workflow.ainvoke({"url": "https://example.com"})
+except NodeTimeoutError:
+    print("Task timed out")
+```
+
+Timeouts are supported only for async tasks and entrypoints. If you set `timeout` on a sync function, LangGraph raises an error when the task or entrypoint is declared.
+
+When a task or entrypoint exceeds its timeout, LangGraph raises `NodeTimeoutError`, which subclasses Python's built-in `TimeoutError`. If a retry policy retries `TimeoutError` or `NodeTimeoutError`, the timed-out attempt is retried. The timeout applies to each attempt independently, so the timer resets for every retry.
+
 :::
 
 ## Caching tasks
