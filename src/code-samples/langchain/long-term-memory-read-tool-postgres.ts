@@ -5,7 +5,7 @@ import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
 
 const DB_URI =
   process.env.POSTGRES_URI ??
-  "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+  "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
 const store = PostgresStore.fromConnString(DB_URI);
 // :remove-start:
 // Drop old store tables if they exist (prior version used different schema).
@@ -56,7 +56,7 @@ await agent.invoke(
 async function main() {
   const DB_URI =
     process.env.POSTGRES_URI ||
-    "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+    "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
   const store = PostgresStore.fromConnString(DB_URI);
 
   try {
