@@ -589,6 +589,90 @@ if __name__ == "__main__":
 Here is an [example](https://smith.langchain.com/public/9574f70a-b893-49fe-8c62-691bd114bf14/r) of what the resulting trace looks like in LangSmith.
 
 
+## Configure for the Messages view
+
+If you're sending traces to LangSmith via OpenTelemetry, configure your spans so the [Messages view](/langsmith/view-traces#messages-view) can render your traces correctly. Two things are required:
+
+- Set `ls_message_format` in span metadata so LangSmith knows how to parse the message format.
+- Structure tool spans so LangSmith can associate them with the LLM call that triggered them.
+
+### Inputs and outputs
+
+Span attribute conventions differ by span type:
+
+- **Chain spans:** use `gen_ai.prompt` for inputs and `gen_ai.completion` for outputs.
+- **Tool spans:** use `gen_ai.tool.call.arguments` for inputs and `gen_ai.tool.call.result` for outputs.
+- **LLM spans:** captured automatically by your instrumentation library (for example, `traceanthropic`); no manual attribute setting is needed.
+
+### Tool call association
+
+LangSmith uses one of two strategies to associate tool runs with the LLM call that triggered them.
+
+- **Tool call ID matching** is the default for OpenAI APIs. The LLM run's output must contain `tool_calls` entries with IDs, and each corresponding tool run's output must reference the matching tool call ID. This happens automatically when you log the raw OpenAI API response as the LLM run output.
+- **Adjacency matching by tool name** is the default for Anthropic. LangSmith matches tool runs to the preceding LLM run by name and position in the trace. The only requirement is that tool spans are flushed after the LLM span ends.
+
+### Example: Go SDK with Anthropic
+
+The following example uses the LangSmith Go SDK's OTel tracer with `traceanthropic` auto-instrumentation, which automatically captures each `messages.New` call as an LLM span. Tool spans are created manually after the LLM call, satisfying the adjacency requirement.
+
+**Root span:**
+
+```go
+ctx, rootSpan := tracer.Start(ctx, "turn_1",
+    trace.WithNewRoot(),
+    trace.WithAttributes(
+        attribute.String("langsmith.span.kind", "chain"),
+        attribute.String("langsmith.metadata.ls_message_format", "anthropic"),
+        attribute.String("langsmith.metadata.session_id", threadID),
+        attribute.String("session_id", threadID),
+        attribute.String("session.id", threadID),
+        attribute.String("gen_ai.prompt", userMsg),
+    ),
+)
+defer rootSpan.End()
+```
+
+`langsmith.span.kind = "chain"` marks this as an agent run, which becomes the outer container in the Messages view that groups all messages for the turn. `ls_message_format = "anthropic"` is required. Without it, LangSmith won't parse the Anthropic message format and the Messages view won't render. The three session ID attributes link turns together as a single conversation thread.
+
+**Tool-use loop:** tool spans are created after `messages.New` returns:
+
+```go
+for {
+    // LLM span created automatically by the traceanthropic-wrapped client
+    message, err := client.Messages.New(ctx, anthropic.MessageNewParams{...})
+    if err != nil { return err }
+
+    toolResults := runToolCalls(ctx, tracer, message)
+    if len(toolResults) == 0 {
+        break
+    }
+    messages = append(messages, anthropic.NewUserMessage(toolResults...))
+}
+```
+
+Because `runToolCalls` runs after `messages.New` returns, tool spans are created after the LLM span ends. This is what enables adjacency matching: LangSmith sees the tool spans following the LLM span in the trace timeline and nests them under the assistant message that triggered them in the Messages view.
+
+**Tool span:**
+
+```go
+_, toolSpan := tracer.Start(ctx, toolUse.Name,
+    trace.WithAttributes(
+        attribute.String("langsmith.span.kind", "tool"),
+        attribute.String("langsmith.metadata.ls_message_format", "anthropic"),
+        attribute.String("gen_ai.operation.name", "tool"),
+        attribute.String("tool.name", toolUse.Name),
+        attribute.String("gen_ai.tool.call.arguments", inputRaw),
+    ),
+)
+// execute the tool...
+toolSpan.SetAttributes(attribute.String("gen_ai.tool.call.result", string(resultJSON)))
+toolSpan.End()
+```
+
+The span name (`toolUse.Name`) appears as the tool name in the tool call card in the Messages view. `gen_ai.tool.call.result` populates the result shown in the card. Call `toolSpan.End()` explicitly rather than deferring it so each tool span closes before the next LLM call begins, keeping the trace timeline correct for adjacency matching.
+
+For a complete working example, see the [langsmith-go-messages-view-demo](https://github.com/langchain-ai/langsmith-go-messages-view-demo) repository.
+
 ## Advanced configuration
 
 ### Use OpenTelemetry collector for fan-out
