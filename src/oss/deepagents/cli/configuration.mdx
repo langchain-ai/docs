@@ -13,6 +13,54 @@ The CLI stores its configuration in the `~/.deepagents/` directory. The main con
 | `hooks.json` | JSON | External tool subscriptions to CLI lifecycle events |
 | `.mcp.json` | JSON | Global MCP server definitions |
 
+<Note>
+    Files under `~/.deepagents/.state/` hold per-machine CLI state and are managed automatically by the CLI. The `.state/` directory was introduced in `deepagents-cli>=0.0.49`.
+</Note>
+
+## Provider credentials
+
+For every provider, the CLI checks two credential sources in order:
+
+1. **Stored keys** — entered via `/auth` and persisted locally.
+2. **Environment variables** — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc., plus the same names with a [`DEEPAGENTS_CLI_`](#deepagents_cli_-prefix) prefix and any keys loaded from [`.env` files](#environment-variables).
+
+A stored key always wins over an env-var key for the same provider.
+
+### Use `/auth` (recommended)
+
+Open the credential manager from any session:
+
+```txt
+/auth
+```
+
+The manager lists every provider the CLI knows about, marks the ones that already have a key, and lets you paste, rotate, or clear credentials inline. Each provider renders as one of:
+
+| Label | Meaning |
+|-------|---------|
+| `✓ credentials set` | A stored or env-var key is available |
+| `! missing OPENAI_API_KEY` | The named env var is unset and no key is stored — pick the row to paste one |
+| `local provider` | No credentials needed (e.g., local Ollama) |
+| `implicit auth` | Credentials are implicit (e.g., Vertex AI Application Default Credentials) |
+| `custom auth` | A `class_path` provider managing its own auth (mTLS, JWT, custom headers) |
+
+Press Enter on a row to paste a key, or use the row's delete affordance to clear an existing one. Saved keys are written atomically and persist across sessions and `/reload`.
+
+<Note>
+    Keys are scoped to your user account on this machine — the CLI never transmits them anywhere except to the configured provider's API.
+</Note>
+
+### Environment variables (CI and headless)
+
+For non-interactive runs, CI/CD pipelines, or anywhere a TUI isn't available, export the provider's env var or write it to `~/.deepagents/.env`:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENAI_API_KEY="sk-..."
+```
+
+See [Environment variables](#environment-variables) below for loading order, the `DEEPAGENTS_CLI_` prefix, and per-project overrides.
+
 ## Environment variables
 
 The CLI loads environment variables from dotenv files so you don't need to `export` API keys in your shell profile or duplicate `.env` files across projects.
@@ -75,14 +123,17 @@ recent = "google_genai:gemini-3.1-pro-preview"   # last /model switch (written a
 
 `[models].default` always takes priority over `[models].recent`. The `/model` command only writes to `[models].recent`, so your configured default is never overwritten by mid-session switches. To remove the default, use `/model --default --clear` or delete the `default` key from the config file.
 
-### Recent agent
+### Default and recent agent
 
 ```toml
 [agents]
-recent = "backend-dev"   # last /agents switch (written automatically)
+default = "backend-dev"  # your intentional long-term preference (Ctrl+S in /agents picker)
+recent = "frontend-dev"  # last /agents switch (written automatically)
 ```
 
-Selecting an agent via the `/agents` slash command writes the name to `[agents].recent`. The next bare `deepagents` launch resumes that agent automatically. Explicit `-a`/`--agent` always overrides, and `-r`/`--resume` bypasses the recent entry so the thread's original agent is restored. See [Switch agents](/oss/deepagents/cli/overview#switch-agents) for the full precedence chain.
+`[agents].default` always takes priority over `[agents].recent`. Selecting an agent in the `/agents` picker with `Enter` writes to `recent`; pressing `Ctrl+S` on the highlighted row pins it as `default`. Pressing `Ctrl+S` again on the same row clears the default.
+
+Explicit `-a`/`--agent` always overrides both, and `-r`/`--resume` bypasses both so the thread's original agent is restored. See [Switch agents](/oss/deepagents/cli/overview#switch-agents) for the full precedence chain.
 
 ### Provider configuration
 
@@ -174,23 +225,9 @@ With this configuration:
 
 The merge is shallow: any key present in the model sub-table replaces the same key from the provider-level params, while keys only at the provider level are preserved.
 
-#### CLI overrides with `--model-params`
-
-For one-off adjustments without editing the config file, pass a JSON object via `--model-params` at launch or mid-session with the `/model` command:
-
-```bash
-deepagents --model ollama:llama3 --model-params '{"temperature": 0.9, "num_ctx": 16384}'
-
-# In non-interactive mode
-deepagents -n "Summarize this repo" --model ollama:llama3 --model-params '{"temperature": 0}'
-```
-
-```txt title="Inside the TUI"
-/model --model-params '{"temperature": 0.9}' ollama:llama3
-/model --model-params '{"num_ctx": 16384}'  # opens selector, applies params to chosen model
-```
-
-These take the highest priority, overriding values from config file params. Mid-session params are applied for the current session only and are not persisted. `--model-params` cannot be combined with `--default`.
+<Tip>
+    For one-off adjustments without editing `config.toml`, pass a JSON object via `--model-params` at launch or mid-session with `/model`. CLI flags take highest priority over the config file. See [Model parameters](/oss/deepagents/cli/providers#model-parameters) on the providers page for syntax and provider-specific examples.
+</Tip>
 
 ### Profile overrides (Advanced)
 
@@ -473,7 +510,7 @@ All CLI-specific environment variables use the `DEEPAGENTS_CLI_` prefix. See [`D
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CLI_DEBUG" type="string" post={["optional"]}>
-    Enable verbose debug logging to a file.
+    Enable verbose debug logging to a file. Accepts `1`, `true`, `yes`, `on` (case-insensitive) as enabled; `0`, `false`, `no`, `off`, empty string, or unset disables it. When enabled, the per-session server log file is preserved on shutdown and its path is printed to stderr for triage.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CLI_DEBUG_FILE" type="string" default="/tmp/deepagents_debug.log" post={["optional"]}>
