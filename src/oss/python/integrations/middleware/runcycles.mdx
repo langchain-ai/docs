@@ -3,7 +3,7 @@ title: "Cycles middleware integration"
 description: "Integrate with the Cycles middleware using LangChain Python."
 ---
 
-This guide provides a quick overview for getting started with the [Cycles](https://runcycles.io) middleware. The `langchain-runcycles` package exposes two [agent middleware](/oss/langchain/middleware/overview/) classes that gate agent behavior at runtime against an external policy and budget service. For a detailed listing of all features, parameters, and configurations, head to the [Cycles API reference](https://github.com/runcycles/langchain-runcycles).
+This guide provides a quick overview for getting started with the [Cycles](https://runcycles.io) middleware. The `langchain-runcycles` package exposes three [agent middleware](/oss/langchain/middleware/overview/) classes that put pre-execution budget authority in front of model calls, tool calls, and runaway agent loops. For a detailed listing of all features, parameters, and configurations, head to the [Cycles API reference](https://github.com/runcycles/langchain-runcycles).
 
 ## Overview
 
@@ -11,6 +11,7 @@ This guide provides a quick overview for getting started with the [Cycles](https
 
 | Class | Package | Serializable | [JS support](https://reference.langchain.com/javascript/langchain-community) | Downloads | Version |
 | :--- | :--- | :---: | :---: | :---: | :---: |
+| [`CyclesModelGate`](https://github.com/runcycles/langchain-runcycles/blob/main/langchain_runcycles/model_gate.py) | [`langchain-runcycles`](https://pypi.org/project/langchain-runcycles/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-runcycles?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-runcycles?style=flat-square&label=%20) |
 | [`CyclesToolGate`](https://github.com/runcycles/langchain-runcycles/blob/main/langchain_runcycles/tool_gate.py) | [`langchain-runcycles`](https://pypi.org/project/langchain-runcycles/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-runcycles?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-runcycles?style=flat-square&label=%20) |
 | [`CyclesFanOutGate`](https://github.com/runcycles/langchain-runcycles/blob/main/langchain_runcycles/fanout.py) | [`langchain-runcycles`](https://pypi.org/project/langchain-runcycles/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-runcycles?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-runcycles?style=flat-square&label=%20) |
 
@@ -154,7 +155,7 @@ model_gate = CyclesModelGate(
 
 The full LangChain agent governance triad (fan-out caps, model-spend reservation, and tool-call authorization) uses one `middleware=[...]` list:
 
-```python All three gates icon="layer-group"
+```python All three gates icon="layers-linked"
 from langchain.agents import create_agent
 from langchain_runcycles import CyclesFanOutGate, CyclesModelGate, CyclesToolGate
 from runcycles import Action, Amount, Subject, Unit
@@ -297,6 +298,10 @@ In `"reserve"` and `"decide+reserve"` modes, the middleware reserves the configu
 
 ### Settlement-failure policy
 
+<Note>
+    Available in `langchain-runcycles` 0.1.2+.
+</Note>
+
 If `commit_reservation` itself fails after a successful tool run, the tool's side effect already happened. `settlement_error_policy` on `CyclesToolGate` controls what happens next:
 
 | Policy | Behavior | When to choose |
@@ -304,7 +309,7 @@ If `commit_reservation` itself fails after a successful tool run, the tool's sid
 | `"raise"` (default) | Propagate the commit exception. Tool result is lost; caller reconciles. | Strict governance: no tool-level cost goes unaccounted. |
 | `"log"` | Log a warning, return the tool result. The reservation expires via TTL. | UX continuity matters more than per-call settlement guarantees. |
 
-```python Settlement policy icon="scale-balanced"
+```python Settlement policy icon="scale"
 from langchain_runcycles import CyclesToolGate
 from runcycles import Action, Subject
 
@@ -327,9 +332,13 @@ The release path (on tool-side exception) always logs and continues so the origi
 
 Cycles idempotency keys take the shape `{prefix}-{tool_call_id}` (no random suffix), so a duplicate dispatch (durable workflow replay, middleware retry, process recovery) lands on the *same* reservation rather than creating a second one. If the upstream omits `tool_call_id`, a synthetic `missing-<hex>` id is fabricated and a warning is logged; that fallback path is *not* retry-stable. Conformant LangChain runtimes always supply `id`.
 
+<Note>
+    `idempotency_namespace` is available in `langchain-runcycles` 0.1.3+. The callable form's `None`-return per-call opt-out is fully type-correct in 0.1.4+.
+</Note>
+
 **Namespace scoping (v0.1.3+):** if your runtime reuses short tool-call ids across runs (`tc_1`, `tc_2`, ...), set `idempotency_namespace` on `CyclesToolGate` / `CyclesFanOutGate` to scope keys by run, workflow, or tenant. Keys then become `{prefix}-{namespace}-{tool_call_id}`. Accepts a static string or a callable receiving the request (tool gate) or state (fan-out gate). A callable returning `None` opts out of namespacing for that call, falling back to the v0.1.2 shape: useful when some calls should be globally scoped while others get run-scoped namespacing. Errors raised by the callable propagate to the agent (fail-fast on misconfiguration).
 
-```python Idempotency namespace icon="layer-group"
+```python Idempotency namespace icon="layers-linked"
 from langchain_runcycles import CyclesToolGate
 from runcycles import Action, Subject
 
@@ -354,9 +363,11 @@ gate = CyclesToolGate(
 )
 ```
 
-### v0.1.x scope
+### v0.1.x scope: architecture-complete, production polish in v0.2.0
 
-Implemented: `wrap_tool_call` (tool-call gating, `CyclesToolGate`) and `before_model` (fan-out caps, `CyclesFanOutGate`). `wrap_model_call` (LLM-spend reservation, planned as `CyclesModelGate`) is on the roadmap for v0.2; until then, use `runcycles.stream_reservation` directly inside an LLM-spend handler for token-level streaming budget tracking.
+Implemented (v0.1.5+): `wrap_model_call` (`CyclesModelGate`), `wrap_tool_call` (`CyclesToolGate`), and `before_model` (`CyclesFanOutGate`). All three middleware classes ship at architecture parity with the same three modes, settlement-failure policy, and idempotency-namespace plumbing.
+
+Deferred to v0.2.0: provider-specific token-cost extractors (OpenAI / Anthropic response metadata parsing), streaming-aware settlement, and a polished demo agent. Until then, `CyclesModelGate` commits at the configured `estimate`; for precise per-call token cost capture today, use the `BaseCallbackHandler` callback handler from `cycles-client-python` alongside this middleware (the two compose cleanly).
 
 ---
 
