@@ -255,9 +255,35 @@ gate = CyclesToolGate(
 
 The release path (on tool-side exception) always logs and continues so the original tool exception wins; `settlement_error_policy` applies only to the success-path commit.
 
-### Idempotency keys are deterministic per `tool_call_id`
+### Idempotency keys: deterministic per `tool_call_id`, optionally namespaced
 
 Cycles idempotency keys take the shape `{prefix}-{tool_call_id}` (no random suffix), so a duplicate dispatch (durable workflow replay, middleware retry, process recovery) lands on the *same* reservation rather than creating a second one. If the upstream omits `tool_call_id`, a synthetic `missing-<hex>` id is fabricated and a warning is logged; that fallback path is *not* retry-stable. Conformant LangChain runtimes always supply `id`.
+
+**Namespace scoping (v0.1.3+):** if your runtime reuses short tool-call ids across runs (`tc_1`, `tc_2`, ...), set `idempotency_namespace` on `CyclesToolGate` / `CyclesFanOutGate` to scope keys by run, workflow, or tenant. Keys then become `{prefix}-{namespace}-{tool_call_id}`. Accepts a static string or a callable receiving the request (tool gate) or state (fan-out gate). A callable returning `None` opts out of namespacing for that call, falling back to the v0.1.2 shape: useful when some calls should be globally scoped while others get run-scoped namespacing. Errors raised by the callable propagate to the agent (fail-fast on misconfiguration).
+
+```python Idempotency namespace icon="layer-group"
+from langchain_runcycles import CyclesToolGate
+from runcycles import Action, Subject
+
+# Static: same namespace every call
+gate = CyclesToolGate(
+    client,
+    subject=Subject(tenant="acme"),
+    action=Action(kind="tool.call", name="send_email"),
+    idempotency_namespace="run_2026_05_10_abc",
+)
+
+# Callable: extract per call from your runtime's run-id source
+def my_run_id(_request):
+    return current_run_id()  # whatever your runtime exposes
+
+gate = CyclesToolGate(
+    client,
+    subject=Subject(tenant="acme"),
+    action=Action(kind="tool.call", name="send_email"),
+    idempotency_namespace=my_run_id,
+)
+```
 
 ### v0.1.x scope
 
