@@ -1,0 +1,207 @@
+---
+title: "Runcycles middleware integration"
+description: "Integrate with the Runcycles middleware using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the [Runcycles](https://runcycles.io) middleware. The `langchain-runcycles` package exposes two [agent middleware](/oss/langchain/middleware/overview/) classes that gate agent behavior at runtime against an external policy and budget service. For a detailed listing of all features, parameters, and configurations, head to the [Runcycles API reference](https://github.com/runcycles/langchain-runcycles).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | [JS support](https://reference.langchain.com/javascript/langchain-community) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [`CyclesToolGate`](https://github.com/runcycles/langchain-runcycles/blob/main/langchain_runcycles/tool_gate.py) | [`langchain-runcycles`](https://pypi.org/project/langchain-runcycles/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-runcycles?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-runcycles?style=flat-square&label=%20) |
+| [`CyclesFanOutGate`](https://github.com/runcycles/langchain-runcycles/blob/main/langchain_runcycles/fanout.py) | [`langchain-runcycles`](https://pypi.org/project/langchain-runcycles/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-runcycles?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-runcycles?style=flat-square&label=%20) |
+
+### Features
+
+- <Icon icon="shield-lock" size={16}/> Pre-tool-call authorization via `wrap_tool_call` — denied calls return a `ToolMessage` so the model can recover gracefully.
+- <Icon icon="wallet" size={16}/> Per-tenant budget enforcement — reserve before tool use, commit on success, release on exception.
+- <Icon icon="repeat" size={16}/> Fan-out caps via `before_model` with `jump_to: "end"` — stop runaway agents before another model turn.
+- <Icon icon="bolt" size={16}/> Sync and async support — pair with `agent.invoke()` or `agent.ainvoke()`.
+
+---
+
+## Setup
+
+To use the Runcycles middleware, you'll need a [Runcycles](https://runcycles.io) account, an API key for the Cycles service, and the `langchain-runcycles` integration package.
+
+### Credentials
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "CYCLES_API_KEY" not in os.environ:
+    os.environ["CYCLES_API_KEY"] = getpass.getpass("Enter your Cycles API key: ")
+if "CYCLES_BASE_URL" not in os.environ:
+    os.environ["CYCLES_BASE_URL"] = "http://localhost:7878"
+```
+
+It's also helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The Runcycles middleware lives in the `langchain-runcycles` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-runcycles
+    ```
+    ```python uv
+    uv add langchain-runcycles
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Both middleware classes wrap a `runcycles.CyclesClient` (or `AsyncCyclesClient` for async agents). Configure subject and action — these tell Cycles *who* is acting and *what* they're doing.
+
+```python Initialize middleware icon="arrows-shuffle"
+import os
+from langchain_runcycles import CyclesFanOutGate, CyclesToolGate
+from runcycles import Action, CyclesClient, CyclesConfig, Subject
+
+client = CyclesClient(
+    CyclesConfig(
+        base_url=os.environ["CYCLES_BASE_URL"],
+        api_key=os.environ["CYCLES_API_KEY"],
+    )
+)
+
+tool_gate = CyclesToolGate(
+    client,
+    subject=Subject(tenant="acme", agent="researcher"),
+    action={"send_email": Action(kind="tool.call", name="send_email")},
+    mode="decide",  # or "reserve", or "decide+reserve"
+)
+
+fanout_gate = CyclesFanOutGate(
+    max_turns=20,
+    client=client,
+    subject=Subject(tenant="acme"),
+    action=Action(kind="model.turn", name="research"),
+)
+```
+
+---
+
+## Use with an agent
+
+Pass middleware to @[`create_agent`] in order. Combine the Runcycles middleware with built-in middleware like `HumanInTheLoopMiddleware` for production-grade agent governance.
+
+```python Agent with middleware icon="robot"
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+
+@tool
+def send_email(to: str, body: str) -> str:
+    """Send an email to a recipient."""
+    return f"Sent to {to}"
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[send_email],
+    middleware=[fanout_gate, tool_gate],
+)
+
+agent.invoke({"messages": [{"role": "user", "content": "Email alice@example.com to confirm."}]})
+```
+
+<Tip>
+    Middleware runs in the [agent loop](/oss/langchain/middleware/overview#the-agent-loop). For custom behavior, see [custom middleware](/oss/langchain/middleware/custom).
+</Tip>
+
+---
+
+## CyclesToolGate — pre-tool-call authorization
+
+`CyclesToolGate` overrides `wrap_tool_call` to gate every tool call. It supports three modes:
+
+| Mode | Behavior |
+| :--- | :--- |
+| `"decide"` | Calls `client.decide()`. Denies the tool call on a non-allow decision. No reservation. |
+| `"reserve"` | Creates a reservation, runs the tool, commits on success, releases on exception. |
+| `"decide+reserve"` | Authorizes via `decide()` first, then reserves and commits. Most strict. |
+
+Denied calls return a `ToolMessage` containing the denial reason — the underlying tool handler is never invoked, but the model sees the denial like any other tool result and can choose another path.
+
+```python CyclesToolGate icon="shield-lock"
+from langchain_runcycles import CyclesToolGate
+from runcycles import Action, Subject
+
+gate = CyclesToolGate(
+    client,
+    subject=Subject(tenant="acme", agent="researcher"),
+    action={
+        "search": Action(kind="tool.call", name="search"),
+        "send_email": Action(kind="tool.call", name="send_email"),
+    },
+    mode="decide+reserve",
+    denial_message="Cycles denied {tool} for tenant: {reason}",
+)
+```
+
+`subject` and `action` accept either static values, a per-tool mapping (dict), or callables that resolve from request and state — useful when the tenant comes from per-call agent state.
+
+---
+
+## CyclesFanOutGate — turn caps and remote policy halts
+
+`CyclesFanOutGate` overrides `before_model` (decorated with `@hook_config(can_jump_to=["end"])`) to halt the agent before another model turn. Two ways to halt:
+
+1. **Local turn cap** — when the number of model turns reaches `max_turns`.
+2. **Remote policy** — when an optional `client.decide()` call returns DENY (e.g. a per-tenant burst budget is exhausted).
+
+```python CyclesFanOutGate icon="repeat"
+from langchain_runcycles import CyclesFanOutGate
+from runcycles import Action, Subject
+
+fanout_gate = CyclesFanOutGate(
+    max_turns=20,
+    client=client,                                              # optional remote check
+    subject=Subject(tenant="acme"),
+    action=Action(kind="model.turn", name="research"),
+    cap_message="Stopped at {turns} of {max_turns} model turns.",
+)
+```
+
+When the gate halts, it returns:
+
+```python
+{"messages": [AIMessage(content="...")], "jump_to": "end"}
+```
+
+…so the LangChain runtime exits the loop cleanly and returns the AIMessage to the user.
+
+---
+
+## Async support
+
+For async agents, pass an `AsyncCyclesClient` and invoke the agent with `.ainvoke()`. The middleware automatically uses the async hooks (`awrap_tool_call`, `abefore_model`).
+
+```python Async usage icon="bolt"
+from runcycles import AsyncCyclesClient
+
+async_client = AsyncCyclesClient(CyclesConfig(...))
+gate = CyclesToolGate(async_client, subject=..., action=..., mode="decide")
+
+agent = create_agent(model="...", tools=[...], middleware=[gate])
+await agent.ainvoke({"messages": [...]})
+```
+
+---
+
+## API reference
+
+For detailed documentation, examples, and the full middleware contract, see the [`langchain-runcycles` repository](https://github.com/runcycles/langchain-runcycles) and the [Cycles SDK reference](https://runcycles.io).
+
+---
