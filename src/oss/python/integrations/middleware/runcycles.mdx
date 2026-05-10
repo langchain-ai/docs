@@ -17,6 +17,7 @@ This guide provides a quick overview for getting started with the [Cycles](https
 
 ### Features
 
+- <Icon icon="cpu" size={16}/> Pre-model-call authorization via `wrap_model_call`: gate every LLM turn before spend, returning an `AIMessage` denial so the agent terminates naturally (v0.1.5+).
 - <Icon icon="shield-lock" size={16}/> Pre-tool-call authorization via `wrap_tool_call`: denied calls return a `ToolMessage` so the model can recover gracefully.
 - <Icon icon="wallet" size={16}/> Per-tenant budget enforcement: reserve before tool use, commit on success, release on exception.
 - <Icon icon="repeat" size={16}/> Fan-out caps via `before_model` with `jump_to: "end"`: stop runaway agents before another model turn.
@@ -64,11 +65,11 @@ The Cycles middleware lives in the `langchain-runcycles` package:
 
 ## Instantiation
 
-Both middleware classes wrap a `runcycles.CyclesClient` (or `AsyncCyclesClient` for async agents). Configure subject and action: these tell Cycles *who* is acting and *what* they're doing.
+All three middleware classes wrap a `runcycles.CyclesClient` (or `AsyncCyclesClient` for async agents). Configure subject and action: these tell Cycles *who* is acting and *what* they're doing.
 
 ```python Initialize middleware icon="arrows-shuffle"
 import os
-from langchain_runcycles import CyclesFanOutGate, CyclesToolGate
+from langchain_runcycles import CyclesFanOutGate, CyclesModelGate, CyclesToolGate
 from runcycles import Action, CyclesClient, CyclesConfig, Subject
 
 client = CyclesClient(
@@ -76,6 +77,13 @@ client = CyclesClient(
         base_url=os.environ["CYCLES_BASE_URL"],
         api_key=os.environ["CYCLES_API_KEY"],
     )
+)
+
+model_gate = CyclesModelGate(
+    client,
+    subject=Subject(tenant="acme", agent="researcher"),
+    action=Action(kind="llm.completion", name="research-turn"),
+    mode="decide",  # or "reserve", or "decide+reserve"
 )
 
 tool_gate = CyclesToolGate(
@@ -255,7 +263,7 @@ When the gate halts, it returns:
 
 ## Async support
 
-For async agents, pass an `AsyncCyclesClient` and invoke the agent with `.ainvoke()`. The middleware automatically uses the async hooks (`awrap_tool_call`, `abefore_model`).
+For async agents, pass an `AsyncCyclesClient` and invoke the agent with `.ainvoke()`. The middleware automatically uses the async hooks — `awrap_model_call` on `CyclesModelGate`, `awrap_tool_call` on `CyclesToolGate`, and `abefore_model` on `CyclesFanOutGate`.
 
 ```python Async usage icon="bolt"
 import os
