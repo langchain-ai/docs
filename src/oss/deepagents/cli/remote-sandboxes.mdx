@@ -1,0 +1,150 @@
+---
+title: Use remote sandboxes
+sidebarTitle: Remote sandboxes
+description: Run Deep Agents CLI tool execution in LangSmith, Daytona, Modal, Runloop, or AgentCore sandboxes. Install provider extras, set credentials, and use flags and setup scripts.
+---
+
+The CLI uses the [sandbox as tool](/oss/deepagents/sandboxes#sandbox-as-tool-pattern) pattern: the CLI process (LLM loop, memory, tool dispatch) runs on your machine, but agent tool calls (`read_file`, `write_file`, `execute`, etc.) target the remote sandbox, not your local filesystem. To get files into the sandbox, use a [setup script](#setup-scripts) or the provider's file transfer APIs (see [Working with files](/oss/deepagents/sandboxes#working-with-files)).
+
+For a deeper look at sandbox architecture, integration patterns, and security best practices, see [Sandboxes](/oss/deepagents/sandboxes).
+
+<Steps>
+    <Step title="Install provider dependency" icon="download">
+        <Tabs>
+            <Tab title="LangSmith">
+                Included by default when installing `deepagents-cli`. No extra installation needed.
+            </Tab>
+            <Tab title="Daytona">
+                ```bash
+                uv tool install deepagents-cli --with langchain-daytona
+                ```
+            </Tab>
+            <Tab title="Modal">
+                ```bash
+                uv tool install deepagents-cli --with langchain-modal
+                ```
+            </Tab>
+            <Tab title="Runloop">
+                ```bash
+                uv tool install deepagents-cli --with langchain-runloop
+                ```
+            </Tab>
+            <Tab title="AgentCore">
+                ```bash
+                uv tool install deepagents-cli --with langchain-agentcore-codeinterpreter
+                ```
+            </Tab>
+        </Tabs>
+    </Step>
+
+    <Step title="Set provider credentials" icon="key">
+        <Tabs>
+            <Tab title="LangSmith">
+                ```bash
+                export LANGSMITH_API_KEY="your-key"
+                ```
+            </Tab>
+            <Tab title="Daytona">
+                ```bash
+                export DAYTONA_API_KEY="your-key"
+                ```
+            </Tab>
+            <Tab title="Modal">
+                ```bash
+                modal setup
+                ```
+            </Tab>
+            <Tab title="Runloop">
+                ```bash
+                export RUNLOOP_API_KEY="your-key"
+                ```
+            </Tab>
+            <Tab title="AgentCore">
+                ```bash
+                export AWS_ACCESS_KEY_ID="your-key"
+                export AWS_SECRET_ACCESS_KEY="your-secret"
+                export AWS_SESSION_TOKEN="session-token"
+                export AWS_REGION="us-west-2"
+                ```
+            </Tab>
+        </Tabs>
+    </Step>
+
+    <Step title="Run the CLI with a sandbox" icon="player-play">
+        <Tabs>
+            <Tab title="LangSmith">
+                ```bash
+                deepagents --sandbox langsmith
+                ```
+            </Tab>
+            <Tab title="Daytona">
+                ```bash
+                deepagents --sandbox daytona
+                ```
+            </Tab>
+            <Tab title="Modal">
+                ```bash
+                deepagents --sandbox modal
+                ```
+            </Tab>
+            <Tab title="Runloop">
+                ```bash
+                deepagents --sandbox runloop
+                ```
+            </Tab>
+            <Tab title="AgentCore">
+                ```bash
+                deepagents --sandbox agentcore
+                ```
+            </Tab>
+        </Tabs>
+    </Step>
+</Steps>
+
+## Sandbox flags and examples
+
+| Flag | Description |
+|------|-------------|
+| `--sandbox TYPE` | Sandbox provider to use: `langsmith`, `agentcore`, `modal`, `daytona`, or `runloop` (default: `none`) |
+| `--sandbox-id ID` | Reuse an existing sandbox by ID instead of creating a new one. Skips creation and cleanup. Refer to your sandbox documentation for more |
+| `--sandbox-setup PATH` | Path to a setup script to run inside the sandbox upon creation |
+
+Examples:
+
+```bash
+# Create a new Daytona sandbox
+deepagents --sandbox daytona
+
+# Reuse an existing sandbox (skips creation and cleanup)
+deepagents --sandbox runloop --sandbox-id dbx_abc123
+
+# Run a setup script after sandbox creation
+deepagents --sandbox modal --sandbox-setup ./setup.sh
+```
+
+## Setup scripts
+
+Use `--sandbox-setup` to run a shell script inside the sandbox after creation. This is useful for cloning repos, installing dependencies, and configuring environment variables.
+
+```bash title="setup.sh"
+#!/bin/bash
+set -e
+
+# Clone repository using GitHub token
+git clone https://x-access-token:${GITHUB_TOKEN}@github.com/username/repo.git $HOME/workspace
+cd $HOME/workspace
+
+# Make environment variables persistent
+cat >> ~/.bashrc <<'EOF'
+export GITHUB_TOKEN="${GITHUB_TOKEN}"
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
+cd $HOME/workspace
+EOF
+source ~/.bashrc
+```
+
+The CLI expands `${VAR}` references in setup scripts using your local environment variables. Store secrets in a local `.env` file for the setup script to access.
+
+<Warning>
+    Sandboxes isolate code execution, but agents remain vulnerable to prompt injection with untrusted inputs. Use human-in-the-loop approval, short-lived secrets, and trusted setup scripts only. See [Security considerations](/oss/deepagents/sandboxes#security-considerations) for details.
+</Warning>
