@@ -1,9 +1,9 @@
 ---
-title: "Runcycles middleware integration"
-description: "Integrate with the Runcycles middleware using LangChain Python."
+title: "Cycles middleware integration"
+description: "Integrate with the Cycles middleware using LangChain Python."
 ---
 
-This guide provides a quick overview for getting started with the [Runcycles](https://runcycles.io) middleware. The `langchain-runcycles` package exposes two [agent middleware](/oss/langchain/middleware/overview/) classes that gate agent behavior at runtime against an external policy and budget service. For a detailed listing of all features, parameters, and configurations, head to the [Runcycles API reference](https://github.com/runcycles/langchain-runcycles).
+This guide provides a quick overview for getting started with the [Cycles](https://runcycles.io) middleware. The `langchain-runcycles` package exposes two [agent middleware](/oss/langchain/middleware/overview/) classes that gate agent behavior at runtime against an external policy and budget service. For a detailed listing of all features, parameters, and configurations, head to the [Cycles API reference](https://github.com/runcycles/langchain-runcycles).
 
 ## Overview
 
@@ -25,7 +25,7 @@ This guide provides a quick overview for getting started with the [Runcycles](ht
 
 ## Setup
 
-To use the Runcycles middleware, you'll need a [Runcycles](https://runcycles.io) account, an API key for the Cycles service, and the `langchain-runcycles` integration package.
+To use the Cycles middleware, you'll need a [Cycles](https://runcycles.io) account, an API key for the Cycles service, and the `langchain-runcycles` integration package.
 
 ### Credentials
 
@@ -48,7 +48,7 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ### Installation
 
-The Runcycles middleware lives in the `langchain-runcycles` package:
+The Cycles middleware lives in the `langchain-runcycles` package:
 
 <CodeGroup>
     ```python pip
@@ -96,7 +96,7 @@ fanout_gate = CyclesFanOutGate(
 
 ## Use with an agent
 
-Pass middleware to @[`create_agent`] in order. Combine the Runcycles middleware with built-in middleware like `HumanInTheLoopMiddleware` for production-grade agent governance.
+Pass middleware to @[`create_agent`] in order. Combine the Cycles middleware with built-in middleware like `HumanInTheLoopMiddleware` for production-grade agent governance.
 
 ```python Agent with middleware icon="robot"
 from langchain.agents import create_agent
@@ -129,8 +129,8 @@ agent.invoke({"messages": [{"role": "user", "content": "Email alice@example.com 
 | Mode | Behavior |
 | :--- | :--- |
 | `"decide"` | Calls `client.decide()`. Denies the tool call on a non-allow decision. No reservation. |
-| `"reserve"` | Creates a reservation, runs the tool, commits on success, releases on exception. |
-| `"decide+reserve"` | Authorizes via `decide()` first, then reserves and commits. Most strict. |
+| `"reserve"` | Creates a reservation, runs the tool, commits on success (at the configured `estimate`), releases on exception. |
+| `"decide+reserve"` | Authorizes via `decide()` first, then reserves and commits at the configured `estimate`. Most strict. |
 
 Denied calls return a `ToolMessage` containing the denial reason: the underlying tool handler is never invoked, but the model sees the denial like any other tool result and can choose another path.
 
@@ -189,14 +189,75 @@ When the gate halts, it returns:
 For async agents, pass an `AsyncCyclesClient` and invoke the agent with `.ainvoke()`. The middleware automatically uses the async hooks (`awrap_tool_call`, `abefore_model`).
 
 ```python Async usage icon="bolt"
-from runcycles import AsyncCyclesClient
+import os
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_runcycles import CyclesToolGate
+from runcycles import Action, AsyncCyclesClient, CyclesConfig, Subject
 
-async_client = AsyncCyclesClient(CyclesConfig(...))
-gate = CyclesToolGate(async_client, subject=..., action=..., mode="decide")
+@tool
+def send_email(to: str, body: str) -> str:
+    """Send an email to a recipient."""
+    return f"Sent to {to}"
 
-agent = create_agent(model="...", tools=[...], middleware=[gate])
-await agent.ainvoke({"messages": [...]})
+async_client = AsyncCyclesClient(
+    CyclesConfig(
+        base_url=os.environ["CYCLES_BASE_URL"],
+        api_key=os.environ["CYCLES_API_KEY"],
+    )
+)
+gate = CyclesToolGate(
+    async_client,
+    subject=Subject(tenant="acme", agent="researcher"),
+    action=Action(kind="tool.call", name="send_email"),
+    mode="decide",
+)
+
+agent = create_agent(model="claude-sonnet-4-6", tools=[send_email], middleware=[gate])
+await agent.ainvoke({"messages": [{"role": "user", "content": "Email alice@example.com."}]})
 ```
+
+---
+
+## Production notes
+
+A few v0.1.x behaviors worth knowing before pointing the middleware at production traffic.
+
+### Reserve mode commits at the configured `estimate`
+
+In `"reserve"` and `"decide+reserve"` modes, the middleware reserves the configured `estimate`, runs the tool, then commits *that same amount* on success — not the tool's actual measured cost. Per-tool actual-cost instrumentation (analogous to `runcycles.stream_reservation`'s `cost_fn`) is on the roadmap. For now: set `estimate` to the worst-case spend per call you're willing to debit, or use `mode="decide"` if you only want policy gating without budget movement.
+
+### Settlement-failure policy
+
+If `commit_reservation` itself fails after a successful tool run, the tool's side effect already happened. `settlement_error_policy` on `CyclesToolGate` controls what happens next:
+
+| Policy | Behavior | When to choose |
+| :--- | :--- | :--- |
+| `"raise"` (default) | Propagate the commit exception. Tool result is lost; caller reconciles. | Strict governance: no tool-level cost goes unaccounted. |
+| `"log"` | Log a warning, return the tool result. The reservation expires via TTL. | UX continuity matters more than per-call settlement guarantees. |
+
+```python Settlement policy icon="scale-balanced"
+from langchain_runcycles import CyclesToolGate
+from runcycles import Action, Subject
+
+gate = CyclesToolGate(
+    client,
+    subject=Subject(tenant="acme"),
+    action=Action(kind="tool.call", name="send_email"),
+    mode="reserve",
+    settlement_error_policy="log",   # opt out of the strict default
+)
+```
+
+The release path (on tool-side exception) always logs and continues so the original tool exception wins; `settlement_error_policy` applies only to the success-path commit.
+
+### Idempotency keys are deterministic per `tool_call_id`
+
+Cycles idempotency keys take the shape `{prefix}-{tool_call_id}` (no random suffix), so a duplicate dispatch — durable workflow replay, middleware retry, process recovery — lands on the *same* reservation rather than creating a second one. If the upstream omits `tool_call_id`, a synthetic `missing-<hex>` id is fabricated and a warning is logged; that fallback path is *not* retry-stable. Conformant LangChain runtimes always supply `id`.
+
+### v0.1.x scope
+
+Implemented: `wrap_tool_call` (tool-call gating, `CyclesToolGate`) and `before_model` (fan-out caps, `CyclesFanOutGate`). `wrap_model_call` (LLM-spend reservation, planned as `CyclesModelGate`) is on the roadmap for v0.2; until then, use `runcycles.stream_reservation` directly inside an LLM-spend handler for token-level streaming budget tracking.
 
 ---
 
