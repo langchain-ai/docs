@@ -122,6 +122,74 @@ agent.invoke({"messages": [{"role": "user", "content": "Email alice@example.com 
 
 ---
 
+## CyclesModelGate: pre-model-call authorization (v0.1.5+)
+
+`CyclesModelGate` overrides `wrap_model_call` to gate every LLM invocation. Same three modes as `CyclesToolGate`. On denial in `decide` mode, returns a `ModelResponse` whose `AIMessage` carries the denial reason: the agent terminates naturally because the `AIMessage` has no `tool_calls`.
+
+| Mode | Behavior |
+| :--- | :--- |
+| `"decide"` | Calls `client.decide()`. Denies the model call on a non-allow decision. No reservation. |
+| `"reserve"` | Creates a reservation, calls the model, commits on success (at the configured `estimate`), releases on exception. |
+| `"decide+reserve"` | Authorizes via `decide()` first, then reserves and commits at the configured `estimate`. Most strict. |
+
+```python CyclesModelGate icon="cpu"
+from langchain_runcycles import CyclesModelGate
+from runcycles import Action, Amount, Subject, Unit
+
+model_gate = CyclesModelGate(
+    client,
+    subject=Subject(tenant="acme", agent="researcher"),
+    action=Action(kind="llm.completion", name="gpt-4o"),
+    mode="reserve",
+    estimate=Amount(unit=Unit.USD_MICROCENTS, amount=2_000_000),  # $0.02 per call
+    denial_message="Cycles denied this model call: {reason}",
+)
+```
+
+<Tip>
+    v0.1.5 commits at the configured `estimate` rather than extracting actual token usage from the provider response. Provider-specific token extractors (OpenAI, Anthropic) and streaming integration land in v0.2.0. For precise per-call token cost capture today, the `BaseCallbackHandler` recipe in `cycles-client-python` works alongside this middleware.
+</Tip>
+
+### Compose all three gates
+
+The full LangChain agent governance triad (fan-out caps, model-spend reservation, and tool-call authorization) uses one `middleware=[...]` list:
+
+```python All three gates icon="layer-group"
+from langchain.agents import create_agent
+from langchain_runcycles import CyclesFanOutGate, CyclesModelGate, CyclesToolGate
+from runcycles import Action, Amount, Subject, Unit
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[search, send_email],
+    middleware=[
+        CyclesFanOutGate(
+            max_turns=20,
+            client=client,
+            subject=Subject(tenant="acme"),
+            action=Action(kind="model.turn", name="research"),
+        ),
+        CyclesModelGate(
+            client,
+            subject=Subject(tenant="acme", agent="researcher"),
+            action=Action(kind="llm.completion", name="claude-sonnet-4-6"),
+            mode="reserve",
+            estimate=Amount(unit=Unit.USD_MICROCENTS, amount=2_000_000),
+        ),
+        CyclesToolGate(
+            client,
+            subject=Subject(tenant="acme", agent="researcher"),
+            action={"send_email": Action(kind="tool.call", name="send_email")},
+            mode="decide+reserve",
+        ),
+    ],
+)
+```
+
+This order (fan-out first, then model, then tool) means runaway loops halt before model spend, and model spend is reserved before tool side effects.
+
+---
+
 ## CyclesToolGate: pre-tool-call authorization
 
 `CyclesToolGate` overrides `wrap_tool_call` to gate every tool call. It supports three modes:
