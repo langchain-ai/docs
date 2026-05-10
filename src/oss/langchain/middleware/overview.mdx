@@ -66,6 +66,57 @@ Middleware exposes hooks before and after each of those steps:
     className="rounded-lg mx-auto"
 />
 
+## Use middleware inside a LangGraph workflow
+
+Middleware is not a separate runtime—it compiles down into the same [LangGraph](/oss/langgraph/overview) nodes and edges that power @[`create_agent`]. Because `create_agent` returns a compiled graph, you can drop the whole agent (middleware and all) into a larger `StateGraph` as a node or subgraph, and every middleware hook continues to run.
+
+Reach for this pattern when the surrounding topology is more than a standard "loop until done"—for example, classifying input before routing to one of several agents, fanning out work in parallel, or stitching agent calls together with deterministic steps.
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langgraph.graph import START, MessagesState, StateGraph
+
+email_agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[read_email, send_email],
+    middleware=[HumanInTheLoopMiddleware(interrupt_on={"send_email": True})],
+)
+
+graph = (
+    StateGraph(MessagesState)
+    .add_node("classify", classify_node)
+    .add_node("email_agent", email_agent)
+    .add_edge(START, "classify")
+    .add_conditional_edges("classify", route)
+    .compile()
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, humanInTheLoopMiddleware } from "langchain";
+import { StateGraph, MessagesAnnotation, START } from "@langchain/langgraph";
+
+const emailAgent = createAgent({
+  model: "claude-sonnet-4-6",
+  tools: [readEmail, sendEmail],
+  middleware: [humanInTheLoopMiddleware({ interruptOn: { send_email: true } })],
+});
+
+const graph = new StateGraph(MessagesAnnotation)
+  .addNode("classify", classifyNode)
+  .addNode("email_agent", emailAgent)
+  .addEdge(START, "classify")
+  .addConditionalEdges("classify", route)
+  .compile();
+```
+:::
+
+The HITL interrupt, summarization, PII redaction, retries, and any custom hooks all travel with the agent node. See [Use subgraphs](/oss/langgraph/use-subgraphs) for the full set of composition patterns, including per-invocation versus per-thread persistence.
+
 ## Additional resources
 
 <CardGroup cols={2}>
