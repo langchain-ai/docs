@@ -112,6 +112,7 @@ Built files are stored in `/reference/dist/{LANGUAGE}`, which is then deployed t
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
 * `make broken-links` - Check for broken links in documentation
+* `make broken-links-with-anchors` - Check for broken links + check links with anchors
 * `make build-references` - Build reference docs
 * `make preview-references` - Preview reference docs using vercel
 * `make install` - Install all dependencies

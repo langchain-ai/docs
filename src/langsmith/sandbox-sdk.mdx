@@ -332,6 +332,79 @@ try {
 
 </CodeGroup>
 
+## Sandbox lifetime and retention
+
+Sandboxes are governed by a two-stage retention model anchored to **idle
+activity** and the **`stopped`** state.
+
+| Field | What it controls | When it fires |
+|-------|------------------|---------------|
+| `idle_ttl_seconds` | The launcher stops the sandbox after this many seconds of inactivity. Any command execution or file I/O resets the timer. `0` disables the idle stop. | Default `600` (10 minutes) when omitted. |
+| `delete_after_stop_seconds` | Once the sandbox enters the `stopped` state, this timer starts. After it elapses, the sandbox row + filesystem clone are permanently deleted by a server-side sweep. `0` disables stop-anchored deletion (manual cleanup required). | Server applies its configured default (typically 14 days) when omitted. |
+
+Both values must be multiples of 60 (minute resolution). The full lifecycle is:
+
+```
+running ──(idle for idle_ttl_seconds)──▶ stopped ──(delete_after_stop_seconds)──▶ deleted
+```
+
+You can also call `stop_sandbox` / `stopSandbox` explicitly — that also
+populates `stopped_at` and starts the deletion timer.
+
+<CodeGroup>
+
+```python Python
+# Default retention (server defaults: 10-min idle stop, 14-day delete)
+with client.sandbox(snapshot_id=snapshot_id) as sb:
+    sb.run("echo hello")
+
+# Aggressive: stop after 5 min idle, delete 1 hour after stop
+sb = client.create_sandbox(
+    snapshot_id=snapshot_id,
+    idle_ttl_seconds=300,
+    delete_after_stop_seconds=3600,
+)
+
+# Long-running: never auto-stop, delete 7 days after manual stop
+sb = client.create_sandbox(
+    snapshot_id=snapshot_id,
+    idle_ttl_seconds=0,
+    delete_after_stop_seconds=604800,
+)
+
+# Update retention on an existing sandbox
+sb = client.update_sandbox(
+    sb.name,
+    idle_ttl_seconds=1800,
+    delete_after_stop_seconds=2592000,  # 30 days
+)
+```
+
+```ts TypeScript
+// Default retention (server defaults applied)
+const sandbox = await client.createSandbox(snapshotId);
+
+// Aggressive: stop after 5 min idle, delete 1 hour after stop
+const sb = await client.createSandbox(snapshotId, {
+  idleTtlSeconds: 300,
+  deleteAfterStopSeconds: 3600,
+});
+
+// Long-running: never auto-stop, delete 7 days after manual stop
+const longRunning = await client.createSandbox(snapshotId, {
+  idleTtlSeconds: 0,
+  deleteAfterStopSeconds: 604800,
+});
+
+// Update retention on an existing sandbox
+await client.updateSandbox(sb.name, {
+  idleTtlSeconds: 1800,
+  deleteAfterStopSeconds: 2592000, // 30 days
+});
+```
+
+</CodeGroup>
+
 ## Command lifecycle and TTL
 
 The sandbox daemon manages command session lifecycles with two timeout mechanisms:

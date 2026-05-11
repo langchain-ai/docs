@@ -7,17 +7,18 @@ When a model proposes an action that might require review—for example, writing
 
 It does this by checking each tool call against a configurable policy. If intervention is needed, the middleware issues an @[interrupt] that halts execution. The graph state is saved using LangGraph's [persistence layer](/oss/langgraph/persistence), so execution can pause safely and resume later.
 
-A human decision then determines what happens next: the action can be approved as-is (`approve`), modified before running (`edit`), or rejected with feedback (`reject`).
+A human decision then determines what happens next: the action can be approved as-is (`approve`), modified before running (`edit`), rejected with feedback (`reject`), or responded to directly (`respond`) for "ask user" style tools.
 
 ## Interrupt decision types
 
-The [middleware](/oss/langchain/middleware/built-in#human-in-the-loop) defines three built-in ways a human can respond to an interrupt:
+The [middleware](/oss/langchain/middleware/built-in#human-in-the-loop) defines four built-in ways a human can respond to an interrupt:
 
 | Decision Type | Description                                                               | Example Use Case                                    |
 |---------------|---------------------------------------------------------------------------|-----------------------------------------------------|
 | ✅ `approve`   | The action is approved as-is and executed without changes.                | Send an email draft exactly as written              |
 | ✏️ `edit`     | The tool call is executed with modifications.                             | Change the recipient before sending an email        |
 | ❌ `reject`    | The tool call is rejected, with an explanation added to the conversation. | Reject an email draft and explain how to rewrite it |
+| 💬 `respond`  | Tool execution is skipped; the human's message becomes the tool result.   | Answer an "ask_user" prompt with a direct reply     |
 
 The available decision types for each tool depend on the policy you configure in `interrupt_on`.
 When multiple tool calls are paused at the same time, each action requires a separate decision.
@@ -47,7 +48,7 @@ agent = create_agent(
     middleware=[
         HumanInTheLoopMiddleware( # [!code highlight]
             interrupt_on={
-                "write_file": True,  # All decisions (approve, edit, reject) allowed
+                "write_file": True,  # All decisions (approve, edit, reject, respond) allowed
                 "execute_sql": {"allowed_decisions": ["approve", "reject"]},  # No editing allowed
                 "read_data": False, # Safe operation, no approval needed
             },
@@ -75,7 +76,7 @@ const agent = createAgent({
     middleware: [
         humanInTheLoopMiddleware({
             interruptOn: {
-                write_file: true, // All decisions (approve, edit, reject) allowed
+                write_file: true, // All decisions (approve, edit, reject, respond) allowed
                 execute_sql: {
                     allowedDecisions: ["approve", "reject"],
                     // No editing allowed
@@ -120,7 +121,7 @@ const agent = createAgent({
 **`InterruptOnConfig` options:**
 
 <ParamField body="allowed_decisions" type="list[string]">
-    List of allowed decisions: `'approve'`, `'edit'`, or `'reject'`
+    List of allowed decisions: `'approve'`, `'edit'`, `'reject'`, or `'respond'`
 </ParamField>
 
 <ParamField body="description" type="string | callable">
@@ -474,6 +475,58 @@ When multiple actions are under review, provide a decision for each action in th
 :::
 
 </Tab>
+
+<Tab title="💬 respond">
+    Use `respond` for "ask user" style tools where the tool's real implementation is the human's reply. The `message` content is returned directly as the tool result; the tool itself is not executed.
+
+    :::python
+    ```python
+    agent.invoke(
+        Command(
+            # Decisions are provided as a list, one per action under review.
+            # The order of decisions must match the order of actions
+            # in the interrupt request.
+            resume={
+                "decisions": [
+                    {
+                        "type": "respond",
+                        # The human's reply, returned directly as the tool result
+                        "message": "Blue.",
+                    }
+                ]
+            }
+        ),
+        config=config,  # Same thread ID to resume the paused conversation
+        version="v2",
+    )
+    ```
+    :::
+
+    :::js
+    ```typescript
+    await agent.invoke(
+        new Command({
+            // Decisions are provided as a list, one per action under review.
+            // The order of decisions must match the order of actions
+            // in the interrupt request.
+            resume: {
+                decisions: [
+                    {
+                        type: "respond",
+                        // The human's reply, returned directly as the tool result
+                        message: "Blue.",
+                    }
+                ]
+            }
+        }),
+        config  // Same thread ID to resume the paused conversation
+    );
+    ```
+    :::
+
+The `message` is returned to the agent as a successful `ToolMessage`. Use `respond` when the tool is intentionally a placeholder for human input—for example, an `ask_user` tool that prompts for clarification.
+
+</Tab>
 </Tabs>
 
 ## Streaming with human-in-the-loop
@@ -567,7 +620,7 @@ The middleware defines an `after_model` hook that runs after the model generates
 2. The middleware inspects the response for tool calls.
 3. If any calls require human input, the middleware builds a `HITLRequest` with `action_requests` and `review_configs` and calls @[interrupt].
 4. The agent waits for human decisions.
-5. Based on the `HITLResponse` decisions, the middleware executes approved or edited calls, synthesizes @[ToolMessage]'s for rejected calls, and resumes execution.
+5. Based on the `HITLResponse` decisions, the middleware executes approved or edited calls, synthesizes @[ToolMessage]'s for rejected calls, returns human replies directly as @[ToolMessage]'s for `respond` decisions, and resumes execution.
 
 
 
