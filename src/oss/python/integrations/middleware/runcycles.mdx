@@ -23,8 +23,6 @@ This guide provides a quick overview for getting started with the [Cycles](https
 - <Icon icon="repeat" size={16}/> Fan-out caps via `before_model` with `jump_to: "end"`: stop runaway agents before another model turn.
 - <Icon icon="bolt" size={16}/> Sync and async support: pair with `agent.invoke()` or `agent.ainvoke()`.
 
----
-
 ## Setup
 
 To use the Cycles middleware, you'll need a running [Cycles](https://runcycles.io) server (or a hosted Cycles endpoint), an API key for that server, and the `langchain-runcycles` integration package. Cycles is an open protocol with a reference server you can self-host; you don't need a SaaS account.
@@ -60,8 +58,6 @@ The Cycles middleware lives in the `langchain-runcycles` package:
     uv add langchain-runcycles
     ```
 </CodeGroup>
-
----
 
 ## Instantiation
 
@@ -101,8 +97,6 @@ fanout_gate = CyclesFanOutGate(
 )
 ```
 
----
-
 ## Use with an agent
 
 Pass middleware to @[`create_agent`] in order. Combine the Cycles middleware with built-in middleware like `HumanInTheLoopMiddleware` for production-grade agent governance.
@@ -129,8 +123,6 @@ agent.invoke({"messages": [{"role": "user", "content": "Email alice@example.com 
     Middleware runs in the [agent loop](/oss/langchain/middleware/overview#the-agent-loop). For custom behavior, see [custom middleware](/oss/langchain/middleware/custom).
 </Tip>
 
----
-
 ## CyclesModelGate: pre-model-call authorization (v0.1.5+)
 
 <Note>
@@ -152,7 +144,7 @@ from runcycles import Action, Amount, Subject, Unit
 model_gate = CyclesModelGate(
     client,
     subject=Subject(tenant="acme", agent="researcher"),
-    action=Action(kind="llm.completion", name="gpt-4o"),
+    action=Action(kind="llm.completion", name="claude-sonnet-4-6"),
     mode="reserve",
     estimate=Amount(unit=Unit.USD_MICROCENTS, amount=2_000_000),  # $0.02 per call
     denial_message="Cycles denied this model call: {reason}",
@@ -201,8 +193,6 @@ agent = create_agent(
 
 This order (fan-out first, then model, then tool) means runaway loops halt before model spend, and model spend is reserved before tool side effects.
 
----
-
 ## CyclesToolGate: pre-tool-call authorization
 
 `CyclesToolGate` overrides `wrap_tool_call` to gate every tool call. It supports three modes:
@@ -233,8 +223,6 @@ gate = CyclesToolGate(
 
 `subject` and `action` accept either static values, a per-tool mapping (dict), or callables that resolve from request and state: useful when the tenant comes from per-call agent state.
 
----
-
 ## CyclesFanOutGate: turn caps and remote policy halts
 
 `CyclesFanOutGate` overrides `before_model` (decorated with `@hook_config(can_jump_to=["end"])`) to halt the agent before another model turn. Two ways to halt:
@@ -262,8 +250,6 @@ When the gate halts, it returns:
 ```
 
 …so the LangChain runtime exits the loop cleanly and returns the AIMessage to the user.
-
----
 
 ## Async support
 
@@ -297,8 +283,6 @@ gate = CyclesToolGate(
 agent = create_agent(model="claude-sonnet-4-6", tools=[send_email], middleware=[gate])
 await agent.ainvoke({"messages": [{"role": "user", "content": "Email alice@example.com."}]})
 ```
-
----
 
 ## Production notes
 
@@ -348,7 +332,12 @@ Cycles idempotency keys take the shape `{prefix}-{tool_call_id}` (no random suff
     `idempotency_namespace` is available in `langchain-runcycles` 0.1.3+. The callable form's `None`-return per-call opt-out is fully type-correct in 0.1.4+.
 </Note>
 
-**Namespace scoping (v0.1.3+):** if your runtime reuses short tool-call ids across runs (`tc_1`, `tc_2`, ...), set `idempotency_namespace` on `CyclesToolGate` / `CyclesFanOutGate` to scope keys by run, workflow, or tenant. Keys then become `{prefix}-{namespace}-{tool_call_id}`. Accepts a static string or a callable receiving the request (tool gate) or state (fan-out gate). A callable returning `None` opts out of namespacing for that call, falling back to the v0.1.2 shape: useful when some calls should be globally scoped while others get run-scoped namespacing. Errors raised by the callable propagate to the agent (fail-fast on misconfiguration).
+**Namespace scoping (v0.1.3+):** if your runtime reuses short tool-call ids across runs (`tc_1`, `tc_2`, ...), set `idempotency_namespace` to scope keys by run, workflow, or tenant. Key shape differs per class:
+
+- `CyclesToolGate` is deterministic on the upstream `tool_call_id`: `{prefix}-{namespace}-{tool_call_id}` with a namespace, or `{prefix}-{tool_call_id}` without (the v0.1.2 shape, retained for back-compat).
+- `CyclesModelGate` and `CyclesFanOutGate` don't have a stable upstream id — model and fan-out decisions are per-call — so the key uses a fresh UUID: `{prefix}-{namespace}-{uuid}` with a namespace, or `{prefix}-{uuid}` without. The namespace there scopes keys by run/tenant for observability and audit grouping; it doesn't make the key retry-stable.
+
+Accepts a static string or a callable receiving the request (model / tool gate) or state (fan-out gate). A callable returning `None` opts out of namespacing for that call. Errors raised by the callable propagate to the agent (fail-fast on misconfiguration).
 
 ```python Idempotency namespace icon="layers-linked"
 from langchain_runcycles import CyclesToolGate
@@ -377,14 +366,10 @@ gate = CyclesToolGate(
 
 ### v0.1.x scope: architecture-complete, production polish in v0.2.0
 
-Implemented (v0.1.5+): `wrap_model_call` (`CyclesModelGate`), `wrap_tool_call` (`CyclesToolGate`), and `before_model` (`CyclesFanOutGate`). All three middleware classes ship at architecture parity with the same three modes, settlement-failure policy, and idempotency-namespace plumbing.
+Implemented (v0.1.5+): `wrap_model_call` (`CyclesModelGate`), `wrap_tool_call` (`CyclesToolGate`), and `before_model` (`CyclesFanOutGate`) — all three hooks of the LangChain agent governance triad. `CyclesModelGate` and `CyclesToolGate` share the same three modes (`decide` / `reserve` / `decide+reserve`), reservation lifecycle, and `settlement_error_policy`. `CyclesFanOutGate` is a thinner halt-only middleware: it consults `decide()` per turn and counts turns against `max_turns`, but does not reserve, so it shares only the `idempotency_namespace` plumbing with the other two.
 
 Deferred to v0.2.0: provider-specific token-cost extractors (OpenAI / Anthropic response metadata parsing), streaming-aware settlement, and a polished demo agent. Until then, `CyclesModelGate` commits at the configured `estimate`; for precise per-call token cost capture today, use the `BaseCallbackHandler` callback handler from `cycles-client-python` alongside this middleware (the two compose cleanly).
-
----
 
 ## API reference
 
 For detailed documentation, examples, and the full middleware contract, see the [`langchain-runcycles` repository](https://github.com/runcycles/langchain-runcycles) and the [Cycles SDK reference](https://runcycles.io).
-
----
