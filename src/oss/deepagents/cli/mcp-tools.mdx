@@ -6,22 +6,45 @@ description: Load additional tools from MCP (Model Context Protocol) servers
 
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) lets you extend the Deep Agents CLI with tools from external servers—file systems, APIs, databases, and more—without modifying the agent itself. The CLI connects to MCP servers at startup, discovers their tools, and makes them available to the agent alongside the built-in tools.
 
+There is no dedicated `mcp add` command. Instead, MCP servers are added by editing a `.mcp.json` config file. The CLI auto-discovers configs in three locations, which lets you scope servers either to a single project or to every project on your machine (similar to Claude Code's `.mcp.json` and Codex/Cursor's `mcpServers` block).
+
 ## Quickstart
 
-<Steps>
-    <Step title="Create a config file" icon="file">
-        Create a `.mcp.json` file at your project root. The format follows the [Claude Desktop convention](https://modelcontextprotocol.io/quickstart/user):
+This quickstart adds the [LangChain documentation MCP server](https://docs.langchain.com/mcp) to every Deep Agents CLI session on your machine. Swap in any other MCP server's URL or stdio command in the same shape.
 
-        ```json title=".mcp.json"
+<Steps>
+    <Step title="Choose a scope" icon="layer-group">
+        Pick the location that matches how broadly you want the server to be available. Use the user-level path for servers you want everywhere (the equivalent of Claude Code's `claude mcp add --scope user` or Cursor/Codex global config); use a project-level path for servers tied to one repo.
+
+        | Scope | Path | When to use |
+        |-------|------|-------------|
+        | **User (recommended for general tools)** | `~/.deepagents/.mcp.json` | Available in every project on this machine |
+        | Project | `<project>/.mcp.json` | Shared with collaborators via the repo (Claude Code compatible) |
+        | Project (hidden) | `<project>/.deepagents/.mcp.json` | Project-specific but kept out of the repo root |
+
+        See [Discovery locations](#discovery-locations) for full precedence rules.
+    </Step>
+
+    <Step title="Create the config file" icon="file">
+        Create the file at the chosen path. The format follows the [Claude Desktop convention](https://modelcontextprotocol.io/quickstart/user), so the same `mcpServers` block works across clients.
+
+        ```bash
+        mkdir -p ~/.deepagents
+        # Then create ~/.deepagents/.mcp.json with the content below
+        ```
+
+        ```json title="~/.deepagents/.mcp.json"
         {
             "mcpServers": {
                 "docs-langchain": {
-                "type": "http",
-                "url": "https://docs.langchain.com/mcp"
+                    "type": "http",
+                    "url": "https://docs.langchain.com/mcp"
                 }
             }
         }
         ```
+
+        To add more servers, add more entries to `mcpServers`. See [Configuration format](#configuration-format) for stdio, SSE, and HTTP server fields, environment variables, and headers.
     </Step>
 
     <Step title="Launch the CLI" icon="terminal">
@@ -29,15 +52,19 @@ description: Load additional tools from MCP (Model Context Protocol) servers
         deepagents
         ```
 
-        On startup, the CLI automatically discovers your `.mcp.json`, spawns each configured server, discovers its tools, and prints a confirmation:
+        On startup, the CLI auto-discovers the config, connects to each server, discovers its tools, and prints a confirmation:
 
         ```
         ✓ Loaded 3 MCP tools
         ```
 
-        The agent can now use those tools for the duration of the session. Sessions are kept alive—stdio servers are not restarted between tool calls.
+        Run `/mcp` in an interactive session to see per-server status, transport, and the loaded tool list. The agent can now use those tools for the duration of the session—stdio servers are kept alive between tool calls.
     </Step>
 </Steps>
+
+<Tip>
+    For remote servers that require OAuth (Linear, Notion, Slack, GitHub, and similar hosted endpoints), set `"auth": "oauth"` on the server entry and then run `deepagents mcp login <server>` once. See [OAuth login](#oauth-login).
+</Tip>
 
 ## Auto-discovery
 
@@ -55,7 +82,7 @@ Configs are checked in this order (lowest to highest precedence):
 
 The project root is the nearest parent directory containing a `.git` folder, falling back to the current working directory.
 
-When multiple config files exist, their `mcpServers` entries are merged. If the same server name appears in more than one file, the higher-precedence config wins.
+When multiple config files exist, their `mcpServers` entries are merged. If the same server name appears in more than one file, the higher-precedence config wins. This lets a project-level config override a user-level entry (for example, pinning a different version of the same server) without disturbing your other projects.
 
 ### Flags
 
