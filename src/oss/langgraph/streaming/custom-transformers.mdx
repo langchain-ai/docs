@@ -79,7 +79,7 @@ interface StreamTransformer<TProjection = unknown> {
 
 ## Streaming projection
 
-Pass a string name to `StreamChannel` when a projection should be available both in process and over the wire. The projection stays available through `run.extensions`, and each pushed value is also emitted as a `custom:<name>` protocol event for remote clients:
+Pass a string name to `StreamChannel` to expose a streaming projection through `run.extensions` *and* forward each pushed value into the run's main event stream as a `custom:<name>` protocol event. Without a name, the channel is a side-channel projection only — accessible on `run.extensions` but not visible to consumers iterating raw events:
 
 :::python
 ```py
@@ -172,7 +172,7 @@ for await (const item of run.extensions.toolActivity) {
 ```
 :::
 
-For custom events emitted from graph nodes that should stay in process, use a local projection:
+For custom events emitted from graph nodes that should stay off the main event stream, use an unnamed channel:
 
 :::python
 ```py
@@ -229,23 +229,9 @@ const customTransformer = () => {
 ```
 :::
 
-Remote clients can consume named `StreamChannel` projections through `thread.extensions` or by subscribing to the corresponding `custom:<name>` channel:
-
-:::js
-```ts
-const thread = client.threads.stream<Extensions>({
-  assistantId: "simple-tool-with-metrics",
-});
-
-for await (const item of thread.extensions.toolActivity) {
-  console.log(item);
-}
-```
-:::
-
 ## Final-value projection
 
-Use local streams, promises, or other in-process objects when the projection should not cross the wire:
+Use unnamed streams, promises, or other in-process objects when the projection should not flow into the main event stream:
 
 :::python
 ```py
@@ -323,7 +309,7 @@ const run = await graph.streamEvents(input, {
 ```
 :::
 
-Compile transformers into a graph when deployed clients should see them:
+Compile transformers into the graph when every run of that graph should produce the projection:
 
 :::python
 ```py
@@ -341,8 +327,6 @@ const graph = builder.compile({
 ```
 :::
 
-Compile-time transformers can run server-side and expose named `StreamChannel` projections to SDK clients as `thread.extensions.<name>` and `custom:<name>` events.
-
 :::python
 `create_agent` registers the built-in tool-call transformer for you, which is why agents expose `run.tool_calls`. On a plain `StateGraph`, opt in when you want the same projection:
 
@@ -356,22 +340,4 @@ for tool_call in run.tool_calls:
 ```
 :::
 
-:::js
-## Type extensions
-
-Use `InferExtensions` to reuse the in-process transformer type when consuming remote streams:
-
-```ts
-import type { InferExtensions } from "@langchain/langgraph";
-
-type Extensions = InferExtensions<
-  [typeof statsTransformer, typeof toolActivityTransformer]
->;
-
-const thread = client.threads.stream<Extensions>({
-  assistantId: "simple-tool-with-metrics",
-});
-```
-:::
-
-See [StreamChannel](/oss/langgraph/streaming/streamchannel) for choosing whether projection events should stay in process or also emit `custom:<name>` events.
+See [StreamChannel](/oss/langgraph/streaming/streamchannel) for choosing whether pushed values stay on `run.extensions` only or also flow into the main event stream as `custom:<name>` events.

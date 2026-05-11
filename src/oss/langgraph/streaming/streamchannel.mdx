@@ -1,43 +1,41 @@
 ---
 title: StreamChannel
-description: Use StreamChannel for local and remote stream transformer projections.
+description: Use StreamChannel as the stream transformer projection primitive.
 ---
 
-`StreamChannel` is the projection primitive for custom streaming data. It gives in-process consumers an iterable stream, and it can also forward pushed values to remote SDK clients when the channel has a protocol name.
+`StreamChannel` is the projection primitive for custom streaming data. It always exposes an iterable stream on `run.extensions.<name>`. The constructor argument decides whether each push also flows into the run's main event stream as a `custom:<name>` event—that is, whether the projection's values show up when iterating raw protocol events.
 
 :::js
-In TypeScript, create an unnamed channel for local-only data, or pass a string name to also emit pushed values over the wire as `custom:<name>` events:
-
 ```ts
-const local = new StreamChannel<T>();
-const remote = new StreamChannel<T>("timeline");
+const sideChannel = new StreamChannel<T>();
+const partOfMainStream = new StreamChannel<T>("timeline");
 ```
 
 :::
 
 ## Decision Rule
 
-Use one `StreamChannel` whenever you need a streaming projection. The only decision is whether the stream should cross the wire.
+Use one `StreamChannel` whenever you need a streaming projection. The only decision is whether each push should also flow into the main event stream as a `custom:<name>` event.
 
 :::js
 | Need | Use |
 | ---- | --- |
-| Data should stay in process only | `new StreamChannel<T>()` |
-| Data should be available in process and over the wire | `new StreamChannel<T>(name)` |
+| Side-channel projection only | `new StreamChannel<T>()` |
+| Also flow each push into the main event stream | `new StreamChannel<T>(name)` |
 :::
 
 :::python
 | Need | Use |
 | ---- | --- |
-| Data should stay in process only | `StreamChannel()` |
-| Data should be available in process and over the wire | `StreamChannel(name)` |
+| Side-channel projection only | `StreamChannel()` |
+| Also flow each push into the main event stream | `StreamChannel(name)` |
 :::
 
-Named channel payloads must be serializable because they are also emitted as `custom:<name>` protocol events. Keep promises, async iterables, class instances, and other in-process handles local.
+Named channel payloads must be serializable, because each pushed value also becomes a `custom:<name>` protocol event in the main stream. Keep promises, async iterables, class instances, and other in-process handles in unnamed channels.
 
-## Local Channels
+## Unnamed channels
 
-Local channels are available through `run.extensions`, but they are not forwarded to remote clients.
+Unnamed channels are available only as a side-channel projection through `run.extensions`. Pushed values do not appear in the run's main event stream.
 
 :::js
 ```ts
@@ -77,9 +75,9 @@ class ProgressTransformer(StreamTransformer):
 ```
 :::
 
-## Wire-visible channels
+## Named channels
 
-Wire-visible channels are available in process through `run.extensions`, and the stream handler also forwards each `push()` as a `custom:<name>` protocol event using the channel name. Remote SDK clients consume them through `thread.extensions.<name>` or a `custom:<name>` subscription.
+Named channels are available through `run.extensions`, and the stream handler also forwards each `push()` into the run's main event stream as a `custom:<name>` protocol event. Any consumer iterating raw events on the run sees those pushes alongside the built-in channels (`messages`, `values`, `lifecycle`, and so on).
 
 :::js
 ```ts
@@ -149,5 +147,5 @@ class ToolActivityTransformer(StreamTransformer):
 `StreamChannel` lifecycle is managed by the stream handler when the channel is returned from a transformer's `init()` method. Transformers push data, but do not close or fail the channel directly.
 
 :::js
-Both local and wire-visible `StreamChannel`s are closed or failed by the stream handler.
+Both unnamed and named `StreamChannel`s are closed or failed by the stream handler.
 :::
