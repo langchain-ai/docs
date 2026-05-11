@@ -37,6 +37,8 @@ if "CYCLES_API_KEY" not in os.environ:
     os.environ["CYCLES_API_KEY"] = getpass.getpass("Enter your Cycles API key: ")
 if "CYCLES_BASE_URL" not in os.environ:
     os.environ["CYCLES_BASE_URL"] = "http://localhost:7878"
+if "ANTHROPIC_API_KEY" not in os.environ:
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API key: ")
 ```
 
 It's also helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
@@ -48,14 +50,14 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ### Installation
 
-The Cycles middleware lives in the `langchain-runcycles` package:
+The Cycles middleware lives in the `langchain-runcycles` package. The examples below use Claude, so install `langchain-anthropic` too:
 
 <CodeGroup>
     ```bash pip
-    pip install -U langchain-runcycles
+    pip install -U langchain-runcycles langchain-anthropic
     ```
     ```bash uv
-    uv add langchain-runcycles
+    uv add langchain-runcycles langchain-anthropic
     ```
 </CodeGroup>
 
@@ -309,34 +311,43 @@ A few behaviors worth knowing before pointing the middleware at production traff
 ### Settlement-failure policy
 
 <Note>
-    Available in `langchain-runcycles` 0.1.2+.
+    Available on `CyclesToolGate` in `langchain-runcycles` 0.1.2+ and on `CyclesModelGate` in 0.1.5+. v0.2.3 extended both gates to honor the policy on non-success `CyclesResponse` returns in addition to raised exceptions.
 </Note>
 
-If `commit_reservation` itself fails after a successful tool run, the tool's side effect already happened. `settlement_error_policy` on `CyclesToolGate` controls what happens next:
+If `commit_reservation` fails after a successful handler run — either by **raising an exception** or by **returning a non-success `CyclesResponse`** (4xx/5xx from the Cycles server) — the handler already ran and its side effect is real. `settlement_error_policy` on **both `CyclesToolGate` and `CyclesModelGate`** controls what happens next, identically across both gates and both failure modes:
 
 | Policy | Behavior | When to choose |
 | :--- | :--- | :--- |
-| `"raise"` (default) | Propagate the commit exception. Tool result is lost; caller reconciles. | Strict governance: no tool-level cost goes unaccounted. |
-| `"log"` | Log a warning, return the tool result. The reservation expires via TTL. | UX continuity matters more than per-call settlement guarantees. |
+| `"raise"` (default) | Propagate the failure: original exception on raised path, `RuntimeError` carrying the server's `denial_reason` on the non-success-response path. Handler result is lost; caller reconciles. | Strict governance: no handler-level cost goes unaccounted. |
+| `"log"` | Log a warning, return the handler result. The reservation expires via TTL. | UX continuity matters more than per-call settlement guarantees. |
 
 ```python Settlement policy icon="scale"
-from langchain_runcycles import CyclesToolGate
+from langchain_runcycles import CyclesToolGate, CyclesModelGate
 from runcycles import Action, Subject
 
-gate = CyclesToolGate(
+# Same parameter on both gates:
+tool_gate = CyclesToolGate(
     client,
     subject=Subject(tenant="acme"),
     action=Action(kind="tool.call", name="send_email"),
     mode="reserve",
     settlement_error_policy="log",   # opt out of the strict default
 )
+
+model_gate = CyclesModelGate(
+    client,
+    subject=Subject(tenant="acme"),
+    action=Action(kind="llm.completion", name="claude-sonnet-4-6"),
+    mode="reserve",
+    settlement_error_policy="log",
+)
 ```
 
 <Tip>
-    `"raise"` surfaces the commit failure as a tool exception, so a LangChain agent may retry. If the tool's side effect (an email send, a payment, a CRM write) is **not safely idempotent on retry**, choose `"log"` instead. Duplicate side effects are usually worse than a one-off accounting miss.
+    `"raise"` surfaces the commit failure to the agent, which may retry. If the handler's side effect (an email send, a payment, a CRM write, or a paid model call) is **not safely idempotent on retry**, choose `"log"` instead. Duplicate side effects are usually worse than a one-off accounting miss.
 </Tip>
 
-The release path (on tool-side exception) always logs and continues so the original tool exception wins; `settlement_error_policy` applies only to the success-path commit.
+The release path (after a model or tool handler exception) always logs and continues so the original handler exception wins; `settlement_error_policy` applies only to the success-path commit.
 
 ### Idempotency keys: deterministic per `tool_call_id`, optionally namespaced
 
