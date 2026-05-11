@@ -1,0 +1,219 @@
+---
+title: Memory and Skills
+sidebarTitle: Memory and skills
+description: Persistent memory, AGENTS.md files, and reusable skills for the Deep Agents CLI including creation, discovery, and invocation.
+---
+
+There are two primary ways to customize any agent:
+
+- **[Memory](#memory)**: `AGENTS.md` files and auto-saved memories that persist across sessions. Use memory for general coding style, preferences, and learned conventions.
+
+- **[Skills](#skills)**: Global and project-specific context, conventions, guidelines, or instructions. Use skills for context that applies when performing specific tasks.
+
+Use `/remember` to explicitly prompt the agent to update its memory and skills from the current conversation.
+
+<Tip>
+    Building a custom agent with the SDK? See [Memory](/oss/deepagents/memory) for programmatic memory backends.
+</Tip>
+
+## Memory
+
+### Automatic memory
+
+As you use the agent, it automatically stores information in `~/.deepagents/<agent_name>/memories/` as markdown files using a memory-first protocol:
+
+1. **Research**: Searches memory for relevant context before starting tasks
+2. **Response**: Checks memory when uncertain during execution
+3. **Learning**: Automatically saves new information for future sessions
+
+The agent organizes its memories by topic with descriptive filenames:
+
+```
+~/.deepagents/backend-dev/memories/
+├── api-conventions.md
+├── database-schema.md
+└── deployment-process.md
+```
+
+When you teach the agent conventions:
+
+```bash
+deepagents --agent backend-dev
+> Our API uses snake_case and includes created_at/updated_at timestamps
+```
+
+It remembers for future sessions:
+
+```bash
+> Create a /users endpoint
+# Applies conventions without prompting
+```
+
+### AGENTS.md files
+
+[`AGENTS.md` files](https://agents.md/) provide persistent context that is always loaded at session start:
+
+- **Global**: `~/.deepagents/<agent_name>/AGENTS.md` — loaded every session.
+- **Project**: `.deepagents/AGENTS.md` in any git project root — loaded when the CLI is run from within that project.
+
+Both files are appended to the system prompt at startup.
+
+### How memory works
+
+The agent may also read its memory files when answering project-specific questions or when you reference past work or patterns.
+
+The agent will update `AGENTS.md` as you provide information on how it should behave, feedback on its work, or instructions to remember something.
+It will also update its memory if it identifies patterns or preferences from your interactions.
+
+To add more structured project knowledge in additional memory files, add them in `.deepagents/` and reference them in the `AGENTS.md` file.
+You must reference additional files in the `AGENTS.md` file for the agent to be aware of them.
+The additional files will not be read on startup but the agent can reference and update them when needed.
+
+### When to use global vs. project AGENTS.md
+
+Use a global `AGENTS.md` (`~/.deepagents/agent/AGENTS.md`) for:
+
+- Your personality, style, and universal coding preferences
+- General tone and communication style
+- Universal coding preferences (formatting, type hints, etc.)
+- Tool usage patterns that apply everywhere
+- Workflows and methodologies that don't change per-project
+
+Use a project `AGENTS.md` (`.deepagents/AGENTS.md` in project root) for:
+
+- Project-specific context and conventions
+- Project architecture and design patterns
+- Coding conventions specific to this codebase
+- Testing strategies and deployment processes
+- Team guidelines and project structure
+
+## Skills
+
+Skills are reusable agent capabilities that provide specialized workflows and domain knowledge.
+You can use [skills](/oss/deepagents/skills) to provide your deep agent with new capabilities and expertise.
+Deep agent skills follow the [Agent Skills standard](https://agentskills.io/).
+Once you have added skills your deep agent will automatically make use of them and update them as you use the agent and provide it with additional information.
+
+### Add skills
+
+<Steps>
+    <Step title="Create a skill">
+
+        ```bash
+        # User skill (stored in ~/.deepagents/<agent_name>/skills/)
+        deepagents skills create test-skill
+
+        # Project skill (stored in .deepagents/skills/)
+        deepagents skills create test-skill --project
+        ```
+
+        This generates:
+
+        ```plaintext
+        skills/
+        └── test-skill
+            └── SKILL.md
+        ```
+
+    </Step>
+    <Step title="Edit SKILL.md">
+        Open the generated `SKILL.md` and edit the file to include your instructions.
+    </Step>
+    <Step title="Add optional resources">
+        Optionally add additional scripts or other resources to the `test-skill` folder. For more information, see [Examples](/oss/deepagents/skills#example).
+    </Step>
+</Steps>
+
+You can also copy existing skills directly to the agent's folder:
+
+```bash
+mkdir -p ~/.deepagents/<agent_name>/skills
+cp -r examples/skills/web-research ~/.deepagents/<agent_name>/skills/
+```
+
+### Install community skills
+
+You can use tools like Vercel's [Skills CLI](https://github.com/vercel-labs/skills) to install community [Agent Skills](https://agentskills.io/) in your environment and make them available to your deep agents:
+
+```bash
+# Install a skill globally
+npx skills add vercel-labs/agent-skills --skill web-design-guidelines -a deepagents -g -y
+
+# List installed skills
+npx skills ls -a deepagents -g
+```
+
+Global installs (`-g`) symlink skills into `~/.deepagents/agent/skills/` — the default agent's user-level skills directory. Project-level installs (omit `-g`) place skills in `.deepagents/skills/` relative to the current directory, making them available to any agent running in that project regardless of agent name.
+
+<Note>
+    Global installs target the default `agent` directory only. If you use a custom-named agent, either use project-level installs or manually symlink the skill into `~/.deepagents/{your-agent}/skills/`.
+</Note>
+
+### Skill discovery
+
+At startup, the CLI discovers skills from both Deep Agents and shared alias directories:
+
+```text
+~/.deepagents/<agent_name>/skills/
+~/.agents/skills/
+.deepagents/skills/
+.agents/skills/
+~/.claude/skills/          (experimental)
+.claude/skills/            (experimental)
+```
+
+When duplicate skill names exist, later-precedence directories override earlier ones (see [App data](/oss/deepagents/data-locations#skills)).
+
+For project-specific skills, the project's root folder must have a `.git` folder.
+When you start the CLI from anywhere within the project's folder, the CLI will find the project's root folder by checking for a containing `.git` folder.
+
+For each skill, the CLI reads the name and the description from the `SKILL.md` file's frontmatter.
+As you use the CLI, if a task matches the skill's description, the agent will read the skill file and follow its instructions.
+
+You can also invoke a skill directly with `/skill:<name> [args]`. Skill discovery runs at startup and again on `/reload`.
+
+### Invoke a skill from the command line
+
+Use `--skill` to invoke a skill at launch without typing a slash command interactively:
+
+```bash
+# Open the TUI and immediately run a skill
+deepagents --skill code-review
+
+# Pass a request to the skill with -m
+deepagents --skill code-review -m 'review the auth module'
+
+# Pipe content into a skill
+cat diff.txt | deepagents --skill code-review
+
+# Pipe content and add a request
+cat diff.txt | deepagents --skill code-review -m 'focus on security'
+```
+
+`--skill` also works in non-interactive mode:
+
+```bash
+# Run a skill headlessly
+deepagents --skill code-review -n 'review this patch'
+
+# Quiet mode (only agent output on stdout)
+deepagents --skill code-review -n 'review this patch' -q
+```
+
+<Note>
+    `--skill` with `--quiet` or `--no-stream` requires `-n` (non-interactive mode).
+</Note>
+
+### List skills
+
+```bash
+# List all user skills
+deepagents skills list
+
+# List project skills
+deepagents skills list --project
+
+# Get detailed info about a specific skill
+deepagents skills info test-skill
+deepagents skills info test-skill --project
+```
