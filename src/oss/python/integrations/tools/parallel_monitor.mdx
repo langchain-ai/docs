@@ -1,0 +1,172 @@
+---
+title: "Parallel Monitor integration"
+description: "Integrate with the ParallelMonitor type using LangChain Python."
+---
+
+>[Parallel](https://platform.parallel.ai/) is a real-time web search and content extraction platform built for LLMs and AI applications.
+
+`ParallelMonitor` calls Parallel's [Monitor API](https://docs.parallel.ai/monitor-api/monitor-quickstart) to schedule a query on a recurring cadence (1 hour to 30 days) and notify you, via webhook or polling, when relevant new content shows up. Useful for ongoing competitive intelligence, regulatory tracking, or topic monitoring.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| @[`ParallelMonitor`] | @[`langchain-parallel`] | ❌ | ❌ | <a href="https://pypi.org/project/langchain-parallel/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-parallel?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+## Setup
+
+The integration lives in the `langchain-parallel` package.
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-parallel
+    ```
+    ```bash uv
+    uv add langchain-parallel
+    ```
+</CodeGroup>
+
+### Credentials
+
+Head to [Parallel](https://platform.parallel.ai) to sign up and generate an API key. Set `PARALLEL_API_KEY` in your environment:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PARALLEL_API_KEY"):
+    os.environ["PARALLEL_API_KEY"] = getpass.getpass("Parallel API key:\n")
+```
+
+## Instantiation
+
+```python
+from langchain_parallel import ParallelMonitor
+
+client = ParallelMonitor()
+```
+
+## Create a monitor
+
+`frequency` is `<n><unit>` where unit is `h`, `d`, or `w`, and the resulting duration sits in `[1h, 30d]` (e.g. `"1h"`, `"6h"`, `"3d"`, `"1w"`, `"2w"`).
+
+```python
+from langchain_parallel import MonitorWebhook
+
+monitor = client.create(
+    query="Latest peer-reviewed papers on net-energy-gain fusion",
+    frequency="1d",
+    metadata={"label": "fusion-watch"},
+    # Optional: receive new events on a webhook endpoint.
+    # webhook=MonitorWebhook(
+    #     url="https://example.com/parallel/webhook",
+    #     event_types=["monitor.event.detected"],
+    # ),
+)
+
+print(monitor["monitor_id"], "—", monitor["status"])
+```
+
+The valid `event_types` are `monitor.event.detected`, `monitor.execution.completed`, and `monitor.execution.failed`. Omit the field to receive all three.
+
+## Retrieve, list, delete
+
+```python
+got = client.retrieve(monitor["monitor_id"])
+
+monitors = client.list(limit=20)
+
+deleted = client.delete(monitor["monitor_id"])
+```
+
+## List events
+
+`list_events()` returns a flat `{"events": [...]}` list. Newly-created monitors typically have none until the first scheduled execution; the call shape works either way.
+
+```python
+events = client.list_events(monitor["monitor_id"], lookback_period="7d")
+for ev in events.get("events", []):
+    print(ev["type"], ev.get("event_date"))
+```
+
+To inspect a single event group:
+
+```python
+group = client.get_event_group(monitor["monitor_id"], event_group_id="...")
+```
+
+## Simulate an event
+
+Useful when wiring up a webhook handler. `simulate_event()` posts a synthetic event of the requested type (default: `monitor.event.detected`) to the monitor's webhook.
+
+<Note>
+    `simulate_event()` requires a webhook configured on the monitor. Pass `webhook=MonitorWebhook(...)` when calling `create()` first; otherwise the API returns `400 — Webhook not configured for this monitor`.
+</Note>
+
+```python
+client.simulate_event(monitor["monitor_id"], event_type="monitor.event.detected")
+```
+
+## Async
+
+Every CRUD and event method has an async counterpart prefixed with `a`:
+
+```python
+monitor = await client.acreate(query="...", frequency="6h")
+events = await client.alist_events(monitor["monitor_id"], lookback_period="7d")
+await client.adelete(monitor["monitor_id"])
+```
+
+## Webhook signature verification
+
+Webhook deliveries are signed using the Standard Webhooks scheme (HMAC-SHA256 over `<webhook-id>.<webhook-timestamp>.<body>`, base64-encoded, `v1,<sig>` format with replay protection). Verify with `verify_webhook`:
+
+```python
+from langchain_parallel import verify_webhook
+
+ok = verify_webhook(
+    body,
+    webhook_id=request.headers["webhook-id"],
+    webhook_timestamp=request.headers["webhook-timestamp"],
+    webhook_signature=request.headers["webhook-signature"],
+    secret=os.environ["PARALLEL_WEBHOOK_SECRET"],
+)
+```
+
+The signing secret is configured at the org webhook-endpoint level in the Parallel dashboard, not per-monitor. See [webhook setup](https://docs.parallel.ai/resources/webhook-setup) for the full delivery contract.
+
+## Response format
+
+`create()` and `retrieve()` return a monitor dict. `list_events()` returns a flat events envelope.
+
+```python
+# create() / retrieve()
+{
+    "monitor_id": "mon_abc",
+    "status": "active",
+    "query": "...",
+    "frequency": "1d",
+    "metadata": {...},
+    "webhook": {"url": "...", "event_types": [...]},
+    "created_at": "2026-04-15T10:30:00Z",
+    # ... additional API-side fields
+}
+
+# list_events()
+{
+    "events": [
+        {
+            "type": "event",            # or "completion" / "error"
+            "event_date": "2026-04-15T10:30:00Z",
+            "event_group_id": "...",
+            # ... event-type-specific fields
+        },
+    ],
+}
+```
+
+## API reference
+
+For detailed documentation, head to the @[`ParallelMonitor`] API reference or the [Monitor API guides](https://docs.parallel.ai/monitor-api/monitor-quickstart).

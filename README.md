@@ -112,6 +112,7 @@ Built files are stored in `/reference/dist/{LANGUAGE}`, which is then deployed t
 * `make dev` - Start development mode with file watching and live rebuild
 * `make build` - Build documentation to `./build` directory
 * `make broken-links` - Check for broken links in documentation
+* `make broken-links-with-anchors` - Check for broken links + check links with anchors
 * `make build-references` - Build reference docs
 * `make preview-references` - Preview reference docs using vercel
 * `make install` - Install all dependencies
@@ -210,7 +211,7 @@ Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licen
 1. **Use the safe Make commands** (recommended):
 
    ```bash
-   make mint-broken-links  # Builds docs first, then checks links (excludes integrations)
+   make broken-links-with-anchors      # Builds docs first, then checks internal links
    ```
 
 2. **Run Mintlify commands from the build directory**:
