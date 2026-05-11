@@ -18,11 +18,11 @@ The public install assets are:
 - `install-script.sh`: one installer with separate `prereqs`, `namespace`, `secret`, `values`, `install`, and `forward` steps.
 - `values.yaml`: default Helm values for a port-forward-only install.
 
-Mission Control images are published in Docker Hub at `langchain/langsmith-mission-control`. Check the latest images with:
+Mission Control images are published in Docker Hub at `langchain/mission-control`. Check the latest images with:
 
 ```bash
-docker pull langchain/langsmith-mission-control:backend-latest
-docker pull langchain/langsmith-mission-control:frontend-latest
+docker pull langchain/mission-control:backend-latest
+docker pull langchain/mission-control:frontend-latest
 ```
 
 Browser review links:
@@ -123,7 +123,7 @@ Common edits:
 | `namespace` | Install Mission Control somewhere other than `langsmith`. Also pass `-n <namespace>` to the script. |
 | `resources` | Your namespace has a `ResourceQuota` or your platform requires specific requests/limits. |
 | `ingress.enabled` and `ingress.host` | You want to expose Mission Control through your ingress controller instead of port-forwarding. |
-| `features.*` | You need to remove specific write permissions or external egress features. |
+| `config.features.*` | You need to remove specific write permissions or external egress features. |
 | `diagnostics.persistence.enabled` | You want diagnostic bundles to survive pod restarts and Helm upgrades. |
 | `backend.podSecurityContext` and `frontend.podSecurityContext` | Your platform requires containers to run as a specific non-root UID, such as `1001`. |
 
@@ -154,7 +154,7 @@ Useful flags:
 ./install-script.sh all -u admin
 printf '%s\n' 'your-password' | ./install-script.sh secret -u admin --password-stdin
 ./install-script.sh all -f values.yaml --skip-rbac-check
-./install-script.sh install --chart-ref langchain/langsmith-mission-control
+./install-script.sh install --chart-ref langchain/mission-control
 ./install-script.sh install --chart-path /path/to/mission-control
 ./install-script.sh forward --port 3001:3000
 ```
@@ -178,7 +178,7 @@ Use this path when installer scripts are not allowed. These steps use normal `ku
     curl -fsSL https://raw.githubusercontent.com/langchain-ai/helm/main/charts/mission-control/values.yaml -o values.yaml
     ```
 
-    Review `values.yaml` before installing. Keep `auth.enabled: true` for production.
+    Review `values.yaml` before installing. Keep `config.auth.enabled: true` for production.
 
     If your platform requires non-root containers, Mission Control can run as UID `1001`. Add this to `values.yaml` before installing:
 
@@ -235,7 +235,7 @@ Use this path when installer scripts are not allowed. These steps use normal `ku
       --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-    For multi-replica backend deployments, include a shared JWT signing key in the same Secret and set `auth.jwtSecretKey: jwtSecret` in `values.yaml`:
+    For multi-replica backend deployments, include a shared JWT signing key in the same Secret and set `config.auth.jwtSecretKey: jwtSecret` in `values.yaml`:
 
     ```bash
     JWT_SECRET="$(openssl rand -base64 32)"
@@ -257,10 +257,10 @@ Use this path when installer scripts are not allowed. These steps use normal `ku
       --rollback-on-failure
     ```
 
-    Wait for both deployments to become ready:
+    Wait for both workloads to become ready (the backend runs as a StatefulSet, the frontend as a Deployment):
 
     ```bash
-    kubectl rollout status deployment/mission-control-backend -n langsmith
+    kubectl rollout status statefulset/mission-control-backend -n langsmith
     kubectl rollout status deployment/mission-control-frontend -n langsmith
     ```
 
@@ -286,7 +286,7 @@ Download the latest public values file, merge in any local changes you need, the
 ```bash
 helm repo update langchain
 
-helm upgrade --install mission-control langchain/langsmith-mission-control \
+helm upgrade --install mission-control langchain/mission-control \
   --namespace langsmith \
   --values values.yaml \
   --rollback-on-failure
@@ -339,7 +339,7 @@ kubectl delete secret -n langsmith \
 |---------|---------------|
 | `kubectl auth can-i ...` returns `no` | Ask a cluster admin to grant install-time RBAC or run the install for you. |
 | Pods stay `Pending` | Check namespace `ResourceQuota`, node capacity, and PVC/storage class events with `kubectl describe pod -n langsmith <pod>`. |
-| Image pull errors | Confirm the cluster can pull `langchain/langsmith-mission-control:backend-latest` and `langchain/langsmith-mission-control:frontend-latest`. |
+| Image pull errors | Confirm the cluster can pull `langchain/mission-control:backend-latest` and `langchain/mission-control:frontend-latest`. |
 | Login fails | Confirm `mission-control-auth` exists in the same namespace and has `username` and `password` keys. |
 | Browser cannot connect | Confirm the port-forward command is still running and no other local process is using port `3000`. |
 
@@ -347,7 +347,7 @@ kubectl delete secret -n langsmith \
 
 The Helm chart creates a `ServiceAccount`, `ClusterRole`, and `ClusterRoleBinding` named `mission-control`. Most permissions are read-only. Write verbs are narrow and controlled by feature flags.
 
-Install or upgrade requires the ability to create cluster-scoped RBAC (`ClusterRole` and `ClusterRoleBinding`), usually `cluster-admin` or a custom equivalent. The broadest runtime permission set is only used when `features.deploy: true`; that flag is `false` by default.
+Install or upgrade requires the ability to create cluster-scoped RBAC (`ClusterRole` and `ClusterRoleBinding`), usually `cluster-admin` or a custom equivalent. The broadest runtime permission set is only used when `config.features.deploy: true`; that flag is `false` by default.
 
 #### Always-present read-only permissions
 
@@ -366,11 +366,11 @@ Install or upgrade requires the ability to create cluster-scoped RBAC (`ClusterR
 
 | Feature flag | Resources | Extra verbs |
 |--------------|-----------|-------------|
-| `features.configSave` | secrets (`mission-control-draft`) | create, update, delete |
-| `features.alerts` | secrets (`mission-control-alerts-*`) | create, update, delete |
-| `features.fixIssue` | pods | delete |
-| `features.adopt` | secrets, configmaps, serviceaccounts, deployments, statefulsets | patch |
-| `auth.enabled` | secrets (`mission-control-auth`, setup-token), backend deployment | create, update, delete, patch |
-| `features.deploy` | workloads, networking, RBAC, CRDs, Helm release secrets | create, update, patch, delete |
+| `config.features.configSave` | secrets (`mission-control-draft`) | create, update, delete |
+| `config.features.alerts` | secrets (`mission-control-alerts-*`) | create, update, delete |
+| `config.features.fixIssue` | pods | delete |
+| `config.features.adopt` | secrets, configmaps, serviceaccounts, deployments, statefulsets | patch |
+| `config.auth.enabled` | secrets (`mission-control-auth`, setup-token), backend deployment | create, update, delete, patch |
+| `config.features.deploy` | workloads, networking, RBAC, CRDs, Helm release secrets | create, update, patch, delete |
 
-Set feature flags to `false` in `values.yaml` to remove the corresponding write verbs. With all feature flags disabled, Mission Control is effectively read-only except for authentication setup permissions when `auth.enabled: true`.
+Set feature flags to `false` in `values.yaml` to remove the corresponding write verbs. With all feature flags disabled, Mission Control is effectively read-only except for authentication setup permissions when `config.auth.enabled: true`.
