@@ -1,13 +1,13 @@
 ---
-title: Custom transformers
-description: Build application-specific projections for Event Streaming.
+title: Custom projections
+description: Build application-specific projections with stream transformers and StreamChannel.
 ---
 
-Stream transformers are the projection layer in Event Streaming. They observe protocol events, keep their own state, and expose derived views of a run such as messages, tool calls, subgraphs, tool activity, token totals, progress events, artifacts, or third-party protocol messages.
+Stream transformers are the projection layer in Event streaming. They observe protocol events, keep their own state, and expose derived views of a run such as messages, tool calls, subgraphs, tool activity, token totals, progress events, artifacts, or third-party protocol messages. `StreamChannel` is the projection primitive transformers use to publish those views.
 
 ## How transformers work
 
-Event Streaming starts with Pregel Streaming output from the LangGraph Pregel engine. The runtime normalizes those chunks into protocol events, then a stream handler routes each event through a stack of stream transformers.
+Event streaming starts with Pregel streaming output from the LangGraph Pregel engine. The runtime normalizes those chunks into protocol events, then a stream handler routes each event through a stack of stream transformers.
 
 ```mermaid
 flowchart TD
@@ -29,10 +29,10 @@ Transformers are observational. They do not call back into the graph runtime. In
 ## User transformers
 
 :::python
-User transformers are the public extension point for Event Streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions["name"]`.
+User transformers are the public extension point for Event streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions["name"]`.
 :::
 :::js
-User transformers are the public extension point for Event Streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions.<name>`.
+User transformers are the public extension point for Event streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions.<name>`.
 :::
 
 Use a user transformer when the built-in projections do not match the shape your application needs. For example, a transformer can publish tool activity, token totals, progress events, artifacts, or messages for another protocol.
@@ -76,6 +76,28 @@ interface StreamTransformer<TProjection = unknown> {
 - `process()` observes each protocol event. Return `false` only when you intentionally want to suppress the original event.
 - `finalize()` closes or resolves non-channel projections after a successful run.
 - `fail()` propagates errors to non-channel projections.
+
+## StreamChannel
+
+`StreamChannel` is the projection primitive a transformer uses for streaming values. It always exposes an iterable stream on `run.extensions.<name>`. The constructor argument decides whether each `push()` also flows into the run's main event stream as a `custom:<name>` event—that is, whether the projection's values show up when iterating raw protocol events.
+
+:::js
+| Need | Use |
+| ---- | --- |
+| Side-channel projection only | `new StreamChannel<T>()` |
+| Also flow each push into the main event stream | `new StreamChannel<T>(name)` |
+:::
+
+:::python
+| Need | Use |
+| ---- | --- |
+| Side-channel projection only | `StreamChannel()` |
+| Also flow each push into the main event stream | `StreamChannel(name)` |
+:::
+
+Named channel payloads must be serializable, because each pushed value also becomes a `custom:<name>` protocol event in the main stream. Keep promises, async iterables, class instances, and other in-process handles in unnamed channels.
+
+The stream handler owns channel lifecycle. Once `init()` returns a channel, the handler closes or fails it for you when the run ends. Transformers only push values.
 
 ## Streaming projection
 
@@ -340,4 +362,3 @@ for tool_call in run.tool_calls:
 ```
 :::
 
-See [StreamChannel](/oss/langgraph/streaming/streamchannel) for choosing whether pushed values stay on `run.extensions` only or also flow into the main event stream as `custom:<name>` events.
