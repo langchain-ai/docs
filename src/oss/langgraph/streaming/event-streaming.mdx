@@ -211,13 +211,71 @@ for event in run:
     if data.get("event") != "content-block-delta":
         continue
 
-    block = data.get("content_block") or {}
+    block = data.get("delta") or {}
     if block.get("type") == "text":
         print(block.get("text", ""), end="", flush=True)
     elif block.get("type") == "reasoning":
         print(f"[thinking]{block.get('reasoning', '')}", end="", flush=True)
 ```
 :::
+
+## Channels and event lifecycle
+
+Raw events flow on channels. The channel name appears as the event's `method`; each channel emits a specific event shape.
+
+| Channel | Purpose |
+| ------- | ------- |
+| `values` | Full graph state snapshots. |
+| `updates` | Per-node state deltas. |
+| `messages` | Content-block-centric chat model output. |
+| `tools` | Tool call start, streamed output, finish, and error events. |
+| `lifecycle` | Run, subgraph, and subagent status changes. |
+| `checkpoints` | Lightweight checkpoint envelopes for branching and time travel. |
+| `input` | Human-in-the-loop input requests and responses. |
+| `tasks` | Pregel task creation and result events. |
+| `custom` | User-defined payloads from graph code. |
+| `custom:<name>` | Application-defined stream transformer output. |
+
+The typed projections (`run.messages`, `run.values`, etc.) are built from these channels. Filter on channels when [subscribing to raw protocol events](#subscribe-to-raw-protocol-events) from a deployed graph.
+
+### Message lifecycle
+
+The `messages` channel models output as content blocks:
+
+```text
+message-start
+content-block-start
+content-block-delta
+content-block-finish
+message-finish
+```
+
+Content blocks have explicit boundaries: a block starts, emits zero or more deltas, and finishes before the next block in the same message starts. This makes token streaming, reasoning blocks, tool-call blocks, and multimodal content explicit without requiring provider-specific formats. `message-finish` may include token usage; unrecoverable model-call failures arrive as message error events.
+
+### Tool lifecycle
+
+The `tools` channel exposes tool execution:
+
+```text
+tool-started
+tool-output-delta
+tool-finished
+tool-error
+```
+
+Tool events are correlated by tool call ID, so a tool execution can be joined back to its originating tool-call content block on the `messages` channel.
+
+### Run lifecycle
+
+The `lifecycle` channel tracks root run, subgraph, and subagent status. Status values:
+
+- `started`
+- `running`
+- `completed`
+- `failed`
+- `interrupted`
+
+Each lifecycle event carries a `namespace`, optional graph name, optional error, optional checkpoint, and optional `cause` explaining why a child namespace started (parent tool call, fan-out send, edge transition). Consumers should tolerate unknown causes so the protocol can add new variants without breaking existing clients.
 
 ## Stream messages
 
