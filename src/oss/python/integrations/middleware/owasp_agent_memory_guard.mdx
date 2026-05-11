@@ -3,17 +3,23 @@ title: "OWASP Agent Memory Guard"
 description: "Protect LangChain agents from memory poisoning attacks with the OWASP Agent Memory Guard middleware."
 ---
 
-This guide provides a quick overview for getting started with the OWASP Agent Memory Guard [middleware](/oss/langchain/middleware/overview/). For detailed documentation, head to the [GitHub repository](https://github.com/OWASP/www-project-agent-memory-guard/tree/main/integrations/langchain-agent-memory-guard).
+
+This guide provides a quick overview for getting started with the OWASP Agent Memory Guard [middleware](/oss/langchain/middleware/overview/). For detailed documentation, head to the [integration README](https://github.com/OWASP/www-project-agent-memory-guard/blob/main/integrations/langchain-agent-memory-guard/README.md).
+
 
 ## Overview
 
+
 ### Details
+
 
 | Class | Package | Serializable | [JS support](https://reference.langchain.com/javascript/langchain-community) | Downloads | Version |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | [`MemoryGuardMiddleware`](https://github.com/OWASP/www-project-agent-memory-guard/blob/main/integrations/langchain-agent-memory-guard/langchain_agent_memory_guard/middleware.py) | [`langchain-agent-memory-guard`](https://pypi.org/project/langchain-agent-memory-guard/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-agent-memory-guard?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-agent-memory-guard?style=flat-square&label=%20) |
 
+
 ### Features
+
 
 - <Icon icon="shield-lock" size={16}/> **Prompt injection detection** — Catches injected instructions hidden in agent memory, tool outputs, and context
 - <Icon icon="key" size={16}/> **Secret leakage prevention** — Detects API keys, tokens, and credentials in model responses
@@ -21,15 +27,21 @@ This guide provides a quick overview for getting started with the OWASP Agent Me
 - <Icon icon="lock" size={16}/> **Protected key enforcement** — Prevents unauthorized modification of critical memory fields
 - <Icon icon="terminal" size={16}/> **Tool output scanning** — Scans tool results for injected payloads before they enter the agent loop
 
-This middleware implements the [OWASP Agentic Security Initiative ASI06](https://owasp.org/www-project-agentic-security-initiative/) threat model for memory poisoning defense.
+
+This middleware implements the [OWASP Top 10 for Agentic Applications ASI06](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) threat model for memory poisoning defense.
+
 
 ---
 
+
 ## Setup
+
 
 No API key or external service is required. The middleware runs entirely locally with zero network calls.
 
+
 ### Installation
+
 
 <CodeGroup>
     ```python pip
@@ -40,7 +52,9 @@ No API key or external service is required. The middleware runs entirely locally
     ```
 </CodeGroup>
 
+
 It's also helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>:
+
 
 ```python Enable tracing icon="flask"
 import os
@@ -48,110 +62,17 @@ os.environ["LANGSMITH_API_KEY"] = "your-langsmith-key"
 os.environ["LANGSMITH_TRACING"] = "true"
 ```
 
+
 ---
 
+
 ## Instantiation
+
 
 ```python Initialize middleware icon="arrows-shuffle"
 from langchain_agent_memory_guard import MemoryGuardMiddleware
 
-# Default: strict policy, block on violation
+
+# Default: blocks the agent on any detected attack
 middleware = MemoryGuardMiddleware()
 
-# Custom: warn instead of blocking
-middleware = MemoryGuardMiddleware(on_violation="warn")
-
-# Custom: strip malicious content silently
-middleware = MemoryGuardMiddleware(on_violation="strip")
-```
-
----
-
-## Use with an agent
-
-Pass the middleware to @[`create_agent`] or @[`create_deep_agent`]. It composes with other middleware (runs in order).
-
-```python Agent with memory guard icon="robot"
-from langchain.agents import create_agent
-from langchain_agent_memory_guard import MemoryGuardMiddleware
-
-agent = create_agent(
-    model="openai:gpt-4o",
-    tools=[my_search_tool, my_db_tool],
-    middleware=[MemoryGuardMiddleware()],
-)
-
-# The agent is now protected against memory poisoning
-result = agent.invoke({"messages": [{"role": "user", "content": "Search for recent AI news"}]})
-```
-
-<Tip>
-    Middleware runs in the [agent loop](/oss/langchain/middleware/overview#the-agent-loop). For custom behavior, see [custom middleware](/oss/langchain/middleware/custom).
-</Tip>
-
----
-
-## Violation handling modes
-
-The middleware supports three modes for handling detected attacks:
-
-| Mode | Behavior | Use case |
-|------|----------|----------|
-| `"block"` (default) | Raises `MemoryGuardViolation` exception | Production systems where security is critical |
-| `"warn"` | Logs warning, continues execution | Development/testing, monitoring without disruption |
-| `"strip"` | Removes violating content silently | High-availability systems that must not fail |
-
-```python Error handling icon="shield-lock"
-from langchain_agent_memory_guard import MemoryGuardMiddleware
-from langchain_agent_memory_guard.middleware import MemoryGuardViolation
-
-middleware = MemoryGuardMiddleware(on_violation="block")
-
-try:
-    result = agent.invoke({"messages": [{"role": "user", "content": "Process this data"}]})
-except MemoryGuardViolation as e:
-    print(f"Attack detected and blocked: {e}")
-```
-
----
-
-## Custom security policy
-
-Use the core `agent-memory-guard` policy system for fine-grained control:
-
-```python Custom policy icon="settings"
-from agent_memory_guard import Policy
-from langchain_agent_memory_guard import MemoryGuardMiddleware
-
-# Strict policy (default) — all detectors enabled
-middleware = MemoryGuardMiddleware(policy=Policy.strict())
-
-# Permissive policy — detect but don't enforce
-middleware = MemoryGuardMiddleware(policy=Policy.permissive())
-```
-
----
-
-## How it protects your agent
-
-The middleware hooks into three points in the agent loop:
-
-| Hook | What it scans | Threat mitigated |
-|------|--------------|-----------------|
-| `before_model` | All messages in agent state | Injection planted in memory/context |
-| `after_model` | Model's response content | Secret leakage, injection propagation |
-| `wrap_tool_call` | Tool output content | **Primary attack vector**: injection via tool results |
-
-Tool outputs are the most dangerous attack surface because an adversary can embed prompt injection payloads in web pages, database records, or API responses that the agent's tools fetch.
-
----
-
-## API reference
-
-For detailed documentation of all features and configurations, see the [GitHub repository](https://github.com/OWASP/www-project-agent-memory-guard/tree/main/integrations/langchain-agent-memory-guard).
-
-## Related resources
-
-- [OWASP Agent Memory Guard](https://github.com/OWASP/www-project-agent-memory-guard) — Core library
-- [OWASP Agentic Security Initiative](https://owasp.org/www-project-agentic-security-initiative/) — Threat model (ASI06)
-- [agent-memory-guard on PyPI](https://pypi.org/project/agent-memory-guard/) — Core package
