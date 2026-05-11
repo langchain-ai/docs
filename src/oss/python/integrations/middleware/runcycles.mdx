@@ -51,10 +51,10 @@ os.environ["LANGSMITH_TRACING"] = "true"
 The Cycles middleware lives in the `langchain-runcycles` package:
 
 <CodeGroup>
-    ```python pip
+    ```bash pip
     pip install -U langchain-runcycles
     ```
-    ```python uv
+    ```bash uv
     uv add langchain-runcycles
     ```
 </CodeGroup>
@@ -221,7 +221,7 @@ gate = CyclesToolGate(
 )
 ```
 
-`subject` and `action` accept either static values, a per-tool mapping (dict), or callables that resolve from request and state: useful when the tenant comes from per-call agent state.
+`action` accepts a static `Action`, a per-tool mapping (`Mapping[str, Action]`), or a callable that resolves from request and state. `subject` is more restrictive: static `Subject` or a callable; per-tool mappings aren't supported there (the constructor rejects them). Use the callable form when the tenant comes from per-call agent state.
 
 ## CyclesFanOutGate: turn caps and remote policy halts
 
@@ -335,7 +335,7 @@ Cycles idempotency keys take the shape `{prefix}-{tool_call_id}` (no random suff
 **Namespace scoping (v0.1.3+):** if your runtime reuses short tool-call ids across runs (`tc_1`, `tc_2`, ...), set `idempotency_namespace` to scope keys by run, workflow, or tenant. Key shape differs per class:
 
 - `CyclesToolGate` is deterministic on the upstream `tool_call_id`: `{prefix}-{namespace}-{tool_call_id}` with a namespace, or `{prefix}-{tool_call_id}` without (the v0.1.2 shape, retained for back-compat).
-- `CyclesModelGate` and `CyclesFanOutGate` don't have a stable upstream id — model and fan-out decisions are per-call — so the key uses a fresh UUID: `{prefix}-{namespace}-{uuid}` with a namespace, or `{prefix}-{uuid}` without. The namespace there scopes keys by run/tenant for observability and audit grouping; it doesn't make the key retry-stable.
+- `CyclesModelGate` and `CyclesFanOutGate` don't have a stable upstream id (model and fan-out decisions are per-call), so the key uses a fresh UUID: `{prefix}-{namespace}-{uuid}` with a namespace, or `{prefix}-{uuid}` without. The namespace there scopes keys by run/tenant for observability and audit grouping; it doesn't make the key retry-stable.
 
 Accepts a static string or a callable receiving the request (model / tool gate) or state (fan-out gate). A callable returning `None` opts out of namespacing for that call. Errors raised by the callable propagate to the agent (fail-fast on misconfiguration).
 
@@ -366,7 +366,7 @@ gate = CyclesToolGate(
 
 ### v0.1.x scope: architecture-complete, production polish in v0.2.0
 
-Implemented (v0.1.5+): `wrap_model_call` (`CyclesModelGate`), `wrap_tool_call` (`CyclesToolGate`), and `before_model` (`CyclesFanOutGate`) — all three hooks of the LangChain agent governance triad. `CyclesModelGate` and `CyclesToolGate` share the same three modes (`decide` / `reserve` / `decide+reserve`), reservation lifecycle, and `settlement_error_policy`. `CyclesFanOutGate` is a thinner halt-only middleware: it consults `decide()` per turn and counts turns against `max_turns`, but does not reserve, so it shares only the `idempotency_namespace` plumbing with the other two.
+Implemented (v0.1.5+): `wrap_model_call` (`CyclesModelGate`), `wrap_tool_call` (`CyclesToolGate`), and `before_model` (`CyclesFanOutGate`): all three hooks of the LangChain agent governance triad. `CyclesModelGate` and `CyclesToolGate` share the same three modes (`decide` / `reserve` / `decide+reserve`), reservation lifecycle, and `settlement_error_policy`. `CyclesFanOutGate` is a thinner halt-only middleware: it consults `decide()` per turn and counts turns against `max_turns`, but does not reserve, so it shares only the `idempotency_namespace` plumbing with the other two.
 
 Deferred to v0.2.0: provider-specific token-cost extractors (OpenAI / Anthropic response metadata parsing), streaming-aware settlement, and a polished demo agent. Until then, `CyclesModelGate` commits at the configured `estimate`; for precise per-call token cost capture today, use the `BaseCallbackHandler` callback handler from `cycles-client-python` alongside this middleware (the two compose cleanly).
 
