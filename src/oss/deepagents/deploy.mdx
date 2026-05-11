@@ -3,7 +3,9 @@ title: Deploy with the CLI
 description: Deploy a model-agnostic, open source agent to production with the Deep Agents CLI
 ---
 
-Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith Deployment](/langsmith/deployment): a horizontally scalable server with 30+ endpoints including MCP, A2A, Agent Protocol, human-in-the-loop, and memory APIs. Built on open standards:
+`deepagents deploy` takes your agent configuration and files and deploys them together as a [LangSmith Deployment](/langsmith/deployment).
+
+LangSmith Deployments are horizontally scalable servers with 30+ endpoints including MCP, A2A, Agent Protocol, human-in-the-loop, and memory APIs. Built on open standards:
 
 - **Open source harness**: MIT licensed, available for [Python](https://github.com/langchain-ai/deepagents) and [TypeScript](https://github.com/langchain-ai/deepagentsjs)
 - **[AGENTS.md](https://agents.md/)**: open standard for agent instructions
@@ -28,21 +30,6 @@ Deep Agents Deploy takes your agent configuration and deploys it as a [LangSmith
 | AGENTS.md support | ✅ | ❌ |
 | Agent endpoints | MCP, A2A, Agent Protocol | Proprietary |
 | Self hosting | ✅ | ❌ |
-
-## What you're deploying
-
-`deepagents deploy` packages your agent configuration and deploys it as a [LangSmith Deployment](/langsmith/deployment). You configure your agent with a few parameters:
-
-| Parameter | Description |
-| --- | --- |
-| **`model`** | The LLM to use. Any provider works — see [supported models](/oss/deepagents/models#supported-models). |
-| **`AGENTS.md`** | The system prompt, loaded at the start of each session. |
-| **`skills`** | [Agent Skills](https://agentskills.io/) for specialized knowledge and actions. Skills are synced into the sandbox so the agent can execute them at runtime. See [skills docs](/oss/deepagents/skills). |
-| **``user/``** | Per-user writable memory. If a `AGENTS.md` template is present in the `user` folder, the agents seeds the template per user (if the folder is empty the agents creates an empty `AGENTS.md`). Writable at runtime. Preloaded into the agent's context via the memory middleware. |
-| **`mcp.json`** | MCP tools (HTTP/SSE). See [MCP docs](/oss/langchain/mcp). |
-| **`subagents/`** | Specialized [subagents](/oss/deepagents/subagents) the main agent can delegate to. Each subdirectory contains its own `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. See [subagents](#subagents). |
-| **`sandbox`** | Optional execution environment. Thread-scoped sandboxes are provisioned per thread and will be re-created if the server restarts. Use `scope = "assistant"` if you need sandbox state that persists across threads. See [sandbox providers](#sandbox-providers). |
-| **`frontend`** | Optional prebuilt React chat UI shipped alongside the agent on the same deployment. Configurable for per-user auth or anonymous mode, with real-time todos, files, and subagent activity panels. See [`[frontend]`](#frontend). |
 
 ## Install
 
@@ -92,11 +79,11 @@ This creates the following files:
 | `mcp.json` | MCP server configuration (empty by default) |
 | `skills/` | Directory for [Agent Skills](https://agentskills.io/), with an example `review` skill |
 
-After init, edit `AGENTS.md` with your agent's instructions and run `deepagents deploy`. Optionally add a `user/` directory with per-user memory templates — see [User Memory](#user-memory).
+After init, edit your project files and run `deepagents deploy`.
 
-## Project layout
+## Setup
 
-The deploy command uses a convention-based project layout. Place the following files alongside your `deepagents.toml` and they are automatically discovered:
+The deploy command uses the following project layout. Place the following files alongside your `deepagents.toml` and they are automatically discovered and deployed:
 
 ```txt
 my-agent/
@@ -117,79 +104,61 @@ my-agent/
     └── AGENTS.md
 ```
 
-| File/directory | Purpose | Required |
-| --- | --- | --- |
-| `AGENTS.md` | [Memory](/oss/deepagents/memory) for the agent. Provides persistent context (project conventions, instructions, preferences) that is always loaded at startup. Read-only at runtime. | Yes |
-| `skills/` | Directory of [skill](/oss/deepagents/skills) definitions. Each subdirectory should contain a `SKILL.md` file. Read-only at runtime. | No |
-| `user/` | Per-user writable memory. If a `AGENTS.md` template is present in the `user` folder, the agents seeds the template per user (if the folder is empty the agents creates an empty `AGENTS.md`). Writable at runtime. Preloaded into the agent's context via the memory middleware. | No |
-| `subagents/` | [Subagents](#subagents) the main agent can delegate to. Each subdirectory must contain a `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. Auto-discovered at bundle time. | No |
-| `mcp.json` | [MCP](https://modelcontextprotocol.io/) server configuration. Only `http` and `sse` transports are supported in deployed contexts. | No |
-| `.env` | Environment variables (API keys, secrets). Placed alongside `deepagents.toml` at the project root. | No |
-
-<Warning>
-    `mcp.json` must only contain servers using `http` or `sse` transports. Servers using `stdio` transport are not supported in deployed environments because there is no local process to spawn.
-
-    Convert stdio servers to HTTP or SSE before deploying.
-</Warning>
+| File | Description |
+| ---- | ----------- |
+| **`deepagents.toml`** | Required. Configures the agent's [identity](#configuration-file), [authentication](#auth), [sandbox environment](#sandbox), and the deployment of a prebuilt [frontend](#frontend) Reach chat UI. |
+| **`AGENTS.md`** | Required. [Memory](/oss/deepagents/memory) for the agent. Provides persistent context (project conventions, instructions, preferences) that is always loaded at startup. Read-only at runtime. |
+| **`skills/`** | _Optional_. Directory of [skill](/oss/deepagents/skills) definitions that provide specialized workflows and domain knowledge. Each subdirectory should contain a `SKILL.md` file. Read-only at runtime. Dotfiles are skipped when uploading. |
+| **`user/`** | _Optional_. Per-user writable memory. If an `AGENTS.md` template is present in the `user` folder, the agents seeds the template per user (if the folder is empty the agents creates an empty `AGENTS.md`). The agent can read from and write to this file. Preloaded into the agent's context via the memory middleware. |
+| **`mcp.json`** | _Optional_. MCP tools (HTTP/SSE). If `mcp.json` exists, it is included in the deployment and [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) is added as a dependency. See [MCP (LangChain)](/oss/langchain/mcp) for more information. <Warning> `mcp.json` must only contain servers using `http` or `sse` transports. Servers using `stdio` transport are not supported in deployed environments because there is no local process to spawn. <br /><br /> Convert stdio servers to HTTP or SSE before deploying. </Warning> |
+| **`subagents/`** | _Optional_. Specialized [Subagents](#subagents) the main agent can delegate to. Each subdirectory must contain a `deepagents.toml`, `AGENTS.md`, and optionally a `skills` folder. Auto-discovered at bundle time. |
+| `.env` | _Optional_. Environment variables (API keys, secrets). Placed alongside `deepagents.toml` at the project root. See [Environment variables](#environment-variables). |
 
 ## Configuration file
 
 `deepagents.toml` configures the agent's identity and sandbox environment. Only the `[agent]` section is required. The `[sandbox]` section is optional and defaults to no sandbox.
 
+| Field | Type | Description |
+| --- | --- | --- |
+| [`[agent]`](#agent) | Object | Required. Core agent identity (name and model). |
+| [`[sandbox]`](#sandbox) | Object | _Optional_. Configure the isolated execution environment where the agent runs code. Defaults to no sandbox. |
+| [`[auth]`](#auth) | Object | _Optional_. Configure authentication on the deployed agent. Required when `[frontend].enabled = true`. |
+| [`[frontend]`](#frontend) | Object | _Optional_. Enable and configure the built-in chat UI frontend. |
+
 ### `[agent]`
 
-(Required)
-
-Core agent identity. For more on model selection and provider configuration, see [supported models](/oss/deepagents/models#supported-models).
-
-<ResponseField name="name" type="string" required>
-    Name for the deployed agent. Used as the assistant identifier in LangSmith.
-</ResponseField>
-
-<ResponseField name="model" type="string">
-    Model identifier in `provider:model` format. See [supported models](/oss/deepagents/models#supported-models).
-</ResponseField>
+Configure the core agent identity:
 
 ```toml deepagents.toml
 [agent]
 name = "research-assistant"
+description = "Researches market trends, competitors, and target audiences"
 model = "google_genai:gemini-3.1-pro-preview"
 ```
 
-<Note>
-    The `name` field is the only required value in the entire configuration file. Everything else has defaults.
-</Note>
-
-Skills, user memories, subagents, MCP servers, and model dependencies are auto-detected from the project layout:
-
-- **Skills**: the bundler recursively scans `skills/`, skipping hidden dotfiles, and bundles the rest.
-- **User memory**: if `user/` exists, a single `AGENTS.md` is bundled as per-user memory (from `user/AGENTS.md` if present, otherwise empty). At runtime, each user gets their own copy (seeded on first access, never overwritten). The agent can read from and write to this file.
-- **Subagents**: if `subagents/` exists, the bundler scans for valid subdirectories (each must contain `deepagents.toml` and `AGENTS.md`). The main agent receives a `task` tool to delegate work to each subagent by name. See [subagents](#subagents).
-- **MCP servers**: if `mcp.json` exists, it is included in the deployment and [`langchain-mcp-adapters`](https://pypi.org/project/langchain-mcp-adapters/) is added as a dependency. Only HTTP/SSE transports are supported (stdio is rejected at bundle time).
-- **Model dependencies**: the `provider:` prefix in the `model` field determines the required `langchain-*` package (e.g., `google_genai` -> `langchain-google-genai`). This includes models specified in subagent configs.
-- **Sandbox dependencies**: the `[sandbox].provider` value maps to its partner package (e.g., `daytona` -> `langchain-daytona`).
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Required. Name for the deployed agent. Used as the assistant identifier in LangSmith. |
+| `description` | `string` | _Optional_. Human-readable description of what the agent does. |
+| `model` | `string` | _Optional_. Model identifier in `provider:model` format. See [supported models](/oss/deepagents/models#supported-models). The `provider:` prefix in the `model` field determines the required `langchain-*` package (e.g., `google_genai` -> `langchain-google-genai`) which is automatically included in the deployment. This includes models specified in subagent configs. Defaults to a credential-based model if omitted (tries `openai:gpt-5.2`, then `anthropic:claude-sonnet-4-6`, then `google_genai:gemini-3.1-pro-preview`, then `google_vertexai:gemini-3.1-pro-preview`, then `nvidia:nvidia/nemotron-3-super-120b-a12b`). |
 
 ### `[sandbox]`
 
 Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes).
 
-When omitted or set to `provider = "none"`, the sandbox is disabled. Sandboxes are for if you need code execution or skill script execution.
+```toml deepagents.toml
+[sandbox]
+provider = "langsmith"
+template = "coding-agent"
+image = "python:3.12"
+```
 
-<ResponseField name="provider" type="string" default="none">
-    Sandbox provider. Determines where the container runs. Supported values: `"none"`, `"daytona"`, `"modal"`, `"runloop"`, `"langsmith"` (private beta). See [sandbox integrations](/oss/integrations/sandboxes) for provider details.
-</ResponseField>
-
-<ResponseField name="template" type="string" default="deepagents-deploy">
-    Provider-specific template name for the sandbox environment.
-</ResponseField>
-
-<ResponseField name="image" type="string" default="python:3">
-    Base Docker image for the sandbox container.
-</ResponseField>
-
-<ResponseField name="scope" type="string" default="thread">
-    Sandbox lifecycle scope. `"thread"` creates one sandbox per conversation. `"assistant"` shares a single sandbox across all conversations for the same assistant.
-</ResponseField>
+| Field | Type | Description |
+| --- | --- | --- |
+| `provider` | `string` | _Optional_. Sandbox provider. Supported values: `"none"`, `"daytona"`, `"modal"`, `"runloop"`, `"langsmith"` (private beta). The relevant partner package is automatically included in the deployment. See [sandbox integrations](/oss/integrations/sandboxes) for provider details. Defaults to `"none"`. When omitted or set to `provider = "none"`, the sandbox is disabled. |
+| `template` | `string` | _Optional_. Provider-specific template name for the sandbox environment. Defaults to `"deepagents-deploy"`. |
+| `image` | `string` | _Optional_. Base Docker image for the sandbox container. Defaults to `"python:3"`. |
+| `scope` | `string` | _Optional_. Sandbox lifecycle scope. Defaults to `"thread"`. `"thread"` creates one sandbox per conversation. `"assistant"` shares a single sandbox across all conversations for the same assistant. |
 
 **Scope behavior:**
 
@@ -198,11 +167,7 @@ When omitted or set to `provider = "none"`, the sandbox is disabled. Sandboxes a
 
 ### `[auth]`
 
-Add an `[auth]` section to control authentication on the deployed agent. When present, the bundler generates an `auth.py` file wired into the deployment automatically. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Deployment's default `x-api-key` requirement applies).
-
-<ResponseField name="provider" type="string" required>
-    Auth provider. Supported values: `"supabase"`, `"clerk"`, `"anonymous"`.
-</ResponseField>
+Add an `[auth]` section to configure authentication on the deployed agent. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Deployment's default `x-api-key` requirement applies).
 
 ```toml deepagents.toml
 [agent]
@@ -213,15 +178,23 @@ model = "google-genai:gemini-3.1-pro-preview"
 provider = "supabase"   # supabase | clerk | anonymous
 ```
 
-The required environment variables depend on the provider:
+| Field | Type | Description |
+| --- | --- | --- |
+| `provider` | `string` | Required. Auth provider. Supported values: `"supabase"`, `"clerk"`, `"anonymous"`. |
+
+Pick one of three providers:
+
+- **Clerk** (`[auth] provider = "clerk"`) — per-user real authentication. Each user signs in; threads and memory are scoped per user.
+- **Supabase** (`[auth] provider = "supabase"`) — per-user real authentication. Same per-user scoping as Clerk.
+- **Anonymous** (`[auth] provider = "anonymous"`) — the bundler ships a permissive auth handler that overrides LangSmith Deployment's default `x-api-key` requirement so the frontend can reach `/threads`, which means anyone with the deploy URL can call the API. The frontend assigns each browser a UUID cookie and filters the thread picker by it (UX-only scoping, not security). The CLI requires an interactive `y/N` confirmation before pushing.
+
+Depending on your provider, add the following credentials to your `.env` alongside your other credentials:
 
 | Provider | Required env vars |
 | --- | --- |
 | `supabase` | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_DEFAULT_KEY` |
 | `clerk` | `CLERK_SECRET_KEY` |
 | `anonymous` | None |
-
-Add these to your `.env` alongside your other credentials. The bundler validates that all required vars are present at deploy time and fails fast with a clear error if any are missing.
 
 **Runtime behavior:**
 
@@ -230,29 +203,23 @@ Add these to your `.env` alongside your other credentials. The bundler validates
 - All resources (threads, runs, store) are automatically scoped per user via `metadata.owner`.
 - LangSmith Studio bypasses auth for local development.
 
+For information on how to authenticate, see [Authentication](#authentication).
+
 ### `[frontend]`
 
 <Note>
     Frontend deployment requires `deepagents-cli>=0.0.43`.
 </Note>
 
-Optionally enable `[frontend]` to ship a prebuilt React chat UI alongside your agent on the same deployment. The frontend is mounted at `/app` on your deployment URL; your LangGraph API stays at the root (`/threads`, `/runs`, `/assistants`). Every frontend uses one of three authentication providers — Clerk, Supabase, or anonymous (see [`[auth]`](#auth) below).
+Optionally enable `[frontend]` to ship a prebuilt React chat UI alongside your agent on the same deployment. The frontend is mounted at `/app` on your deployment URL; your LangGraph API stays at the root (`/threads`, `/runs`, `/assistants`). The frontend provides:
 
-<ResponseField name="enabled" type="boolean" default="false">
-    If `true`, bundle the default chat UI into the deployment.
-</ResponseField>
+- Streaming chat with the agent
+- Thread picker with auto-generated titles from the first user message
+- Real-time todos, files, and subagent activity panels that reflect your deep agent's live graph state
+- Light/dark theme toggle that follows OS preference on first load and persists after
+- (Clerk / Supabase only) Sign-in / sign-up / sign-out flows — Clerk ships its full widget (social logins, password reset); Supabase ships email/password with a built-in password reset flow
 
-<ResponseField name="app_name" type="string" default="[agent].name">
-    Display name shown in the UI header and browser tab.
-</ResponseField>
-
-<ResponseField name="subtitle" type="string" default="Your deep agent, deployed.">
-    Subtitle shown under the app name in the header and on the empty-state hero. Use it to describe what the agent does.
-</ResponseField>
-
-<ResponseField name="prompts" type="string[]">
-    Suggestion chips shown on the empty-state when there are no messages. Defaults to a generic research-themed set; override to tailor the chips to your agent.
-</ResponseField>
+Every frontend uses one of three authentication providers — Clerk, Supabase, or anonymous (see [`[auth]`](#auth)).
 
 ```toml deepagents.toml
 [agent]
@@ -273,21 +240,12 @@ prompts = [
 ]
 ```
 
-**Authentication providers:**
-
-`[auth]` is required when `[frontend].enabled = true`. Pick one of three providers:
-
-- **Clerk** (`[auth] provider = "clerk"`) — per-user real authentication. Each user signs in; threads and memory are scoped per user.
-- **Supabase** (`[auth] provider = "supabase"`) — per-user real authentication. Same per-user scoping as Clerk.
-- **Anonymous** (`[auth] provider = "anonymous"`) — the bundler ships a permissive auth handler that overrides LangSmith Deployment's default `x-api-key` requirement so the frontend can reach `/threads`, which means anyone with the deploy URL can call the API. The frontend assigns each browser a UUID cookie and filters the thread picker by it (UX-only scoping, not security). The CLI requires an interactive `y/N` confirmation before pushing.
-
-**What you get:**
-
-- Streaming chat with the agent
-- Thread picker with auto-generated titles from the first user message
-- Real-time todos, files, and subagent activity panels that reflect your deep agent's live graph state
-- Light/dark theme toggle that follows OS preference on first load and persists after
-- (Clerk / Supabase only) Sign-in / sign-up / sign-out flows — Clerk ships its full widget (social logins, password reset); Supabase ships email/password with a built-in password reset flow
+| Field | Type | Description |
+| --- | --- | --- |
+| `enabled` | `boolean` | _Optional_. If `true`, bundle the default chat UI into the deployment. Defaults to `false`. |
+| `app_name` | `string` | _Optional_. Display name shown in the UI header and browser tab. Defaults to `[agent].name`. |
+| `subtitle` | `string` | _Optional_. Subtitle shown under the app name in the header and on the empty-state hero. Use it to describe what the agent does. Defaults to `"Your deep agent, deployed."`. |
+| `prompts` | `string[]` | _Optional_. Suggestion chips shown on the empty-state when there are no messages. Defaults to a generic research-themed set; override to tailor the chips to your agent. |
 
 **Environment variables:**
 
@@ -305,7 +263,7 @@ After deploying, add your deployment URL to your auth provider's dashboard so au
 - **Clerk:** Dashboard → your application → **Domains** → add your deployment host (e.g. `clerk-abc.us.langgraph.app`). Clerk development instances auto-whitelist localhost; production deployment URLs need explicit whitelisting.
 - **Supabase:** Dashboard → **Authentication** → **URL Configuration** → add `https://<your-deployment>/app/**` to **Redirect URLs**. Without this, password-reset and email-confirmation links won't route back to your app.
 
-### `.env`
+## Environment variables
 
 Place a `.env` file alongside `deepagents.toml` with your API keys:
 
@@ -375,10 +333,6 @@ When `[auth]` is configured for `supabase` or `clerk`, pass the token from your 
 
 Each user's threads and memory are isolated automatically—User B cannot see User A's threads.
 
-## Sandbox providers
-
-Set `[sandbox].provider` in `deepagents.toml` and add the required env vars to `.env`. For available providers, see [sandbox integrations](/oss/integrations/sandboxes). For lifecycle patterns and SDK usage, see [sandboxes](/oss/deepagents/sandboxes).
-
 ## Deployment endpoints
 
 The deployed server exposes:
@@ -388,72 +342,6 @@ The deployed server exposes:
 - [**Agent Protocol**](https://github.com/langchain-ai/agent-protocol): standard API for building UIs
 - [**Human-in-the-loop**](/oss/deepagents/human-in-the-loop): approval gates for sensitive actions
 - [**Memory**](/oss/deepagents/memory): short-term and long-term memory access
-
-## Examples
-
-A content writing agent with per-user preferences that the agent can update:
-
-```toml deepagents.toml
-[agent]
-name = "deepagents-deploy-content-writer"
-model = "google_genai:gemini-3.1-pro-preview"
-```
-
-```txt
-my-content-writer/
-├── deepagents.toml
-├── AGENTS.md
-├── skills/
-│   ├── blog-post/SKILL.md
-│   └── social-media/SKILL.md
-└── user/
-    └── AGENTS.md          # writable — agent learns user preferences
-```
-
-A coding agent with a LangSmith sandbox for running code:
-
-```toml deepagents.toml
-[agent]
-name = "deepagents-deploy-coding-agent"
-model = "google_genai:gemini-3.1-pro-preview"
-
-[sandbox]
-provider = "langsmith"
-template = "coding-agent"
-image = "python:3.12"
-```
-
-A GTM strategy agent that delegates research to a subagent:
-
-```txt
-my-gtm-agent/
-├── deepagents.toml
-├── AGENTS.md
-├── skills/
-│   └── competitor-analysis/
-│       └── SKILL.md
-└── subagents/
-    └── market-researcher/
-        ├── deepagents.toml
-        ├── AGENTS.md
-        └── skills/
-            └── analyze-market/
-                └── SKILL.md
-```
-
-A lightweight internal-demo agent with the bundled UI in anonymous mode (no signup, no infrastructure):
-
-```toml deepagents.toml
-[agent]
-name = "internal-demo"
-model = "anthropic:claude-sonnet-4-6"
-
-[auth]
-provider = "anonymous"   # API open to anyone with the URL — confirm at deploy time
-
-[frontend]
-enabled = true
-```
 
 ## User Memory
 
@@ -531,24 +419,18 @@ Each subagent subdirectory **may** contain:
 
 ### Subagent configuration
 
-<ResponseField name="name" type="string" required>
-    Unique identifier for the subagent. Must be unique across all subagents.
-</ResponseField>
-
-<ResponseField name="description" type="string" required>
-    What this subagent does. The main agent uses this to decide when to delegate. Must be non-empty.
-</ResponseField>
-
-<ResponseField name="model" type="string">
-    Model override in `provider:model` format. Omit to inherit the main agent's model.
-</ResponseField>
-
 ```toml subagents/researcher/deepagents.toml
 [agent]
 name = "researcher"
 description = "Researches market trends, competitors, and target audiences"
 model = "google_genai:gemini-3.1-pro-preview"
 ```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Required. Unique identifier for the subagent. Must be unique across all subagents. |
+| `description` | `string` | Required. What this subagent does. The main agent uses this to decide when to delegate. Must be non-empty. |
+| `model` | `string` | _Optional_. Model override in `provider:model` format. Omit to inherit the main agent's model. |
 
 ### Inheritance
 
@@ -604,3 +486,69 @@ market data to support go-to-market decisions.
 
 - **MCP: HTTP/SSE only.** Stdio transports are rejected at bundle time.
 - **No custom Python tools.** Use MCP servers to expose custom tool logic.
+
+## Examples
+
+A content writing agent with per-user preferences that the agent can update:
+
+```toml deepagents.toml
+[agent]
+name = "deepagents-deploy-content-writer"
+model = "google_genai:gemini-3.1-pro-preview"
+```
+
+```txt
+my-content-writer/
+├── deepagents.toml
+├── AGENTS.md
+├── skills/
+│   ├── blog-post/SKILL.md
+│   └── social-media/SKILL.md
+└── user/
+    └── AGENTS.md          # writable — agent learns user preferences
+```
+
+A coding agent with a LangSmith sandbox for running code:
+
+```toml deepagents.toml
+[agent]
+name = "deepagents-deploy-coding-agent"
+model = "google_genai:gemini-3.1-pro-preview"
+
+[sandbox]
+provider = "langsmith"
+template = "coding-agent"
+image = "python:3.12"
+```
+
+A GTM strategy agent that delegates research to a subagent:
+
+```txt
+my-gtm-agent/
+├── deepagents.toml
+├── AGENTS.md
+├── skills/
+│   └── competitor-analysis/
+│       └── SKILL.md
+└── subagents/
+    └── market-researcher/
+        ├── deepagents.toml
+        ├── AGENTS.md
+        └── skills/
+            └── analyze-market/
+                └── SKILL.md
+```
+
+A lightweight internal-demo agent with the bundled UI in anonymous mode (no signup, no infrastructure):
+
+```toml deepagents.toml
+[agent]
+name = "internal-demo"
+model = "anthropic:claude-sonnet-4-6"
+
+[auth]
+provider = "anonymous"   # API open to anyone with the URL — confirm at deploy time
+
+[frontend]
+enabled = true
+```
