@@ -259,20 +259,10 @@ def get_weather(city: str) -> str:
     return f"It's always sunny in {city}!"
 
 
-def search_papers(topic: str) -> str:
-    """Search recent papers on a topic."""
-    return f"Found 3 papers on {topic}."
-
-
 weather_agent = create_agent(
     model=init_chat_model("openai:gpt-5.4"),
     tools=[get_weather],
     name="weather_agent",
-)
-research_agent = create_agent(
-    model=init_chat_model("openai:gpt-5.4"),
-    tools=[search_papers],
-    name="research_agent",
 )
 
 
@@ -282,25 +272,19 @@ def call_weather(query: str) -> str:
     return result["messages"][-1].text
 
 
-def call_research(query: str) -> str:
-    """Query the research agent."""
-    result = research_agent.invoke({"messages": [{"role": "user", "content": query}]})
-    return result["messages"][-1].text
-
-
 supervisor = create_agent(
     model=init_chat_model("openai:gpt-5.4"),
-    tools=[call_weather, call_research],
+    tools=[call_weather],
     name="supervisor",
 )
 
 run = supervisor.stream_events(
-    {"messages": [{"role": "user", "content": "Weather in Boston, and any recent papers on it?"}]},
+    {"messages": [{"role": "user", "content": "What's the weather in Boston?"}]},
     version="v3",
 )
 
 for subagent in run.subgraphs:
-    if subagent.graph_name not in ("weather_agent", "research_agent"):  # [!code highlight]
+    if subagent.graph_name != "weather_agent":
         continue
     print(f"{subagent.graph_name}: ", end="")
     for message in subagent.messages:
@@ -320,20 +304,10 @@ const getWeather = tool(
   { name: "get_weather", schema: z.object({ city: z.string() }) }
 );
 
-const searchPapers = tool(
-  async ({ topic }) => `Found 3 papers on ${topic}.`,
-  { name: "search_papers", schema: z.object({ topic: z.string() }) }
-);
-
 const weatherAgent = createAgent({
   model: "openai:gpt-5.4",
   tools: [getWeather],
   name: "weather_agent",
-});
-const researchAgent = createAgent({
-  model: "openai:gpt-5.4",
-  tools: [searchPapers],
-  name: "research_agent",
 });
 
 const callWeather = tool(
@@ -346,29 +320,19 @@ const callWeather = tool(
   { name: "call_weather", schema: z.object({ query: z.string() }) }
 );
 
-const callResearch = tool(
-  async ({ query }) => {
-    const result = await researchAgent.invoke({
-      messages: [{ role: "user", content: query }],
-    });
-    return result.messages.at(-1)?.text ?? "";
-  },
-  { name: "call_research", schema: z.object({ query: z.string() }) }
-);
-
 const supervisor = createAgent({
   model: "openai:gpt-5.4",
-  tools: [callWeather, callResearch],
+  tools: [callWeather],
   name: "supervisor",
 });
 
 const run = await supervisor.streamEvents(
-  { messages: [{ role: "user", content: "Weather in Boston, and any recent papers on it?" }] },
+  { messages: [{ role: "user", content: "What's the weather in Boston?" }] },
   { version: "v3" }
 );
 
 for await (const subagent of run.subgraphs) {
-  if (!["weather_agent", "research_agent"].includes(subagent.name)) continue; // [!code highlight]
+  if (subagent.name !== "weather_agent") continue;
   process.stdout.write(`${subagent.name}: `);
   for await (const message of subagent.messages) {
     for await (const token of message.text) {
