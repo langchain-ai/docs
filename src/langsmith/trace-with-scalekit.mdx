@@ -1,0 +1,215 @@
+---
+title: Trace Scalekit tool calls
+sidebarTitle: Scalekit
+description: Trace authenticated tool calls from Scalekit connectors in LangSmith using LangChain.
+---
+
+[Scalekit](https://scalekit.com) provides authenticated tool calling for AI agents. It ships 60+ pre-built connectors (Gmail, Slack, Salesforce, GitHub, Notion, and more), manages OAuth flows and token storage per user, and returns native LangChain `StructuredTool` objects. When you enable LangSmith tracing, Scalekit tool calls appear as tool spans in your traces automatically.
+
+This guide shows you how to trace Scalekit tool calls with LangSmith using:
+
+- The [LangChain SDK adapter](#use-the-langchain-sdk-adapter) for native `StructuredTool` integration.
+- [MCP via `langchain-mcp-adapters`](#use-mcp-with-langchain) for protocol-based tool access.
+
+## Prerequisites
+
+- A [LangSmith account](https://smith.langchain.com) and [API key](/langsmith/create-account-api-key)
+- A [Scalekit account](https://app.scalekit.com) with API credentials (Client ID, Client Secret, Environment URL)
+- An [OpenAI API key](https://platform.openai.com/api-keys)
+- A Gmail connection configured in the Scalekit dashboard under **Agent Auth > Connections**
+
+## Use the LangChain SDK adapter
+
+Scalekit's Python SDK includes a native LangChain adapter that returns `StructuredTool` objects. Bind them to any LangChain-compatible model and tool calls trace in LangSmith automatically.
+
+### Installation
+
+<CodeGroup>
+
+```bash pip
+pip install scalekit-sdk-python langchain-openai langsmith
+```
+
+```bash uv
+uv add scalekit-sdk-python langchain-openai langsmith
+```
+
+</CodeGroup>
+
+### Set up tracing
+
+Set your LangSmith and Scalekit environment variables:
+
+```bash
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=<your_langsmith_api_key>
+export LANGCHAIN_PROJECT=<your_project_name>  # optional
+
+export SCALEKIT_CLIENT_ID=<your_scalekit_client_id>
+export SCALEKIT_CLIENT_SECRET=<your_scalekit_client_secret>
+export SCALEKIT_ENV_URL=<your_scalekit_env_url>
+export OPENAI_API_KEY=<your_openai_api_key>
+```
+
+<Tip>
+If [`LANGCHAIN_PROJECT`](/langsmith/log-traces-to-project) is not set, traces are sent to the default project.
+</Tip>
+
+### Connect a user to a service
+
+Initialize the Scalekit client and authorize a user. This example uses Gmail, but the same pattern applies to any of Scalekit's 60+ connectors.
+
+```python
+import os
+
+import scalekit.client
+
+scalekit_client = scalekit.client.ScalekitClient(
+    client_id=os.getenv("SCALEKIT_CLIENT_ID"),
+    client_secret=os.getenv("SCALEKIT_CLIENT_SECRET"),
+    env_url=os.getenv("SCALEKIT_ENV_URL"),
+)
+actions = scalekit_client.actions
+
+# Create or retrieve the user's connected account
+response = actions.get_or_create_connected_account(
+    connection_name="gmail",
+    identifier="user_123",
+)
+
+# Generate an authorization link if the user hasn't authorized yet
+if response.connected_account.status != "ACTIVE":
+    link = actions.get_authorization_link(
+        connection_name="gmail",
+        identifier="user_123",
+    )
+    print("Authorize Gmail:", link.link)
+    input("Press Enter after authorizing...")
+```
+
+Scalekit handles the full OAuth flow, token exchange, and automatic refresh. Once the user completes authorization, the connected account status becomes `ACTIVE`.
+
+### Build and run a LangChain agent
+
+`actions.langchain.get_tools()` returns native `StructuredTool` objects. Bind them to a model and run the tool-calling loop:
+
+```python
+from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_openai import ChatOpenAI
+
+tools = actions.langchain.get_tools(
+    identifier="user_123",
+    connection_names=["gmail"],
+)
+tool_map = {t.name: t for t in tools}
+
+llm = ChatOpenAI(model="gpt-4o").bind_tools(tools)
+messages = [HumanMessage("Fetch my last 5 unread emails and summarize them")]
+
+while True:
+    response = llm.invoke(messages)
+    messages.append(response)
+    if not response.tool_calls:
+        print(response.content)
+        break
+    for tc in response.tool_calls:
+        result = tool_map[tc["name"]].invoke(tc["args"])
+        messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+```
+
+Because Scalekit tools are standard LangChain `StructuredTool` objects, LangSmith traces them the same way it traces any LangChain tool call. No additional tracing configuration is required beyond the environment variables set above.
+
+## Use MCP with LangChain
+
+Scalekit can also serve tools over the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Use `langchain-mcp-adapters` to consume them as LangChain tools.
+
+### Installation
+
+<CodeGroup>
+
+```bash pip
+pip install langchain-mcp-adapters langchain-openai langsmith
+```
+
+```bash uv
+uv add langchain-mcp-adapters langchain-openai langsmith
+```
+
+</CodeGroup>
+
+### Connect and trace via MCP
+
+Set the same LangSmith environment variables as above, then connect to a Scalekit-generated MCP URL:
+
+```python
+import asyncio
+
+from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
+
+
+async def run(mcp_url: str):
+    async with MultiServerMCPClient(
+        {"scalekit": {"transport": "streamable_http", "url": mcp_url}}
+    ) as client:
+        tools = client.get_tools()
+        tool_map = {t.name: t for t in tools}
+        llm = ChatOpenAI(model="gpt-4o").bind_tools(tools)
+        messages = [HumanMessage("Fetch my last 5 unread emails and summarize them")]
+
+        while True:
+            response = await llm.ainvoke(messages)
+            messages.append(response)
+            if not response.tool_calls:
+                print(response.content)
+                break
+            for tc in response.tool_calls:
+                result = await tool_map[tc["name"]].ainvoke(tc["args"])
+                messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+
+
+asyncio.run(run(mcp_url="<your_scalekit_mcp_url>"))
+```
+
+Refer to the [Scalekit MCP documentation](https://docs.scalekit.com/agentkit/mcp/generate-user-urls/) to generate user-specific MCP URLs.
+
+## View traces in LangSmith
+
+After running the agent:
+
+1. Open [LangSmith](https://smith.langchain.com).
+1. Select your project.
+1. Locate the trace for the agent run.
+
+Each Scalekit tool call appears as a tool span showing the tool name (for example, `gmail_fetch_mails`), the input arguments, and the structured response returned from the connector API. The parent chain shows the full agent reasoning loop, including model calls and tool invocations.
+
+## Troubleshooting
+
+### Connected account stays in PENDING
+
+The user has not completed the OAuth flow. Call `get_authorization_link` and redirect the user to the returned URL. After the user authorizes, the connected account status updates to `ACTIVE`.
+
+### Tool calls not appearing in traces
+
+Verify that `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` are set in the environment where your agent runs. Scalekit tools are standard LangChain `StructuredTool` objects, so they trace automatically when LangSmith tracing is enabled.
+
+### Tool call fails with resource not found
+
+Check three things:
+1. The connection name exists in **Agent Auth > Connections** in the Scalekit dashboard.
+1. The `identifier` matches the one used when creating the connected account.
+1. The connected account status is `ACTIVE`.
+
+## Next steps
+
+- [View and filter traces](/langsmith/filter-traces-in-application)
+- [Add custom metadata to traces](/langsmith/ls-metadata-parameters)
+- [Evaluate agent performance](/langsmith/evaluation)
+
+## Additional resources
+
+- [Scalekit AgentKit documentation](https://docs.scalekit.com/agentkit/overview)
+- [Scalekit LangChain guide](https://docs.scalekit.com/agentkit/examples/langchain/)
+- [Sample LangChain agent repository](https://github.com/scalekit-inc/sample-langchain-agent)
+- [Scalekit connectors catalog](https://docs.scalekit.com/agentkit/connectors/)
