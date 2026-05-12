@@ -3,7 +3,7 @@ title: Deploy with the CLI
 description: Deploy a model-agnostic, open source agent to production with the Deep Agents CLI
 ---
 
-`deepagents deploy` takes your agent configuration and files and deploys them together as a [LangSmith Deployment](/langsmith/deployment).
+`deepagents deploy` takes your agent configuration and files and deploys them together as a [LangSmith Deployment](/langsmith/deployment). It's the fastest path to production for agents whose runtime needs (memory, sandboxes, MCP tools, auth, frontend) can be expressed in a single `deepagents.toml`. For the conceptual overview of what production deployment entails—multi-tenancy, durability, guardrails, and frontend integration—see [Going to production](/oss/deepagents/going-to-production).
 
 LangSmith Deployments are horizontally scalable servers with 30+ endpoints including MCP, A2A, Agent Protocol, human-in-the-loop, and memory APIs. Built on open standards:
 
@@ -144,7 +144,7 @@ model = "google_genai:gemini-3.1-pro-preview"
 
 ### `[sandbox]`
 
-Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes).
+Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes). For the production tradeoffs between thread-scoped and assistant-scoped sandboxes, file transfers, and secret management, see [Going to production: Sandboxes](/oss/deepagents/going-to-production#sandboxes).
 
 ```toml deepagents.toml
 [sandbox]
@@ -165,9 +165,11 @@ image = "python:3.12"
 - `"thread"` (default): Each conversation gets its own sandbox. Different threads get different sandboxes, but the same thread reuses its sandbox across turns. Use this when each conversation should start with a clean environment.
 - `"assistant"`: All conversations share one sandbox. Files, installed packages, and other state persist across conversations. Use this when the agent maintains a long-lived workspace like a cloned repo.
 
+For a deeper discussion of sandbox lifecycle in multi-tenant deployments, including TTL, snapshots, and cleanup, see [Going to production: Lifecycle](/oss/deepagents/going-to-production#lifecycle).
+
 ### `[auth]`
 
-Add an `[auth]` section to configure authentication on the deployed agent. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Deployment's default `x-api-key` requirement applies).
+Add an `[auth]` section to configure authentication on the deployed agent. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Deployment's default `x-api-key` requirement applies). For background on multi-tenant authentication patterns—including team-level RBAC and forwarding end-user credentials to external APIs—see [Going to production: Multi-tenancy](/oss/deepagents/going-to-production#multi-tenancy).
 
 ```toml deepagents.toml
 [agent]
@@ -219,7 +221,7 @@ Optionally enable `[frontend]` to ship a prebuilt React chat UI alongside your a
 - Light/dark theme toggle that follows OS preference on first load and persists after
 - (Clerk / Supabase only) Sign-in / sign-up / sign-out flows — Clerk ships its full widget (social logins, password reset); Supabase ships email/password with a built-in password reset flow
 
-Every frontend uses one of three authentication providers — Clerk, Supabase, or anonymous (see [`[auth]`](#auth)).
+Every frontend uses one of three authentication providers — Clerk, Supabase, or anonymous (see [`[auth]`](#auth)). For UI patterns specific to deep agents (subagent cards, todo lists, custom state rendering) and for connecting your own React/Vue/Svelte/Angular frontend instead of the bundled UI, see [Going to production: Frontend](/oss/deepagents/going-to-production#frontend).
 
 ```toml deepagents.toml
 [agent]
@@ -265,7 +267,7 @@ After deploying, add your deployment URL to your auth provider's dashboard so au
 
 ## Environment variables
 
-Place a `.env` file alongside `deepagents.toml` with your API keys:
+Place a `.env` file alongside `deepagents.toml` with your API keys. For sandbox code that needs to call external APIs without leaking credentials, prefer the [sandbox auth proxy](/oss/deepagents/going-to-production#managing-secrets) over baking secrets into `.env`.
 
 ```bash
 # Required — model provider keys
@@ -345,7 +347,7 @@ The deployed server exposes:
 
 ## User Memory
 
-User memory gives each user their own writable `AGENTS.md` that persists across conversations. To enable it, create a `user/` directory at your project root:
+User memory gives each user their own writable `AGENTS.md` that persists across conversations. This is the CLI's built-in equivalent of the user-scoped memory pattern described in [Going to production: Memory](/oss/deepagents/going-to-production#memory); the CLI wires up a per-user `StoreBackend` namespace for you. To enable it, create a `user/` directory at your project root:
 
 ```txt
 user/
@@ -486,6 +488,8 @@ market data to support go-to-market decisions.
 
 - **MCP: HTTP/SSE only.** Stdio transports are rejected at bundle time.
 - **No custom Python tools.** Use MCP servers to expose custom tool logic.
+
+If your agent needs custom tools, custom middleware (rate limiting, retries, PII redaction), or production patterns the CLI doesn't expose, deploy directly via [LangSmith Deployments](/langsmith/deployment) and follow [Going to production](/oss/deepagents/going-to-production) for the underlying patterns ([guardrails](/oss/deepagents/going-to-production#guardrails), [durability](/oss/deepagents/going-to-production#durability), [scoped memory](/oss/deepagents/going-to-production#scoping)).
 
 ## Examples
 
