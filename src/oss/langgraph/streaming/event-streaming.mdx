@@ -36,10 +36,6 @@ const finalState = await run.output;
 ```
 :::
 
-<Note>
-  The `version="v3"` flag is temporarily required to opt in to this stream behavior. The new behavior will become the default stream version in the next major LangGraph release.
-</Note>
-
 To stream against a graph deployed behind an Agent Server, see the [LangSmith Streaming API](/langsmith/streaming).
 
 ## What Event streaming provides
@@ -59,117 +55,7 @@ The run stream exposes typed projections over one underlying event flow:
 
 Multiple consumers can read these projections concurrently. Reading `run.messages` does not consume events needed by `run.values`, `run.subgraphs`, or `run.output`.
 
-## Stream all protocol events
-
-Use the run object itself when you want the raw protocol event stream:
-
-:::python
-```py
-run = graph.stream_events({
-    "messages": [{"role": "user", "content": "What is 42 * 17?"}],
-}, version="v3")
-
-for event in run:
-    namespace = event["params"]["namespace"]
-    print(namespace, event["method"], event["params"]["data"])
-```
-:::
-
-:::js
-```ts
-const run = await graph.streamEvents(
-  { messages: [{ role: "user", content: "What is 42 * 17?" }] },
-  { version: "v3" }
-);
-
-for await (const event of run) {
-  const namespace = event.params.namespace;
-  console.log(namespace, event.method, event.params.data);
-}
-```
-:::
-
-Each event has a channel-like `method`, a `seq` number, and `params` containing `namespace`, `timestamp`, optional `node`, and channel-specific `data`.
-
-The `namespace` is a path from the root graph to the scope that emitted the event. The root is the empty array `[]`. Each child execution adds one `"name:runtime_id"` segment, so a nested tool call inside a subgraph looks like `["researcher:6f4d", "tools:91ac"]`. The name before `:` is the stable graph or node name; the suffix is a per-invocation runtime ID. Filter raw events by namespace yourself when you only care about a specific subtree — `run.subgraphs` already does this for nested graph executions.
-
-:::python
-For `method == "messages"`, `event["params"]["data"]` contains content-block lifecycle events such as `message-start`, `content-block-delta`, and `message-finish`.
-
-```py
-for event in run:
-    if event["method"] != "messages":
-        continue
-
-    data = event["params"]["data"]
-    if data.get("event") != "content-block-delta":
-        continue
-
-    block = data.get("delta") or {}
-    if block.get("type") == "text":
-        print(block.get("text", ""), end="", flush=True)
-    elif block.get("type") == "reasoning":
-        print(f"[thinking]{block.get('reasoning', '')}", end="", flush=True)
-```
-:::
-
-## Channels and event lifecycle
-
-Raw events flow on channels. The channel name appears as the event's `method`; each channel emits a specific event shape.
-
-| Channel | Purpose |
-| ------- | ------- |
-| `values` | Full graph state snapshots. |
-| `updates` | Per-node state deltas. |
-| `messages` | Content-block-centric chat model output. |
-| `tools` | Tool call start, streamed output, finish, and error events. |
-| `lifecycle` | Run, subgraph, and subagent status changes. |
-| `checkpoints` | Lightweight checkpoint envelopes for branching and time travel. |
-| `input` | Human-in-the-loop input requests and responses. |
-| `tasks` | Pregel task creation and result events. |
-| `custom` | User-defined payloads from graph code. |
-| `custom:<name>` | Application-defined stream transformer output. |
-
-The typed projections (`run.messages`, `run.values`, etc.) are built from these channels. The channel name appears as the `method` field on raw events when you iterate the run object directly.
-
-### Message lifecycle
-
-The `messages` channel models output as content blocks:
-
-```text
-message-start
-content-block-start
-content-block-delta
-content-block-finish
-message-finish
-```
-
-Content blocks have explicit boundaries: a block starts, emits zero or more deltas, and finishes before the next block in the same message starts. This makes token streaming, reasoning blocks, tool-call blocks, and multimodal content explicit without requiring provider-specific formats. `message-finish` may include token usage; unrecoverable model-call failures arrive as message error events.
-
-### Tool lifecycle
-
-The `tools` channel exposes tool execution:
-
-```text
-tool-started
-tool-output-delta
-tool-finished
-tool-error
-```
-
-Tool events are correlated by tool call ID, so a tool execution can be joined back to its originating tool-call content block on the `messages` channel.
-
-### Run lifecycle
-
-The `lifecycle` channel tracks root run, subgraph, and subagent status. Status values:
-
-- `started`
-- `running`
-- `completed`
-- `failed`
-- `interrupted`
-
-Each lifecycle event carries a `namespace`, optional graph name, optional error, optional checkpoint, and optional `cause` explaining why a child namespace started (parent tool call, fan-out send, edge transition). Consumers should tolerate unknown causes so the protocol can add new variants without breaking existing clients.
+Event streaming sits one level above [Pregel streaming](/oss/langgraph/streaming), which exposes raw graph execution events through `stream_mode` modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, and `debug`. Use Pregel streaming when you need low-level access to those modes; use Event streaming when application code benefits from typed projections.
 
 ## Stream messages
 
@@ -306,43 +192,6 @@ await Promise.all([
 ```
 :::
 
-## Add custom projections
-
-Custom stream transformers can add application-specific projections under `run.extensions`:
-
-:::python
-```py
-run = graph.stream_events(
-    input,
-    version="v3",
-    transformers=[stats_transformer, tool_activity_transformer],
-)
-
-for activity in run.extensions["tool_activity"]:
-    print(activity)
-
-for total_tokens in run.extensions["total_tokens"]:
-    print(total_tokens)
-```
-:::
-
-:::js
-```ts
-const run = await graph.streamEvents(input, {
-  version: "v3",
-  transformers: [statsTransformer, toolActivityTransformer],
-});
-
-for await (const activity of run.extensions.toolActivity) {
-  console.log(activity);
-}
-
-console.log(await run.extensions.totalTokens);
-```
-:::
-
-See [Build your own projection](#build-your-own-projection) for the transformer contract.
-
 ## Resume after an interrupt
 
 When a graph pauses for human input, inspect `run.interrupted` and `run.interrupts`, then resume by calling `stream_events(..., version="v3")` again with `Command`.
@@ -368,13 +217,133 @@ final_state = run.output
 ```
 :::
 
-## Relationship to Pregel streaming
+## Stream all protocol events
 
-Event streaming and Pregel streaming serve different levels of the stack. Use [Pregel streaming](/oss/langgraph/streaming) when you need low-level Pregel stream modes or access to LangGraph internals. Use Event streaming (`stream_events(..., version="v3")`) when application code benefits from typed projections.
+Use the run object itself when you want the raw protocol event stream:
+
+:::python
+```py
+run = graph.stream_events({
+    "messages": [{"role": "user", "content": "What is 42 * 17?"}],
+}, version="v3")
+
+for event in run:
+    namespace = event["params"]["namespace"]
+    print(namespace, event["method"], event["params"]["data"])
+```
+:::
+
+:::js
+```ts
+const run = await graph.streamEvents(
+  { messages: [{ role: "user", content: "What is 42 * 17?" }] },
+  { version: "v3" }
+);
+
+for await (const event of run) {
+  const namespace = event.params.namespace;
+  console.log(namespace, event.method, event.params.data);
+}
+```
+:::
+
+Each event has a channel-like `method`, a `seq` number, and `params` containing `namespace`, `timestamp`, optional `node`, and channel-specific `data`.
+
+The `namespace` is a path from the root graph to the scope that emitted the event. The root is the empty array `[]`. Each child execution adds one `"name:runtime_id"` segment, so a nested tool call inside a subgraph looks like `["researcher:6f4d", "tools:91ac"]`. The name before `:` is the stable graph or node name; the suffix is a per-invocation runtime ID. Filter raw events by namespace yourself when you only care about a specific subtree — `run.subgraphs` already does this for nested graph executions.
+
+## Channels and event lifecycle
+
+Raw events flow on channels. The channel name appears as the event's `method`; each channel emits a specific event shape.
+
+| Channel | Purpose |
+| ------- | ------- |
+| `values` | Full graph state snapshots. |
+| `updates` | Per-node state deltas. |
+| `messages` | Content-block-centric chat model output. |
+| `tools` | Tool call start, streamed output, finish, and error events. |
+| `lifecycle` | Run, subgraph, and subagent status changes. |
+| `checkpoints` | Lightweight checkpoint envelopes for branching and time travel. |
+| `input` | Human-in-the-loop input requests and responses. |
+| `tasks` | Pregel task creation and result events. |
+| `custom` | User-defined payloads from graph code. |
+| `custom:<name>` | Application-defined stream transformer output. |
+
+The typed projections (`run.messages`, `run.values`, etc.) are built from these channels. The channel name appears as the `method` field on raw events when you iterate the run object directly.
+
+### Messages
+
+The `messages` channel models output as content blocks. The data's `event` field is one of:
+
+- `message-start`
+- `content-block-start`
+- `content-block-delta`
+- `content-block-finish`
+- `message-finish`
+
+Content blocks have explicit boundaries: a block starts, emits zero or more deltas, and finishes before the next block in the same message starts. This makes token streaming, reasoning blocks, tool-call blocks, and multimodal content explicit without requiring provider-specific formats. `message-finish` may include token usage; unrecoverable model-call failures arrive as message error events.
+
+To consume raw content-block events directly instead of using the `run.messages` projection:
+
+:::python
+```py
+for event in run:
+    if event["method"] != "messages":
+        continue
+
+    data = event["params"]["data"]
+    if data.get("event") != "content-block-delta":
+        continue
+
+    block = data.get("delta") or {}
+    if block.get("type") == "text-delta":
+        print(block.get("text", ""), end="", flush=True)
+    elif block.get("type") == "reasoning-delta":
+        print(f"[thinking]{block.get('reasoning', '')}", end="", flush=True)
+```
+:::
+
+:::js
+```ts
+for await (const event of run) {
+  if (event.method !== "messages") continue;
+
+  const data = event.params.data;
+  if (data.event !== "content-block-delta") continue;
+
+  const block = data.delta ?? {};
+  if (block.type === "text-delta") {
+    process.stdout.write(block.text ?? "");
+  } else if (block.type === "reasoning-delta") {
+    process.stdout.write(`[thinking]${block.reasoning ?? ""}`);
+  }
+}
+```
+:::
+
+### Tools
+
+The `tools` channel exposes tool execution. The data's `event` field is one of:
+
+- `tool-started`
+- `tool-output-delta`
+- `tool-finished`
+- `tool-error`
+
+Tool events are correlated by tool call ID, so a tool execution can be joined back to its originating tool-call content block on the `messages` channel.
+
+### Lifecycle
+
+The `lifecycle` channel tracks root run, subgraph, and subagent status. The data's `event` field is one of:
+
+- `started`
+- `running`
+- `completed`
+- `failed`
+- `interrupted`
+
+Beyond `event`, lifecycle data may include an optional `graph_name`, `error`, and `cause` describing why a child scope started (parent tool call, fan-out send, edge transition).
 
 ## Build your own projection
-
-The remaining sections are for application or library code that needs a projection the built-in transformers do not provide. Most readers can stop here.
 
 Stream transformers are the projection layer in Event streaming. They observe protocol events, keep their own state, and expose derived views of a run such as messages, tool calls, subgraphs, tool activity, token totals, progress events, artifacts, or third-party protocol messages. `StreamChannel` is the projection primitive transformers use to publish those views.
 
