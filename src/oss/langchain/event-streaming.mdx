@@ -92,6 +92,7 @@ const finalState = await run.output;
 :::
 | `run.values` | Agent state snapshots. |
 | `run.output` | Final agent state. |
+| `run.subgraphs` | Nested graph runs (sub-agents and plain subgraphs). |
 | `run.extensions` | Custom transformer projections. |
 :::python
 | `run.tool_calls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
@@ -234,6 +235,154 @@ await Promise.all([
 ]);
 ```
 :::
+
+## Streaming sub-agents
+
+When a `create_agent` call invokes another `create_agent` (via a wrapping tool, typically), the inner agent's events flow at a nested namespace and surface as a handle on `run.subgraphs`. Each handle exposes the inner agent's own `.messages`, `.values`, `.tool_calls`, and `.output` projections. The `name=` you pass to `create_agent` becomes `subagent.graph_name` (Python) / `subagent.name` (JS), which lets you filter and label per agent.
+
+Every nested `CompiledStateGraph` shows up on `run.subgraphs` — `create_agent` instances are one specific kind. Filter on the name to act only on the ones you care about.
+
+:::python
+```py
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+
+def get_weather(city: str) -> str:
+    """Get weather for a given city."""
+    return f"It's always sunny in {city}!"
+
+
+def search_papers(topic: str) -> str:
+    """Search recent papers on a topic."""
+    return f"Found 3 papers on {topic}."
+
+
+weather_agent = create_agent(
+    model=init_chat_model("openai:gpt-5.4"),
+    tools=[get_weather],
+    name="weather_agent",
+)
+research_agent = create_agent(
+    model=init_chat_model("openai:gpt-5.4"),
+    tools=[search_papers],
+    name="research_agent",
+)
+
+
+def call_weather(query: str) -> str:
+    """Query the weather agent."""
+    result = weather_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].text
+
+
+def call_research(query: str) -> str:
+    """Query the research agent."""
+    result = research_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].text
+
+
+supervisor = create_agent(
+    model=init_chat_model("openai:gpt-5.4"),
+    tools=[call_weather, call_research],
+    name="supervisor",
+)
+
+run = supervisor.stream_events(
+    {"messages": [{"role": "user", "content": "Weather in Boston, and any recent papers on it?"}]},
+    version="v3",
+)
+
+for subagent in run.subgraphs:
+    if subagent.graph_name == "weather_agent":  # [!code highlight]
+        print("weather: ", end="")
+    elif subagent.graph_name == "research_agent":  # [!code highlight]
+        print("research: ", end="")
+    else:  # [!code highlight]
+        continue  # [!code highlight]
+
+    for message in subagent.messages:
+        for token in message.text:
+            print(token, end="", flush=True)
+    print()
+```
+:::
+
+:::js
+```ts
+import { createAgent, tool } from "langchain";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }) => `It's always sunny in ${city}!`,
+  { name: "get_weather", schema: z.object({ city: z.string() }) }
+);
+
+const searchPapers = tool(
+  async ({ topic }) => `Found 3 papers on ${topic}.`,
+  { name: "search_papers", schema: z.object({ topic: z.string() }) }
+);
+
+const weatherAgent = createAgent({
+  model: "openai:gpt-5.4",
+  tools: [getWeather],
+  name: "weather_agent",
+});
+const researchAgent = createAgent({
+  model: "openai:gpt-5.4",
+  tools: [searchPapers],
+  name: "research_agent",
+});
+
+const callWeather = tool(
+  async ({ query }) => {
+    const result = await weatherAgent.invoke({
+      messages: [{ role: "user", content: query }],
+    });
+    return result.messages.at(-1)?.text ?? "";
+  },
+  { name: "call_weather", schema: z.object({ query: z.string() }) }
+);
+
+const callResearch = tool(
+  async ({ query }) => {
+    const result = await researchAgent.invoke({
+      messages: [{ role: "user", content: query }],
+    });
+    return result.messages.at(-1)?.text ?? "";
+  },
+  { name: "call_research", schema: z.object({ query: z.string() }) }
+);
+
+const supervisor = createAgent({
+  model: "openai:gpt-5.4",
+  tools: [callWeather, callResearch],
+  name: "supervisor",
+});
+
+const run = await supervisor.streamEvents(
+  { messages: [{ role: "user", content: "Weather in Boston, and any recent papers on it?" }] },
+  { version: "v3" }
+);
+
+for await (const subagent of run.subgraphs) {
+  let label: string;
+  if (subagent.name === "weather_agent") label = "weather"; // [!code highlight]
+  else if (subagent.name === "research_agent") label = "research"; // [!code highlight]
+  else continue; // [!code highlight]
+
+  process.stdout.write(`${label}: `);
+  for await (const message of subagent.messages) {
+    for await (const token of message.text) {
+      process.stdout.write(token);
+    }
+  }
+  process.stdout.write("\n");
+}
+```
+:::
+
+The same projection covers plain `StateGraph` subgraphs invoked from a tool — set `name=` on `.compile(name=...)` to get a label in `subagent.graph_name`. There's no separate sub-agent-only projection; the filter is what you write into your loop.
 
 ## State and final output
 
