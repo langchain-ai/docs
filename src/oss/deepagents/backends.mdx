@@ -43,12 +43,12 @@ Here are a few prebuilt filesystem backends that you can quickly use with your d
 
 | Built-in backend | Description |
 |---|---|
-| [Default](#statebackend-ephemeral) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview")` <br></br> Ephemeral in state. The default filesystem backend for an agent is stored in `langgraph` state. Note that this filesystem only persists _for a single thread_. |
+| [Default](#statebackend) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview")` <br></br> Thread-scoped. The default filesystem backend for an agent is stored in `langgraph` state. Files persist across turns within a thread (via your checkpointer) and are not shared across threads. |
 | [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. |
 | [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=StoreBackend())` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
 | [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
 | [Local shell](#localshellbackend-local-shell) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}))` <br></br>Filesystem and shell execution directly on the host. No isolation—use only in controlled development environments. See [security considerations](#localshellbackend-local-shell) below. |
-| [Composite](#compositebackend-router) | Ephemeral by default, `/memories/` persisted. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
+| [Composite](#compositebackend-router) | Thread-scoped by default, `/memories/` persisted across threads. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
 
 
 ```mermaid
@@ -84,7 +84,7 @@ graph TB
 
 ## Built-in backends
 
-### StateBackend (ephemeral)
+### StateBackend
 
 :::python
 <BackendStatePy />
@@ -96,7 +96,11 @@ graph TB
 
 **How it works:**
 - Stores files in LangGraph agent state for the current thread via @[`StateBackend`].
-- Persists across multiple agent turns on the same thread via checkpoints.
+- Persists across multiple agent turns on the same thread via checkpoints. Files are not shared across threads.
+
+<Warning>
+Designed to be used from within a graph. Calling backend methods (e.g., `state_backend.upload_files(...)`) outside of a graph run won't take effect until the graph executes.
+</Warning>
 
 **Best for:**
 - A scratch pad for the agent to write intermediate results.
@@ -336,7 +340,7 @@ Namespace components must contain only alphanumeric characters, hyphens, undersc
 - Preserves the original path prefixes in listings and search results.
 
 **Best for:**
-- When you want to give your agent both ephemeral and cross-thread storage, a `CompositeBackend` allows you provide both a `StateBackend` and `StoreBackend`
+- When you want to give your agent both thread-scoped and cross-thread storage, a `CompositeBackend` allows you provide both a `StateBackend` and `StoreBackend`
 - When you have multiple sources of information that you want to provide to your agent as part of a single filesystem.
     - e.g. You have long-term memories stored under `/memories/` in one Store and you also have a custom backend that has documentation accessible at /docs/.
 
@@ -361,7 +365,7 @@ Before version 1.9.0, only `BackendProtocol` was supported which is now `Backend
 
 ## Route to different backends
 
-Route parts of the namespace to different backends. Commonly used to persist `/memories/*` and keep everything else ephemeral.
+Route parts of the namespace to different backends. Commonly used to persist `/memories/*` across threads and keep everything else thread-scoped.
 
 :::python
 ```python
@@ -396,7 +400,7 @@ const agent = createDeepAgent({
 :::
 
 Behavior:
-- `/workspace/plan.md` → `StateBackend` (ephemeral)
+- `/workspace/plan.md` → `StateBackend` (thread-scoped)
 - `/memories/agent.md` → `FilesystemBackend` under `/deepagents/myagent`
 - `ls`, `glob`, `grep` aggregate results and show original path prefixes.
 
