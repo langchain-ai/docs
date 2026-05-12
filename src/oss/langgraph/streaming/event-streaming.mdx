@@ -160,7 +160,7 @@ const finalState = await run.output;
 ## Stream multiple projections
 
 :::python
-Use `run.interleave(...)` to round-robin across multiple projections in synchronous Python code:
+Use `run.interleave(...)` to consume multiple projections in strict arrival order in synchronous Python code:
 
 ```py
 for name, item in run.interleave("values", "messages", "subgraphs"):
@@ -196,11 +196,13 @@ await Promise.all([
 
 When a graph pauses for human input, inspect `run.interrupted` and `run.interrupts`, then resume by calling `stream_events(..., version="v3")` again with `Command`.
 
+Resume requires a graph compiled with a checkpointer and a config carrying a thread ID — see [persistence](/oss/langgraph/persistence).
+
 :::python
 ```py
 from langgraph.types import Command
 
-run = graph.stream_events(input, version="v3", config=thread_config)
+run = graph.stream_events(input, version="v3")
 
 for message in run.messages:
     print(str(message.text))
@@ -211,7 +213,6 @@ if run.interrupted:
 run = graph.stream_events(
     Command(resume={"decisions": [{"type": "approve"}]}),
     version="v3",
-    config=thread_config,
 )
 final_state = run.output
 ```
@@ -221,10 +222,7 @@ final_state = run.output
 ```ts
 import { Command } from "@langchain/langgraph";
 
-let run = await graph.streamEvents(input, {
-  version: "v3",
-  config: threadConfig,
-});
+let run = await graph.streamEvents(input, { version: "v3" });
 
 for await (const message of run.messages) {
   console.log(await message.text);
@@ -236,7 +234,7 @@ if (run.interrupted) {
 
 run = await graph.streamEvents(
   new Command({ resume: { decisions: [{ type: "approve" }] } }),
-  { version: "v3", config: threadConfig }
+  { version: "v3" }
 );
 const finalState = await run.output;
 ```
