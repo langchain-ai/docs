@@ -61,7 +61,7 @@ QuickJS is the execution boundary for interpreter code. Explicit bridges, such a
 | One or two simple external calls | Normal tool calling |
 | A small program that loops, branches, retries, or aggregates results | Interpreter |
 | Many selected tool calls that should run from code | Interpreter with programmatic tool calling |
-| Reusable helpers used across threads | Interpreter with [functional skills](/oss/deepagents/skills#use-functional-skills) |
+| Reusable helpers used across threads | Interpreter with [interpreter skills](/oss/deepagents/skills#use-interpreter-skills) |
 | Shell commands, package installs, tests, or full OS filesystem access | [Sandboxes](/oss/deepagents/sandboxes) |
 
 ## Add an interpreter to an agent
@@ -139,7 +139,7 @@ totals;
 ```
 
 :::python
-By default, interpreter state also persists across turns in the same thread by snapshotting the eotkinh state after each agent run, and restoring it before the next run.
+By default, interpreter state also persists across turns in the same thread by snapshotting the working state after each agent run, and restoring it before the next run.
 :::
 
 ## Programmatic tool calling
@@ -305,16 +305,16 @@ const releaseSummary = riskReports
 releaseSummary;
 ```
 
-## Functional skills
+## Interpreter skills
 
-Functional skills are [skills](/oss/deepagents/skills) that expose code modules to an interpreter. When configured with interpreter middleware, the agent can import these modules from code and use them for deterministic helper logic.
+Interpreter skills are [skills](/oss/deepagents/skills) that expose code modules to an interpreter. When configured with interpreter middleware, the agent can import these modules from code and use them for deterministic helper logic.
 
-Functional skills are useful when the agent needs reusable helpers for structured data workflows, such as sorting, grouping, scoring, parsing, validating, or aggregating data. For setup details, see [Functional skills](/oss/deepagents/skills#use-functional-skills).
+Interpreter skills are useful when the agent needs reusable helpers for structured data workflows, such as sorting, grouping, scoring, parsing, validating, or aggregating data. For setup details, see [Interpreter skills](/oss/deepagents/skills#use-interpreter-skills).
 
 :::python
 ## Snapshots and time travel
 
-Python `CodeInterpreterMiddleware` snapshots interpreter state after each agent run and restores it before the next run by default. A snapshot is a serialized copy of the interpreter's in-memory JavaScript state, including globals, variables, functions, and imported modules that exist when the agent finishes running code.
+`CodeInterpreterMiddleware` snapshots interpreter state after each agent run and restores it before the next run by default. A snapshot is a serialized copy of the interpreter's in-memory JavaScript state, including globals, variables, functions, and imported modules that exist when the agent finishes running code.
 
 Across conversation turns, the lifecycle is:
 
@@ -367,7 +367,7 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | Top-level `await` | Yes | Use promises in interpreter code |
 | `console.log` capture | Yes | Disable with `capture_console=False` |
 | Agent tools | No | Add a PTC allowlist |
-| Functional skill modules | No | Add a `module` entry and configure `skills_backend` or `skillsBackend` |
+| Interpreter skill modules | No | Add a `module` entry and configure `skills_backend` or `skillsBackend` |
 | Filesystem access | No | Add the [built-in filesystem tools](/oss/deepagents/harness#virtual-filesystem-access) via the PTC allowlist |
 | Network access | No | Expose a specific network tool through PTC |
 | Wall-clock or datetime access | No | Expose an explicit time tool if needed |
@@ -380,11 +380,21 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | Top-level `await` | Yes | Use promises in interpreter code |
 | `console.log` capture | Yes | Disable with `captureConsole: false` |
 | Agent tools | No | Add a PTC allowlist |
-| Functional skill modules | No | Add a `module` entry and configure `skills_backend` or `skillsBackend` |
+| Interpreter skill modules | No | Add a `module` entry and configure `skills_backend` or `skillsBackend` |
 | Filesystem access | No | Add the [built-in filesystem tools](/oss/deepagents/harness#virtual-filesystem-access) via the PTC allowlist |
 | Network access | No | Expose a specific network tool through PTC |
 | Wall-clock or datetime access | No | Expose an explicit time tool if needed |
 | Shell commands, package installs, tests, OS-level execution | No | Use a [sandbox backend](/oss/deepagents/sandboxes) |
+:::
+
+:::python
+<Note>
+    **How code execution works**
+
+    Interpreter code runs in an embedded QuickJS context, not a separate VM or process. In Python, this runtime is provided by [`quickjs-rs`](https://github.com/langchain-ai/quickjs-rs), which documents the same-process execution boundary in its [Security guide](https://github.com/langchain-ai/quickjs-rs#security).
+
+    Treat interpreters as a capability-scoped execution layer, not a host-memory isolation boundary. For untrusted or semi-trusted code, run agents in isolated worker processes or containers and keep the PTC allowlist narrow.
+</Note>
 :::
 
 ## Middleware options
@@ -401,7 +411,7 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | `max_result_chars` | `4000` | Maximum characters returned from result and stdout blocks. |
 | `capture_console` | `True` | Whether `console.log`, `console.warn`, and `console.error` output is captured. |
 | `ptc` | `None` | PTC allowlist: list of tool names or `BaseTool` instances. |
-| `skills_backend` | `None` | Backend used to resolve functional skill modules. |
+| `skills_backend` | `None` | Backend used to resolve interpreter skill modules. |
 | `snapshot_between_turns` | `True` | Whether interpreter state snapshots persist across agent turns. |
 | `max_snapshot_bytes` | `None` | Maximum serialized snapshot size. Defaults to `memory_limit`. |
 :::
@@ -416,7 +426,7 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | `maxStackSizeBytes` | `320 * 1024` | QuickJS stack size limit in bytes. |
 | `executionTimeoutMs` | `5000` | Per-eval timeout in milliseconds. Negative values disable the timeout. |
 | `systemPrompt` | `null` | Override the built-in interpreter system prompt. |
-| `skillsBackend` | omitted | Backend used to resolve functional skill modules. |
+| `skillsBackend` | omitted | Backend used to resolve interpreter skill modules. |
 | `maxPtcCalls` | `256` | Maximum `tools.*` calls per eval. Use `null` only in trusted environments. |
 | `maxResultChars` | `4000` | Maximum characters retained from console output, result, and error strings. |
 | `toolName` | `"eval"` | Name of the interpreter tool exposed to the model. |
