@@ -1,0 +1,192 @@
+---
+title: "Snowflake Cortex REST API"
+description: "Use Snowflake Cortex REST API with LangChain via ChatOpenAI and ChatAnthropic."
+---
+
+[Snowflake Cortex REST API](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api) gives you access to frontier LLMs from Anthropic (Claude), OpenAI (GPT), Meta (Llama), Mistral, DeepSeek, and Snowflake — all running within Snowflake's security perimeter.
+
+Cortex REST API supports two industry-standard API specifications:
+
+| Compatibility | Endpoint | Supported Models | LangChain Class |
+|---|---|---|---|
+| OpenAI Chat Completions | `/api/v2/cortex/v1/chat/completions` | All models | `ChatOpenAI` |
+| Anthropic Messages | `/api/v2/cortex/v1/messages` | Claude models only | `ChatAnthropic` |
+
+Since Cortex REST API is fully compatible with both the OpenAI and Anthropic APIs, you can use `ChatOpenAI` or `ChatAnthropic` directly with a custom `base_url` — no additional packages needed.
+
+## Prerequisites
+
+1. A Snowflake account URL (e.g., `https://<account_identifier>.snowflakecomputing.com`)
+2. A [Programmatic Access Token (PAT)](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens) for authentication
+3. A model name from the [available models list](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api#model-availability)
+
+## Option 1: OpenAI-compatible endpoint (all models)
+
+Use `ChatOpenAI` with a custom `base_url` to access any model available on Cortex REST API.
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-openai
+```
+
+```bash uv
+uv add langchain-openai
+```
+</CodeGroup>
+
+### Setup
+
+```python
+import os
+
+os.environ["OPENAI_API_KEY"] = "<your-snowflake-pat>"
+```
+
+### Usage
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    base_url="https://<account_identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    model="snowflake-llama-3.3-70b",
+)
+
+response = llm.invoke("What is Snowflake Cortex?")
+print(response.content)
+```
+
+### Streaming
+
+```python
+for chunk in llm.stream("Explain data lakehouse architecture"):
+    print(chunk.content, end="", flush=True)
+```
+
+### Tool calling
+
+```python
+from pydantic import BaseModel, Field
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location."""
+    location: str = Field(description="City and state, e.g. San Francisco, CA")
+
+llm_with_tools = llm.bind_tools([GetWeather])
+response = llm_with_tools.invoke("What's the weather in New York?")
+print(response.tool_calls)
+```
+
+### Structured output
+
+```python
+from pydantic import BaseModel
+
+class Summary(BaseModel):
+    title: str
+    key_points: list[str]
+    sentiment: str
+
+structured_llm = llm.with_structured_output(Summary)
+result = structured_llm.invoke("Summarize: Snowflake reported record Q4 revenue driven by AI workloads.")
+print(result)
+```
+
+### Using different models
+
+```python
+claude = ChatOpenAI(
+    base_url="https://<account_identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    model="claude-sonnet-4-5",
+)
+
+gpt = ChatOpenAI(
+    base_url="https://<account_identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    model="openai-gpt-4.1",
+)
+
+llama = ChatOpenAI(
+    base_url="https://<account_identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    model="llama4-maverick",
+)
+```
+
+## Option 2: Anthropic Messages endpoint (Claude models)
+
+Use `ChatAnthropic` with a custom `base_url` for Claude models via the Anthropic Messages API.
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-anthropic
+```
+
+```bash uv
+uv add langchain-anthropic
+```
+</CodeGroup>
+
+### Setup
+
+```python
+import os
+
+os.environ["ANTHROPIC_API_KEY"] = "<your-snowflake-pat>"
+```
+
+### Usage
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+llm = ChatAnthropic(
+    base_url="https://<account_identifier>.snowflakecomputing.com/api/v2/cortex",
+    model="claude-sonnet-4-5",
+)
+
+response = llm.invoke("Explain zero-copy cloning in Snowflake")
+print(response.content)
+```
+
+### Streaming
+
+```python
+for chunk in llm.stream("Write a haiku about data engineering"):
+    print(chunk.content, end="", flush=True)
+```
+
+### Tool calling
+
+```python
+from pydantic import BaseModel, Field
+
+class RunQuery(BaseModel):
+    """Execute a SQL query against a database."""
+    query: str = Field(description="The SQL query to execute")
+
+llm_with_tools = llm.bind_tools([RunQuery])
+response = llm_with_tools.invoke("Find the top 10 customers by revenue")
+print(response.tool_calls)
+```
+
+## Available models
+
+For the full list of available models including Claude, GPT, Llama, Mistral, DeepSeek, and Snowflake models, see the [Cortex REST API model availability](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api#model-availability).
+
+## Authentication
+
+Cortex REST API uses a Snowflake [Programmatic Access Token (PAT)](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens) as the API key. The PAT is passed in the `Authorization: Bearer <PAT>` header, which `ChatOpenAI` and `ChatAnthropic` handle automatically via their `api_key` parameters.
+
+Other supported authentication methods:
+- [Key pair authentication](https://docs.snowflake.com/developer-guide/snowflake-rest-api/authentication#label-sfrest-api-authenticating-key-pair)
+- [OAuth](https://docs.snowflake.com/developer-guide/snowflake-rest-api/authentication#label-sfrest-api-authenticating-oauth)
+
+## Related
+
+- [Cortex REST API documentation](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api)
+- [langchain-snowflake package](https://pypi.org/project/langchain-snowflake/) — native integration with Cortex AI SQL + REST
+- [Snowflake provider page](/oss/integrations/providers/snowflake)
+- [Generating a PAT](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens)
