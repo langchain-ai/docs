@@ -1,105 +1,109 @@
 ---
-title: Deploy a Managed Deep Agent
-description: Deploy a deep agent to the Managed Deep Agents API with the Deep Agents CLI.
+title: Deploy Managed Deep Agents
+description: Create, run, and operate Managed Deep Agents with the private preview API.
 icon: "robot"
 ---
 
-Managed Deep Agents lets you deploy a Deep Agents project to a managed LangSmith API. The `deepagents deploy` command packages your agent files and creates or updates a Managed Deep Agent.
-
-<Warning>
-    `deepagents deploy` is deprecated. For new deployments, use the [Managed Deep Agents API private preview](/langsmith/managed-deep-agents-api). This page remains available for existing CLI users.
-</Warning>
+Managed Deep Agents is an API-first hosted runtime for creating, running, and operating deep agents in LangSmith. It gives Deep Agents a durable home with managed execution, threads, streaming, human-in-the-loop support, files, sandboxes, and LangSmith tracing.
 
 <Note>
     Managed Deep Agents is in private preview. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
 </Note>
 
+Deep Agents give developers an open-source harness for building agents that can plan, use tools, delegate to subagents, write files, and work over long horizons. Managed Deep Agents packages the operational layer around that harness, so you can focus on the agent's behavior instead of running custom runtime infrastructure.
+
+For route-level details, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api).
+
+## When to use Managed Deep Agents
+
+Use Managed Deep Agents when you want to:
+
+- Create and manage deep agents programmatically.
+- Run long-running agents without standing up a custom agent server.
+- Stream runs and preserve durable thread state.
+- Use managed files, tools, and sandbox-backed execution.
+- Inspect traces and agent behavior in LangSmith.
+
 <Tip>
     You can also deploy Deep Agents with a standard [LangSmith Deployment](/langsmith/deployment-quickstart). Use that path when you need custom application code, custom routes, advanced authentication, full Agent Server APIs, stronger isolation controls, or maximum scalability.
 </Tip>
 
-The CLI and API use the same managed agent model. You can deploy through the CLI, then call the same agent through the Managed Deep Agents API.
+## What Managed Deep Agents provides
 
-## Prerequisites
+### Managed runtime
 
-Before you begin, ensure you have:
+Managed Deep Agents provides hosted runtime primitives for deep agents. You can create managed agents, update their configuration, create threads, and stream runs from your own application or platform workflow.
 
-- Private preview access to Managed Deep Agents.
-- A LangSmith API key for a workspace with access.
-- The Deep Agents CLI installed.
-- A Deep Agents project with `deepagents.toml` and `AGENTS.md`.
+The private preview API is available under `/v1/deepagents`. It includes managed agent resources, thread operations, and streaming runs.
 
-## 1. Install the CLI
+### Agent context and files
 
-Install the Deep Agents CLI or run the deploy command directly with `uvx`:
+Managed Deep Agents keeps the familiar Deep Agents project shape:
 
-<CodeGroup>
-    ```bash uv
-    uv tool install deepagents-cli
-    ```
-
-    ```bash uvx
-    uvx deepagents-cli deploy
-    ```
-</CodeGroup>
-
-## 2. Prepare your project
-
-Place the agent files next to `deepagents.toml`. The CLI discovers these files and sends them to the Managed Deep Agents API.
-
-```txt
-my-agent/
-├── deepagents.toml
-├── AGENTS.md
-├── tools.json
-├── skills/
-│   └── <skill-name>/
-│       └── SKILL.md
-└── subagents/
-    └── <subagent-name>/
-        ├── deepagents.toml
-        └── AGENTS.md
-```
-
-| File | Description |
+| File or directory | Purpose |
 | --- | --- |
-| `deepagents.toml` | Required. Configures the managed agent. |
-| `AGENTS.md` | Required. Provides the agent instructions loaded at session start. |
-| `tools.json` | Optional. Defines tool configuration for the managed agent. |
-| `skills/` | Optional. Contains skill definitions. Each skill directory includes a `SKILL.md` file. |
-| `subagents/` | Optional. Contains subagent definitions. Each subagent directory includes `deepagents.toml` and `AGENTS.md`. |
+| `AGENTS.md` | Defines the agent instructions. |
+| `skills/` | Contains skills the agent can use. |
+| `subagents/` | Contains subagent definitions for delegated work. |
+| `tools.json` | Configures tools for the managed agent. |
 
-## 3. Deploy
+Managed Deep Agents stores and versions the files that define the agent. Context Hub gives the agent a managed place to retain and update the context it needs to work over time.
 
-Set your LangSmith API key, then run `deepagents deploy` from the project directory:
+### Tools and sandboxes
 
-```bash
-export LANGSMITH_API_KEY="lsv2_..."
-deepagents deploy
-```
+Configure tools with `tools.json`. Use sandbox-backed execution for workflows that need code, shell commands, and file I/O.
 
-By default, `deepagents deploy` looks for `deepagents.toml` in the current directory. Pass `--config` to use a different path:
+Managed Deep Agents keeps tool and sandbox setup in the managed runtime, so you do not need to rebuild that operational layer for every agent.
 
-```bash
-deepagents deploy --config path/to/deepagents.toml
-```
+### Sleep-time compute
 
-The command creates or updates a Managed Deep Agent through the Managed Deep Agents API.
+You can optionally enable sleep-time compute through the Managed Deep Agents API. Sleep-time compute enables LangSmith Engine for your agent, letting it review conversations, learn from real usage, and update Context Hub files between runs.
 
-## 4. Invoke the agent
+This turns agent creation from a static step into a feedback loop: the agent can improve from the work it actually does.
 
-After deployment, call the agent through the Managed Deep Agents API. The private preview route shape uses `/v1/deepagents/agents` for agent management and `/v1/deepagents/threads` for thread and run operations.
+### LangSmith visibility
 
-Use your LangSmith API key with the `X-Api-Key` header:
+Runs are traced in LangSmith, so teams can debug behavior, inspect tool calls, and understand how an agent is improving over time.
 
-```txt
-X-Api-Key: <LANGSMITH_API_KEY>
-```
+## How it works
 
-Use the `/v1/deepagents/threads` endpoint group to create threads and run the agent. For the supported private preview route groups, see [Managed Deep Agents API](/langsmith/managed-deep-agents-api).
+<Steps>
+    <Step title="Create or update a managed agent">
+        Use the Managed Deep Agents API to create an agent and provide the files that define it, including instructions, skills, subagents, and tool configuration.
+    </Step>
+    <Step title="Create a thread">
+        Create a thread for the work you want the agent to perform. Threads preserve the conversation and execution state needed for long-running work.
+    </Step>
+    <Step title="Stream a run">
+        Stream a run from your application using the thread run streaming endpoint. This lets your application display progress while the agent works.
+    </Step>
+    <Step title="Inspect the result in LangSmith">
+        Use LangSmith traces to inspect messages, tool calls, files, and runtime behavior as the agent runs and improves.
+    </Step>
+</Steps>
 
-## Limitations
+For the supported private preview endpoint groups, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api).
 
-Managed Deep Agents does not mirror every LangSmith Deployment endpoint. Non-LangGraph Platform (non-LGP) endpoint groups such as integrations, auth, triggers, skills, and sandboxes are not mirrored yet.
+## What this unlocks
 
-The private preview also does not include standalone LangSmith Deployment behavior such as bundled frontend hosting, custom auth providers, custom routes, A2A, MCP agent exposure, or RemoteGraph endpoints.
+Managed Deep Agents is designed for teams building agents that need durable execution, tools, sandboxes, tracing, and a managed path to production.
+
+Common patterns include:
+
+- Support and triage agents that work across long-running threads.
+- Research agents that keep track of sources, notes, and deliverables.
+- Coding agents that need a filesystem, shell commands, and resumable execution.
+- Data analysis agents that can run code and preserve artifacts.
+- Internal operations agents that improve their own context from repeated use.
+
+## Built on open-source Deep Agents
+
+Deep Agents remains open source. Managed Deep Agents is the hosted path for teams that want the Deep Agents harness plus LangSmith-managed runtime infrastructure.
+
+You can keep the agent definition in your repository, then use the Managed Deep Agents API to create and operate managed agents in LangSmith.
+
+## Private preview scope
+
+Managed Deep Agents does not mirror every LangSmith Deployment endpoint in private preview. Non-LangGraph Platform (non-LGP) endpoint groups such as integrations, auth, triggers, skills, and sandboxes are not mirrored yet.
+
+Request and response examples will be added after API testing is complete and public OpenAPI-generated reference pages are available.
