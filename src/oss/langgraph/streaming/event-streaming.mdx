@@ -217,6 +217,31 @@ final_state = run.output
 ```
 :::
 
+:::js
+```ts
+import { Command } from "@langchain/langgraph";
+
+let run = await graph.streamEvents(input, {
+  version: "v3",
+  config: threadConfig,
+});
+
+for await (const message of run.messages) {
+  console.log(await message.text);
+}
+
+if (run.interrupted) {
+  console.log(run.interrupts);
+}
+
+run = await graph.streamEvents(
+  new Command({ resume: { decisions: [{ type: "approve" }] } }),
+  { version: "v3", config: threadConfig }
+);
+const finalState = await run.output;
+```
+:::
+
 ## Stream all protocol events
 
 Use the run object itself when you want the raw protocol event stream:
@@ -345,7 +370,9 @@ Beyond `event`, lifecycle data may include an optional `graph_name`, `error`, an
 
 ## Build your own projection
 
-Stream transformers are the projection layer in Event streaming. They observe protocol events, keep their own state, and expose derived views of a run such as messages, tool calls, subgraphs, tool activity, token totals, progress events, artifacts, or third-party protocol messages. `StreamChannel` is the projection primitive transformers use to publish those views.
+Stream transformers are the projection layer in Event streaming. They observe protocol events, keep their own state, and expose derived views of a run — things like tool activity, token totals, progress events, artifacts, or messages for another protocol. `StreamChannel` is the projection primitive transformers use to publish those views.
+
+Write a user transformer when the built-in projections (`run.messages`, `run.values`, `run.subgraphs`, `run.output`) don't match the shape your application needs. User transformer projections appear under `run.extensions`.
 
 ### How transformers work
 
@@ -367,17 +394,6 @@ The stream handler is the central dispatcher for one run. For every protocol eve
 4. Calls `finalize()` or `fail()` on every transformer when the run ends.
 
 Transformers are observational. They do not call back into the graph runtime. Instead, they consume events and push derived values into `StreamChannel`, promises, or other projection objects.
-
-### When to write one
-
-:::python
-User transformers are the public extension point for Event streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions["name"]`.
-:::
-:::js
-User transformers are the public extension point for Event streaming. They let application or third-party code observe protocol events and expose derived data under `run.extensions.<name>`.
-:::
-
-Use a user transformer when the built-in projections do not match the shape your application needs. For example, a transformer can publish tool activity, token totals, progress events, artifacts, or messages for another protocol.
 
 ### Transformer shape
 
@@ -441,9 +457,9 @@ Named channel payloads must be serializable, because each pushed value also beco
 
 The stream handler owns channel lifecycle. Once `init()` returns a channel, the handler closes or fails it for you when the run ends. Transformers only push values.
 
-### Example: streaming projection
+### Example: named channel
 
-Pass a string name to `StreamChannel` to expose a streaming projection through `run.extensions` *and* forward each pushed value into the run's main event stream as a `custom:<name>` protocol event. Without a name, the channel is a side-channel projection only — accessible on `run.extensions` but not visible to consumers iterating raw events:
+Pass a string name to `StreamChannel` to expose a streaming projection through `run.extensions` *and* forward each pushed value into the run's main event stream as a `custom:<name>` protocol event:
 
 :::python
 ```py
@@ -508,7 +524,11 @@ const toolActivityTransformer = () => {
 ```
 :::
 
-For custom events emitted from graph nodes that should stay off the main event stream, use an unnamed channel:
+### Example: unnamed channel
+
+Without a name, the channel is a side-channel projection only — accessible on `run.extensions` but not visible to consumers iterating raw events. This is the right choice for projections that hold in-process handles (promises, async iterables, class instances) that can't be serialized onto the main event stream.
+
+The example below pairs an unnamed channel with `get_stream_writer`, which lets graph nodes emit `custom`-channel events that the transformer then drains into the projection:
 
 :::python
 ```py
@@ -663,8 +683,10 @@ const graph = builder.compile({
 ```
 :::
 
+### Built-in: `ToolCallTransformer`
+
 :::python
-Use the built-in `ToolCallTransformer` to expose `run.tool_calls` on a plain `StateGraph`:
+LangGraph ships `ToolCallTransformer` as a built-in. Register it to expose `run.tool_calls` on a plain `StateGraph`:
 
 ```py
 from langgraph.prebuilt import ToolCallTransformer
