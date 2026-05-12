@@ -16,12 +16,24 @@ class ManagePromptsPush {
   public static void main(String[] args) {
     if (System.getenv("LANGSMITH_API_KEY") == null
         || System.getenv("LANGSMITH_API_KEY").isBlank()) {
-      System.out.println("[manage-prompts-push] Skipping (LANGSMITH_API_KEY is not set).");
-      return;
+      throw new IllegalStateException("LANGSMITH_API_KEY must be set to run this sample.");
     }
     try {
 // :remove-end:
 LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+
+// :remove-start:
+      try {
+        client.repos().delete(
+            com.langchain.smith.models.repos.RepoDeleteParams.builder()
+                .owner("-")
+                .repo("joke-generator")
+                .build()
+        );
+      } catch (Exception ignored) {
+        // Prompt may not exist yet.
+      }
+// :remove-end:
 
 client.repos().create(
     RepoCreateParams.builder()
@@ -48,6 +60,12 @@ client.commits().create(
         .build()
 );
 // :remove-start:
+      client.repos().delete(
+          com.langchain.smith.models.repos.RepoDeleteParams.builder()
+              .owner("-")
+              .repo("joke-generator")
+              .build()
+      );
       System.out.println("[manage-prompts-push] Done.");
     } catch (Exception e) {
       System.out.println("[manage-prompts-push] Skipping (" + e.getMessage() + ").");
