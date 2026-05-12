@@ -61,19 +61,55 @@ jobs:
               return;
             }
 
-            // --- Parse OWNERS rules (CODEOWNERS syntax) ---
+            // --- Parse OWNERS rules (CODEOWNERS syntax + auto-request marker) ---
+            // A trailing # auto-request[: @a @b] comment opts the matching
+            // rule into GitHub review-request auto-assignment. The bare form
+            // requests every owner on the rule; the scoped form requests only
+            // the listed subset.
             const rules = [];
-            for (const line of ownersContent.split('\n')) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed.startsWith('#')) continue;
-              const parts = trimmed.split(/\s+/);
+            for (const rawLine of ownersContent.split('\n')) {
+              const trimmed = rawLine.trim();
+              if (!trimmed) continue;
+
+              const hashIdx = trimmed.indexOf('#');
+              const ruleText = (hashIdx === -1 ? trimmed : trimmed.slice(0, hashIdx)).trim();
+              const commentText = hashIdx === -1 ? '' : trimmed.slice(hashIdx + 1).trim();
+              if (!ruleText) continue;
+
+              const parts = ruleText.split(/\s+/);
               const pattern = parts[0];
               const owners = parts.slice(1).filter(o => o.startsWith('@'));
-              if (owners.length > 0) rules.push({ pattern, owners });
+              if (owners.length === 0) continue;
+
+              let autoRequest = null;
+              const autoMatch = commentText.match(/^auto-request\b\s*:?\s*(.*)$/i);
+              if (autoMatch) {
+                const listed = autoMatch[1]
+                  .split(/[\s,]+/)
+                  .filter(t => t.startsWith('@'))
+                  .map(t => t.replace(/^@/, ''));
+                const ownerNames = owners.map(o => o.replace(/^@/, ''));
+                if (listed.length === 0) {
+                  autoRequest = ownerNames;
+                } else {
+                  const ownerSet = new Set(ownerNames.map(o => o.toLowerCase()));
+                  const filtered = listed.filter(u => ownerSet.has(u.toLowerCase()));
+                  const dropped = listed.filter(u => !ownerSet.has(u.toLowerCase()));
+                  if (dropped.length > 0) {
+                    console.log(
+                      `OWNERS: ignoring auto-request ${dropped.length === 1 ? 'entry' : 'entries'} ` +
+                      `not in owner list for ${pattern}: ${dropped.map(u => '@' + u).join(', ')}`
+                    );
+                  }
+                  autoRequest = filtered;
+                }
+              }
+
+              rules.push({ pattern, owners, autoRequest });
             }
 
             // Last matching rule wins (same as GitHub CODEOWNERS behavior)
-            function findOwners(filepath) {
+            function matchRule(filepath) {
               let matched = null;
               for (const rule of rules) {
                 let pat = rule.pattern.startsWith('/') ? rule.pattern.slice(1) : rule.pattern;
@@ -92,7 +128,7 @@ jobs:
                 }
                 if (matches) matched = rule;
               }
-              return matched ? matched.owners : [];
+              return matched;
             }
 
             // --- Map file paths to human-readable product names ---
@@ -120,13 +156,23 @@ jobs:
 
             // --- Group by product, merging owners across files ---
             const productOwners = new Map();
+            const autoRequestReviewers = new Set();
             let authorIsOwner = false;
             for (const file of files) {
-              const owners = findOwners(file.filename);
+              const rule = matchRule(file.filename);
+              const owners = rule ? rule.owners : [];
               const ownerNames = owners.map(o => o.replace(/^@/, ''));
 
               if (ownerNames.some(o => o.toLowerCase() === author.toLowerCase())) {
                 authorIsOwner = true;
+              }
+
+              if (rule && rule.autoRequest) {
+                for (const u of rule.autoRequest) {
+                  if (u.toLowerCase() !== author.toLowerCase()) {
+                    autoRequestReviewers.add(u);
+                  }
+                }
               }
 
               const product = getProductName(file.filename);
@@ -140,6 +186,21 @@ jobs:
               }
               for (const o of ownerNames) {
                 productOwners.get(product).add(o);
+              }
+            }
+
+            // --- Auto-request opted-in reviewers (any PR author) ---
+            if (autoRequestReviewers.size > 0) {
+              const reviewers = [...autoRequestReviewers];
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner, repo,
+                  pull_number: pr.number,
+                  reviewers
+                });
+                console.log(`Auto-requested reviewers ${reviewers.join(', ')} on PR #${pr.number}`);
+              } catch (error) {
+                console.log(`Failed to auto-request reviewers ${reviewers.join(', ')}: ${error.message}`);
               }
             }
 
