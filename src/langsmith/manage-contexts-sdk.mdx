@@ -5,7 +5,11 @@ description: Use the LangSmith SDK to push, pull, list, and delete agent and ski
 tag: SDK
 ---
 
-Use the LangSmith [Python](/langsmith/smith-python-sdk) and [TypeScript](smith-js-ts-sdk) SDKs to manage **agent repos** and **skill repos** in the [Context Hub](/langsmith/context-engineering-concepts) programmatically. [Push](#push-an-agent) new versions from CI, [pull](#pull-an-agent) the latest or a pinned commit at runtime to inject context into your agent, and use additional methods to [check existence](#check-whether-a-repo-exists), [list and search](#list-agents-and-skills) repos, and [delete](#delete-an-agent-or-skill) what you no longer need.
+Use the LangSmith [Python](/langsmith/smith-python-sdk) and [TypeScript](/langsmith/smith-js-ts-sdk) SDKs to manage **agent repos** and **skill repos** in the [Context Hub](/langsmith/use-the-context-hub) programmatically. [Push](#push-an-agent) new versions from CI, [pull](#pull-an-agent) the latest or a pinned commit at runtime to inject context into your agent, and use additional methods to [check existence](#check-whether-a-repo-exists), [list and search](#list-agents-and-skills) repos, and [delete](#delete-an-agent-or-skill) what you no longer need.
+
+<Note>
+Context Hub methods require `langsmith>=0.7.35` (Python) and `langsmith>=0.5.23` (TypeScript).
+</Note>
 
 ## Setup
 
@@ -133,7 +137,9 @@ console.log(url);
 
 Instead of inlining file content, an entry in `files` can be a link to
 another agent or skill repo, which lets you compose contexts without duplicating
-content across repos. For example, an agent that delegates to a shared skill. The linked repo is resolved at pull time:
+content across repos. For example, an agent that delegates to a shared skill.
+
+If you omit `commit_id`, LangSmith links to the latest commit of that repo when you push this commit. If the linked repo updates later, LangSmith propagates that update to parent repos that reference it.
 
 <CodeGroup>
 ```python Python
@@ -183,7 +189,7 @@ Both `push_agent` / `pushAgent` and `push_skill` / `pushSkill` accept the follow
 | ---------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `identifier`                       | `string`                                    | The repo's identifier.                                                                       |
 | `files`                            | `dict[str, Entry \| None]`                  | Map of file path to `Entry`. Pass `None` / `null` to delete a path in this commit.           |
-| `parent_commit` / `parentCommit`   | `string` (optional)                         | Parent commit hash for optimistic concurrency. Must be 8–64 hex characters when provided. Raises `LangSmithConflictError` if it doesn't match the latest commit. |
+| `parent_commit` / `parentCommit`   | `string` (optional)                         | Parent commit hash prefix for optimistic concurrency. Must be 8–64 characters when provided. If it doesn't match the latest commit, the API returns a 409 conflict. |
 | `description`                      | `string` (optional)                         | Repo description. Set on creation or patched on update.                                      |
 | `readme`                           | `string` (optional)                         | Repo readme content.                                                                         |
 | `tags`                             | `string[]` (optional)                       | Repo tags.                                                                                   |
@@ -350,7 +356,7 @@ for await (const skill of client.listSkills({ isPublic: true })) {
 | `offset`                 | `int` (Python only)   | Number of repos to skip. Defaults to 0.                      |
 | `is_public` / `isPublic` | `boolean` (optional)  | Filter to only public (or only private) repos.               |
 | `is_archived` / `isArchived` | `boolean` (optional) | Filter by archived state. Defaults to `False`.            |
-| `query`                  | `string` (optional)   | Search query matched as a prefix against the repo handle.    |
+| `query`                  | `string` (optional)   | Search query across repo handle, owner handle, description, and tags. |
 
 <Note>
 Python's `list_agents` / `list_skills` return a paginated response object with explicit
@@ -363,7 +369,7 @@ consume it.
 
 <Warning>
 This operation is permanent and cannot be undone. Deleting a repo also
-removes all file repos nested within it.
+removes its owned child file repos.
 </Warning>
 
 Delete an agent or skill repo from your workspace:
@@ -387,4 +393,3 @@ await client.deleteAgent("email-assistant");
 await client.deleteSkill("deep-research");
 ```
 </CodeGroup>
-
