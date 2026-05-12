@@ -3,7 +3,7 @@ title: Manage prompts programmatically
 sidebarTitle: Manage prompts programmatically
 ---
 
-You can use the LangSmith Python and TypeScript SDK to manage prompts programmatically.
+You can use the LangSmith Python, TypeScript, and Java SDKs to manage prompts programmatically.
 
 <Note>
 Previously this functionality lived in the `langchainhub` package which is now deprecated. All functionality going forward will live in the `langsmith` package.
@@ -26,6 +26,10 @@ uv add langsmith  # version >= 0.1.99
 
 ```bash TypeScript
 yarn add langsmith langchain # langsmith version >= 0.1.99 and langchain version >= 0.2.14
+```
+
+```kotlin Java/Kotlin (Gradle)
+implementation("com.langchain.smith:langsmith-java:0.1.0-beta.4")
 ```
 </CodeGroup>
 
@@ -85,14 +89,40 @@ console.log(url);
 ```
 
 ```java Java
-import com.langchain.smith.models.prompts.PromptPushParams;
-import com.langchain.smith.models.prompts.Prompt;
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.core.JsonValue;
+import com.langchain.smith.models.commits.CommitCreateParams;
+import com.langchain.smith.models.repos.RepoCreateParams;
+import java.util.List;
+import java.util.Map;
 
-Prompt prompt = Prompt.builder()
-    .name("joke-generator")
-    .object(prompt)
-    .build();
-var url = client.prompts().push(prompt);
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+
+client.repos().create(
+    RepoCreateParams.builder()
+        .repoHandle("joke-generator")
+        .isPublic(false)
+        .build()
+);
+
+Map<String, Object> manifest = Map.of(
+    "lc", 1,
+    "type", "constructor",
+    "id", List.of("langchain_core", "prompts", "prompt", "PromptTemplate"),
+    "kwargs", Map.of(
+        "template", "tell me a joke about {topic}",
+        "input_variables", List.of("topic")
+    )
+);
+
+client.commits().create(
+    CommitCreateParams.builder()
+        .owner("-")
+        .repo("joke-generator")
+        .manifest(JsonValue.from(manifest))
+        .build()
+);
 ```
 
 </CodeGroup>
@@ -277,12 +307,19 @@ await chain.invoke({"topic": "cats"});
 ```
 
 ```java Java
-RepoListPage jokePrompts = client.repos().list(
-    RepoListParams.builder()
-        .query("joke")
-        .isPublic(RepoListParams.IsPublic.FALSE)
-        .build()
-);
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.prompts.Prompt;
+import com.langchain.smith.prompts.PromptClient;
+import com.langchain.smith.prompts.PromptValue;
+import java.util.Map;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+PromptClient promptClient = PromptClient.create(client);
+
+Prompt prompt = promptClient.pull("joke-generator");
+PromptValue formattedPrompt = prompt.invoke(Map.of("topic", "cats"));
+// Use formattedPrompt with your model provider — see "Use a prompt without LangChain" below.
 ```
 
 </CodeGroup>
@@ -332,6 +369,10 @@ prompt = prompts.pull("joke-generator:12344e88")
 const prompt = await hub.pull("joke-generator:12344e88")
 ```
 
+```java Java
+Prompt prompt = promptClient.pull("joke-generator:12344e88");
+```
+
 </CodeGroup>
 
 To pull a public prompt from the LangChain Hub, you need to specify the handle of the prompt's author.
@@ -348,6 +389,10 @@ prompt = prompts.pull("efriis/my-first-prompt")
 
 ```typescript TypeScript
 const prompt = await hub.pull("efriis/my-first-prompt")
+```
+
+```java Java
+Prompt prompt = promptClient.pull("efriis/my-first-prompt");
 ```
 
 </CodeGroup>
@@ -735,6 +780,33 @@ const openAIResponse = await openAIClient.chat.completions.create({
 });
 ```
 
+```java Java
+import static com.langchain.smith.prompts.PromptConverters.convertToOpenAIParams;
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.prompts.Prompt;
+import com.langchain.smith.prompts.PromptClient;
+import com.langchain.smith.prompts.PromptValue;
+import com.openai.client.OpenAIClient;
+import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.models.ChatModel;
+import com.openai.models.chat.completions.ChatCompletion;
+import java.util.Map;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+PromptClient promptClient = PromptClient.create(client);
+OpenAIClient openai = OpenAIOkHttpClient.fromEnv();
+
+Prompt prompt = promptClient.pull("jacob/joke-generator");
+PromptValue formattedPrompt = prompt.invoke(Map.of("topic", "cats"));
+
+ChatCompletion completion = openai.chat().completions().create(
+    convertToOpenAIParams(formattedPrompt)
+        .model(ChatModel.GPT_4_1_MINI)
+        .build()
+);
+```
+
 </CodeGroup>
 
 ### Anthropic
@@ -790,6 +862,34 @@ const anthropicResponse = await anthropicClient.messages.create({
 });
 ```
 
+```java Java
+import static com.langchain.smith.prompts.PromptConverters.convertToAnthropicParams;
+import com.anthropic.client.AnthropicClient;
+import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.models.messages.Message;
+import com.anthropic.models.messages.Model;
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.prompts.Prompt;
+import com.langchain.smith.prompts.PromptClient;
+import com.langchain.smith.prompts.PromptValue;
+import java.util.Map;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+PromptClient promptClient = PromptClient.create(client);
+AnthropicClient anthropic = AnthropicOkHttpClient.fromEnv();
+
+Prompt prompt = promptClient.pull("jacob/joke-generator");
+PromptValue formattedPrompt = prompt.invoke(Map.of("topic", "cats"));
+
+Message message = anthropic.messages().create(
+    convertToAnthropicParams(formattedPrompt)
+        .model(Model.CLAUDE_SONNET_4_5)
+        .maxTokens(1024)
+        .build()
+);
+```
+
 </CodeGroup>
 
 ## List, delete, and like prompts
@@ -840,6 +940,11 @@ client.unlikePrompt("efriis/my-first-prompt");
 ```
 
 ```java Java
+import com.langchain.smith.models.repos.RepoDeleteParams;
+import com.langchain.smith.models.repos.RepoListPage;
+import com.langchain.smith.models.repos.RepoListParams;
+import com.langchain.smith.models.repos.RepoWithLookups;
+
 // List all prompts in my workspace
 RepoListPage prompts = client.repos().list();
 for (RepoWithLookups prompt : prompts.repos()) {
@@ -855,15 +960,10 @@ RepoListPage jokePrompts = client.repos().list(
 );
 
 // Delete a prompt
-String promptId = "joke-generator";
-String[] parts = promptId.split("/", 2);
-String owner = parts.length > 1 ? parts[0] : "-";
-String repo = parts.length > 1 ? parts[1] : promptId;
-
 client.repos().delete(
     RepoDeleteParams.builder()
-        .owner(owner)
-        .repo(repo)
+        .owner("-")
+        .repo("joke-generator")
         .build()
 );
 ```
