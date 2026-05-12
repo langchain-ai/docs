@@ -1,0 +1,160 @@
+---
+title: "ChatTelnyx integration"
+sidebarTitle: Telnyx
+description: "Integrate the ChatTelnyx chat model using LangChain Python."
+---
+
+This will help you get started with Telnyx [chat models](/oss/langchain/models). Telnyx provides OpenAI-compatible AI inference APIs for chat models and embeddings.
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all features and configuration options, head to the @[`ChatTelnyx`] API reference.
+</Tip>
+
+For a full list of available models, visit the [Telnyx models page](https://developers.telnyx.com/docs/inference/models).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS/TS Support | Downloads | Latest Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| @[`ChatTelnyx`] | @[`langchain-telnyx`] | ❌ | ❌ | <a href="https://pypi.org/project/langchain-telnyx/" target="_blank"><img src="https://static.pepy.tech/badge/langchain-telnyx/month" alt="Downloads per month" noZoom height="100" class="rounded" /></a> | <a href="https://pypi.org/project/langchain-telnyx/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-telnyx?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+
+## Setup
+
+To access Telnyx models, install the `langchain-telnyx` package and set your API key.
+
+### Installation
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-telnyx
+    ```
+    ```bash uv
+    uv add langchain-telnyx
+    ```
+</CodeGroup>
+
+### Credentials
+
+Get an API key from [Telnyx](https://telnyx.com) and set the `TELNYX_API_KEY` environment variable:
+
+```python
+import getpass
+import os
+
+if not os.getenv("TELNYX_API_KEY"):
+    os.environ["TELNYX_API_KEY"] = getpass.getpass("Enter your Telnyx API key: ")
+```
+
+Optional: override the OpenAI-compatible base URL if needed:
+
+```python
+os.environ["TELNYX_API_BASE"] = "https://api.telnyx.com/v2/ai/openai"
+```
+
+## Instantiation
+
+```python
+from langchain_telnyx import ChatTelnyx
+
+model = ChatTelnyx(
+    model="moonshotai/Kimi-K2.6",
+    temperature=0,
+    max_tokens=1024,
+    max_retries=2,
+    # other params...
+)
+```
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to Spanish. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = model.invoke(messages)
+ai_msg.content
+```
+
+```text
+"Me encanta programar."
+```
+
+## Streaming
+
+```python
+for chunk in model.stream("Write a short poem about the sea."):
+    print(chunk.text, end="", flush=True)
+```
+
+Async streaming is also supported:
+
+```python
+async for chunk in model.astream("Write a short poem about the sea."):
+    print(chunk.text, end="", flush=True)
+```
+
+## Tool calling
+
+Telnyx uses the OpenAI-compatible tool calling format.
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location"""
+
+    location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+
+model_with_tools = model.bind_tools([GetWeather])
+ai_msg = model_with_tools.invoke("what is the weather like in San Francisco")
+ai_msg.tool_calls
+```
+
+## Structured output
+
+`ChatTelnyx` supports structured output via [`with_structured_output`](/oss/langchain/models#structured-output):
+
+```python
+from pydantic import BaseModel, Field
+
+
+class Movie(BaseModel):
+    title: str = Field(description="The title of the movie")
+    year: int = Field(description="The year the movie was released")
+
+
+structured_model = model.with_structured_output(Movie)
+structured_model.invoke("Provide details about the movie Inception")
+```
+
+## Embeddings
+
+The same package also provides `TelnyxEmbeddings`:
+
+```python
+from langchain_telnyx import TelnyxEmbeddings
+
+embeddings = TelnyxEmbeddings(model="thenlper/gte-large")
+vector = embeddings.embed_query("Hello world")
+```
+
+## Package links
+
+- PyPI: [langchain-telnyx](https://pypi.org/project/langchain-telnyx/)
+- Repository: [team-telnyx/langchain-telnyx](https://github.com/team-telnyx/langchain-telnyx)
