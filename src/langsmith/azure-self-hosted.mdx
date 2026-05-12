@@ -8,6 +8,7 @@ When running LangSmith on [Microsoft Azure](https://azure.microsoft.com/), you c
 
 This page provides:
 
+- [Installation flow](#installation-flow) summary, including which components are installed together versus separately.
 - [Initial setup steps](#initial-setup) for deploying to AKS, configuring managed services, and setting up authentication.
 - [Azure-specific architecture patterns](#reference-architecture) and reference diagrams.
 - [Compute and networking guidance](#compute-and-networking-on-azure) and best practices.
@@ -18,6 +19,37 @@ LangChain provides Terraform modules specifically for Azure to help provision in
 
 View the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure) for documentation and examples.
 </Note>
+
+## Installation flow
+
+The architecture diagram below shows several components, but they are not installed individually. LangSmith on Azure is deployed as **two layers**: Azure infrastructure that you provision in your subscription, and the LangSmith application that runs on AKS as a single Helm release.
+
+### What gets installed, and how
+
+| Layer | What it includes | How it's installed |
+|-------|------------------|--------------------|
+| **Azure infrastructure** | AKS cluster, virtual network, Azure Database for PostgreSQL, Azure Managed Redis (or Azure Cache for Redis), Azure Blob Storage, Azure Key Vault, ingress and Microsoft Entra ID integration. ClickHouse is provisioned through [ClickHouse Cloud](/langsmith/self-host-external-clickhouse) or, if required, in-cluster on AKS. | Provisioned in your Azure subscription using your existing IaC workflow. The [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure) can stand up all of these resources in one apply. |
+| **LangSmith application** | LangSmith frontend, backend, queue, platform backend, Playground, and ACE services. Optionally also the [LangSmith Deployment](/langsmith/deployment) control plane and data plane (operator, listener, host-backend, `LangGraphPlatform` CRD). | Installed as a **single Helm release** from the [`langchain/langsmith` Helm chart](https://github.com/langchain-ai/helm/tree/main/charts/langsmith). One `helm upgrade --install` command deploys all in-cluster LangSmith services together. See [Install on Kubernetes](/langsmith/kubernetes). |
+
+In other words, the boxes inside the AKS cluster on the architecture diagram are not separate installations. They are pods that the LangSmith Helm chart creates from one release. The Azure managed services around the cluster are the components that your infrastructure team provisions separately as part of standard Azure resource creation.
+
+### Compliance touchpoints
+
+For most enterprise reviews, the compliance surface area is the Azure managed services plus the LangSmith container images that run in AKS. Concretely:
+
+- **One application review** covers the LangSmith Helm chart and the container images it deploys.
+- **Per-service reviews** apply to the Azure managed resources you choose to use (AKS, PostgreSQL, Managed Redis, Blob Storage, Key Vault, Entra ID, ingress and WAF). These are standard Azure services and are typically reviewed by infra and security teams against existing approval patterns rather than as new third-party tools.
+- ClickHouse is the one storage component where the review depends on your choice: ClickHouse Cloud is a third-party SaaS review, while in-cluster ClickHouse on AKS is reviewed as part of the LangSmith application.
+
+LangSmith Deployment, Fleet, Insights, and Polly are enabled through configuration on the same Helm release rather than as separate installs. See [Enable LangSmith Deployment, Fleet, Insights, and Polly](/langsmith/deploy-self-hosted-full-platform). The one exception is [KEDA](https://keda.sh/), an open-source Kubernetes autoscaler that LangSmith Deployment requires; it is installed as its own Helm release in a separate `keda` namespace.
+
+### Installation order
+
+1. Provision Azure infrastructure: AKS cluster, virtual network and subnets, Azure Database for PostgreSQL, Azure Managed Redis, Azure Blob Storage, Azure Key Vault, and ingress.
+2. Provision ClickHouse: either subscribe to [ClickHouse Cloud](/langsmith/self-host-external-clickhouse) or plan for an in-cluster ClickHouse deployment managed by the LangSmith Helm chart.
+3. Configure [Microsoft Entra ID](https://www.microsoft.com/en-us/security/business/identity-access/microsoft-entra-id) and [Azure Workload Identity](https://azure.github.io/azure-workload-identity/docs/introduction.html) so LangSmith pods can authenticate to the managed services above.
+4. Install LangSmith with one `helm upgrade --install` from the `langchain/langsmith` chart, pointing it at your managed services. See [Install on Kubernetes](/langsmith/kubernetes).
+5. (Optional) Enable LangSmith Deployment, Fleet, Insights, and Polly by updating the same Helm values and installing KEDA. See [Enable LangSmith Deployment, Fleet, Insights, and Polly](/langsmith/deploy-self-hosted-full-platform).
 
 ## Initial setup
 
@@ -66,6 +98,10 @@ After completing these initial setup steps, you can review the complete Azure ar
 We recommend using Azure's managed services to provide a scalable, secure, and resilient platform. The following architecture applies to both self-hosted and hybrid deployments:
 
 ![Architecture diagram showing Azure relations to LangSmith services](/langsmith/images/azure-architecture-self-hosted.png)
+
+<Note>
+The components inside the AKS cluster (frontend, backend, queue, platform backend, Playground, ACE, and optionally the control plane and data plane for [LangSmith Deployment](/langsmith/deployment)) are not installed individually. They are deployed together as a single Helm release from the `langchain/langsmith` chart. The boxes outside the cluster (Azure Database for PostgreSQL, Azure Managed Redis, Azure Blob Storage, ClickHouse, and ingress) are Azure managed services that you provision separately. See [Installation flow](#installation-flow) for a summary.
+</Note>
 
 - **Client interfaces**: Users interact with LangSmith via a web browser or the LangChain SDK. All traffic terminates at an [Azure Load Balancer](https://azure.microsoft.com/en-us/products/load-balancer/) and is routed to the frontend (NGINX) within the [AKS](https://azure.microsoft.com/en-us/products/kubernetes-service/) cluster before being routed to another service within the cluster if necessary.
 - **Storage services**: The platform requires persistent storage for traces, metadata and caching. On Azure the recommended services are:
