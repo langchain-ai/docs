@@ -437,6 +437,23 @@ interface StreamTransformer<TProjection = unknown> {
 - `finalize()` closes or resolves non-channel projections after a successful run.
 - `fail()` propagates errors to non-channel projections.
 
+### Declaring required stream modes
+
+A transformer that only processes events from specific Pregel stream modes should declare them via `required_stream_modes`. The runtime takes the union of every registered transformer's `required_stream_modes` and asks the graph for exactly those modes — modes that no transformer requests aren't emitted at all, which keeps the event stream tight.
+
+:::python
+```py
+class CustomTransformer(StreamTransformer):
+    required_stream_modes = ("custom",)  # [!code highlight]
+
+    def process(self, event: ProtocolEvent) -> bool:
+        # process() will only see "custom" events.
+        ...
+```
+:::
+
+Set the tuple to the modes your `process()` actually filters on (`"messages"`, `"tools"`, `"custom"`, `"values"`, `"updates"`, `"checkpoints"`, `"tasks"`, `"debug"`). The default is an empty tuple, which means the transformer consumes only synthetic events or is purely passive.
+
 ### StreamChannel
 
 `StreamChannel` is the projection primitive a transformer uses for streaming values. It always exposes an iterable stream on `run.extensions.<name>`. The constructor argument decides whether each `push()` also flows into the run's main event stream as a `custom:<name>` event—that is, whether the projection's values show up when iterating raw protocol events.
