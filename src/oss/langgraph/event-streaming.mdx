@@ -5,11 +5,46 @@ description: Stream LangGraph runs with typed projections for messages, state, s
 
 Event streaming is the recommended in-process streaming model for most LangGraph application code. It returns a run stream object that can be consumed in multiple ways at the same time.
 
+## Quickstart
+
+:::python
+```py
+stream = graph.stream_events({
+    "messages": [{"role": "user", "content": "What is 42 * 17?"}],
+}, version="v3")
+
+for message in stream.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
+
+final_state = stream.output
+```
+:::
+
+:::js
+```ts
+const stream = await graph.streamEvents(
+  { messages: [{ role: "user", content: "What is 42 * 17?" }] },
+  { version: "v3" }
+);
+
+for await (const message of stream.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
+}
+
+const finalState = await stream.output;
+```
+:::
+
+To stream against a graph deployed behind an Agent Server, see the [LangSmith Streaming API](/langsmith/streaming).
+
 ## How the pieces fit together
 
 The streaming stack has two main layers:
 
-1. **Pregel streaming** emits raw graph execution events from the Pregel engine.
+1. **Streaming** emits raw graph execution events from the Pregel engine.
 2. **Event streaming** normalizes those events, runs them through stream transformers, and exposes typed projections.
 
 <div className="my-6 rounded-xl border bg-gray-50 p-4 dark:bg-gray-900">
@@ -48,41 +83,6 @@ The streaming stack has two main layers:
 
 The event router is the bridge between the two layers. It receives normalized Pregel events and passes each event through the registered stream transformers. Built-in transformers create standard projections such as `stream.messages`, `stream.values`, `stream.subgraphs`, and `stream.output`. Custom transformers can add application-specific projections under `stream.extensions`.
 
-## Quickstart
-
-:::python
-```py
-stream = graph.stream_events({
-    "messages": [{"role": "user", "content": "What is 42 * 17?"}],
-}, version="v3")
-
-for message in stream.messages:
-    for token in message.text:
-        print(token, end="", flush=True)
-
-final_state = stream.output
-```
-:::
-
-:::js
-```ts
-const stream = await graph.streamEvents(
-  { messages: [{ role: "user", content: "What is 42 * 17?" }] },
-  { version: "v3" }
-);
-
-for await (const message of stream.messages) {
-  for await (const token of message.text) {
-    process.stdout.write(token);
-  }
-}
-
-const finalState = await stream.output;
-```
-:::
-
-To stream against a graph deployed behind an Agent Server, see the [LangSmith Streaming API](/langsmith/streaming).
-
 ## What event streaming provides
 
 The run stream exposes typed projections over one underlying event flow:
@@ -100,7 +100,7 @@ The run stream exposes typed projections over one underlying event flow:
 
 Multiple consumers can read these projections concurrently. Reading `stream.messages` does not consume events needed by `stream.values`, `stream.subgraphs`, or `stream.output`.
 
-Event streaming sits one level above [Pregel streaming](/oss/langgraph/streaming), which exposes raw graph execution events through `stream_mode` modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, and `debug`. Use Pregel streaming when you need low-level access to those modes; use event streaming when application code benefits from typed projections.
+Event streaming sits one level above [streaming](/oss/langgraph/streaming), which exposes raw graph execution events through `stream_mode` modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, and `debug`. Use streaming when you need low-level access to those modes; use event streaming when application code benefits from typed projections.
 
 ## Stream messages
 
@@ -451,7 +451,7 @@ Write one when the existing projections don't match the shape an application nee
 
 ### How transformers work
 
-Event streaming starts with Pregel streaming output from the LangGraph Pregel engine. The runtime normalizes those chunks into protocol events, then a stream handler routes each event through a stack of stream transformers.
+Event streaming starts with streaming output from the LangGraph Pregel engine. The runtime normalizes those chunks into protocol events, then a stream handler routes each event through a stack of stream transformers.
 
 ```mermaid
 flowchart TD
