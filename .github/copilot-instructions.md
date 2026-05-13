@@ -5,11 +5,11 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
-3. **Never use markdown in frontmatter `description`** — breaks SEO
-4. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
-5. **Always update `src/docs.json`** when adding new pages
-6. **Use Tabler icons only** — not FontAwesome
-7. **Test code examples** before including them
+1. **Never use markdown in frontmatter `description`** — breaks SEO
+1. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
+1. **Always update `src/docs.json`** when adding new pages
+1. **Use Tabler icons only** — not FontAwesome
+1. **Test code examples** before including them
 
 ## Repository structure
 
