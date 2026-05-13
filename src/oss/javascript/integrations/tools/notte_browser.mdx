@@ -1,0 +1,119 @@
+---
+title: "Notte browser toolkit integration"
+description: "Integrate with the NotteBrowserToolkit using LangChain JavaScript to drive a managed remote browser."
+---
+
+The `NotteBrowserToolkit` gives a LangChain agent four tools to drive a browser session on [Notte](https://notte.cc), a managed browser-infrastructure platform: navigate, act, extract, and observe. Sessions are remote-hosted, so you do not need to manage a local browser process.
+
+## Setup
+
+Install the toolkit, the Notte SDK, and `@langchain/core`:
+
+```bash
+npm install @langchain/community notte-sdk @langchain/core
+```
+
+Set your Notte API key (sign up at [notte.cc](https://notte.cc)):
+
+```bash
+export NOTTE_API_KEY="your-notte-api-key"
+```
+
+## Usage
+
+```typescript
+import { NotteClient } from "notte-sdk";
+import { NotteBrowserToolkit } from "@langchain/community/agents/toolkits/notte_browser";
+import { ChatOpenAI } from "@langchain/openai";
+import { createAgent } from "langchain";
+
+async function main() {
+  const client = new NotteClient();
+  const session = client.Session({ headless: true });
+  await session.start();
+
+  try {
+    const toolkit = await NotteBrowserToolkit.fromClient(client, session);
+
+    const model = new ChatOpenAI({
+      modelName: "gpt-4o",
+      temperature: 0,
+    });
+
+    const agent = createAgent({
+      model,
+      tools: toolkit.getTools(),
+    });
+
+    const stream = await agent.stream(
+      {
+        messages: [
+          {
+            role: "user",
+            content:
+              "Go to https://news.ycombinator.com and report the titles of the top three posts.",
+          },
+        ],
+      },
+      { streamMode: "values" }
+    );
+
+    for await (const { messages } of stream) {
+      const last =
+        messages && messages.length > 0
+          ? messages[messages.length - 1]
+          : undefined;
+      if (last?.content) {
+        console.log(last.content);
+      } else if (last?.tool_calls && last.tool_calls.length > 0) {
+        console.log(last.tool_calls);
+      }
+    }
+  } finally {
+    await session.stop();
+  }
+}
+
+main();
+```
+
+## The tools
+
+The toolkit exposes four tools:
+
+- `NotteNavigateTool`: navigate the session to a URL.
+- `NotteActTool`: perform a natural-language action on the current page (e.g. "click the sign-up button"). Backed by Notte's perception model.
+- `NotteExtractTool`: extract structured data given an instruction and a JSON Schema.
+- `NotteObserveTool`: list the interactive elements on the current page (useful for letting the LLM plan).
+
+Each tool can also be imported individually:
+
+```typescript
+import {
+  NotteNavigateTool,
+  NotteActTool,
+  NotteExtractTool,
+  NotteObserveTool,
+} from "@langchain/community/agents/toolkits/notte_browser";
+```
+
+## Bringing your own session
+
+By default the toolkit reuses a single `Session` across all four tools. Pass a pre-started `Session` to share lifecycle control with your application:
+
+```typescript
+const session = client.Session({ headless: true });
+await session.start();
+const toolkit = await NotteBrowserToolkit.fromClient(client, session);
+// ... use toolkit ...
+await session.stop();
+```
+
+Omit the `session` argument and each tool will lazily create one on first call.
+
+## Related
+
+- Tool [conceptual guide](/oss/langchain/tools)
+- Tool [how-to guides](/oss/langchain/tools)
+- [Notte Documentation](https://docs.notte.cc)
+- [Notte Browser Toolkit reference implementation](https://github.com/nottelabs/notte-langchain)
