@@ -20,6 +20,8 @@
       - [`reference.langchain.com`](#referencelangchaincom)
     - [File formats](#file-formats)
     - [Available commands](#available-commands)
+  - [Linting](#linting)
+    - [Codespell](#codespell)
   - [Troubleshooting](#troubleshooting)
     - [`docs dev` not working / running](#docs-dev-not-working--running)
     - [Mintlify `.venv` parsing error](#mintlify-venv-parsing-error)
@@ -144,6 +146,16 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 ## Linting
 
 After running `make install`, you can use `make lint_prose` to ensure your writing meets our style guide rules.
+
+### Codespell
+
+`make lint` runs `uv run codespell src` to check source documentation for common spelling errors.
+
+Codespell is configured in `pyproject.toml` under `[tool.codespell]`:
+
+* Add custom accepted words to `src/.codespellignore`. This file is referenced by `ignore-words = "src/.codespellignore"`.
+* Exclude generated files, vendor content, or other paths that should not be spell checked by adding glob patterns to the `skip` setting.
+* Keep skip patterns scoped. Prefer adding accepted words to `src/.codespellignore` when the word is valid documentation content, and use `skip` when the file or directory should not be checked at all.
 
 You can also follow these steps to enable `vale` with VS Code or Cursor:
 
