@@ -439,7 +439,7 @@ interface StreamTransformer<TProjection = unknown> {
 
 ### Declaring required stream modes
 
-A transformer that only processes events from specific Pregel stream modes should declare them via `required_stream_modes`. The runtime takes the union of every registered transformer's `required_stream_modes` and asks the graph for exactly those modes — modes that no transformer requests aren't emitted at all, which keeps the event stream tight.
+`required_stream_modes` controls which Pregel stream modes the underlying graph emits. The runtime takes the union of every registered transformer's `required_stream_modes` and passes that union as the `stream_mode` argument to the graph's `.stream()` call. **Modes that no transformer requests are never emitted** — declaring `("custom",)` is what causes `custom` events to flow through the run at all.
 
 :::python
 ```py
@@ -447,12 +447,13 @@ class CustomTransformer(StreamTransformer):
     required_stream_modes = ("custom",)  # [!code highlight]
 
     def process(self, event: ProtocolEvent) -> bool:
-        # process() will only see "custom" events.
-        ...
+        if event["method"] == "custom":
+            ...
+        return True
 ```
 :::
 
-Set the tuple to the modes your `process()` actually filters on (`"messages"`, `"tools"`, `"custom"`, `"values"`, `"updates"`, `"checkpoints"`, `"tasks"`, `"debug"`). The default is an empty tuple, which means the transformer consumes only synthetic events or is purely passive.
+`process()` receives every event the graph emits (filtered by your own `event["method"]` checks), so the declaration is about turning on the upstream emission, not about narrowing what `process()` sees. Valid values are the Pregel stream modes: `"messages"`, `"tools"`, `"custom"`, `"values"`, `"updates"`, `"checkpoints"`, `"tasks"`, `"debug"`. The default is an empty tuple, which is correct for transformers that derive their projection from synthetic events emitted by other transformers (or are purely passive).
 
 ### StreamChannel
 
