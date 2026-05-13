@@ -3,7 +3,7 @@
 🦜 **Welcome!** This repository contains the documentation build pipeline for LangChain projects.
 
 * 🏠 [`docs.langchain.com`](https://docs.langchain.com) is our docs home, centralizing LangChain, LangGraph, LangSmith, and LangChain Labs (Deep Agents, Open SWE, Open Agent Platform). This site is hosted on [Mintlify](https://mintlify.com).
-* 🛠️ `reference.langchain.com` is home to the API reference docs for LangChain, LangGraph, LangSmith, and LangChain integration packages (e.g., [`langchain-anthropic`](https://pypi.org/project/langchain-anthropic/), [`langchain-openai`](https://pypi.org/project/langchain-openai/)). These are static sites built from the source code and deployed to [Vercel](https://vercel.com).
+* 🛠️ [`reference.langchain.com`](https://reference.langchain.com/python/) hosts generated API reference for LangChain, LangGraph, LangSmith, and integration packages. That site is **not** built from this repository (no reference build scripts or output live here).
   * [`Python reference`](https://reference.langchain.com/python/)
   * [`JavaScript/TypeScript reference`](https://reference.langchain.com/javascript/)
 * 💬 [`chat.langchain.com`](https://chat.langchain.com) is an AI-powered assistant that can answer questions about LangChain documentation.
@@ -52,8 +52,7 @@ For more information on how to contribute to LangChain documentation, follow the
 
 For detailed information about setting up your development environment and contributing to documentation, see the [documentation contributing guide](https://docs.langchain.com/oss/python/contributing/documentation).
 
-> [!IMPORTANT]
-> For contributing to reference docs, see the `README.md` file in the `/reference/python` and `/reference/javascript` directories.
+To report issues with **reference.langchain.com** (missing pages, broken links, or generated API content), [open a reference documentation issue](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) on this repo so maintainers can route it.
 
 ## Reference
 
@@ -62,6 +61,7 @@ For detailed information about setting up your development environment and contr
 ```text
 # --- docs.langchain.com ----------------------------------------------
 build/                    # Built docs (DO NOT EDIT)
+packages.yml              # Package metadata (indexes, tables, downloads; not the API reference build)
 pipeline/                 # Build pipeline source code
 scripts/                  # Helper scripts
 src/                      # Source documentation files (< EDIT CONTENT HERE)
@@ -71,14 +71,6 @@ src/                      # Source documentation files (< EDIT CONTENT HERE)
 tests/                    # Test files for the pipeline
 Makefile                  # Build targets
 pyproject.toml            # Dependencies
-
-# --- reference.langchain.com -----------------------------------------
-reference/                # Reference docs build pipelines
-    dist/                 # Built docs (DO NOT EDIT)
-    javascript/           # JS/TS reference build pipeline
-    python/               # Python reference build pipeline and source
-    package.json          # Vercel commands and dependencies
-    vercel.json           # Vercel configuration/redirects
 ```
 
 #### `docs.langchain.com`
@@ -94,9 +86,7 @@ Documentation changes follow a PR workflow where all tests must pass before merg
 
 #### `reference.langchain.com`
 
-Each language has its own build pipeline in `/reference/<language>`. Reference docs are built with a combination of automated docstring extraction and manually written content. Refer to the `README.md` in each folder for details on how to build and contribute.
-
-Built files are stored in `/reference/dist/{LANGUAGE}`, which is then deployed to Vercel. The build process is triggered automatically on pushes to `main` and can also be triggered manually via the Vercel dashboard.
+API reference is generated and deployed outside this repo. Browse [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) reference there. If something is wrong with that site, use the [reference docs issue template](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml).
 
 ### File formats
 
@@ -113,8 +103,6 @@ Built files are stored in `/reference/dist/{LANGUAGE}`, which is then deployed t
 * `make build` - Build documentation to `./build` directory
 * `make broken-links` - Check for broken links in documentation
 * `make broken-links-with-anchors` - Check for broken links + check links with anchors
-* `make build-references` - Build reference docs
-* `make preview-references` - Preview reference docs using vercel
 * `make install` - Install all dependencies
 * `make clean` - Remove build artifacts
 * `make test` - Run the test suite

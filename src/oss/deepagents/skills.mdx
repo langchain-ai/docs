@@ -18,7 +18,7 @@ Skills require `deepagents>=1.7.0`.
 
 You can use [Agent Skills](https://agentskills.io/) to provide your deep agent with new capabilities and expertise. For ready-to-use skills that improve your agent's performance on LangChain ecosystem tasks, see the [LangChain Skills](https://github.com/langchain-ai/langchain-skills) repository.
 
-Deep agent skills follow the [Agent Skills specification](https://agentskills.io/specification).
+Deep agent skills follow the [Agent Skills specification](https://agentskills.io/specification) and add additional capability for interpreter skills, which makes it possible to provide skills with importable functions that an interpreter can call.
 
 ## What are skills
 
@@ -69,10 +69,11 @@ The `SKILL.md` file always follows the same pattern, starting with metadata in t
 
 The following example shows a skill that gives instructions on how to provide relevant langgraph docs when prompted:
 
-```md
+````md
 ---
 name: langgraph-docs
 description: Use this skill for requests related to LangGraph in order to fetch relevant documentation to provide accurate, up-to-date guidance.
+module: index.ts
 ---
 
 # langgraph-docs
@@ -103,9 +104,45 @@ Based on the question, identify 2-4 most relevant documentation URLs from the in
 
 Use the fetch_url tool to read the selected documentation URLs.
 
-### 4. Provide Accurate Guidance
+### 4. Provide accurate guidance
 
-After reading the documentation, complete the user's request.
+After reading the documentation, answer the user's question using the relevant LangGraph docs you fetched.
+
+In your response:
+
+- Give a direct answer first.
+- Include the minimum necessary context and any key steps or API names.
+- Avoid quoting long passages. Paraphrase and link instead.
+
+### 5. Provide the regular links for the used references
+
+At the end of your response, include a **References** section listing the page URLs you used.
+
+`llms.txt` uses Markdown link targets that typically end in `.md`. Use the helper from this skill module to resolve those into the actual page URLs before listing them as references.
+
+```typescript
+const { resolveLlmsUrl } = await import("@/skills/langgraph-docs");
+
+// llms.txt uses Markdown link targets that typically end in `.md`.
+// Convert those into the actual page URLs before fetching.
+const llmsUrls = [
+  "https://docs.langchain.com/oss/langgraph/concepts.md",
+  "https://docs.langchain.com/oss/langgraph/concepts.md",
+  "https://docs.langchain.com/oss/langgraph/tutorials.md",
+];
+
+const pageUrls = [...new Set(llmsUrls.map(resolveLlmsUrl))];
+pageUrls;
+```
+````
+
+The referenced helper code would be placed in `index.ts`:
+
+```typescript
+// index.ts
+export function resolveLlmsUrl(url: string) {
+  return url.endsWith(".md") ? url.slice(0, -3) : url;
+}
 ```
 
 :::python
@@ -129,7 +166,7 @@ For more example skills, see [Deep Agents example skills](https://github.com/lan
 
 The following example shows a `SKILL.md` file using all available frontmatter fields:
 
-```md expandable
+````md expandable
 ---
 name: langgraph-docs
 description: Use this skill for requests related to LangGraph in order to fetch relevant documentation to provide accurate, up-to-date guidance.
@@ -139,6 +176,7 @@ metadata:
   author: langchain
   version: "1.0"
 allowed-tools: fetch_url
+module: index.ts
 ---
 
 # langgraph-docs
@@ -171,8 +209,35 @@ Use the fetch_url tool to read the selected documentation URLs.
 
 ### 4. Provide accurate guidance
 
-After reading the documentation, complete the user's request.
+After reading the documentation, answer the user's question using the relevant LangGraph docs you fetched.
+
+In your response:
+
+- Give a direct answer first.
+- Include the minimum necessary context and any key steps or API names.
+- Avoid quoting long passages. Paraphrase and link instead.
+
+### 5. Provide the regular links for the used references
+
+At the end of your response, include a **References** section listing the page URLs you used.
+
+`llms.txt` uses Markdown link targets that typically end in `.md`. Use the helper from this skill module to resolve those into the actual page URLs before listing them as references.
+
+```typescript
+const { resolveLlmsUrl } = await import("@/skills/langgraph-docs");
+
+// llms.txt uses Markdown link targets that typically end in `.md`.
+// Convert those into the actual page URLs before fetching.
+const llmsUrls = [
+  "https://docs.langchain.com/oss/langgraph/concepts.md",
+  "https://docs.langchain.com/oss/langgraph/concepts.md",
+  "https://docs.langchain.com/oss/langgraph/tutorials.md",
+];
+
+const pageUrls = [...new Set(llmsUrls.map(resolveLlmsUrl))];
+pageUrls;
 ```
+````
 
 ## Usage
 
@@ -323,7 +388,132 @@ When skills are configured, a "Skills System" section is injected into the agent
     Write clear, specific descriptions in your `SKILL.md` frontmatter. The agent decides whether to use a skill based on the description alone—detailed descriptions lead to better skill matching.
 </Tip>
 
-## Execute skill scripts in a sandbox
+## Execute code with skills
+
+Skills support code execution in two ways:
+
+- [Use interpreter skills](#use-interpreter-skills) when the agent needs reusable, importable helpers available from interpreter code.
+- [Execute skill scripts in a sandbox](#execute-skill-scripts-in-a-sandbox) when the agent needs to install dependencies, run tests, call CLIs, or work with an operating-system filesystem.
+
+### Use interpreter skills
+
+Interpreter skills are skills that expose code modules to an [interpreter](/oss/deepagents/interpreters). Regular skills give the agent instructions and context. Interpreter skills also give the agent importable functions it can call from interpreter code.
+
+This lets you package domain-specific logic once and make it available as a deterministic building block inside the agent's workspace. Instead of asking the model to re-create a parser, scorer, normalizer, validator, or aggregation routine from scratch, the agent can import a tested helper and compose it with tools, subagents, and runtime state.
+
+Use interpreter skills for code that should be:
+
+- **Reusable** across prompts, agents, or projects.
+- **Deterministic** enough that you want the same behavior every time.
+- **Too detailed** to keep in the model context as instructions.
+- **Useful inside larger workflows**, such as scoring search results, normalizing API responses, validating records, grouping rows, or converting data into a report-ready shape.
+
+To make a skill importable:
+
+<Steps titleSize="h4">
+    <Step title="Add a module entry">
+        Add a `module` key to the skill's `SKILL.md` frontmatter. The value is a JavaScript or TypeScript file path relative to the skill directory.
+    </Step>
+    <Step title="Configure skills normally">
+        Pass the skill source path with the `skills` argument when creating the agent.
+    </Step>
+    <Step title="Use the same backend">
+        Configure the interpreter middleware with the same backend that `SkillsMiddleware` uses to load skill files.
+    </Step>
+    <Step title="Import from interpreter code">
+        The agent imports the helper module with `await import("@/skills/<name>")`.
+    </Step>
+</Steps>
+
+Minimal skill layout:
+
+```text
+skills/
+`-- order-helpers/
+    |-- SKILL.md
+    `-- index.ts
+```
+
+````md
+---
+name: order-helpers
+description: Helper functions for normalizing and grouping order records.
+module: index.ts
+---
+
+# order-helpers
+
+Use this skill when order records need deterministic cleanup or aggregation.
+
+Import these utilities into the REPL in order to interact with order data:
+
+```typescript
+const { groupByStatus } = await import("@/skills/order-helpers");
+groupByStatus(...);
+```
+````
+
+```typescript
+// skills/order-helpers/index.ts
+interface Order {
+  id: string;
+  status: string;
+}
+
+export function groupByStatus(orders: Order[]) {
+  return orders.reduce((acc, order) => {
+    acc[order.status] = acc[order.status] ?? [];
+    acc[order.status].push(order);
+    return acc;
+  }, {});
+}
+```
+
+Then configure the agent:
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import StateBackend
+from langchain_quickjs import CodeInterpreterMiddleware
+
+backend = StateBackend()
+
+agent = create_deep_agent(
+    model="openai:gpt-5.4",
+    backend=backend,
+    skills=["/skills/"],
+    middleware=[CodeInterpreterMiddleware(skills_backend=backend)],
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, StateBackend } from "deepagents";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+const backend = new StateBackend();
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.4",
+  backend,
+  skills: ["/skills/"],
+  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
+});
+```
+:::
+
+The agent can now import the module from interpreter code:
+
+```javascript
+const { groupByStatus } = await import("@/skills/order-helpers");
+
+const grouped = groupByStatus(orders);
+grouped;
+```
+
+### Execute skill scripts in a sandbox
 
 Skills can include scripts alongside the `SKILL.md` file, such as, for example, a Python file that performs a search or data transformation. The agent can _read_ these scripts from any backend, but to _execute_ them, the agent needs access to a shell — which only [sandbox backends](/oss/deepagents/sandboxes) provide.
 
