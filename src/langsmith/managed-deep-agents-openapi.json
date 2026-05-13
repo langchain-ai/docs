@@ -1,0 +1,1637 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Managed Deep Agents API",
+    "version": "0.1.0",
+    "description": "Create, configure, and run Managed Deep Agents."
+  },
+  "servers": [
+    {
+      "url": "https://api.smith.langchain.com/v1/deepagents"
+    }
+  ],
+  "security": [
+    {
+      "apiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Agents",
+      "description": "Create and manage Managed Deep Agent resources."
+    },
+    {
+      "name": "Threads",
+      "description": "Create and inspect durable thread state."
+    },
+    {
+      "name": "Runs",
+      "description": "Start runs on Managed Deep Agent threads."
+    },
+    {
+      "name": "Credentials",
+      "description": "Register credentials for tools used by Managed Deep Agents."
+    }
+  ],
+  "paths": {
+    "/agents": {
+      "get": {
+        "tags": ["Agents"],
+        "summary": "List agents",
+        "description": "Return Managed Deep Agents owned by the authenticated user. System-created default agents are excluded.",
+        "operationId": "listManagedDeepAgents",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/agents/list-agents",
+          "metadata": {
+            "title": "List agents",
+            "sidebarTitle": "List agents"
+          }
+        },
+        "parameters": [
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "Items per page. Defaults to 20. Maximum is 100.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque pagination cursor from a previous response.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Substring filter on agent name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "description": "Field to sort by.",
+            "schema": {
+              "type": "string",
+              "enum": ["created_at", "updated_at", "name"],
+              "default": "updated_at"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "description": "Sort order.",
+            "schema": {
+              "type": "string",
+              "enum": ["asc", "desc"],
+              "default": "desc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agents returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAgentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Agents"],
+        "summary": "Create an agent",
+        "description": "Create an agent with metadata, runtime configuration, and an optional file tree. Creation is atomic: either the agent is fully created or no state is persisted.",
+        "operationId": "createManagedDeepAgent",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/agents/create-agent",
+          "metadata": {
+            "title": "Create an agent",
+            "sidebarTitle": "Create an agent"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IncludeFiles"
+          },
+          {
+            "$ref": "#/components/parameters/UserTimezone"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Create a research assistant",
+                  "value": {
+                    "name": "research-assistant",
+                    "description": "Research assistant that can search the web and summarize sources.",
+                    "permissions": {
+                      "identity": "personal",
+                      "visibility": "user"
+                    },
+                    "runtime": {
+                      "model": {
+                        "model_id": "claude-sonnet-4-6"
+                      }
+                    },
+                    "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+                    "tools": {
+                      "tools": [
+                        {
+                          "name": "tavily_web_search",
+                          "mcp_server_url": "https://tools.langchain.com",
+                          "mcp_server_name": "Fleet",
+                          "display_name": "tavily_web_search"
+                        }
+                      ],
+                      "interrupt_config": {
+                        "https://tools.langchain.com::tavily_web_search::Fleet": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}": {
+      "get": {
+        "tags": ["Agents"],
+        "summary": "Get an agent",
+        "description": "Return the specified agent, including metadata, permissions, runtime, extras, and the parsed file tree at the latest commit. Pass `include_files=true` to include the raw file map.",
+        "operationId": "getManagedDeepAgent",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/agents/get-agent",
+          "metadata": {
+            "title": "Get an agent",
+            "sidebarTitle": "Get an agent"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/IncludeFiles"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Agents"],
+        "summary": "Update an agent",
+        "description": "Update the specified agent. Top-level scalar fields merge field-by-field. Nested objects such as `runtime`, `permissions`, `tools`, `subagents`, `skills`, and `extras` are replaced in full when provided. Providing file-tree fields such as `instructions`, `tools`, `subagents`, `skills`, or `files` creates a new file tree commit.",
+        "operationId": "updateManagedDeepAgent",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/agents/update-agent",
+          "metadata": {
+            "title": "Update an agent",
+            "sidebarTitle": "Update an agent"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/IncludeFiles"
+          },
+          {
+            "$ref": "#/components/parameters/UserTimezone"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentRequest"
+              },
+              "examples": {
+                "updateInstructions": {
+                  "summary": "Update instructions and tools",
+                  "value": {
+                    "description": "Research assistant that searches the web, reads URLs, and summarizes sources.",
+                    "instructions": "You are a careful research assistant. Search for sources, read relevant pages, keep notes, and return concise answers with citations.",
+                    "tools": {
+                      "tools": [
+                        {
+                          "name": "tavily_web_search",
+                          "mcp_server_url": "https://tools.langchain.com",
+                          "mcp_server_name": "Fleet",
+                          "display_name": "tavily_web_search"
+                        },
+                        {
+                          "name": "read_url_content",
+                          "mcp_server_url": "https://tools.langchain.com",
+                          "mcp_server_name": "Fleet",
+                          "display_name": "read_url_content"
+                        }
+                      ],
+                      "interrupt_config": {
+                        "https://tools.langchain.com::tavily_web_search::Fleet": true,
+                        "https://tools.langchain.com::read_url_content::Fleet": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Agents"],
+        "summary": "Delete an agent",
+        "description": "Delete the agent and its associated state. The call is idempotent: deleting a non-existent agent returns `204`.",
+        "operationId": "deleteManagedDeepAgent",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/agents/delete-agent",
+          "metadata": {
+            "title": "Delete an agent",
+            "sidebarTitle": "Delete an agent"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AgentID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Agent deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/threads": {
+      "post": {
+        "tags": ["Threads"],
+        "summary": "Create a thread",
+        "description": "Create a thread bound to a Managed Deep Agent. Use the returned thread ID to start runs.",
+        "operationId": "createManagedDeepAgentThread",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/create-thread",
+          "metadata": {
+            "title": "Create a thread",
+            "sidebarTitle": "Create a thread"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThreadRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Create a thread for an agent",
+                  "value": {
+                    "agent_id": "11111111-1111-1111-1111-111111111111",
+                    "options": {
+                      "test_run": false,
+                      "skip_memory_write_protection": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Thread created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/threads/search": {
+      "post": {
+        "tags": ["Threads"],
+        "summary": "Search threads",
+        "description": "Search threads. Request and response bodies are proxied unchanged to the upstream agent runtime.",
+        "operationId": "searchManagedDeepAgentThreads",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/search-threads",
+          "metadata": {
+            "title": "Search threads",
+            "sidebarTitle": "Search threads"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassThroughJSON"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Threads returned from the upstream runtime.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/threads/count": {
+      "post": {
+        "tags": ["Threads"],
+        "summary": "Count threads",
+        "description": "Count threads matching the specified criteria. Request and response bodies are proxied unchanged to the upstream agent runtime.",
+        "operationId": "countManagedDeepAgentThreads",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/count-threads",
+          "metadata": {
+            "title": "Count threads",
+            "sidebarTitle": "Count threads"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassThroughJSON"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Thread count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/threads/{threadID}": {
+      "get": {
+        "tags": ["Threads"],
+        "summary": "Get thread",
+        "description": "Return thread metadata and status for the given thread ID.",
+        "operationId": "getManagedDeepAgentThread",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/get-thread",
+          "metadata": {
+            "title": "Get thread",
+            "sidebarTitle": "Get thread"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ThreadID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thread returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/threads/{threadID}/runs": {
+      "post": {
+        "tags": ["Runs"],
+        "summary": "Create a thread run",
+        "description": "Start a run on the thread. This endpoint is proxied to the upstream agent runtime and accepts its run payload. Include the assistant or agent identifier and run inputs in the request body.",
+        "operationId": "createManagedDeepAgentThreadRun",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/runs/create-thread-run",
+          "metadata": {
+            "title": "Create a thread run",
+            "sidebarTitle": "Create a thread run"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ThreadID"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassThroughJSON"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Run returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Run created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/threads/{threadID}/runs/stream": {
+      "post": {
+        "tags": ["Runs"],
+        "summary": "Stream a thread run",
+        "description": "Start a run on a thread and stream output as server-sent events. The request must use `agent_id`; `assistant_id` is reserved for server-side forwarding and is rejected.",
+        "operationId": "streamManagedDeepAgentThreadRun",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/runs/stream-thread-run",
+          "metadata": {
+            "title": "Stream a thread run",
+            "sidebarTitle": "Stream a thread run"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ThreadID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamRunRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Stream updates",
+                  "value": {
+                    "agent_id": "11111111-1111-1111-1111-111111111111",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
+                      }
+                    ],
+                    "stream_mode": ["updates"],
+                    "stream_subgraphs": true,
+                    "user_timezone": "America/Los_Angeles"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-sent event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/threads/{threadID}/resolve-interrupt": {
+      "post": {
+        "tags": ["Runs"],
+        "summary": "Resolve an interrupted thread",
+        "description": "Complete a human-interrupt pause on the thread without sending new input, allowing execution to continue or finish. On success the response has no body.",
+        "operationId": "resolveManagedDeepAgentThreadInterrupt",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/runs/resolve-interrupt",
+          "metadata": {
+            "title": "Resolve an interrupt",
+            "sidebarTitle": "Resolve an interrupt"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ThreadID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Interrupt resolved."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/auth-scopes/{scope_slug}/credentials": {
+      "post": {
+        "tags": ["Credentials"],
+        "summary": "Create a credential",
+        "description": "Register a credential under an auth scope and bind it to one or more targets such as MCP servers. The response never includes the secret token.",
+        "operationId": "createManagedDeepAgentCredential",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/credentials/create-credential",
+          "metadata": {
+            "title": "Create a credential",
+            "sidebarTitle": "Create a credential"
+          }
+        },
+        "parameters": [
+          {
+            "name": "scope_slug",
+            "in": "path",
+            "required": true,
+            "description": "Auth scope slug. Currently only `default` is supported.",
+            "schema": {
+              "type": "string",
+              "enum": ["default"]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCredentialRequest"
+              },
+              "examples": {
+                "staticBearerMcpServer": {
+                  "summary": "Create a static bearer credential",
+                  "value": {
+                    "display_name": "Search API token",
+                    "description": "Bearer token for the MCP search server.",
+                    "auth": {
+                      "type": "static_bearer",
+                      "token": "<SECRET_TOKEN>"
+                    },
+                    "bindings": [
+                      {
+                        "kind": "mcp_server",
+                        "url": "https://tools.langchain.com"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Credential created. The secret token is not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Credential"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key",
+        "x-default": "LANGSMITH_API_KEY"
+      }
+    },
+    "parameters": {
+      "AgentID": {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "description": "Managed Deep Agent ID.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ThreadID": {
+        "name": "threadID",
+        "in": "path",
+        "required": true,
+        "description": "Thread ID.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "IncludeFiles": {
+        "name": "include_files",
+        "in": "query",
+        "required": false,
+        "description": "Include the raw file map in the agent response. Accepted truthy values are `true` and `1`.",
+        "schema": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "UserTimezone": {
+        "name": "X-User-Timezone",
+        "in": "header",
+        "required": false,
+        "description": "User timezone for runtime configuration stamping. Defaults to `UTC` when omitted.",
+        "schema": {
+          "type": "string",
+          "example": "America/Los_Angeles"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication required or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The authenticated workspace does not have access to the resource or feature.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Request conflicts with current resource state.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "UnprocessableEntity": {
+        "description": "Request is syntactically valid but failed validation.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "BadGateway": {
+        "description": "Upstream agent runtime error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Dependent service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CreateAgentRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable agent name. Must not be blank."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short agent description."
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/AgentPermissions"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Agent system prompt. Written to `AGENTS.md`."
+          },
+          "tools": {
+            "$ref": "#/components/schemas/ToolsConfig"
+          },
+          "subagents": {
+            "type": "array",
+            "description": "Subagents. Each entry is written to `subagents/<name>/AGENTS.md` and, when provided, `subagents/<name>/tools.json`.",
+            "items": {
+              "$ref": "#/components/schemas/SubagentSpec"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "description": "Inline skills. Each entry is written to `skills/<name>/SKILL.md` and supporting files.",
+            "items": {
+              "$ref": "#/components/schemas/SkillSpec"
+            }
+          },
+          "extras": {
+            "type": "object",
+            "description": "Caller-defined key-value metadata attached to the agent.",
+            "additionalProperties": true
+          },
+          "files": {
+            "$ref": "#/components/schemas/FileMap"
+          }
+        }
+      },
+      "UpdateAgentRequest": {
+        "type": "object",
+        "description": "Sparse update payload. Omitted fields are left unchanged.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Updated agent name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Updated agent description."
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/AgentPermissions"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Updated agent system prompt. Triggers a new file tree commit."
+          },
+          "tools": {
+            "$ref": "#/components/schemas/ToolsConfig"
+          },
+          "subagents": {
+            "type": "array",
+            "description": "Updated subagent definitions. Replaces the existing subagents field in full.",
+            "items": {
+              "$ref": "#/components/schemas/SubagentSpec"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "description": "Updated inline skills. Replaces the existing skills field in full.",
+            "items": {
+              "$ref": "#/components/schemas/SkillSpec"
+            }
+          },
+          "extras": {
+            "type": "object",
+            "description": "Updated caller-defined metadata. Replaces the existing extras field in full.",
+            "additionalProperties": true
+          },
+          "files": {
+            "$ref": "#/components/schemas/FileMap"
+          }
+        }
+      },
+      "AgentPermissions": {
+        "type": "object",
+        "description": "Agent visibility and sharing configuration. When omitted on create, defaults to personal identity, tenant visibility, and read tenant access.",
+        "properties": {
+          "identity": {
+            "type": "string",
+            "enum": ["personal", "shared"],
+            "default": "personal",
+            "description": "Agent identity scope."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": ["tenant", "user"],
+            "default": "tenant",
+            "description": "Visibility scope for the agent."
+          },
+          "tenant_access_level": {
+            "type": "string",
+            "enum": ["read", "run", "write"],
+            "default": "read",
+            "description": "Workspace access level."
+          },
+          "shared_users": {
+            "$ref": "#/components/schemas/SharedUsers"
+          }
+        }
+      },
+      "SharedUsers": {
+        "type": "object",
+        "properties": {
+          "read": {
+            "type": "array",
+            "description": "User IDs allowed to read the agent.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "description": "User IDs allowed to run the agent.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "update": {
+            "type": "array",
+            "description": "User IDs allowed to update the agent.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AgentRuntime": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/AgentModelConfig"
+          }
+        }
+      },
+      "AgentModelConfig": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "description": "Model ID used to run the agent.",
+            "example": "claude-sonnet-4-6"
+          }
+        }
+      },
+      "ToolsConfig": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "description": "MCP tools available to the agent. Serialized to `tools.json`.",
+            "items": {
+              "$ref": "#/components/schemas/ToolSpec"
+            }
+          },
+          "interrupt_config": {
+            "type": "object",
+            "description": "Per-tool interrupt rules keyed by tool identifier. Use `{}` for no interrupts.",
+            "additionalProperties": true
+          }
+        }
+      },
+      "ToolSpec": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name as exposed by the MCP server."
+          },
+          "mcp_server_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the MCP server hosting this tool."
+          },
+          "mcp_server_name": {
+            "type": "string",
+            "description": "Display name for the MCP server. Defaults to the URL when empty."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Display name for the tool. Defaults to the tool name when empty."
+          }
+        }
+      },
+      "SubagentSpec": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Subagent slug. Must be non-blank and may contain letters, numbers, spaces, underscores, or hyphens."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short human-readable description."
+          },
+          "model_id": {
+            "type": "string",
+            "description": "Model ID for this subagent. Inherits the parent runtime when empty."
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Subagent system prompt. Written to `subagents/<name>/AGENTS.md`."
+          },
+          "tools": {
+            "$ref": "#/components/schemas/ToolsConfig"
+          }
+        }
+      },
+      "SkillSpec": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["inline"],
+            "default": "inline",
+            "description": "Skill discriminator. Only `inline` is supported."
+          },
+          "name": {
+            "type": "string",
+            "description": "Skill slug. Must be non-blank and may contain letters, numbers, spaces, underscores, or hyphens."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short human-readable description shown to the agent."
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Skill body. Written to `skills/<name>/SKILL.md`."
+          },
+          "files": {
+            "type": "object",
+            "description": "Supporting files keyed by relative path. Paths must be relative with no leading slash or `..` segment.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FileMap": {
+        "type": "object",
+        "description": "Raw file map for paths not covered by typed fields. Keys are relative file paths. Setting a typed field and the corresponding `files` entry returns `422`.",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/FileEntry"
+        }
+      },
+      "FileEntry": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "File contents as a UTF-8 string."
+          }
+        }
+      },
+      "AgentSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/AgentPermissions"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "extras": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Agent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "revision": {
+                "type": "string",
+                "description": "Revision token for the latest file tree commit."
+              },
+              "instructions": {
+                "type": "string",
+                "description": "Agent system prompt parsed from `AGENTS.md`."
+              },
+              "tools": {
+                "$ref": "#/components/schemas/ToolsConfig"
+              },
+              "subagents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SubagentSpec"
+                }
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SkillSpec"
+                }
+              },
+              "files": {
+                "$ref": "#/components/schemas/FileMap"
+              }
+            }
+          }
+        ]
+      },
+      "ListAgentsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSummary"
+            }
+          },
+          "next_cursor": {
+            "type": ["string", "null"],
+            "description": "Cursor for the next page, or `null` when there are no more pages."
+          }
+        }
+      },
+      "CreateThreadRequest": {
+        "type": "object",
+        "required": ["agent_id"],
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Managed Deep Agent ID."
+          },
+          "options": {
+            "$ref": "#/components/schemas/CreateThreadOptions"
+          }
+        }
+      },
+      "CreateThreadOptions": {
+        "type": "object",
+        "properties": {
+          "test_run": {
+            "type": "boolean",
+            "description": "Marks the thread as a test run, filtered out of usage and analytics."
+          },
+          "skip_memory_write_protection": {
+            "type": "boolean",
+            "description": "Lets runs on this thread bypass the default long-term-memory write protection."
+          }
+        }
+      },
+      "Thread": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["idle", "busy", "interrupted", "error"]
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StreamRunRequest": {
+        "type": "object",
+        "required": ["agent_id", "messages"],
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Managed Deep Agent ID. The server forwards this upstream as `assistant_id`."
+          },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Input messages for the run.",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "stream_mode": {
+            "type": "array",
+            "description": "Stream modes to return.",
+            "items": {
+              "type": "string",
+              "enum": ["values", "updates", "messages-tuple"]
+            }
+          },
+          "stream_subgraphs": {
+            "type": "boolean",
+            "description": "Whether to stream subgraph events."
+          },
+          "user_timezone": {
+            "type": "string",
+            "description": "User timezone for runtime context.",
+            "example": "America/Los_Angeles"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["user", "assistant", "system", "tool"]
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateCredentialRequest": {
+        "type": "object",
+        "required": ["display_name", "auth", "bindings"],
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable credential name. Must not be blank."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional credential description."
+          },
+          "auth": {
+            "$ref": "#/components/schemas/CredentialAuth"
+          },
+          "bindings": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Targets the credential applies to.",
+            "items": {
+              "$ref": "#/components/schemas/CredentialBinding"
+            }
+          }
+        }
+      },
+      "CredentialAuth": {
+        "type": "object",
+        "required": ["type", "token"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["static_bearer"],
+            "description": "Credential auth type."
+          },
+          "token": {
+            "type": "string",
+            "description": "Secret bearer token. This value is never returned in responses.",
+            "format": "password"
+          }
+        }
+      },
+      "CredentialBinding": {
+        "type": "object",
+        "required": ["kind", "url"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["mcp_server"],
+            "description": "Binding target kind."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "HTTP(S) URL of the MCP server to bind."
+          }
+        }
+      },
+      "Credential": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope_slug": {
+            "type": "string",
+            "enum": ["default"]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "auth_type": {
+            "type": "string",
+            "enum": ["static_bearer"],
+            "description": "Credential auth type. The secret token is not returned."
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CredentialBinding"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PassThroughJSON": {
+        "type": "object",
+        "description": "JSON payload passed through to the upstream agent runtime.",
+        "additionalProperties": true
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}
