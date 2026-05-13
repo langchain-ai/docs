@@ -3,6 +3,11 @@ title: Going to production
 description: Take your deep agent to production with persistent memory, sandboxes, resilience middleware, and deployment options
 ---
 
+import SandboxLifecycleFactoryAssistantPy from '/snippets/deepagents-sandbox-lifecycle-factory-assistant-py.mdx';
+import SandboxLifecycleFactoryAssistantTs from '/snippets/deepagents-sandbox-lifecycle-factory-assistant-ts.mdx';
+import SandboxLifecycleFactoryThreadPy from '/snippets/deepagents-sandbox-lifecycle-factory-thread-py.mdx';
+import SandboxLifecycleFactoryThreadTs from '/snippets/deepagents-sandbox-lifecycle-factory-thread-ts.mdx';
+
 This guide covers considerations for taking a deep agent from a local prototype to a production deployment. It walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend.
 
 
@@ -198,7 +203,7 @@ Shared memory (assistant, user, or organization scope) is a vector for prompt in
 
 ### Configuration
 
-In Deep Agents, memory is stored as files in a virtual filesystem. By default, files only last for a single conversation. To persist them, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both ephemeral scratch space and persistent [long-term memory](/oss/deepagents/memory).
+In Deep Agents, memory is stored as files in a virtual filesystem. By default, files are scoped to a single thread (conversation) and not shared across threads. To share memory across threads, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both thread-scoped scratch space and cross-thread [long-term memory](/oss/deepagents/memory).
 
 :::python
 <Note>
@@ -401,16 +406,20 @@ For the full namespace factory API, see [namespace factories](/oss/deepagents/ba
 
 Locally, agents can read and write files on disk and run shell commands directly. In production, you need to think about isolation and persistence. The right setup depends on whether your agent needs to execute code:
 
-- **Filesystem backends** are enough if your agent only reads and writes files. Choose a backend that matches your persistence needs: ephemeral scratch space, persistent storage, or a mix of both.
+- **Filesystem backends** are enough if your agent only reads and writes files. Choose a backend that matches your persistence needs: thread-scoped scratch space, cross-thread storage, or a mix of both.
 - **Sandboxes** add an isolated container with an `execute` tool for running shell commands. Use a sandbox if your agent needs to run code, install packages, or do anything beyond file I/O.
 
 ### Filesystem
 
 Choose a backend based on what needs to persist:
 
-- @[StateBackend] (default): ephemeral scratch space, scoped to a single conversation. Checkpointed at every step, so avoid writing large files.
-- @[StoreBackend]: persistent storage that survives across conversations. Scope with a [namespace factory](/oss/deepagents/backends#namespace-factories).
-- @[CompositeBackend]: mix both. Ephemeral scratch space by default with persistent routes for specific paths like `/memories/`.
+- @[StateBackend] (default): thread-scoped scratch space. Files persist across turns within a thread via your checkpointer but are not shared across threads. Checkpointed at every step, so avoid writing large files.
+- @[StoreBackend]: cross-thread storage that survives across conversations. Scope with a [namespace factory](/oss/deepagents/backends#namespace-factories).
+- @[CompositeBackend]: mix both. Thread-scoped scratch space by default with cross-thread routes for specific paths like `/memories/`.
+
+:::python
+- [`ContextHubBackend`](/oss/deepagents/backends#contexthubbackend): durable files in a LangSmith Hub repo (`owner/name` or `name`). Use this when you want LangSmith-native persistence without provisioning a separate LangGraph store.
+:::
 
 For the full list of backends and how to build custom ones, see [backends](/oss/deepagents/backends).
 
@@ -440,53 +449,11 @@ The examples below use an async [graph factory](/langsmith/graph-rebuild) instea
     Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the run config, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. The provider's label-based lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
 
 :::python
-```python agent.py
-from daytona import CreateSandboxFromSnapshotParams, Daytona
-from deepagents import create_deep_agent
-from langchain_core.runnables import RunnableConfig
-from langchain_daytona import DaytonaSandbox
-
-client = Daytona()
-
-
-async def agent(config: RunnableConfig):
-    thread_id = config["configurable"]["thread_id"]  # [!code highlight]
-    try:
-        sandbox = await client.find_one(labels={"thread_id": thread_id})
-    except Exception:
-        sandbox = await client.create(
-            CreateSandboxFromSnapshotParams(
-                labels={"thread_id": thread_id},
-                auto_delete_interval=3600,  # TTL: clean up when idle
-            )
-        )
-    return create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=DaytonaSandbox(sandbox=sandbox))
-```
+<SandboxLifecycleFactoryThreadPy />
 :::
 
 :::js
-```typescript src/agent.ts
-import { Daytona } from "@daytonaio/sdk";
-import { DaytonaSandbox } from "@langchain/daytona";
-import { createDeepAgent } from "deepagents";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-
-const client = new Daytona();
-
-export async function agent(config: LangGraphRunnableConfig) {
-  const threadId = config.configurable?.thread_id as string;  // [!code highlight]
-  let sandbox;
-  try {
-    sandbox = await client.findOne({ labels: { thread_id: threadId } });
-  } catch {
-    sandbox = await client.create({
-      labels: { thread_id: threadId },
-      autoDeleteInterval: 3600, // TTL: clean up when idle
-    });
-  }
-  return createDeepAgent({ backend: await DaytonaSandbox.fromId(sandbox.id) });
-}
-```
+<SandboxLifecycleFactoryThreadTs />
 :::
 
   </Tab>
@@ -494,47 +461,11 @@ export async function agent(config: LangGraphRunnableConfig) {
     All conversations share one sandbox. The [graph factory](/langsmith/graph-rebuild) reads the [assistant](/langsmith/assistants) ID from `config["configurable"]`, so every thread on the same assistant returns to the same environment. Files, installed packages, and cloned repositories persist across conversations.
 
 :::python
-```python agent.py
-from daytona import CreateSandboxFromSnapshotParams, Daytona
-from deepagents import create_deep_agent
-from langchain_core.runnables import RunnableConfig
-from langchain_daytona import DaytonaSandbox
-
-client = Daytona()
-
-
-async def agent(config: RunnableConfig):
-    assistant_id = config["configurable"]["assistant_id"]  # [!code highlight]
-    try:
-        sandbox = await client.find_one(labels={"assistant_id": assistant_id})
-    except Exception:
-        sandbox = await client.create(
-            CreateSandboxFromSnapshotParams(labels={"assistant_id": assistant_id})
-        )
-    return create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=DaytonaSandbox(sandbox=sandbox))
-```
+<SandboxLifecycleFactoryAssistantPy />
 :::
 
 :::js
-```typescript src/agent.ts
-import { Daytona } from "@daytonaio/sdk";
-import { DaytonaSandbox } from "@langchain/daytona";
-import { createDeepAgent } from "deepagents";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-
-const client = new Daytona();
-
-export async function agent(config: LangGraphRunnableConfig) {
-  const assistantId = config.configurable?.assistant_id as string;  // [!code highlight]
-  let sandbox;
-  try {
-    sandbox = await client.findOne({ labels: { assistant_id: assistantId } });
-  } catch {
-    sandbox = await client.create({ labels: { assistant_id: assistantId } });
-  }
-  return createDeepAgent({ backend: await DaytonaSandbox.fromId(sandbox.id) });
-}
-```
+<SandboxLifecycleFactoryAssistantTs />
 :::
 
     <Warning>

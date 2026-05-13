@@ -11,6 +11,7 @@ import BackendLocalShellPy from '/snippets/backend-local-shell-py.mdx';
 import BackendLocalShellJs from '/snippets/backend-local-shell-js.mdx';
 import BackendStorePy from '/snippets/backend-store-py.mdx';
 import BackendStoreJs from '/snippets/backend-store-js.mdx';
+import BackendContextHubPy from '/snippets/backend-context-hub-py.mdx';
 import BackendCompositePy from '/snippets/backend-composite-py.mdx';
 import BackendCompositeJs from '/snippets/backend-composite-js.mdx';
 
@@ -43,12 +44,13 @@ Here are a few prebuilt filesystem backends that you can quickly use with your d
 
 | Built-in backend | Description |
 |---|---|
-| [Default](#statebackend-ephemeral) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview")` <br></br> Ephemeral in state. The default filesystem backend for an agent is stored in `langgraph` state. Note that this filesystem only persists _for a single thread_. |
+| [Default](#statebackend) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview")` <br></br> Thread-scoped. The default filesystem backend for an agent is stored in `langgraph` state. Files persist across turns within a thread (via your checkpointer) and are not shared across threads. |
 | [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. |
 | [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=StoreBackend())` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
+| [Context Hub](#contexthubbackend) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=ContextHubBackend("my-agent"))` <br></br>Stores files durably in a LangSmith Hub repo, without provisioning a separate LangGraph store. |
 | [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
 | [Local shell](#localshellbackend-local-shell) | `agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}))` <br></br>Filesystem and shell execution directly on the host. No isolation—use only in controlled development environments. See [security considerations](#localshellbackend-local-shell) below. |
-| [Composite](#compositebackend-router) | Ephemeral by default, `/memories/` persisted. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
+| [Composite](#compositebackend-router) | Thread-scoped by default, `/memories/` persisted across threads. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
 
 
 ```mermaid
@@ -58,6 +60,7 @@ graph TB
     Backend --> State[State]
     Backend --> Disk[Filesystem]
     Backend --> Store[Store]
+    Backend --> ContextHub[Context Hub]
     Backend --> Sandbox[Sandbox]
     Backend --> LocalShell[Local Shell]
     Backend --> Composite[Composite]
@@ -67,6 +70,7 @@ graph TB
     Router --> State
     Router --> Disk
     Router --> Store
+    Router --> ContextHub
 
     Sandbox --> Execute["#43; execute tool"]
     LocalShell --> Execute["#43; execute tool"]
@@ -77,14 +81,14 @@ graph TB
     classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
 
     class Tools trigger
-    class Backend,State,Disk,Store,Sandbox,LocalShell,Composite,Custom process
+    class Backend,State,Disk,Store,ContextHub,Sandbox,LocalShell,Composite,Custom process
     class Router decision
     class Execute output
 ```
 
 ## Built-in backends
 
-### StateBackend (ephemeral)
+### StateBackend
 
 :::python
 <BackendStatePy />
@@ -96,7 +100,11 @@ graph TB
 
 **How it works:**
 - Stores files in LangGraph agent state for the current thread via @[`StateBackend`].
-- Persists across multiple agent turns on the same thread via checkpoints.
+- Persists across multiple agent turns on the same thread via checkpoints. Files are not shared across threads.
+
+<Warning>
+Designed to be used from within a graph. Calling backend methods (e.g., `state_backend.upload_files(...)`) outside of a graph run won't take effect until the graph executes.
+</Warning>
 
 **Best for:**
 - A scratch pad for the agent to write intermediate results.
@@ -321,6 +329,32 @@ Namespace components must contain only alphanumeric characters, hyphens, undersc
     When no namespace factory is provided, the legacy default uses the `assistant_id` from LangGraph config metadata. This means all users of the same [assistant](/langsmith/assistants) share the same storage. For multi-user [going to production](/oss/deepagents/going-to-production), always provide a namespace factory.
 </Note>
 
+### ContextHubBackend
+
+:::python
+<BackendContextHubPy />
+:::
+
+`ContextHubBackend` stores files in a LangSmith Hub repo. Construct it with a repo identifier in `owner/name` or `name` format.
+
+<Note>
+Set `LANGSMITH_API_KEY` before using `ContextHubBackend`.
+</Note>
+
+**How it works:**
+- Pulls the Hub repo tree lazily on first use, then serves reads from an in-memory cache.
+- Persists writes and edits as Hub commits and updates the cache after successful commits.
+- Uses optimistic parent-commit writes (`parent_commit`): each push targets the latest known commit hash.
+
+**Behavior and limits:**
+- If the repo does not exist, first pull is treated as empty; the first successful write can create the repo.
+- If another writer advances the repo first, your stale parent-commit write can fail. Re-pull and retry on conflict.
+- `upload_files()` accepts UTF-8 text. Non-UTF-8 files are rejected per path with `invalid_path`.
+
+**Best for:**
+- LangSmith-native durable filesystem persistence without separately wiring a LangGraph `BaseStore`.
+- Workflows that benefit from Hub commit history on filesystem changes.
+
 ### CompositeBackend (router)
 
 :::python
@@ -336,7 +370,7 @@ Namespace components must contain only alphanumeric characters, hyphens, undersc
 - Preserves the original path prefixes in listings and search results.
 
 **Best for:**
-- When you want to give your agent both ephemeral and cross-thread storage, a `CompositeBackend` allows you provide both a `StateBackend` and `StoreBackend`
+- When you want to give your agent both thread-scoped and cross-thread storage, a `CompositeBackend` allows you provide both a `StateBackend` and `StoreBackend`
 - When you have multiple sources of information that you want to provide to your agent as part of a single filesystem.
     - e.g. You have long-term memories stored under `/memories/` in one Store and you also have a custom backend that has documentation accessible at /docs/.
 
@@ -344,7 +378,7 @@ Namespace components must contain only alphanumeric characters, hyphens, undersc
 
 :::python
 - Pass a backend instance to `create_deep_agent(model=..., backend=...)`. The filesystem middleware uses it for all tooling.
-- The backend must implement `BackendProtocol` (for example, `StateBackend()`, `FilesystemBackend(root_dir=".")`, `StoreBackend()`).
+- The backend must implement `BackendProtocol` (for example, `StateBackend()`, `FilesystemBackend(root_dir=".")`, `StoreBackend()`, `ContextHubBackend("my-agent")`).
 - If omitted, the default is `StateBackend()`.
 :::
 
@@ -361,7 +395,7 @@ Before version 1.9.0, only `BackendProtocol` was supported which is now `Backend
 
 ## Route to different backends
 
-Route parts of the namespace to different backends. Commonly used to persist `/memories/*` and keep everything else ephemeral.
+Route parts of the namespace to different backends. Commonly used to persist `/memories/*` across threads and keep everything else thread-scoped.
 
 :::python
 ```python
@@ -396,7 +430,7 @@ const agent = createDeepAgent({
 :::
 
 Behavior:
-- `/workspace/plan.md` → `StateBackend` (ephemeral)
+- `/workspace/plan.md` → `StateBackend` (thread-scoped)
 - `/memories/agent.md` → `FilesystemBackend` under `/deepagents/myagent`
 - `ls`, `glob`, `grep` aggregate results and show original path prefixes.
 

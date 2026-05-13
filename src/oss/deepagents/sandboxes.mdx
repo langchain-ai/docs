@@ -4,8 +4,12 @@ sidebarTitle: Sandboxes
 description: Execute code in isolated environments with sandbox backends
 ---
 
-import SandboxBasicPy from '/snippets/deepagents-sandbox-basic-py.mdx';
 import SandboxBasicJs from '/snippets/deepagents-sandbox-basic-js.mdx';
+import SandboxBasicPy from '/snippets/deepagents-sandbox-basic-py.mdx';
+import SandboxLifecycleFactoryAssistantPy from '/snippets/deepagents-sandbox-lifecycle-factory-assistant-py.mdx';
+import SandboxLifecycleFactoryAssistantTs from '/snippets/deepagents-sandbox-lifecycle-factory-assistant-ts.mdx';
+import SandboxLifecycleFactoryThreadPy from '/snippets/deepagents-sandbox-lifecycle-factory-thread-py.mdx';
+import SandboxLifecycleFactoryThreadTs from '/snippets/deepagents-sandbox-lifecycle-factory-thread-ts.mdx';
 
 Agents generate code, interact with filesystems, and run shell commands. Because we can't predict what an agent might do, it's important that its environment is isolated so it can't access credentials, files, or the network. Sandboxes provide this isolation by creating a boundary between the agent's execution environment and your host system.
 
@@ -111,266 +115,55 @@ Don't see your provider? You can implement your own sandbox backend. See [Contri
 
 ## Lifecycle and scoping
 
-Sandboxes consume resources and cost money until they're shut down. How you manage their lifecycle depends on your application.
+Most applications choose either one sandbox per [thread](/langsmith/use-threads) (thread-scoped) or one shared sandbox for every thread on the same [assistant](/langsmith/assistants) (assistant-scoped).
 
-Choose how sandbox lifecycles map to your application's resources. See [going to production](/oss/deepagents/going-to-production#sandboxes) for more on this decision.
+Sandboxes consume resources and cost money until they are shut down. Make sure you shut sandboxes down once they are no longer in use.
+
+For the full lifecycle table, async [graph factory](/langsmith/graph-rebuild) notes, TTL behavior, LangGraph Deployment wiring, and client-side examples, see [Sandbox lifecycle](/oss/deepagents/going-to-production#lifecycle) in Going to production.
 
 ### Thread-scoped (default)
 
-Each conversation gets its own sandbox. The sandbox is created when the first run starts and reused for follow-up messages on the same thread. When the thread is cleaned up (or the sandbox TTL expires), the sandbox is destroyed. This is the right default for most agents.
+Each conversation gets its own sandbox. The first run creates it; follow-up turns on the same thread reuse it. When the thread ends or the sandbox TTL expires, the environment goes away. Store the mapping with provider labels or metadata as in the following example so each run resolves to the same sandbox.
 
-Example: a data analysis bot where each conversation starts with a clean environment.
-
-### Assistant-scoped
-
-All threads for a given [assistant](/langsmith/assistants) share one sandbox. The sandbox ID is stored on the assistant's configuration, so every conversation returns to the same environment. Files, installed packages, and cloned repositories persist across conversations. Use this when the agent maintains a long-running workspace.
-
-Example: a coding assistant that maintains a cloned repo and installed dependencies across conversations.
-
-<Warning>
-    Assistant-scoped sandboxes accumulate files, installed packages, and other in-sandbox state over time. Configure a TTL with your sandbox provider, use snapshots to reset periodically, or implement cleanup logic to prevent the sandbox's disk and memory from growing unbounded. Thread-scoped sandboxes avoid this by starting fresh each conversation.
-</Warning>
-
-### Basic lifecycle
-
-:::js
-
-```typescript
-// Create and initialize
-const sandbox = await ModalSandbox.create(options);
-
-// Use the sandbox (directly or via an agent)
-const result = await sandbox.execute("echo hello");
-
-// Clean up when done
-await sandbox.close();
-```
-:::
-
-:::python
+<Tip>
+When users can return after idle time, configure a TTL on the sandbox so the provider deletes or archives idle environments automatically.
+</Tip>
 
 <Tabs>
-    <Tab title="Daytona">
+    <Tab title="Python">
 
-        ```python
-        from daytona import Daytona
-
-        from langchain_daytona import DaytonaSandbox
-
-        sandbox = Daytona().create()
-        backend = DaytonaSandbox(sandbox=sandbox)
-
-        result = backend.execute("echo hello")
-        # ... use sandbox
-        sandbox.stop()
-        ```
+<SandboxLifecycleFactoryThreadPy />
 
     </Tab>
-    <Tab title="Modal">
+    <Tab title="TypeScript">
 
-        ```python
-        import modal
-
-        from langchain_modal import ModalSandbox
-
-        app = modal.App.lookup("your-app")
-        modal_sandbox = modal.Sandbox.create(app=app)
-        backend = ModalSandbox(sandbox=modal_sandbox)
-
-        result = backend.execute("echo hello")
-        # ... use sandbox
-        modal_sandbox.terminate()
-        ```
-
-    </Tab>
-    <Tab title="Runloop">
-
-        ```python
-        from runloop_api_client import RunloopSDK
-
-        from langchain_runloop import RunloopSandbox
-
-        client = RunloopSDK(bearer_token="...")
-        devbox = client.devbox.create()
-        backend = RunloopSandbox(devbox=devbox)
-
-        result = backend.execute("echo hello")
-        # ... use sandbox
-        devbox.shutdown()
-        ```
-
-    </Tab>
-    <Tab title="AgentCore">
-
-        ```python
-        from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-
-        from langchain_agentcore_codeinterpreter import AgentCoreSandbox
-
-        interpreter = CodeInterpreter(region="us-west-2")
-        interpreter.start()
-
-        backend = AgentCoreSandbox(interpreter=interpreter)
-
-        result = backend.execute("echo hello")
-        # ... use sandbox
-        interpreter.stop()
-        ```
-
-    </Tab>
-    <Tab title="LangSmith">
-
-        ```python
-        from langsmith.sandbox import SandboxClient
-
-        from deepagents.backends.langsmith import LangSmithSandbox
-
-        client = SandboxClient()
-        ls_sandbox = client.create_sandbox(template_name="deepagents-deploy")
-
-        backend = LangSmithSandbox(sandbox=ls_sandbox)
-
-        result = backend.execute("echo hello")
-        # ... use sandbox
-        client.delete_sandbox(backend.id)
-        ```
+<SandboxLifecycleFactoryThreadTs />
 
     </Tab>
 </Tabs>
-:::
 
-### Per-conversation lifecycle
+### Assistant-scoped
 
-In chat applications, a conversation is typically represented by a `thread_id`.
-Generally, each `thread_id` should use its own unique sandbox.
+Every thread on the same assistant reuses one sandbox. Files, installed packages, and cloned repositories persist across conversations.
 
-Store the mapping between sandbox ID and `thread_id` in your application or with the sandbox if the sandbox provider allows attaching metadata to the sandbox.
+<Warning>
+Assistant-scoped sandboxes accumulate in-sandbox state over time. Configure a TTL with your sandbox provider, use snapshots to reset periodically, or implement cleanup logic so disk and memory do not grow without bound.
+</Warning>
 
-<Tip>
-**TTL for chat applications.** When users can re-engage after idle time, you often don't know if or when they'll return. Configure a time-to-live (TTL) on the sandbox—for example, TTL to archive or TTL to delete—so the provider automatically cleans up idle sandboxes. Many sandbox providers support this.
-</Tip>
+<Tabs>
+    <Tab title="Python">
 
-:::python
+<SandboxLifecycleFactoryAssistantPy />
 
-The following example shows a get-or-create pattern using Daytona.
-For other providers, consult the sandbox provider API for the equivalent labels, metadata, and TTL options:
+    </Tab>
+    <Tab title="TypeScript">
 
-```python
-from langchain_core.utils.uuid import uuid7
+<SandboxLifecycleFactoryAssistantTs />
 
-from daytona import CreateSandboxFromSnapshotParams, Daytona
-from deepagents import create_deep_agent
-from langchain_daytona import DaytonaSandbox
+    </Tab>
+</Tabs>
 
-client = Daytona()
-thread_id = str(uuid7())
-
-# Get or create sandbox by thread_id
-try:
-    sandbox = client.find_one(labels={"thread_id": thread_id})
-except Exception:
-    params = CreateSandboxFromSnapshotParams(
-        labels={"thread_id": thread_id},
-        # Add TTL so the sandbox is cleaned up when idle
-        auto_delete_interval=3600,
-    )
-    sandbox = client.create(params)
-
-backend = DaytonaSandbox(sandbox=sandbox)
-agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
-    backend=backend,
-    system_prompt="You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
-)
-
-try:
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Create a hello world Python script and run it",
-                }
-            ]
-        },
-        config={
-            "configurable": {
-                "thread_id": thread_id,
-            }
-        },
-    )
-    print(result["messages"][-1].content)
-except Exception:
-    # Optional: delete the sandbox proactively on an exception
-    client.delete(sandbox)
-    raise
-```
-
-:::
-
-:::js
-
-```typescript
-import "dotenv/config";
-import { randomUUID } from "node:crypto";
-import { Daytona } from "@daytonaio/sdk";
-import type { CreateSandboxFromSnapshotParams } from "@daytonaio/sdk";
-import { DaytonaSandbox } from "@langchain/daytona";
-import { createDeepAgent } from "deepagents";
-
-const client = new Daytona();
-const threadId = randomUUID();
-
-// Get or create sandbox by thread_id
-let sandbox;
-try {
-    sandbox = await client.findOne({ labels: { thread_id: threadId } });
-} catch {
-    const params: CreateSandboxFromSnapshotParams = {
-        labels: { thread_id: threadId },
-        // Add TTL so the sandbox is cleaned up when idle (minutes)
-        autoDeleteInterval: 3600,
-    };
-sandbox = await client.create(params);
-}
-
-const backend = await DaytonaSandbox.fromId(sandbox.id);
-const agent = createDeepAgent({
-    backend,
-    systemPrompt:
-        "You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
-});
-
-try {
-    const result = await agent.invoke(
-        {
-            messages: [
-                {
-                role: "user",
-                content: "Create a hello world Python script and run it",
-                },
-            ],
-        },
-        {
-            configurable: {
-                thread_id: threadId,
-            },
-        },
-    );
-    const lastMessage = result.messages[result.messages.length - 1];
-    console.log(
-        typeof lastMessage.content === "string"
-        ? lastMessage.content
-        : String(lastMessage.content),
-    );
-} catch (err) {
-    // Optional: delete the sandbox proactively on an exception
-    await client.delete(sandbox);
-    throw err;
-}
-```
-
-:::
+For manual create, execute, and teardown outside a graph factory, see [Basic usage](#basic-usage) and [sandbox integrations](/oss/integrations/sandboxes) for provider-specific APIs.
 
 ## Integration patterns
 
