@@ -38,7 +38,7 @@ const finalState = await run.output;
 
 To stream against a graph deployed behind an Agent Server, see the [LangSmith Streaming API](/langsmith/streaming).
 
-## What Event streaming provides
+## What event streaming provides
 
 The run stream exposes typed projections over one underlying event flow:
 
@@ -55,7 +55,7 @@ The run stream exposes typed projections over one underlying event flow:
 
 Multiple consumers can read these projections concurrently. Reading `run.messages` does not consume events needed by `run.values`, `run.subgraphs`, or `run.output`.
 
-Event streaming sits one level above [Pregel streaming](/oss/langgraph/streaming), which exposes raw graph execution events through `stream_mode` modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, and `debug`. Use Pregel streaming when you need low-level access to those modes; use Event streaming when application code benefits from typed projections.
+Event streaming sits one level above [Pregel streaming](/oss/langgraph/streaming), which exposes raw graph execution events through `stream_mode` modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, and `debug`. Use Pregel streaming when you need low-level access to those modes; use event streaming when application code benefits from typed projections.
 
 ## Stream messages
 
@@ -270,7 +270,37 @@ for await (const event of run) {
 ```
 :::
 
-Each event has a channel-like `method`, a `seq` number, and `params` containing `namespace`, `timestamp`, optional `node`, and channel-specific `data`.
+Each event is a `ProtocolEvent` envelope wrapping a channel-specific payload. The same shape is what a transformer's `process(event)` receives.
+
+:::python
+```py
+class ProtocolEvent(TypedDict):
+    seq: int                    # strictly increasing within a run; use for ordering
+    method: str                 # channel name: "messages", "values", "updates", "custom", "tools", "lifecycle", ...
+    params: ProtocolEventParams
+
+
+class ProtocolEventParams(TypedDict):
+    namespace: list[str]        # path of "<name>:<runtime_id>" segments from the root graph; [] is the root
+    timestamp: int              # wall-clock milliseconds; can drift, don't rely on for ordering
+    data: Any                   # channel-specific payload; shape depends on `method`
+```
+:::
+
+:::js
+```ts
+interface ProtocolEvent {
+  readonly seq: number;         // strictly increasing within a run; use for ordering
+  readonly method: string;      // channel name: "messages", "values", "updates", "custom", "tools", "lifecycle", ...
+  readonly params: {
+    readonly namespace: string[];  // path of "<name>:<runtime_id>" segments from the root graph; [] is the root
+    readonly timestamp: number;    // wall-clock milliseconds; can drift, don't rely on for ordering
+    readonly node?: string;        // graph node that emitted this event, when applicable
+    readonly data: unknown;        // channel-specific payload; shape depends on `method`
+  };
+}
+```
+:::
 
 The `namespace` is a path from the root graph to the scope that emitted the event. The root is the empty array `[]`. Each child execution adds one `"name:runtime_id"` segment, so a nested tool call inside a subgraph looks like `["researcher:6f4d", "tools:91ac"]`. The name before `:` is the stable graph or node name; the suffix is a per-invocation runtime ID. Filter raw events by namespace yourself when you only care about a specific subtree — `run.subgraphs` already does this for nested graph executions.
 
@@ -368,9 +398,11 @@ Beyond `event`, lifecycle data may include an optional `graph_name`, `error`, an
 
 ## Build your own projection
 
-Stream transformers are the projection layer in Event streaming. They observe protocol events, keep their own state, and expose derived views of a run — things like tool activity, token totals, progress events, artifacts, or messages for another protocol. `StreamChannel` is the projection primitive transformers use to publish those views.
+Stream transformers are the projection layer in event streaming. They observe protocol events, keep their own state, and expose derived views of a run — things like tool activity, token totals, progress events, artifacts, or messages for another protocol. `StreamChannel` is the projection primitive transformers use to publish those views.
 
-Write a user transformer when the built-in projections (`run.messages`, `run.values`, `run.subgraphs`, `run.output`) don't match the shape your application needs. User transformer projections appear under `run.extensions`.
+Built-in projections (`run.messages`, `run.values`, `run.subgraphs`, `run.output`) and product-specific projections (LangChain's `run.tool_calls`, Deep Agents' `run.subagents`) are themselves transformers using this same contract. User transformers stack on top via compile-time or call-time registration, and their projections appear under `run.extensions`.
+
+Write one when the existing projections don't match the shape an application needs.
 
 ### How transformers work
 
@@ -429,7 +461,7 @@ interface StreamTransformer<TProjection = unknown> {
 :::
 
 - `init()` creates the projection object. User transformer projections appear under `run.extensions`.
-- `process()` observes each protocol event. Return `false` only when you intentionally want to suppress the original event.
+- `process()` observes each protocol event. See [Stream all protocol events](#stream-all-protocol-events) for the `ProtocolEvent` shape. Return `false` only when you intentionally want to suppress the original event.
 - `finalize()` closes or resolves non-channel projections after a successful run.
 - `fail()` propagates errors to non-channel projections.
 
