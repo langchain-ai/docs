@@ -11,6 +11,39 @@ rss: true
 
 [Agent Server](/langsmith/agent-server) is an API platform for creating and managing agent-based applications. It provides built-in persistence, a task queue, and supports deploying, configuring, and running assistants (agentic workflows) at scale. This changelog documents all notable updates, features, and fixes to Agent Server releases.
 
+<Update label="2026-05-11" tags={["agent-server"]}>
+## v0.9.0rc1
+
+### General Notes
+- Added cron metadata filtering in /runs/crons/search and /runs/crons/count, matching metadata filter behavior already available for assistants/threads.
+- Added Postgres checkpointer pool tuning knobs for cases when loading lots of large checkpoints at once. LANGGRAPH_CHECKPOINTER_POSTGRES_POOL_MIN_SIZE and LANGGRAPH_CHECKPOINTER_POSTGRES_POOL_TIMEOUT_SECONDS can now be set.
+- Fixed a crash in update_state in the mongo checkpointer when a thread has no prior checkpoint.
+- Includes dependency updates for security vulnerabilities.
+
+### New Features
+#### Delta channel support
+Delta channels are now supported so checkpoints can store incremental state updates instead of repeatedly storing full channel payloads, which helps with large, append-heavy state like message histories.
+
+To use, define state channels with LangGraph's DeltaChannel reducer pattern in your graph state.
+This behavior is enabled when the installed langgraph is >= 1.2.
+Docs: [DeltaChannel reference](/oss/langgraph/pregel#deltachannel-beta)
+
+#### Event streaming APIs
+Event streaming APIs are being introduced, with a unified event-streaming surface intended for richer real-time run events and command/event workflows.
+
+The feature flag `FF_V2_EVENT_STREAMING` can be set to true to enable the new event streaming APIs.
+
+The new endpoints include:
+- `POST /threads/{thread_id}/stream/events`
+- `POST /threads/{thread_id}/commands`
+- `WS /threads/{thread_id}/stream/events`
+
+Docs:
+- [Agent Server API reference](/langsmith/server-api-ref)
+- [LangGraph event streaming reference](/oss/langgraph/streaming/event-streaming)
+
+</Update>
+
 <Update label="2026-05-05" tags={["agent-server"]}>
 ## v0.8.7
 
@@ -61,9 +94,13 @@ rss: true
 <Update label="2026-04-16" tags={["agent-server"]}>
 ## v0.8.0
 
-- Switched the default queuing system to Redis, ensuring improved ordering and efficiency.
-- Enhanced webhook security by enabling SSRF protection by default, blocking risky IP ranges, and improving validation with DNS pinning and per-hop checks.
-- Updated hono from version 4.12.12 to 4.12.14 to address security and type handling improvements.
+This minor version moves run queue polling from Postgres to Redis, saving database load and improving performance.
+
+Under the hood, Agent Server uses a durable run queue to manage run execution. Workers poll the queue for new runs and execute them. Previously, the queue polling logic went through Postgres. This could result in long running queries especially under high load. With this update, the queue polling logic now goes through Redis and then fetches run details from Postgres. This makes the hot path for queue polling substantially faster and reduces the load on the database.
+
+This is not a breaking change and does not require code changes to upgrade, but there are a couple of things to be aware of:
+- In the deployment immediately after upgrading, the queue will shift over. There may be a brief window where threads are scheduled non-chronologically. Run execution order is still guaranteed within each thread.
+- **Self-hosted only:** Redis traffic may increase slightly. In internal testing, the increase was modest.
 </Update>
 
 <Update label="2026-04-15" tags={["agent-server"]}>

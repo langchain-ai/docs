@@ -2,14 +2,14 @@
 
 # LangChain Documentation Guidelines
 
-Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored docs only—not `**/reference/**` directories or build artifacts.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`—not Mintlify `build/` output.
 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
 2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
 3. **Never use markdown in frontmatter `description`** — breaks SEO
-4. **Never edit `reference/` directory** — auto-generated
+4. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
 5. **Always update `src/docs.json`** when adding new pages
 6. **Use Tabler icons only** — not FontAwesome
 7. **Test code examples** before including them
@@ -29,6 +29,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Build system | `pipeline/` |
 | Icon library | Tabler — <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report issues here](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
 ## Project structure
@@ -50,7 +51,8 @@ docs/
 │   │   ├── javascript/         #   TypeScript-specific (integrations, migrations, releases)
 │   │   ├── integrations/       #   Shared integration content
 │   │   ├── concepts/           #   Conceptual overviews
-│   │   └── contributing/       #   Contribution guides
+│   │   ├── contributing/       #   Contribution guides
+│   │   └── reference/          #   Reference tab entry pages (link to reference.langchain.com)
 │   ├── snippets/               # Reusable MDX snippets
 │   │   ├── langsmith/          #   LangSmith snippets
 │   │   ├── oss/                #   OSS snippets
@@ -110,7 +112,7 @@ Flat groups (no tabs):
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
 | Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
 | Learn* | `src/oss/` (various) | Tutorials, Conceptual overviews, Additional resources (TS adds: "LangChain Academy") |
-| Reference | `src/oss/reference/` | Reference, Errors, Releases, Policies — auto-generated, do not edit |
+| Reference | `src/oss/reference/` | Reference, Errors, Releases, Policies — short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribution guides, integration authoring |
 
 ## Local development

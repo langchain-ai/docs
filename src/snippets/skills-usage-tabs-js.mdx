@@ -2,10 +2,12 @@
 <Tab title="StateBackend">
 
 ```typescript
-import { createDeepAgent, type FileData } from "deepagents";
+import { createDeepAgent, StateBackend, type FileData } from "deepagents";
 import { MemorySaver } from "@langchain/langgraph";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 
 const checkpointer = new MemorySaver();
+const backend = new StateBackend();
 
 function createFileData(content: string): FileData {
   const now = new Date().toISOString();
@@ -26,9 +28,12 @@ const skillContent = await response.text();
 skillsFiles["/skills/langgraph-docs/SKILL.md"] = createFileData(skillContent);
 
 const agent = await createDeepAgent({
+  model: "openai:gpt-5.4",
+  backend,
   checkpointer,
   // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
   skills: ["/skills/"],
+  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
 });
 
 const config = {
@@ -60,9 +65,11 @@ import {
   InMemoryStore,
   MemorySaver,
 } from "@langchain/langgraph";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 
 const checkpointer = new MemorySaver();
 const store = new InMemoryStore();
+const backend = new StoreBackend();
 
 function createFileData(content: string): FileData {
   const now = new Date().toISOString();
@@ -83,11 +90,13 @@ const fileData = createFileData(skillContent);
 await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
 
 const agent = await createDeepAgent({
-  backend: new StoreBackend(),
+  model: "openai:gpt-5.4",
+  backend,
   store: store,
   checkpointer,
   // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
   skills: ["/skills/"],
+  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
 });
 
 const config = {
@@ -116,11 +125,13 @@ const result = await agent.invoke(
 ```typescript
 import { createDeepAgent, FilesystemBackend } from "deepagents";
 import { MemorySaver } from "@langchain/langgraph";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 
 const checkpointer = new MemorySaver();
 const backend = new FilesystemBackend({ rootDir: process.cwd() });
 
 const agent = await createDeepAgent({
+  model: "openai:gpt-5.4",
   backend,
   skills: ["./examples/skills/"],
   interruptOn: {
@@ -129,6 +140,7 @@ const agent = await createDeepAgent({
     delete_file: true,
   },
   checkpointer, // Required!
+  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
 });
 
 const config = {
