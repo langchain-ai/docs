@@ -57,6 +57,22 @@ def test_build_all_empty_directory() -> None:
         builder.build_all()
         assert not fs.list_build_files()
 
+
+def test_build_all_copies_tsx_snippets() -> None:
+    """Test that local TSX snippet components are copied to build/snippets."""
+    files = [
+        File(
+            path="snippets/example-component.tsx",
+            content="export default function Example() { return null; }",
+        ),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        assert fs.build_file_exists("snippets/example-component.tsx")
+
     def test_build_all_supported_files() -> None:
         """Test building all supported file types.
 
