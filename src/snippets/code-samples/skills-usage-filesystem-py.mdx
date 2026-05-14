@@ -1,0 +1,37 @@
+```python
+import tempfile
+from pathlib import Path
+
+from deepagents import create_deep_agent
+from deepagents.backends.filesystem import FilesystemBackend
+from langchain_quickjs import CodeInterpreterMiddleware
+from langgraph.checkpoint.memory import MemorySaver
+
+checkpointer = MemorySaver()
+root_dir = tempfile.mkdtemp(prefix="deepagents-skills-")
+backend = FilesystemBackend(root_dir=root_dir, virtual_mode=True)
+
+skills_root = Path(root_dir) / "skills" / "write-timestamp"
+skills_root.mkdir(parents=True)
+skill_src = Path(__file__).resolve().parent / "skills/write-timestamp/SKILL.md"
+skills_root.joinpath("SKILL.md").write_text(skill_src.read_text(encoding="utf-8"), encoding="utf-8")
+
+agent = create_deep_agent(
+    model="google_genai:gemini-3.1-pro-preview",
+    backend=backend,
+    skills=[str(Path(root_dir) / "skills")],
+    interrupt_on={
+        "write_file": True,
+        "read_file": False,
+        "edit_file": True,
+    },
+    checkpointer=checkpointer,
+    middleware=[CodeInterpreterMiddleware(skills_backend=backend)],
+)
+
+# Example invocation (requires LLM credentials):
+# result = agent.invoke(
+#     {"messages": [{"role": "user", "content": "What is langgraph?"}]},
+#     config={"configurable": {"thread_id": "12345"}},
+# )
+```

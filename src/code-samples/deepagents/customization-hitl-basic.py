@@ -1,0 +1,45 @@
+"""Customization: human-in-the-loop interrupt_on example."""
+
+# :snippet-start: hitl-basic-config-py
+from langchain.tools import tool
+from deepagents import create_deep_agent
+from langgraph.checkpoint.memory import MemorySaver
+
+
+@tool
+def remove_file(path: str) -> str:
+    """Delete a file from the filesystem."""
+    return f"Deleted {path}"
+
+
+@tool
+def fetch_file(path: str) -> str:
+    """Read a file from the filesystem."""
+    return f"Contents of {path}"
+
+
+@tool
+def notify_email(to: str, subject: str, body: str) -> str:
+    """Send an email."""
+    return f"Sent email to {to}"
+
+
+# Checkpointer is REQUIRED for human-in-the-loop
+checkpointer = MemorySaver()
+
+# KEEP MODEL
+agent = create_deep_agent(
+    model="google_genai:gemini-3.1-pro-preview",
+    tools=[remove_file, fetch_file, notify_email],
+    interrupt_on={
+        "remove_file": True,  # Default: approve, edit, reject, respond
+        "fetch_file": False,  # No interrupts needed
+        "notify_email": {"allowed_decisions": ["approve", "reject"]},  # No editing
+    },
+    checkpointer=checkpointer,  # Required!
+)
+# :snippet-end:
+
+# :remove-start:
+assert agent is not None
+# :remove-end:
