@@ -1,9 +1,5 @@
 """Customization: memory configuration examples (StateBackend, StoreBackend, FilesystemBackend)."""
 
-# :remove-start:
-model = "anthropic:claude-sonnet-4-6"
-# :remove-end:
-
 # :snippet-start: customization-memory-state-py
 from urllib.request import urlopen
 
@@ -18,7 +14,7 @@ with urlopen(
 checkpointer = MemorySaver()
 
 agent = create_deep_agent(
-    model=model,
+    model="anthropic:claude-sonnet-4-6",
     memory=[
         "/AGENTS.md"
     ],
@@ -67,7 +63,7 @@ store.put(
 )
 
 agent = create_deep_agent(
-    model=model,
+    model="anthropic:claude-sonnet-4-6",
     backend=StoreBackend(),
     store=store,
     memory=["/AGENTS.md"],
@@ -100,7 +96,7 @@ from langgraph.checkpoint.memory import MemorySaver
 checkpointer = MemorySaver()
 
 agent = create_deep_agent(
-    model=model,
+    model="anthropic:claude-sonnet-4-6",
     backend=FilesystemBackend(root_dir="/Users/user/{project}"),
     memory=[
         "./AGENTS.md"

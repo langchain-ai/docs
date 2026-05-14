@@ -1,11 +1,5 @@
 """Customization: system prompt example."""
 
-# :remove-start:
-from deepagents import create_deep_agent
-
-model = "anthropic:claude-sonnet-4-6"
-# :remove-end:
-
 # :snippet-start: customization-system-prompt-py
 from deepagents import create_deep_agent
 
@@ -15,7 +9,7 @@ thorough research, and then write a polished report. \
 """
 
 agent = create_deep_agent(
-    model=model,
+    model="anthropic:claude-sonnet-4-6",
     system_prompt=research_instructions,
 )
 # :snippet-end:

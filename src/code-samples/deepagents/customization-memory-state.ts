@@ -27,6 +27,7 @@ function createFileData(content: string): FileData {
 }
 
 const agent = await createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
   memory: ["/AGENTS.md"],
   checkpointer: checkpointer,
 });

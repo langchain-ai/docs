@@ -1,15 +1,8 @@
 """Customization: custom middleware example."""
 
-# :remove-start:
-from deepagents import create_deep_agent
-
-model = "anthropic:claude-sonnet-4-6"
-# :remove-end:
-
 # :snippet-start: customization-middleware-py
 from langchain.agents.middleware import wrap_tool_call
 from langchain.tools import tool
-
 from deepagents import create_deep_agent
 
 
@@ -41,7 +34,7 @@ def log_tool_calls(request, handler):
 
 
 agent = create_deep_agent(
-    model=model,
+    model="anthropic:claude-sonnet-4-6",
     tools=[get_weather],
     middleware=[log_tool_calls],
 )

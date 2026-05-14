@@ -32,6 +32,7 @@ await store.put(["filesystem"], "/AGENTS.md", fileData);
 const checkpointer = new MemorySaver();
 
 const agent = await createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
   backend: new StoreBackend(),
   store: store,
   checkpointer: checkpointer,
