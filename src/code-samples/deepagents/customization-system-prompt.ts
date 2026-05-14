@@ -7,6 +7,7 @@ const researchInstructions =
   `write a polished report.`;
 
 const agent = createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
   systemPrompt: researchInstructions,
 });
 // :snippet-end:

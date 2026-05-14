@@ -40,6 +40,7 @@ const internetSearch = tool(
 );
 
 const agent = createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
   tools: [internetSearch],
 });
 // :snippet-end:
