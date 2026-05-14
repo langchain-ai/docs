@@ -1,14 +1,8 @@
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
+// :snippet-start: skills-usage-store-js
 import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
 import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// :snippet-start: skills-usage-store-js
 const checkpointer = new MemorySaver();
 const store = new InMemoryStore();
 const backend = new StoreBackend();
@@ -22,11 +16,14 @@ function createFileData(content: string): FileData {
   };
 }
 
-const skillPath = join(__dirname, "skills/write-timestamp/SKILL.md");
-const skillContent = await readFile(skillPath, "utf-8");
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
 const fileData = createFileData(skillContent);
 
-await store.put(["filesystem"], "/skills/write-timestamp/SKILL.md", fileData);
+await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
 
 // KEEP MODEL
 const agent = await createDeepAgent({
@@ -34,18 +31,22 @@ const agent = await createDeepAgent({
   backend,
   store,
   checkpointer,
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
   skills: ["/skills/"],
   middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
 });
 
-// Example invocation (requires LLM credentials):
-// const config = { recursionLimit: 50, configurable: { thread_id: `thread-${Date.now()}` } };
-// const result = await agent.invoke(
-//   { messages: [{ role: "user", content: "what is langraph?" }] },
-//   config,
-// );
+const config = {
+  recursionLimit: 50,
+  configurable: { thread_id: `thread-${Date.now()}` },
+};
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "what is langraph?" }] },
+  config,
+);
 // :snippet-end:
 
 // :remove-start:
 if (!agent) throw new Error("agent not created");
+if (!result) throw new Error("result empty");
 // :remove-end:

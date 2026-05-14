@@ -1,8 +1,7 @@
 """Customization: wiring skills with different backends."""
 
 # :snippet-start: skills-usage-state-py
-from pathlib import Path
-
+from urllib.request import urlopen
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.backends.utils import create_file_data
@@ -12,8 +11,9 @@ from langgraph.checkpoint.memory import MemorySaver
 checkpointer = MemorySaver()
 backend = StateBackend()
 
-skill_path = Path(__file__).resolve().parent / "skills/write-timestamp/SKILL.md"
-skill_content = skill_path.read_text(encoding="utf-8")
+skill_url = "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/examples/skills/langgraph-docs/SKILL.md"
+with urlopen(skill_url) as response:
+    skill_content = response.read().decode('utf-8')
 
 skills_files = {
     "/skills/write-timestamp/SKILL.md": create_file_data(skill_content),
@@ -24,12 +24,13 @@ agent = create_deep_agent(
     backend=backend,
     skills=["/skills/"],
     checkpointer=checkpointer,
-    middleware=[CodeInterpreterMiddleware(skills_backend=backend)],
+    middleware=[CodeInterpreterMiddleware(skills_backend=backend)], # for interpreter skills
 )
 
 result = agent.invoke(
     {
         "messages": [{"role": "user", "content": "What is langgraph?"}],
+        # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
         "files": skills_files,
     },
     config={"configurable": {"thread_id": "12345"}},
@@ -38,8 +39,7 @@ result = agent.invoke(
 assert result is not None
 
 # :snippet-start: skills-usage-store-py
-from pathlib import Path
-
+from urllib.request import urlopen
 from deepagents import create_deep_agent
 from deepagents.backends import StoreBackend
 from deepagents.backends.utils import create_file_data
@@ -49,8 +49,9 @@ from langgraph.store.memory import InMemoryStore
 store = InMemoryStore()
 backend = StoreBackend()
 
-skill_path = Path(__file__).resolve().parent / "skills/write-timestamp/SKILL.md"
-skill_content = skill_path.read_text(encoding="utf-8")
+skill_url = "https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/libs/cli/examples/skills/langgraph-docs/SKILL.md"
+with urlopen(skill_url) as response:
+    skill_content = response.read().decode('utf-8')
 
 store.put(
     namespace=("filesystem",),
@@ -67,30 +68,21 @@ agent = create_deep_agent(
     middleware=[CodeInterpreterMiddleware(skills_backend=backend)],
 )
 
-# Example invocation (requires LLM credentials):
-# result = agent.invoke(
-#     {"messages": [{"role": "user", "content": "What is langgraph?"}]},
-#     config={"configurable": {"thread_id": "12345"}},
-# )
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What is langgraph?"}]},
+    config={"configurable": {"thread_id": "12345"}},
+)
 # :snippet-end:
 
 # :snippet-start: skills-usage-filesystem-py
-import tempfile
-from pathlib import Path
-
 from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
 from langchain_quickjs import CodeInterpreterMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 
+# Checkpointer is REQUIRED for human-in-the-loop
 checkpointer = MemorySaver()
-root_dir = tempfile.mkdtemp(prefix="deepagents-skills-")
 backend = FilesystemBackend(root_dir=root_dir, virtual_mode=True)
-
-skills_root = Path(root_dir) / "skills" / "write-timestamp"
-skills_root.mkdir(parents=True)
-skill_src = Path(__file__).resolve().parent / "skills/write-timestamp/SKILL.md"
-skills_root.joinpath("SKILL.md").write_text(skill_src.read_text(encoding="utf-8"), encoding="utf-8")
 
 # KEEP MODEL
 agent = create_deep_agent(
@@ -102,15 +94,14 @@ agent = create_deep_agent(
         "read_file": False,
         "edit_file": True,
     },
-    checkpointer=checkpointer,
-    middleware=[CodeInterpreterMiddleware(skills_backend=backend)],
+    checkpointer=checkpointer, # Required!
+    middleware=[CodeInterpreterMiddleware(skills_backend=backend)], # for interpreter skills
 )
 
-# Example invocation (requires LLM credentials):
-# result = agent.invoke(
-#     {"messages": [{"role": "user", "content": "What is langgraph?"}]},
-#     config={"configurable": {"thread_id": "12345"}},
-# )
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What is langgraph?"}]},
+    config={"configurable": {"thread_id": "12345"}},
+)
 # :snippet-end:
 
 # :remove-start:
