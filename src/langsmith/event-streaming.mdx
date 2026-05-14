@@ -1,0 +1,361 @@
+---
+title: Event streaming
+sidebarTitle: Event streaming
+description: Stream LangSmith deployments with typed projections for messages, state, tool calls, subgraphs, and custom transformers.
+---
+
+Event streaming is the recommended streaming model for new applications talking to a LangSmith deployment. The [LangGraph SDK](/langsmith/langgraph-js-ts-sdk) opens a single subscription against the [LangSmith Deployment API](/langsmith/server-api-ref) and exposes typed projections — messages, state, tool calls, subgraphs, output, and custom transformer extensions — that can be consumed concurrently from one run.
+
+This page covers the v2-native streaming protocol exposed at `langgraph-api>=0.9.0rc1`. For the legacy `stream_mode`-based API (`updates`, `values`, `messages`, `custom`), see [Streaming API](/langsmith/streaming).
+
+<Note>
+Event streaming against a deployment requires `langgraph-api>=0.9.0rc1` on the [LangGraph Agent Server](/langsmith/local-server). Upgrade with `pip install -U "langgraph-api>=0.9.0rc1"`, or run a recent `langgraph dev` from `langgraph-cli`. Servers on earlier versions continue to serve the [legacy streaming API](/langsmith/streaming).
+</Note>
+
+<Note>
+0.9.0rc1 is a release candidate. The protocol and SDK surface may change before the GA cut.
+</Note>
+
+## Quickstart
+
+:::js
+```ts
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({
+  apiUrl: process.env.DEPLOYMENT_URL,
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const thread = await client.threads.stream(undefined, {
+  assistantId: "agent",
+});
+
+await thread.run.start({
+  input: { messages: [{ role: "user", content: "What is 42 * 17?" }] },
+});
+
+for await (const message of thread.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
+}
+
+const finalState = await thread.output;
+```
+:::
+
+:::python
+The Python deployment SDK is being rolled out in phases. Phase 2 (currently on the `main` branch) exposes the raw event iterator and `subscribe` API; typed projections (`stream.messages`, `stream.values`, etc.) land in a later phase. See [Stream all protocol events](#stream-all-protocol-events) for the Python surface available today.
+:::
+
+In-process LangGraph applications use the same event-streaming concepts through `graph.stream_events(..., version="v3")` / `graph.streamEvents(...)`. See [LangGraph event streaming](/oss/langgraph/event-streaming) for the in-process API.
+
+## How the pieces fit together
+
+A deployment-scoped stream has three layers:
+
+1. The Agent Server runs the graph and emits **protocol events** on named channels (`messages`, `values`, `tools`, `lifecycle`, …).
+2. The deployment delivers those events over **SSE** (or WebSocket) on a thread-scoped endpoint — `POST /threads/{thread_id}/stream/events` — and persists them so a dropped client can resume by event ID.
+3. The SDK client opens that subscription, dedupes by `event_id`, and exposes **typed projections** on a single stream object that multiple consumers can read concurrently.
+
+The SDK normalizes the wire format into the same `ProtocolEvent` envelope used by the in-process API, so application code that consumes projections does not need to change between local development and a deployed graph.
+
+## What event streaming provides
+
+The stream returned by `client.threads.stream(...)` exposes typed projections over one underlying event flow:
+
+| Projection | Use |
+| ---------- | --- |
+| `thread` (iterable) | Iterate every protocol event. |
+| `thread.messages` | Stream chat model messages, token deltas, reasoning, and tool-call argument chunks. |
+| `thread.values` | Iterate state snapshots and await the final value. |
+| `thread.output` | Await the final output. |
+| `thread.toolCalls` | Observe tool invocations with assembled input, status, output, and errors. |
+| `thread.subgraphs` | Discover and observe nested graph executions. |
+| `thread.subagents` | Discover and observe Deep Agents subagent invocations. |
+| `thread.interrupts` | Inspect human-in-the-loop interrupt payloads. |
+| `thread.interrupted` | Check whether the run paused for human input. |
+| `thread.audio`, `thread.images`, `thread.video`, `thread.files` | Iterate media content blocks extracted from messages. |
+| `thread.extensions` | Consume custom stream transformer projections published on `custom:<name>` channels. |
+
+Multiple consumers can read these projections concurrently. Reading `thread.messages` does not consume events needed by `thread.values`, `thread.toolCalls`, `thread.subgraphs`, or `thread.output`.
+
+Event streaming sits one level above the [legacy streaming API](/langsmith/streaming), which exposes raw stream modes through `client.runs.stream(...)` and the older `POST /threads/{thread_id}/runs/stream` endpoint. The legacy API still works against `langgraph-api>=0.9.0rc1`; the two paths coexist.
+
+## Stream messages
+
+Use `thread.messages` for chat model output:
+
+:::js
+```ts
+const thread = await client.threads.stream(undefined, { assistantId: "agent" });
+
+await thread.run.start({ input });
+
+for await (const message of thread.messages) {
+  const text = await message.text;
+  const usage = await message.usage;
+
+  console.log(text);
+  console.log(usage);
+}
+```
+:::
+
+`message.text` is both an async iterable and a promise-like value. Iterate it for token-by-token output, or await it for the complete text. `message.reasoning` exposes reasoning deltas and `message.toolCalls` exposes tool-call argument chunks. To consume text, reasoning, and tool-call chunks in exact arrival order, iterate the raw event stream instead of each projection separately.
+
+## Stream state
+
+Use `thread.values` to stream full state snapshots after each step:
+
+:::js
+```ts
+const thread = await client.threads.stream(undefined, { assistantId: "agent" });
+
+await thread.run.start({ input });
+
+for await (const snapshot of thread.values) {
+  console.log(snapshot);
+}
+
+const finalState = await thread.output;
+```
+:::
+
+`thread.values` is also promise-like — `await thread.values` resolves to the final state, equivalent to `await thread.output`.
+
+## Stream tool calls
+
+`thread.toolCalls` exposes assembled tool invocations. Each handle carries the tool name, the assembled input, a status (`started`, `finished`, `errored`), and — when the tool ran — its output or error:
+
+:::js
+```ts
+for await (const call of thread.toolCalls) {
+  console.log(call.name, await call.input);
+
+  if (call.status === "errored") {
+    console.error(await call.error);
+  } else {
+    console.log(await call.output);
+  }
+}
+```
+:::
+
+Tool events are correlated by tool call ID with the corresponding tool-call content blocks on `thread.messages`.
+
+## Stream subgraphs
+
+Use `thread.subgraphs` to observe nested graph work without parsing namespace strings:
+
+:::js
+```ts
+for await (const subgraph of thread.subgraphs) {
+  console.log(subgraph.name, subgraph.path);
+
+  for await (const message of subgraph.messages) {
+    console.log(await message.text);
+  }
+}
+```
+:::
+
+For [Deep Agents](/oss/deepagents/event-streaming) deployments, prefer `thread.subagents` for subagent invocations — it exposes the subagent name, prompt, and per-subagent message and tool-call projections.
+
+## Stream output
+
+Await `thread.output` for the final state once the run completes:
+
+:::js
+```ts
+await thread.run.start({ input });
+
+const finalState = await thread.output;
+```
+:::
+
+`thread.output` shares its subscription with `thread.values`, so awaiting one does not require an extra round trip when the other is also being read.
+
+## Stream multiple projections
+
+Run concurrent consumers when application code needs more than one projection at a time:
+
+:::js
+```ts
+await Promise.all([
+  (async () => {
+    for await (const message of thread.messages) {
+      console.log(await message.text);
+    }
+  })(),
+  (async () => {
+    for await (const call of thread.toolCalls) {
+      console.log(call.name, call.status);
+    }
+  })(),
+  (async () => {
+    for await (const subgraph of thread.subgraphs) {
+      console.log(subgraph.path);
+    }
+  })(),
+]);
+```
+:::
+
+Each projection opens a filtered subscription against the same thread, so concurrent reads do not increase server load beyond the channels actually consumed.
+
+## Resume after an interrupt
+
+When a graph pauses for human input, inspect `thread.interrupted` and `thread.interrupts`, then resume by responding to the interrupt:
+
+:::js
+```ts
+const thread = await client.threads.stream(undefined, { assistantId: "agent" });
+
+await thread.run.start({ input });
+
+for await (const message of thread.messages) {
+  console.log(await message.text);
+}
+
+if (thread.interrupted) {
+  for (const interrupt of thread.interrupts) {
+    await thread.input.respond({
+      namespace: interrupt.namespace,
+      interrupt_id: interrupt.interrupt_id,
+      response: { decisions: [{ type: "approve" }] },
+    });
+  }
+}
+
+const finalState = await thread.output;
+```
+:::
+
+Resume requires a graph compiled with a checkpointer. The deployment persists the checkpoint between the interrupt and the resume, so the client only needs the `thread_id` (and, for branching, a `checkpoint_id`). To branch from an earlier point in the run, pass `forkFrom: { checkpointId }` to `thread.run.start(...)`.
+
+## Stream all protocol events
+
+Iterate the stream object itself when application code needs the raw protocol event flow:
+
+:::js
+```ts
+const thread = await client.threads.stream(undefined, { assistantId: "agent" });
+
+await thread.run.start({ input });
+
+for await (const event of thread) {
+  console.log(event.method, event.params.namespace, event.params.data);
+}
+```
+:::
+
+:::python
+The Python deployment SDK currently exposes the raw event iterator and a `subscribe` API for filtering by channel. Open the stream as an async context manager, dispatch the run, and iterate `stream.events`:
+
+```py
+from langgraph_sdk import get_client
+
+client = get_client(url=DEPLOYMENT_URL, api_key=API_KEY)
+
+async with client.threads.stream(assistant_id="agent") as stream:
+    await stream.run.start(input={"messages": [{"role": "user", "content": "hi"}]})
+
+    async for event in stream.events:
+        print(event["method"], event["params"]["namespace"], event["params"]["data"])
+```
+
+To narrow to specific channels, open a `subscribe` on the stream:
+
+```py
+async with stream.subscribe(["messages", "tools"]) as sub:
+    async for event in sub:
+        ...
+```
+:::
+
+Each event is a `ProtocolEvent` envelope wrapping a channel-specific payload:
+
+:::js
+```ts
+interface ProtocolEvent {
+  readonly seq: number;          // strictly increasing within a run; use for ordering
+  readonly method: string;       // channel name: "messages", "values", "tools", "lifecycle", "custom", ...
+  readonly params: {
+    readonly namespace: string[];   // path of "<name>:<runtime_id>" segments; [] is the root
+    readonly timestamp: number;     // wall-clock milliseconds; can drift, don't rely on for ordering
+    readonly data: unknown;         // channel-specific payload
+  };
+  readonly event_id?: string;    // stable dedup ID; mirrored to the SSE `id:` field
+}
+```
+:::
+
+:::python
+The Phase 2 Python SDK does not yet define a `TypedDict` for the protocol envelope; events arrive as plain dicts with the same field names as the JS interface above (`seq`, `method`, `params.namespace`, `params.timestamp`, `params.data`, `event_id`).
+:::
+
+The `namespace` is a path from the root graph to the scope that emitted the event. The root is the empty array. Each child execution adds one `"name:runtime_id"` segment, so a nested tool call inside a subgraph looks like `["researcher:6f4d", "tools:91ac"]`. Filter raw events by namespace directly when only a specific subtree matters; `thread.subgraphs` already does this for nested graph executions.
+
+## Channels and event lifecycle
+
+Raw events flow on channels. The channel name appears as the event's `method`; each channel emits a specific event shape.
+
+| Channel | Purpose |
+| ------- | ------- |
+| `values` | Full graph state snapshots. |
+| `updates` | Per-node state deltas. |
+| `messages` | Content-block-centric chat model output. |
+| `tools` | Tool call start, streamed output, finish, and error events. |
+| `lifecycle` | Run, subgraph, and subagent status changes. |
+| `checkpoints` | Lightweight checkpoint envelopes for branching and time travel. |
+| `input` | Human-in-the-loop input requests and responses. |
+| `tasks` | Pregel task creation and result events. |
+| `custom` | User-defined payloads from graph code. |
+| `custom:<name>` | Application-defined stream transformer output. |
+
+The typed projections (`thread.messages`, `thread.values`, `thread.toolCalls`, etc.) are built from these channels. The channel name appears as the `method` field on raw events when iterating the stream object directly.
+
+### Messages
+
+The `messages` channel models output as content blocks. The `data.event` field is one of `message-start`, `content-block-start`, `content-block-delta`, `content-block-finish`, `message-finish`. Content blocks have explicit boundaries: a block starts, emits zero or more deltas, and finishes before the next block in the same message starts. `message-finish` may include token usage; unrecoverable model-call failures arrive as message error events.
+
+### Tools
+
+The `tools` channel exposes tool execution. The `data.event` field is one of `tool-started`, `tool-output-delta`, `tool-finished`, `tool-error`. Tool events are correlated by tool call ID, so a tool execution can be joined back to its originating tool-call content block on the `messages` channel.
+
+### Lifecycle
+
+The `lifecycle` channel tracks root run, subgraph, and subagent status. The `data.event` field is one of `started`, `running`, `completed`, `failed`, `interrupted`. Lifecycle data may include an optional `graph_name`, `error`, and `cause` describing why a child scope started (parent tool call, fan-out send, edge transition).
+
+## Resumability and replay
+
+Deployment streams are resumable. The Agent Server buffers events per run, assigns each a stable `event_id`, and replays from a client-supplied anchor on reconnect.
+
+The SDK handles reconnection automatically — a dropped SSE connection is reopened with the last observed `event_id` on the `Last-Event-ID` header, and the client dedupes any events the server replays from before the cutover. To resume an existing stream from a different process (a page reload, a worker handoff), open the same thread again:
+
+:::js
+```ts
+const thread = await client.threads.stream(threadId, {
+  assistantId: "agent",
+  since: lastSeenSeq,
+});
+
+for await (const event of thread) {
+  console.log(event.method, event.event_id);
+}
+```
+:::
+
+`since` is the sequence anchor; pass the last `event.seq` observed by the previous consumer. The server replays from that point forward. Clients that only need projection-level resumption can omit `since` — the server replays the full event log for the thread on reconnect, and the SDK dedupes by `event_id`.
+
+## Related
+
+- [Streaming API](/langsmith/streaming) — the legacy `stream_mode`-based streaming API. Still supported by `langgraph-api>=0.9.0rc1` for existing applications.
+- [LangGraph event streaming](/oss/langgraph/event-streaming) — the same concepts applied to an in-process LangGraph application.
+- [LangChain agent event streaming](/oss/langchain/event-streaming) — agent-focused projections for messages, tool calls, and middleware updates.
+- [Deep Agents event streaming](/oss/deepagents/event-streaming) — subagent streams, nested messages, and subagent tool calls.
+- [LangSmith Deployment API](/langsmith/server-api-ref) — wire-level reference for `POST /threads/{thread_id}/stream/events` and related endpoints.
+
+The wire-level event and command formats are defined in the [Agent Protocol](https://github.com/langchain-ai/agent-protocol) repository.
