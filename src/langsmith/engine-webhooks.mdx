@@ -1,0 +1,167 @@
+---
+title: LangSmith Engine webhook events
+sidebarTitle: Engine webhook events
+description: Reference for the webhook events the LangSmith Engine sends when it creates issues or links new traces to existing issues.
+tag: Beta
+---
+
+<Note>The LangSmith Engine is in **Beta** and under active development. To provide feedback or use this feature, reach out to the [LangChain team](https://forum.langchain.com/c/help/langsmith/).</Note>
+
+The LangSmith Engine sends webhook events to your endpoint when it detects new issues in your tracing project or links new traces to issues it has already opened. Use webhooks to forward issues into your incident-management, paging, or chat tools.
+
+To configure webhook subscriptions, open the **Issue Settings** panel on the **Issues** tab of a tracing project. See [Configure the LangSmith Engine](/langsmith/engine#configure-the-langsmith-engine).
+
+## Delivery
+
+LangSmith POSTs a JSON body to your webhook URL with `Content-Type: application/json` and any custom headers you attached to the subscription.
+
+| Property | Value |
+| --- | --- |
+| Method | `POST` |
+| Body | JSON, [common envelope](#event-envelope) below |
+| Scheme | `https://` only |
+| Timeout | 20 seconds per attempt |
+| Retries | Up to 3 attempts on transport errors or HTTP responses `>= 400`, with exponential backoff |
+| Response | The status code is checked. Response bodies are ignored |
+
+<Note>
+Retries deliver a byte-identical payload, including the same `id`. Dedupe on `id` so a retried delivery does not produce a duplicate downstream effect.
+</Note>
+
+### Custom headers
+
+You can attach arbitrary headers to each subscription (for example, `Authorization: Bearer …`) to authenticate the caller at your endpoint. `Content-Type` is always set by LangSmith and cannot be overridden.
+
+### Severity filtering
+
+Each subscription has a `severity_threshold` in the range `0`–`3`. An event is delivered only when the issue's `severity` is **less than or equal to** the threshold — lower numbers are more urgent.
+
+| Severity | Meaning |
+| --- | --- |
+| `0` | Urgent |
+| `1` | High |
+| `2` | Medium |
+| `3` | Low |
+
+For example, a subscription with `severity_threshold: 1` receives events for `URGENT` (0) and `HIGH` (1) issues only.
+
+### Event-type filtering
+
+Each subscription specifies the [event types](#event-types) it wants to receive. Subscriptions created without an explicit list default to `["issue.created"]`.
+
+## Event envelope
+
+Every event delivered to your endpoint uses the same outer JSON shape.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | UUID | Unique identifier for this delivery. Stable across retries — use it to dedupe. |
+| `type` | string | Event type. One of [`issue.created`](#issue-created) or [`issue.trace.added`](#issue-trace-added). |
+| `created` | integer | Unix seconds (UTC) when the event was enqueued. |
+| `request_id` | UUID | Shared by every event fired from the same upstream action. See [Batch coalescing](#batch-coalescing). |
+| `data` | object | Event payload. Contains `data.object` (always) and `data.trace` (only on [`issue.trace.added`](#issue-trace-added)). |
+
+### `data.object`
+
+`data.object` is a snapshot of the issue and is included on every event, regardless of type. Treat it as the authoritative state of the issue at the time the event was generated.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | UUID | Issue ID. |
+| `name` | string | Short title of the issue. |
+| `description` | string | Human-readable description. |
+| `severity` | integer | `0` (urgent) through `3` (low). See [Severity filtering](#severity-filtering). |
+| `tenant_id` | UUID | Workspace the issue belongs to. |
+| `tenant_name` | string | Workspace display name. Best-effort; empty if the workspace has been deleted. |
+| `session_id` | UUID | Tracing project the issue belongs to. |
+| `session_name` | string | Tracing project name. Best-effort; empty if the project has been deleted. |
+| `url` | string | Deep link to the issue in the LangSmith UI. |
+
+### `data.trace`
+
+`data.trace` is included only on [`issue.trace.added`](#issue-trace-added) events.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `run_id` | UUID | ID of the run that was linked to the issue. |
+| `trace_id` | UUID | ID of the trace that contains the run. |
+| `start_time` | string | RFC 3339 timestamp of when the run started. |
+| `comment` | string \| null | Optional note recorded when the trace was linked. Omitted when empty. |
+
+### Batch coalescing
+
+A single upstream action can produce multiple webhook events. For example, opening an issue that links five traces emits one [`issue.created`](#issue-created) event followed by five [`issue.trace.added`](#issue-trace-added) events. Every event from that one action shares the same `request_id`, so consumers can group them into a single notification.
+
+## Event types
+
+This is the complete list of event types the LangSmith Engine sends today. The list is additive — new event types may be introduced in the future, so handlers should ignore unknown `type` values rather than failing.
+
+### <a id="issue-created"></a> `issue.created`
+
+Sent when the LangSmith Engine creates a new issue. `data.trace` is omitted.
+
+```json
+{
+  "id": "b91c1f0e-7c4a-4f53-9d3e-9f1c8e7a2b10",
+  "type": "issue.created",
+  "created": 1747238400,
+  "request_id": "0d2f4f6a-2a3a-4b6e-9b87-5d5b6e8c9a01",
+  "data": {
+    "object": {
+      "id": "9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+      "name": "Tool selection inconsistency",
+      "description": "Agent repeatedly calls the search tool with identical arguments before terminating.",
+      "severity": 1,
+      "tenant_id": "11111111-2222-3333-4444-555555555555",
+      "tenant_name": "Acme Workspace",
+      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "session_name": "prod-api",
+      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa?tab=5&issue=9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d"
+    }
+  }
+}
+```
+
+### <a id="issue-trace-added"></a> `issue.trace.added`
+
+Sent when a new trace is linked to an existing issue. `data.trace` describes the linked trace.
+
+```json
+{
+  "id": "c02e3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "type": "issue.trace.added",
+  "created": 1747238410,
+  "request_id": "0d2f4f6a-2a3a-4b6e-9b87-5d5b6e8c9a01",
+  "data": {
+    "object": {
+      "id": "9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+      "name": "Tool selection inconsistency",
+      "description": "Agent repeatedly calls the search tool with identical arguments before terminating.",
+      "severity": 1,
+      "tenant_id": "11111111-2222-3333-4444-555555555555",
+      "tenant_name": "Acme Workspace",
+      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "session_name": "prod-api",
+      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa?tab=5&issue=9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d"
+    },
+    "trace": {
+      "run_id": "f1e2d3c4-b5a6-9788-6655-44332211ffee",
+      "trace_id": "abcdefab-1234-5678-9abc-def012345678",
+      "start_time": "2026-05-14T12:30:00Z",
+      "comment": "Reproduces the same tool-loop pattern."
+    }
+  }
+}
+```
+
+## Security
+
+- LangSmith only delivers webhooks over `https://`. URLs are validated when the subscription is created and again at delivery time, and private and metadata IP ranges are blocked in SaaS.
+- LangSmith does not currently sign webhook bodies. Authenticate the sender by setting a secret on the subscription as a custom header (for example, `Authorization: Bearer …`) and verifying it at your endpoint. Anyone with the webhook URL can POST to it, so treat the URL itself as confidential and rely on the header for authentication.
+- Dedupe on the event `id` so that a retried delivery does not cause a duplicate notification.
+
+## Best practices
+
+- **Acknowledge fast.** Respond with `2xx` as soon as you have persisted the event. Move slow work — fan-out, paging, downstream API calls — onto a queue rather than blocking the webhook response, so you stay within the 20-second timeout.
+- **Be tolerant of unknown event types.** New event types may be added without notice. Ignore `type` values your handler does not recognize.
+- **Be tolerant of new fields.** New fields may be added to existing payloads without notice. Parse with a permissive schema rather than rejecting unknown keys.
